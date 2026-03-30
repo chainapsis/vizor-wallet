@@ -182,18 +182,26 @@ pub fn scan_blocks(
     let db_cache = open_block_cache(cache_path)?;
     let mut db_data = open_wallet_db(db_path, network)?;
 
-    let tree_state = TreeState {
-        network: tree_state_network.to_string(),
-        height: tree_state_height,
-        hash: tree_state_hash.to_string(),
-        time: tree_state_time,
-        sapling_tree: tree_state_sapling_tree.to_string(),
-        orchard_tree: tree_state_orchard_tree.to_string(),
+    let from_state = if tree_state_hash.is_empty() {
+        // Empty tree state — used at Sapling activation height where no prior state exists
+        let prior_height = BlockHeight::from_u32(tree_state_height as u32);
+        zcash_client_backend::data_api::chain::ChainState::empty(
+            prior_height,
+            BlockHash([0u8; 32]),
+        )
+    } else {
+        let tree_state = TreeState {
+            network: tree_state_network.to_string(),
+            height: tree_state_height,
+            hash: tree_state_hash.to_string(),
+            time: tree_state_time,
+            sapling_tree: tree_state_sapling_tree.to_string(),
+            orchard_tree: tree_state_orchard_tree.to_string(),
+        };
+        tree_state
+            .to_chain_state()
+            .map_err(|e| format!("Failed to parse chain state: {e}"))?
     };
-
-    let from_state = tree_state
-        .to_chain_state()
-        .map_err(|e| format!("Failed to parse chain state: {e}"))?;
 
     let height = BlockHeight::from_u32(from_height as u32);
 

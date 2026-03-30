@@ -14,6 +14,7 @@ import '../generated/service.pb.dart' as pb;
 import '../rust/api/sync.dart' as rust_sync;
 
 const _batchSize = 1000;
+const _saplingActivationHeight = 419200; // mainnet
 
 class SyncState {
   final bool isSyncing;
@@ -124,9 +125,23 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         await _downloadAndCacheBlocks(stub, cachePath, start, batchEnd - 1);
 
         // 5. Get tree state before first block
-        final treeState = await stub.getTreeState(
-          pb.BlockID(height: Int64(start - 1)),
-        );
+        // At Sapling activation height, no tree state exists yet — use empty state
+        final pb.TreeState treeState;
+        if (start <= _saplingActivationHeight) {
+          log('Sync: using empty tree state for Sapling activation height');
+          treeState = pb.TreeState(
+            network: network.name,
+            height: Int64(start - 1),
+            hash: '',
+            time: 0,
+            saplingTree: '',
+            orchardTree: '',
+          );
+        } else {
+          treeState = await stub.getTreeState(
+            pb.BlockID(height: Int64(start - 1)),
+          );
+        }
 
         // 6. Scan blocks
         final result = await rust_sync.scanBlocks(
