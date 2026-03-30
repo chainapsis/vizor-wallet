@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zcash Wallet — Developer Onboarding</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-secondary: #8b949e;
+      --accent: #f4b728;
+      --link: #58a6ff;
+      --code-bg: #1c2128;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 48px 24px;
+    }
+    h1 { color: var(--accent); font-size: 2em; margin-bottom: 8px; }
+    h2 { color: var(--accent); font-size: 1.5em; margin-top: 48px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h3 { color: var(--text); font-size: 1.15em; margin-top: 32px; margin-bottom: 12px; }
+    p, li { color: var(--text-secondary); margin-bottom: 12px; }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.9em;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 16px 0;
+      font-size: 0.85em;
+      line-height: 1.5;
+    }
+    pre code { background: none; padding: 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 0.9em;
+    }
+    th { background: var(--surface); color: var(--text); }
+    td { color: var(--text-secondary); }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.75em;
+      font-weight: 600;
+    }
+    .rust { background: #b7410e22; color: #e57324; border: 1px solid #e5732444; }
+    .dart { background: #0175c222; color: #02a3f4; border: 1px solid #02a3f444; }
+    .ffi { background: #6e40c933; color: #a78bfa; border: 1px solid #a78bfa44; }
+    .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin: 32px 0; }
+    .toc ol { padding-left: 24px; }
+    .toc li { margin-bottom: 6px; }
+    .toc a { color: var(--text); }
+    .subtitle { color: var(--text-secondary); font-size: 1.1em; margin-bottom: 32px; }
+    .diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      margin: 16px 0;
+      font-family: 'SF Mono', monospace;
+      font-size: 0.85em;
+      white-space: pre;
+      overflow-x: auto;
+      line-height: 1.4;
+    }
+    .note {
+      background: #f4b72811;
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+    .note p { color: var(--text); margin: 0; }
+  </style>
+</head>
+<body>
+
+<h1>Zcash Wallet — Developer Onboarding</h1>
+<p class="subtitle">Flutter + Rust FFI architecture for the Zcash shielded mobile wallet</p>
+
+<div class="toc">
+  <strong>Table of Contents</strong>
+  <ol>
+    <li><a href="#architecture">Architecture Overview</a>
+      <ol>
+        <li><a href="#arch-layers">Layer Separation: Rust Core / FFI Bridge / Dart UI</a></li>
+        <li><a href="#arch-diagram">Data Flow Diagram</a></li>
+        <li><a href="#arch-why">Why Rust + Flutter (not native SDKs)</a></li>
+      </ol>
+    </li>
+    <li><a href="#ffi">Flutter Rust Bridge (FRB) Communication</a>
+      <ol>
+        <li><a href="#ffi-how">How FRB Works</a></li>
+        <li><a href="#ffi-types">Type Mapping: Rust ↔ Dart</a></li>
+        <li><a href="#ffi-codegen">Codegen Workflow</a></li>
+        <li><a href="#ffi-constraints">Design Constraints</a></li>
+      </ol>
+    </li>
+    <li><a href="#rust-core">Rust Core Logic</a>
+      <ol>
+        <li><a href="#rust-modules">Module Structure</a></li>
+        <li><a href="#rust-wallet">Wallet API — Key Derivation &amp; Account Management</a></li>
+        <li><a href="#rust-sync">Sync API — Block Scanning &amp; Balance</a></li>
+        <li><a href="#rust-deps">Zcash Crate Dependency Graph</a></li>
+        <li><a href="#rust-security">Security Model: Spending Key Separation</a></li>
+      </ol>
+    </li>
+    <li><a href="#dart-layer">Dart / Flutter Layer</a>
+      <ol>
+        <li><a href="#dart-providers">Riverpod Providers</a></li>
+        <li><a href="#dart-sync-loop">Sync Loop Orchestration (Dart-managed)</a></li>
+        <li><a href="#dart-grpc">gRPC Client &amp; Proto Definitions</a></li>
+        <li><a href="#dart-routing">Navigation &amp; Routing</a></li>
+        <li><a href="#dart-ui">UI Screens</a></li>
+      </ol>
+    </li>
+    <li><a href="#sync-deep">Sync Engine Deep Dive</a>
+      <ol>
+        <li><a href="#sync-flow">Full Sync Flow (Step by Step)</a></li>
+        <li><a href="#sync-blockcache">Block Cache &amp; FsBlockDb</a></li>
+        <li><a href="#sync-scanning">Trial Decryption &amp; Note Discovery</a></li>
+        <li><a href="#sync-progress">Progress Reporting</a></li>
+      </ol>
+    </li>
+    <li><a href="#api-reference">API Reference</a>
+      <ol>
+        <li><a href="#api-wallet">Wallet Functions (6)</a></li>
+        <li><a href="#api-sync">Sync Functions (8)</a></li>
+        <li><a href="#api-structs">Data Structures</a></li>
+      </ol>
+    </li>
+    <li><a href="#address">Address System</a>
+      <ol>
+        <li><a href="#addr-ua">Unified Address (Sapling + Orchard)</a></li>
+        <li><a href="#addr-transparent">Transparent Address (separate)</a></li>
+        <li><a href="#addr-zodl">Compatibility with zodl/Zashi</a></li>
+      </ol>
+    </li>
+    <li><a href="#testing">Testing</a>
+      <ol>
+        <li><a href="#test-rust">Rust Unit Tests</a></li>
+        <li><a href="#test-dart">Dart Tests</a></li>
+      </ol>
+    </li>
+    <li><a href="#dev-commands">Development Commands</a></li>
+  </ol>
+</div>
+
+<!-- ============================================================ -->
+<!-- 1. Architecture Overview                                      -->
+<!-- ============================================================ -->
+
+<h2 id="architecture">1. Architecture Overview</h2>
+
+<h3 id="arch-layers">1.1 Layer Separation</h3>
+<p>The wallet is split into three distinct layers:</p>
+<table>
+  <tr>
+    <th>Layer</th><th>Language</th><th>Responsibility</th><th>Key Files</th>
+  </tr>
+  <tr>
+    <td><span class="badge rust">Rust Core</span></td>
+    <td>Rust</td>
+    <td>All Zcash cryptography: key derivation (ZIP-32), address encoding (ZIP-316), block scanning (trial decryption), wallet DB (SQLite), commitment tree management</td>
+    <td><code>rust/src/wallet/</code>, <code>rust/src/api/</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge ffi">FFI Bridge</span></td>
+    <td>Generated</td>
+    <td>flutter_rust_bridge v2.11.1 codegen. Translates Rust <code>pub fn</code> in <code>rust/src/api/</code> into Dart async functions. Handles memory, serialization, error propagation.</td>
+    <td><code>lib/src/rust/</code> (auto-generated), <code>flutter_rust_bridge.yaml</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge dart">Dart UI</span></td>
+    <td>Dart / Flutter</td>
+    <td>UI rendering, state management (Riverpod), navigation (GoRouter), secure storage (iOS Keychain / Android Keystore), gRPC client to lightwalletd, sync loop orchestration</td>
+    <td><code>lib/src/providers/</code>, <code>lib/src/features/</code>, <code>lib/app.dart</code></td>
+  </tr>
+</table>
+
+<h3 id="arch-diagram">1.2 Data Flow Diagram</h3>
+<div class="diagram">
+                          lightwalletd (zec.rocks:443)
+                                    |
+                             gRPC (Dart)
+                                    |
+                    +---------------+---------------+
+                    |                               |
+             Download blocks                  Get tree states
+             Get subtree roots                Get chain tip
+                    |                               |
+                    v                               v
+        +---------------------+         +---------------------+
+        |   Dart Sync Loop    |         |   Dart Providers    |
+        |  (SyncNotifier)     |-------->|  (WalletNotifier)   |
+        +---------------------+         +---------------------+
+                    |                               |
+              FFI calls                       FFI calls
+                    |                               |
+        +-----------+-----------+       +-----------+-----------+
+        |  rust/src/api/sync.rs |       | rust/src/api/wallet.rs|
+        +-----------+-----------+       +-----------+-----------+
+                    |                               |
+        +-----------+-----------+       +-----------+-----------+
+        | rust/src/wallet/sync.rs|      | rust/src/wallet/keys.rs|
+        +-----------+-----------+       +-----------+-----------+
+                    |                               |
+        +-----------+-------------------------------+-----------+
+        |                   zcash_client_sqlite                 |
+        |              (WalletDb + FsBlockDb)                   |
+        +-------------------------------------------------------+
+                    |
+            SQLite Database
+         (wallet.db + cache/)
+</div>
+
+<h3 id="arch-why">1.3 Why Rust + Flutter</h3>
+<p>The official Zcash ecosystem provides mobile SDKs for Swift (iOS) and Kotlin (Android), both of which wrap the same <code>librustzcash</code> Rust crates via UniFFI / JNI. There is no official Flutter/Dart SDK.</p>
+<p>Our approach calls <code>librustzcash</code> directly via FFI, which gives us:</p>
+<ul>
+  <li><strong>Single Rust codebase</strong> for both iOS and Android &mdash; no platform-specific crypto code</li>
+  <li><strong>Direct access</strong> to <code>zcash_client_backend</code> and <code>zcash_client_sqlite</code> without an intermediary SDK</li>
+  <li><strong>flutter_rust_bridge</strong> handles cross-compilation, async, and type marshalling automatically</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- 2. Flutter Rust Bridge (FRB) Communication                    -->
+<!-- ============================================================ -->
+
+<h2 id="ffi">2. Flutter Rust Bridge (FRB) Communication</h2>
+
+<h3 id="ffi-how">2.1 How FRB Works</h3>
+<p>FRB reads Rust source files in <code>rust/src/api/</code> and generates Dart bindings. At runtime:</p>
+<ol>
+  <li>Dart calls a generated async function (e.g. <code>createWallet()</code>)</li>
+  <li>FRB serializes arguments using SSE (Simple Serialization Engine)</li>
+  <li>The call is dispatched to a Rust function on a separate isolate/thread</li>
+  <li>Rust executes the function, serializes the result</li>
+  <li>FRB deserializes the result back into Dart objects</li>
+</ol>
+<p>Rust functions marked <code>#[flutter_rust_bridge::frb(sync)]</code> run synchronously on the calling thread (no isolate hop). Use this only for trivial, non-blocking operations.</p>
+
+<h3 id="ffi-types">2.2 Type Mapping</h3>
+<table>
+  <tr><th>Rust Type</th><th>Dart Type</th><th>Notes</th></tr>
+  <tr><td><code>String</code></td><td><code>String</code></td><td>UTF-8, copied across FFI</td></tr>
+  <tr><td><code>u64</code></td><td><code>BigInt</code></td><td>Dart <code>int</code> is 64-bit on native, but FRB uses <code>BigInt</code> for u64</td></tr>
+  <tr><td><code>u32</code>, <code>u8</code></td><td><code>int</code></td><td></td></tr>
+  <tr><td><code>bool</code></td><td><code>bool</code></td><td></td></tr>
+  <tr><td><code>Vec&lt;u8&gt;</code></td><td><code>Uint8List</code></td><td>Efficient byte transfer</td></tr>
+  <tr><td><code>Vec&lt;T&gt;</code></td><td><code>List&lt;T&gt;</code></td><td></td></tr>
+  <tr><td><code>Result&lt;T, String&gt;</code></td><td><code>Future&lt;T&gt;</code></td><td><code>Err</code> becomes a Dart exception</td></tr>
+  <tr><td><code>struct Foo { pub x: String }</code></td><td><code>class Foo { final String x; }</code></td><td>FRB generates the Dart class</td></tr>
+</table>
+
+<h3 id="ffi-codegen">2.3 Codegen Workflow</h3>
+<pre><code># After modifying any file in rust/src/api/*.rs:
+# (adding/removing/changing pub fn signatures or pub structs)
+flutter_rust_bridge_codegen generate
+
+# This regenerates:
+#   lib/src/rust/api/*.dart        (Dart bindings)
+#   lib/src/rust/frb_generated.*   (FFI glue)
+#   rust/src/frb_generated.rs      (Rust FFI glue)</code></pre>
+
+<div class="note">
+  <p><strong>Important:</strong> Run codegen from the project root (<code>/zcash-wallet/</code>), not from <code>rust/</code>. The <code>flutter_rust_bridge.yaml</code> config is in the project root.</p>
+</div>
+
+<h3 id="ffi-constraints">2.4 Design Constraints</h3>
+<ul>
+  <li><strong>Simple types only at the API boundary.</strong> FRB handles primitives, <code>String</code>, <code>Vec</code>, and flat structs well. Complex Zcash types (<code>WalletDb</code>, <code>UnifiedSpendingKey</code>, <code>CompactBlock</code>) must stay inside Rust. The API layer (<code>rust/src/api/</code>) converts between simple types and internal Zcash types.</li>
+  <li><strong>No persistent Rust state across calls.</strong> Each FFI call opens the database, performs the operation, and closes. There is no long-lived <code>WalletDb</code> instance held in Rust. This is simpler and avoids lifecycle issues.</li>
+  <li><strong>Errors are strings.</strong> <code>Result&lt;T, String&gt;</code> is used throughout the API. Zcash crate errors are formatted into human-readable strings at the API boundary.</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- 3. Rust Core Logic                                            -->
+<!-- ============================================================ -->
+
+<h2 id="rust-core">3. Rust Core Logic</h2>
+
+<h3 id="rust-modules">3.1 Module Structure</h3>
+<pre><code>rust/src/
+  lib.rs                  # Module declarations
+  frb_generated.rs        # Auto-generated FRB glue (do not edit)
+  api/
+    mod.rs                # API module declarations
+    wallet.rs             # FRB-exposed wallet functions (6 functions)
+    sync.rs               # FRB-exposed sync functions (8 functions)
+    simple.rs             # FRB demo (greet function, can be removed)
+  wallet/
+    mod.rs                # Internal module declarations
+    keys.rs               # Key derivation, mnemonic, address generation
+    sync.rs               # Block scanning, balance queries, chain state</code></pre>
+
+<p>The <code>api/</code> layer is the FFI boundary &mdash; it contains only thin wrappers that parse parameters and delegate to <code>wallet/</code>. The <code>wallet/</code> layer contains the actual Zcash logic.</p>
+
+<h3 id="rust-wallet">3.2 Wallet API &mdash; Key Derivation &amp; Account Management</h3>
+
+<p>File: <code>rust/src/wallet/keys.rs</code></p>
+
+<p><strong>Mnemonic generation:</strong> Uses <code>bip0039</code> crate to generate 24-word BIP-39 mnemonics with 256-bit entropy. Seed derivation follows the standard: PBKDF2-HMAC-SHA512 with salt <code>"mnemonic" + passphrase</code> (empty passphrase).</p>
+
+<p><strong>Key derivation:</strong> <code>zcash_keys::UnifiedSpendingKey::from_seed()</code> derives three key types from a single seed:</p>
+<ul>
+  <li><strong>Transparent:</strong> BIP-44 path <code>m/44'/133'/0'</code> (mainnet)</li>
+  <li><strong>Sapling:</strong> ZIP-32 HD derivation on the Jubjub curve</li>
+  <li><strong>Orchard:</strong> ZIP-32 HD derivation on the Pallas curve</li>
+</ul>
+
+<p><strong>Account creation:</strong> <code>WalletDb::create_account()</code> stores only the Unified Full Viewing Key (UFVK) in the database. The spending key is never persisted in the DB.</p>
+
+<p><strong>Address encoding:</strong> The Unified Address is generated with <code>Require Orchard + Require Sapling + Omit Transparent</code>, matching zodl/Zashi wallet behavior. This is controlled by the <code>shielded_address_request()</code> helper function.</p>
+
+<pre><code>fn shielded_address_request() -> UnifiedAddressRequest {
+    UnifiedAddressRequest::custom(
+        ReceiverRequirement::Require, // Orchard
+        ReceiverRequirement::Require, // Sapling
+        ReceiverRequirement::Omit,    // Transparent
+    ).expect("valid receiver requirements")
+}</code></pre>
+
+<h3 id="rust-sync">3.3 Sync API &mdash; Block Scanning &amp; Balance</h3>
+
+<p>File: <code>rust/src/wallet/sync.rs</code></p>
+
+<p>Individual sync steps exposed to Dart. Each function opens the database, performs one operation, and returns. Dart orchestrates the sequence.</p>
+
+<table>
+  <tr><th>Function</th><th>What it does</th></tr>
+  <tr><td><code>update_chain_tip()</code></td><td>Sets the latest block height in the wallet DB. Must be called before <code>suggest_scan_ranges()</code>.</td></tr>
+  <tr><td><code>put_sapling_subtree_roots()</code></td><td>Stores Sapling commitment tree subtree roots for efficient tree reconstruction.</td></tr>
+  <tr><td><code>put_orchard_subtree_roots()</code></td><td>Same for Orchard.</td></tr>
+  <tr><td><code>suggest_scan_ranges()</code></td><td>Queries the wallet DB for block ranges that need scanning, ordered by priority.</td></tr>
+  <tr><td><code>write_block_metadata()</code></td><td>Registers compact block files in the <code>FsBlockDb</code> metadata DB. Validates that files exist.</td></tr>
+  <tr><td><code>scan_blocks()</code></td><td>Performs trial decryption on cached compact blocks using <code>scan_cached_blocks()</code> from <code>zcash_client_backend</code>.</td></tr>
+  <tr><td><code>get_sync_progress()</code></td><td>Returns <code>fully_scanned_height</code> and <code>chain_tip_height</code> from the wallet summary.</td></tr>
+  <tr><td><code>get_wallet_balance()</code></td><td>Returns spendable balances for transparent, Sapling, and Orchard pools.</td></tr>
+</table>
+
+<h3 id="rust-deps">3.4 Zcash Crate Dependency Graph</h3>
+<div class="diagram">
+  zcash_client_sqlite (0.19.5)  &lt;-- Our main entry point
+    |-- zcash_client_backend (0.21.2)
+    |     |-- zcash_keys (0.12.0)
+    |     |-- zcash_protocol (0.7.2)
+    |     |-- zcash_address (0.10.1)
+    |     |-- zcash_primitives (0.26.4)
+    |     +-- lightwalletd proto (via tonic-prost)
+    |-- sapling-crypto (0.5.x)   &lt;-- Must match zcash_client_sqlite's version
+    +-- orchard (0.11.x)         &lt;-- Must match zcash_client_sqlite's version
+</div>
+
+<div class="note">
+  <p><strong>Version constraint:</strong> <code>orchard</code> and <code>sapling-crypto</code> versions must match what <code>zcash_client_sqlite</code> uses internally. If you use different versions, you get type mismatch errors (e.g. "expected <code>sapling_crypto::Node</code>, found <code>Node</code>") because Rust treats different crate versions as different types.</p>
+</div>
+
+<h3 id="rust-security">3.5 Security Model: Spending Key Separation</h3>
+<p>This is an intentional design by <code>librustzcash</code>, not our choice:</p>
+<ul>
+  <li><code>WalletDb</code> stores only the <strong>Unified Full Viewing Key (UFVK)</strong> &mdash; sufficient for detecting transactions and computing balances, but cannot spend funds.</li>
+  <li>The <strong>mnemonic / seed</strong> is stored in Dart's <code>flutter_secure_storage</code> (iOS Keychain / Android Keystore), encrypted at rest by the OS.</li>
+  <li>The spending key is derived on-the-fly from the seed only when needed for transaction signing, passed to Rust via FFI, and used with <code>secrecy::SecretVec</code> for memory zeroization after use.</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- 4. Dart / Flutter Layer                                       -->
+<!-- ============================================================ -->
+
+<h2 id="dart-layer">4. Dart / Flutter Layer</h2>
+
+<h3 id="dart-providers">4.1 Riverpod Providers</h3>
+
+<p><strong><code>walletProvider</code></strong> (<code>AsyncNotifierProvider&lt;WalletNotifier, WalletState&gt;</code>)</p>
+<ul>
+  <li>On <code>build()</code>: checks if wallet DB exists, loads address from UFVK</li>
+  <li><code>createWallet()</code>: generates mnemonic, creates account, saves mnemonic to secure storage</li>
+  <li><code>importWallet()</code>: validates mnemonic, deletes existing DB, creates account</li>
+  <li><code>WalletState</code>: <code>{ hasWallet, unifiedAddress, network }</code></li>
+</ul>
+
+<p><strong><code>syncProvider</code></strong> (<code>AsyncNotifierProvider&lt;SyncNotifier, SyncState&gt;</code>)</p>
+<ul>
+  <li>Manages the entire sync lifecycle via gRPC + Rust FFI</li>
+  <li><code>startSync()</code>: connects to lightwalletd, runs the sync loop</li>
+  <li><code>stopSync()</code>: sets cancellation flag</li>
+  <li><code>SyncState</code>: <code>{ isSyncing, percentage, scannedHeight, chainTipHeight, transparentBalance, saplingBalance, orchardBalance, totalBalance, error }</code></li>
+</ul>
+
+<h3 id="dart-sync-loop">4.2 Sync Loop Orchestration</h3>
+<p>The sync loop runs in Dart (not Rust), following the zodl/Zashi Android SDK pattern where Kotlin's <code>CompactBlockProcessor</code> manages the loop. Our equivalent is <code>SyncNotifier._runSync()</code>.</p>
+
+<pre><code>// Simplified sync loop (actual code in sync_provider.dart)
+1. Connect gRPC to zec.rocks:443
+2. Get chain tip height
+3. Call Rust: update_chain_tip(height)
+4. Download Sapling + Orchard subtree roots via gRPC stream
+5. Call Rust: put_subtree_roots(sapling_roots, orchard_roots)
+6. Loop:
+   a. Call Rust: suggest_scan_ranges() -> ranges
+   b. If no ranges: done (fully synced)
+   c. Pick highest-priority range, batch = 1000 blocks
+   d. Download compact blocks via gRPC stream
+   e. Write block files to {cache}/blocks/{height}-{hash}-compactblock
+   f. Call Rust: write_block_metadata(metas)
+   g. Get tree state via gRPC: getTreeState(start - 1)
+   h. Call Rust: scan_blocks(from_height, tree_state, limit)
+   i. Call Rust: get_sync_status() + get_balance()
+   j. Update SyncState -> UI refreshes</code></pre>
+
+<h3 id="dart-grpc">4.3 gRPC Client &amp; Proto Definitions</h3>
+<p>Proto files from the <a href="https://github.com/zcash/lightwalletd">lightwalletd</a> repository are compiled to Dart using <code>protoc</code> + <code>protoc_plugin</code>.</p>
+
+<table>
+  <tr><th>Proto File</th><th>Generated Dart</th><th>Key Types</th></tr>
+  <tr><td><code>protos/service.proto</code></td><td><code>lib/src/generated/service.pbgrpc.dart</code></td><td><code>CompactTxStreamerClient</code>, <code>BlockID</code>, <code>BlockRange</code>, <code>TreeState</code>, <code>ChainSpec</code></td></tr>
+  <tr><td><code>protos/compact_formats.proto</code></td><td><code>lib/src/generated/compact_formats.pb.dart</code></td><td><code>CompactBlock</code>, <code>CompactTx</code>, <code>CompactSaplingOutput</code>, <code>CompactOrchardAction</code></td></tr>
+</table>
+
+<p>The Dart gRPC client connects to <code>zec.rocks:443</code> (mainnet) with TLS. Key RPC methods used:</p>
+<ul>
+  <li><code>getLatestBlock()</code> &mdash; current chain tip</li>
+  <li><code>getBlockRange()</code> &mdash; streaming download of compact blocks</li>
+  <li><code>getTreeState()</code> &mdash; commitment tree state at a given height</li>
+  <li><code>getSubtreeRoots()</code> &mdash; streaming download of subtree roots</li>
+</ul>
+
+<h3 id="dart-routing">4.4 Navigation &amp; Routing</h3>
+<p>Uses <code>go_router</code> with redirect guards based on wallet state:</p>
+<pre><code>Routes:
+  /          -> redirects to /welcome or /home based on hasWallet
+  /welcome   -> WelcomeScreen (create / import choice)
+  /create    -> CreateWalletScreen (24-word grid)
+  /import    -> ImportWalletScreen (mnemonic input)
+  /home      -> HomeScreen (balance, sync status, address)</code></pre>
+
+<h3 id="dart-ui">4.5 UI Screens</h3>
+<table>
+  <tr><th>Screen</th><th>File</th><th>Description</th></tr>
+  <tr><td>Welcome</td><td><code>features/onboarding/screens/welcome_screen.dart</code></td><td>"Create New Wallet" / "Import Wallet" buttons</td></tr>
+  <tr><td>Create Wallet</td><td><code>features/onboarding/screens/create_wallet_screen.dart</code></td><td>24-word mnemonic grid, backup confirmation checkbox</td></tr>
+  <tr><td>Import Wallet</td><td><code>features/onboarding/screens/import_wallet_screen.dart</code></td><td>Mnemonic text input, optional birthday height, real-time validation</td></tr>
+  <tr><td>Home</td><td><code>features/home/screens/home_screen.dart</code></td><td>Balance display, sync progress bar, address card with copy</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<!-- 5. Sync Engine Deep Dive                                      -->
+<!-- ============================================================ -->
+
+<h2 id="sync-deep">5. Sync Engine Deep Dive</h2>
+
+<h3 id="sync-flow">5.1 Full Sync Flow</h3>
+<p>Initial sync on mainnet starts from Sapling activation height (419,200) and must scan through to the current tip (~3.29M blocks). This takes hours on mobile.</p>
+
+<p>The scan range priority system determines what to scan first:</p>
+<table>
+  <tr><th>Priority</th><th>Value</th><th>Meaning</th></tr>
+  <tr><td>Verify</td><td>6</td><td>Chain reorg detection &mdash; scan immediately</td></tr>
+  <tr><td>ChainTip</td><td>5</td><td>Latest blocks &mdash; shows recent transactions</td></tr>
+  <tr><td>FoundNote</td><td>4</td><td>Complete commitment trees for found notes</td></tr>
+  <tr><td>OpenAdjacent</td><td>3</td><td>Near account birthday</td></tr>
+  <tr><td>Historic</td><td>2</td><td>Advance fully-scanned height</td></tr>
+  <tr><td>Scanned</td><td>1</td><td>Already scanned (skipped)</td></tr>
+  <tr><td>Ignored</td><td>0</td><td>Not relevant (skipped)</td></tr>
+</table>
+
+<h3 id="sync-blockcache">5.2 Block Cache &amp; FsBlockDb</h3>
+<p><code>FsBlockDb</code> from <code>zcash_client_sqlite</code> is a filesystem-backed block cache:</p>
+<ul>
+  <li><strong>Metadata DB:</strong> <code>{cache_path}/blockmeta.sqlite</code> &mdash; tracks which blocks are cached</li>
+  <li><strong>Block files:</strong> <code>{cache_path}/blocks/{height}-{hash_hex}-compactblock</code></li>
+  <li>Hash in filename is <strong>byte-reversed hex</strong> (matches <code>BlockHash::Display</code>)</li>
+  <li>File content is protobuf-serialized <code>CompactBlock</code></li>
+</ul>
+
+<p>Dart writes the block files, Rust reads them during scanning. The flow:</p>
+<pre><code>Dart: gRPC download -> CompactBlock.writeToBuffer() -> write file
+Dart: call Rust write_block_metadata() -> validates files exist, writes to SQLite
+Rust: scan_cached_blocks() -> FsBlockDb reads files -> prost::decode -> trial decrypt</code></pre>
+
+<h3 id="sync-scanning">5.3 Trial Decryption &amp; Note Discovery</h3>
+<p><code>scan_cached_blocks()</code> from <code>zcash_client_backend</code> performs trial decryption on every shielded output in the cached blocks:</p>
+<ul>
+  <li>For each Sapling output: attempts decryption with the wallet's Sapling IVK</li>
+  <li>For each Orchard action: attempts decryption with the wallet's Orchard IVK</li>
+  <li>Successful decryption = note belongs to this wallet &rarr; stored in wallet DB</li>
+  <li>Nullifiers are tracked to detect when notes are spent</li>
+</ul>
+
+<h3 id="sync-progress">5.4 Progress Reporting</h3>
+<p>After each batch of 1000 blocks, Dart calls <code>get_sync_status()</code> which reads <code>WalletSummary</code> from the DB. This provides <code>fully_scanned_height</code> and <code>chain_tip_height</code>, from which percentage is computed. The <code>SyncState</code> is updated and the UI reflects the new progress.</p>
+
+<!-- ============================================================ -->
+<!-- 6. API Reference                                              -->
+<!-- ============================================================ -->
+
+<h2 id="api-reference">6. API Reference</h2>
+
+<h3 id="api-wallet">6.1 Wallet Functions</h3>
+<table>
+  <tr><th>Dart Function</th><th>Rust Function</th><th>Sync?</th><th>Description</th></tr>
+  <tr>
+    <td><code>createWallet({network, dbPath})</code></td>
+    <td><code>create_wallet(network, db_path)</code></td>
+    <td>async</td>
+    <td>Generates mnemonic, creates account, returns <code>WalletCreationResult { mnemonic, unifiedAddress }</code></td>
+  </tr>
+  <tr>
+    <td><code>importWallet({mnemonic, birthdayHeight?, network, dbPath})</code></td>
+    <td><code>import_wallet(mnemonic, birthday_height, network, db_path)</code></td>
+    <td>async</td>
+    <td>Imports from mnemonic, returns <code>WalletImportResult { unifiedAddress }</code></td>
+  </tr>
+  <tr>
+    <td><code>getUnifiedAddress({dbPath, network})</code></td>
+    <td><code>get_unified_address(db_path, network)</code></td>
+    <td>async</td>
+    <td>Returns the shielded UA (Sapling+Orchard) from DB</td>
+  </tr>
+  <tr>
+    <td><code>getTransparentAddress({dbPath, network})</code></td>
+    <td><code>get_transparent_address(db_path, network)</code></td>
+    <td>async</td>
+    <td>Returns the transparent-only address from DB</td>
+  </tr>
+  <tr>
+    <td><code>walletExists({dbPath})</code></td>
+    <td><code>wallet_exists(db_path)</code></td>
+    <td><strong>sync</strong></td>
+    <td>Checks if wallet DB file exists</td>
+  </tr>
+  <tr>
+    <td><code>validateMnemonic({mnemonic})</code></td>
+    <td><code>validate_mnemonic(mnemonic)</code></td>
+    <td><strong>sync</strong></td>
+    <td>Validates BIP-39 checksum and word list</td>
+  </tr>
+</table>
+
+<h3 id="api-sync">6.2 Sync Functions</h3>
+<table>
+  <tr><th>Dart Function</th><th>Rust Function</th><th>Description</th></tr>
+  <tr>
+    <td><code>updateChainTip({dbPath, network, height})</code></td>
+    <td><code>update_chain_tip(db_path, network, height)</code></td>
+    <td>Sets chain tip. Must call before <code>suggestScanRanges</code>.</td>
+  </tr>
+  <tr>
+    <td><code>putSubtreeRoots({dbPath, network, saplingRoots, orchardRoots})</code></td>
+    <td><code>put_subtree_roots(...)</code></td>
+    <td>Stores commitment tree subtree roots. Each root = <code>{ completingBlockHeight, rootHash[32] }</code></td>
+  </tr>
+  <tr>
+    <td><code>suggestScanRanges({dbPath, network})</code></td>
+    <td><code>suggest_scan_ranges(db_path, network)</code></td>
+    <td>Returns <code>List&lt;ScanRangeInfo&gt;</code> with <code>{ start, end, priority }</code></td>
+  </tr>
+  <tr>
+    <td><code>writeBlockMetadata({cachePath, blocks})</code></td>
+    <td><code>write_block_metadata(cache_path, blocks)</code></td>
+    <td>Registers block files. <code>BlockMetaInfo = { height, hash[32], time, saplingOutputsCount, orchardActionsCount }</code></td>
+  </tr>
+  <tr>
+    <td><code>scanBlocks({dbPath, cachePath, network, fromHeight, treeState*, limit})</code></td>
+    <td><code>scan_blocks(...)</code></td>
+    <td>Trial decryption. TreeState passed as individual fields (network, height, hash, time, saplingTree, orchardTree).</td>
+  </tr>
+  <tr>
+    <td><code>getSyncStatus({dbPath, network})</code></td>
+    <td><code>get_sync_status(db_path, network)</code></td>
+    <td>Returns <code>SyncProgress { scannedHeight, chainTipHeight, isSyncing }</code></td>
+  </tr>
+  <tr>
+    <td><code>getBalance({dbPath, network})</code></td>
+    <td><code>get_balance(db_path, network)</code></td>
+    <td>Returns <code>WalletBalance { transparent, sapling, orchard, total }</code> in zatoshi</td>
+  </tr>
+  <tr>
+    <td><code>getBlocksDir({cachePath})</code></td>
+    <td><code>get_blocks_dir(cache_path)</code></td>
+    <td><strong>sync</strong>. Returns <code>{cachePath}/blocks</code></td>
+  </tr>
+</table>
+
+<h3 id="api-structs">6.3 Data Structures</h3>
+<pre><code>// Wallet
+WalletCreationResult { mnemonic: String, unifiedAddress: String }
+WalletImportResult   { unifiedAddress: String }
+
+// Sync
+SyncProgress   { scannedHeight: u64, chainTipHeight: u64, isSyncing: bool }
+WalletBalance  { transparent: u64, sapling: u64, orchard: u64, total: u64 }
+ScanRangeInfo  { start: u64, end: u64, priority: u8 }
+ScanResult     { blocksScanned: u64 }
+SubtreeRoot    { completingBlockHeight: u64, rootHash: Vec&lt;u8&gt; }
+BlockMetaInfo  { height: u64, hash: Vec&lt;u8&gt;, time: u32,
+                 saplingOutputsCount: u32, orchardActionsCount: u32 }</code></pre>
+
+<!-- ============================================================ -->
+<!-- 7. Address System                                             -->
+<!-- ============================================================ -->
+
+<h2 id="address">7. Address System</h2>
+
+<h3 id="addr-ua">7.1 Unified Address (Sapling + Orchard)</h3>
+<p>The primary address shown to users is a ZIP-316 Unified Address containing <strong>Sapling and Orchard receivers only</strong> (transparent is excluded). This matches zodl/Zashi behavior.</p>
+<ul>
+  <li>Mainnet prefix: <code>u1...</code></li>
+  <li>Receivers: Orchard (Pallas curve) + Sapling (Jubjub curve)</li>
+  <li>Sending wallets automatically select the highest-privacy receiver they support</li>
+</ul>
+
+<h3 id="addr-transparent">7.2 Transparent Address</h3>
+<p>A separate transparent-only address is available via <code>getTransparentAddress()</code>. This is a standard t-address (P2PKH, prefix <code>t1</code> on mainnet) derived from the same seed at BIP-44 path <code>m/44'/133'/0'</code>.</p>
+
+<h3 id="addr-zodl">7.3 Compatibility with zodl/Zashi</h3>
+<div class="note">
+  <p>Same mnemonic will produce <strong>different addresses</strong> between our wallet and zodl. This is expected &mdash; zodl's Android SDK uses specific git revisions of <code>orchard</code> and <code>sapling-crypto</code> via <code>[patch.crates-io]</code> that differ from the crates.io published versions we use. The key derivation math produces different curve points. Both are valid Zcash addresses from the same seed.</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- 8. Testing                                                    -->
+<!-- ============================================================ -->
+
+<h2 id="testing">8. Testing</h2>
+
+<h3 id="test-rust">8.1 Rust Unit Tests (8 tests)</h3>
+<pre><code>cd rust && cargo test</code></pre>
+<table>
+  <tr><th>Test</th><th>What it verifies</th></tr>
+  <tr><td><code>test_generate_mnemonic_is_24_words</code></td><td>Generated mnemonic has exactly 24 words</td></tr>
+  <tr><td><code>test_mnemonic_to_seed_roundtrip</code></td><td>Mnemonic produces a 64-byte seed</td></tr>
+  <tr><td><code>test_invalid_mnemonic</code></td><td>Invalid mnemonic is rejected (BIP-39 checksum)</td></tr>
+  <tr><td><code>test_parse_network</code></td><td>"main" / "test" / "invalid" parsing</td></tr>
+  <tr><td><code>test_create_wallet_and_get_address</code></td><td>Full wallet creation + address retrieval roundtrip</td></tr>
+  <tr><td><code>test_create_testnet_wallet</code></td><td>Testnet wallet produces <code>utest1...</code> prefix</td></tr>
+  <tr><td><code>test_deterministic_address_from_same_seed</code></td><td>Same seed always produces the same address</td></tr>
+  <tr><td><code>test_shielded_address_has_sapling_and_orchard_only</code></td><td>UA contains Sapling+Orchard, no transparent</td></tr>
+</table>
+
+<h3 id="test-dart">8.2 Dart Tests</h3>
+<pre><code>fvm flutter test</code></pre>
+<p>Currently 2 unit tests for data class equality. Widget tests and integration tests require FRB initialization with a running Rust backend.</p>
+
+<!-- ============================================================ -->
+<!-- 9. Development Commands                                       -->
+<!-- ============================================================ -->
+
+<h2 id="dev-commands">9. Development Commands</h2>
+
+<pre><code># Flutter (always use fvm)
+fvm flutter run                  # Run on connected device/simulator
+fvm flutter test                 # Dart unit tests
+fvm flutter analyze              # Static analysis
+
+# Rust
+cd rust && cargo test            # Rust unit tests
+cd rust && cargo check           # Fast compilation check
+
+# FRB codegen (after changing rust/src/api/*.rs)
+flutter_rust_bridge_codegen generate   # Run from project root!
+
+# Proto codegen (after changing protos/*.proto)
+protoc --dart_out=grpc:lib/src/generated -Iprotos \
+  protos/service.proto protos/compact_formats.proto
+
+# iOS simulator
+./clear-app.sh                   # Reset app + keychain on simulator</code></pre>
+
+</body>
+</html>
