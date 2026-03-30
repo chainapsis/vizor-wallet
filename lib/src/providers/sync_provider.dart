@@ -254,7 +254,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ))) {
       final height = block.height;
       final hash = Uint8List.fromList(block.hash);
-      final hashHex = hash.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+      // BlockHash Display in Rust reverses bytes before hex encoding
+      final reversedHash = Uint8List.fromList(hash.reversed.toList());
+      final hashHex = reversedHash
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join();
 
       // Write compact block as protobuf binary
       final data = block.writeToBuffer();
