@@ -1,3 +1,5 @@
+use std::panic;
+
 use crate::wallet::{keys, sync as wallet_sync};
 
 pub struct SyncProgress {
@@ -23,64 +25,9 @@ pub struct ScanResult {
     pub blocks_scanned: u64,
 }
 
-pub fn update_chain_tip(db_path: String, network: String, height: u64) -> Result<(), String> {
-    let network = keys::parse_network(&network)?;
-    wallet_sync::update_chain_tip(&db_path, network, height)
-}
-
-pub fn put_subtree_roots(
-    db_path: String,
-    network: String,
-    sapling_roots: Vec<SubtreeRoot>,
-    orchard_roots: Vec<SubtreeRoot>,
-) -> Result<(), String> {
-    let network = keys::parse_network(&network)?;
-
-    let sapling: Vec<(u64, Vec<u8>)> = sapling_roots
-        .into_iter()
-        .map(|r| (r.completing_block_height, r.root_hash))
-        .collect();
-    wallet_sync::put_sapling_subtree_roots(&db_path, network, &sapling)?;
-
-    let orchard: Vec<(u64, Vec<u8>)> = orchard_roots
-        .into_iter()
-        .map(|r| (r.completing_block_height, r.root_hash))
-        .collect();
-    wallet_sync::put_orchard_subtree_roots(&db_path, network, &orchard)?;
-
-    Ok(())
-}
-
 pub struct SubtreeRoot {
     pub completing_block_height: u64,
     pub root_hash: Vec<u8>,
-}
-
-pub fn suggest_scan_ranges(
-    db_path: String,
-    network: String,
-) -> Result<Vec<ScanRangeInfo>, String> {
-    let network = keys::parse_network(&network)?;
-    let ranges = wallet_sync::suggest_scan_ranges(&db_path, network)?;
-    Ok(ranges
-        .into_iter()
-        .map(|r| ScanRangeInfo {
-            start: r.start,
-            end: r.end,
-            priority: r.priority,
-        })
-        .collect())
-}
-
-pub fn write_block_metadata(
-    cache_path: String,
-    blocks: Vec<BlockMetaInfo>,
-) -> Result<(), String> {
-    let tuples: Vec<(u64, Vec<u8>, u32, u32, u32)> = blocks
-        .into_iter()
-        .map(|b| (b.height, b.hash, b.time, b.sapling_outputs_count, b.orchard_actions_count))
-        .collect();
-    wallet_sync::write_block_metadata(&cache_path, &tuples)
 }
 
 pub struct BlockMetaInfo {
@@ -91,6 +38,95 @@ pub struct BlockMetaInfo {
     pub orchard_actions_count: u32,
 }
 
+fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
+    match panic::catch_unwind(f) {
+        Ok(result) => result,
+        Err(e) => {
+            let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = e.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown panic".to_string()
+            };
+            Err(format!("Rust panic: {msg}"))
+        }
+    }
+}
+
+pub fn update_chain_tip(db_path: String, network: String, height: u64) -> Result<(), String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        wallet_sync::update_chain_tip(&db_path, network, height)
+    })
+}
+
+pub fn put_subtree_roots(
+    db_path: String,
+    network: String,
+    sapling_roots: Vec<SubtreeRoot>,
+    orchard_roots: Vec<SubtreeRoot>,
+) -> Result<(), String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+
+        let sapling: Vec<(u64, Vec<u8>)> = sapling_roots
+            .into_iter()
+            .map(|r| (r.completing_block_height, r.root_hash))
+            .collect();
+        wallet_sync::put_sapling_subtree_roots(&db_path, network, &sapling)?;
+
+        let orchard: Vec<(u64, Vec<u8>)> = orchard_roots
+            .into_iter()
+            .map(|r| (r.completing_block_height, r.root_hash))
+            .collect();
+        wallet_sync::put_orchard_subtree_roots(&db_path, network, &orchard)?;
+
+        Ok(())
+    })
+}
+
+pub fn suggest_scan_ranges(
+    db_path: String,
+    network: String,
+) -> Result<Vec<ScanRangeInfo>, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let ranges = wallet_sync::suggest_scan_ranges(&db_path, network)?;
+        Ok(ranges
+            .into_iter()
+            .map(|r| ScanRangeInfo {
+                start: r.start,
+                end: r.end,
+                priority: r.priority,
+            })
+            .collect())
+    })
+}
+
+pub fn write_block_metadata(
+    cache_path: String,
+    blocks: Vec<BlockMetaInfo>,
+) -> Result<(), String> {
+    catch(|| {
+        let tuples: Vec<(u64, Vec<u8>, u32, u32, u32)> = blocks
+            .into_iter()
+            .map(|b| {
+                (
+                    b.height,
+                    b.hash,
+                    b.time,
+                    b.sapling_outputs_count,
+                    b.orchard_actions_count,
+                )
+            })
+            .collect();
+        wallet_sync::write_block_metadata(&cache_path, &tuples)
+    })
+}
+
+/// Scan cached blocks with trial decryption.
+/// TreeState fields passed individually. Empty hash = Sapling activation (empty tree state).
 pub fn scan_blocks(
     db_path: String,
     cache_path: String,
@@ -104,41 +140,49 @@ pub fn scan_blocks(
     tree_state_orchard_tree: String,
     limit: u64,
 ) -> Result<ScanResult, String> {
-    let network = keys::parse_network(&network)?;
-    let scanned = wallet_sync::scan_blocks(
-        &db_path,
-        &cache_path,
-        network,
-        from_height,
-        &tree_state_network,
-        tree_state_height,
-        &tree_state_hash,
-        tree_state_time,
-        &tree_state_sapling_tree,
-        &tree_state_orchard_tree,
-        limit,
-    )?;
-    Ok(ScanResult { blocks_scanned: scanned })
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let scanned = wallet_sync::scan_blocks(
+            &db_path,
+            &cache_path,
+            network,
+            from_height,
+            &tree_state_network,
+            tree_state_height,
+            &tree_state_hash,
+            tree_state_time,
+            &tree_state_sapling_tree,
+            &tree_state_orchard_tree,
+            limit,
+        )?;
+        Ok(ScanResult {
+            blocks_scanned: scanned,
+        })
+    })
 }
 
 pub fn get_sync_status(db_path: String, network: String) -> Result<SyncProgress, String> {
-    let network = keys::parse_network(&network)?;
-    let p = wallet_sync::get_sync_progress(&db_path, network)?;
-    Ok(SyncProgress {
-        scanned_height: p.scanned_height,
-        chain_tip_height: p.chain_tip_height,
-        is_syncing: p.is_syncing,
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let p = wallet_sync::get_sync_progress(&db_path, network)?;
+        Ok(SyncProgress {
+            scanned_height: p.scanned_height,
+            chain_tip_height: p.chain_tip_height,
+            is_syncing: p.is_syncing,
+        })
     })
 }
 
 pub fn get_balance(db_path: String, network: String) -> Result<WalletBalance, String> {
-    let network = keys::parse_network(&network)?;
-    let b = wallet_sync::get_wallet_balance(&db_path, network)?;
-    Ok(WalletBalance {
-        transparent: b.transparent,
-        sapling: b.sapling,
-        orchard: b.orchard,
-        total: b.transparent + b.sapling + b.orchard,
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let b = wallet_sync::get_wallet_balance(&db_path, network)?;
+        Ok(WalletBalance {
+            transparent: b.transparent,
+            sapling: b.sapling,
+            orchard: b.orchard,
+            total: b.transparent + b.sapling + b.orchard,
+        })
     })
 }
 

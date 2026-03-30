@@ -2,7 +2,7 @@ use std::path::Path;
 
 use bip0039::{Count, English, Mnemonic};
 use rand::rngs::OsRng;
-use secrecy::SecretVec;
+use secrecy::{ExposeSecret, SecretVec};
 use zcash_client_backend::data_api::{
     Account as _, AccountBirthday, WalletRead, WalletWrite,
     chain::ChainState,
@@ -18,11 +18,12 @@ pub fn generate_mnemonic() -> String {
     mnemonic.phrase().to_string()
 }
 
-/// Convert a mnemonic phrase to a 64-byte seed.
-pub fn mnemonic_to_seed(phrase: &str) -> Result<Vec<u8>, String> {
+/// Convert a mnemonic phrase to a 64-byte seed wrapped in SecretVec.
+/// The seed is zeroized from memory when the SecretVec is dropped.
+pub fn mnemonic_to_seed(phrase: &str) -> Result<SecretVec<u8>, String> {
     let mnemonic = Mnemonic::<English>::from_phrase(phrase)
         .map_err(|e| format!("Invalid mnemonic: {e}"))?;
-    Ok(mnemonic.to_seed("").to_vec())
+    Ok(SecretVec::new(mnemonic.to_seed("").to_vec()))
 }
 
 /// Parse network string to Network enum.
@@ -39,16 +40,17 @@ pub fn parse_network(network: &str) -> Result<Network, String> {
 pub fn init_db_and_create_account(
     db_path: &str,
     network: Network,
-    seed_bytes: &[u8],
+    seed: &SecretVec<u8>,
     birthday_height: Option<u64>,
 ) -> Result<String, String> {
     let mut db = WalletDb::for_path(db_path, network, SystemClock, OsRng)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
 
-    let seed = SecretVec::new(seed_bytes.to_vec());
-
-    init_wallet_db(&mut db, Some(SecretVec::new(seed_bytes.to_vec())))
-        .map_err(|e| format!("Failed to init wallet DB: {e}"))?;
+    init_wallet_db(
+        &mut db,
+        Some(SecretVec::new(seed.expose_secret().to_vec())),
+    )
+    .map_err(|e| format!("Failed to init wallet DB: {e}"))?;
 
     let birthday = match birthday_height {
         Some(h) => {
@@ -178,7 +180,7 @@ mod tests {
     fn test_mnemonic_to_seed_roundtrip() {
         let phrase = generate_mnemonic();
         let seed = mnemonic_to_seed(&phrase).unwrap();
-        assert_eq!(seed.len(), 64);
+        assert_eq!(seed.expose_secret().len(), 64);
     }
 
     #[test]

@@ -165,7 +165,7 @@ pub fn write_block_metadata(
 }
 
 /// Scan cached blocks using trial decryption.
-/// Dart passes the TreeState fields individually (from lightwalletd gRPC response).
+/// Empty tree_state_hash = Sapling activation (empty tree state).
 pub fn scan_blocks(
     db_path: &str,
     cache_path: &str,
@@ -184,7 +184,7 @@ pub fn scan_blocks(
 
     let from_state = if tree_state_hash.is_empty() {
         // Empty tree state — used at Sapling activation height where no prior state exists
-        let prior_height = BlockHeight::from_u32(tree_state_height as u32);
+        let prior_height = BlockHeight::from_u32((from_height - 1) as u32);
         zcash_client_backend::data_api::chain::ChainState::empty(
             prior_height,
             BlockHash([0u8; 32]),

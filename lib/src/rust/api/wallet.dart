@@ -6,10 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `catch`
+
 /// Create a new Zcash wallet with a fresh mnemonic.
-///
-/// Returns the mnemonic phrase and the derived Unified Address.
-/// The mnemonic must be securely stored by the caller (Dart side).
 Future<WalletCreationResult> createWallet({
   required String network,
   required String dbPath,
@@ -19,8 +18,6 @@ Future<WalletCreationResult> createWallet({
 );
 
 /// Import an existing wallet from a mnemonic phrase.
-///
-/// Optionally specify a birthday height for faster sync.
 Future<WalletImportResult> importWallet({
   required String mnemonic,
   BigInt? birthdayHeight,
