@@ -100,6 +100,12 @@ pub extern "C" fn zcash_get_sync_mode() -> u8 {
     DESIRED_SYNC_MODE.load(Ordering::SeqCst)
 }
 
+/// Set the desired sync mode (0=none, 1=foreground, 2=background).
+#[no_mangle]
+pub extern "C" fn zcash_set_sync_mode(mode: u8) {
+    DESIRED_SYNC_MODE.store(mode, Ordering::SeqCst);
+}
+
 /// Check if a sync is currently running.
 #[no_mangle]
 pub extern "C" fn zcash_is_sync_running() -> bool {

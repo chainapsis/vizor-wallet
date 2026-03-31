@@ -30,6 +30,7 @@ class BackgroundSyncManager {
 
         task.expirationHandler = { [weak self] in
             self?.taskProgress = nil
+            zcash_set_sync_mode(0)  // none → prevents resubmit
             zcash_cancel_sync()
         }
 
