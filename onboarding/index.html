@@ -104,8 +104,9 @@
     </li>
     <li><a href="#api-reference">API 레퍼런스</a>
       <ol>
-        <li><a href="#api-wallet">Wallet 함수 (6개)</a></li>
-        <li><a href="#api-sync">Sync 함수 (8개)</a></li>
+        <li><a href="#api-wallet">Wallet 함수 (7개)</a></li>
+        <li><a href="#api-sync">Sync &amp; Enhancement 함수 (16개)</a></li>
+        <li><a href="#api-send">Send 함수 (2단계)</a></li>
         <li><a href="#api-structs">데이터 구조체</a></li>
       </ol>
     </li>
@@ -263,8 +264,8 @@ flutter_rust_bridge_codegen generate
   frb_generated.rs        # FRB 자동 생성 글루 코드 (수정 금지)
   api/
     mod.rs                # API 모듈 선언
-    wallet.rs             # FRB 노출 wallet 함수 (6개)
-    sync.rs               # FRB 노출 sync 함수 (8개)
+    wallet.rs             # FRB 노출 wallet 함수 (7개: create, import, address, validate, derive_seed)
+    sync.rs               # FRB 노출 sync/send/enhancement 함수 (16개+)
     simple.rs             # FRB 데모 (greet 함수, 제거 가능)
   wallet/
     mod.rs                # 내부 모듈 선언
@@ -313,7 +314,16 @@ flutter_rust_bridge_codegen generate
   <tr><td><code>write_block_metadata()</code></td><td><code>FsBlockDb</code> 메타데이터 DB에 compact block 파일을 등록한다. 파일 존재 여부를 검증한다.</td></tr>
   <tr><td><code>scan_blocks()</code></td><td><code>zcash_client_backend</code>의 <code>scan_cached_blocks()</code>를 사용하여 캐시된 compact block에 trial decryption을 수행한다.</td></tr>
   <tr><td><code>get_sync_progress()</code></td><td>월렛 요약에서 <code>fully_scanned_height</code>와 <code>chain_tip_height</code>를 반환한다.</td></tr>
-  <tr><td><code>get_wallet_balance()</code></td><td>transparent, Sapling, Orchard 풀의 사용 가능 잔액을 반환한다.</td></tr>
+  <tr><td><code>get_wallet_balance()</code></td><td>transparent, Sapling, Orchard 풀의 사용 가능 잔액 + pending 잔액을 반환한다.</td></tr>
+  <tr><td><code>rewind_to_height()</code></td><td>체인 reorg 시 월렛 DB를 특정 높이로 롤백한다.</td></tr>
+  <tr><td><code>validate_address()</code></td><td>주소 문자열을 검증하고 타입(unified/sapling/transparent)을 반환한다.</td></tr>
+  <tr><td><code>get_next_available_address()</code></td><td>다음 diversified Unified Address를 생성한다 (zodl 패턴).</td></tr>
+  <tr><td><code>get_transaction_data_requests()</code></td><td>Enhancement 루프용: 추가 데이터가 필요한 TX 목록을 반환한다.</td></tr>
+  <tr><td><code>decrypt_and_store_transaction()</code></td><td>풀 TX 바이트를 trial decryption하여 메모/금액을 추출하고 DB에 저장한다.</td></tr>
+  <tr><td><code>set_transaction_status()</code></td><td>TX의 채굴 상태를 업데이트한다 (Mined/NotInMainChain/TxidNotRecognized).</td></tr>
+  <tr><td><code>get_transaction_history()</code></td><td>v_transactions SQL view에서 TX 내역 목록을 조회한다.</td></tr>
+  <tr><td><code>propose_send()</code></td><td>전송 제안: 노트 선택 + ZIP-317 수수료 계산. Sapling params 필요 여부를 반환한다.</td></tr>
+  <tr><td><code>execute_proposal()</code></td><td>제안 실행: zk-SNARK proof 생성 + 서명 + TX 생성.</td></tr>
 </table>
 
 <h3 id="rust-deps">3.4 Zcash Crate 의존성 그래프</h3>
@@ -339,6 +349,8 @@ flutter_rust_bridge_codegen generate
   <li><code>WalletDb</code>에는 <strong>Unified Full Viewing Key (UFVK)</strong>만 저장된다 — 트랜잭션 감지와 잔액 계산에는 충분하지만, 자금을 사용할 수는 없다.</li>
   <li><strong>니모닉 / seed</strong>는 Dart의 <code>flutter_secure_storage</code>(iOS Keychain / Android Keystore)에 저장되며, OS에 의해 rest 상태에서 암호화된다.</li>
   <li>Spending key는 트랜잭션 서명이 필요할 때만 seed에서 즉석에서 유도되고, FFI를 통해 Rust에 전달되며, 사용 후 <code>secrecy::SecretVec</code>으로 메모리 제로화된다.</li>
+  <li><code>mnemonic_to_seed()</code>는 <code>SecretVec&lt;u8&gt;</code>을 반환한다. plain <code>Vec&lt;u8&gt;</code>이 아니므로 drop 시 자동 제로화된다.</li>
+  <li>모든 API 함수 (<code>api/wallet.rs</code>, <code>api/sync.rs</code>)에 <code>catch_unwind</code> panic guard가 적용되어 있다. Rust panic이 발생해도 Flutter 프로세스가 크래시하지 않고 <code>Result::Err("Rust panic: ...")</code>으로 변환된다.</li>
 </ul>
 
 <!-- ============================================================ -->
@@ -383,8 +395,27 @@ flutter_rust_bridge_codegen generate
    f. Rust 호출: write_block_metadata(metas)
    g. gRPC로 tree state 조회: getTreeState(start - 1)
    h. Rust 호출: scan_blocks(from_height, tree_state, limit)
-   i. Rust 호출: get_sync_status() + get_balance()
-   j. SyncState 업데이트 -> UI 갱신</code></pre>
+   i. Enhancement 루프 실행 (아래 참조)
+   j. Rust 호출: get_sync_status() + get_balance()
+   k. SyncState 업데이트 -> UI 갱신</code></pre>
+
+<h3 id="dart-enhancement">4.6 Enhancement 루프</h3>
+<p>매 scan batch 후에 실행되며, compact block에서 발견된 노트의 전체 TX 데이터를 가져온다:</p>
+<pre><code>1. Rust: get_transaction_data_requests() → 3가지 유형의 요청
+2. 각 요청에 대해:
+   - Enhancement(txid): getTransaction(txid) gRPC → decrypt_and_store_transaction()
+   - GetStatus(txid): getTransaction(txid) gRPC → set_transaction_status()
+   - TransactionsInvolvingAddress(addr): getTaddressTxids(addr, range) gRPC
+     → 각 TX에 대해 decrypt_and_store_transaction()
+3. 더 이상 요청이 없을 때까지 반복</code></pre>
+
+<div class="note">
+  <p><strong>Enhancement가 필요한 이유:</strong> compact block의 ciphertext는 앞 52바이트만 포함하므로 "내 노트인지" + "금액"은 알 수 있지만 <strong>메모 전체 내용</strong>은 알 수 없다. 풀 TX를 가져와야 메모, 정확한 금액, 발신자 정보 등을 얻을 수 있다.</p>
+</div>
+
+<div class="note">
+  <p><strong>TransactionsInvolvingAddress:</strong> <code>transparent-inputs</code> feature가 활성화되면 BIP-44 gap limit (기본 10개)까지의 transparent 주소에 대해 자동으로 TX 조회 요청이 생성된다. 이것은 lightwalletd 서버에 transparent 주소를 노출하므로 프라이버시 트레이드오프가 있다.</p>
+</div>
 
 <h3 id="dart-grpc">4.3 gRPC 클라이언트 &amp; Proto 정의</h3>
 <p><a href="https://github.com/zcash/lightwalletd">lightwalletd</a> 레포의 proto 파일을 <code>protoc</code> + <code>protoc_plugin</code>으로 Dart 코드로 컴파일한다.</p>
@@ -401,6 +432,8 @@ flutter_rust_bridge_codegen generate
   <li><code>getBlockRange()</code> — compact block 스트리밍 다운로드</li>
   <li><code>getTreeState()</code> — 특정 높이의 commitment tree 상태</li>
   <li><code>getSubtreeRoots()</code> — subtree root 스트리밍 다운로드</li>
+  <li><code>getTransaction()</code> — 특정 TX의 풀 데이터 조회 (enhancement용)</li>
+  <li><code>getTaddressTxids()</code> — transparent 주소 관련 TX 목록 조회</li>
 </ul>
 
 <h3 id="dart-routing">4.4 네비게이션 &amp; 라우팅</h3>
@@ -410,7 +443,10 @@ flutter_rust_bridge_codegen generate
   /welcome   -> WelcomeScreen (생성 / 가져오기 선택)
   /create    -> CreateWalletScreen (24단어 그리드)
   /import    -> ImportWalletScreen (니모닉 입력)
-  /home      -> HomeScreen (잔액, sync 상태, 주소)</code></pre>
+  /home      -> HomeScreen (잔액, sync 상태, 주소, Send/Receive/History 버튼)
+  /send      -> SendScreen (주소 검증, 금액, 메모, 2단계 전송)
+  /receive   -> ReceiveScreen (QR 코드, diversified address 생성)
+  /history   -> HistoryScreen (트랜잭션 내역 목록)</code></pre>
 
 <h3 id="dart-ui">4.5 UI 화면</h3>
 <table>
@@ -418,7 +454,10 @@ flutter_rust_bridge_codegen generate
   <tr><td>Welcome</td><td><code>features/onboarding/screens/welcome_screen.dart</code></td><td>"Create New Wallet" / "Import Wallet" 버튼</td></tr>
   <tr><td>Create Wallet</td><td><code>features/onboarding/screens/create_wallet_screen.dart</code></td><td>24단어 니모닉 그리드, 백업 확인 체크박스</td></tr>
   <tr><td>Import Wallet</td><td><code>features/onboarding/screens/import_wallet_screen.dart</code></td><td>니모닉 텍스트 입력, 선택적 birthday height, 실시간 유효성 검사</td></tr>
-  <tr><td>Home</td><td><code>features/home/screens/home_screen.dart</code></td><td>잔액 표시, sync 진행률 바, 주소 카드 + 복사</td></tr>
+  <tr><td>Home</td><td><code>features/home/screens/home_screen.dart</code></td><td>잔액 표시, sync 진행률 바, 주소 카드 + 복사, Send/Receive/History 버튼</td></tr>
+  <tr><td>Send</td><td><code>features/send/screens/send_screen.dart</code></td><td>2단계 전송: propose → (조건부 Sapling params 다운로드) → execute. 실시간 주소 타입 검증.</td></tr>
+  <tr><td>Receive</td><td><code>features/receive/screens/receive_screen.dart</code></td><td>QR 코드 (zcash: URI), 주소 복사, "New Address" 버튼으로 diversified address 생성</td></tr>
+  <tr><td>History</td><td><code>features/history/screens/history_screen.dart</code></td><td>트랜잭션 목록: 수신/발신, 금액, 블록 높이, 날짜, 수수료</td></tr>
 </table>
 
 <!-- ============================================================ -->
@@ -554,9 +593,15 @@ Rust: scan_cached_blocks() -> FsBlockDb가 파일 읽기 -> prost::decode -> tri
     <td><strong>sync</strong></td>
     <td>BIP-39 체크섬 및 단어 목록 유효성 검사</td>
   </tr>
+  <tr>
+    <td><code>deriveSeed({mnemonic})</code></td>
+    <td><code>derive_seed(mnemonic)</code></td>
+    <td>async</td>
+    <td>니모닉에서 64바이트 raw seed 유도. 전송 시 <code>execute_proposal</code>에 전달.</td>
+  </tr>
 </table>
 
-<h3 id="api-sync">6.2 Sync 함수</h3>
+<h3 id="api-sync">6.2 Sync &amp; Enhancement 함수</h3>
 <table>
   <tr><th>Dart Function</th><th>Rust Function</th><th>설명</th></tr>
   <tr>
@@ -599,21 +644,87 @@ Rust: scan_cached_blocks() -> FsBlockDb가 파일 읽기 -> prost::decode -> tri
     <td><code>get_blocks_dir(cache_path)</code></td>
     <td><strong>sync</strong>. <code>{cachePath}/blocks</code> 반환</td>
   </tr>
+  <tr>
+    <td><code>rewindToHeight({dbPath, network, height})</code></td>
+    <td><code>rewind_to_height(...)</code></td>
+    <td>chain reorg 시 월렛 DB를 특정 높이로 롤백</td>
+  </tr>
+  <tr>
+    <td><code>validateAddress({address})</code></td>
+    <td><code>validate_address(address)</code></td>
+    <td><code>AddressValidationResult { isValid, addressType }</code> 반환 (unified/sapling/transparent/invalid)</td>
+  </tr>
+  <tr>
+    <td><code>getNextAvailableAddress({dbPath, network})</code></td>
+    <td><code>get_next_available_address(...)</code></td>
+    <td>다음 diversified UA 생성 (zodl 패턴: 매번 다른 diversifier)</td>
+  </tr>
+  <tr>
+    <td><code>getTransactionDataRequests({dbPath, network})</code></td>
+    <td><code>get_transaction_data_requests(...)</code></td>
+    <td>Enhancement용 요청 목록: <code>{ requestType, txid?, address?, blockRangeStart?, blockRangeEnd? }</code></td>
+  </tr>
+  <tr>
+    <td><code>decryptAndStoreTransaction({dbPath, network, txBytes, minedHeight?})</code></td>
+    <td><code>decrypt_and_store_transaction(...)</code></td>
+    <td>풀 TX를 trial decryption → 메모/금액 추출 → DB 저장</td>
+  </tr>
+  <tr>
+    <td><code>setTransactionStatus({dbPath, network, txidHex, status})</code></td>
+    <td><code>set_transaction_status(...)</code></td>
+    <td>TX 상태 업데이트: status &gt;0 = Mined(height), -1 = NotInMainChain, -2 = TxidNotRecognized</td>
+  </tr>
+  <tr>
+    <td><code>getTransactionHistory({dbPath, network})</code></td>
+    <td><code>get_transaction_history(...)</code></td>
+    <td>v_transactions SQL view에서 TX 목록 조회</td>
+  </tr>
 </table>
 
-<h3 id="api-structs">6.3 데이터 구조체</h3>
+<h3 id="api-send">6.3 Send 함수 (2단계)</h3>
+<p>전송은 propose → execute 2단계로 분리되어, Sapling proving parameters가 필요한지 사전에 확인할 수 있다.</p>
+<table>
+  <tr><th>Dart Function</th><th>Rust Function</th><th>설명</th></tr>
+  <tr>
+    <td><code>proposeSend({dbPath, network, toAddress, amountZatoshi, memo?})</code></td>
+    <td><code>propose_send(...)</code></td>
+    <td>전송 제안. <code>ProposalResult { proposalId, needsSaplingParams, feeZatoshi }</code> 반환. Proof 생성 없음, params 불필요.</td>
+  </tr>
+  <tr>
+    <td><code>executeProposal({dbPath, proposalId, seed, spendParamsPath?, outputParamsPath?})</code></td>
+    <td><code>execute_proposal(...)</code></td>
+    <td>제안 실행. zk-SNARK proof 생성 + 서명. <code>needsSaplingParams</code>가 true였을 경우에만 params 경로 필요.</td>
+  </tr>
+</table>
+
+<div class="note">
+  <p><strong>Sapling Proving Parameters:</strong> Sapling proof 생성에 <code>sapling-spend.params</code> (~47MB) + <code>sapling-output.params</code> (~3.5MB) 파일이 필요하다. Orchard (Halo 2)는 trusted setup이 없어 파라미터 파일이 불필요하다. <code>propose_send()</code>의 <code>needsSaplingParams</code> 플래그로 필요 여부를 사전에 확인한 후, 필요 시 <code>https://download.z.cash/downloads/</code>에서 다운로드하고 SHA-1 검증 후 저장한다. 한 번만 다운로드하면 이후에는 로컬 파일을 사용한다.</p>
+</div>
+
+<h3 id="api-structs">6.4 데이터 구조체</h3>
 <pre><code>// Wallet
 WalletCreationResult { mnemonic: String, unifiedAddress: String }
 WalletImportResult   { unifiedAddress: String }
 
 // Sync
 SyncProgress   { scannedHeight: u64, chainTipHeight: u64, isSyncing: bool }
-WalletBalance  { transparent: u64, sapling: u64, orchard: u64, total: u64 }
+WalletBalance  { transparent: u64, sapling: u64, orchard: u64,
+                 saplingPending: u64, orchardPending: u64, total: u64 }
 ScanRangeInfo  { start: u64, end: u64, priority: u8 }
 ScanResult     { blocksScanned: u64 }
 SubtreeRoot    { completingBlockHeight: u64, rootHash: Vec&lt;u8&gt; }
 BlockMetaInfo  { height: u64, hash: Vec&lt;u8&gt;, time: u32,
-                 saplingOutputsCount: u32, orchardActionsCount: u32 }</code></pre>
+                 saplingOutputsCount: u32, orchardActionsCount: u32 }
+
+// Send
+ProposalResult { proposalId: u64, needsSaplingParams: bool, feeZatoshi: u64 }
+
+// Enhancement
+TxDataRequest     { requestType: String, txid: String?, address: String?,
+                    blockRangeStart: u64?, blockRangeEnd: u64? }
+TransactionInfo   { txidHex: String, minedHeight: u64, expiredUnmined: bool,
+                    accountBalanceDelta: i64, fee: u64, blockTime: u64 }
+AddressValidationResult { isValid: bool, addressType: String }</code></pre>
 
 <!-- ============================================================ -->
 <!-- 7. 주소 체계                                                   -->
