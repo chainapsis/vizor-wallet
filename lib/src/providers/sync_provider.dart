@@ -56,18 +56,20 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   @override
   Future<SyncState> build() async {
     // Listen for iOS background sync progress via EventChannel
-    _eventChannelSub = _progressChannel.receiveBroadcastStream().listen(
-      (event) {
-        final map = event as Map;
-        _onSyncProgress(
-          scannedHeight: (map['scannedHeight'] as num).toInt(),
-          chainTipHeight: (map['chainTipHeight'] as num).toInt(),
-          percentage: (map['percentage'] as num).toDouble(),
-          isBackground: true,
-        );
-      },
-      onError: (_) {},
-    );
+    if (Platform.isIOS) {
+      _eventChannelSub = _progressChannel.receiveBroadcastStream().listen(
+        (event) {
+          final map = event as Map;
+          _onSyncProgress(
+            scannedHeight: (map['scannedHeight'] as num).toInt(),
+            chainTipHeight: (map['chainTipHeight'] as num).toInt(),
+            percentage: (map['percentage'] as num).toDouble(),
+            isBackground: true,
+          );
+        },
+        onError: (_) {},
+      );
+    }
 
     // Listen for Android foreground service stop signal
     FlutterForegroundTask.receivePort?.listen((message) {
