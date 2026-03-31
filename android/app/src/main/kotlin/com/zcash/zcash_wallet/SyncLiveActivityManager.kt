@@ -1,11 +1,19 @@
 package com.zcash.zcash_wallet
 
 import android.app.Notification
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.widget.RemoteViews
-import com.istornz.live_activities.LiveActivityManager
+import com.example.live_activities.LiveActivityManager
 
-class SyncLiveActivityManager(private val context: Context) : LiveActivityManager() {
+class SyncLiveActivityManager(context: Context) : LiveActivityManager(context) {
+    private val context: Context = context.applicationContext
+    private val pendingIntent = PendingIntent.getActivity(
+        context, 200, Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+        }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
 
     override suspend fun buildNotification(
         notification: Notification.Builder,
@@ -33,13 +41,18 @@ class SyncLiveActivityManager(private val context: Context) : LiveActivityManage
         )
         bigRemoteView.setProgressBar(R.id.pb_sync_expanded, 100, progress, false)
 
-        notification
+        return notification
             .setSmallIcon(android.R.drawable.ic_popup_sync)
+            .setOngoing(true)
+            .setContentTitle("Zcash Wallet")
+            .setContentText(status)
+            .setContentIntent(pendingIntent)
+            .setStyle(Notification.DecoratedCustomViewStyle())
             .setCustomContentView(remoteView)
             .setCustomBigContentView(bigRemoteView)
-            .setOngoing(true)
-            .setSilent(true)
-
-        return notification.build()
+            .setPriority(Notification.PRIORITY_LOW)
+            .setCategory(Notification.CATEGORY_PROGRESS)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .build()
     }
 }
