@@ -47,6 +47,11 @@ bool walletExists({required String dbPath}) =>
 bool validateMnemonic({required String mnemonic}) =>
     RustLib.instance.api.crateApiWalletValidateMnemonic(mnemonic: mnemonic);
 
+/// Derive seed bytes from a mnemonic phrase.
+/// Returns 64 raw bytes. The caller should treat these as sensitive.
+Future<Uint8List> deriveSeed({required String mnemonic}) =>
+    RustLib.instance.api.crateApiWalletDeriveSeed(mnemonic: mnemonic);
+
 /// Get the transparent address for the wallet (separate from the shielded UA).
 Future<String> getTransparentAddress({
   required String dbPath,

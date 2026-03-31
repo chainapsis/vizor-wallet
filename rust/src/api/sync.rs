@@ -158,18 +158,40 @@ pub fn validate_address(address: String) -> Result<AddressValidationResult, Stri
     })
 }
 
-// ======================== Send ========================
+// ======================== Send (2-step: propose then execute) ========================
 
-pub fn send_to_address(
-    db_path: String, network: String, seed: Vec<u8>,
+pub struct ProposalResult {
+    pub proposal_id: u64,
+    pub needs_sapling_params: bool,
+    pub fee_zatoshi: u64,
+}
+
+/// Step 1: Propose a transfer. Returns proposal info including whether Sapling params are needed.
+pub fn propose_send(
+    db_path: String, network: String,
     to_address: String, amount_zatoshi: u64, memo: Option<String>,
-    spend_params_path: String, output_params_path: String,
-) -> Result<String, String> {
+) -> Result<ProposalResult, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        wallet_sync::send_to_address(
-            &db_path, network, &seed, &to_address, amount_zatoshi,
-            memo.as_deref(), &spend_params_path, &output_params_path,
+        let r = wallet_sync::propose_send(&db_path, network, &to_address, amount_zatoshi, memo.as_deref())?;
+        Ok(ProposalResult {
+            proposal_id: r.proposal_id,
+            needs_sapling_params: r.needs_sapling_params,
+            fee_zatoshi: r.fee_zatoshi,
+        })
+    })
+}
+
+/// Step 2: Execute a previously proposed transfer.
+/// spend_params_path and output_params_path are required only if needs_sapling_params was true.
+pub fn execute_proposal(
+    db_path: String, proposal_id: u64, seed: Vec<u8>,
+    spend_params_path: Option<String>, output_params_path: Option<String>,
+) -> Result<String, String> {
+    catch(|| {
+        wallet_sync::execute_proposal(
+            &db_path, proposal_id, &seed,
+            spend_params_path.as_deref(), output_params_path.as_deref(),
         )
     })
 }

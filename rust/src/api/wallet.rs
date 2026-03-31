@@ -1,5 +1,7 @@
 use std::panic;
 
+use secrecy::ExposeSecret;
+
 use crate::wallet::keys;
 
 /// Result of wallet creation, containing the mnemonic and unified address.
@@ -82,6 +84,15 @@ pub fn wallet_exists(db_path: String) -> bool {
 #[flutter_rust_bridge::frb(sync)]
 pub fn validate_mnemonic(mnemonic: String) -> bool {
     keys::mnemonic_to_seed(&mnemonic).is_ok()
+}
+
+/// Derive seed bytes from a mnemonic phrase.
+/// Returns 64 raw bytes. The caller should treat these as sensitive.
+pub fn derive_seed(mnemonic: String) -> Result<Vec<u8>, String> {
+    catch(|| {
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        Ok(seed.expose_secret().to_vec())
+    })
 }
 
 /// Get the transparent address for the wallet (separate from the shielded UA).

@@ -66,6 +66,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
 
   @protected
+  ProposalResult dco_decode_proposal_result(dynamic raw);
+
+  @protected
   ScanRangeInfo dco_decode_scan_range_info(dynamic raw);
 
   @protected
@@ -158,6 +161,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
 
   @protected
   ScanRangeInfo sse_decode_scan_range_info(SseDeserializer deserializer);
@@ -270,6 +276,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_proposal_result(
+    ProposalResult self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_scan_range_info(ScanRangeInfo self, SseSerializer serializer);

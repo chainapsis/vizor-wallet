@@ -215,19 +215,16 @@ pub fn validate_address(address: &str) -> Result<String, String> {
 
 // ======================== Send ========================
 
-pub fn send_to_address(
-    db_path: &str, network: Network, seed_bytes: &[u8],
+/// Propose a transfer. Returns (proposal_id, needs_sapling_params, fee_zatoshi).
+/// The proposal is stored internally and referenced by proposal_id for execute_proposal.
+pub fn propose_send(
+    db_path: &str, network: Network,
     to_address: &str, amount_zatoshi: u64, memo_str: Option<&str>,
-    spend_params_path: &str, output_params_path: &str,
-) -> Result<String, String> {
+) -> Result<ProposalResult, String> {
+    use zcash_protocol::{PoolType, ShieldedProtocol as SP};
+
     let mut db = open_wallet_db(db_path, network)?;
     let account_id = get_first_account_id(&db)?;
-    let account = db.get_account(account_id).map_err(|e| format!("{e}"))?.ok_or("Account not found")?;
-
-    let seed = SecretVec::new(seed_bytes.to_vec());
-    let zip32_index = account.source().key_derivation().ok_or("No key derivation")?.account_index();
-    let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
-        .map_err(|e| format!("USK derivation failed: {e:?}"))?;
 
     let to: zcash_address::ZcashAddress = to_address.parse().map_err(|e| format!("Bad address: {e}"))?;
     let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
@@ -249,18 +246,81 @@ pub fn send_to_address(
         request, ConfirmationsPolicy::default(),
     ).map_err(|e| format!("Propose failed: {e}"))?;
 
+    let needs_sapling = proposal.steps().iter().any(|step| {
+        step.involves(PoolType::Shielded(SP::Sapling))
+    });
+
+    let fee: u64 = proposal.steps().iter()
+        .map(|step| u64::from(step.balance().fee_required()))
+        .sum();
+
+    // Store proposal for later execution
+    let mut store = PROPOSAL_STORE.lock().map_err(|e| format!("Lock error: {e}"))?;
+    let id = store.next_id;
+    store.next_id += 1;
+    store.proposals.insert(id, StoredProposal { proposal, network });
+
+    Ok(ProposalResult { proposal_id: id, needs_sapling_params: needs_sapling, fee_zatoshi: fee })
+}
+
+/// Execute a previously proposed transfer. Requires seed and optionally Sapling params paths.
+pub fn execute_proposal(
+    db_path: &str,
+    proposal_id: u64,
+    seed_bytes: &[u8],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<String, String> {
+    let mut store = PROPOSAL_STORE.lock().map_err(|e| format!("Lock error: {e}"))?;
+    let stored = store.proposals.remove(&proposal_id)
+        .ok_or("Proposal not found (expired or already executed)")?;
+    let network = stored.network;
+    drop(store);
+
+    let mut db = open_wallet_db(db_path, network)?;
+    let account_id = get_first_account_id(&db)?;
+    let account = db.get_account(account_id).map_err(|e| format!("{e}"))?.ok_or("Account not found")?;
+
+    let seed = SecretVec::new(seed_bytes.to_vec());
+    let zip32_index = account.source().key_derivation().ok_or("No key derivation")?.account_index();
+    let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
+        .map_err(|e| format!("USK derivation failed: {e:?}"))?;
+
     let prover = LocalTxProver::new(
-        std::path::Path::new(spend_params_path),
-        std::path::Path::new(output_params_path),
+        std::path::Path::new(spend_params_path.unwrap_or("")),
+        std::path::Path::new(output_params_path.unwrap_or("")),
     );
 
     let txids = create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
         &mut db, &network, &prover, &prover,
         &wallet::SpendingKeys::from_unified_spending_key(usk),
-        OvkPolicy::Sender, &proposal,
+        OvkPolicy::Sender, &stored.proposal,
     ).map_err(|e| format!("Create TX failed: {e}"))?;
 
     Ok(txids.into_iter().map(|id| format!("{id}")).collect::<Vec<_>>().join(","))
+}
+
+pub(crate) struct ProposalResult {
+    pub proposal_id: u64,
+    pub needs_sapling_params: bool,
+    pub fee_zatoshi: u64,
+}
+
+// In-memory proposal store (proposals are short-lived, between propose and execute)
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+struct StoredProposal {
+    proposal: zcash_client_backend::proposal::Proposal<StandardFeeRule, zcash_client_sqlite::ReceivedNoteId>,
+    network: Network,
+}
+
+static PROPOSAL_STORE: std::sync::LazyLock<Mutex<ProposalStore>> =
+    std::sync::LazyLock::new(|| Mutex::new(ProposalStore { proposals: HashMap::new(), next_id: 1 }));
+
+struct ProposalStore {
+    proposals: HashMap<u64, StoredProposal>,
+    next_id: u64,
 }
 
 // ======================== Diversified Address ========================

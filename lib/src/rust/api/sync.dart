@@ -101,22 +101,33 @@ Future<BigInt> rewindToHeight({
 Future<AddressValidationResult> validateAddress({required String address}) =>
     RustLib.instance.api.crateApiSyncValidateAddress(address: address);
 
-Future<String> sendToAddress({
+/// Step 1: Propose a transfer. Returns proposal info including whether Sapling params are needed.
+Future<ProposalResult> proposeSend({
   required String dbPath,
   required String network,
-  required List<int> seed,
   required String toAddress,
   required BigInt amountZatoshi,
   String? memo,
-  required String spendParamsPath,
-  required String outputParamsPath,
-}) => RustLib.instance.api.crateApiSyncSendToAddress(
+}) => RustLib.instance.api.crateApiSyncProposeSend(
   dbPath: dbPath,
   network: network,
-  seed: seed,
   toAddress: toAddress,
   amountZatoshi: amountZatoshi,
   memo: memo,
+);
+
+/// Step 2: Execute a previously proposed transfer.
+/// spend_params_path and output_params_path are required only if needs_sapling_params was true.
+Future<String> executeProposal({
+  required String dbPath,
+  required BigInt proposalId,
+  required List<int> seed,
+  String? spendParamsPath,
+  String? outputParamsPath,
+}) => RustLib.instance.api.crateApiSyncExecuteProposal(
+  dbPath: dbPath,
+  proposalId: proposalId,
+  seed: seed,
   spendParamsPath: spendParamsPath,
   outputParamsPath: outputParamsPath,
 );
@@ -226,6 +237,31 @@ class BlockMetaInfo {
           time == other.time &&
           saplingOutputsCount == other.saplingOutputsCount &&
           orchardActionsCount == other.orchardActionsCount;
+}
+
+class ProposalResult {
+  final BigInt proposalId;
+  final bool needsSaplingParams;
+  final BigInt feeZatoshi;
+
+  const ProposalResult({
+    required this.proposalId,
+    required this.needsSaplingParams,
+    required this.feeZatoshi,
+  });
+
+  @override
+  int get hashCode =>
+      proposalId.hashCode ^ needsSaplingParams.hashCode ^ feeZatoshi.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProposalResult &&
+          runtimeType == other.runtimeType &&
+          proposalId == other.proposalId &&
+          needsSaplingParams == other.needsSaplingParams &&
+          feeZatoshi == other.feeZatoshi;
 }
 
 class ScanRangeInfo {
