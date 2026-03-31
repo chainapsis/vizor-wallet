@@ -1,17 +1,17 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../main.dart' show log;
 import '../core/config/network_config.dart';
 import '../rust/api/sync.dart' as rust_sync;
-import '../services/background_sync_service.dart' as bg_sync;
-import '../services/live_activity_service.dart';
 
 const _pollIntervalMs = 2000;
+const _iosBackgroundSyncChannel =
+    MethodChannel('com.zcash.wallet/background_sync');
 
 class SyncState {
   final bool isSyncing;
@@ -50,17 +50,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<SyncState> build() async {
     ref.onDispose(() {
       _pollTimer?.cancel();
-      if (_backgroundMode) bg_sync.stopBackgroundSync();
     });
-
-    // Listen for stop signal from Android foreground service notification
-    FlutterForegroundTask.receivePort?.listen((message) {
-      if (message == 'stop_sync') {
-        log('SyncNotifier: received stop_sync from notification');
-        stopSync();
-      }
-    });
-
     return SyncState();
   }
 
@@ -68,7 +58,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _backgroundMode = false;
     state = AsyncData(SyncState(isSyncing: true));
 
-    // Start polling for progress
     _startProgressPolling();
 
     try {
@@ -87,12 +76,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       state = AsyncData(SyncState(error: e.toString()));
     } finally {
       _pollTimer?.cancel();
-      if (_backgroundMode) {
-        await bg_sync.stopBackgroundSync();
-        await LiveActivityService.instance.stopSyncActivity();
-        _backgroundMode = false;
-      }
-      // Final progress update
+      _backgroundMode = false;
       await _updateProgress();
     }
   }
@@ -100,19 +84,36 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void stopSync() {
     rust_sync.cancelFullSync();
     _pollTimer?.cancel();
-    if (_backgroundMode) {
-      bg_sync.stopBackgroundSync();
-      LiveActivityService.instance.stopSyncActivity();
-      _backgroundMode = false;
+    _backgroundMode = false;
+  }
+
+  /// Enable background sync (iOS 26+ only via BGContinuedProcessingTask).
+  Future<void> enableBackgroundSync() async {
+    if (_backgroundMode) return;
+    if (!Platform.isIOS) return;
+
+    try {
+      final success = await _iosBackgroundSyncChannel
+          .invokeMethod<bool>('startBackgroundSync');
+      if (success == true) {
+        _backgroundMode = true;
+        log('SyncNotifier: iOS background sync submitted');
+      }
+    } catch (e) {
+      log('SyncNotifier: background sync failed: $e');
     }
   }
 
-  Future<void> enableBackgroundSync() async {
-    if (_backgroundMode) return;
-    _backgroundMode = true;
-    await bg_sync.startBackgroundSync();
-    await LiveActivityService.instance.startSyncActivity();
-    log('SyncNotifier: background sync enabled');
+  /// Check if background sync is available on this device.
+  static Future<bool> isBackgroundSyncAvailable() async {
+    if (!Platform.isIOS) return false;
+    try {
+      final available = await _iosBackgroundSyncChannel
+          .invokeMethod<bool>('isAvailable');
+      return available ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   void _startProgressPolling() {
@@ -152,20 +153,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         orchardBalance: balance.orchard,
         totalBalance: balance.total,
       ));
-
-      // Update background notification/Dynamic Island
-      if (_backgroundMode) {
-        bg_sync.updateBackgroundSyncProgress(
-          percentage: pct,
-          scannedHeight: scanned,
-          chainTipHeight: tip,
-        );
-        await LiveActivityService.instance.updateProgress(
-          percentage: pct,
-          scannedHeight: scanned,
-          chainTipHeight: tip,
-        );
-      }
     } catch (e) {
       // Polling error — ignore, will retry
     }
@@ -175,7 +162,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final dir = await getApplicationDocumentsDirectory();
     return '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
   }
-
 }
 
 final syncProvider =

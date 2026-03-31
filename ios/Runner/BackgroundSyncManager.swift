@@ -4,11 +4,10 @@ import BackgroundTasks
 @available(iOS 26.0, *)
 class BackgroundSyncManager {
     static let shared = BackgroundSyncManager()
-    static let taskIdentifier = "com.zcash.zcashWallet.sync"
+    static let taskIdentifier = "com.zcash.zcashWallet.sync.*"
 
-    /// Shared progress state updated by C callback, read by task monitor.
-    private var latestProgress: CSyncProgress?
-    private var syncRunning = false
+    /// Stored reference to task's NSProgress — updated from C callback thread (thread-safe).
+    private var taskProgress: Progress?
 
     private init() {}
 
@@ -26,48 +25,36 @@ class BackgroundSyncManager {
     }
 
     private func handleBackgroundTask(_ task: BGContinuedProcessingTask) {
-        task.expirationHandler = {
+        // Store progress reference for C callback to update (NSProgress is thread-safe)
+        taskProgress = task.progress
+
+        task.expirationHandler = { [weak self] in
+            self?.taskProgress = nil
             zcash_cancel_sync()
         }
 
         let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let dbPath = documentsDir.appendingPathComponent("zcash_wallet.db").path
 
-        // Start Dynamic Island
-        LiveActivityManager.shared.start()
-
-        // Start a timer to read progress and update task.progress
-        syncRunning = true
-        let progressTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self, let p = self.latestProgress else { return }
-            task.progress.totalUnitCount = Int64(p.chain_tip_height)
-            task.progress.completedUnitCount = Int64(p.scanned_height)
-        }
-
-        // Run sync via C FFI (blocking) — C callback cannot capture context
+        // Run sync via C FFI (blocking call on background queue)
         let result = zcash_run_full_sync(
             dbPath,
             "https://zec.rocks:443",
             "main",
             { progress in
-                // Static-context-safe: update shared state + EventChannel
+                // Called from tokio thread — NSProgress is thread-safe
                 if #available(iOS 26.0, *) {
-                    BackgroundSyncManager.shared.latestProgress = progress
+                    let mgr = BackgroundSyncManager.shared
+                    mgr.taskProgress?.totalUnitCount = Int64(progress.chain_tip_height)
+                    mgr.taskProgress?.completedUnitCount = Int64(progress.scanned_height)
                 }
 
-                LiveActivityManager.shared.update(
-                    percentage: progress.percentage,
-                    scannedHeight: progress.scanned_height,
-                    chainTipHeight: progress.chain_tip_height
-                )
-
+                // Send to Dart via EventChannel (if app is in foreground)
                 SyncProgressStreamHandler.shared.sendProgress(progress)
             }
         )
 
-        progressTimer.invalidate()
-        syncRunning = false
-        LiveActivityManager.shared.stop()
+        taskProgress = nil
         task.setTaskCompleted(success: result == 0)
     }
 

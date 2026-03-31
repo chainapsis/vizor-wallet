@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
-import '../../../services/background_sync_service.dart' as bg_sync;
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -28,7 +27,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _checkBackgroundSyncAvailability() async {
-    final available = await bg_sync.isBackgroundSyncAvailable();
+    final available = await SyncNotifier.isBackgroundSyncAvailable();
     log('[zcash] BackgroundSync available: $available');
     if (mounted) setState(() => _canBackgroundSync = available);
   }
