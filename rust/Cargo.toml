@@ -38,7 +38,11 @@ rand = "0.8"
 # Async runtime & gRPC
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots"] }
+tonic-prost = "0.14"
 prost = "0.13"
+
+# C FFI
+libc = "0.2"
 
 # SQLite (re-exported by zcash_client_sqlite but needed for Connection type)
 rusqlite = "0.37"

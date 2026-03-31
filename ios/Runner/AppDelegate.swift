@@ -14,13 +14,14 @@ import UIKit
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
-    // Set up MethodChannel via applicationRegistrar (UISceneDelegate compatible)
-    let channel = FlutterMethodChannel(
-      name: "com.zcash.wallet/background_sync",
-      binaryMessenger: engineBridge.applicationRegistrar.messenger()
-    )
+    let messenger = engineBridge.applicationRegistrar.messenger()
 
-    channel.setMethodCallHandler { (call, result) in
+    // MethodChannel for background sync control
+    let methodChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/background_sync",
+      binaryMessenger: messenger
+    )
+    methodChannel.setMethodCallHandler { (call, result) in
       switch call.method {
       case "isAvailable":
         result(BackgroundSyncManager.shared.isAvailable())
@@ -31,5 +32,12 @@ import UIKit
         result(FlutterMethodNotImplemented)
       }
     }
+
+    // EventChannel for sync progress (Swift → Dart)
+    let eventChannel = FlutterEventChannel(
+      name: "com.zcash.wallet/sync_progress",
+      binaryMessenger: messenger
+    )
+    eventChannel.setStreamHandler(SyncProgressStreamHandler.shared)
   }
 }

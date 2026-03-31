@@ -1,38 +1,71 @@
 import Foundation
 import BackgroundTasks
 
-/// Manages iOS background sync via BGContinuedProcessingTask (iOS 26+).
-/// On older iOS versions, this class is available but methods are no-ops.
 class BackgroundSyncManager {
     static let shared = BackgroundSyncManager()
     static let taskIdentifier = "com.zcash.zcashWallet.sync"
 
     private init() {}
 
-    /// Register the background task with the system.
-    /// Call this in AppDelegate.didFinishLaunchingWithOptions.
     func registerBackgroundTask() {
         if #available(iOS 17.0, *) {
             BGTaskScheduler.shared.register(
                 forTaskWithIdentifier: Self.taskIdentifier,
                 using: nil
             ) { task in
-                // This handler is called when the system grants background time
-                // The actual sync runs in the Dart isolate, not here
-                // We just need to keep the task alive while Dart syncs
-                task.expirationHandler = {
-                    task.setTaskCompleted(success: false)
-                }
+                self.handleBackgroundTask(task)
             }
         }
     }
 
-    /// Submit a background processing task request.
-    /// On iOS 26+, this uses BGContinuedProcessingTask.
-    /// On older versions, this is a no-op.
+    private func handleBackgroundTask(_ task: BGTask) {
+        task.expirationHandler = {
+            zcash_cancel_sync()
+        }
+
+        // Get paths
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dbPath = documentsDir.appendingPathComponent("zcash_wallet.db").path
+        let cachePath = documentsDir.appendingPathComponent("zcash_cache").path
+
+        // Create cache dir if needed
+        try? FileManager.default.createDirectory(atPath: cachePath, withIntermediateDirectories: true)
+
+        // Start Dynamic Island
+        if #available(iOS 16.1, *) {
+            LiveActivityManager.shared.start()
+        }
+
+        // Run sync via C FFI (blocking)
+        let result = zcash_run_full_sync(
+            dbPath,
+            cachePath,
+            "https://zec.rocks:443",
+            "main",
+            { progress in
+                // Update Dynamic Island
+                if #available(iOS 16.1, *) {
+                    LiveActivityManager.shared.update(
+                        percentage: progress.percentage,
+                        scannedHeight: progress.scanned_height,
+                        chainTipHeight: progress.chain_tip_height
+                    )
+                }
+
+                // Send to Dart via EventChannel (if app is in foreground)
+                SyncProgressStreamHandler.shared.sendProgress(progress)
+            }
+        )
+
+        // Stop Dynamic Island
+        if #available(iOS 16.1, *) {
+            LiveActivityManager.shared.stop()
+        }
+
+        task.setTaskCompleted(success: result == 0)
+    }
+
     func startBackgroundSync() -> Bool {
-        // BGContinuedProcessingTask is iOS 26+
-        // For now, use BGProcessingTaskRequest as a baseline (iOS 13+)
         if #available(iOS 13.0, *) {
             let request = BGProcessingTaskRequest(identifier: Self.taskIdentifier)
             request.requiresNetworkConnectivity = true
@@ -42,17 +75,16 @@ class BackgroundSyncManager {
                 try BGTaskScheduler.shared.submit(request)
                 return true
             } catch {
-                print("BackgroundSync: Failed to submit task: \(error)")
+                print("BackgroundSync: failed to submit: \(error)")
                 return false
             }
         }
         return false
     }
 
-    /// Check if background sync is available on this iOS version.
     func isAvailable() -> Bool {
         if #available(iOS 26.0, *) {
-            return true  // BGContinuedProcessingTask
+            return true
         }
         return false
     }

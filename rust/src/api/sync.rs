@@ -1,6 +1,50 @@
 use std::panic;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
-use crate::wallet::{keys, sync as wallet_sync};
+use crate::wallet::{keys, sync as wallet_sync, sync_engine};
+
+// ======================== Full Sync ========================
+
+/// Start a full sync. Blocks until complete or cancelled.
+/// Dart should call this from an async context and poll get_sync_status() for progress.
+/// All gRPC, file I/O, scanning, and enhancement happen inside Rust.
+pub fn start_full_sync(
+    db_path: String,
+    cache_path: String,
+    lightwalletd_url: String,
+    network: String,
+) -> Result<(), String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let cancel = SYNC_CANCEL.clone();
+        cancel.store(false, Ordering::Relaxed);
+
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        rt.block_on(async {
+            sync_engine::run_sync_inner(
+                &db_path,
+                &cache_path,
+                &lightwalletd_url,
+                network,
+                cancel,
+                |_progress| {
+                    // Progress is available via get_sync_status() polling
+                },
+            )
+            .await
+        })
+    })
+}
+
+/// Cancel a running full sync.
+#[flutter_rust_bridge::frb(sync)]
+pub fn cancel_full_sync() {
+    SYNC_CANCEL.store(true, Ordering::Relaxed);
+}
+
+static SYNC_CANCEL: std::sync::LazyLock<Arc<AtomicBool>> =
+    std::sync::LazyLock::new(|| Arc::new(AtomicBool::new(false)));
 
 // ======================== Data Structures ========================
 

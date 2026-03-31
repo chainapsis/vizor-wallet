@@ -8,6 +8,24 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `catch`
 
+/// Start a full sync. Blocks until complete or cancelled.
+/// Dart should call this from an async context and poll get_sync_status() for progress.
+/// All gRPC, file I/O, scanning, and enhancement happen inside Rust.
+Future<void> startFullSync({
+  required String dbPath,
+  required String cachePath,
+  required String lightwalletdUrl,
+  required String network,
+}) => RustLib.instance.api.crateApiSyncStartFullSync(
+  dbPath: dbPath,
+  cachePath: cachePath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+);
+
+/// Cancel a running full sync.
+void cancelFullSync() => RustLib.instance.api.crateApiSyncCancelFullSync();
+
 Future<void> updateChainTip({
   required String dbPath,
   required String network,
