@@ -7,7 +7,9 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    BackgroundSyncManager.shared.registerBackgroundTask()
+    if #available(iOS 26.0, *) {
+      BackgroundSyncManager.shared.registerBackgroundTask()
+    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -24,10 +26,18 @@ import UIKit
     methodChannel.setMethodCallHandler { (call, result) in
       switch call.method {
       case "isAvailable":
-        result(BackgroundSyncManager.shared.isAvailable())
+        if #available(iOS 26.0, *) {
+          result(true)
+        } else {
+          result(false)
+        }
       case "startBackgroundSync":
-        let success = BackgroundSyncManager.shared.startBackgroundSync()
-        result(success)
+        if #available(iOS 26.0, *) {
+          let success = BackgroundSyncManager.shared.startBackgroundSync()
+          result(success)
+        } else {
+          result(false)
+        }
       default:
         result(FlutterMethodNotImplemented)
       }
