@@ -126,7 +126,7 @@
     <li><a href="#background-sync">Background Sync</a>
       <ol>
         <li><a href="#bg-ios">iOS BGContinuedProcessingTask (iOS 26+)</a></li>
-        <li><a href="#bg-android">Android</a></li>
+        <li><a href="#bg-android">Android Foreground Service</a></li>
       </ol>
     </li>
     <li><a href="#gotchas">알려진 주의사항</a></li>
@@ -165,7 +165,7 @@
   <tr>
     <td><span class="badge dart">Dart UI</span></td>
     <td>Dart / Flutter</td>
-    <td>UI 렌더링, 상태 관리(Riverpod), 네비게이션(GoRouter), 보안 저장소(iOS Keychain / Android Keystore). Sync는 Rust에서 실행되며 Dart는 진행률만 폴링.</td>
+    <td>UI 렌더링, 상태 관리(Riverpod), 네비게이션(GoRouter), 보안 저장소(iOS Keychain / Android Keystore). Sync는 Rust에서 실행되며 Dart는 Stream으로 진행률을 수신.</td>
     <td><code>lib/src/providers/</code>, <code>lib/src/features/</code>, <code>lib/app.dart</code></td>
   </tr>
 </table>
@@ -328,11 +328,11 @@ flutter_rust_bridge_codegen generate
 
 <p>파일: <code>rust/src/wallet/sync.rs</code>, <code>rust/src/wallet/sync_engine.rs</code></p>
 
-<p>Sync는 Rust에서 통합 실행된다. <code>sync_engine.rs</code>의 <code>run_sync_inner()</code>가 gRPC 연결, 블록 다운로드, 스캔, enhancement를 모두 처리한다. Dart는 <code>start_full_sync()</code> 하나만 호출하고, 진행률은 <code>get_sync_status()</code>와 <code>get_balance()</code>를 2초마다 폴링하여 확인한다.</p>
+<p>Sync는 Rust에서 통합 실행된다. <code>sync_engine.rs</code>의 <code>run_sync_inner()</code>가 gRPC 연결, 블록 다운로드, 스캔, enhancement를 모두 처리한다. Dart는 <code>startFullSync(mode: 1)</code>을 호출하면 <code>Stream&lt;ApiSyncProgressEvent&gt;</code>를 반환받아 <code>stream.listen()</code>으로 진행률을 수신한다. 10초 간격 폴링은 fallback으로 유지된다.</p>
 
 <table>
   <tr><th>Function</th><th>역할</th></tr>
-  <tr><td><code>start_full_sync()</code></td><td>통합 sync 실행 (gRPC + scan + enhancement). Blocking call. tokio runtime 내부 생성.</td></tr>
+  <tr><td><code>start_full_sync(mode)</code></td><td>통합 sync 실행 (gRPC + scan + enhancement). <code>Stream&lt;ApiSyncProgressEvent&gt;</code> 반환. mode 파라미터로 foreground(1)/background(2) 구분.</td></tr>
   <tr><td><code>cancel_full_sync()</code></td><td>AtomicBool로 sync 취소 신호. sync</td></tr>
   <tr><td><code>get_sync_status()</code></td><td><code>SyncProgress { scannedHeight, chainTipHeight, isSyncing }</code> 반환</td></tr>
   <tr><td><code>get_balance()</code></td><td><code>WalletBalance { transparent, sapling, orchard, total }</code> 반환 (zatoshi)</td></tr>
@@ -395,37 +395,56 @@ flutter_rust_bridge_codegen generate
 
 <p><strong><code>syncProvider</code></strong> (<code>AsyncNotifierProvider&lt;SyncNotifier, SyncState&gt;</code>)</p>
 <ul>
-  <li><code>startSync()</code>: <code>rust_sync.startFullSync()</code> 호출 (blocking). 별도 Timer로 2초마다 진행률 폴링.</li>
-  <li><code>stopSync()</code>: <code>rust_sync.cancelFullSync()</code> 호출 (AtomicBool 설정)</li>
-  <li><code>enableBackgroundSync()</code>: iOS 26+ 전용. MethodChannel로 BGContinuedProcessingTask 제출.</li>
+  <li><code>startSync()</code>: FRB <code>startFullSync(mode: 1)</code> 호출로 <code>Stream&lt;ApiSyncProgressEvent&gt;</code> 수신. <code>stream.listen(_onSyncProgress)</code>로 콜백 등록. <code>_onSyncProgress</code>에서 매 이벤트마다 <code>getBalance()</code> FFI를 호출하여 잔액 갱신. 10초 간격 폴링은 fallback으로 유지.</li>
+  <li><code>stopSync()</code>: 통합 <code>cancelFullSync()</code> 호출 (AtomicBool 설정)</li>
+  <li><code>enableBackgroundSync()</code>: Android = <code>flutter_foreground_task</code>로 notification만 추가. iOS = <code>setSyncMode(2)</code> + MethodChannel로 BGContinuedProcessingTask 제출.</li>
+  <li><code>disableBackgroundSync()</code>: Android = notification 제거. iOS = <code>setSyncMode(1)</code> + <code>while(isSyncRunning()) await 200ms</code> 대기 + foreground sync 재시작.</li>
+  <li><code>AppLifecycleListener.onResume</code>: expiration 감지 (mode==0) → foreground sync 재시작</li>
+  <li>iOS EventChannel listener: background sync 중 C callback → <code>SyncProgressStreamHandler</code> → Dart로 진행률 수신</li>
   <li><code>SyncState</code>: <code>{ isSyncing, isBackgroundMode, percentage, scannedHeight, chainTipHeight, transparentBalance, saplingBalance, orchardBalance, totalBalance, error }</code></li>
 </ul>
 
 <h3 id="dart-sync-loop">4.2 Sync 실행</h3>
-<p>Sync 루프는 <strong>Rust</strong>에서 실행된다 (<code>sync_engine.rs</code>). Dart는 한 줄로 sync를 시작하고, 진행률을 폴링한다.</p>
+<p>Sync 루프는 <strong>Rust</strong>에서 실행된다 (<code>sync_engine.rs</code>). Dart는 <code>startFullSync(mode: 1)</code>을 호출하여 <code>Stream&lt;ApiSyncProgressEvent&gt;</code>를 수신하고, <code>stream.listen()</code>으로 진행률 콜백을 등록한다.</p>
 
 <pre><code>// sync_provider.dart (간소화)
-await rust_sync.startFullSync(    // blocking — Rust에서 전체 sync 실행
+final stream = rust_sync.startFullSync(
   dbPath: dbPath,
   lightwalletdUrl: 'https://zec.rocks:443',
   network: 'main',
+  mode: 1, // foreground
 );
 
-// 별도 Timer로 2초마다 폴링:
+stream.listen(_onSyncProgress);
+
+void _onSyncProgress(ApiSyncProgressEvent event) {
+  // 매 batch마다 balance 갱신
+  final balance = await rust_sync.getBalance(dbPath: dbPath, network: 'main');
+  state = state.copyWith(
+    percentage: event.percentage,
+    scannedHeight: event.scannedHeight,
+    totalBalance: balance.total,
+  );
+}
+
+// 10초 간격 폴링은 fallback으로 유지:
 final progress = await rust_sync.getSyncStatus(dbPath: dbPath, network: 'main');
 final balance = await rust_sync.getBalance(dbPath: dbPath, network: 'main');</code></pre>
 
 <p><strong>Rust 내부 sync 루프 (<code>run_sync_inner</code>):</strong></p>
 <pre><code>1. tonic gRPC로 zec.rocks:443에 TLS 연결 (tls-ring)
 2. getLatestBlock() → update_chain_tip()
-3. getSubtreeRoots() → put_subtree_roots() (incremental, start_index 최적화)
-4. 루프:
-   a. suggest_scan_ranges() → 최고 우선순위 범위 선택
-   b. getBlockRange() → CompactBlock을 메모리에 저장 (MemoryBlockSource)
-   c. getTreeState(start - 1) → ChainState 생성
-   d. scan_cached_blocks(MemoryBlockSource) → trial decryption
-   e. run_enhancement() → full tx 조회 + decrypt_and_store_transaction
-   f. progress_fn 콜백 (C FFI용, Dart에서는 미사용)
+3. getSubtreeRoots() → put_subtree_roots() (incremental)
+4. 루프 (100블록 batch):
+   a. cancel/mode 체크
+   b. suggest_scan_ranges() → 최고 우선순위 범위 선택
+   c. getBlockRange() → CompactBlock을 메모리에 저장 (MemoryBlockSource)
+   d. cancel/mode 체크
+   e. getTreeState(start - 1) → ChainState 생성
+   f. scan_cached_blocks(MemoryBlockSource)
+   g. cancel/mode 체크
+   h. run_enhancement()
+   i. progress_fn 콜백 → StreamSink.add() (Dart) 또는 C callback (Swift)
 5. 모든 범위 완료 → 반환</code></pre>
 
 <h3 id="dart-enhancement">4.6 Enhancement 루프</h3>
@@ -580,7 +599,7 @@ impl BlockSource for MemoryBlockSource {
 </ul>
 
 <h3 id="sync-progress">5.5 진행률 보고</h3>
-<p>Dart가 2초 간격 Timer로 <code>get_sync_status()</code>와 <code>get_balance()</code>를 폴링한다. Rust sync 루프 내에서도 매 batch마다 <code>progress_fn</code> 콜백이 호출되지만, Dart FRB 경로에서는 이 콜백을 사용하지 않는다 (C FFI 경로에서 iOS <code>task.progress</code> 업데이트에 사용).</p>
+<p>Rust가 매 100블록 batch 완료 후 <code>StreamSink</code>를 통해 Dart에 <code>ApiSyncProgressEvent</code>를 전송한다. Dart의 <code>stream.listen()</code> 콜백에서 <code>getBalance()</code> FFI를 즉시 호출하여 balance도 함께 갱신한다. 10초 간격 폴링은 fallback으로 유지된다. iOS background sync에서는 C callback → <code>SyncProgressStreamHandler</code> → EventChannel로 전달된다.</p>
 
 <!-- ============================================================ -->
 <!-- 6. API 레퍼런스                                                -->
@@ -818,50 +837,74 @@ AddressValidationResult { isValid: bool, addressType: String }</code></pre>
 
 <h2 id="background-sync">9. Background Sync</h2>
 
-<p>Background sync는 iOS 26+ 전용이다. <code>BGContinuedProcessingTask</code>를 사용하며, Swift가 C FFI로 Rust sync를 직접 실행한다.</p>
+<p>Background sync는 iOS와 Android 모두 지원한다. iOS는 <code>BGContinuedProcessingTask</code> + C FFI로 Rust sync를 직접 실행하고, Android는 <code>flutter_foreground_task</code>를 통해 notification만 관리하며 sync 자체는 동일한 FRB Stream으로 실행된다.</p>
 
 <h3 id="bg-ios">9.1 iOS BGContinuedProcessingTask (iOS 26+)</h3>
 
 <p><strong>핵심 원리:</strong> Dart 코드는 iOS background에서 실행할 수 없다. BGContinuedProcessingTask의 핸들러는 Swift에서 실행되므로, Rust를 C FFI로 직접 호출해야 한다.</p>
 
+<p><strong>Mode 전환 메커니즘:</strong></p>
+<p>Rust에 <code>DESIRED_SYNC_MODE</code> AtomicU8이 존재한다 (0=none, 1=foreground, 2=background). 이 값으로 foreground/background sync 간 전환을 제어한다.</p>
+
+<ul>
+  <li><strong>Foreground → Background:</strong> Dart가 <code>setSyncMode(2)</code> 호출 → Rust fg sync가 다음 batch에서 mode mismatch 감지 후 종료 → Swift BGTask handler가 <code>while(mode!=2 || is_running) sleep(2s)</code>로 대기 → 조건 충족 시 C FFI <code>zcash_run_full_sync()</code> 호출로 bg sync 시작</li>
+  <li><strong>Background → Foreground:</strong> Dart가 <code>setSyncMode(1)</code> 호출 → Rust bg sync가 다음 batch에서 mode mismatch 감지 후 종료 → Dart가 <code>while(isSyncRunning()) await 200ms</code>로 대기 → fg sync 시작</li>
+  <li><strong>Expiration:</strong> <code>expirationHandler</code>가 mode=0 + cancel 설정 → resubmit 하지 않음 → 앱이 foreground로 돌아오면 <code>AppLifecycleListener.onResume</code>에서 mode==0 감지 → foreground sync 재시작</li>
+  <li><strong>BGTask resubmit:</strong> sync가 종료되었는데 mode가 여전히 2이면 BGTask를 다시 제출하여 background sync 계속</li>
+</ul>
+
 <div class="diagram">
 Dart: "Sync on Background" 버튼 탭
-  → MethodChannel('com.zcash.wallet/background_sync')
-    → Swift: BGContinuedProcessingTaskRequest 제출
-      → OS가 핸들러 실행 (background queue)
-        → zcash_run_full_sync() [C FFI, blocking]
-          → tokio runtime 생성
-            → run_sync_inner() [gRPC + scan + enhancement]
-          → C callback → task.progress 업데이트 (NSProgress, thread-safe)
-          → C callback → SyncProgressStreamHandler → EventChannel → Dart (앱이 foreground면)
-        → task.setTaskCompleted(success:)
+  → setSyncMode(2) [FRB]
+    → Rust fg sync: mode mismatch → 종료
+  → MethodChannel → Swift: BGContinuedProcessingTaskRequest 제출
+    → OS가 핸들러 실행 (background queue)
+      → while(mode!=2 || is_running) sleep(2s) [대기]
+      → zcash_run_full_sync() [C FFI, blocking]
+        → tokio runtime 생성
+          → run_sync_inner() [gRPC + scan + enhancement]
+        → C callback → task.progress 업데이트 (NSProgress, thread-safe)
+        → C callback → SyncProgressStreamHandler → EventChannel → Dart (앱이 foreground면)
+      → sync 종료, mode==2이면 BGTask resubmit
+      → task.setTaskCompleted(success:)
 </div>
 
 <p><strong>주요 파일:</strong></p>
 <table>
   <tr><th>파일</th><th>역할</th></tr>
-  <tr><td><code>rust/src/ffi.rs</code></td><td>C FFI: <code>zcash_run_full_sync()</code>, <code>zcash_cancel_sync()</code></td></tr>
-  <tr><td><code>ios/Runner/zcash_sync.h</code></td><td>C 헤더 (Swift Bridging Header에서 import)</td></tr>
-  <tr><td><code>ios/Runner/BackgroundSyncManager.swift</code></td><td><code>@available(iOS 26.0, *)</code>. BGTask 등록/제출/핸들링</td></tr>
+  <tr><td><code>rust/src/ffi.rs</code></td><td>C FFI: <code>zcash_run_full_sync()</code>, <code>zcash_cancel_sync()</code>, <code>zcash_get_sync_mode()</code>, <code>zcash_set_sync_mode()</code>, <code>zcash_is_sync_running()</code></td></tr>
+  <tr><td><code>ios/Runner/zcash_sync.h</code></td><td>C 헤더</td></tr>
+  <tr><td><code>ios/Runner/BackgroundSyncManager.swift</code></td><td><code>@available(iOS 26.0, *)</code>. BGTask 등록/제출/핸들링. 조건 충족 대기 후 sync 시작.</td></tr>
   <tr><td><code>ios/Runner/AppDelegate.swift</code></td><td>task 등록 + MethodChannel + EventChannel 설정</td></tr>
-  <tr><td><code>ios/Runner/SyncProgressStreamHandler.swift</code></td><td>C callback → FlutterEventChannel 브릿지</td></tr>
+  <tr><td><code>ios/Runner/SyncProgressStreamHandler.swift</code></td><td>C callback → Dart EventChannel 브릿지</td></tr>
 </table>
 
 <p><strong>task.progress (필수):</strong> BGContinuedProcessingTask는 NSProgressReporting을 준수하며, <strong>progress 보고가 필수</strong>이다. stalled로 판단되면 시스템이 task를 강제 종료한다. C callback에서 <code>BackgroundSyncManager.shared.taskProgress</code> (NSProgress 참조)를 thread-safe하게 업데이트한다.</p>
 
 <p><strong>시스템 UI:</strong> OS가 자동으로 Dynamic Island / Lock Screen에 title, subtitle, progress를 표시한다. 별도의 Live Activity 구현이 불필요하다.</p>
 
-<p><strong>expirationHandler:</strong> 시스템이 시간 만료 또는 사용자가 Stop을 누르면 호출. <code>zcash_cancel_sync()</code>로 AtomicBool을 설정하여 Rust sync 루프가 다음 batch에서 정상 종료한다.</p>
-
 <p><strong>필수 설정:</strong></p>
 <ul>
   <li><code>Info.plist</code>: <code>UIBackgroundModes</code> (processing, fetch) + <code>BGTaskSchedulerPermittedIdentifiers</code> (<code>com.zcash.zcashWallet.sync</code>)</li>
   <li><code>Runner-Bridging-Header.h</code>: <code>#import "zcash_sync.h"</code></li>
-  <li>Android: background sync 미지원 (foreground sync만 가능)</li>
 </ul>
 
-<h3 id="bg-android">9.2 Android</h3>
-<p>Android에서는 background sync를 지원하지 않는다. Foreground에서만 sync가 실행된다.</p>
+<h3 id="bg-android">9.2 Android Foreground Service</h3>
+<p>Android에서는 <code>flutter_foreground_task</code>를 사용하여 notification만 관리한다. Sync 자체는 foreground와 동일한 Dart FRB Stream으로 실행되며, mode 전환 메커니즘은 없다.</p>
+
+<ul>
+  <li><code>enableBackgroundSync()</code>: foreground service notification을 추가한다. 사용자에게 sync가 진행 중임을 알리고 시스템이 앱을 kill하지 않도록 한다.</li>
+  <li><code>disableBackgroundSync()</code>: notification을 제거한다. Sync 자체는 중단되지 않는다.</li>
+</ul>
+
+<p><strong>주요 파일:</strong></p>
+<table>
+  <tr><th>파일</th><th>역할</th></tr>
+  <tr><td><code>lib/src/services/background_sync_service.dart</code></td><td>Platform 추상화 — iOS/Android 분기</td></tr>
+  <tr><td><code>AndroidManifest.xml</code></td><td>FOREGROUND_SERVICE 권한 + service 선언</td></tr>
+  <tr><td><code>SyncLiveActivityManager.kt</code></td><td>Custom notification UI</td></tr>
+  <tr><td><code>live_activity.xml</code> / <code>live_activity_expanded.xml</code></td><td>Notification 레이아웃</td></tr>
+</table>
 
 <!-- ============================================================ -->
 <!-- 알려진 주의사항                                                  -->
@@ -894,6 +937,22 @@ Dart: "Sync on Background" 버튼 탭
   <tr>
     <td>ffi.rs 위치</td>
     <td><code>ffi.rs</code>는 <code>api/</code> 밖에 위치해야 함. FRB codegen이 <code>api/</code> 하위의 <code>extern "C"</code> 함수를 처리하려다 실패.</td>
+  </tr>
+  <tr>
+    <td>Sync mode 전환 timing</td>
+    <td>iOS에서 mode 전환 시 이전 sync가 종료될 때까지 대기해야 한다. Swift BGTask handler는 <code>while(mode!=2 || is_running) sleep(2s)</code>. Dart <code>disableBackgroundSync</code>는 <code>while(isSyncRunning()) await 200ms</code>.</td>
+  </tr>
+  <tr>
+    <td>SYNC_CANCEL 통일</td>
+    <td>FRB와 C FFI가 같은 <code>SYNC_CANCEL</code> AtomicBool을 공유한다. Dart <code>cancelFullSync()</code>와 Swift <code>zcash_cancel_sync()</code> 모두 동일한 flag를 설정.</td>
+  </tr>
+  <tr>
+    <td>BGTask expiration</td>
+    <td><code>expirationHandler</code>에서 mode=0으로 설정하여 resubmit 방지. 앱이 foreground로 돌아오면 <code>onResume</code>에서 mode==0 감지 후 foreground sync 재시작.</td>
+  </tr>
+  <tr>
+    <td>BATCH_SIZE 100</td>
+    <td>1000에서 100으로 줄임. cancel/mode 전환 반응이 ~10배 빨라짐. 성능 차이는 무시할 수 있는 수준 (DB write 횟수만 증가).</td>
   </tr>
 </table>
 
