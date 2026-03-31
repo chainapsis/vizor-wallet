@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1. 아키텍처 개요 — Zcash Wallet Onboarding</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p><a href="index.html">&larr; 목차로 돌아가기</a></p>
+
+<h2 id="architecture">1. 아키텍처 개요</h2>
+
+<h3 id="arch-layers">1.1 레이어 분리</h3>
+<p>월렛은 세 개의 레이어로 분리되어 있다:</p>
+<table>
+  <tr><th>Layer</th><th>Language</th><th>역할</th><th>주요 파일</th></tr>
+  <tr>
+    <td><span class="badge rust">Rust Core</span></td>
+    <td>Rust</td>
+    <td>모든 Zcash 암호학: 키 유도(ZIP-32), 주소 인코딩(ZIP-316), 블록 스캐닝(trial decryption), 월렛 DB(SQLite), commitment tree 관리</td>
+    <td><code>rust/src/wallet/</code>, <code>rust/src/api/</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge ffi">FFI Bridge</span></td>
+    <td>Generated</td>
+    <td>flutter_rust_bridge v2.11.1 codegen. <code>rust/src/api/</code>의 <code>pub fn</code>을 Dart async 함수로 변환. 메모리, 직렬화, 에러 전파를 처리.</td>
+    <td><code>lib/src/rust/</code> (자동 생성), <code>flutter_rust_bridge.yaml</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge ffi">C FFI</span></td>
+    <td>C / Swift</td>
+    <td>iOS background sync용. <code>ffi.rs</code>가 <code>#[no_mangle] pub extern "C"</code>로 Rust sync를 노출. Swift가 <code>zcash_sync.h</code>를 통해 호출. FRB와 별개의 경로.</td>
+    <td><code>rust/src/ffi.rs</code>, <code>ios/Runner/zcash_sync.h</code>, <code>ios/Runner/BackgroundSyncManager.swift</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge dart">Dart UI</span></td>
+    <td>Dart / Flutter</td>
+    <td>UI 렌더링, 상태 관리(Riverpod), 네비게이션(GoRouter), 보안 저장소(iOS Keychain / Android Keystore). Sync는 Rust에서 실행되며 Dart는 Stream으로 진행률을 수신.</td>
+    <td><code>lib/src/providers/</code>, <code>lib/src/features/</code>, <code>lib/app.dart</code></td>
+  </tr>
+</table>
+
+<h3 id="arch-diagram">1.2 데이터 흐름 다이어그램</h3>
+<div class="diagram">
+                          lightwalletd (zec.rocks:443)
+                                    |
+                             gRPC (tonic, Rust)
+                                    |
+                    +---------------+---------------+
+                    |                               |
+           Dart (foreground)              Swift (iOS background)
+                    |                               |
+              FRB 호출                        C FFI 호출
+                    |                               |
+        +-----------+-----------+       +-----------+-----------+
+        |  rust/src/api/sync.rs |       |  rust/src/ffi.rs      |
+        |  start_full_sync()    |       |  zcash_run_full_sync()|
+        +-----------+-----------+       +-----------+-----------+
+                    |                               |
+                    +----------- 공통 ---------------+
+                                    |
+                    +---------------+---------------+
+                    |   sync_engine::run_sync_inner()           |
+                    |   1. tonic gRPC 연결                      |
+                    |   2. subtree roots 다운로드                |
+                    |   3. compact blocks → 메모리              |
+                    |   4. scan_cached_blocks (in-memory)       |
+                    |   5. enhancement (full tx 조회)           |
+                    +-------------------------------------------+
+                                    |
+                    +---------------+---------------+
+                    |          zcash_client_sqlite              |
+                    |              (WalletDb)                   |
+                    +-------------------------------------------+
+                                    |
+                            SQLite Database
+                             (wallet.db)
+</div>
+
+<h3 id="arch-why">1.3 왜 Rust + Flutter인가</h3>
+<p>공식 Zcash 생태계에서 Swift(iOS)와 Kotlin(Android) 모바일 SDK를 제공하지만, 둘 다 내부적으로 동일한 <code>librustzcash</code> Rust 크레이트를 UniFFI / JNI로 래핑한 것이다. 공식 Flutter/Dart SDK는 존재하지 않는다.</p>
+<p>우리 접근법은 <code>librustzcash</code>를 FFI로 직접 호출하며, 이를 통해:</p>
+<ul>
+  <li><strong>단일 Rust 코드베이스</strong>로 iOS와 Android 모두 커버 — 플랫폼별 암호화 코드 불필요</li>
+  <li><code>zcash_client_backend</code>와 <code>zcash_client_sqlite</code>에 중간 SDK 없이 <strong>직접 접근</strong></li>
+  <li><strong>flutter_rust_bridge</strong>가 크로스 컴파일, async, 타입 마샬링을 자동으로 처리</li>
+</ul>
+
+<div class="nav">
+  <span></span>
+  <a href="ffi.html">다음: FRB 통신 &rarr;</a>
+</div>
+
+</body>
+</html>

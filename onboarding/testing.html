@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>8. 테스트 — Zcash Wallet Onboarding</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p><a href="index.html">&larr; 목차로 돌아가기</a></p>
+
+<h2 id="testing">8. 테스트</h2>
+<p><em>(Background Sync, 알려진 주의사항, 개발 명령어는 아래 섹션 9~11 참조)</em></p>
+
+<h3 id="test-rust">8.1 Rust 단위 테스트 (8개)</h3>
+<pre><code>cd rust && cargo test</code></pre>
+<table>
+  <tr><th>Test</th><th>검증 내용</th></tr>
+  <tr><td><code>test_generate_mnemonic_is_24_words</code></td><td>생성된 니모닉이 정확히 24단어인지</td></tr>
+  <tr><td><code>test_mnemonic_to_seed_roundtrip</code></td><td>니모닉이 64바이트 seed를 생성하는지</td></tr>
+  <tr><td><code>test_invalid_mnemonic</code></td><td>잘못된 니모닉이 거부되는지 (BIP-39 체크섬)</td></tr>
+  <tr><td><code>test_parse_network</code></td><td>"main" / "test" / "invalid" 파싱</td></tr>
+  <tr><td><code>test_create_wallet_and_get_address</code></td><td>전체 월렛 생성 + 주소 조회 라운드트립</td></tr>
+  <tr><td><code>test_create_testnet_wallet</code></td><td>테스트넷 월렛이 <code>utest1...</code> 접두사를 생성하는지</td></tr>
+  <tr><td><code>test_deterministic_address_from_same_seed</code></td><td>같은 seed가 항상 같은 주소를 생성하는지</td></tr>
+  <tr><td><code>test_shielded_address_has_sapling_and_orchard_only</code></td><td>UA에 Sapling+Orchard만 포함되고 transparent가 없는지</td></tr>
+</table>
+
+<h3 id="test-dart">8.2 Dart 테스트</h3>
+<pre><code>fvm flutter test</code></pre>
+<p>현재 데이터 클래스 equality를 위한 2개의 단위 테스트가 있다. 위젯 테스트와 통합 테스트는 실행 중인 Rust 백엔드와 함께 FRB 초기화가 필요하다.</p>
+
+<div class="nav">
+  <a href="address.html">&larr; 이전: 주소 체계</a>
+  <a href="background-sync.html">다음: Background Sync &rarr;</a>
+</div>
+
+</body>
+</html>

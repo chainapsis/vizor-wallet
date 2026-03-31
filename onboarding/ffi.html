@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2. Flutter Rust Bridge (FRB) 통신 — Zcash Wallet Onboarding</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p><a href="index.html">&larr; 목차로 돌아가기</a></p>
+
+<h2 id="ffi">2. Flutter Rust Bridge (FRB) 통신</h2>
+
+<h3 id="ffi-how">2.1 FRB 작동 방식</h3>
+<p>FRB는 <code>rust/src/api/</code>의 Rust 소스 파일을 읽고 Dart 바인딩을 생성한다. 런타임에:</p>
+<ol>
+  <li>Dart가 생성된 async 함수를 호출 (예: <code>createWallet()</code>)</li>
+  <li>FRB가 SSE(Simple Serialization Engine)로 인자를 직렬화</li>
+  <li>별도 isolate/thread의 Rust 함수로 호출이 전달됨</li>
+  <li>Rust가 함수를 실행하고 결과를 직렬화</li>
+  <li>FRB가 결과를 역직렬화하여 Dart 객체로 반환</li>
+</ol>
+<p><code>#[flutter_rust_bridge::frb(sync)]</code>로 표시된 Rust 함수는 호출 스레드에서 동기적으로 실행된다(isolate 전환 없음). 간단하고 블로킹하지 않는 연산에만 사용해야 한다.</p>
+
+<h3 id="ffi-types">2.2 타입 매핑</h3>
+<table>
+  <tr><th>Rust Type</th><th>Dart Type</th><th>비고</th></tr>
+  <tr><td><code>String</code></td><td><code>String</code></td><td>UTF-8, FFI 경계에서 복사됨</td></tr>
+  <tr><td><code>u64</code></td><td><code>BigInt</code></td><td>Dart <code>int</code>는 네이티브에서 64비트이지만 FRB는 u64에 <code>BigInt</code> 사용</td></tr>
+  <tr><td><code>u32</code>, <code>u8</code></td><td><code>int</code></td><td></td></tr>
+  <tr><td><code>bool</code></td><td><code>bool</code></td><td></td></tr>
+  <tr><td><code>Vec&lt;u8&gt;</code></td><td><code>Uint8List</code></td><td>효율적 바이트 전송</td></tr>
+  <tr><td><code>Vec&lt;T&gt;</code></td><td><code>List&lt;T&gt;</code></td><td></td></tr>
+  <tr><td><code>Result&lt;T, String&gt;</code></td><td><code>Future&lt;T&gt;</code></td><td><code>Err</code>는 Dart 예외가 됨</td></tr>
+  <tr><td><code>struct Foo { pub x: String }</code></td><td><code>class Foo { final String x; }</code></td><td>FRB가 Dart 클래스를 생성</td></tr>
+</table>
+
+<h3 id="ffi-codegen">2.3 Codegen 워크플로우</h3>
+<pre><code># rust/src/api/*.rs 파일을 수정한 후 (pub fn 시그니처나 pub struct 변경 시):
+flutter_rust_bridge_codegen generate
+
+# 재생성되는 파일:
+#   lib/src/rust/api/*.dart        (Dart 바인딩)
+#   lib/src/rust/frb_generated.*   (FFI 글루 코드)
+#   rust/src/frb_generated.rs      (Rust FFI 글루 코드)</code></pre>
+
+<div class="note">
+  <p><strong>중요:</strong> codegen은 프로젝트 루트(<code>/zcash-wallet/</code>)에서 실행해야 한다. <code>rust/</code>에서 실행하면 안 된다. <code>flutter_rust_bridge.yaml</code> 설정이 프로젝트 루트에 있기 때문이다.</p>
+</div>
+
+<h3 id="ffi-constraints">2.4 설계 제약</h3>
+<ul>
+  <li><strong>API 경계에는 단순 타입만 사용.</strong> FRB는 프리미티브, <code>String</code>, <code>Vec</code>, 플랫 struct를 잘 처리한다. 복잡한 Zcash 타입(<code>WalletDb</code>, <code>UnifiedSpendingKey</code>, <code>CompactBlock</code>)은 Rust 내부에 머물러야 한다. API 레이어(<code>rust/src/api/</code>)가 단순 타입과 내부 Zcash 타입 간의 변환을 담당한다.</li>
+  <li><strong>호출 간 Rust 상태를 유지하지 않는다.</strong> 각 FFI 호출은 DB를 열고, 연산을 수행하고, 닫는다. Rust에 장기 유지되는 <code>WalletDb</code> 인스턴스가 없다. 더 단순하고 라이프사이클 문제를 피할 수 있다.</li>
+  <li><strong>에러는 문자열이다.</strong> API 전체에서 <code>Result&lt;T, String&gt;</code>을 사용한다. Zcash crate 에러는 API 경계에서 사람이 읽을 수 있는 문자열로 포맷된다.</li>
+</ul>
+
+<div class="nav">
+  <a href="architecture.html">&larr; 이전: 아키텍처 개요</a>
+  <a href="rust-core.html">다음: Rust 핵심 로직 &rarr;</a>
+</div>
+
+</body>
+</html>

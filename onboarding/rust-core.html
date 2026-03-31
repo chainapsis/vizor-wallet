@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3. Rust 핵심 로직 — Zcash Wallet Onboarding</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p><a href="index.html">&larr; 목차로 돌아가기</a></p>
+
+<h2 id="rust-core">3. Rust 핵심 로직</h2>
+
+<h3 id="rust-modules">3.1 모듈 구조</h3>
+<pre><code>rust/src/
+  lib.rs                  # pub mod api, ffi, wallet, frb_generated
+  frb_generated.rs        # FRB 자동 생성 글루 코드 (수정 금지)
+  ffi.rs                  # C FFI: zcash_run_full_sync(), zcash_cancel_sync()
+                          # api/ 밖에 위치 — FRB codegen이 픽업하지 않도록
+  api/
+    mod.rs                # API 모듈 선언
+    wallet.rs             # FRB 노출 wallet 함수 (7개)
+    sync.rs               # FRB 노출: start_full_sync(), cancel_full_sync(),
+                          # get_sync_status(), get_balance(), send, history 등
+                          # (개별 sync 단계 함수는 legacy dead code)
+    simple.rs             # FRB 데모 (greet 함수, 제거 가능)
+  wallet/
+    mod.rs                # 내부 모듈 선언
+    keys.rs               # 키 유도, 니모닉, 주소 생성
+    sync.rs               # 잔액 조회, send, history, address validation 등
+    sync_engine.rs        # 통합 sync 루프: run_sync_inner()
+                          # MemoryBlockSource (BlockSource trait 구현)
+                          # gRPC + scan + enhancement 전부 포함</code></pre>
+
+<p><code>api/</code> 레이어가 FFI 경계이며, 파라미터를 파싱하고 <code>wallet/</code>에 위임하는 얇은 래퍼만 포함한다. <code>wallet/</code> 레이어에 실제 Zcash 로직이 들어있다.</p>
+
+<p><strong>두 가지 FFI 경로:</strong> Dart는 FRB를 통해 <code>api/sync.rs</code>의 <code>start_full_sync()</code>를 호출한다. iOS background에서는 Swift가 C FFI를 통해 <code>ffi.rs</code>의 <code>zcash_run_full_sync()</code>를 호출한다. 둘 다 내부적으로 <code>sync_engine::run_sync_inner()</code>를 실행한다.</p>
+
+<p><code>ffi.rs</code>가 <code>api/</code> 밖에 있는 이유: FRB codegen이 <code>api/</code> 하위의 모든 <code>pub fn</code>을 Dart 바인딩으로 변환하는데, C FFI 함수(<code>extern "C"</code>, <code>*const c_char</code> 등)는 FRB가 처리할 수 없다.</p>
+
+<h3 id="rust-wallet">3.2 Wallet API — 키 유도 &amp; 계정 관리</h3>
+
+<p>파일: <code>rust/src/wallet/keys.rs</code></p>
+
+<p><strong>니모닉 생성:</strong> <code>bip0039</code> 크레이트로 256비트 엔트로피의 24단어 BIP-39 니모닉을 생성한다. Seed 유도는 표준을 따른다: PBKDF2-HMAC-SHA512, salt = <code>"mnemonic" + passphrase</code> (빈 passphrase).</p>
+
+<p><strong>키 유도:</strong> <code>zcash_keys::UnifiedSpendingKey::from_seed()</code>가 하나의 seed에서 세 종류의 키를 유도한다:</p>
+<ul>
+  <li><strong>Transparent:</strong> BIP-44 경로 <code>m/44'/133'/0'</code> (mainnet)</li>
+  <li><strong>Sapling:</strong> Jubjub 곡선 위의 ZIP-32 HD 유도</li>
+  <li><strong>Orchard:</strong> Pallas 곡선 위의 ZIP-32 HD 유도</li>
+</ul>
+
+<p><strong>계정 생성:</strong> <code>WalletDb::create_account()</code>은 Unified Full Viewing Key (UFVK)만 데이터베이스에 저장한다. Spending key는 DB에 영속화하지 않는다.</p>
+
+<p><strong>주소 인코딩:</strong> Unified Address는 <code>Require Orchard + Require Sapling + Omit Transparent</code>로 생성하며, zodl/Zashi 월렛 동작과 일치한다. <code>shielded_address_request()</code> 헬퍼 함수가 이를 제어한다.</p>
+
+<pre><code>fn shielded_address_request() -> UnifiedAddressRequest {
+    UnifiedAddressRequest::custom(
+        ReceiverRequirement::Require, // Orchard
+        ReceiverRequirement::Require, // Sapling
+        ReceiverRequirement::Omit,    // Transparent
+    ).expect("valid receiver requirements")
+}</code></pre>
+
+<h3 id="rust-sync">3.3 Sync API — 블록 스캐닝 &amp; 잔액</h3>
+
+<p>파일: <code>rust/src/wallet/sync.rs</code>, <code>rust/src/wallet/sync_engine.rs</code></p>
+
+<p>Sync는 Rust에서 통합 실행된다. <code>sync_engine.rs</code>의 <code>run_sync_inner()</code>가 gRPC 연결, 블록 다운로드, 스캔, enhancement를 모두 처리한다. Dart는 <code>startFullSync(mode: 1)</code>을 호출하면 <code>Stream&lt;ApiSyncProgressEvent&gt;</code>를 반환받아 <code>stream.listen()</code>으로 진행률을 수신한다. 10초 간격 폴링은 fallback으로 유지된다.</p>
+
+<table>
+  <tr><th>Function</th><th>역할</th></tr>
+  <tr><td><code>start_full_sync(mode)</code></td><td>통합 sync 실행 (gRPC + scan + enhancement). <code>Stream&lt;ApiSyncProgressEvent&gt;</code> 반환. mode 파라미터로 foreground(1)/background(2) 구분.</td></tr>
+  <tr><td><code>cancel_full_sync()</code></td><td>AtomicBool로 sync 취소 신호. sync</td></tr>
+  <tr><td><code>get_sync_status()</code></td><td><code>SyncProgress { scannedHeight, chainTipHeight, isSyncing }</code> 반환</td></tr>
+  <tr><td><code>get_balance()</code></td><td><code>WalletBalance { transparent, sapling, orchard, total }</code> 반환 (zatoshi)</td></tr>
+  <tr><td><code>get_transaction_history()</code></td><td>v_transactions SQL view에서 TX 내역 목록 조회</td></tr>
+  <tr><td><code>validate_address()</code></td><td>주소 타입 검증 (unified/sapling/transparent/invalid)</td></tr>
+  <tr><td><code>get_next_available_address()</code></td><td>다음 diversified UA 생성</td></tr>
+  <tr><td><code>propose_send()</code></td><td>전송 제안: 노트 선택 + ZIP-317 수수료 계산</td></tr>
+  <tr><td><code>execute_proposal()</code></td><td>제안 실행: zk-SNARK proof 생성 + 서명</td></tr>
+  <tr><td><code>rewind_to_height()</code></td><td>chain reorg 시 롤백</td></tr>
+</table>
+
+<div class="note">
+  <p><strong>Legacy 함수:</strong> <code>api/sync.rs</code>에는 이전 Dart-orchestrated sync에서 사용하던 개별 단계 함수들(update_chain_tip, suggest_scan_ranges, write_block_metadata, scan_blocks 등)이 아직 남아있다. FRB 바인딩은 생성되지만 Dart에서 호출되지 않는 dead code이다.</p>
+</div>
+
+<h3 id="rust-deps">3.4 Zcash Crate 의존성 그래프</h3>
+<div class="diagram">
+  zcash_client_sqlite (0.19.5)  &lt;-- 우리의 주요 진입점
+    |-- zcash_client_backend (0.21.2)
+    |     |-- zcash_keys (0.12.0)
+    |     |-- zcash_protocol (0.7.2)
+    |     |-- zcash_address (0.10.1)
+    |     |-- zcash_primitives (0.26.4)
+    |     +-- lightwalletd proto (내부 tonic gRPC)
+    |-- sapling-crypto (0.5.x)   &lt;-- zcash_client_sqlite의 버전과 반드시 일치해야 함
+    +-- orchard (0.11.x)         &lt;-- zcash_client_sqlite의 버전과 반드시 일치해야 함
+
+  tonic (0.14)                   &lt;-- gRPC 클라이언트 (tls-ring + tls-webpki-roots)
+</div>
+
+<div class="note">
+  <p><strong>버전 제약:</strong> <code>orchard</code>와 <code>sapling-crypto</code> 버전은 <code>zcash_client_sqlite</code>가 내부적으로 사용하는 것과 반드시 일치해야 한다. 다른 버전을 사용하면 타입 불일치 에러가 발생한다 (예: "expected <code>sapling_crypto::Node</code>, found <code>Node</code>"). Rust는 서로 다른 crate 버전을 다른 타입으로 취급하기 때문이다.</p>
+</div>
+
+<h3 id="rust-security">3.5 보안 모델: Spending Key 분리</h3>
+<p>이것은 <code>librustzcash</code>의 의도적인 설계이며, 우리의 선택이 아니다:</p>
+<ul>
+  <li><code>WalletDb</code>에는 <strong>Unified Full Viewing Key (UFVK)</strong>만 저장된다 — 트랜잭션 감지와 잔액 계산에는 충분하지만, 자금을 사용할 수는 없다.</li>
+  <li><strong>니모닉 / seed</strong>는 Dart의 <code>flutter_secure_storage</code>(iOS Keychain / Android Keystore)에 저장되며, OS에 의해 rest 상태에서 암호화된다.</li>
+  <li>Spending key는 트랜잭션 서명이 필요할 때만 seed에서 즉석에서 유도되고, FFI를 통해 Rust에 전달되며, 사용 후 <code>secrecy::SecretVec</code>으로 메모리 제로화된다.</li>
+  <li><code>mnemonic_to_seed()</code>는 <code>SecretVec&lt;u8&gt;</code>을 반환한다. plain <code>Vec&lt;u8&gt;</code>이 아니므로 drop 시 자동 제로화된다.</li>
+  <li>모든 API 함수 (<code>api/wallet.rs</code>, <code>api/sync.rs</code>)에 <code>catch_unwind</code> panic guard가 적용되어 있다. Rust panic이 발생해도 Flutter 프로세스가 크래시하지 않고 <code>Result::Err("Rust panic: ...")</code>으로 변환된다.</li>
+</ul>
+
+<div class="nav">
+  <a href="ffi.html">&larr; 이전: FRB 통신</a>
+  <a href="dart-layer.html">다음: Dart / Flutter 레이어 &rarr;</a>
+</div>
+
+</body>
+</html>

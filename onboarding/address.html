@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>7. 주소 체계 — Zcash Wallet Onboarding</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p><a href="index.html">&larr; 목차로 돌아가기</a></p>
+
+<h2 id="address">7. 주소 체계</h2>
+
+<h3 id="addr-ua">7.1 Unified Address (Sapling + Orchard)</h3>
+<p>사용자에게 표시되는 기본 주소는 <strong>Sapling과 Orchard receiver만</strong> 포함하는 ZIP-316 Unified Address이다 (transparent 제외). zodl/Zashi 동작과 일치한다.</p>
+<ul>
+  <li>메인넷 접두사: <code>u1...</code></li>
+  <li>Receivers: Orchard (Pallas 곡선) + Sapling (Jubjub 곡선)</li>
+  <li>보내는 월렛이 자동으로 지원하는 가장 높은 프라이버시 레벨의 receiver를 선택</li>
+</ul>
+
+<h3 id="addr-transparent">7.2 Transparent Address</h3>
+<p><code>getTransparentAddress()</code>를 통해 별도의 transparent 전용 주소를 조회할 수 있다. 이것은 동일한 seed에서 BIP-44 경로 <code>m/44'/133'/0'</code>로 유도된 표준 t-address (P2PKH, 메인넷 접두사 <code>t1</code>)이다.</p>
+
+<h3 id="addr-zodl">7.3 zodl/Zashi 호환성</h3>
+<div class="note">
+  <p>같은 니모닉으로 생성해도 우리 월렛과 zodl에서 <strong>다른 주소가 생성</strong>된다. 이것은 예상된 동작이다 — zodl의 Android SDK가 <code>[patch.crates-io]</code>를 통해 crates.io 공개 버전과 다른 특정 git revision의 <code>orchard</code>와 <code>sapling-crypto</code>를 사용하기 때문이다. 키 유도 수학이 다른 곡선 포인트를 생성한다. 두 주소 모두 동일한 seed에서 유도된 유효한 Zcash 주소이다.</p>
+</div>
+
+<div class="nav">
+  <a href="api-reference.html">&larr; 이전: API 레퍼런스</a>
+  <a href="testing.html">다음: 테스트 &rarr;</a>
+</div>
+
+</body>
+</html>

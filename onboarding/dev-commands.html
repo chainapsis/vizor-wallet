@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>11. 개발 명령어 — Zcash Wallet Onboarding</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p><a href="index.html">&larr; 목차로 돌아가기</a></p>
+
+<h2 id="dev-commands">11. 개발 명령어</h2>
+
+<pre><code># Flutter (항상 fvm 사용)
+fvm flutter run                  # 연결된 디바이스/시뮬레이터에서 실행
+fvm flutter test                 # Dart 단위 테스트
+fvm flutter analyze              # 정적 분석
+
+# Rust
+cd rust && cargo test            # Rust 단위 테스트
+cd rust && cargo check           # 빠른 컴파일 체크
+
+# FRB codegen (rust/src/api/*.rs 변경 후)
+flutter_rust_bridge_codegen generate   # 프로젝트 루트에서 실행!
+
+# iOS 시뮬레이터
+./clear-app.sh                   # 시뮬레이터에서 앱 + 키체인 초기화</code></pre>
+
+<div class="nav">
+  <a href="gotchas.html">&larr; 이전: 알려진 주의사항</a>
+  <span></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>5. Sync 엔진 상세 — Zcash Wallet Onboarding</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p><a href="index.html">&larr; 목차로 돌아가기</a></p>
+
+<h2 id="sync-deep">5. Sync 엔진 상세</h2>
+
+<h3 id="sync-flow">5.1 전체 Sync 흐름</h3>
+<p>메인넷 초기 sync는 Sapling 활성화 높이(419,200)부터 시작하여 현재 tip(~329만 블록)까지 스캔해야 한다. 모바일에서 수 시간이 소요된다.</p>
+
+<p>스캔 범위 우선순위 시스템이 무엇을 먼저 스캔할지 결정한다:</p>
+<table>
+  <tr><th>Priority</th><th>Value</th><th>의미</th></tr>
+  <tr><td>Verify</td><td>6</td><td>체인 reorg 감지 — 즉시 스캔</td></tr>
+  <tr><td>ChainTip</td><td>5</td><td>최신 블록 — 최근 트랜잭션 표시</td></tr>
+  <tr><td>FoundNote</td><td>4</td><td>발견된 노트의 commitment tree 완성</td></tr>
+  <tr><td>OpenAdjacent</td><td>3</td><td>계정 birthday 근처</td></tr>
+  <tr><td>Historic</td><td>2</td><td>fully-scanned height 전진</td></tr>
+  <tr><td>Scanned</td><td>1</td><td>이미 스캔됨 (건너뜀)</td></tr>
+  <tr><td>Ignored</td><td>0</td><td>관련 없음 (건너뜀)</td></tr>
+</table>
+
+<h3 id="sync-compact">5.2 Compact Block이란</h3>
+
+<p>Compact Block은 Zcash 블록의 <strong>경량화 버전</strong>이다. 라이트 클라이언트가 trial decryption을 수행하는 데 필요한 최소한의 데이터만 포함한다.</p>
+
+<table>
+  <tr><th></th><th>Full Block</th><th>Compact Block</th></tr>
+  <tr><td>크기</td><td>~2MB (평균)</td><td>~2KB (평균)</td></tr>
+  <tr><td>포함 내용</td><td>모든 TX 데이터, 서명, 스크립트, 풀 메모</td><td>블록 헤더 + shielded 출력의 암호화된 부분만</td></tr>
+  <tr><td>용도</td><td>풀노드 검증</td><td>라이트 클라이언트 trial decryption</td></tr>
+  <tr><td>대역폭</td><td>100%</td><td>~1% (90%+ 절약)</td></tr>
+</table>
+
+<p><strong>왜 필요한가:</strong> Shielded 트랜잭션에서 "이것이 내 트랜잭션인지" 확인하려면 모든 shielded 출력을 내 viewing key로 복호화 시도해야 한다 (trial decryption). 이 작업에 필요한 데이터는 각 출력의 <strong>암호화된 ciphertext와 ephemeral key</strong> 뿐이다. 서명, transparent 스크립트, 풀 메모 등은 불필요하다.</p>
+
+<p>lightwalletd가 풀노드에서 블록을 받아 불필요한 부분을 걷어내고 compact block으로 변환하여 라이트 클라이언트에 제공한다.</p>
+
+<p><strong>Protobuf 구조:</strong></p>
+<pre><code>message CompactBlock {
+  uint64 height = 2;
+  bytes  hash = 3;            // 블록 해시
+  bytes  prevHash = 4;        // 이전 블록 해시 (체인 검증용)
+  uint32 time = 5;
+  repeated CompactTx vtx = 7; // 트랜잭션 목록
+}
+
+message CompactTx {
+  bytes hash = 1;                             // TX 해시
+  repeated CompactSaplingOutput outputs = 5;  // Sapling 출력
+  repeated CompactOrchardAction actions = 6;  // Orchard 액션
+}
+
+message CompactSaplingOutput {
+  bytes cmu = 1;           // note commitment
+  bytes ephemeralKey = 2;  // 복호화에 필요
+  bytes ciphertext = 3;    // 암호화된 노트 (앞 52바이트만)
+}</code></pre>
+
+<div class="note">
+  <p><strong>ciphertext의 한계:</strong> compact block의 <code>ciphertext</code>는 풀 메모(512바이트)가 아니라 <strong>앞 52바이트만</strong> 포함한다. 이것으로 "내 노트인지" + "금액이 얼마인지"는 알 수 있지만, <strong>메모 전체 내용은 알 수 없다</strong>. 메모를 읽으려면 enhancement 루프에서 풀 트랜잭션을 별도로 가져와야 한다.</p>
+</div>
+
+<h3 id="sync-blockcache">5.3 In-Memory Block Source</h3>
+<p>이전에는 <code>FsBlockDb</code>(파일시스템 기반 캐시)를 사용했으나, 현재는 <strong>메모리 기반 <code>MemoryBlockSource</code></strong>를 사용한다.</p>
+<p><code>zcash_client_backend</code>의 <code>BlockSource</code> trait을 구현하여, gRPC에서 받은 <code>CompactBlock</code>을 <code>Vec</code>에 저장하고 <code>scan_cached_blocks()</code>에 직접 전달한다. 파일 I/O가 완전히 제거되었다.</p>
+<pre><code>// sync_engine.rs
+struct MemoryBlockSource {
+    blocks: Vec&lt;CompactBlock&gt;,  // gRPC에서 받은 블록
+}
+
+impl BlockSource for MemoryBlockSource {
+    fn with_blocks(..., mut with_block: F) {
+        for block in &self.blocks {
+            with_block(block.clone())?;
+        }
+    }
+}</code></pre>
+<p>이로 인해 <code>cache_path</code> 파라미터, <code>FsBlockDb</code>, <code>BlockMeta</code>, <code>init_blockmeta_db</code>가 모두 불필요해졌다.</p>
+
+<h3 id="sync-scanning">5.4 Trial Decryption &amp; 노트 발견</h3>
+<p><code>zcash_client_backend</code>의 <code>scan_cached_blocks()</code>가 캐시된 블록의 모든 shielded 출력에 trial decryption을 수행한다:</p>
+<ul>
+  <li>각 Sapling 출력에 대해: 월렛의 Sapling IVK로 복호화 시도</li>
+  <li>각 Orchard 액션에 대해: 월렛의 Orchard IVK로 복호화 시도</li>
+  <li>복호화 성공 = 이 월렛의 노트 &rarr; 월렛 DB에 저장</li>
+  <li>Nullifier를 추적하여 노트가 사용되었는지 감지</li>
+</ul>
+
+<h3 id="sync-progress">5.5 진행률 보고</h3>
+<p>Rust가 매 100블록 batch 완료 후 <code>StreamSink</code>를 통해 Dart에 <code>ApiSyncProgressEvent</code>를 전송한다. Dart의 <code>stream.listen()</code> 콜백에서 <code>getBalance()</code> FFI를 즉시 호출하여 balance도 함께 갱신한다. 10초 간격 폴링은 fallback으로 유지된다. iOS background sync에서는 C callback → <code>SyncProgressStreamHandler</code> → EventChannel로 전달된다.</p>
+
+<div class="nav">
+  <a href="dart-layer.html">&larr; 이전: Dart / Flutter 레이어</a>
+  <a href="api-reference.html">다음: API 레퍼런스 &rarr;</a>
+</div>
+
+</body>
+</html>

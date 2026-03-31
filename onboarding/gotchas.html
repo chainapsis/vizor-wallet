@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>10. 알려진 주의사항 — Zcash Wallet Onboarding</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p><a href="index.html">&larr; 목차로 돌아가기</a></p>
+
+<h2 id="gotchas">10. 알려진 주의사항</h2>
+
+<table>
+  <tr><th>주제</th><th>주의사항</th></tr>
+  <tr>
+    <td>TxId byte order</td>
+    <td>Rust에서 <code>TxId::as_ref()</code>가 원본 바이트를 반환하므로 reverse 불필요. <code>TxId::Display</code>는 byte-reversed hex (블록 탐색기 형식).</td>
+  </tr>
+  <tr>
+    <td>orchard/sapling 버전</td>
+    <td><code>zcash_client_sqlite</code>가 사용하는 버전과 반드시 일치해야 함 (현재 orchard 0.11, sapling-crypto 0.5). 다르면 Rust 타입 불일치 에러.</td>
+  </tr>
+  <tr>
+    <td>Sapling 활성화 높이</td>
+    <td>419,200 이전 블록에서 <code>getTreeState()</code> 호출 시 lightwalletd가 에러 반환. 빈 hash로 <code>ChainState::empty()</code> 사용.</td>
+  </tr>
+  <tr>
+    <td>rustls CryptoProvider</td>
+    <td><code>tonic</code>의 <code>tls-webpki-roots</code>는 crypto backend를 포함하지 않음. <code>tls-ring</code> feature를 반드시 함께 활성화해야 rustls 0.23+에서 동작.</td>
+  </tr>
+  <tr>
+    <td>C callback context</td>
+    <td>C function pointer는 context를 capture할 수 없다. iOS background sync에서 task.progress를 업데이트하려면 NSProgress 참조를 shared 변수에 저장하고 C callback에서 접근해야 한다.</td>
+  </tr>
+  <tr>
+    <td>ffi.rs 위치</td>
+    <td><code>ffi.rs</code>는 <code>api/</code> 밖에 위치해야 함. FRB codegen이 <code>api/</code> 하위의 <code>extern "C"</code> 함수를 처리하려다 실패.</td>
+  </tr>
+  <tr>
+    <td>Sync mode 전환 timing</td>
+    <td>iOS에서 mode 전환 시 이전 sync가 종료될 때까지 대기해야 한다. Swift BGTask handler는 <code>while(mode!=2 || is_running) sleep(2s)</code>. Dart <code>disableBackgroundSync</code>는 <code>while(isSyncRunning()) await 200ms</code>.</td>
+  </tr>
+  <tr>
+    <td>SYNC_CANCEL 통일</td>
+    <td>FRB와 C FFI가 같은 <code>SYNC_CANCEL</code> AtomicBool을 공유한다. Dart <code>cancelFullSync()</code>와 Swift <code>zcash_cancel_sync()</code> 모두 동일한 flag를 설정.</td>
+  </tr>
+  <tr>
+    <td>BGTask expiration</td>
+    <td><code>expirationHandler</code>에서 mode=0으로 설정하여 resubmit 방지. 앱이 foreground로 돌아오면 <code>onResume</code>에서 mode==0 감지 후 foreground sync 재시작.</td>
+  </tr>
+  <tr>
+    <td>BATCH_SIZE 100</td>
+    <td>1000에서 100으로 줄임. cancel/mode 전환 반응이 ~10배 빨라짐. 성능 차이는 무시할 수 있는 수준 (DB write 횟수만 증가).</td>
+  </tr>
+</table>
+
+<div class="nav">
+  <a href="background-sync.html">&larr; 이전: Background Sync</a>
+  <a href="dev-commands.html">다음: 개발 명령어 &rarr;</a>
+</div>
+
+</body>
+</html>
