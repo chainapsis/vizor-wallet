@@ -179,10 +179,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       // Android: just remove notification, sync continues
       await bg_sync.stopBackgroundSync();
     } else if (Platform.isIOS) {
-      // iOS: switch mode → Rust background sync exits → restart foreground
+      // iOS: switch mode → Rust background sync exits at next batch
       rust_sync.setSyncMode(mode: 1);
       await bg_sync.stopBackgroundSync();
-      // Wait briefly for background sync to exit, then start foreground
+      // Wait for background sync to actually stop before starting foreground
+      while (rust_sync.isSyncRunning()) {
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
       startSync();
     }
 

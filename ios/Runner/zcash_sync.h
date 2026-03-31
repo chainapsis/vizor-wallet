@@ -28,4 +28,7 @@ void zcash_cancel_sync(void);
 /// Get the current desired sync mode (0=none, 1=foreground, 2=background).
 uint8_t zcash_get_sync_mode(void);
 
+/// Check if a sync is currently running.
+bool zcash_is_sync_running(void);
+
 #endif // ZCASH_SYNC_H

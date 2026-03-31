@@ -5,7 +5,7 @@ use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::api::sync::{DESIRED_SYNC_MODE, SYNC_RUNNING};
+use crate::api::sync::{DESIRED_SYNC_MODE, SYNC_CANCEL, SYNC_RUNNING};
 use crate::wallet::{keys, sync_engine};
 
 /// Progress data passed to the C callback.
@@ -20,9 +20,6 @@ pub struct CSyncProgress {
 /// C callback type for progress updates.
 pub type SyncProgressCallback = extern "C" fn(CSyncProgress);
 
-/// Global cancel flag for C FFI sync.
-static C_CANCEL: std::sync::LazyLock<Arc<AtomicBool>> =
-    std::sync::LazyLock::new(|| Arc::new(AtomicBool::new(false)));
 
 /// Run full sync from C (Swift). Blocks until complete or cancelled.
 /// Returns 0 on success, 1 on error.
@@ -49,7 +46,7 @@ pub extern "C" fn zcash_run_full_sync(
             Err(_) => return 1,
         };
 
-        let cancel = C_CANCEL.clone();
+        let cancel = SYNC_CANCEL.clone();
         cancel.store(false, Ordering::Relaxed);
 
         let rt = match tokio::runtime::Runtime::new() {
@@ -91,14 +88,20 @@ pub extern "C" fn zcash_run_full_sync(
     }
 }
 
-/// Cancel a running C FFI sync.
+/// Cancel a running sync (shared flag with FRB path).
 #[no_mangle]
 pub extern "C" fn zcash_cancel_sync() {
-    C_CANCEL.store(true, Ordering::Relaxed);
+    SYNC_CANCEL.store(true, Ordering::Relaxed);
 }
 
 /// Get the current desired sync mode (0=none, 1=foreground, 2=background).
 #[no_mangle]
 pub extern "C" fn zcash_get_sync_mode() -> u8 {
     DESIRED_SYNC_MODE.load(Ordering::SeqCst)
+}
+
+/// Check if a sync is currently running.
+#[no_mangle]
+pub extern "C" fn zcash_is_sync_running() -> bool {
+    SYNC_RUNNING.load(Ordering::SeqCst)
 }

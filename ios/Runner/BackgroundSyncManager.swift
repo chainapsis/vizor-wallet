@@ -33,6 +33,12 @@ class BackgroundSyncManager {
             zcash_cancel_sync()
         }
 
+        // Wait for mode=background AND previous sync to finish
+        while zcash_get_sync_mode() != 2 || zcash_is_sync_running() {
+            if task.progress.isCancelled { task.setTaskCompleted(success: false); return }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+
         let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let dbPath = documentsDir.appendingPathComponent("zcash_wallet.db").path
 

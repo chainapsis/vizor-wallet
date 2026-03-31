@@ -94,7 +94,7 @@ pub fn is_sync_running() -> bool {
     SYNC_RUNNING.load(Ordering::SeqCst)
 }
 
-static SYNC_CANCEL: std::sync::LazyLock<Arc<AtomicBool>> =
+pub(crate) static SYNC_CANCEL: std::sync::LazyLock<Arc<AtomicBool>> =
     std::sync::LazyLock::new(|| Arc::new(AtomicBool::new(false)));
 
 pub(crate) static SYNC_RUNNING: AtomicBool = AtomicBool::new(false);
