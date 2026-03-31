@@ -81,7 +81,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     // Refresh progress when app returns to foreground
     _lifecycleListener = AppLifecycleListener(
-      onResume: () => _updateProgress(),
+      onResume: () {
+        _updateProgress();
+        if (_backgroundMode && rust_sync.getSyncMode() == 0) {
+          _backgroundMode = false;
+          startSync();
+        }
+      },
     );
 
     ref.onDispose(() {
