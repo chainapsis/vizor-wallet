@@ -4,7 +4,7 @@ import BackgroundTasks
 @available(iOS 26.0, *)
 class BackgroundSyncManager {
     static let shared = BackgroundSyncManager()
-    static let taskIdentifier = "com.zcash.zcashWallet.sync.*"
+    static let taskIdentifier = "com.zcash.zcashWallet.sync"
 
     /// Stored reference to task's NSProgress — updated from C callback thread (thread-safe).
     private var taskProgress: Progress?
@@ -59,9 +59,8 @@ class BackgroundSyncManager {
     }
 
     func startBackgroundSync() -> Bool {
-        // Submit with a concrete identifier matching the wildcard pattern
         let request = BGContinuedProcessingTaskRequest(
-            identifier: "com.zcash.zcashWallet.sync.main",
+            identifier: Self.taskIdentifier,
             title: "Syncing Zcash Wallet",
             subtitle: "Scanning blockchain blocks"
         )

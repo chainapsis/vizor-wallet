@@ -9,7 +9,7 @@
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.zcash.zcashWallet.sync.*</string>
+		<string>com.zcash.zcashWallet.sync</string>
 	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
