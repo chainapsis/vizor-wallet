@@ -17,7 +17,6 @@ class _SyncTaskHandler extends TaskHandler {
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     // Task started — sync is already running in the main isolate
-    // This handler just keeps the foreground service alive
   }
 
   @override
@@ -28,6 +27,15 @@ class _SyncTaskHandler extends TaskHandler {
   @override
   Future<void> onDestroy(DateTime timestamp, bool isAppTerminated) async {
     // Service being destroyed
+  }
+
+  @override
+  void onNotificationButtonPressed(String id) {
+    if (id == 'stop') {
+      // Send stop signal to main isolate
+      FlutterForegroundTask.sendDataToMain('stop_sync');
+      FlutterForegroundTask.stopService();
+    }
   }
 }
 
@@ -127,6 +135,9 @@ Future<void> _startAndroidForegroundService() async {
     notificationText: 'Syncing blockchain...',
     serviceId: 1001,
     callback: _foregroundTaskCallback,
+    notificationButtons: [
+      const NotificationButton(id: 'stop', text: 'Stop Sync'),
+    ],
   );
 
   final success = result is ServiceRequestSuccess;
