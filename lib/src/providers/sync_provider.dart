@@ -45,6 +45,7 @@ class SyncState {
 class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _backgroundMode = false;
   Timer? _pollTimer;
+  int _lastLoggedHeight = 0;
 
   @override
   Future<SyncState> build() async {
@@ -141,6 +142,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       final scanned = progress.scannedHeight.toInt();
       final tip = progress.chainTipHeight.toInt();
       final pct = tip > 0 ? scanned / tip : 0.0;
+
+      if (scanned != _lastLoggedHeight) {
+        log('Sync: ${(pct * 100).toStringAsFixed(1)}% ($scanned/$tip)');
+        _lastLoggedHeight = scanned;
+      }
 
       state = AsyncData(SyncState(
         isSyncing: progress.isSyncing,
