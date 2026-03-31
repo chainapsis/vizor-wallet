@@ -1,3 +1,8 @@
+//
+//  SyncWidgetLiveActivity.swift
+//  SyncWidget
+//
+
 import ActivityKit
 import SwiftUI
 import WidgetKit
@@ -43,7 +48,6 @@ struct SyncWidgetLiveActivity: Widget {
             let status = sharedDefault.string(forKey: context.attributes.prefixedKey("status")) ?? "Syncing..."
 
             return DynamicIsland {
-                // Expanded regions
                 DynamicIslandExpandedRegion(.leading) {
                     Image(systemName: "shield.checkered")
                         .foregroundColor(.yellow)
