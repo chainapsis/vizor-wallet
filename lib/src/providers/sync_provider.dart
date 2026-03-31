@@ -75,17 +75,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _backgroundMode = false;
     state = AsyncData(SyncState(isSyncing: true));
 
-    // Start Live Activity on supported devices (Dynamic Island)
-    await LiveActivityService.instance.startSyncActivity();
-
     try {
       await _runSync();
     } catch (e, st) {
       log('SyncNotifier: ERROR: $e\n$st');
       state = AsyncData(SyncState(error: e.toString()));
-    } finally {
-      // Stop Live Activity when sync ends (success or error)
-      await LiveActivityService.instance.stopSyncActivity();
     }
   }
 
@@ -93,6 +87,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _cancelled = true;
     if (_backgroundMode) {
       bg_sync.stopBackgroundSync();
+      LiveActivityService.instance.stopSyncActivity();
       _backgroundMode = false;
     }
   }
@@ -102,6 +97,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (_backgroundMode) return;
     _backgroundMode = true;
     await bg_sync.startBackgroundSync();
+    await LiveActivityService.instance.startSyncActivity();
     log('SyncNotifier: background sync enabled');
     // Update state to reflect background mode
     final current = state.value;
@@ -241,15 +237,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           totalBalance: balance.total,
         ));
 
-        // Update Live Activity (Dynamic Island) on every batch
-        await LiveActivityService.instance.updateProgress(
-          percentage: pct,
-          scannedHeight: scanned,
-          chainTipHeight: tip,
-        );
-
-        // Update platform notification if in background mode
+        // Update background notification + Dynamic Island if in background mode
         if (_backgroundMode) {
+          await LiveActivityService.instance.updateProgress(
+            percentage: pct,
+            scannedHeight: scanned,
+            chainTipHeight: tip,
+          );
           bg_sync.updateBackgroundSyncProgress(
             percentage: pct,
             scannedHeight: scanned,
@@ -279,9 +273,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         totalBalance: balance.total,
       ));
 
-      // Stop background service when sync completes
+      // Stop background service and Live Activity when sync completes
       if (_backgroundMode) {
         await bg_sync.stopBackgroundSync();
+        await LiveActivityService.instance.stopSyncActivity();
         _backgroundMode = false;
         log('SyncNotifier: background sync completed, service stopped');
       }
