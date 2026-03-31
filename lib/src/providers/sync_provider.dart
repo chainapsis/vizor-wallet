@@ -46,6 +46,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _backgroundMode = false;
   Timer? _pollTimer;
   int _lastLoggedHeight = 0;
+  String? _cachedDbPath;
 
   @override
   Future<SyncState> build() async {
@@ -165,8 +166,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<String> _getDbPath() async {
+    if (_cachedDbPath != null) return _cachedDbPath!;
     final dir = await getApplicationDocumentsDirectory();
-    return '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
+    _cachedDbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
+    return _cachedDbPath!;
   }
 }
 
