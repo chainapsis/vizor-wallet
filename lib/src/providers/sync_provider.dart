@@ -190,9 +190,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       // iOS: switch mode → Rust background sync exits at next batch
       rust_sync.setSyncMode(mode: 1);
       await bg_sync.stopBackgroundSync();
-      // Wait for background sync to stop (max 30 seconds)
+      // Wait for background sync to stop (max 120 seconds)
       var waited = 0;
-      while (rust_sync.isSyncRunning() && waited < 30000) {
+      while (rust_sync.isSyncRunning() && waited < 120000) {
         await Future.delayed(const Duration(milliseconds: 200));
         waited += 200;
       }

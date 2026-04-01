@@ -72,7 +72,7 @@ class BackgroundSyncManager {
 
         // Wait for mode=background AND previous sync to finish
         var waitCount = 0
-        let maxWait = 30 // 60 seconds
+        let maxWait = 60 // 120 seconds
         while zcash_get_sync_mode() != 2 || zcash_is_sync_running() {
             waitCount += 1
             if waitCount > maxWait {
