@@ -36,7 +36,7 @@ pub struct SyncProgressEvent {
 }
 
 const BATCH_SIZE_FOREGROUND: u32 = 100;
-const BATCH_SIZE_BACKGROUND: u32 = 100;
+const BATCH_SIZE_BACKGROUND: u32 = 10;
 const SAPLING_ACTIVATION_HEIGHT: u32 = 419200;
 
 type WalletDatabase = WalletDb<rusqlite::Connection, Network, SystemClock, OsRng>;

@@ -75,7 +75,7 @@ class BackgroundSyncManager {
                     // which makes the system think the task is stalled.
                     mgr.batchCount += 1
                     let estimatedTotalBatches = max(
-                        Int64(progress.chain_tip_height - progress.scanned_height) / 100 + mgr.batchCount,
+                        Int64(progress.chain_tip_height - progress.scanned_height) / 10 + mgr.batchCount,
                         mgr.batchCount + 1
                     )
                     mgr.taskProgress?.totalUnitCount = estimatedTotalBatches
