@@ -9,6 +9,7 @@ class BackgroundSyncManager {
     /// Stored reference to task's NSProgress — updated from C callback thread (thread-safe).
     private var taskProgress: Progress?
     private var batchCount: Int64 = 0
+    private var heartbeat: DispatchSourceTimer?
 
     private init() {}
 
@@ -39,6 +40,8 @@ class BackgroundSyncManager {
         task.expirationHandler = { [weak self] in
             print("[BGSync] EXPIRATION HANDLER CALLED")
             print("[BGSync]   mode=\(zcash_get_sync_mode()), is_running=\(zcash_is_sync_running())")
+            self?.heartbeat?.cancel()
+            self?.heartbeat = nil
             self?.taskProgress = nil
             zcash_set_sync_mode(0)
             zcash_cancel_sync()
@@ -60,14 +63,15 @@ class BackgroundSyncManager {
 
         // Heartbeat timer: increment completedUnitCount every 5s to prevent OS stalled detection.
         // Actual batch callbacks jump by 100, heartbeats fill in between with +1.
-        let heartbeat = DispatchSource.makeTimerSource(queue: .global())
-        heartbeat.schedule(deadline: .now() + 5.0, repeating: 5.0)
-        heartbeat.setEventHandler { [weak self] in
+        let hb = DispatchSource.makeTimerSource(queue: .global())
+        hb.schedule(deadline: .now() + 5.0, repeating: 5.0)
+        hb.setEventHandler { [weak self] in
             guard let self, let progress = self.taskProgress else { return }
             progress.completedUnitCount += 1
             print("[BGSync] heartbeat: completedUnitCount=\(progress.completedUnitCount)")
         }
-        heartbeat.resume()
+        hb.resume()
+        heartbeat = hb
 
         // Run sync via C FFI (blocking call on background queue)
         let result = zcash_run_full_sync(
@@ -92,7 +96,8 @@ class BackgroundSyncManager {
             }
         )
 
-        heartbeat.cancel()
+        heartbeat?.cancel()
+        heartbeat = nil
 
         print("[BGSync] zcash_run_full_sync returned: \(result)")
         print("[BGSync]   mode=\(zcash_get_sync_mode()), is_running=\(zcash_is_sync_running())")
