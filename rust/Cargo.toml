@@ -42,6 +42,9 @@ tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring
 # SQLite (re-exported by zcash_client_sqlite but needed for Connection type)
 rusqlite = "0.37"
 
+# Logging (FRB forwards to Dart console via setup_default_user_utils)
+log = "0.4"
+
 # Hex encoding
 hex = "0.4"
 

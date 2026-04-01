@@ -97,6 +97,8 @@ pub async fn run_sync_inner(
     desired_mode: &AtomicU8,
     progress_fn: impl Fn(SyncProgressEvent) + Send + Sync,
 ) -> Result<(), String> {
+    log::info!("sync: starting (mode={})", running_mode);
+
     // 1. Connect gRPC
     let channel = Endpoint::from_shared(lightwalletd_url.to_string())
         .map_err(|e| format!("Invalid URL: {e}"))?
@@ -115,6 +117,7 @@ pub async fn run_sync_inner(
         .map_err(|e| format!("get_latest_block: {e}"))?
         .into_inner();
     let tip_height = BlockHeight::from_u32(tip.height as u32);
+    log::info!("sync: chain tip = {}", tip.height);
 
     {
         let mut db_data = open_db(db_data_path, network)?;
@@ -127,9 +130,11 @@ pub async fn run_sync_inner(
     // 4. Sync loop
     loop {
         if cancel.load(Ordering::Relaxed) {
+            log::info!("sync: cancelled");
             return Ok(());
         }
         if desired_mode.load(Ordering::SeqCst) != running_mode {
+            log::info!("sync: mode changed, exiting");
             return Ok(());
         }
 
@@ -183,9 +188,11 @@ pub async fn run_sync_inner(
 
         // Report progress
         let progress = get_progress(db_data_path, network)?;
+        log::info!("sync: {:.1}% ({}/{})", progress.percentage * 100.0, progress.scanned_height, progress.chain_tip_height);
         progress_fn(progress);
     }
 
+    log::info!("sync: completed");
     // Final progress
     let mut progress = get_progress(db_data_path, network)?;
     progress.is_complete = true;

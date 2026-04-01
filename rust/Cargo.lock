@@ -1991,6 +1991,7 @@ dependencies = [
  "bip0039",
  "flutter_rust_bridge",
  "hex",
+ "log",
  "nonempty 0.10.0",
  "orchard",
  "rand",
