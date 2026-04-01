@@ -28,12 +28,15 @@ class BackgroundSyncManager {
         print("[BGSync] registerBackgroundTask: done")
     }
 
+    private var batchCount: Int64 = 0
+
     private func handleBackgroundTask(_ task: BGContinuedProcessingTask) {
         print("[BGSync] handleBackgroundTask: started")
         print("[BGSync]   mode=\(zcash_get_sync_mode()), is_running=\(zcash_is_sync_running())")
 
         // Store progress reference for C callback to update (NSProgress is thread-safe)
         taskProgress = task.progress
+        batchCount = 0
         print("[BGSync]   taskProgress stored, totalUnitCount=\(task.progress.totalUnitCount), completedUnitCount=\(task.progress.completedUnitCount)")
 
         task.expirationHandler = { [weak self] in
@@ -67,8 +70,17 @@ class BackgroundSyncManager {
                 // Called from tokio thread — NSProgress is thread-safe
                 if #available(iOS 26.0, *) {
                     let mgr = BackgroundSyncManager.shared
-                    mgr.taskProgress?.totalUnitCount = Int64(progress.chain_tip_height)
-                    mgr.taskProgress?.completedUnitCount = Int64(progress.scanned_height)
+                    // Use batch count for completedUnitCount so it always increases.
+                    // fully_scanned_height may not advance until contiguous ranges complete,
+                    // which makes the system think the task is stalled.
+                    mgr.batchCount += 1
+                    let estimatedTotalBatches = max(
+                        Int64(progress.chain_tip_height - progress.scanned_height) / 100 + mgr.batchCount,
+                        mgr.batchCount + 1
+                    )
+                    mgr.taskProgress?.totalUnitCount = estimatedTotalBatches
+                    mgr.taskProgress?.completedUnitCount = mgr.batchCount
+                    print("[BGSync] progress: batch=\(mgr.batchCount)/~\(estimatedTotalBatches), scanned=\(progress.scanned_height)/\(progress.chain_tip_height)")
                 }
 
                 // Send to Dart via EventChannel (if app is in foreground)
