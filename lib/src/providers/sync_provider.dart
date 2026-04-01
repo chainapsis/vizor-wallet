@@ -48,8 +48,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _backgroundMode = false;
   Timer? _pollTimer;
   int _lastLoggedHeight = 0;
-  int _syncStartHeight = 0;
-  int _syncTargetHeight = 0;
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
   StreamSubscription? _eventChannelSub;
@@ -107,8 +105,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> startSync() async {
     _backgroundMode = false;
     _lastLoggedHeight = 0;
-    _syncStartHeight = 0;
-    _syncTargetHeight = 0;
     state = AsyncData(SyncState(isSyncing: true));
 
     _startProgressPolling();
@@ -234,17 +230,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     bool isSyncing = true,
     bool isComplete = false,
   }) async {
-    // Track session progress (blocks scanned in this sync session)
-    if (_syncStartHeight == 0 && scannedHeight > 0) {
-      _syncStartHeight = scannedHeight;
-      _syncTargetHeight = chainTipHeight;
-    }
-    final sessionTotal = _syncTargetHeight - _syncStartHeight;
-    final sessionDone = scannedHeight - _syncStartHeight;
-    final sessionPct = sessionTotal > 0 ? sessionDone / sessionTotal : percentage;
-
     if (scannedHeight != _lastLoggedHeight) {
-      log('Sync: ${(sessionPct * 100).toStringAsFixed(1)}% ($sessionDone/$sessionTotal blocks)');
+      log('Sync: ${(percentage * 100).toStringAsFixed(1)}% ($scannedHeight/$chainTipHeight)');
       _lastLoggedHeight = scannedHeight;
     }
 
@@ -258,7 +245,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       state = AsyncData(SyncState(
         isSyncing: isSyncing && !isComplete,
         isBackgroundMode: isBackground || _backgroundMode,
-        percentage: sessionPct,
+        percentage: percentage,
         scannedHeight: scannedHeight,
         chainTipHeight: chainTipHeight,
         transparentBalance: balance.transparent,
@@ -271,7 +258,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       state = AsyncData(SyncState(
         isSyncing: isSyncing && !isComplete,
         isBackgroundMode: isBackground || _backgroundMode,
-        percentage: sessionPct,
+        percentage: percentage,
         scannedHeight: scannedHeight,
         chainTipHeight: chainTipHeight,
       ));
@@ -313,14 +300,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
       final scanned = progress.scannedHeight.toInt();
       final tip = progress.chainTipHeight.toInt();
-
-      if (_syncStartHeight == 0 && scanned > 0) {
-        _syncStartHeight = scanned;
-        _syncTargetHeight = tip;
-      }
-      final sessionTotal = _syncTargetHeight - _syncStartHeight;
-      final sessionDone = scanned - _syncStartHeight;
-      final pct = sessionTotal > 0 ? sessionDone / sessionTotal : (tip > 0 ? scanned / tip : 0.0);
+      final pct = tip > 0 ? scanned / tip : 0.0;
 
       state = AsyncData(SyncState(
         isSyncing: progress.isSyncing,
