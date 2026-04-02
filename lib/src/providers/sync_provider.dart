@@ -279,34 +279,40 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // ======================== Balance Refresh ========================
 
   Future<void> _refreshBalance() async {
-    try {
-      final dbPath = await _getDbPath();
-      final balance = await rust_sync.getBalance(
-        dbPath: dbPath,
-        network: ZcashNetwork.mainnet.name,
-      );
-      final recentTxs = await rust_sync.getTransactionHistory(
-        dbPath: dbPath,
-        network: ZcashNetwork.mainnet.name,
-        limit: 10,
-      );
+    final prev = state.value;
+    final dbPath = await _getDbPath();
+    final network = ZcashNetwork.mainnet.name;
 
-      final prev = state.value;
-      state = AsyncData(SyncState(
-        isSyncing: prev?.isSyncing ?? false,
-        isBackgroundMode: _backgroundMode,
-        percentage: prev?.percentage ?? 0.0,
-        scannedHeight: prev?.scannedHeight ?? 0,
-        chainTipHeight: prev?.chainTipHeight ?? 0,
-        transparentBalance: balance.transparent,
-        saplingBalance: balance.sapling,
-        orchardBalance: balance.orchard,
-        totalBalance: balance.total,
-        recentTransactions: recentTxs,
-      ));
+    BigInt? transparent, sapling, orchard, total;
+    try {
+      final balance = await rust_sync.getBalance(dbPath: dbPath, network: network);
+      transparent = balance.transparent;
+      sapling = balance.sapling;
+      orchard = balance.orchard;
+      total = balance.total;
     } catch (e) {
       log('SyncNotifier: balance refresh failed: $e');
     }
+
+    var recentTxs = prev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
+    try {
+      recentTxs = await rust_sync.getTransactionHistory(dbPath: dbPath, network: network, limit: 10);
+    } catch (e) {
+      log('SyncNotifier: tx history refresh failed: $e');
+    }
+
+    state = AsyncData(SyncState(
+      isSyncing: prev?.isSyncing ?? false,
+      isBackgroundMode: _backgroundMode,
+      percentage: prev?.percentage ?? 0.0,
+      scannedHeight: prev?.scannedHeight ?? 0,
+      chainTipHeight: prev?.chainTipHeight ?? 0,
+      transparentBalance: transparent ?? prev?.transparentBalance,
+      saplingBalance: sapling ?? prev?.saplingBalance,
+      orchardBalance: orchard ?? prev?.orchardBalance,
+      totalBalance: total ?? prev?.totalBalance,
+      recentTransactions: recentTxs,
+    ));
   }
 
   Future<String> _getDbPath() async {
