@@ -12,7 +12,6 @@ import '../core/config/network_config.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import '../services/background_sync_service.dart' as bg_sync;
 
-const _pollIntervalMs = 10000;
 const _progressChannel = EventChannel('com.zcash.wallet/sync_progress');
 
 class SyncState {
@@ -46,7 +45,6 @@ class SyncState {
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _backgroundMode = false;
-  Timer? _pollTimer;
   int _lastLoggedHeight = 0;
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
@@ -79,10 +77,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       }
     });
 
-    // Refresh progress when app returns to foreground
+    // Refresh balance when app returns to foreground
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
-        _updateProgress();
+        _refreshBalance();
         if (_backgroundMode && rust_sync.getSyncMode() == 0) {
           _backgroundMode = false;
           startSync();
@@ -91,7 +89,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
 
     ref.onDispose(() {
-      _pollTimer?.cancel();
       _syncSub?.cancel();
       _eventChannelSub?.cancel();
       _lifecycleListener?.dispose();
@@ -106,8 +103,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _backgroundMode = false;
     _lastLoggedHeight = 0;
     state = AsyncData(SyncState(isSyncing: true));
-
-    _startProgressPolling();
 
     try {
       final dbPath = await _getDbPath();
@@ -154,7 +149,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     rust_sync.cancelFullSync();
     _syncSub?.cancel();
     _syncSub = null;
-    _pollTimer?.cancel();
     if (_backgroundMode) {
       bg_sync.stopBackgroundSync();
       _backgroundMode = false;
@@ -172,8 +166,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       // iOS: switch mode → Rust foreground sync exits → BGTask takes over
       rust_sync.setSyncMode(mode: 2);
       await bg_sync.startBackgroundSync();
-      // Keep polling for progress (EventChannel + fallback)
-      _startProgressPolling();
     }
 
     log('SyncNotifier: background sync enabled');
@@ -212,14 +204,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // ======================== Progress Handling ========================
 
   void _onSyncDone() {
-    _pollTimer?.cancel();
     _syncSub = null;
-    _updateProgress();
-
-    // If mode switched to background, keep polling for updates
-    if (_backgroundMode) {
-      _startProgressPolling();
-    }
+    _refreshBalance();
   }
 
   Future<void> _onSyncProgress({
@@ -274,36 +260,19 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
   }
 
-  // ======================== Polling Fallback ========================
+  // ======================== Balance Refresh ========================
 
-  void _startProgressPolling() {
-    _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(
-      const Duration(milliseconds: _pollIntervalMs),
-      (_) => _updateProgress(),
-    );
-  }
-
-  Future<void> _updateProgress() async {
+  Future<void> _refreshBalance() async {
     try {
       final dbPath = await _getDbPath();
-      final network = ZcashNetwork.mainnet;
-
-      final progress = await rust_sync.getSyncStatus(
-        dbPath: dbPath,
-        network: network.name,
-      );
       final balance = await rust_sync.getBalance(
         dbPath: dbPath,
-        network: network.name,
+        network: ZcashNetwork.mainnet.name,
       );
 
-      // Polling only updates balance and isSyncing.
-      // Progress (percentage, heights) comes exclusively from the
-      // stream/EventChannel to avoid oscillation.
       final prev = state.value;
       state = AsyncData(SyncState(
-        isSyncing: progress.isSyncing,
+        isSyncing: false,
         isBackgroundMode: _backgroundMode,
         percentage: prev?.percentage ?? 0.0,
         scannedHeight: prev?.scannedHeight ?? 0,
@@ -312,10 +281,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         saplingBalance: balance.sapling,
         orchardBalance: balance.orchard,
         totalBalance: balance.total,
-        error: prev?.error,
       ));
     } catch (e) {
-      log('SyncNotifier: polling update failed: $e');
+      log('SyncNotifier: balance refresh failed: $e');
     }
   }
 
