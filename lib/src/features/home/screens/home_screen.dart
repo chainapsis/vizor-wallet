@@ -66,11 +66,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           SliverToBoxAdapter(child: _buildHeroBalance(context, sync)),
           SliverToBoxAdapter(child: _buildActionButtons(context)),
           SliverToBoxAdapter(child: _buildActivityHeader(context)),
-          if (sync.isSyncing)
+          if (sync.error != null)
+            SliverToBoxAdapter(child: _buildSyncError(context, sync)),
+          if (sync.isSyncing && sync.error == null)
             SliverToBoxAdapter(child: _buildSyncItem(context, sync)),
-          if (_canBackgroundSync && sync.isSyncing && !sync.isBackgroundMode)
+          if (_canBackgroundSync && sync.isSyncing && !sync.isBackgroundMode && sync.error == null)
             SliverToBoxAdapter(child: _buildBackgroundSyncButton(context)),
-          if (sync.isBackgroundMode)
+          if (sync.isBackgroundMode && sync.error == null)
             SliverToBoxAdapter(child: _buildStopBackgroundSyncButton(context)),
           SliverToBoxAdapter(child: _buildActivityPlaceholder(context, sync)),
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
@@ -185,6 +187,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSyncError(BuildContext context, SyncState sync) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
+      child: GestureDetector(
+        onTap: () => ref.read(syncProvider.notifier).startSync(),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: colors.error.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Icon(Icons.error_outline, color: colors.error, size: 24),
+              ),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Sync Error', style: text.titleMedium),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Tap to retry',
+                    style: text.labelSmall?.copyWith(color: colors.outline),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
