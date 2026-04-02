@@ -88,20 +88,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _eventChannelSub = _progressChannel.receiveBroadcastStream().listen(
         (event) {
           final map = event as Map;
-          final isSyncing = map['isSyncing'] as bool?;
-          final isComplete = map['isComplete'] as bool?;
-          final hasNewTx = map['hasNewTx'] as bool?;
-          if (isSyncing == null || isComplete == null || hasNewTx == null) {
-            log('SyncNotifier: WARNING: EventChannel missing fields — isSyncing=$isSyncing isComplete=$isComplete hasNewTx=$hasNewTx');
-          }
           _onSyncProgress(
             scannedHeight: (map['scannedHeight'] as num).toInt(),
             chainTipHeight: (map['chainTipHeight'] as num).toInt(),
             percentage: (map['percentage'] as num).toDouble(),
             isBackground: true,
-            isSyncing: isSyncing ?? true,
-            isComplete: isComplete ?? false,
-            hasNewTx: hasNewTx ?? false,
+            isSyncing: map['isSyncing'] as bool,
+            isComplete: map['isComplete'] as bool,
+            hasNewTx: map['hasNewTx'] as bool,
           );
         },
         onError: (e) { log('SyncNotifier: EventChannel error: $e'); },
