@@ -8,7 +8,9 @@ typedef struct {
     uint64_t scanned_height;
     uint64_t chain_tip_height;
     double percentage;
+    bool is_syncing;
     bool is_complete;
+    bool has_new_tx;
 } CSyncProgress;
 
 typedef void (*SyncProgressCallback)(CSyncProgress);

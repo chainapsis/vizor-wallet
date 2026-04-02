@@ -65,6 +65,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             chainTipHeight: (map['chainTipHeight'] as num).toInt(),
             percentage: (map['percentage'] as num).toDouble(),
             isBackground: true,
+            isSyncing: (map['isSyncing'] as bool?) ?? true,
+            isComplete: (map['isComplete'] as bool?) ?? false,
+            hasNewTx: (map['hasNewTx'] as bool?) ?? false,
           );
         },
         onError: (e) { log('SyncNotifier: EventChannel error: $e'); },
@@ -216,9 +219,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     required int chainTipHeight,
     required double percentage,
     required bool isBackground,
-    bool isSyncing = true,
-    bool isComplete = false,
-    bool hasNewTx = false,
+    required bool isSyncing,
+    required bool isComplete,
+    required bool hasNewTx,
   }) async {
     if (scannedHeight != _lastLoggedHeight) {
       log('Sync: ${(percentage * 100).toStringAsFixed(1)}% ($scannedHeight/$chainTipHeight)');
