@@ -97,9 +97,11 @@ impl BlockSource for MemoryBlockSource {
 </ul>
 
 <h3 id="sync-progress">5.5 진행률 보고</h3>
-<p>Rust는 <code>WalletSummary::progress()</code>를 사용하여 진행률을 계산한다. 이 함수는 <code>Ratio&lt;u64&gt;</code>를 반환하며, notes scanned / total notes 비율이다. 이 방식은 블록이 순서대로 스캔되지 않을 때에도 정확하다 (예: ChainTip priority가 먼저 스캔되는 경우). Percentage는 Dart에는 <code>StreamSink</code>를 통해, Swift에는 C callback을 통해 스트리밍된다.</p>
+<p>진행률은 scan-queue 기반으로 계산한다. 매 배치 후 <code>suggest_scan_ranges()</code>에서 남은 블록 수(remaining)와 전체 블록 수(total, <code>Ignored</code> 제외)를 계산하여 <code>pct = 1.0 - remaining / total</code>로 산출한다. 이 방식은 스캔 순서(ChainTip 우선, FoundNote, Historic)에 관계없이 정확하며, 노트가 없는 지갑에서도 올바르게 동작한다.</p>
 
-<p>Dart의 <code>stream.listen()</code> 콜백에서 <code>getBalance()</code> FFI를 즉시 호출하여 balance도 함께 갱신한다. 10초 간격 폴링은 fallback으로 유지된다. iOS background sync에서는 C callback &rarr; <code>SyncProgressStreamHandler</code> &rarr; EventChannel로 전달된다.</p>
+<p>각 progress event에는 <code>has_new_tx</code> 플래그가 포함된다. <code>ScanSummary</code>의 received/spent note count &gt; 0이면 true이며, Dart에서 이를 감지하여 최근 10건의 트랜잭션을 조회한다.</p>
+
+<p>Dart의 <code>stream.listen()</code> 콜백에서 <code>getBalance()</code> FFI를 호출하여 balance를 갱신하고, <code>hasNewTx || isComplete</code>이면 <code>getTransactionHistory(limit: 10)</code>도 호출한다. 폴링은 없으며, 모든 상태 업데이트는 stream, EventChannel, onResume에 의해 구동된다. iOS background sync에서는 C callback &rarr; <code>SyncProgressStreamHandler</code> &rarr; EventChannel로 전달되며, isSyncing, isComplete, hasNewTx 등 모든 필드가 포함된다.</p>
 
 <div class="nav">
   <a href="dart-layer.html">&larr; 이전: Dart / Flutter 레이어</a>

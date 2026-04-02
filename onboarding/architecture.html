@@ -19,7 +19,7 @@
   <tr>
     <td><span class="badge rust">Rust Core</span></td>
     <td>Rust</td>
-    <td>모든 Zcash 암호학: 키 유도(ZIP-32), 주소 인코딩(ZIP-316), 블록 스캐닝(trial decryption), 월렛 DB(SQLite), commitment tree 관리. Single DB connection reused across entire sync. Progress uses <code>WalletSummary::progress()</code> — note-based ratio (notes scanned / total notes) that works correctly even when blocks are scanned out of order. All sync logs include [Xs] elapsed time. Errors logged via <code>log</code> crate &rarr; Flutter console.</td>
+    <td>모든 Zcash 암호학: 키 유도(ZIP-32), 주소 인코딩(ZIP-316), 블록 스캐닝(trial decryption), 월렛 DB(SQLite), commitment tree 관리. Single DB connection reused across entire sync. Progress는 scan-queue 기반 (매 배치 후 remaining/total 블록 수 계산). <code>has_new_tx</code> 플래그로 새 트랜잭션 발견 시 Dart에 알림. All sync logs include [Xs] elapsed time. Errors logged via <code>log</code> crate &rarr; Flutter console.</td>
     <td><code>rust/src/wallet/</code>, <code>rust/src/api/</code></td>
   </tr>
   <tr>

@@ -63,8 +63,8 @@
     <td>새 지갑 생성 시 lightwalletd에서 chain tip을 birthday로 가져옴. 네트워크 실패 시 지갑 생성 차단 (full scan 방지). DB 삭제는 birthday fetch 성공 후에만.</td>
   </tr>
   <tr>
-    <td>Note-based Progress</td>
-    <td><code>WalletSummary::progress()</code>의 <code>Ratio&lt;u64&gt;</code>를 사용. <code>fully_scanned_height</code> 기반이 아니라 notes scanned / total notes 기반이므로 out-of-order scanning에서도 정확.</td>
+    <td>Scan-queue Progress</td>
+    <td>매 배치 후 <code>suggest_scan_ranges()</code>에서 remaining/total 블록 수를 계산하여 <code>1.0 - remaining/total</code>로 진행률 산출. <code>WalletSummary::progress()</code>는 사용하지 않음 — 노트가 없는 지갑에서 0%로 고정되는 문제 때문. scan-queue 방식은 스캔 순서와 무관하게 정확하며 FoundNote로 추가된 범위도 자동 반영.</td>
   </tr>
   <tr>
     <td>iOS QoS</td>

@@ -41,7 +41,7 @@
 
 <p><strong>Heartbeat timer:</strong> <code>.global(qos: .utility)</code>에서 실행되며, 5초마다 <code>completedUnitCount</code>를 +1 nudge한다. 이는 OS가 task를 stalled로 판단하지 않도록 보장한다.</p>
 
-<p><strong>Batch callback:</strong> <code>completedUnitCount = percentage * 10000</code>으로 설정한다 (note-based, 0-10000 scale).</p>
+<p><strong>Batch callback:</strong> <code>completedUnitCount = percentage * 10000</code>으로 설정한다 (scan-queue 기반, 0-10000 scale). EventChannel을 통해 scannedHeight, chainTipHeight, percentage, isSyncing, isComplete, hasNewTx를 Dart에 전달한다.</p>
 
 <p><strong>expirationHandler:</strong> heartbeat 타이머 취소, mode=0 설정, sync cancel을 수행한다.</p>
 
@@ -58,8 +58,9 @@ Dart: "Sync on Background" 버튼 탭
       → zcash_run_full_sync() [C FFI, blocking]
         → current_thread tokio runtime (inherits .utility QoS)
           → run_sync_inner() [gRPC + scan + enhancement]
-        → C callback → completedUnitCount = percentage * 10000 (note-based)
+        → C callback → completedUnitCount = percentage * 10000 (scan-queue based)
         → C callback → SyncProgressStreamHandler → EventChannel → Dart (앱이 foreground면)
+          (isSyncing, isComplete, hasNewTx 포함)
       → heartbeat timer on .global(.utility): +1 nudge every 5s
       → sync 종료, mode==2이면 BGTask resubmit
       → task.setTaskCompleted(success:)

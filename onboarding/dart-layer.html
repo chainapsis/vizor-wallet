@@ -49,16 +49,18 @@ stream.listen(_onSyncProgress);
 void _onSyncProgress(ApiSyncProgressEvent event) {
   // 매 batch마다 balance 갱신
   final balance = await rust_sync.getBalance(dbPath: dbPath, network: 'main');
+  // hasNewTx 또는 isComplete이면 최근 트랜잭션도 갱신
+  if (event.hasNewTx || event.isComplete) {
+    final txs = await rust_sync.getTransactionHistory(dbPath: dbPath, network: 'main', limit: 10);
+    // state에 recentTransactions 업데이트
+  }
   state = state.copyWith(
     percentage: event.percentage,
     scannedHeight: event.scannedHeight,
     totalBalance: balance.total,
   );
 }
-
-// 10초 간격 폴링은 fallback으로 유지:
-final progress = await rust_sync.getSyncStatus(dbPath: dbPath, network: 'main');
-final balance = await rust_sync.getBalance(dbPath: dbPath, network: 'main');</code></pre>
+// 폴링 없음 — 모든 상태 업데이트는 stream, EventChannel, onResume으로 구동</code></pre>
 
 <p><strong>Rust 내부 sync 루프 (<code>run_sync_inner</code>):</strong></p>
 <pre><code>1. tonic gRPC로 zec.rocks:443에 TLS 연결 (tls-ring)
@@ -73,8 +75,10 @@ final balance = await rust_sync.getBalance(dbPath: dbPath, network: 'main');</co
    f. scan_cached_blocks(MemoryBlockSource)
    g. cancel/mode 체크
    h. run_enhancement()
-   i. progress_fn 콜백 → StreamSink.add() (Dart) 또는 C callback (Swift)
-5. 모든 범위 완료 → 반환</code></pre>
+   i. suggest_scan_ranges()로 remaining/total 계산 → percentage = 1.0 - remaining/total
+   j. ScanSummary에서 has_new_tx 판별 (received/spent note count > 0)
+   k. progress_fn 콜백 → StreamSink.add() (Dart) 또는 C callback (Swift)
+5. 모든 범위 완료 → final progress (percentage=1.0, is_complete=true) → 반환</code></pre>
 
 <h3 id="dart-enhancement">4.6 Enhancement 루프</h3>
 <p>매 scan batch 후 Rust sync 루프 내에서 실행된다. compact block에서 발견된 노트의 전체 TX 데이터를 lightwalletd에서 가져온다:</p>

@@ -62,7 +62,7 @@
 <h3 id="api-sync">6.2 Sync &amp; Enhancement 함수</h3>
 
 <div class="note">
-  <p><strong>현재 구조:</strong> Sync는 Rust에서 통합 실행된다. 아래 개별 함수 중 <code>start_full_sync</code>, <code>cancel_full_sync</code>, <code>get_sync_status</code>, <code>get_balance</code>만 Dart에서 호출된다. 나머지는 legacy dead code이다 (FRB 바인딩은 존재하지만 호출되지 않음).</p>
+  <p><strong>현재 구조:</strong> Sync는 Rust에서 통합 실행된다. 아래 개별 함수 중 <code>start_full_sync</code>, <code>cancel_full_sync</code>, <code>get_balance</code>, <code>get_transaction_history</code>가 Dart에서 호출된다. 나머지는 legacy dead code이다 (FRB 바인딩은 존재하지만 호출되지 않음).</p>
 </div>
 
 <table>
@@ -93,14 +93,14 @@
     <td>Trial decryption. TreeState는 개별 필드로 전달 (network, height, hash, time, saplingTree, orchardTree).</td>
   </tr>
   <tr>
-    <td><code>getSyncStatus({dbPath, network})</code></td>
-    <td><code>get_sync_status(db_path, network)</code></td>
-    <td><code>SyncProgress { scannedHeight, chainTipHeight, isSyncing }</code> 반환</td>
-  </tr>
-  <tr>
     <td><code>getBalance({dbPath, network})</code></td>
     <td><code>get_balance(db_path, network)</code></td>
-    <td><code>WalletBalance { transparent, sapling, orchard, total }</code> 반환 (zatoshi 단위)</td>
+    <td><code>WalletBalance { transparent, sapling, orchard, transparent_pending, sapling_pending, orchard_pending, total }</code> 반환 (zatoshi 단위). total은 confirmed + pending 합산.</td>
+  </tr>
+  <tr>
+    <td><code>getTransactionHistory({dbPath, network, limit})</code></td>
+    <td><code>get_transaction_history(db_path, network, limit)</code></td>
+    <td><code>List&lt;TransactionInfo&gt;</code> 반환. limit으로 최근 N건 제한. null이면 전체.</td>
   </tr>
   <tr>
     <td><code>getBlocksDir({cachePath})</code></td>
