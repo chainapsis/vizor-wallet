@@ -80,16 +80,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           SliverToBoxAdapter(child: _buildHeroBalance(sync)),
           // Action buttons
           SliverToBoxAdapter(child: _buildActionButtons(context)),
-          // Background sync controls
-          if (_canBackgroundSync && sync.isSyncing && !sync.isBackgroundMode)
-            SliverToBoxAdapter(child: _buildBackgroundSyncButton()),
-          if (sync.isBackgroundMode)
-            SliverToBoxAdapter(child: _buildStopBackgroundSyncButton()),
           // Recent Activity header
           SliverToBoxAdapter(child: _buildActivityHeader(context)),
           // Sync status item (if syncing)
           if (sync.isSyncing)
             SliverToBoxAdapter(child: _buildSyncItem(sync)),
+          // Background sync button (between sync item and transactions)
+          if (_canBackgroundSync && sync.isSyncing && !sync.isBackgroundMode)
+            SliverToBoxAdapter(child: _buildBackgroundSyncButton()),
+          if (sync.isBackgroundMode)
+            SliverToBoxAdapter(child: _buildStopBackgroundSyncButton()),
           // Placeholder transactions
           SliverToBoxAdapter(child: _buildActivityPlaceholder(sync)),
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
@@ -225,24 +225,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildBackgroundSyncButton() {
     return Padding(
-      padding: const EdgeInsets.only(top: 12, left: 24, right: 24),
-      child: TextButton.icon(
-        onPressed: () => ref.read(syncProvider.notifier).enableBackgroundSync(),
-        icon: const Icon(Icons.sync, size: 16),
-        label: const Text('Sync on Background'),
-        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      child: GestureDetector(
+        onTap: () => ref.read(syncProvider.notifier).enableBackgroundSync(),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            color: _surfaceContainerLow,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.cloud_sync, size: 16, color: _secondary),
+              const SizedBox(width: 8),
+              Text(
+                'SYNC IN BACKGROUND',
+                style: TextStyle(
+                  fontFamily: 'Manrope',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 10,
+                  letterSpacing: 1.5,
+                  color: _secondary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildStopBackgroundSyncButton() {
     return Padding(
-      padding: const EdgeInsets.only(top: 12, left: 24, right: 24),
-      child: TextButton.icon(
-        onPressed: () => ref.read(syncProvider.notifier).disableBackgroundSync(),
-        icon: const Icon(Icons.sync_disabled, size: 16),
-        label: const Text('Stop Background Sync'),
-        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      child: GestureDetector(
+        onTap: () => ref.read(syncProvider.notifier).disableBackgroundSync(),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            color: _surfaceContainerLow,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.sync_disabled, size: 16, color: _secondary),
+              const SizedBox(width: 8),
+              Text(
+                'STOP BACKGROUND SYNC',
+                style: TextStyle(
+                  fontFamily: 'Manrope',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 10,
+                  letterSpacing: 1.5,
+                  color: _secondary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -365,24 +409,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    if (!sync.isSyncing && sync.chainTipHeight > 0) {
+    if (!sync.isSyncing) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
-        child: Center(
-          child: Column(
-            children: [
-              Icon(Icons.check_circle, color: _tertiary, size: 32),
-              const SizedBox(height: 8),
-              Text(
-                'Fully synced',
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontSize: 14,
-                  color: _outline,
-                ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: _tertiary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
               ),
-            ],
-          ),
+              child: const Center(
+                child: Icon(Icons.check_circle, color: _tertiary, size: 24),
+              ),
+            ),
+            const SizedBox(width: 20),
+            const Text(
+              'Wallet Synchronized',
+              style: TextStyle(
+                fontFamily: 'Manrope',
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+                color: _onSurface,
+              ),
+            ),
+          ],
         ),
       );
     }
