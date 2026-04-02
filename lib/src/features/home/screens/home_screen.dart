@@ -6,17 +6,6 @@ import '../../../../main.dart' show log;
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 
-// Design system colors from Stitch
-const _surface = Color(0xFFF9F9F9);
-const _surfaceContainerLow = Color(0xFFF2F4F4);
-const _surfaceContainerHigh = Color(0xFFE4E9EA);
-const _onSurface = Color(0xFF2D3435);
-const _primary = Color(0xFF5F5E5E);
-const _onPrimary = Color(0xFFFAF7F6);
-const _secondary = Color(0xFF4D626C);
-const _tertiary = Color(0xFF1C6D25);
-const _outline = Color(0xFF757C7D);
-
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -56,7 +45,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final syncState = ref.watch(syncProvider);
 
     return Scaffold(
-      backgroundColor: _surface,
       body: walletAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) => Center(child: Text('Error: $err')),
@@ -66,7 +54,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           syncState.value ?? SyncState(),
         ),
       ),
-      bottomNavigationBar: _buildBottomNav(),
+      bottomNavigationBar: _buildBottomNav(context),
     );
   }
 
@@ -74,31 +62,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return SafeArea(
       child: CustomScrollView(
         slivers: [
-          // Top bar
-          SliverToBoxAdapter(child: _buildTopBar()),
-          // Hero balance
-          SliverToBoxAdapter(child: _buildHeroBalance(sync)),
-          // Action buttons
+          SliverToBoxAdapter(child: _buildTopBar(context)),
+          SliverToBoxAdapter(child: _buildHeroBalance(context, sync)),
           SliverToBoxAdapter(child: _buildActionButtons(context)),
-          // Recent Activity header
           SliverToBoxAdapter(child: _buildActivityHeader(context)),
-          // Sync status item (if syncing)
           if (sync.isSyncing)
-            SliverToBoxAdapter(child: _buildSyncItem(sync)),
-          // Background sync button (between sync item and transactions)
+            SliverToBoxAdapter(child: _buildSyncItem(context, sync)),
           if (_canBackgroundSync && sync.isSyncing && !sync.isBackgroundMode)
-            SliverToBoxAdapter(child: _buildBackgroundSyncButton()),
+            SliverToBoxAdapter(child: _buildBackgroundSyncButton(context)),
           if (sync.isBackgroundMode)
-            SliverToBoxAdapter(child: _buildStopBackgroundSyncButton()),
-          // Placeholder transactions
-          SliverToBoxAdapter(child: _buildActivityPlaceholder(sync)),
+            SliverToBoxAdapter(child: _buildStopBackgroundSyncButton(context)),
+          SliverToBoxAdapter(child: _buildActivityPlaceholder(context, sync)),
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
     );
   }
 
-  Widget _buildTopBar() {
+  Widget _buildTopBar(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Row(
@@ -106,22 +90,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.shield, color: _onSurface.withValues(alpha: 0.8), size: 22),
+              Icon(Icons.shield, color: colors.onSurface.withValues(alpha: 0.8), size: 22),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Zcash',
-                style: TextStyle(
-                  fontFamily: 'Manrope',
+                style: text.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
-                  fontSize: 20,
                   letterSpacing: -0.5,
-                  color: _onSurface,
                 ),
               ),
             ],
           ),
           IconButton(
-            icon: const Icon(Icons.qr_code_scanner, color: _onSurface),
+            icon: Icon(Icons.qr_code_scanner, color: colors.onSurface),
             onPressed: () {},
           ),
         ],
@@ -129,7 +110,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildHeroBalance(SyncState sync) {
+  Widget _buildHeroBalance(BuildContext context, SyncState sync) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
@@ -139,23 +123,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: _tertiary.withValues(alpha: 0.1),
+              color: colors.tertiary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.verified_user, size: 14, color: _tertiary),
+                Icon(Icons.verified_user, size: 14, color: colors.tertiary),
                 const SizedBox(width: 6),
                 Text(
                   'SHIELDED BALANCE',
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.5,
-                    color: _tertiary,
-                  ),
+                  style: text.labelSmall?.copyWith(color: colors.tertiary),
                 ),
               ],
             ),
@@ -169,24 +147,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             children: [
               Text(
                 _formatZec(sync.totalBalance),
-                style: const TextStyle(
-                  fontFamily: 'Manrope',
-                  fontWeight: FontWeight.w800,
-                  fontSize: 56,
-                  height: 1.0,
-                  letterSpacing: -2,
-                  color: _onSurface,
-                ),
+                style: text.displayLarge,
               ),
               const SizedBox(width: 8),
               Text(
                 'ZEC',
-                style: TextStyle(
-                  fontFamily: 'Manrope',
-                  fontWeight: FontWeight.w600,
-                  fontSize: 28,
-                  color: _secondary,
-                ),
+                style: text.displayMedium?.copyWith(color: colors.secondary),
               ),
             ],
           ),
@@ -223,7 +189,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildBackgroundSyncButton() {
+  Widget _buildBackgroundSyncButton(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       child: GestureDetector(
@@ -232,23 +201,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: _surfaceContainerLow,
+            color: colors.surfaceContainerLow,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.cloud_sync, size: 16, color: _secondary),
+              Icon(Icons.cloud_sync, size: 16, color: colors.secondary),
               const SizedBox(width: 8),
               Text(
                 'SYNC IN BACKGROUND',
-                style: TextStyle(
-                  fontFamily: 'Manrope',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 10,
-                  letterSpacing: 1.5,
-                  color: _secondary,
-                ),
+                style: text.labelSmall?.copyWith(color: colors.secondary),
               ),
             ],
           ),
@@ -257,7 +220,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildStopBackgroundSyncButton() {
+  Widget _buildStopBackgroundSyncButton(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       child: GestureDetector(
@@ -266,23 +232,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: _surfaceContainerLow,
+            color: colors.surfaceContainerLow,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.sync_disabled, size: 16, color: _secondary),
+              Icon(Icons.sync_disabled, size: 16, color: colors.secondary),
               const SizedBox(width: 8),
               Text(
                 'STOP BACKGROUND SYNC',
-                style: TextStyle(
-                  fontFamily: 'Manrope',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 10,
-                  letterSpacing: 1.5,
-                  color: _secondary,
-                ),
+                style: text.labelSmall?.copyWith(color: colors.secondary),
               ),
             ],
           ),
@@ -292,32 +252,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildActivityHeader(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 40, 24, 0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text(
-            'Recent Activity',
-            style: TextStyle(
-              fontFamily: 'Manrope',
-              fontWeight: FontWeight.w700,
-              fontSize: 20,
-              letterSpacing: -0.3,
-              color: _onSurface,
-            ),
-          ),
+          Text('Recent Activity', style: text.titleLarge),
           GestureDetector(
             onTap: () => context.push('/history'),
             child: Text(
               'VIEW ALL',
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w600,
-                fontSize: 11,
-                letterSpacing: 1.5,
-                color: _secondary,
-              ),
+              style: text.labelLarge?.copyWith(color: colors.secondary),
             ),
           ),
         ],
@@ -325,8 +273,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildSyncItem(SyncState sync) {
+  Widget _buildSyncItem(BuildContext context, SyncState sync) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     final pct = (sync.percentage * 100).toStringAsFixed(0);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
       child: Row(
@@ -335,11 +286,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: _surfaceContainerLow,
+              color: colors.surfaceContainerLow,
               shape: BoxShape.circle,
             ),
-            child: const Center(
-              child: Icon(Icons.sync, color: _secondary, size: 24),
+            child: Center(
+              child: Icon(Icons.sync, color: colors.secondary, size: 24),
             ),
           ),
           const SizedBox(width: 20),
@@ -349,25 +300,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               children: [
                 Row(
                   children: [
-                    const Text(
-                      'Syncing...',
-                      style: TextStyle(
-                        fontFamily: 'Manrope',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                        color: _onSurface,
-                      ),
-                    ),
+                    Text('Syncing...', style: text.titleMedium),
                     const SizedBox(width: 8),
                     Text(
                       '$pct%',
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 10,
-                        letterSpacing: 1.5,
-                        color: _outline,
-                      ),
+                      style: text.labelSmall?.copyWith(color: colors.outline),
                     ),
                   ],
                 ),
@@ -379,8 +316,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: LinearProgressIndicator(
                       value: sync.percentage.clamp(0.0, 1.0),
                       minHeight: 4,
-                      backgroundColor: _surfaceContainerHigh,
-                      valueColor: const AlwaysStoppedAnimation(_secondary),
+                      backgroundColor: colors.surfaceContainerHigh,
+                      valueColor: AlwaysStoppedAnimation(colors.secondary),
                     ),
                   ),
                 ),
@@ -392,18 +329,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildActivityPlaceholder(SyncState sync) {
+  Widget _buildActivityPlaceholder(BuildContext context, SyncState sync) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
     if (sync.isSyncing && sync.chainTipHeight == 0) {
-      return const Padding(
-        padding: EdgeInsets.fromLTRB(24, 32, 24, 0),
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
         child: Center(
           child: Text(
             'Waiting for sync...',
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontSize: 14,
-              color: _outline,
-            ),
+            style: text.bodyLarge?.copyWith(color: colors.outline),
           ),
         ),
       );
@@ -418,23 +354,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: _tertiary.withValues(alpha: 0.1),
+                color: colors.tertiary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Center(
-                child: Icon(Icons.check_circle, color: _tertiary, size: 24),
+              child: Center(
+                child: Icon(Icons.check_circle, color: colors.tertiary, size: 24),
               ),
             ),
             const SizedBox(width: 20),
-            const Text(
-              'Wallet Synchronized',
-              style: TextStyle(
-                fontFamily: 'Manrope',
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-                color: _onSurface,
-              ),
-            ),
+            Text('Wallet Synchronized', style: text.titleMedium),
           ],
         ),
       );
@@ -443,10 +371,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return const SizedBox.shrink();
   }
 
-  Widget _buildBottomNav() {
+  Widget _buildBottomNav(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Container(
       decoration: BoxDecoration(
-        color: _surface.withValues(alpha: 0.9),
+        color: colors.surface.withValues(alpha: 0.9),
       ),
       child: SafeArea(
         child: Padding(
@@ -498,29 +428,25 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final bg = filled ? colors.primary : colors.surfaceContainerHigh;
+    final fg = filled ? colors.onPrimary : colors.onSurface;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: filled ? _primary : _surfaceContainerHigh,
+          color: bg,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 20, color: filled ? _onPrimary : _onSurface),
+            Icon(icon, size: 20, color: fg),
             const SizedBox(width: 12),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Manrope',
-                fontWeight: FontWeight.w700,
-                fontSize: 11,
-                letterSpacing: 2,
-                color: filled ? _onPrimary : _onSurface,
-              ),
-            ),
+            Text(label, style: text.labelMedium?.copyWith(color: fg)),
           ],
         ),
       ),
@@ -543,33 +469,27 @@ class _BottomNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final fg = isActive ? colors.onSurface : colors.outline;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? _surfaceContainerHigh : Colors.transparent,
+          color: isActive ? colors.surfaceContainerHigh : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 24,
-              color: isActive ? _onSurface : _outline,
-            ),
+            Icon(icon, size: 24, color: fg),
             const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 1.5,
-                color: isActive ? _onSurface : _outline,
-              ),
-            ),
+            Text(label, style: text.labelLarge?.copyWith(
+              fontWeight: FontWeight.w500,
+              color: fg,
+            )),
           ],
         ),
       ),

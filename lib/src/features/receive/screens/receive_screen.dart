@@ -69,7 +69,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.surfaceContainerLowest,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: QrImageView(

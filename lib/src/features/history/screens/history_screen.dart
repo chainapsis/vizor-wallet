@@ -89,15 +89,16 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       itemBuilder: (context, index) {
                         final tx = _transactions![index];
                         final isIncoming = tx.accountBalanceDelta.toInt() >= 0;
+                        final colors = Theme.of(context).colorScheme;
                         return ListTile(
                           leading: Icon(
                             isIncoming ? Icons.arrow_downward : Icons.arrow_upward,
-                            color: isIncoming ? Colors.green : Colors.red,
+                            color: isIncoming ? colors.tertiary : colors.error,
                           ),
                           title: Text(
                             _formatZec(tx.accountBalanceDelta.toInt()),
                             style: TextStyle(
-                              color: isIncoming ? Colors.green : Colors.red,
+                              color: isIncoming ? colors.tertiary : colors.onSurface,
                               fontWeight: FontWeight.w600,
                             ),
                           ),

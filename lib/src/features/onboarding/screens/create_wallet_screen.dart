@@ -60,8 +60,8 @@ class _CreateWalletScreenState extends ConsumerState<CreateWalletScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.error_outline,
-                            size: 48, color: Colors.red),
+                        Icon(Icons.error_outline,
+                            size: 48, color: Theme.of(context).colorScheme.error),
                         const SizedBox(height: 16),
                         Text('Error: $_error',
                             textAlign: TextAlign.center),
