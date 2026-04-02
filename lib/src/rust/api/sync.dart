@@ -522,6 +522,7 @@ class WalletBalance {
   final BigInt transparent;
   final BigInt sapling;
   final BigInt orchard;
+  final BigInt transparentPending;
   final BigInt saplingPending;
   final BigInt orchardPending;
   final BigInt total;
@@ -530,6 +531,7 @@ class WalletBalance {
     required this.transparent,
     required this.sapling,
     required this.orchard,
+    required this.transparentPending,
     required this.saplingPending,
     required this.orchardPending,
     required this.total,
@@ -540,6 +542,7 @@ class WalletBalance {
       transparent.hashCode ^
       sapling.hashCode ^
       orchard.hashCode ^
+      transparentPending.hashCode ^
       saplingPending.hashCode ^
       orchardPending.hashCode ^
       total.hashCode;
@@ -552,6 +555,7 @@ class WalletBalance {
           transparent == other.transparent &&
           sapling == other.sapling &&
           orchard == other.orchard &&
+          transparentPending == other.transparentPending &&
           saplingPending == other.saplingPending &&
           orchardPending == other.orchardPending &&
           total == other.total;

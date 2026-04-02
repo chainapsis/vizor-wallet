@@ -113,6 +113,7 @@ pub struct WalletBalance {
     pub transparent: u64,
     pub sapling: u64,
     pub orchard: u64,
+    pub transparent_pending: u64,
     pub sapling_pending: u64,
     pub orchard_pending: u64,
     pub total: u64,
@@ -245,8 +246,8 @@ pub fn get_balance(db_path: String, network: String) -> Result<WalletBalance, St
         let b = wallet_sync::get_wallet_balance(&db_path, network)?;
         Ok(WalletBalance {
             transparent: b.transparent, sapling: b.sapling, orchard: b.orchard,
-            sapling_pending: b.sapling_pending, orchard_pending: b.orchard_pending,
-            total: b.transparent + b.sapling + b.orchard,
+            transparent_pending: b.transparent_pending, sapling_pending: b.sapling_pending, orchard_pending: b.orchard_pending,
+            total: b.transparent + b.sapling + b.orchard + b.transparent_pending + b.sapling_pending + b.orchard_pending,
         })
     })
 }

@@ -182,24 +182,25 @@ pub fn get_sync_progress(db_path: &str, network: Network) -> Result<SyncProgress
 
 pub(crate) struct WalletBalance {
     pub transparent: u64, pub sapling: u64, pub orchard: u64,
-    pub sapling_pending: u64, pub orchard_pending: u64,
+    pub transparent_pending: u64, pub sapling_pending: u64, pub orchard_pending: u64,
 }
 
 pub fn get_wallet_balance(db_path: &str, network: Network) -> Result<WalletBalance, String> {
     let db = open_wallet_db(db_path, network)?;
     match db.get_wallet_summary(ConfirmationsPolicy::default()).map_err(|e| format!("{e}"))? {
         Some(s) => {
-            let (mut t, mut sa, mut or, mut sp, mut op) = (0u64, 0u64, 0u64, 0u64, 0u64);
+            let (mut t, mut sa, mut or, mut tp, mut sp, mut op) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
             for (_, b) in s.account_balances() {
                 t += u64::from(b.unshielded_balance().spendable_value());
                 sa += u64::from(b.sapling_balance().spendable_value());
                 or += u64::from(b.orchard_balance().spendable_value());
+                tp += u64::from(b.unshielded_balance().change_pending_confirmation()) + u64::from(b.unshielded_balance().value_pending_spendability());
                 sp += u64::from(b.sapling_balance().change_pending_confirmation()) + u64::from(b.sapling_balance().value_pending_spendability());
                 op += u64::from(b.orchard_balance().change_pending_confirmation()) + u64::from(b.orchard_balance().value_pending_spendability());
             }
-            Ok(WalletBalance { transparent: t, sapling: sa, orchard: or, sapling_pending: sp, orchard_pending: op })
+            Ok(WalletBalance { transparent: t, sapling: sa, orchard: or, transparent_pending: tp, sapling_pending: sp, orchard_pending: op })
         }
-        None => Ok(WalletBalance { transparent: 0, sapling: 0, orchard: 0, sapling_pending: 0, orchard_pending: 0 }),
+        None => Ok(WalletBalance { transparent: 0, sapling: 0, orchard: 0, transparent_pending: 0, sapling_pending: 0, orchard_pending: 0 }),
     }
 }
 
