@@ -142,18 +142,7 @@ pub async fn run_sync_inner(
     // 3. Download subtree roots (incremental)
     download_subtree_roots(&mut client, &mut db).await?;
 
-    // 4. Calculate total blocks to scan (for progress reporting)
-    let total_to_scan: u64 = {
-        let ranges = db.suggest_scan_ranges().map_err(|e| err(&format!("suggest_scan_ranges: {e}")))?;
-        ranges.iter()
-            .filter(|r| r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned)
-            .map(|r| u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start)) as u64)
-            .sum()
-    };
-    let mut blocks_scanned: u64 = 0;
-    log::info!("[{}] sync: total blocks to scan = {}", elapsed(), total_to_scan);
-
-    // 5. Sync loop
+    // 4. Sync loop
     loop {
         if cancel.load(Ordering::Relaxed) {
             log::info!("[{}] sync: cancelled", elapsed());
@@ -209,22 +198,30 @@ pub async fn run_sync_inner(
         // Enhancement
         run_enhancement(&mut client, &mut db, network).await?;
 
-        // Report progress (scan-queue based)
-        blocks_scanned += u32::from(end).saturating_sub(u32::from(start)) as u64;
-        let pct = if total_to_scan > 0 { blocks_scanned as f64 / total_to_scan as f64 } else { 1.0 };
+        // Report progress (scan-queue based: scanned / total from current queue state)
         let has_new_tx = scan_summary.received_sapling_note_count() > 0
             || scan_summary.spent_sapling_note_count() > 0
             || scan_summary.received_orchard_note_count() > 0
             || scan_summary.spent_orchard_note_count() > 0;
+        let post_ranges = db.suggest_scan_ranges().map_err(|e| err(&format!("suggest_scan_ranges: {e}")))?;
+        let remaining: u64 = post_ranges.iter()
+            .filter(|r| r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned)
+            .map(|r| u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start)) as u64)
+            .sum();
+        let total: u64 = post_ranges.iter()
+            .filter(|r| r.priority() != ScanPriority::Ignored)
+            .map(|r| u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start)) as u64)
+            .sum();
+        let pct = if total > 0 { 1.0 - (remaining as f64 / total as f64) } else { 1.0 };
         let progress = SyncProgressEvent {
             scanned_height: u32::from(end) as u64,
             chain_tip_height: tip.height as u64,
-            percentage: pct.min(1.0),
+            percentage: pct.clamp(0.0, 1.0),
             is_syncing: true,
             is_complete: false,
             has_new_tx,
         };
-        log::info!("[{}] sync: {:.1}% ({}/{} blocks)", elapsed(), pct * 100.0, blocks_scanned, total_to_scan);
+        log::info!("[{}] sync: {:.1}% ({} remaining)", elapsed(), pct * 100.0, remaining);
         progress_fn(progress);
     }
 
