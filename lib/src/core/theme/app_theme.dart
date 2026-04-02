@@ -107,11 +107,7 @@ const _darkColorScheme = ColorScheme(
 const _headlineFamily = 'Manrope';
 const _bodyFamily = 'Inter';
 
-TextTheme _buildTextTheme(Brightness brightness) {
-  final color = brightness == Brightness.light
-      ? const Color(0xFF2D3435)
-      : const Color(0xFFE2E3E3);
-
+TextTheme _buildTextTheme(Color textColor) {
   return TextTheme(
     // Hero balance (56px Manrope 800)
     displayLarge: TextStyle(
@@ -120,7 +116,7 @@ TextTheme _buildTextTheme(Brightness brightness) {
       fontSize: 56,
       height: 1.0,
       letterSpacing: -2,
-      color: color,
+      color: textColor,
     ),
     // Large heading (28px Manrope 600) — e.g. "ZEC" unit
     displayMedium: TextStyle(
@@ -129,7 +125,7 @@ TextTheme _buildTextTheme(Brightness brightness) {
       fontSize: 28,
       height: 1.2,
       letterSpacing: -0.5,
-      color: color,
+      color: textColor,
     ),
     // Section heading (20px Manrope 700)
     titleLarge: TextStyle(
@@ -138,7 +134,7 @@ TextTheme _buildTextTheme(Brightness brightness) {
       fontSize: 20,
       height: 1.2,
       letterSpacing: -0.3,
-      color: color,
+      color: textColor,
     ),
     // List item title (15px Manrope 700)
     titleMedium: TextStyle(
@@ -146,7 +142,7 @@ TextTheme _buildTextTheme(Brightness brightness) {
       fontWeight: FontWeight.w700,
       fontSize: 15,
       height: 1.4,
-      color: color,
+      color: textColor,
     ),
     // Body (14px Inter 400)
     bodyLarge: TextStyle(
@@ -154,7 +150,7 @@ TextTheme _buildTextTheme(Brightness brightness) {
       fontWeight: FontWeight.w400,
       fontSize: 14,
       height: 1.5,
-      color: color,
+      color: textColor,
     ),
     // Body secondary (14px Inter 500)
     bodyMedium: TextStyle(
@@ -162,7 +158,7 @@ TextTheme _buildTextTheme(Brightness brightness) {
       fontWeight: FontWeight.w500,
       fontSize: 14,
       height: 1.5,
-      color: color,
+      color: textColor,
     ),
     // Small body (12px Inter 500)
     bodySmall: TextStyle(
@@ -170,7 +166,7 @@ TextTheme _buildTextTheme(Brightness brightness) {
       fontWeight: FontWeight.w500,
       fontSize: 12,
       height: 1.5,
-      color: color,
+      color: textColor,
     ),
     // Uppercase label (11px Inter 600)
     labelLarge: TextStyle(
@@ -178,7 +174,7 @@ TextTheme _buildTextTheme(Brightness brightness) {
       fontWeight: FontWeight.w600,
       fontSize: 11,
       letterSpacing: 1.5,
-      color: color,
+      color: textColor,
     ),
     // Button label (11px Manrope 700)
     labelMedium: TextStyle(
@@ -186,7 +182,7 @@ TextTheme _buildTextTheme(Brightness brightness) {
       fontWeight: FontWeight.w700,
       fontSize: 11,
       letterSpacing: 2,
-      color: color,
+      color: textColor,
     ),
     // Caption (10px Inter 700)
     labelSmall: TextStyle(
@@ -194,26 +190,26 @@ TextTheme _buildTextTheme(Brightness brightness) {
       fontWeight: FontWeight.w700,
       fontSize: 10,
       letterSpacing: 1.5,
-      color: color,
+      color: textColor,
     ),
   );
 }
 
 // ---------------------------------------------------------------------------
-// ThemeData builders
+// ThemeData builder — single source of truth for both light and dark
 // ---------------------------------------------------------------------------
 
-ThemeData buildLightTheme() {
+ThemeData _buildTheme(ColorScheme colorScheme) {
   return ThemeData(
     useMaterial3: true,
-    brightness: Brightness.light,
-    colorScheme: _lightColorScheme,
-    textTheme: _buildTextTheme(Brightness.light),
+    brightness: colorScheme.brightness,
+    colorScheme: colorScheme,
+    textTheme: _buildTextTheme(colorScheme.onSurface),
     fontFamily: _bodyFamily,
-    scaffoldBackgroundColor: _lightColorScheme.surface,
+    scaffoldBackgroundColor: colorScheme.surface,
     appBarTheme: AppBarTheme(
-      backgroundColor: _lightColorScheme.surface,
-      foregroundColor: _lightColorScheme.onSurface,
+      backgroundColor: colorScheme.surface,
+      foregroundColor: colorScheme.onSurface,
       elevation: 0,
       scrolledUnderElevation: 0,
       titleTextStyle: TextStyle(
@@ -221,13 +217,13 @@ ThemeData buildLightTheme() {
         fontWeight: FontWeight.w700,
         fontSize: 20,
         letterSpacing: -0.3,
-        color: _lightColorScheme.onSurface,
+        color: colorScheme.onSurface,
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: _lightColorScheme.primary,
-        foregroundColor: _lightColorScheme.onPrimary,
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         textStyle: const TextStyle(
           fontFamily: _headlineFamily,
@@ -238,8 +234,8 @@ ThemeData buildLightTheme() {
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        foregroundColor: _lightColorScheme.onSurface,
-        side: BorderSide(color: _lightColorScheme.outline),
+        foregroundColor: colorScheme.onSurface,
+        side: BorderSide(color: colorScheme.outline),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         textStyle: const TextStyle(
           fontFamily: _headlineFamily,
@@ -251,50 +247,5 @@ ThemeData buildLightTheme() {
   );
 }
 
-ThemeData buildDarkTheme() {
-  return ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.dark,
-    colorScheme: _darkColorScheme,
-    textTheme: _buildTextTheme(Brightness.dark),
-    fontFamily: _bodyFamily,
-    scaffoldBackgroundColor: _darkColorScheme.surface,
-    appBarTheme: AppBarTheme(
-      backgroundColor: _darkColorScheme.surface,
-      foregroundColor: _darkColorScheme.onSurface,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      titleTextStyle: TextStyle(
-        fontFamily: _headlineFamily,
-        fontWeight: FontWeight.w700,
-        fontSize: 20,
-        letterSpacing: -0.3,
-        color: _darkColorScheme.onSurface,
-      ),
-    ),
-    filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        backgroundColor: _darkColorScheme.primary,
-        foregroundColor: _darkColorScheme.onPrimary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        textStyle: const TextStyle(
-          fontFamily: _headlineFamily,
-          fontWeight: FontWeight.w700,
-          fontSize: 14,
-        ),
-      ),
-    ),
-    outlinedButtonTheme: OutlinedButtonThemeData(
-      style: OutlinedButton.styleFrom(
-        foregroundColor: _darkColorScheme.onSurface,
-        side: BorderSide(color: _darkColorScheme.outline),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        textStyle: const TextStyle(
-          fontFamily: _headlineFamily,
-          fontWeight: FontWeight.w700,
-          fontSize: 14,
-        ),
-      ),
-    ),
-  );
-}
+ThemeData buildLightTheme() => _buildTheme(_lightColorScheme);
+ThemeData buildDarkTheme() => _buildTheme(_darkColorScheme);
