@@ -159,6 +159,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       bg_sync.stopBackgroundSync();
       _backgroundMode = false;
     }
+    // Stream is cancelled — no more events will arrive.
+    // Update UI immediately to reflect stopped state.
+    final prev = state.value;
+    state = AsyncData(SyncState(
+      isSyncing: false,
+      isBackgroundMode: false,
+      percentage: prev?.percentage ?? 0.0,
+      scannedHeight: prev?.scannedHeight ?? 0,
+      chainTipHeight: prev?.chainTipHeight ?? 0,
+      transparentBalance: prev?.transparentBalance,
+      saplingBalance: prev?.saplingBalance,
+      orchardBalance: prev?.orchardBalance,
+      totalBalance: prev?.totalBalance,
+      recentTransactions: prev?.recentTransactions ?? const [],
+    ));
   }
 
   Future<void> enableBackgroundSync() async {
