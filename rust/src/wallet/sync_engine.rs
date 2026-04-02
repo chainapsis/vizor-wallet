@@ -366,11 +366,14 @@ async fn run_enhancement(
                         Ok(response) => {
                             let raw = response.into_inner();
                             if !raw.data.is_empty() {
-                                if let Ok(tx) = Transaction::read(&raw.data[..], BranchId::Sapling) {
-                                    let height = if raw.height > 0 { Some(BlockHeight::from_u32(raw.height as u32)) } else { None };
-                                    if let Err(e) = decrypt_and_store_transaction(&network, db, &tx, height) {
-                                        log::error!("sync: decrypt_and_store_transaction failed: {e}");
+                                match Transaction::read(&raw.data[..], BranchId::Sapling) {
+                                    Ok(tx) => {
+                                        let height = if raw.height > 0 { Some(BlockHeight::from_u32(raw.height as u32)) } else { None };
+                                        if let Err(e) = decrypt_and_store_transaction(&network, db, &tx, height) {
+                                            log::error!("sync: decrypt_and_store_transaction failed: {e}");
+                                        }
                                     }
+                                    Err(e) => log::warn!("sync: Transaction::read failed for {txid_str}: {e}"),
                                 }
                             }
                             if matches!(req, TransactionDataRequest::GetStatus(_)) {
@@ -414,11 +417,14 @@ async fn run_enhancement(
                             let mut stream = response.into_inner();
                             while let Ok(Some(raw)) = stream.message().await {
                                 if !raw.data.is_empty() {
-                                    if let Ok(tx) = Transaction::read(&raw.data[..], BranchId::Sapling) {
-                                        let height = if raw.height > 0 { Some(BlockHeight::from_u32(raw.height as u32)) } else { None };
-                                        if let Err(e) = decrypt_and_store_transaction(&network, db, &tx, height) {
-                                            log::error!("sync: decrypt_and_store_transaction (addr) failed: {e}");
+                                    match Transaction::read(&raw.data[..], BranchId::Sapling) {
+                                        Ok(tx) => {
+                                            let height = if raw.height > 0 { Some(BlockHeight::from_u32(raw.height as u32)) } else { None };
+                                            if let Err(e) = decrypt_and_store_transaction(&network, db, &tx, height) {
+                                                log::error!("sync: decrypt_and_store_transaction (addr) failed: {e}");
+                                            }
                                         }
+                                        Err(e) => log::warn!("sync: Transaction::read (addr) failed: {e}"),
                                     }
                                 }
                             }
