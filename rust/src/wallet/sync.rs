@@ -447,27 +447,25 @@ pub fn get_transaction_history(
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     ).map_err(|e| format!("Failed to open DB: {e}"))?;
     let sql = match limit {
-        Some(n) => format!(
-            "SELECT txid, mined_height, expired_unmined, account_balance_delta, \
+        Some(_) => "SELECT txid, mined_height, expired_unmined, account_balance_delta, \
              COALESCE(fee_paid, 0), COALESCE(block_time, 0) \
              FROM v_transactions \
              ORDER BY COALESCE(mined_height, 999999999) DESC, tx_index DESC \
-             LIMIT {n}"),
+             LIMIT ?1",
         None => "SELECT txid, mined_height, expired_unmined, account_balance_delta, \
              COALESCE(fee_paid, 0), COALESCE(block_time, 0) \
              FROM v_transactions \
-             ORDER BY COALESCE(mined_height, 999999999) DESC, tx_index DESC".to_string(),
+             ORDER BY COALESCE(mined_height, 999999999) DESC, tx_index DESC",
     };
-    let mut stmt = conn.prepare(&sql).map_err(|e| format!("SQL error: {e}"))?;
+    let mut stmt = conn.prepare(sql).map_err(|e| format!("SQL error: {e}"))?;
 
-    let rows = stmt.query_map([], |row| {
+    let map_row = |row: &rusqlite::Row| -> rusqlite::Result<TransactionInfo> {
         let txid_blob: Vec<u8> = row.get(0)?;
         let mined_height: Option<u32> = row.get(1)?;
         let expired_unmined: bool = row.get(2)?;
         let balance_delta: i64 = row.get(3)?;
         let fee: u64 = row.get::<_, i64>(4)?.unsigned_abs();
         let block_time: u64 = row.get::<_, i64>(5)?.unsigned_abs();
-
         Ok(TransactionInfo {
             txid_hex: hex::encode(&txid_blob),
             mined_height: mined_height.unwrap_or(0) as u64,
@@ -476,7 +474,13 @@ pub fn get_transaction_history(
             fee,
             block_time,
         })
-    }).map_err(|e| format!("Query error: {e}"))?;
+    };
+
+    let rows = if let Some(n) = limit {
+        stmt.query_map(rusqlite::params![n], map_row)
+    } else {
+        stmt.query_map([], map_row)
+    }.map_err(|e| format!("Query error: {e}"))?;
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Row error: {e}"))

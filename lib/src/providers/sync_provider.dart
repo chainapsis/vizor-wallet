@@ -43,6 +43,34 @@ class SyncState {
         saplingBalance = saplingBalance ?? BigInt.zero,
         orchardBalance = orchardBalance ?? BigInt.zero,
         totalBalance = totalBalance ?? BigInt.zero;
+
+  SyncState copyWith({
+    bool? isSyncing,
+    bool? isBackgroundMode,
+    double? percentage,
+    int? scannedHeight,
+    int? chainTipHeight,
+    BigInt? transparentBalance,
+    BigInt? saplingBalance,
+    BigInt? orchardBalance,
+    BigInt? totalBalance,
+    String? error,
+    List<rust_sync.TransactionInfo>? recentTransactions,
+  }) {
+    return SyncState(
+      isSyncing: isSyncing ?? this.isSyncing,
+      isBackgroundMode: isBackgroundMode ?? this.isBackgroundMode,
+      percentage: percentage ?? this.percentage,
+      scannedHeight: scannedHeight ?? this.scannedHeight,
+      chainTipHeight: chainTipHeight ?? this.chainTipHeight,
+      transparentBalance: transparentBalance ?? this.transparentBalance,
+      saplingBalance: saplingBalance ?? this.saplingBalance,
+      orchardBalance: orchardBalance ?? this.orchardBalance,
+      totalBalance: totalBalance ?? this.totalBalance,
+      error: error ?? this.error,
+      recentTransactions: recentTransactions ?? this.recentTransactions,
+    );
+  }
 }
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
@@ -60,14 +88,20 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _eventChannelSub = _progressChannel.receiveBroadcastStream().listen(
         (event) {
           final map = event as Map;
+          final isSyncing = map['isSyncing'] as bool?;
+          final isComplete = map['isComplete'] as bool?;
+          final hasNewTx = map['hasNewTx'] as bool?;
+          if (isSyncing == null || isComplete == null || hasNewTx == null) {
+            log('SyncNotifier: WARNING: EventChannel missing fields — isSyncing=$isSyncing isComplete=$isComplete hasNewTx=$hasNewTx');
+          }
           _onSyncProgress(
             scannedHeight: (map['scannedHeight'] as num).toInt(),
             chainTipHeight: (map['chainTipHeight'] as num).toInt(),
             percentage: (map['percentage'] as num).toDouble(),
             isBackground: true,
-            isSyncing: (map['isSyncing'] as bool?) ?? true,
-            isComplete: (map['isComplete'] as bool?) ?? false,
-            hasNewTx: (map['hasNewTx'] as bool?) ?? false,
+            isSyncing: isSyncing ?? true,
+            isComplete: isComplete ?? false,
+            hasNewTx: hasNewTx ?? false,
           );
         },
         onError: (e) { log('SyncNotifier: EventChannel error: $e'); },
