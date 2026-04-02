@@ -298,20 +298,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         network: network.name,
       );
 
-      final scanned = progress.scannedHeight.toInt();
-      final tip = progress.chainTipHeight.toInt();
-      final pct = tip > 0 ? scanned / tip : 0.0;
-
+      // Polling only updates balance and isSyncing.
+      // Progress (percentage, heights) comes exclusively from the
+      // stream/EventChannel to avoid oscillation.
+      final prev = state.value;
       state = AsyncData(SyncState(
         isSyncing: progress.isSyncing,
         isBackgroundMode: _backgroundMode,
-        percentage: pct,
-        scannedHeight: scanned,
-        chainTipHeight: tip,
+        percentage: prev?.percentage ?? 0.0,
+        scannedHeight: prev?.scannedHeight ?? 0,
+        chainTipHeight: prev?.chainTipHeight ?? 0,
         transparentBalance: balance.transparent,
         saplingBalance: balance.sapling,
         orchardBalance: balance.orchard,
         totalBalance: balance.total,
+        error: prev?.error,
       ));
     } catch (e) {
       log('SyncNotifier: polling update failed: $e');

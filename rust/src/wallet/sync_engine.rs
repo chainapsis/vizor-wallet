@@ -233,23 +233,21 @@ fn get_progress(db: &WalletDatabase) -> Result<SyncProgressEvent, String> {
             let scanned = u32::from(s.fully_scanned_height()) as u64;
             let tip = u32::from(s.chain_tip_height()) as u64;
 
-            // Use note-based progress from WalletSummary::progress()
-            // This tracks scanned notes / total notes, works correctly
-            // even when blocks are scanned out of order.
+            // Note-based progress from WalletSummary::progress().
+            // Combines scan + recovery ratios (numerators/denominators added).
+            // When denominator is 0 (no notes to scan, e.g. new wallet),
+            // treat as 100% — matches zcash-android-wallet-sdk behavior.
             let progress = s.progress();
             let scan = progress.scan();
             let recovery = progress.recovery();
-            let pct = if *scan.denominator() > 0 {
-                *scan.numerator() as f64 / *scan.denominator() as f64
-            } else if let Some(r) = recovery {
-                if *r.denominator() > 0 {
-                    *r.numerator() as f64 / *r.denominator() as f64
-                } else {
-                    if tip > 0 { scanned as f64 / tip as f64 } else { 0.0 }
-                }
-            } else {
-                if tip > 0 { scanned as f64 / tip as f64 } else { 0.0 }
+            let (num, den) = match recovery {
+                Some(r) => (
+                    *scan.numerator() + *r.numerator(),
+                    *scan.denominator() + *r.denominator(),
+                ),
+                None => (*scan.numerator(), *scan.denominator()),
             };
+            let pct = if den > 0 { num as f64 / den as f64 } else { 1.0 };
 
             Ok(SyncProgressEvent {
                 scanned_height: scanned, chain_tip_height: tip, percentage: pct,
