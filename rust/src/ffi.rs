@@ -14,6 +14,7 @@ pub struct CSyncProgress {
     pub chain_tip_height: u64,
     pub percentage: f64,
     pub is_complete: bool,
+    pub has_new_tx: bool,
 }
 
 /// C callback type for progress updates.
@@ -85,6 +86,7 @@ pub extern "C" fn zcash_run_full_sync(
                         chain_tip_height: progress.chain_tip_height,
                         percentage: progress.percentage,
                         is_complete: progress.is_complete,
+                        has_new_tx: progress.has_new_tx,
                     });
                 },
             )

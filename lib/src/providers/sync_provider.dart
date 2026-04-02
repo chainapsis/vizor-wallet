@@ -25,6 +25,7 @@ class SyncState {
   final BigInt orchardBalance;
   final BigInt totalBalance;
   final String? error;
+  final List<rust_sync.TransactionInfo> recentTransactions;
 
   SyncState({
     this.isSyncing = false,
@@ -37,6 +38,7 @@ class SyncState {
     BigInt? orchardBalance,
     BigInt? totalBalance,
     this.error,
+    this.recentTransactions = const [],
   })  : transparentBalance = transparentBalance ?? BigInt.zero,
         saplingBalance = saplingBalance ?? BigInt.zero,
         orchardBalance = orchardBalance ?? BigInt.zero,
@@ -125,6 +127,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           isBackground: false,
           isSyncing: event.isSyncing,
           isComplete: event.isComplete,
+          hasNewTx: event.hasNewTx,
         ),
         onDone: () {
           log('Sync: stream ended');
@@ -215,6 +218,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     required bool isBackground,
     bool isSyncing = true,
     bool isComplete = false,
+    bool hasNewTx = false,
   }) async {
     if (scannedHeight != _lastLoggedHeight) {
       log('Sync: ${(percentage * 100).toStringAsFixed(1)}% ($scannedHeight/$chainTipHeight)');
@@ -228,6 +232,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         network: ZcashNetwork.mainnet.name,
       );
 
+      // Fetch recent transactions when new tx activity detected or sync complete
+      final prev = state.value;
+      var recentTxs = prev?.recentTransactions ?? const [];
+      if (hasNewTx || isComplete) {
+        try {
+          recentTxs = await rust_sync.getTransactionHistory(
+            dbPath: dbPath,
+            network: ZcashNetwork.mainnet.name,
+            limit: 10,
+          );
+        } catch (e) {
+          log('SyncNotifier: tx history fetch failed: $e');
+        }
+      }
+
       state = AsyncData(SyncState(
         isSyncing: isSyncing && !isComplete,
         isBackgroundMode: isBackground || _backgroundMode,
@@ -238,6 +257,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         saplingBalance: balance.sapling,
         orchardBalance: balance.orchard,
         totalBalance: balance.total,
+        recentTransactions: recentTxs,
       ));
     } catch (e) {
       log('SyncNotifier: balance fetch failed: $e');
@@ -269,6 +289,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         dbPath: dbPath,
         network: ZcashNetwork.mainnet.name,
       );
+      final recentTxs = await rust_sync.getTransactionHistory(
+        dbPath: dbPath,
+        network: ZcashNetwork.mainnet.name,
+        limit: 10,
+      );
 
       final prev = state.value;
       state = AsyncData(SyncState(
@@ -281,6 +306,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         saplingBalance: balance.sapling,
         orchardBalance: balance.orchard,
         totalBalance: balance.total,
+        recentTransactions: recentTxs,
       ));
     } catch (e) {
       log('SyncNotifier: balance refresh failed: $e');

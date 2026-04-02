@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../main.dart' show log;
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
+import '../../../rust/api/sync.dart' as rust_sync;
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -75,6 +76,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           if (sync.isBackgroundMode && sync.error == null)
             SliverToBoxAdapter(child: _buildStopBackgroundSyncButton(context)),
           SliverToBoxAdapter(child: _buildActivityPlaceholder(context, sync)),
+          // Recent transactions
+          if (sync.recentTransactions.isNotEmpty)
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => _buildTransactionItem(context, sync.recentTransactions[index]),
+                childCount: sync.recentTransactions.length,
+              ),
+            ),
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
@@ -400,6 +409,86 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     return const SizedBox.shrink();
+  }
+
+  Widget _buildTransactionItem(BuildContext context, rust_sync.TransactionInfo tx) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final isIncoming = tx.accountBalanceDelta >= 0;
+    final zec = tx.accountBalanceDelta.abs() / 100000000;
+    final sign = isIncoming ? '+' : '-';
+    final amount = '$sign${zec.toStringAsFixed(zec < 0.01 ? 8 : 3)} ZEC';
+
+    // Format date
+    String dateStr = '';
+    if (tx.blockTime > BigInt.zero) {
+      final date = DateTime.fromMillisecondsSinceEpoch(tx.blockTime.toInt() * 1000);
+      dateStr = '${_monthName(date.month)} ${date.day}, ${date.year} \u2022 ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    } else {
+      dateStr = 'Pending';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: colors.surfaceContainerLow,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Icon(
+                isIncoming ? Icons.check_circle : Icons.arrow_outward,
+                color: isIncoming ? colors.tertiary : colors.secondary,
+                size: 24,
+              ),
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isIncoming ? 'Received' : 'Sent',
+                  style: text.titleMedium,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  dateStr,
+                  style: text.bodySmall?.copyWith(color: colors.outline),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                amount,
+                style: text.titleMedium?.copyWith(
+                  color: isIncoming ? colors.tertiary : colors.onSurface,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                isIncoming ? 'SHIELDED' : 'EXTERNAL',
+                style: text.labelSmall?.copyWith(color: colors.outline),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _monthName(int month) {
+    const months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[month];
   }
 
   Widget _buildBottomNav(BuildContext context) {

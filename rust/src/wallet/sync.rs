@@ -439,19 +439,26 @@ pub(crate) struct TransactionInfo {
 }
 
 pub fn get_transaction_history(
-    db_path: &str, _network: Network,
+    db_path: &str, _network: Network, limit: Option<u32>,
 ) -> Result<Vec<TransactionInfo>, String> {
     // Open a separate read-only connection (WalletDb.conn is private)
     let conn = rusqlite::Connection::open_with_flags(
         db_path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     ).map_err(|e| format!("Failed to open DB: {e}"))?;
-    let mut stmt = conn.prepare(
-        "SELECT txid, mined_height, expired_unmined, account_balance_delta, \
-         COALESCE(fee_paid, 0), COALESCE(block_time, 0) \
-         FROM v_transactions \
-         ORDER BY COALESCE(mined_height, 999999999) DESC, tx_index DESC"
-    ).map_err(|e| format!("SQL error: {e}"))?;
+    let sql = match limit {
+        Some(n) => format!(
+            "SELECT txid, mined_height, expired_unmined, account_balance_delta, \
+             COALESCE(fee_paid, 0), COALESCE(block_time, 0) \
+             FROM v_transactions \
+             ORDER BY COALESCE(mined_height, 999999999) DESC, tx_index DESC \
+             LIMIT {n}"),
+        None => "SELECT txid, mined_height, expired_unmined, account_balance_delta, \
+             COALESCE(fee_paid, 0), COALESCE(block_time, 0) \
+             FROM v_transactions \
+             ORDER BY COALESCE(mined_height, 999999999) DESC, tx_index DESC".to_string(),
+    };
+    let mut stmt = conn.prepare(&sql).map_err(|e| format!("SQL error: {e}"))?;
 
     let rows = stmt.query_map([], |row| {
         let txid_blob: Vec<u8> = row.get(0)?;

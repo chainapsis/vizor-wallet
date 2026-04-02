@@ -215,9 +215,11 @@ Future<void> setTransactionStatus({
 Future<List<TransactionInfo>> getTransactionHistory({
   required String dbPath,
   required String network,
+  int? limit,
 }) => RustLib.instance.api.crateApiSyncGetTransactionHistory(
   dbPath: dbPath,
   network: network,
+  limit: limit,
 );
 
 String getBlocksDir({required String cachePath}) =>
@@ -251,6 +253,7 @@ class ApiSyncProgressEvent {
   final double percentage;
   final bool isSyncing;
   final bool isComplete;
+  final bool hasNewTx;
 
   const ApiSyncProgressEvent({
     required this.scannedHeight,
@@ -258,6 +261,7 @@ class ApiSyncProgressEvent {
     required this.percentage,
     required this.isSyncing,
     required this.isComplete,
+    required this.hasNewTx,
   });
 
   @override
@@ -266,7 +270,8 @@ class ApiSyncProgressEvent {
       chainTipHeight.hashCode ^
       percentage.hashCode ^
       isSyncing.hashCode ^
-      isComplete.hashCode;
+      isComplete.hashCode ^
+      hasNewTx.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -277,7 +282,8 @@ class ApiSyncProgressEvent {
           chainTipHeight == other.chainTipHeight &&
           percentage == other.percentage &&
           isSyncing == other.isSyncing &&
-          isComplete == other.isComplete;
+          isComplete == other.isComplete &&
+          hasNewTx == other.hasNewTx;
 }
 
 class BlockMetaInfo {

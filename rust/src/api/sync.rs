@@ -33,6 +33,7 @@ pub struct ApiSyncProgressEvent {
     pub percentage: f64,
     pub is_syncing: bool,
     pub is_complete: bool,
+    pub has_new_tx: bool,
 }
 
 /// Start a full sync. Streams progress events to Dart via StreamSink.
@@ -71,6 +72,7 @@ pub fn start_full_sync(
                         percentage: progress.percentage,
                         is_syncing: progress.is_syncing,
                         is_complete: progress.is_complete,
+                        has_new_tx: progress.has_new_tx,
                     }).is_err() {
                         log::warn!("sync: StreamSink closed, progress not delivered");
                     }
@@ -369,10 +371,10 @@ pub struct TransactionInfo {
     pub block_time: u64,
 }
 
-pub fn get_transaction_history(db_path: String, network: String) -> Result<Vec<TransactionInfo>, String> {
+pub fn get_transaction_history(db_path: String, network: String, limit: Option<u32>) -> Result<Vec<TransactionInfo>, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        let txs = wallet_sync::get_transaction_history(&db_path, network)?;
+        let txs = wallet_sync::get_transaction_history(&db_path, network, limit)?;
         Ok(txs.into_iter().map(|t| TransactionInfo {
             txid_hex: t.txid_hex, mined_height: t.mined_height, expired_unmined: t.expired_unmined,
             account_balance_delta: t.account_balance_delta, fee: t.fee, block_time: t.block_time,

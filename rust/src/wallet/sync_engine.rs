@@ -33,6 +33,7 @@ pub struct SyncProgressEvent {
     pub percentage: f64,
     pub is_syncing: bool,
     pub is_complete: bool,
+    pub has_new_tx: bool,
 }
 
 const BATCH_SIZE_FOREGROUND: u32 = 100;
@@ -197,7 +198,7 @@ pub async fn run_sync_inner(
         };
 
         // Scan from memory
-        scan_cached_blocks(&network, &block_source, &mut db, start, &from_state, batch_size as usize)
+        let scan_summary = scan_cached_blocks(&network, &block_source, &mut db, start, &from_state, batch_size as usize)
             .map_err(|e| err(&format!("scan: {e}")))?;
 
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
@@ -211,12 +212,17 @@ pub async fn run_sync_inner(
         // Report progress (scan-queue based)
         blocks_scanned += u32::from(end).saturating_sub(u32::from(start)) as u64;
         let pct = if total_to_scan > 0 { blocks_scanned as f64 / total_to_scan as f64 } else { 1.0 };
+        let has_new_tx = scan_summary.received_sapling_note_count() > 0
+            || scan_summary.spent_sapling_note_count() > 0
+            || scan_summary.received_orchard_note_count() > 0
+            || scan_summary.spent_orchard_note_count() > 0;
         let progress = SyncProgressEvent {
             scanned_height: u32::from(end) as u64,
             chain_tip_height: tip.height as u64,
             percentage: pct.min(1.0),
             is_syncing: true,
             is_complete: false,
+            has_new_tx,
         };
         log::info!("[{}] sync: {:.1}% ({}/{} blocks)", elapsed(), pct * 100.0, blocks_scanned, total_to_scan);
         progress_fn(progress);
@@ -230,6 +236,7 @@ pub async fn run_sync_inner(
         percentage: 1.0,
         is_syncing: false,
         is_complete: true,
+        has_new_tx: false,
     };
     progress_fn(final_progress);
 

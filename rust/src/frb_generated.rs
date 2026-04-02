@@ -523,11 +523,15 @@ fn wire__crate__api__sync__get_transaction_history_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
+            let api_limit = <Option<u32>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok =
-                        crate::api::sync::get_transaction_history(api_db_path, api_network)?;
+                    let output_ok = crate::api::sync::get_transaction_history(
+                        api_db_path,
+                        api_network,
+                        api_limit,
+                    )?;
                     Ok(output_ok)
                 })())
             }
@@ -1291,12 +1295,14 @@ impl SseDecode for crate::api::sync::ApiSyncProgressEvent {
         let mut var_percentage = <f64>::sse_decode(deserializer);
         let mut var_isSyncing = <bool>::sse_decode(deserializer);
         let mut var_isComplete = <bool>::sse_decode(deserializer);
+        let mut var_hasNewTx = <bool>::sse_decode(deserializer);
         return crate::api::sync::ApiSyncProgressEvent {
             scanned_height: var_scannedHeight,
             chain_tip_height: var_chainTipHeight,
             percentage: var_percentage,
             is_syncing: var_isSyncing,
             is_complete: var_isComplete,
+            has_new_tx: var_hasNewTx,
         };
     }
 }
@@ -1419,6 +1425,17 @@ impl SseDecode for Option<String> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<String>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u32>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -1748,6 +1765,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiSyncProgressEvent {
             self.percentage.into_into_dart().into_dart(),
             self.is_syncing.into_into_dart().into_dart(),
             self.is_complete.into_into_dart().into_dart(),
+            self.has_new_tx.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2062,6 +2080,7 @@ impl SseEncode for crate::api::sync::ApiSyncProgressEvent {
         <f64>::sse_encode(self.percentage, serializer);
         <bool>::sse_encode(self.is_syncing, serializer);
         <bool>::sse_encode(self.is_complete, serializer);
+        <bool>::sse_encode(self.has_new_tx, serializer);
     }
 }
 
@@ -2163,6 +2182,16 @@ impl SseEncode for Option<String> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <String>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u32>::sse_encode(value, serializer);
         }
     }
 }
