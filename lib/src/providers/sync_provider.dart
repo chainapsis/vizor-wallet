@@ -264,13 +264,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       ));
     } catch (e) {
       log('SyncNotifier: balance fetch failed: $e');
-      state = AsyncData(SyncState(
-        isSyncing: isSyncing && !isComplete,
-        isBackgroundMode: isBackground || _backgroundMode,
-        percentage: percentage,
-        scannedHeight: scannedHeight,
-        chainTipHeight: chainTipHeight,
-      ));
     }
 
     // Update Android notification
@@ -300,7 +293,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
       final prev = state.value;
       state = AsyncData(SyncState(
-        isSyncing: false,
+        isSyncing: prev?.isSyncing ?? false,
         isBackgroundMode: _backgroundMode,
         percentage: prev?.percentage ?? 0.0,
         scannedHeight: prev?.scannedHeight ?? 0,
