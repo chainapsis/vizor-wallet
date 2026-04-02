@@ -271,43 +271,42 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _lastLoggedHeight = scannedHeight;
     }
 
+    final prev = state.value;
+    final dbPath = await _getDbPath();
+    final network = ZcashNetwork.mainnet.name;
+
+    BigInt? transparent, sapling, orchard, total;
     try {
-      final dbPath = await _getDbPath();
-      final balance = await rust_sync.getBalance(
-        dbPath: dbPath,
-        network: ZcashNetwork.mainnet.name,
-      );
-
-      // Fetch recent transactions when new tx activity detected or sync complete
-      final prev = state.value;
-      var recentTxs = prev?.recentTransactions ?? const [];
-      if (hasNewTx || isComplete) {
-        try {
-          recentTxs = await rust_sync.getTransactionHistory(
-            dbPath: dbPath,
-            network: ZcashNetwork.mainnet.name,
-            limit: 10,
-          );
-        } catch (e) {
-          log('SyncNotifier: tx history fetch failed: $e');
-        }
-      }
-
-      state = AsyncData(SyncState(
-        isSyncing: isSyncing && !isComplete,
-        isBackgroundMode: isBackground || _backgroundMode,
-        percentage: percentage,
-        scannedHeight: scannedHeight,
-        chainTipHeight: chainTipHeight,
-        transparentBalance: balance.transparent,
-        saplingBalance: balance.sapling,
-        orchardBalance: balance.orchard,
-        totalBalance: balance.total,
-        recentTransactions: recentTxs,
-      ));
+      final balance = await rust_sync.getBalance(dbPath: dbPath, network: network);
+      transparent = balance.transparent;
+      sapling = balance.sapling;
+      orchard = balance.orchard;
+      total = balance.total;
     } catch (e) {
       log('SyncNotifier: balance fetch failed: $e');
     }
+
+    var recentTxs = prev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
+    if (hasNewTx || isComplete) {
+      try {
+        recentTxs = await rust_sync.getTransactionHistory(dbPath: dbPath, network: network, limit: 10);
+      } catch (e) {
+        log('SyncNotifier: tx history fetch failed: $e');
+      }
+    }
+
+    state = AsyncData(SyncState(
+      isSyncing: isSyncing && !isComplete,
+      isBackgroundMode: isBackground || _backgroundMode,
+      percentage: percentage,
+      scannedHeight: scannedHeight,
+      chainTipHeight: chainTipHeight,
+      transparentBalance: transparent ?? prev?.transparentBalance,
+      saplingBalance: sapling ?? prev?.saplingBalance,
+      orchardBalance: orchard ?? prev?.orchardBalance,
+      totalBalance: total ?? prev?.totalBalance,
+      recentTransactions: recentTxs,
+    ));
 
     // Update Android notification
     if (_backgroundMode && Platform.isAndroid) {
