@@ -376,18 +376,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    if (sync.isSyncing && sync.chainTipHeight == 0) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
-        child: Center(
-          child: Text(
-            'Waiting for sync...',
-            style: text.bodyLarge?.copyWith(color: colors.outline),
-          ),
-        ),
-      );
-    }
-
     if (!sync.isSyncing) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),

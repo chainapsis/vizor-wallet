@@ -141,7 +141,18 @@ pub async fn run_sync_inner(
     // 3. Download subtree roots (incremental)
     download_subtree_roots(&mut client, &mut db).await?;
 
-    // 4. Sync loop
+    // 4. Calculate total blocks to scan (for progress reporting)
+    let total_to_scan: u64 = {
+        let ranges = db.suggest_scan_ranges().map_err(|e| err(&format!("suggest_scan_ranges: {e}")))?;
+        ranges.iter()
+            .filter(|r| r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned)
+            .map(|r| u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start)) as u64)
+            .sum()
+    };
+    let mut blocks_scanned: u64 = 0;
+    log::info!("[{}] sync: total blocks to scan = {}", elapsed(), total_to_scan);
+
+    // 5. Sync loop
     loop {
         if cancel.load(Ordering::Relaxed) {
             log::info!("[{}] sync: cancelled", elapsed());
@@ -197,18 +208,30 @@ pub async fn run_sync_inner(
         // Enhancement
         run_enhancement(&mut client, &mut db, network).await?;
 
-        // Report progress
-        let progress = get_progress(&db)?;
-        log::info!("[{}] sync: {:.1}% ({}/{})", elapsed(), progress.percentage * 100.0, progress.scanned_height, progress.chain_tip_height);
+        // Report progress (scan-queue based)
+        blocks_scanned += u32::from(end).saturating_sub(u32::from(start)) as u64;
+        let pct = if total_to_scan > 0 { blocks_scanned as f64 / total_to_scan as f64 } else { 1.0 };
+        let progress = SyncProgressEvent {
+            scanned_height: u32::from(end) as u64,
+            chain_tip_height: tip.height as u64,
+            percentage: pct.min(1.0),
+            is_syncing: true,
+            is_complete: false,
+        };
+        log::info!("[{}] sync: {:.1}% ({}/{} blocks)", elapsed(), pct * 100.0, blocks_scanned, total_to_scan);
         progress_fn(progress);
     }
 
     log::info!("[{}] sync: completed", elapsed());
     // Final progress
-    let mut progress = get_progress(&db)?;
-    progress.is_complete = true;
-    progress.is_syncing = false;
-    progress_fn(progress);
+    let final_progress = SyncProgressEvent {
+        scanned_height: tip.height as u64,
+        chain_tip_height: tip.height as u64,
+        percentage: 1.0,
+        is_syncing: false,
+        is_complete: true,
+    };
+    progress_fn(final_progress);
 
     Ok(())
 }
@@ -226,40 +249,6 @@ fn open_db(path: &str, network: Network) -> Result<WalletDatabase, String> {
         .map_err(|e| err(&format!("DB open: {e}")))
 }
 
-fn get_progress(db: &WalletDatabase) -> Result<SyncProgressEvent, String> {
-    let summary = db.get_wallet_summary(ConfirmationsPolicy::default()).map_err(|e| format!("{e}"))?;
-    match summary {
-        Some(s) => {
-            let scanned = u32::from(s.fully_scanned_height()) as u64;
-            let tip = u32::from(s.chain_tip_height()) as u64;
-
-            // Note-based progress from WalletSummary::progress().
-            // Combines scan + recovery ratios (numerators/denominators added).
-            // When denominator is 0 (no notes to scan, e.g. new wallet),
-            // treat as 100% — matches zcash-android-wallet-sdk behavior.
-            let progress = s.progress();
-            let scan = progress.scan();
-            let recovery = progress.recovery();
-            let (num, den) = match recovery {
-                Some(r) => (
-                    *scan.numerator() + *r.numerator(),
-                    *scan.denominator() + *r.denominator(),
-                ),
-                None => (*scan.numerator(), *scan.denominator()),
-            };
-            let pct = if den > 0 { num as f64 / den as f64 } else { 1.0 };
-
-            Ok(SyncProgressEvent {
-                scanned_height: scanned, chain_tip_height: tip, percentage: pct,
-                is_syncing: scanned < tip, is_complete: false,
-            })
-        }
-        None => Ok(SyncProgressEvent {
-            scanned_height: 0, chain_tip_height: 0, percentage: 0.0,
-            is_syncing: false, is_complete: false,
-        }),
-    }
-}
 
 async fn download_subtree_roots(
     client: &mut CompactTxStreamerClient<Channel>,
