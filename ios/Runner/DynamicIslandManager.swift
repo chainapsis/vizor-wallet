@@ -93,7 +93,7 @@ class DynamicIslandManager {
             appGroupId: "group.com.zcash.zcashWallet"
         )
         Task {
-            await activity.end(state, dismissalPolicy: .immediate)
+            await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: .immediate)
         }
         currentActivity = nil
         activityId = nil
