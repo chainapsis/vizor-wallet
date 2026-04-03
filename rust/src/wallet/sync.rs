@@ -294,33 +294,36 @@ pub async fn execute_proposal(
     let account_id = get_first_account_id(&db)?;
     let account = db.get_account(account_id).map_err(|e| format!("{e}"))?.ok_or("Account not found")?;
 
-    let seed = SecretVec::new(seed_bytes.to_vec());
-    let zip32_index = account.source().key_derivation().ok_or("No key derivation")?.account_index();
-    let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
-        .map_err(|e| format!("USK derivation failed: {e:?}"))?;
+    // Scope seed/USK so they are dropped before network I/O (broadcast)
+    let txids = {
+        let seed = SecretVec::new(seed_bytes.to_vec());
+        let zip32_index = account.source().key_derivation().ok_or("No key derivation")?.account_index();
+        let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
+            .map_err(|e| format!("USK derivation failed: {e:?}"))?;
 
-    let txids = match (spend_params_path, output_params_path) {
-        (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
-            let prover = LocalTxProver::new(
-                std::path::Path::new(sp),
-                std::path::Path::new(op),
-            );
-            create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
-                &mut db, &network, &prover, &prover,
-                &wallet::SpendingKeys::from_unified_spending_key(usk),
-                OvkPolicy::Sender, &stored.proposal,
-            ).map_err(|e| format!("Create TX failed: {e}"))?
+        match (spend_params_path, output_params_path) {
+            (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
+                let prover = LocalTxProver::new(
+                    std::path::Path::new(sp),
+                    std::path::Path::new(op),
+                );
+                create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+                    &mut db, &network, &prover, &prover,
+                    &wallet::SpendingKeys::from_unified_spending_key(usk),
+                    OvkPolicy::Sender, &stored.proposal,
+                ).map_err(|e| format!("Create TX failed: {e}"))?
+            }
+            _ => {
+                let spend_prover = NoOpSpendProver;
+                let output_prover = NoOpOutputProver;
+                create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+                    &mut db, &network, &spend_prover, &output_prover,
+                    &wallet::SpendingKeys::from_unified_spending_key(usk),
+                    OvkPolicy::Sender, &stored.proposal,
+                ).map_err(|e| format!("Create TX failed: {e}"))?
+            }
         }
-        _ => {
-            // No Sapling params — use no-op prover (safe for Orchard-only TXs)
-            let spend_prover = NoOpSpendProver;
-            let output_prover = NoOpOutputProver;
-            create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
-                &mut db, &network, &spend_prover, &output_prover,
-                &wallet::SpendingKeys::from_unified_spending_key(usk),
-                OvkPolicy::Sender, &stored.proposal,
-            ).map_err(|e| format!("Create TX failed: {e}"))?
-        }
+        // seed + usk dropped here, before broadcast
     };
 
     // Broadcast each transaction to lightwalletd
@@ -596,13 +599,15 @@ impl SpendProver for NoOpSpendProver {
         _anchor: bls12_381::Scalar,
         _merkle_path: MerklePath,
     ) -> Option<circuit::Spend> {
-        unreachable!("NoOpSpendProver should not be called for Orchard-only TXs")
+        log::error!("NoOpSpendProver::prepare_circuit called — proposal contains unexpected Sapling spend");
+        None
     }
 
     fn create_proof<R: rand_core::RngCore>(
         &self, _circuit: circuit::Spend, _rng: &mut R,
     ) -> Self::Proof {
-        unreachable!("NoOpSpendProver should not be called for Orchard-only TXs")
+        log::error!("NoOpSpendProver::create_proof called — should never happen");
+        [0u8; GROTH_PROOF_SIZE]
     }
 
     fn encode_proof(_proof: Self::Proof) -> GrothProofBytes {
@@ -622,13 +627,20 @@ impl OutputProver for NoOpOutputProver {
         _value: NoteValue,
         _rcv: ValueCommitTrapdoor,
     ) -> circuit::Output {
-        unreachable!("NoOpOutputProver should not be called for Orchard-only TXs")
+        log::error!("NoOpOutputProver::prepare_circuit called — proposal contains unexpected Sapling output");
+        circuit::Output {
+            value_commitment_opening: None,
+            payment_address: None,
+            commitment_randomness: None,
+            esk: None,
+        }
     }
 
     fn create_proof<R: rand_core::RngCore>(
         &self, _circuit: circuit::Output, _rng: &mut R,
     ) -> Self::Proof {
-        unreachable!("NoOpOutputProver should not be called for Orchard-only TXs")
+        log::error!("NoOpOutputProver::create_proof called — should never happen");
+        [0u8; GROTH_PROOF_SIZE]
     }
 
     fn encode_proof(_proof: Self::Proof) -> GrothProofBytes {
