@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
-import '../../../providers/wallet_provider.dart';
+import '../../../providers/account_provider.dart';
 
 class CreateWalletScreen extends ConsumerStatefulWidget {
   const CreateWalletScreen({super.key});
@@ -28,7 +28,7 @@ class _CreateWalletScreenState extends ConsumerState<CreateWalletScreen> {
   Future<void> _createWallet() async {
     log('CreateScreen._createWallet: starting');
     try {
-      final mnemonic = await ref.read(walletProvider.notifier).createWallet();
+      final mnemonic = await ref.read(accountProvider.notifier).createAccount();
       log('CreateScreen._createWallet: success, got ${mnemonic.split(' ').length} words');
       if (mounted) {
         setState(() {

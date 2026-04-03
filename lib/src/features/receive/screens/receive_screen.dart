@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../../main.dart' show log;
+import '../../../providers/account_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 
@@ -33,9 +34,11 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     try {
       final dir = await getApplicationDocumentsDirectory();
       final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
+      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid ?? '';
       final newAddr = await rust_sync.getNextAvailableAddress(
         dbPath: dbPath,
         network: 'main',
+        accountUuid: accountUuid,
       );
       log('Receive: new diversified address generated');
       setState(() {
