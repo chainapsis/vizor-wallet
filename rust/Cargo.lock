@@ -1989,12 +1989,15 @@ name = "rust_lib_zcash_wallet"
 version = "0.1.0"
 dependencies = [
  "bip0039",
+ "bls12_381",
  "flutter_rust_bridge",
  "hex",
+ "jubjub",
  "log",
  "nonempty 0.10.0",
  "orchard",
  "rand",
+ "rand_core",
  "rusqlite",
  "sapling-crypto",
  "secrecy",
