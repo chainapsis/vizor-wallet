@@ -9,7 +9,7 @@ class TxTrackManager {
     static let taskIdentifier = "com.zcash.zcashWallet.txtrack"
 
     private let trackQueue = DispatchQueue(label: "com.zcash.txtrack", qos: .utility)
-    private let pollInterval: TimeInterval = 10.0
+    private let pollInterval: TimeInterval = 5.0
     private let resultDisplayDelay: TimeInterval = 5.0
     private let lightwalletdUrl = "https://zec.rocks:443"
 
