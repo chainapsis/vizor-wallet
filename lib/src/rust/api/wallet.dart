@@ -74,6 +74,10 @@ Future<String> getUnifiedAddress({
   accountUuid: accountUuid,
 );
 
+/// Generate a new 24-word BIP-39 mnemonic phrase.
+String generateMnemonic() =>
+    RustLib.instance.api.crateApiWalletGenerateMnemonic();
+
 /// Check if a wallet database exists at the given path.
 bool walletExists({required String dbPath}) =>
     RustLib.instance.api.crateApiWalletWalletExists(dbPath: dbPath);

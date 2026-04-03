@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../main.dart' show log;
 import '../core/config/network_config.dart';
 import '../rust/api/sync.dart' as rust_sync;
+import 'account_provider.dart';
 import '../services/background_sync_service.dart' as bg_sync;
 
 const _progressChannel = EventChannel('com.zcash.wallet/sync_progress');
@@ -274,10 +275,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final prev = state.value;
     final dbPath = await _getDbPath();
     final network = ZcashNetwork.mainnet.name;
+    final accountUuid = _getActiveAccountUuid();
+    if (accountUuid == null) return;
 
     BigInt? transparent, sapling, orchard, total;
     try {
-      final balance = await rust_sync.getBalance(dbPath: dbPath, network: network);
+      final balance = await rust_sync.getBalance(dbPath: dbPath, network: network, accountUuid: accountUuid);
       transparent = balance.transparent;
       sapling = balance.sapling;
       orchard = balance.orchard;
@@ -289,7 +292,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     var recentTxs = prev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
     if (hasNewTx || isComplete) {
       try {
-        recentTxs = await rust_sync.getTransactionHistory(dbPath: dbPath, network: network, limit: 10);
+        recentTxs = await rust_sync.getTransactionHistory(dbPath: dbPath, network: network, limit: 10, accountUuid: accountUuid);
       } catch (e) {
         log('SyncNotifier: tx history fetch failed: $e');
       }
@@ -327,10 +330,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final prev = state.value;
     final dbPath = await _getDbPath();
     final network = ZcashNetwork.mainnet.name;
+    final accountUuid = _getActiveAccountUuid();
+    if (accountUuid == null) return;
 
     BigInt? transparent, sapling, orchard, total;
     try {
-      final balance = await rust_sync.getBalance(dbPath: dbPath, network: network);
+      final balance = await rust_sync.getBalance(dbPath: dbPath, network: network, accountUuid: accountUuid);
       transparent = balance.transparent;
       sapling = balance.sapling;
       orchard = balance.orchard;
@@ -341,7 +346,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     var recentTxs = prev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
     try {
-      recentTxs = await rust_sync.getTransactionHistory(dbPath: dbPath, network: network, limit: 10);
+      recentTxs = await rust_sync.getTransactionHistory(dbPath: dbPath, network: network, limit: 10, accountUuid: accountUuid);
     } catch (e) {
       log('SyncNotifier: tx history refresh failed: $e');
     }
@@ -358,6 +363,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       totalBalance: total ?? prev?.totalBalance,
       recentTransactions: recentTxs,
     ));
+  }
+
+  String? _getActiveAccountUuid() {
+    return ref.read(accountProvider).value?.activeAccountUuid;
   }
 
   Future<String> _getDbPath() async {

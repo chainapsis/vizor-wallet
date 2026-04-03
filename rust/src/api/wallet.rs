@@ -151,6 +151,12 @@ pub fn get_unified_address(db_path: String, network: String, account_uuid: Optio
     })
 }
 
+/// Generate a new 24-word BIP-39 mnemonic phrase.
+#[flutter_rust_bridge::frb(sync)]
+pub fn generate_mnemonic() -> String {
+    keys::generate_mnemonic()
+}
+
 /// Check if a wallet database exists at the given path.
 #[flutter_rust_bridge::frb(sync)]
 pub fn wallet_exists(db_path: String) -> bool {
