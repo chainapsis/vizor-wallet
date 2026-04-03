@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../../main.dart' show log;
+import '../../../providers/account_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 
 class HistoryScreen extends ConsumerStatefulWidget {
@@ -29,9 +30,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     try {
       final dir = await getApplicationDocumentsDirectory();
       final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
+      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid ?? '';
       final txs = await rust_sync.getTransactionHistory(
         dbPath: dbPath,
         network: 'main',
+        accountUuid: accountUuid,
       );
       if (mounted) {
         setState(() {

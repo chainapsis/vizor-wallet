@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -96,24 +97,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildTopBar(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final accountState = ref.watch(accountProvider).value;
+    final accountName = accountState?.activeAccount?.name ?? 'Zcash';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(Icons.shield, color: colors.onSurface.withValues(alpha: 0.8), size: 22),
-              const SizedBox(width: 8),
-              Text(
-                'Zcash',
-                style: text.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
+          GestureDetector(
+            onTap: () => context.push('/accounts'),
+            child: Row(
+              children: [
+                Icon(Icons.shield, color: colors.onSurface.withValues(alpha: 0.8), size: 22),
+                const SizedBox(width: 8),
+                Text(
+                  accountName,
+                  style: text.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 4),
+                Icon(Icons.keyboard_arrow_down, color: colors.onSurfaceVariant, size: 20),
+              ],
+            ),
           ),
           IconButton(
             icon: Icon(Icons.qr_code_scanner, color: colors.onSurface),

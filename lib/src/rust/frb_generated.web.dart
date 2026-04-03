@@ -33,6 +33,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  AccountCreationResult dco_decode_account_creation_result(dynamic raw);
+
+  @protected
+  AccountInfo dco_decode_account_info(dynamic raw);
+
+  @protected
   AddressValidationResult dco_decode_address_validation_result(dynamic raw);
 
   @protected
@@ -55,6 +61,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
+  List<AccountInfo> dco_decode_list_account_info(dynamic raw);
 
   @protected
   List<BlockMetaInfo> dco_decode_list_block_meta_info(dynamic raw);
@@ -144,6 +153,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  AccountCreationResult sse_decode_account_creation_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  AccountInfo sse_decode_account_info(SseDeserializer deserializer);
+
+  @protected
   AddressValidationResult sse_decode_address_validation_result(
     SseDeserializer deserializer,
   );
@@ -170,6 +187,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
+  List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
 
   @protected
   List<BlockMetaInfo> sse_decode_list_block_meta_info(
@@ -277,6 +297,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_account_creation_result(
+    AccountCreationResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_account_info(AccountInfo self, SseSerializer serializer);
+
+  @protected
   void sse_encode_address_validation_result(
     AddressValidationResult self,
     SseSerializer serializer,
@@ -305,6 +334,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_account_info(
+    List<AccountInfo> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_block_meta_info(

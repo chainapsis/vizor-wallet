@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../rust/api/wallet.dart' as rust_wallet;
-import '../../../providers/wallet_provider.dart';
+import '../../../providers/account_provider.dart';
 
 class ImportWalletScreen extends ConsumerStatefulWidget {
   const ImportWalletScreen({super.key});
@@ -49,7 +49,7 @@ class _ImportWalletScreenState extends ConsumerState<ImportWalletScreen> {
           birthdayText.isNotEmpty ? int.tryParse(birthdayText) : null;
       log('ImportScreen._import: calling importWallet, birthdayHeight=$birthdayHeight');
 
-      await ref.read(walletProvider.notifier).importWallet(
+      await ref.read(accountProvider.notifier).importAccount(
             mnemonic: _mnemonicController.text.trim(),
             birthdayHeight: birthdayHeight,
           );

@@ -4,11 +4,11 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
+import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
@@ -96,9 +96,11 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       final dir = await getApplicationDocumentsDirectory();
       final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
       final memo = _memoController.text.trim();
+      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid ?? '';
       final fee = await rust_sync.estimateFee(
         dbPath: dbPath,
         network: 'main',
+        accountUuid: accountUuid,
         toAddress: address,
         amountZatoshi: BigInt.from(zatoshi),
         memo: memo.isNotEmpty ? memo : null,
@@ -209,9 +211,11 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
       // Step 1: Propose transfer
       log('Send: proposing transfer');
+      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid ?? '';
       final proposal = await rust_sync.proposeSend(
         dbPath: dbPath,
         network: 'main',
+        accountUuid: accountUuid,
         toAddress: address,
         amountZatoshi: BigInt.from(amountZatoshi),
         memo: memo.isNotEmpty ? memo : null,
@@ -273,10 +277,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       }
 
       // Step 4: Get seed and execute proposal
-      const storage = FlutterSecureStorage();
-      final mnemonic = await storage.read(key: 'zcash_wallet_mnemonic');
+      final mnemonic = await ref.read(accountProvider.notifier).getActiveMnemonic();
       if (mnemonic == null) {
-        setState(() { _error = 'Mnemonic not found in secure storage'; _isSending = false; });
+        setState(() { _error = 'Mnemonic not found for active account'; _isSending = false; });
         return;
       }
 
