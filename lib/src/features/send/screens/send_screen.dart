@@ -55,7 +55,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   }
 
   BigInt _getSpendableBalance() {
-    final syncState = ref.read(syncProvider).valueOrNull;
+    final syncState = ref.read(syncProvider).value;
     return syncState?.totalBalance ?? BigInt.zero;
   }
 
@@ -335,7 +335,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final syncState = ref.watch(syncProvider).valueOrNull;
+    final syncState = ref.watch(syncProvider).value;
     final spendable = syncState?.totalBalance ?? BigInt.zero;
 
     return Scaffold(
