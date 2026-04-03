@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/network_config.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
@@ -167,6 +168,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       log('Send: executing proposal ${proposal.proposalId}');
       final txidResult = await rust_sync.executeProposal(
         dbPath: dbPath,
+        lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
         proposalId: proposal.proposalId,
         seed: seedBytes,
         spendParamsPath: proposal.needsSaplingParams ? spendPath : null,

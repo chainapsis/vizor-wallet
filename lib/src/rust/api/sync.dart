@@ -156,16 +156,18 @@ Future<ProposalResult> proposeSend({
   memo: memo,
 );
 
-/// Step 2: Execute a previously proposed transfer.
+/// Step 2: Execute a previously proposed transfer and broadcast to the network.
 /// spend_params_path and output_params_path are required only if needs_sapling_params was true.
 Future<String> executeProposal({
   required String dbPath,
+  required String lightwalletdUrl,
   required BigInt proposalId,
   required List<int> seed,
   String? spendParamsPath,
   String? outputParamsPath,
 }) => RustLib.instance.api.crateApiSyncExecuteProposal(
   dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
   proposalId: proposalId,
   seed: seed,
   spendParamsPath: spendParamsPath,
