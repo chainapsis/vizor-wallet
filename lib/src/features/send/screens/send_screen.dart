@@ -60,8 +60,34 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   }
 
   String _formatZec(BigInt zatoshi) {
-    final zec = zatoshi.toDouble() / 100000000;
-    return zec.toStringAsFixed(8);
+    final abs = zatoshi.abs();
+    final whole = abs ~/ BigInt.from(100000000);
+    final frac = (abs % BigInt.from(100000000)).toString().padLeft(8, '0');
+    final sign = zatoshi < BigInt.zero ? '-' : '';
+    return '$sign$whole.$frac';
+  }
+
+  /// Parse a ZEC string to zatoshi without floating-point.
+  /// Handles: "1.5", ".01", "100", "0.00000001"
+  int? _parseZecToZatoshi(String input) {
+    var s = input.trim();
+    if (s.isEmpty) return null;
+    if (s.startsWith('.')) s = '0$s';
+
+    final parts = s.split('.');
+    if (parts.length > 2) return null;
+
+    final whole = int.tryParse(parts[0].isEmpty ? '0' : parts[0]);
+    if (whole == null || whole < 0) return null;
+
+    String frac = parts.length > 1 ? parts[1] : '';
+    if (frac.length > 8) frac = frac.substring(0, 8);
+    frac = frac.padRight(8, '0');
+
+    final fracInt = int.tryParse(frac);
+    if (fracInt == null) return null;
+
+    return whole * 100000000 + fracInt;
   }
 
   Future<void> _send() async {
@@ -69,10 +95,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
     try {
       final address = _addressController.text.trim();
-      final amountZec = double.tryParse(_amountController.text.trim()) ?? 0;
-      final amountZatoshi = (amountZec * 100000000).round();
+      final amountZatoshi = _parseZecToZatoshi(_amountController.text.trim());
 
-      if (amountZatoshi <= 0) {
+      if (amountZatoshi == null || amountZatoshi <= 0) {
         setState(() { _error = 'Invalid amount'; _isSending = false; });
         return;
       }
@@ -399,6 +424,10 @@ class _SendScreenState extends ConsumerState<SendScreen> {
               TextField(
                 controller: _amountController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+                  _ZecAmountFormatter(),
+                ],
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   labelText: 'Amount (ZEC)',
@@ -451,5 +480,28 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Enforces: one decimal point max, up to 8 fractional digits.
+class _ZecAmountFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+
+    // Allow empty
+    if (text.isEmpty) return newValue;
+
+    // Only one decimal point
+    if ('.'.allMatches(text).length > 1) return oldValue;
+
+    // Limit fractional digits to 8
+    final dotIndex = text.indexOf('.');
+    if (dotIndex != -1 && text.length - dotIndex - 1 > 8) return oldValue;
+
+    return newValue;
   }
 }

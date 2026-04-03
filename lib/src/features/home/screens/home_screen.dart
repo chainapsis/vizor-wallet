@@ -34,10 +34,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   String _formatZec(BigInt zatoshi) {
-    final zec = zatoshi.toDouble() / 100000000;
-    if (zec == 0) return '0.00';
-    if (zec < 0.01) return zec.toStringAsFixed(8);
-    return zec.toStringAsFixed(2);
+    if (zatoshi == BigInt.zero) return '0.00';
+    final whole = zatoshi ~/ BigInt.from(100000000);
+    final frac = (zatoshi % BigInt.from(100000000)).toString().padLeft(8, '0');
+    if (whole == BigInt.zero && int.parse(frac) < 1000000) {
+      return '0.$frac'; // < 0.01: show full 8 digits
+    }
+    return '$whole.${frac.substring(0, 2)}'; // >= 0.01: show 2 decimals
   }
 
   @override
