@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../../main.dart' show log;
+import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 
@@ -27,7 +28,6 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   final _memoController = TextEditingController();
   bool _isSending = false;
   String? _error;
-  String? _txid;
   String _addressType = '';
 
   @override
@@ -52,20 +52,40 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     }
   }
 
+  BigInt _getSpendableBalance() {
+    final syncState = ref.read(syncProvider).valueOrNull;
+    return syncState?.totalBalance ?? BigInt.zero;
+  }
+
+  String _formatZec(BigInt zatoshi) {
+    final zec = zatoshi.toDouble() / 100000000;
+    return zec.toStringAsFixed(8);
+  }
+
   Future<void> _send() async {
-    setState(() { _isSending = true; _error = null; _txid = null; });
+    setState(() { _isSending = true; _error = null; });
 
     try {
       final address = _addressController.text.trim();
       final amountZec = double.tryParse(_amountController.text.trim()) ?? 0;
       final amountZatoshi = (amountZec * 100000000).round();
-      final memo = _memoController.text.trim();
 
       if (amountZatoshi <= 0) {
         setState(() { _error = 'Invalid amount'; _isSending = false; });
         return;
       }
 
+      // Check balance before proposing
+      final spendable = _getSpendableBalance();
+      if (BigInt.from(amountZatoshi) > spendable) {
+        setState(() {
+          _error = 'Insufficient balance. Available: ${_formatZec(spendable)} ZEC';
+          _isSending = false;
+        });
+        return;
+      }
+
+      final memo = _memoController.text.trim();
       final dir = await getApplicationDocumentsDirectory();
       final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
 
@@ -81,7 +101,20 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
       log('Send: proposal_id=${proposal.proposalId}, needs_sapling=${proposal.needsSaplingParams}, fee=${proposal.feeZatoshi}');
 
-      // Step 2: Check Sapling params if needed
+      // Step 2: Show confirmation with fee
+      if (!mounted) return;
+      final confirmed = await _showConfirmationDialog(
+        address: address,
+        amountZatoshi: BigInt.from(amountZatoshi),
+        feeZatoshi: proposal.feeZatoshi,
+        memo: memo.isNotEmpty ? memo : null,
+      );
+      if (!confirmed) {
+        setState(() => _isSending = false);
+        return;
+      }
+
+      // Step 3: Check Sapling params if needed
       final paramsDir = '${dir.path}${Platform.pathSeparator}sapling_params';
       final spendPath = '$paramsDir${Platform.pathSeparator}sapling-spend.params';
       final outputPath = '$paramsDir${Platform.pathSeparator}sapling-output.params';
@@ -91,15 +124,13 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         final outputExists = File(outputPath).existsSync();
 
         if (!spendExists || !outputExists) {
-          // Show confirmation dialog
           if (!mounted) return;
-          final confirmed = await _showSaplingParamsDialog();
-          if (!confirmed) {
+          final downloadConfirmed = await _showSaplingParamsDialog();
+          if (!downloadConfirmed) {
             setState(() => _isSending = false);
             return;
           }
 
-          // Download params
           await Directory(paramsDir).create(recursive: true);
           if (!spendExists) {
             log('Send: downloading sapling-spend.params (~47MB)');
@@ -123,7 +154,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         }
       }
 
-      // Step 3: Get seed and execute proposal
+      // Step 4: Get seed and execute proposal
       const storage = FlutterSecureStorage();
       final mnemonic = await storage.read(key: 'zcash_wallet_mnemonic');
       if (mnemonic == null) {
@@ -131,7 +162,6 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         return;
       }
 
-      // Derive seed bytes from mnemonic
       final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
 
       log('Send: executing proposal ${proposal.proposalId}');
@@ -144,14 +174,91 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       );
 
       log('Send: success, txids=$txidResult');
-      setState(() {
-        _txid = txidResult;
-        _isSending = false;
-      });
+
+      // Show success and navigate back to home
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Transaction sent successfully'),
+          backgroundColor: Theme.of(context).colorScheme.tertiary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      Navigator.of(context).pop();
     } catch (e) {
       log('Send: ERROR: $e');
       setState(() { _error = e.toString(); _isSending = false; });
     }
+  }
+
+  Future<bool> _showConfirmationDialog({
+    required String address,
+    required BigInt amountZatoshi,
+    required BigInt feeZatoshi,
+    String? memo,
+  }) async {
+    final theme = Theme.of(context);
+    final totalZatoshi = amountZatoshi + feeZatoshi;
+
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Transaction'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('To', style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            )),
+            const SizedBox(height: 4),
+            Text(
+              '${address.substring(0, 16)}...${address.substring(address.length - 8)}',
+              style: theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+            ),
+            const SizedBox(height: 16),
+            _buildConfirmRow(theme, 'Amount', '${_formatZec(amountZatoshi)} ZEC'),
+            const SizedBox(height: 8),
+            _buildConfirmRow(theme, 'Fee', '${_formatZec(feeZatoshi)} ZEC'),
+            Divider(height: 24, color: theme.colorScheme.outlineVariant),
+            _buildConfirmRow(theme, 'Total', '${_formatZec(totalZatoshi)} ZEC',
+              bold: true),
+            if (memo != null && memo.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text('Memo', style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              )),
+              const SizedBox(height: 4),
+              Text(memo, style: theme.textTheme.bodySmall),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Confirm & Send'),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  Widget _buildConfirmRow(ThemeData theme, String label, String value, {bool bold = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        )),
+        Text(value, style: theme.textTheme.bodyMedium?.copyWith(
+          fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+        )),
+      ],
+    );
   }
 
   Future<bool> _showSaplingParamsDialog() async {
@@ -206,6 +313,11 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final syncState = ref.watch(syncProvider).valueOrNull;
+    final spendable = syncState?.totalBalance ?? BigInt.zero;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Send ZEC')),
       body: SafeArea(
@@ -214,6 +326,30 @@ class _SendScreenState extends ConsumerState<SendScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Available balance
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Available Balance',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      )),
+                    const SizedBox(height: 4),
+                    Text('${_formatZec(spendable)} ZEC',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      )),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
               TextField(
                 controller: _addressController,
                 decoration: InputDecoration(
@@ -222,7 +358,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                   suffixIcon: _addressType.isNotEmpty
                       ? Icon(
                           _addressType == 'invalid' ? Icons.error : Icons.check_circle,
-                          color: _addressType == 'invalid' ? Colors.red : Colors.green,
+                          color: _addressType == 'invalid'
+                              ? colors.error
+                              : colors.tertiary,
                         )
                       : null,
                 ),
@@ -233,7 +371,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text('Address type: $_addressType',
-                      style: Theme.of(context).textTheme.labelSmall),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      )),
                 ),
               const SizedBox(height: 16),
               TextField(
@@ -248,42 +388,30 @@ class _SendScreenState extends ConsumerState<SendScreen> {
               const SizedBox(height: 16),
               TextField(
                 controller: _memoController,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
                   labelText: 'Memo (optional)',
-                  helperText: 'Only available for shielded addresses',
+                  helperText: _addressType == 'transparent'
+                      ? 'Memo not available for transparent addresses'
+                      : 'Only available for shielded addresses',
+                  helperStyle: _addressType == 'transparent'
+                      ? TextStyle(color: colors.error)
+                      : null,
                 ),
                 maxLines: 2,
+                enabled: _addressType != 'transparent',
               ),
               if (_error != null) ...[
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.errorContainer,
+                    color: colors.errorContainer,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(_error!, style: TextStyle(
-                    color: Theme.of(context).colorScheme.onErrorContainer,
+                    color: colors.onErrorContainer,
                   )),
-                ),
-              ],
-              if (_txid != null) ...[
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.tertiaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Transaction sent!', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      Text('TxID: $_txid', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace')),
-                    ],
-                  ),
                 ),
               ],
               const SizedBox(height: 24),
