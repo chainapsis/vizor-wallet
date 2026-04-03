@@ -32,6 +32,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   String? _error;
   String _addressType = '';
   String? _amountError; // null = no error, empty string = silent invalid (empty/dot)
+  int _validateSeq = 0;
 
   @override
   void dispose() {
@@ -62,6 +63,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   }
 
   Future<void> _validateAmount() async {
+    final seq = ++_validateSeq;
     final text = _amountController.text.trim();
 
     // Empty or just "." — silently invalid (no error shown, button disabled)
@@ -76,17 +78,16 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       return;
     }
 
-    // Quick balance pre-check before calling propose
+    // Quick balance pre-check
     final spendable = _getSpendableBalance();
     if (BigInt.from(zatoshi) > spendable) {
       setState(() => _amountError = 'Insufficient balance');
       return;
     }
 
-    // Use propose to get actual fee
+    // Need valid address to estimate fee
     final address = _addressController.text.trim();
     if (address.isEmpty || _addressType == 'invalid' || _addressType == 'error' || _addressType.isEmpty) {
-      // Can't propose without valid address — accept amount for now
       setState(() => _amountError = null);
       return;
     }
@@ -95,27 +96,31 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       final dir = await getApplicationDocumentsDirectory();
       final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
       final memo = _memoController.text.trim();
-      final proposal = await rust_sync.proposeSend(
+      final fee = await rust_sync.estimateFee(
         dbPath: dbPath,
         network: 'main',
         toAddress: address,
         amountZatoshi: BigInt.from(zatoshi),
         memo: memo.isNotEmpty ? memo : null,
       );
-      final totalNeeded = BigInt.from(zatoshi) + proposal.feeZatoshi;
+
+      // Stale check — new input arrived while awaiting
+      if (seq != _validateSeq) return;
+
+      final totalNeeded = BigInt.from(zatoshi) + fee;
       if (totalNeeded > spendable) {
-        final feeZec = _formatZec(proposal.feeZatoshi);
+        final feeZec = _formatZec(fee);
         setState(() => _amountError = 'Insufficient balance (fee: $feeZec ZEC)');
       } else {
         setState(() => _amountError = null);
       }
     } catch (e) {
-      // Propose failed — likely insufficient funds or invalid params
+      if (seq != _validateSeq) return;
       final msg = e.toString();
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
         setState(() => _amountError = 'Insufficient balance including fee');
       } else {
-        // Other propose errors — don't block, let _send() handle it
+        log('Send: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
       }
     }

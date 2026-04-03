@@ -156,6 +156,21 @@ Future<ProposalResult> proposeSend({
   memo: memo,
 );
 
+/// Estimate the fee for a transfer without storing a proposal.
+Future<BigInt> estimateFee({
+  required String dbPath,
+  required String network,
+  required String toAddress,
+  required BigInt amountZatoshi,
+  String? memo,
+}) => RustLib.instance.api.crateApiSyncEstimateFee(
+  dbPath: dbPath,
+  network: network,
+  toAddress: toAddress,
+  amountZatoshi: amountZatoshi,
+  memo: memo,
+);
+
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
 /// spend_params_path and output_params_path are required only if needs_sapling_params was true.
 Future<String> executeProposal({

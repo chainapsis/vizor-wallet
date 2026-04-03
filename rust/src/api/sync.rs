@@ -298,6 +298,17 @@ pub fn propose_send(
     })
 }
 
+/// Estimate the fee for a transfer without storing a proposal.
+pub fn estimate_fee(
+    db_path: String, network: String,
+    to_address: String, amount_zatoshi: u64, memo: Option<String>,
+) -> Result<u64, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        wallet_sync::estimate_fee(&db_path, network, &to_address, amount_zatoshi, memo.as_deref())
+    })
+}
+
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
 /// spend_params_path and output_params_path are required only if needs_sapling_params was true.
 pub fn execute_proposal(

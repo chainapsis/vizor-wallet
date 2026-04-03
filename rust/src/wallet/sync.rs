@@ -274,6 +274,44 @@ pub fn propose_send(
     Ok(ProposalResult { proposal_id: id, needs_sapling_params: needs_sapling, fee_zatoshi: fee })
 }
 
+/// Estimate the fee for a transfer without storing the proposal.
+/// Used for validation only — does not consume resources in PROPOSAL_STORE.
+pub fn estimate_fee(
+    db_path: &str, network: Network,
+    to_address: &str, amount_zatoshi: u64, memo_str: Option<&str>,
+) -> Result<u64, String> {
+    use zcash_protocol::ShieldedProtocol as SP;
+
+    let mut db = open_wallet_db(db_path, network)?;
+    let account_id = get_first_account_id(&db)?;
+
+    let to: zcash_address::ZcashAddress = to_address.parse().map_err(|e| format!("Bad address: {e}"))?;
+    let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
+    let memo_bytes = match memo_str {
+        Some(m) => {
+            let bytes = MemoBytes::from(Memo::from_bytes(m.as_bytes()).map_err(|e| format!("Bad memo: {e}"))?);
+            Some(bytes)
+        }
+        None => None,
+    };
+
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
+    let payment = Payment::new(to, value, memo_bytes, None, None, vec![])
+        .ok_or("Cannot send memo to this address type")?;
+    let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
+
+    let proposal = propose_transfer::<_, _, _, _, Infallible>(
+        &mut db, &network, account_id, &input_selector, &change_strategy,
+        request, ConfirmationsPolicy::default(),
+    ).map_err(|e| format!("Propose failed: {e}"))?;
+
+    let fee: u64 = proposal.steps().iter()
+        .map(|step| u64::from(step.balance().fee_required()))
+        .sum();
+
+    Ok(fee)
+}
+
 /// Execute a previously proposed transfer, then broadcast to the network.
 /// Returns comma-separated txids on success.
 pub async fn execute_proposal(
