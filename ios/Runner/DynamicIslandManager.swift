@@ -117,6 +117,8 @@ class DynamicIslandManager {
             print("[DI] Activity started: \(id)")
         } catch {
             print("[DI] Failed to start activity: \(error)")
+            displayMode = .idle
+            activityId = nil
         }
     }
 
