@@ -181,12 +181,15 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       // Refresh balance and tx list so pending TX appears immediately
       await ref.read(syncProvider.notifier).refreshAfterSend();
 
-      // Start iOS TX tracking BGTask for Dynamic Island
+      // Start iOS TX tracking BGTask for Dynamic Island (iOS 26+, not simulator)
       if (Platform.isIOS) {
         try {
           const channel = MethodChannel('com.zcash.wallet/background_sync');
-          await channel.invokeMethod('startTxTracking');
-          log('Send: iOS TX tracking started');
+          final available = await channel.invokeMethod<bool>('isAvailable') ?? false;
+          if (available) {
+            await channel.invokeMethod('startTxTracking');
+            log('Send: iOS TX tracking started');
+          }
         } catch (e) {
           log('Send: iOS TX tracking failed: $e');
         }
