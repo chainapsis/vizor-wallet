@@ -133,8 +133,13 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
       return 'Insufficient balance to cover amount and fee.';
     }
-    if (lower.contains('grpc connect failed') || lower.contains('network')) {
+    if (lower.contains('grpc connect failed') || lower.contains('connection refused') || lower.contains('dns error') || lower.contains('tls error')) {
       return 'Network error. Please check your connection and try again.';
+    }
+    // Partial broadcast must be checked before generic "broadcast rejected"
+    if (lower.contains('broadcast failed after') && lower.contains('txs sent')) {
+      return 'Some transactions were broadcast but not all. '
+             'Please check your transaction history before retrying.';
     }
     if (lower.contains('broadcast rejected')) {
       return 'Transaction was rejected by the network. Please try again.';

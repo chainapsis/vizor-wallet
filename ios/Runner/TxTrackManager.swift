@@ -12,6 +12,7 @@ class TxTrackManager {
     private let pollInterval: TimeInterval = 5.0
     private let resultDisplayDelay: TimeInterval = 5.0
     private let lightwalletdUrl = "https://zec.rocks:443"
+    private var cancelled = false
 
     private init() {}
 
@@ -53,8 +54,11 @@ class TxTrackManager {
         let semaphore = DispatchSemaphore(value: 0)
         var success = false
 
-        task.expirationHandler = {
+        cancelled = false
+
+        task.expirationHandler = { [weak self] in
             print("[TxTrack] EXPIRATION")
+            self?.cancelled = true
             semaphore.signal()
         }
 
@@ -100,8 +104,9 @@ class TxTrackManager {
         var expired = 0
 
         // Poll loop
-        while !pending.isEmpty {
+        while !pending.isEmpty && !cancelled {
             Thread.sleep(forTimeInterval: pollInterval)
+            if cancelled { break }
 
             var stillPending: [(txid: String, expiryHeight: UInt64)] = []
 
