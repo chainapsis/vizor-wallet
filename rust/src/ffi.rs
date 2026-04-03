@@ -138,3 +138,88 @@ pub extern "C" fn zcash_set_sync_mode(mode: u8) {
 pub extern "C" fn zcash_is_sync_running() -> bool {
     SYNC_RUNNING.load(Ordering::SeqCst)
 }
+
+// ======================== TX Tracking FFI ========================
+
+/// Pending transaction info for C callers.
+#[repr(C)]
+pub struct CPendingTx {
+    pub txid_hex: [u8; 65], // 64 hex chars + null terminator
+    pub expiry_height: u64,
+}
+
+/// Get the number of pending (unmined, unexpired, locally-created) transactions.
+/// Returns count on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn zcash_get_pending_tx_count(db_path: *const c_char) -> i32 {
+    let db_path = match unsafe { CStr::from_ptr(db_path) }.to_str() {
+        Ok(s) if !s.is_empty() => s,
+        _ => { log::error!("ffi: invalid db_path"); return -1; }
+    };
+    match crate::wallet::sync::get_pending_transactions(db_path) {
+        Ok(txs) => txs.len() as i32,
+        Err(e) => { log::error!("ffi: get_pending_tx_count: {e}"); -1 }
+    }
+}
+
+/// Fill buffer with pending transactions. Returns number written, -1 on error.
+#[no_mangle]
+pub extern "C" fn zcash_get_pending_txs(
+    db_path: *const c_char,
+    out_buf: *mut CPendingTx,
+    buf_len: i32,
+) -> i32 {
+    let db_path = match unsafe { CStr::from_ptr(db_path) }.to_str() {
+        Ok(s) if !s.is_empty() => s,
+        _ => { log::error!("ffi: invalid db_path"); return -1; }
+    };
+    let txs = match crate::wallet::sync::get_pending_transactions(db_path) {
+        Ok(t) => t,
+        Err(e) => { log::error!("ffi: get_pending_txs: {e}"); return -1; }
+    };
+
+    let count = std::cmp::min(txs.len(), buf_len as usize);
+    for (i, tx) in txs.iter().take(count).enumerate() {
+        let mut hex_buf = [0u8; 65];
+        let hex_bytes = tx.txid_hex.as_bytes();
+        let copy_len = std::cmp::min(hex_bytes.len(), 64);
+        hex_buf[..copy_len].copy_from_slice(&hex_bytes[..copy_len]);
+        // null terminator already 0
+        unsafe {
+            (*out_buf.add(i)).txid_hex = hex_buf;
+            (*out_buf.add(i)).expiry_height = tx.expiry_height;
+        }
+    }
+    count as i32
+}
+
+/// Check if a transaction has been mined via lightwalletd gRPC.
+/// Returns: >0 = mined height, 0 = still pending, -1 = error.
+#[no_mangle]
+pub extern "C" fn zcash_check_tx_status(
+    lightwalletd_url: *const c_char,
+    txid_hex: *const c_char,
+) -> i64 {
+    let url = match unsafe { CStr::from_ptr(lightwalletd_url) }.to_str() {
+        Ok(s) if !s.is_empty() => s,
+        _ => { log::error!("ffi: invalid lightwalletd_url"); return -1; }
+    };
+    let hex_str = match unsafe { CStr::from_ptr(txid_hex) }.to_str() {
+        Ok(s) if !s.is_empty() => s,
+        _ => { log::error!("ffi: invalid txid_hex"); return -1; }
+    };
+    let txid_bytes = match hex::decode(hex_str) {
+        Ok(b) if b.len() == 32 => b,
+        _ => { log::error!("ffi: bad txid hex"); return -1; }
+    };
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => { log::error!("ffi: tokio runtime failed: {e}"); return -1; }
+    };
+
+    rt.block_on(crate::wallet::sync::check_tx_mined(url, &txid_bytes))
+}

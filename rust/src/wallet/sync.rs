@@ -542,6 +542,81 @@ pub fn get_transaction_history(
         .map_err(|e| format!("Row error: {e}"))
 }
 
+// ======================== Pending TX Tracking ========================
+
+pub(crate) struct PendingTxInfo {
+    pub txid_bytes: Vec<u8>,
+    pub txid_hex: String,
+    pub expiry_height: u64,
+}
+
+/// Get all pending (unmined, unexpired) transactions that we created (have raw bytes).
+pub fn get_pending_transactions(db_path: &str) -> Result<Vec<PendingTxInfo>, String> {
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ).map_err(|e| format!("Failed to open DB: {e}"))?;
+
+    let mut stmt = conn.prepare(
+        "SELECT txid, COALESCE(expiry_height, 0) \
+         FROM transactions \
+         WHERE mined_height IS NULL AND expired_unmined = 0 AND raw IS NOT NULL"
+    ).map_err(|e| format!("SQL error: {e}"))?;
+
+    let rows = stmt.query_map([], |row| {
+        let txid_bytes: Vec<u8> = row.get(0)?;
+        let expiry_height: u64 = row.get::<_, i64>(1)?.unsigned_abs();
+        let txid_hex = hex::encode(&txid_bytes);
+        Ok(PendingTxInfo { txid_bytes, txid_hex, expiry_height })
+    }).map_err(|e| format!("Query error: {e}"))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Row error: {e}"))
+}
+
+/// Check if a transaction has been mined by querying lightwalletd.
+/// Returns: 0 = still in mempool, >0 = mined at height, -1 = error/not found.
+pub async fn check_tx_mined(lightwalletd_url: &str, txid_bytes: &[u8]) -> i64 {
+    use tonic::transport::{ClientTlsConfig, Endpoint};
+    use zcash_client_backend::proto::service::{
+        compact_tx_streamer_client::CompactTxStreamerClient, TxFilter,
+    };
+
+    let channel = match Endpoint::from_shared(lightwalletd_url.to_string())
+        .and_then(|e| e.tls_config(ClientTlsConfig::new().with_webpki_roots()))
+    {
+        Ok(e) => match e.connect().await {
+            Ok(c) => c,
+            Err(e) => { log::warn!("txtrack: gRPC connect failed: {e}"); return -1; }
+        },
+        Err(e) => { log::warn!("txtrack: endpoint error: {e}"); return -1; }
+    };
+
+    let mut client = CompactTxStreamerClient::new(channel);
+
+    let filter = TxFilter {
+        block: None,
+        index: 0,
+        hash: txid_bytes.to_vec(),
+    };
+
+    match client.get_transaction(filter).await {
+        Ok(resp) => {
+            let height = resp.into_inner().height;
+            // height 0 = mempool, 0xffffffffffffffff = fork, else = mined
+            if height == 0 || height == u64::MAX {
+                0 // still pending
+            } else {
+                height as i64
+            }
+        }
+        Err(e) => {
+            log::warn!("txtrack: GetTransaction failed: {e}");
+            -1
+        }
+    }
+}
+
 // ======================== Helpers ========================
 
 pub fn get_blocks_dir(cache_path: &str) -> String {

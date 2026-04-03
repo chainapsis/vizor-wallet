@@ -109,12 +109,18 @@ class BackgroundSyncManager {
             { progress in
                 if #available(iOS 26.0, *) {
                     let mgr = BackgroundSyncManager.shared
-                    // Use note-based percentage from Rust (0.0~1.0)
                     // Scale to 10000 for fine-grained NSProgress reporting
                     let completed = Int64(progress.percentage * 10000)
                     mgr.taskProgress?.totalUnitCount = 10000
                     mgr.taskProgress?.completedUnitCount = completed
                     print("[BGSync] batch: \(String(format: "%.1f", progress.percentage * 100))% (\(progress.scanned_height)/\(progress.chain_tip_height))")
+
+                    // Update Dynamic Island via DynamicIslandManager
+                    DynamicIslandManager.shared.showSyncProgress(
+                        percentage: progress.percentage,
+                        scannedHeight: progress.scanned_height,
+                        chainTipHeight: progress.chain_tip_height
+                    )
                 }
                 SyncProgressStreamHandler.shared.sendProgress(progress)
             }
@@ -125,6 +131,11 @@ class BackgroundSyncManager {
         taskProgress = nil
 
         print("[BGSync] zcash_run_full_sync returned: \(result)")
+
+        // End Dynamic Island if sync is fully done (not resubmitting)
+        if !(result == 0 && zcash_get_sync_mode() == 2) {
+            DynamicIslandManager.shared.endActivity()
+        }
 
         if result == 0 && zcash_get_sync_mode() == 2 {
             let resubmitted = startBackgroundSync()
