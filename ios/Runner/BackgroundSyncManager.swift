@@ -117,9 +117,7 @@ class BackgroundSyncManager {
 
                     // Update Dynamic Island via DynamicIslandManager
                     DynamicIslandManager.shared.showSyncProgress(
-                        percentage: progress.percentage,
-                        scannedHeight: progress.scanned_height,
-                        chainTipHeight: progress.chain_tip_height
+                        percentage: progress.percentage
                     )
                 }
                 SyncProgressStreamHandler.shared.sendProgress(progress)
