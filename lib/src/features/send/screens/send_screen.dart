@@ -31,6 +31,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   bool _isSending = false;
   String? _error;
   String _addressType = '';
+  String? _amountError; // null = no error, empty string = silent invalid (empty/dot)
 
   @override
   void dispose() {
@@ -59,6 +60,34 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     final syncState = ref.read(syncProvider).value;
     return syncState?.totalBalance ?? BigInt.zero;
   }
+
+  static const int _minFeeZatoshi = 10000;
+
+  void _validateAmount() {
+    final text = _amountController.text.trim();
+
+    // Empty or just "." — silently invalid (no error shown, button disabled)
+    if (text.isEmpty || text == '.') {
+      setState(() => _amountError = '');
+      return;
+    }
+
+    final zatoshi = _parseZecToZatoshi(text);
+    if (zatoshi == null || zatoshi <= 0) {
+      setState(() => _amountError = 'Invalid amount');
+      return;
+    }
+
+    final spendable = _getSpendableBalance();
+    if (BigInt.from(zatoshi + _minFeeZatoshi) > spendable) {
+      setState(() => _amountError = 'Insufficient balance (fee: 0.0001 ZEC)');
+      return;
+    }
+
+    setState(() => _amountError = null);
+  }
+
+  bool get _isAmountValid => _amountError == null;
 
   String _formatZec(BigInt zatoshi) {
     final abs = zatoshi.abs();
@@ -444,10 +473,14 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                   FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
                   _ZecAmountFormatter(),
                 ],
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
+                onChanged: (_) => _validateAmount(),
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
                   labelText: 'Amount (ZEC)',
                   hintText: '0.00000000',
+                  errorText: _amountError != null && _amountError!.isNotEmpty
+                      ? _amountError
+                      : null,
                 ),
               ),
               const SizedBox(height: 16),
@@ -483,7 +516,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: _isSending || _addressType == 'invalid' || _addressType == 'error' || _addressType.isEmpty
+                  onPressed: _isSending || _addressType == 'invalid' || _addressType == 'error' || _addressType.isEmpty || !_isAmountValid
                       ? null
                       : _send,
                   child: _isSending
