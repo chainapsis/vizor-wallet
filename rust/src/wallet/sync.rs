@@ -331,6 +331,7 @@ pub async fn execute_proposal(
         db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     ).map_err(|e| format!("Failed to open DB for broadcast: {e}"))?;
 
+    let mut broadcast_ok: Vec<String> = Vec::new();
     for txid in &txids {
         let raw_tx = read_conn
             .query_row(
@@ -340,8 +341,18 @@ pub async fn execute_proposal(
             )
             .map_err(|e| format!("Failed to get raw tx for {txid}: {e}"))?;
 
-        broadcast_raw_transaction(lightwalletd_url, &raw_tx).await?;
-        log::info!("send: broadcast {txid} ({} bytes)", raw_tx.len());
+        match broadcast_raw_transaction(lightwalletd_url, &raw_tx).await {
+            Ok(()) => {
+                broadcast_ok.push(format!("{txid}"));
+                log::info!("send: broadcast {txid} ({} bytes)", raw_tx.len());
+            }
+            Err(e) => {
+                return Err(format!(
+                    "Broadcast failed after {}/{} txs sent ({}). Error: {e}",
+                    broadcast_ok.len(), txids.len(), broadcast_ok.join(",")
+                ));
+            }
+        }
     }
 
     Ok(txid_strings.join(","))
