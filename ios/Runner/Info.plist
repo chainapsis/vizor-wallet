@@ -10,6 +10,7 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.zcash.zcashWallet.sync</string>
+		<string>com.zcash.zcashWallet.txtrack</string>
 		<string>com.pravera.flutter_foreground_task.refresh</string>
 	</array>
 	<key>NSSupportsLiveActivities</key>

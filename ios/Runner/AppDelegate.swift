@@ -9,6 +9,7 @@ import UIKit
   ) -> Bool {
     if #available(iOS 26.0, *) {
       BackgroundSyncManager.shared.registerBackgroundTask()
+      TxTrackManager.shared.registerTask()
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -38,6 +39,13 @@ import UIKit
       case "startBackgroundSync":
         if #available(iOS 26.0, *) {
           let success = BackgroundSyncManager.shared.startBackgroundSync()
+          result(success)
+        } else {
+          result(false)
+        }
+      case "startTxTracking":
+        if #available(iOS 26.0, *) {
+          let success = TxTrackManager.shared.startTxTracking()
           result(success)
         } else {
           result(false)

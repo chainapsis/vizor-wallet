@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
@@ -179,6 +180,17 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
       // Refresh balance and tx list so pending TX appears immediately
       await ref.read(syncProvider.notifier).refreshAfterSend();
+
+      // Start iOS TX tracking BGTask for Dynamic Island
+      if (Platform.isIOS) {
+        try {
+          const channel = MethodChannel('com.zcash.wallet/background_sync');
+          await channel.invokeMethod('startTxTracking');
+          log('Send: iOS TX tracking started');
+        } catch (e) {
+          log('Send: iOS TX tracking failed: $e');
+        }
+      }
 
       // Show success and navigate back to home
       if (!mounted) return;
