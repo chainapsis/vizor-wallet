@@ -299,16 +299,29 @@ pub async fn execute_proposal(
     let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
         .map_err(|e| format!("USK derivation failed: {e:?}"))?;
 
-    let prover = LocalTxProver::new(
-        std::path::Path::new(spend_params_path.unwrap_or("")),
-        std::path::Path::new(output_params_path.unwrap_or("")),
-    );
-
-    let txids = create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
-        &mut db, &network, &prover, &prover,
-        &wallet::SpendingKeys::from_unified_spending_key(usk),
-        OvkPolicy::Sender, &stored.proposal,
-    ).map_err(|e| format!("Create TX failed: {e}"))?;
+    let txids = match (spend_params_path, output_params_path) {
+        (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
+            let prover = LocalTxProver::new(
+                std::path::Path::new(sp),
+                std::path::Path::new(op),
+            );
+            create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+                &mut db, &network, &prover, &prover,
+                &wallet::SpendingKeys::from_unified_spending_key(usk),
+                OvkPolicy::Sender, &stored.proposal,
+            ).map_err(|e| format!("Create TX failed: {e}"))?
+        }
+        _ => {
+            // No Sapling params — use no-op prover (safe for Orchard-only TXs)
+            let spend_prover = NoOpSpendProver;
+            let output_prover = NoOpOutputProver;
+            create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+                &mut db, &network, &spend_prover, &output_prover,
+                &wallet::SpendingKeys::from_unified_spending_key(usk),
+                OvkPolicy::Sender, &stored.proposal,
+            ).map_err(|e| format!("Create TX failed: {e}"))?
+        }
+    };
 
     // Broadcast each transaction to lightwalletd
     let txid_strings: Vec<String> = txids.iter().map(|id| format!("{id}")).collect();
@@ -540,6 +553,76 @@ pub fn get_transaction_history(
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Row error: {e}"))
+}
+
+// ======================== No-op Sapling Provers ========================
+// Used for Orchard-only transactions where Sapling params are not available.
+// The prover methods will never be called for Orchard-only TXs.
+
+use sapling_crypto::{
+    bundle::GrothProofBytes,
+    circuit,
+    keys::EphemeralSecretKey,
+    prover::{OutputProver, SpendProver},
+    value::{NoteValue, ValueCommitTrapdoor},
+    Diversifier, MerklePath, PaymentAddress, ProofGenerationKey, Rseed,
+};
+
+const GROTH_PROOF_SIZE: usize = 192;
+
+struct NoOpSpendProver;
+
+impl SpendProver for NoOpSpendProver {
+    type Proof = GrothProofBytes;
+
+    fn prepare_circuit(
+        _proof_generation_key: ProofGenerationKey,
+        _diversifier: Diversifier,
+        _rseed: Rseed,
+        _value: NoteValue,
+        _alpha: jubjub::Fr,
+        _rcv: ValueCommitTrapdoor,
+        _anchor: bls12_381::Scalar,
+        _merkle_path: MerklePath,
+    ) -> Option<circuit::Spend> {
+        unreachable!("NoOpSpendProver should not be called for Orchard-only TXs")
+    }
+
+    fn create_proof<R: rand_core::RngCore>(
+        &self, _circuit: circuit::Spend, _rng: &mut R,
+    ) -> Self::Proof {
+        unreachable!("NoOpSpendProver should not be called for Orchard-only TXs")
+    }
+
+    fn encode_proof(_proof: Self::Proof) -> GrothProofBytes {
+        [0u8; GROTH_PROOF_SIZE]
+    }
+}
+
+struct NoOpOutputProver;
+
+impl OutputProver for NoOpOutputProver {
+    type Proof = GrothProofBytes;
+
+    fn prepare_circuit(
+        _esk: &EphemeralSecretKey,
+        _payment_address: PaymentAddress,
+        _rcm: jubjub::Fr,
+        _value: NoteValue,
+        _rcv: ValueCommitTrapdoor,
+    ) -> circuit::Output {
+        unreachable!("NoOpOutputProver should not be called for Orchard-only TXs")
+    }
+
+    fn create_proof<R: rand_core::RngCore>(
+        &self, _circuit: circuit::Output, _rng: &mut R,
+    ) -> Self::Proof {
+        unreachable!("NoOpOutputProver should not be called for Orchard-only TXs")
+    }
+
+    fn encode_proof(_proof: Self::Proof) -> GrothProofBytes {
+        [0u8; GROTH_PROOF_SIZE]
+    }
 }
 
 // ======================== Pending TX Tracking ========================
