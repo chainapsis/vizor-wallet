@@ -123,6 +123,23 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
   bool get _isAmountValid => _amountError == null;
 
+  String _friendlyError(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
+      return 'Insufficient balance to cover amount and fee.';
+    }
+    if (lower.contains('grpc connect failed') || lower.contains('network')) {
+      return 'Network error. Please check your connection and try again.';
+    }
+    if (lower.contains('broadcast rejected')) {
+      return 'Transaction was rejected by the network. Please try again.';
+    }
+    if (lower.contains('proposal not found')) {
+      return 'Transaction expired. Please try again.';
+    }
+    return 'Send failed. Please try again.';
+  }
+
   String _formatZec(BigInt zatoshi) {
     final abs = zatoshi.abs();
     final whole = abs ~/ BigInt.from(100000000);
@@ -299,7 +316,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       log('Send: ERROR: $e');
-      setState(() { _error = e.toString(); _isSending = false; });
+      setState(() { _error = _friendlyError(e.toString()); _isSending = false; });
     }
   }
 
