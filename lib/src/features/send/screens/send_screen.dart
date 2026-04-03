@@ -61,9 +61,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     return syncState?.totalBalance ?? BigInt.zero;
   }
 
-  static const int _minFeeZatoshi = 10000;
-
-  void _validateAmount() {
+  Future<void> _validateAmount() async {
     final text = _amountController.text.trim();
 
     // Empty or just "." — silently invalid (no error shown, button disabled)
@@ -78,13 +76,49 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       return;
     }
 
+    // Quick balance pre-check before calling propose
     final spendable = _getSpendableBalance();
-    if (BigInt.from(zatoshi + _minFeeZatoshi) > spendable) {
-      setState(() => _amountError = 'Insufficient balance (fee: 0.0001 ZEC)');
+    if (BigInt.from(zatoshi) > spendable) {
+      setState(() => _amountError = 'Insufficient balance');
       return;
     }
 
-    setState(() => _amountError = null);
+    // Use propose to get actual fee
+    final address = _addressController.text.trim();
+    if (address.isEmpty || _addressType == 'invalid' || _addressType == 'error' || _addressType.isEmpty) {
+      // Can't propose without valid address — accept amount for now
+      setState(() => _amountError = null);
+      return;
+    }
+
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
+      final memo = _memoController.text.trim();
+      final proposal = await rust_sync.proposeSend(
+        dbPath: dbPath,
+        network: 'main',
+        toAddress: address,
+        amountZatoshi: BigInt.from(zatoshi),
+        memo: memo.isNotEmpty ? memo : null,
+      );
+      final totalNeeded = BigInt.from(zatoshi) + proposal.feeZatoshi;
+      if (totalNeeded > spendable) {
+        final feeZec = _formatZec(proposal.feeZatoshi);
+        setState(() => _amountError = 'Insufficient balance (fee: $feeZec ZEC)');
+      } else {
+        setState(() => _amountError = null);
+      }
+    } catch (e) {
+      // Propose failed — likely insufficient funds or invalid params
+      final msg = e.toString();
+      if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
+        setState(() => _amountError = 'Insufficient balance including fee');
+      } else {
+        // Other propose errors — don't block, let _send() handle it
+        setState(() => _amountError = null);
+      }
+    }
   }
 
   bool get _isAmountValid => _amountError == null;
