@@ -221,7 +221,7 @@ pub async fn run_sync_inner(
             is_complete: false,
             has_new_tx,
         };
-        log::info!("[{}] sync: {:.1}% ({} remaining)", elapsed(), pct * 100.0, remaining);
+        log::info!("[{}] sync: {:.1}% (remaining={}, total={}, scanned={})", elapsed(), pct * 100.0, remaining, total, total - remaining);
         progress_fn(progress);
     }
 
