@@ -326,10 +326,24 @@ pub async fn execute_proposal(
         // seed + usk dropped here, before broadcast
     };
 
-    // Broadcast each transaction to lightwalletd
+    // Connect to lightwalletd once for all broadcasts
+    use tonic::transport::{ClientTlsConfig, Endpoint};
+    use zcash_client_backend::proto::service::{
+        compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction,
+    };
+
+    let channel = Endpoint::from_shared(lightwalletd_url.to_string())
+        .map_err(|e| format!("Invalid URL: {e}"))?
+        .tls_config(ClientTlsConfig::new().with_webpki_roots())
+        .map_err(|e| format!("TLS error: {e}"))?
+        .connect()
+        .await
+        .map_err(|e| format!("gRPC connect failed: {e}"))?;
+    let mut client = CompactTxStreamerClient::new(channel);
+
+    // Broadcast each transaction
     let txid_strings: Vec<String> = txids.iter().map(|id| format!("{id}")).collect();
 
-    // Open separate read-only connection (WalletDb.conn is private)
     let read_conn = rusqlite::Connection::open_with_flags(
         db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     ).map_err(|e| format!("Failed to open DB for broadcast: {e}"))?;
@@ -344,7 +358,7 @@ pub async fn execute_proposal(
             )
             .map_err(|e| format!("Failed to get raw tx for {txid}: {e}"))?;
 
-        match broadcast_raw_transaction(lightwalletd_url, &raw_tx).await {
+        match broadcast_raw_transaction(&mut client, &raw_tx).await {
             Ok(()) => {
                 broadcast_ok.push(format!("{txid}"));
                 log::info!("send: broadcast {txid} ({} bytes)", raw_tx.len());
@@ -361,22 +375,12 @@ pub async fn execute_proposal(
     Ok(txid_strings.join(","))
 }
 
-/// Broadcast a raw transaction to lightwalletd via gRPC.
-async fn broadcast_raw_transaction(lightwalletd_url: &str, raw_tx: &[u8]) -> Result<(), String> {
-    use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
-    use zcash_client_backend::proto::service::{
-        compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction,
-    };
-
-    let channel = Endpoint::from_shared(lightwalletd_url.to_string())
-        .map_err(|e| format!("Invalid URL: {e}"))?
-        .tls_config(ClientTlsConfig::new().with_webpki_roots())
-        .map_err(|e| format!("TLS error: {e}"))?
-        .connect()
-        .await
-        .map_err(|e| format!("gRPC connect failed: {e}"))?;
-
-    let mut client = CompactTxStreamerClient::new(channel);
+/// Broadcast a raw transaction using an existing gRPC client.
+async fn broadcast_raw_transaction(
+    client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
+    raw_tx: &[u8],
+) -> Result<(), String> {
+    use zcash_client_backend::proto::service::RawTransaction;
 
     let resp = client
         .send_transaction(RawTransaction {
