@@ -339,6 +339,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     try {
       final request = await client.getUrl(Uri.parse(url));
       final response = await request.close();
+      if (response.statusCode != 200) {
+        throw Exception('Download failed: HTTP ${response.statusCode} for $url');
+      }
       final tempPath = '${destPath}_tmp';
       final file = File(tempPath);
       final sink = file.openWrite();
