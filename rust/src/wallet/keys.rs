@@ -7,7 +7,7 @@ use zcash_client_backend::data_api::{
     Account as _, AccountBirthday, WalletRead, WalletWrite,
     chain::ChainState,
 };
-use zcash_client_sqlite::{WalletDb, util::SystemClock, wallet::init::init_wallet_db};
+use zcash_client_sqlite::{AccountUuid, WalletDb, util::SystemClock, wallet::init::init_wallet_db};
 use zcash_keys::keys::{ReceiverRequirement, UnifiedAddressRequest};
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{BlockHeight, Network, NetworkUpgrade, Parameters};
@@ -35,43 +35,54 @@ pub fn parse_network(network: &str) -> Result<Network, String> {
     }
 }
 
-/// Initialize the wallet database and create an account from a seed.
-/// Returns the Unified Address string.
-pub fn init_db_and_create_account(
+/// Initialize the wallet database schema. Idempotent — safe to call multiple times.
+pub fn ensure_db_initialized(
     db_path: &str,
     network: Network,
     seed: &SecretVec<u8>,
-    birthday_height: Option<u64>,
-) -> Result<String, String> {
+) -> Result<(), String> {
     let mut db = WalletDb::for_path(db_path, network, SystemClock, OsRng)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
-
     init_wallet_db(
         &mut db,
         Some(SecretVec::new(seed.expose_secret().to_vec())),
     )
     .map_err(|e| format!("Failed to init wallet DB: {e}"))?;
+    Ok(())
+}
 
-    let birthday = match birthday_height {
+fn make_birthday(network: Network, birthday_height: Option<u64>) -> AccountBirthday {
+    match birthday_height {
         Some(h) => {
             let height = BlockHeight::from_u32(h as u32);
-            let prior_height = height - 1;
-            let chain_state = ChainState::empty(prior_height, BlockHash([0u8; 32]));
+            let chain_state = ChainState::empty(height - 1, BlockHash([0u8; 32]));
             AccountBirthday::from_parts(chain_state, None)
         }
         None => {
-            // For new wallets, use Sapling activation as default
             let sapling_height = network
                 .activation_height(NetworkUpgrade::Sapling)
                 .expect("Sapling activation height must be known");
-            let chain_state =
-                ChainState::empty(sapling_height - 1, BlockHash([0u8; 32]));
+            let chain_state = ChainState::empty(sapling_height - 1, BlockHash([0u8; 32]));
             AccountBirthday::from_parts(chain_state, None)
         }
-    };
+    }
+}
 
-    let (_account_id, usk) = db
-        .create_account("default", &seed, &birthday, None)
+/// Add a new account to the wallet database. Returns (account_uuid, unified_address).
+pub fn add_account(
+    db_path: &str,
+    network: Network,
+    name: &str,
+    seed: &SecretVec<u8>,
+    birthday_height: Option<u64>,
+) -> Result<(String, String), String> {
+    let mut db = WalletDb::for_path(db_path, network, SystemClock, OsRng)
+        .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+
+    let birthday = make_birthday(network, birthday_height);
+
+    let (account_id, usk) = db
+        .create_account(name, seed, &birthday, None)
         .map_err(|e| format!("Failed to create account: {e}"))?;
 
     let ufvk = usk.to_unified_full_viewing_key();
@@ -79,22 +90,86 @@ pub fn init_db_and_create_account(
         .default_address(shielded_address_request())
         .map_err(|e| format!("Failed to derive address: {e}"))?;
 
-    Ok(ua.encode(&network))
+    let uuid_str = account_id.expose_uuid().to_string();
+    Ok((uuid_str, ua.encode(&network)))
 }
 
-/// Get the Unified Address from an existing wallet database.
-pub fn get_address_from_db(db_path: &str, network: Network) -> Result<String, String> {
+/// Legacy wrapper: init DB + create account named "default". Returns unified address.
+pub fn init_db_and_create_account(
+    db_path: &str,
+    network: Network,
+    seed: &SecretVec<u8>,
+    birthday_height: Option<u64>,
+) -> Result<(String, String), String> {
+    ensure_db_initialized(db_path, network, seed)?;
+    add_account(db_path, network, "default", seed, birthday_height)
+}
+
+pub struct AccountInfo {
+    pub uuid: String,
+    pub name: String,
+    pub unified_address: String,
+}
+
+/// List all accounts in the wallet database.
+pub fn list_accounts(db_path: &str, network: Network) -> Result<Vec<AccountInfo>, String> {
     let db = WalletDb::for_path(db_path, network, SystemClock, OsRng)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
 
-    let accounts = db
-        .get_account_ids()
+    let account_ids = db.get_account_ids()
         .map_err(|e| format!("Failed to list accounts: {e}"))?;
 
-    let account_id = accounts
-        .into_iter()
-        .next()
-        .ok_or("No accounts found in wallet")?;
+    let mut accounts = Vec::new();
+    for id in account_ids {
+        let account = db.get_account(id)
+            .map_err(|e| format!("Failed to get account: {e}"))?
+            .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
+
+        let address = match account.ufvk() {
+            Some(ufvk) => {
+                let (ua, _) = ufvk.default_address(shielded_address_request())
+                    .map_err(|e| format!("Failed to derive address: {e}"))?;
+                ua.encode(&network)
+            }
+            None => String::new(),
+        };
+
+        accounts.push(AccountInfo {
+            uuid: id.expose_uuid().to_string(),
+            name: account.name().unwrap_or("").to_string(),
+            unified_address: address,
+        });
+    }
+
+    Ok(accounts)
+}
+
+/// Parse an account UUID string into AccountUuid.
+pub fn parse_account_uuid(s: &str) -> Result<AccountUuid, String> {
+    let uuid = uuid::Uuid::parse_str(s).map_err(|e| format!("Invalid account UUID: {e}"))?;
+    Ok(AccountUuid::from_uuid(uuid))
+}
+
+/// Resolve account_id: if uuid provided, parse it; otherwise take first account.
+fn resolve_account_id(
+    db: &WalletDb<rusqlite::Connection, Network, SystemClock, OsRng>,
+    account_uuid: Option<&str>,
+) -> Result<AccountUuid, String> {
+    match account_uuid {
+        Some(uuid_str) => parse_account_uuid(uuid_str),
+        None => {
+            let ids = db.get_account_ids().map_err(|e| format!("Failed to list accounts: {e}"))?;
+            ids.into_iter().next().ok_or_else(|| "No accounts found in wallet".to_string())
+        }
+    }
+}
+
+/// Get the Unified Address from an existing wallet database.
+pub fn get_address_from_db(db_path: &str, network: Network, account_uuid: Option<&str>) -> Result<String, String> {
+    let db = WalletDb::for_path(db_path, network, SystemClock, OsRng)
+        .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+
+    let account_id = resolve_account_id(&db, account_uuid)?;
 
     let account = db
         .get_account(account_id)
@@ -124,18 +199,11 @@ fn shielded_address_request() -> UnifiedAddressRequest {
 }
 
 /// Get the transparent address from an existing wallet database.
-pub fn get_transparent_address_from_db(db_path: &str, network: Network) -> Result<String, String> {
+pub fn get_transparent_address_from_db(db_path: &str, network: Network, account_uuid: Option<&str>) -> Result<String, String> {
     let db = WalletDb::for_path(db_path, network, SystemClock, OsRng)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
 
-    let accounts = db
-        .get_account_ids()
-        .map_err(|e| format!("Failed to list accounts: {e}"))?;
-
-    let account_id = accounts
-        .into_iter()
-        .next()
-        .ok_or("No accounts found in wallet")?;
+    let account_id = resolve_account_id(&db, account_uuid)?;
 
     let account = db
         .get_account(account_id)
@@ -205,7 +273,7 @@ mod tests {
         let phrase = generate_mnemonic();
         let seed = mnemonic_to_seed(&phrase).unwrap();
 
-        let address =
+        let (_uuid, address) =
             init_db_and_create_account(db_path_str, Network::MainNetwork, &seed, None).unwrap();
 
         // Mainnet unified addresses start with "u1"
@@ -215,7 +283,7 @@ mod tests {
         );
 
         // Verify we can read the address back
-        let address2 = get_address_from_db(db_path_str, Network::MainNetwork).unwrap();
+        let address2 = get_address_from_db(db_path_str, Network::MainNetwork, None).unwrap();
         assert_eq!(address, address2);
     }
 
@@ -228,7 +296,7 @@ mod tests {
         let phrase = generate_mnemonic();
         let seed = mnemonic_to_seed(&phrase).unwrap();
 
-        let address =
+        let (_, address) =
             init_db_and_create_account(db_path_str, Network::TestNetwork, &seed, None).unwrap();
 
         assert!(
@@ -244,13 +312,13 @@ mod tests {
 
         let temp1 = tempfile::tempdir().unwrap();
         let db1 = temp1.path().join("wallet.db");
-        let addr1 =
+        let (_, addr1) =
             init_db_and_create_account(db1.to_str().unwrap(), Network::MainNetwork, &seed, None)
                 .unwrap();
 
         let temp2 = tempfile::tempdir().unwrap();
         let db2 = temp2.path().join("wallet.db");
-        let addr2 =
+        let (_, addr2) =
             init_db_and_create_account(db2.to_str().unwrap(), Network::MainNetwork, &seed, None)
                 .unwrap();
 
@@ -268,7 +336,7 @@ mod tests {
         let phrase = generate_mnemonic();
         let seed = mnemonic_to_seed(&phrase).unwrap();
 
-        let address =
+        let (_, address) =
             init_db_and_create_account(db_path_str, Network::MainNetwork, &seed, None).unwrap();
 
         // Decode and verify receiver types

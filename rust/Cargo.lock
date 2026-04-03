@@ -2004,6 +2004,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tonic",
+ "uuid",
  "zcash_address",
  "zcash_client_backend",
  "zcash_client_sqlite",

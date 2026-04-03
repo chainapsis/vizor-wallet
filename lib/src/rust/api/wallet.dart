@@ -39,13 +39,39 @@ Future<WalletImportResult> importWallet({
   dbPath: dbPath,
 );
 
-/// Get the Unified Address for the wallet.
+/// Add an additional account to an existing wallet database.
+Future<AccountCreationResult> addAccount({
+  required String dbPath,
+  required String network,
+  required String name,
+  required String mnemonic,
+  BigInt? birthdayHeight,
+}) => RustLib.instance.api.crateApiWalletAddAccount(
+  dbPath: dbPath,
+  network: network,
+  name: name,
+  mnemonic: mnemonic,
+  birthdayHeight: birthdayHeight,
+);
+
+/// List all accounts in the wallet database.
+Future<List<AccountInfo>> listAccounts({
+  required String dbPath,
+  required String network,
+}) => RustLib.instance.api.crateApiWalletListAccounts(
+  dbPath: dbPath,
+  network: network,
+);
+
+/// Get the Unified Address for a specific account (or first account if uuid is None).
 Future<String> getUnifiedAddress({
   required String dbPath,
   required String network,
+  String? accountUuid,
 }) => RustLib.instance.api.crateApiWalletGetUnifiedAddress(
   dbPath: dbPath,
   network: network,
+  accountUuid: accountUuid,
 );
 
 /// Check if a wallet database exists at the given path.
@@ -61,27 +87,79 @@ bool validateMnemonic({required String mnemonic}) =>
 Future<Uint8List> deriveSeed({required String mnemonic}) =>
     RustLib.instance.api.crateApiWalletDeriveSeed(mnemonic: mnemonic);
 
-/// Get the transparent address for the wallet (separate from the shielded UA).
+/// Get the transparent address for a specific account (or first account if uuid is None).
 Future<String> getTransparentAddress({
   required String dbPath,
   required String network,
+  String? accountUuid,
 }) => RustLib.instance.api.crateApiWalletGetTransparentAddress(
   dbPath: dbPath,
   network: network,
+  accountUuid: accountUuid,
 );
 
-/// Result of wallet creation, containing the mnemonic and unified address.
-class WalletCreationResult {
-  final String mnemonic;
+/// Result of adding an account to an existing wallet.
+class AccountCreationResult {
+  final String accountUuid;
   final String unifiedAddress;
 
-  const WalletCreationResult({
-    required this.mnemonic,
+  const AccountCreationResult({
+    required this.accountUuid,
     required this.unifiedAddress,
   });
 
   @override
-  int get hashCode => mnemonic.hashCode ^ unifiedAddress.hashCode;
+  int get hashCode => accountUuid.hashCode ^ unifiedAddress.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AccountCreationResult &&
+          runtimeType == other.runtimeType &&
+          accountUuid == other.accountUuid &&
+          unifiedAddress == other.unifiedAddress;
+}
+
+/// Account info returned by list_accounts.
+class AccountInfo {
+  final String uuid;
+  final String name;
+  final String unifiedAddress;
+
+  const AccountInfo({
+    required this.uuid,
+    required this.name,
+    required this.unifiedAddress,
+  });
+
+  @override
+  int get hashCode => uuid.hashCode ^ name.hashCode ^ unifiedAddress.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AccountInfo &&
+          runtimeType == other.runtimeType &&
+          uuid == other.uuid &&
+          name == other.name &&
+          unifiedAddress == other.unifiedAddress;
+}
+
+/// Result of wallet creation, containing the mnemonic, unified address, and account UUID.
+class WalletCreationResult {
+  final String mnemonic;
+  final String unifiedAddress;
+  final String accountUuid;
+
+  const WalletCreationResult({
+    required this.mnemonic,
+    required this.unifiedAddress,
+    required this.accountUuid,
+  });
+
+  @override
+  int get hashCode =>
+      mnemonic.hashCode ^ unifiedAddress.hashCode ^ accountUuid.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -89,22 +167,28 @@ class WalletCreationResult {
       other is WalletCreationResult &&
           runtimeType == other.runtimeType &&
           mnemonic == other.mnemonic &&
-          unifiedAddress == other.unifiedAddress;
+          unifiedAddress == other.unifiedAddress &&
+          accountUuid == other.accountUuid;
 }
 
-/// Result of wallet import, containing the unified address.
+/// Result of wallet import, containing the unified address and account UUID.
 class WalletImportResult {
   final String unifiedAddress;
+  final String accountUuid;
 
-  const WalletImportResult({required this.unifiedAddress});
+  const WalletImportResult({
+    required this.unifiedAddress,
+    required this.accountUuid,
+  });
 
   @override
-  int get hashCode => unifiedAddress.hashCode;
+  int get hashCode => unifiedAddress.hashCode ^ accountUuid.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is WalletImportResult &&
           runtimeType == other.runtimeType &&
-          unifiedAddress == other.unifiedAddress;
+          unifiedAddress == other.unifiedAddress &&
+          accountUuid == other.accountUuid;
 }

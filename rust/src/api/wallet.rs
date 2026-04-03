@@ -4,14 +4,29 @@ use secrecy::ExposeSecret;
 
 use crate::wallet::keys;
 
-/// Result of wallet creation, containing the mnemonic and unified address.
+/// Result of wallet creation, containing the mnemonic, unified address, and account UUID.
 pub struct WalletCreationResult {
     pub mnemonic: String,
     pub unified_address: String,
+    pub account_uuid: String,
 }
 
-/// Result of wallet import, containing the unified address.
+/// Result of wallet import, containing the unified address and account UUID.
 pub struct WalletImportResult {
+    pub unified_address: String,
+    pub account_uuid: String,
+}
+
+/// Result of adding an account to an existing wallet.
+pub struct AccountCreationResult {
+    pub account_uuid: String,
+    pub unified_address: String,
+}
+
+/// Account info returned by list_accounts.
+pub struct AccountInfo {
+    pub uuid: String,
+    pub name: String,
     pub unified_address: String,
 }
 
@@ -70,11 +85,12 @@ pub fn create_wallet(network: String, db_path: String, birthday_height: Option<u
         let mnemonic = keys::generate_mnemonic();
         let seed = keys::mnemonic_to_seed(&mnemonic)?;
 
-        let unified_address = keys::init_db_and_create_account(&db_path, network, &seed, birthday_height)?;
+        let (account_uuid, unified_address) = keys::init_db_and_create_account(&db_path, network, &seed, birthday_height)?;
 
         Ok(WalletCreationResult {
             mnemonic,
             unified_address,
+            account_uuid,
         })
     })
 }
@@ -90,18 +106,48 @@ pub fn import_wallet(
         let network = keys::parse_network(&network)?;
         let seed = keys::mnemonic_to_seed(&mnemonic)?;
 
-        let unified_address =
+        let (account_uuid, unified_address) =
             keys::init_db_and_create_account(&db_path, network, &seed, birthday_height)?;
 
-        Ok(WalletImportResult { unified_address })
+        Ok(WalletImportResult { unified_address, account_uuid })
     })
 }
 
-/// Get the Unified Address for the wallet.
-pub fn get_unified_address(db_path: String, network: String) -> Result<String, String> {
+/// Add an additional account to an existing wallet database.
+pub fn add_account(
+    db_path: String, network: String, name: String,
+    mnemonic: String, birthday_height: Option<u64>,
+) -> Result<AccountCreationResult, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        keys::get_address_from_db(&db_path, network)
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+
+        keys::ensure_db_initialized(&db_path, network, &seed)?;
+        let (account_uuid, unified_address) =
+            keys::add_account(&db_path, network, &name, &seed, birthday_height)?;
+
+        Ok(AccountCreationResult { account_uuid, unified_address })
+    })
+}
+
+/// List all accounts in the wallet database.
+pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo>, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let accounts = keys::list_accounts(&db_path, network)?;
+        Ok(accounts.into_iter().map(|a| AccountInfo {
+            uuid: a.uuid,
+            name: a.name,
+            unified_address: a.unified_address,
+        }).collect())
+    })
+}
+
+/// Get the Unified Address for a specific account (or first account if uuid is None).
+pub fn get_unified_address(db_path: String, network: String, account_uuid: Option<String>) -> Result<String, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        keys::get_address_from_db(&db_path, network, account_uuid.as_deref())
     })
 }
 
@@ -126,10 +172,10 @@ pub fn derive_seed(mnemonic: String) -> Result<Vec<u8>, String> {
     })
 }
 
-/// Get the transparent address for the wallet (separate from the shielded UA).
-pub fn get_transparent_address(db_path: String, network: String) -> Result<String, String> {
+/// Get the transparent address for a specific account (or first account if uuid is None).
+pub fn get_transparent_address(db_path: String, network: String, account_uuid: Option<String>) -> Result<String, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        keys::get_transparent_address_from_db(&db_path, network)
+        keys::get_transparent_address_from_db(&db_path, network, account_uuid.as_deref())
     })
 }
