@@ -320,6 +320,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   // ======================== Balance Refresh ========================
 
+  /// Public: refresh balance and recent transactions (e.g. after send).
+  Future<void> refreshAfterSend() => _refreshBalance();
+
   Future<void> _refreshBalance() async {
     final prev = state.value;
     final dbPath = await _getDbPath();

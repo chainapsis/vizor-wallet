@@ -63,6 +63,70 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
+  Widget _buildTransactionTile(BuildContext context, rust_sync.TransactionInfo tx) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final isIncoming = tx.accountBalanceDelta.toInt() >= 0;
+    final isPending = tx.minedHeight == BigInt.zero && !tx.expiredUnmined;
+    final isExpired = tx.expiredUnmined;
+
+    final IconData icon;
+    final Color iconColor;
+    final String title;
+    final String status;
+    final Color amountColor;
+
+    if (isExpired) {
+      icon = Icons.cancel_outlined;
+      iconColor = colors.error;
+      title = isIncoming ? 'Receive Expired' : 'Send Expired';
+      status = 'Transaction expired';
+      amountColor = colors.outline;
+    } else if (isPending) {
+      icon = Icons.schedule;
+      iconColor = colors.secondary;
+      title = isIncoming ? 'Receiving...' : 'Sending...';
+      status = 'Waiting for confirmation';
+      amountColor = colors.outline;
+    } else {
+      icon = isIncoming ? Icons.arrow_downward : Icons.arrow_upward;
+      iconColor = isIncoming ? colors.tertiary : colors.secondary;
+      title = isIncoming ? 'Received' : 'Sent';
+      status = 'Block ${tx.minedHeight} \u2022 ${_formatDate(tx.blockTime.toInt())}';
+      amountColor = isIncoming ? colors.tertiary : colors.onSurface;
+    }
+
+    return ListTile(
+      leading: isPending
+          ? SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2, color: iconColor),
+            )
+          : Icon(icon, color: iconColor),
+      title: Text(title, style: text.titleSmall),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(status, style: text.bodySmall?.copyWith(color: colors.outline)),
+          if (tx.fee > BigInt.zero)
+            Text(
+              'Fee: ${(tx.fee.toInt() / 100000000).toStringAsFixed(5)} ZEC',
+              style: text.labelSmall?.copyWith(color: colors.outline),
+            ),
+        ],
+      ),
+      trailing: Text(
+        _formatZec(tx.accountBalanceDelta.toInt()),
+        style: text.titleSmall?.copyWith(
+          color: amountColor,
+          fontWeight: FontWeight.w600,
+          decoration: isExpired ? TextDecoration.lineThrough : null,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -86,49 +150,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                   ? const Center(child: Text('No transactions yet'))
                   : ListView.builder(
                       itemCount: _transactions!.length,
-                      itemBuilder: (context, index) {
-                        final tx = _transactions![index];
-                        final isIncoming = tx.accountBalanceDelta.toInt() >= 0;
-                        final colors = Theme.of(context).colorScheme;
-                        return ListTile(
-                          leading: Icon(
-                            isIncoming ? Icons.arrow_downward : Icons.arrow_upward,
-                            color: isIncoming ? colors.tertiary : colors.error,
-                          ),
-                          title: Text(
-                            _formatZec(tx.accountBalanceDelta.toInt()),
-                            style: TextStyle(
-                              color: isIncoming ? colors.tertiary : colors.onSurface,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                tx.expiredUnmined
-                                    ? 'Expired'
-                                    : tx.minedHeight.toInt() > 0
-                                        ? 'Block ${tx.minedHeight}'
-                                        : 'Pending',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              Text(
-                                _formatDate(tx.blockTime.toInt()),
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                    ),
-                              ),
-                            ],
-                          ),
-                          trailing: tx.fee.toInt() > 0
-                              ? Text(
-                                  'Fee: ${(tx.fee.toInt() / 100000000).toStringAsFixed(5)}',
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                )
-                              : null,
-                        );
-                      },
+                      itemBuilder: (context, index) =>
+                          _buildTransactionTile(context, _transactions![index]),
                     ),
     );
   }

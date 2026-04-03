@@ -415,17 +415,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final isIncoming = tx.accountBalanceDelta >= 0;
+    final isPending = tx.minedHeight == BigInt.zero && !tx.expiredUnmined;
+    final isExpired = tx.expiredUnmined;
     final zec = tx.accountBalanceDelta.abs() / 100000000;
     final sign = isIncoming ? '+' : '-';
     final amount = '$sign${zec.toStringAsFixed(zec < 0.01 ? 8 : 3)} ZEC';
 
-    // Format date
-    String dateStr = '';
-    if (tx.blockTime > BigInt.zero) {
-      final date = DateTime.fromMillisecondsSinceEpoch(tx.blockTime.toInt() * 1000);
-      dateStr = '${_monthName(date.month)} ${date.day}, ${date.year} \u2022 ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    // Status-dependent styling
+    final IconData icon;
+    final Color iconColor;
+    final Color iconBgColor;
+    final String label;
+    final String dateStr;
+    final String statusLabel;
+    final Color amountColor;
+
+    if (isExpired) {
+      icon = Icons.cancel_outlined;
+      iconColor = colors.error;
+      iconBgColor = colors.error.withValues(alpha: 0.1);
+      label = isIncoming ? 'Receive Expired' : 'Send Expired';
+      dateStr = 'Transaction expired';
+      statusLabel = 'EXPIRED';
+      amountColor = colors.outline;
+    } else if (isPending) {
+      icon = Icons.schedule;
+      iconColor = colors.secondary;
+      iconBgColor = colors.secondary.withValues(alpha: 0.1);
+      label = isIncoming ? 'Receiving...' : 'Sending...';
+      dateStr = 'Waiting for confirmation';
+      statusLabel = 'PENDING';
+      amountColor = colors.outline;
     } else {
-      dateStr = 'Pending';
+      icon = isIncoming ? Icons.check_circle : Icons.arrow_outward;
+      iconColor = isIncoming ? colors.tertiary : colors.secondary;
+      iconBgColor = colors.surfaceContainerLow;
+      label = isIncoming ? 'Received' : 'Sent';
+      final date = DateTime.fromMillisecondsSinceEpoch(tx.blockTime.toInt() * 1000);
+      dateStr = '${_monthName(date.month)} ${date.day}, ${date.year} \u2022 '
+          '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+      statusLabel = isIncoming ? 'SHIELDED' : 'EXTERNAL';
+      amountColor = isIncoming ? colors.tertiary : colors.onSurface;
     }
 
     return Padding(
@@ -436,16 +466,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: colors.surfaceContainerLow,
+              color: iconBgColor,
               shape: BoxShape.circle,
             ),
-            child: Center(
-              child: Icon(
-                isIncoming ? Icons.check_circle : Icons.arrow_outward,
-                color: isIncoming ? colors.tertiary : colors.secondary,
-                size: 24,
-              ),
-            ),
+            child: isPending
+                ? Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: iconColor,
+                    ),
+                  )
+                : Center(child: Icon(icon, color: iconColor, size: 24)),
           ),
           const SizedBox(width: 20),
           Expanded(
@@ -453,8 +485,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isIncoming ? 'Received' : 'Sent',
-                  style: text.titleMedium,
+                  label,
+                  style: text.titleMedium?.copyWith(
+                    color: isExpired ? colors.outline : null,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -470,13 +504,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               Text(
                 amount,
                 style: text.titleMedium?.copyWith(
-                  color: isIncoming ? colors.tertiary : colors.onSurface,
+                  color: amountColor,
+                  decoration: isExpired ? TextDecoration.lineThrough : null,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
-                isIncoming ? 'SHIELDED' : 'EXTERNAL',
-                style: text.labelSmall?.copyWith(color: colors.outline),
+                statusLabel,
+                style: text.labelSmall?.copyWith(
+                  color: isExpired ? colors.error : colors.outline,
+                ),
               ),
             ],
           ),

@@ -177,6 +177,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
       log('Send: success, txids=$txidResult');
 
+      // Refresh balance and tx list so pending TX appears immediately
+      await ref.read(syncProvider.notifier).refreshAfterSend();
+
       // Show success and navigate back to home
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
