@@ -23,11 +23,12 @@ use zcash_client_backend::{
     zip321::{Payment, TransactionRequest},
 };
 use zcash_client_sqlite::{
-    FsBlockDb,
+    AccountUuid, FsBlockDb,
     WalletDb,
     chain::{BlockMeta, init::init_blockmeta_db},
     util::SystemClock,
 };
+use crate::wallet::keys::parse_account_uuid;
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::block::BlockHash;
 use zcash_proofs::prover::LocalTxProver;
@@ -185,20 +186,22 @@ pub(crate) struct WalletBalance {
     pub transparent_pending: u64, pub sapling_pending: u64, pub orchard_pending: u64,
 }
 
-pub fn get_wallet_balance(db_path: &str, network: Network) -> Result<WalletBalance, String> {
+pub fn get_wallet_balance(db_path: &str, network: Network, account_uuid: &str) -> Result<WalletBalance, String> {
     let db = open_wallet_db(db_path, network)?;
+    let target_id = parse_account_uuid(account_uuid)?;
     match db.get_wallet_summary(ConfirmationsPolicy::default()).map_err(|e| format!("{e}"))? {
         Some(s) => {
-            let (mut t, mut sa, mut or, mut tp, mut sp, mut op) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
-            for (_, b) in s.account_balances() {
-                t += u64::from(b.unshielded_balance().spendable_value());
-                sa += u64::from(b.sapling_balance().spendable_value());
-                or += u64::from(b.orchard_balance().spendable_value());
-                tp += u64::from(b.unshielded_balance().change_pending_confirmation()) + u64::from(b.unshielded_balance().value_pending_spendability());
-                sp += u64::from(b.sapling_balance().change_pending_confirmation()) + u64::from(b.sapling_balance().value_pending_spendability());
-                op += u64::from(b.orchard_balance().change_pending_confirmation()) + u64::from(b.orchard_balance().value_pending_spendability());
+            match s.account_balances().get(&target_id) {
+                Some(b) => Ok(WalletBalance {
+                    transparent: u64::from(b.unshielded_balance().spendable_value()),
+                    sapling: u64::from(b.sapling_balance().spendable_value()),
+                    orchard: u64::from(b.orchard_balance().spendable_value()),
+                    transparent_pending: u64::from(b.unshielded_balance().change_pending_confirmation()) + u64::from(b.unshielded_balance().value_pending_spendability()),
+                    sapling_pending: u64::from(b.sapling_balance().change_pending_confirmation()) + u64::from(b.sapling_balance().value_pending_spendability()),
+                    orchard_pending: u64::from(b.orchard_balance().change_pending_confirmation()) + u64::from(b.orchard_balance().value_pending_spendability()),
+                }),
+                None => Ok(WalletBalance { transparent: 0, sapling: 0, orchard: 0, transparent_pending: 0, sapling_pending: 0, orchard_pending: 0 }),
             }
-            Ok(WalletBalance { transparent: t, sapling: sa, orchard: or, transparent_pending: tp, sapling_pending: sp, orchard_pending: op })
         }
         None => Ok(WalletBalance { transparent: 0, sapling: 0, orchard: 0, transparent_pending: 0, sapling_pending: 0, orchard_pending: 0 }),
     }
@@ -229,13 +232,13 @@ pub fn validate_address(address: &str) -> Result<String, String> {
 /// Propose a transfer. Returns (proposal_id, needs_sapling_params, fee_zatoshi).
 /// The proposal is stored internally and referenced by proposal_id for execute_proposal.
 pub fn propose_send(
-    db_path: &str, network: Network,
+    db_path: &str, network: Network, account_uuid: &str,
     to_address: &str, amount_zatoshi: u64, memo_str: Option<&str>,
 ) -> Result<ProposalResult, String> {
     use zcash_protocol::{PoolType, ShieldedProtocol as SP};
 
     let mut db = open_wallet_db(db_path, network)?;
-    let account_id = get_first_account_id(&db)?;
+    let account_id = parse_account_uuid(account_uuid)?;
 
     let to: zcash_address::ZcashAddress = to_address.parse().map_err(|e| format!("Bad address: {e}"))?;
     let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
@@ -277,13 +280,13 @@ pub fn propose_send(
 /// Estimate the fee for a transfer without storing the proposal.
 /// Used for validation only — does not consume resources in PROPOSAL_STORE.
 pub fn estimate_fee(
-    db_path: &str, network: Network,
+    db_path: &str, network: Network, account_uuid: &str,
     to_address: &str, amount_zatoshi: u64, memo_str: Option<&str>,
 ) -> Result<u64, String> {
     use zcash_protocol::ShieldedProtocol as SP;
 
     let mut db = open_wallet_db(db_path, network)?;
-    let account_id = get_first_account_id(&db)?;
+    let account_id = parse_account_uuid(account_uuid)?;
 
     let to: zcash_address::ZcashAddress = to_address.parse().map_err(|e| format!("Bad address: {e}"))?;
     let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
@@ -461,10 +464,10 @@ struct ProposalStore {
 
 // ======================== Diversified Address ========================
 
-pub fn get_next_available_address(db_path: &str, network: Network) -> Result<String, String> {
+pub fn get_next_available_address(db_path: &str, network: Network, account_uuid: &str) -> Result<String, String> {
     use zcash_keys::keys::{ReceiverRequirement, UnifiedAddressRequest};
     let mut db = open_wallet_db(db_path, network)?;
-    let account_id = get_first_account_id(&db)?;
+    let account_id = parse_account_uuid(account_uuid)?;
     let req = UnifiedAddressRequest::custom(
         ReceiverRequirement::Require, ReceiverRequirement::Require, ReceiverRequirement::Omit,
     ).map_err(|_| "bad request")?;
@@ -564,8 +567,11 @@ pub(crate) struct TransactionInfo {
 }
 
 pub fn get_transaction_history(
-    db_path: &str, _network: Network, limit: Option<u32>,
+    db_path: &str, _network: Network, limit: Option<u32>, account_uuid: &str,
 ) -> Result<Vec<TransactionInfo>, String> {
+    let uuid = uuid::Uuid::parse_str(account_uuid).map_err(|e| format!("Invalid UUID: {e}"))?;
+    let uuid_bytes = uuid.as_bytes().to_vec();
+
     // Open a separate read-only connection (WalletDb.conn is private)
     let conn = rusqlite::Connection::open_with_flags(
         db_path,
@@ -575,11 +581,13 @@ pub fn get_transaction_history(
         Some(_) => "SELECT txid, mined_height, expired_unmined, account_balance_delta, \
              COALESCE(fee_paid, 0), COALESCE(block_time, 0) \
              FROM v_transactions \
+             WHERE account_uuid = ?1 \
              ORDER BY COALESCE(mined_height, 999999999) DESC, tx_index DESC \
-             LIMIT ?1",
+             LIMIT ?2",
         None => "SELECT txid, mined_height, expired_unmined, account_balance_delta, \
              COALESCE(fee_paid, 0), COALESCE(block_time, 0) \
              FROM v_transactions \
+             WHERE account_uuid = ?1 \
              ORDER BY COALESCE(mined_height, 999999999) DESC, tx_index DESC",
     };
     let mut stmt = conn.prepare(sql).map_err(|e| format!("SQL error: {e}"))?;
@@ -602,9 +610,9 @@ pub fn get_transaction_history(
     };
 
     let rows = if let Some(n) = limit {
-        stmt.query_map(rusqlite::params![n], map_row)
+        stmt.query_map(rusqlite::params![&uuid_bytes, n], map_row)
     } else {
-        stmt.query_map([], map_row)
+        stmt.query_map(rusqlite::params![&uuid_bytes], map_row)
     }.map_err(|e| format!("Query error: {e}"))?;
 
     rows.collect::<Result<Vec<_>, _>>()

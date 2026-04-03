@@ -123,9 +123,11 @@ Future<SyncProgress> getSyncStatus({
 Future<WalletBalance> getBalance({
   required String dbPath,
   required String network,
+  required String accountUuid,
 }) => RustLib.instance.api.crateApiSyncGetBalance(
   dbPath: dbPath,
   network: network,
+  accountUuid: accountUuid,
 );
 
 Future<BigInt> rewindToHeight({
@@ -145,12 +147,14 @@ Future<AddressValidationResult> validateAddress({required String address}) =>
 Future<ProposalResult> proposeSend({
   required String dbPath,
   required String network,
+  required String accountUuid,
   required String toAddress,
   required BigInt amountZatoshi,
   String? memo,
 }) => RustLib.instance.api.crateApiSyncProposeSend(
   dbPath: dbPath,
   network: network,
+  accountUuid: accountUuid,
   toAddress: toAddress,
   amountZatoshi: amountZatoshi,
   memo: memo,
@@ -160,12 +164,14 @@ Future<ProposalResult> proposeSend({
 Future<BigInt> estimateFee({
   required String dbPath,
   required String network,
+  required String accountUuid,
   required String toAddress,
   required BigInt amountZatoshi,
   String? memo,
 }) => RustLib.instance.api.crateApiSyncEstimateFee(
   dbPath: dbPath,
   network: network,
+  accountUuid: accountUuid,
   toAddress: toAddress,
   amountZatoshi: amountZatoshi,
   memo: memo,
@@ -192,9 +198,11 @@ Future<String> executeProposal({
 Future<String> getNextAvailableAddress({
   required String dbPath,
   required String network,
+  required String accountUuid,
 }) => RustLib.instance.api.crateApiSyncGetNextAvailableAddress(
   dbPath: dbPath,
   network: network,
+  accountUuid: accountUuid,
 );
 
 Future<List<TxDataRequest>> getTransactionDataRequests({
@@ -233,10 +241,12 @@ Future<List<TransactionInfo>> getTransactionHistory({
   required String dbPath,
   required String network,
   int? limit,
+  required String accountUuid,
 }) => RustLib.instance.api.crateApiSyncGetTransactionHistory(
   dbPath: dbPath,
   network: network,
   limit: limit,
+  accountUuid: accountUuid,
 );
 
 String getBlocksDir({required String cachePath}) =>

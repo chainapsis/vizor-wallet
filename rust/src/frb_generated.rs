@@ -256,6 +256,7 @@ fn wire__crate__api__sync__estimate_fee_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_to_address = <String>::sse_decode(&mut deserializer);
             let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
             let api_memo = <Option<String>>::sse_decode(&mut deserializer);
@@ -265,6 +266,7 @@ fn wire__crate__api__sync__estimate_fee_impl(
                     let output_ok = crate::api::sync::estimate_fee(
                         api_db_path,
                         api_network,
+                        api_account_uuid,
                         api_to_address,
                         api_amount_zatoshi,
                         api_memo,
@@ -344,10 +346,12 @@ fn wire__crate__api__sync__get_balance_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::sync::get_balance(api_db_path, api_network)?;
+                    let output_ok =
+                        crate::api::sync::get_balance(api_db_path, api_network, api_account_uuid)?;
                     Ok(output_ok)
                 })())
             }
@@ -443,11 +447,15 @@ fn wire__crate__api__sync__get_next_available_address_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok =
-                        crate::api::sync::get_next_available_address(api_db_path, api_network)?;
+                    let output_ok = crate::api::sync::get_next_available_address(
+                        api_db_path,
+                        api_network,
+                        api_account_uuid,
+                    )?;
                     Ok(output_ok)
                 })())
             }
@@ -612,6 +620,7 @@ fn wire__crate__api__sync__get_transaction_history_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_limit = <Option<u32>>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -619,6 +628,7 @@ fn wire__crate__api__sync__get_transaction_history_impl(
                         api_db_path,
                         api_network,
                         api_limit,
+                        api_account_uuid,
                     )?;
                     Ok(output_ok)
                 })())
@@ -896,6 +906,7 @@ fn wire__crate__api__sync__propose_send_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_to_address = <String>::sse_decode(&mut deserializer);
             let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
             let api_memo = <Option<String>>::sse_decode(&mut deserializer);
@@ -905,6 +916,7 @@ fn wire__crate__api__sync__propose_send_impl(
                     let output_ok = crate::api::sync::propose_send(
                         api_db_path,
                         api_network,
+                        api_account_uuid,
                         api_to_address,
                         api_amount_zatoshi,
                         api_memo,

@@ -242,10 +242,10 @@ pub fn get_sync_status(db_path: String, network: String) -> Result<SyncProgress,
     })
 }
 
-pub fn get_balance(db_path: String, network: String) -> Result<WalletBalance, String> {
+pub fn get_balance(db_path: String, network: String, account_uuid: String) -> Result<WalletBalance, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        let b = wallet_sync::get_wallet_balance(&db_path, network)?;
+        let b = wallet_sync::get_wallet_balance(&db_path, network, &account_uuid)?;
         Ok(WalletBalance {
             transparent: b.transparent, sapling: b.sapling, orchard: b.orchard,
             transparent_pending: b.transparent_pending, sapling_pending: b.sapling_pending, orchard_pending: b.orchard_pending,
@@ -284,12 +284,12 @@ pub struct ProposalResult {
 
 /// Step 1: Propose a transfer. Returns proposal info including whether Sapling params are needed.
 pub fn propose_send(
-    db_path: String, network: String,
+    db_path: String, network: String, account_uuid: String,
     to_address: String, amount_zatoshi: u64, memo: Option<String>,
 ) -> Result<ProposalResult, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        let r = wallet_sync::propose_send(&db_path, network, &to_address, amount_zatoshi, memo.as_deref())?;
+        let r = wallet_sync::propose_send(&db_path, network, &account_uuid, &to_address, amount_zatoshi, memo.as_deref())?;
         Ok(ProposalResult {
             proposal_id: r.proposal_id,
             needs_sapling_params: r.needs_sapling_params,
@@ -300,12 +300,12 @@ pub fn propose_send(
 
 /// Estimate the fee for a transfer without storing a proposal.
 pub fn estimate_fee(
-    db_path: String, network: String,
+    db_path: String, network: String, account_uuid: String,
     to_address: String, amount_zatoshi: u64, memo: Option<String>,
 ) -> Result<u64, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        wallet_sync::estimate_fee(&db_path, network, &to_address, amount_zatoshi, memo.as_deref())
+        wallet_sync::estimate_fee(&db_path, network, &account_uuid, &to_address, amount_zatoshi, memo.as_deref())
     })
 }
 
@@ -326,10 +326,10 @@ pub fn execute_proposal(
 
 // ======================== Diversified Address ========================
 
-pub fn get_next_available_address(db_path: String, network: String) -> Result<String, String> {
+pub fn get_next_available_address(db_path: String, network: String, account_uuid: String) -> Result<String, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        wallet_sync::get_next_available_address(&db_path, network)
+        wallet_sync::get_next_available_address(&db_path, network, &account_uuid)
     })
 }
 
@@ -383,10 +383,10 @@ pub struct TransactionInfo {
     pub block_time: u64,
 }
 
-pub fn get_transaction_history(db_path: String, network: String, limit: Option<u32>) -> Result<Vec<TransactionInfo>, String> {
+pub fn get_transaction_history(db_path: String, network: String, limit: Option<u32>, account_uuid: String) -> Result<Vec<TransactionInfo>, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        let txs = wallet_sync::get_transaction_history(&db_path, network, limit)?;
+        let txs = wallet_sync::get_transaction_history(&db_path, network, limit, &account_uuid)?;
         Ok(txs.into_iter().map(|t| TransactionInfo {
             txid_hex: t.txid_hex, mined_height: t.mined_height, expired_unmined: t.expired_unmined,
             account_balance_delta: t.account_balance_delta, fee: t.fee, block_time: t.block_time,

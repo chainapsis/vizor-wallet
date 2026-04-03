@@ -107,6 +107,7 @@ abstract class RustLibApi extends BaseApi {
   Future<BigInt> crateApiSyncEstimateFee({
     required String dbPath,
     required String network,
+    required String accountUuid,
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
@@ -124,6 +125,7 @@ abstract class RustLibApi extends BaseApi {
   Future<WalletBalance> crateApiSyncGetBalance({
     required String dbPath,
     required String network,
+    required String accountUuid,
   });
 
   String crateApiSyncGetBlocksDir({required String cachePath});
@@ -135,6 +137,7 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateApiSyncGetNextAvailableAddress({
     required String dbPath,
     required String network,
+    required String accountUuid,
   });
 
   Future<SubtreeIndices> crateApiSyncGetNextSubtreeIndices({
@@ -158,6 +161,7 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String network,
     int? limit,
+    required String accountUuid,
   });
 
   Future<String> crateApiWalletGetTransparentAddress({
@@ -193,6 +197,7 @@ abstract class RustLibApi extends BaseApi {
   Future<ProposalResult> crateApiSyncProposeSend({
     required String dbPath,
     required String network,
+    required String accountUuid,
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
@@ -445,6 +450,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<BigInt> crateApiSyncEstimateFee({
     required String dbPath,
     required String network,
+    required String accountUuid,
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
@@ -455,6 +461,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
           sse_encode_String(toAddress, serializer);
           sse_encode_u_64(amountZatoshi, serializer);
           sse_encode_opt_String(memo, serializer);
@@ -470,7 +477,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncEstimateFeeConstMeta,
-        argValues: [dbPath, network, toAddress, amountZatoshi, memo],
+        argValues: [
+          dbPath,
+          network,
+          accountUuid,
+          toAddress,
+          amountZatoshi,
+          memo,
+        ],
         apiImpl: this,
       ),
     );
@@ -478,7 +492,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiSyncEstimateFeeConstMeta => const TaskConstMeta(
     debugName: "estimate_fee",
-    argNames: ["dbPath", "network", "toAddress", "amountZatoshi", "memo"],
+    argNames: [
+      "dbPath",
+      "network",
+      "accountUuid",
+      "toAddress",
+      "amountZatoshi",
+      "memo",
+    ],
   );
 
   @override
@@ -542,6 +563,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<WalletBalance> crateApiSyncGetBalance({
     required String dbPath,
     required String network,
+    required String accountUuid,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -549,6 +571,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -561,7 +584,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncGetBalanceConstMeta,
-        argValues: [dbPath, network],
+        argValues: [dbPath, network, accountUuid],
         apiImpl: this,
       ),
     );
@@ -569,7 +592,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiSyncGetBalanceConstMeta => const TaskConstMeta(
     debugName: "get_balance",
-    argNames: ["dbPath", "network"],
+    argNames: ["dbPath", "network", "accountUuid"],
   );
 
   @override
@@ -632,6 +655,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<String> crateApiSyncGetNextAvailableAddress({
     required String dbPath,
     required String network,
+    required String accountUuid,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -639,6 +663,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -651,7 +676,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncGetNextAvailableAddressConstMeta,
-        argValues: [dbPath, network],
+        argValues: [dbPath, network, accountUuid],
         apiImpl: this,
       ),
     );
@@ -660,7 +685,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncGetNextAvailableAddressConstMeta =>
       const TaskConstMeta(
         debugName: "get_next_available_address",
-        argNames: ["dbPath", "network"],
+        argNames: ["dbPath", "network", "accountUuid"],
       );
 
   @override
@@ -794,6 +819,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String network,
     int? limit,
+    required String accountUuid,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -802,6 +828,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
           sse_encode_opt_box_autoadd_u_32(limit, serializer);
+          sse_encode_String(accountUuid, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -814,7 +841,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncGetTransactionHistoryConstMeta,
-        argValues: [dbPath, network, limit],
+        argValues: [dbPath, network, limit, accountUuid],
         apiImpl: this,
       ),
     );
@@ -823,7 +850,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncGetTransactionHistoryConstMeta =>
       const TaskConstMeta(
         debugName: "get_transaction_history",
-        argNames: ["dbPath", "network", "limit"],
+        argNames: ["dbPath", "network", "limit", "accountUuid"],
       );
 
   @override
@@ -1048,6 +1075,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<ProposalResult> crateApiSyncProposeSend({
     required String dbPath,
     required String network,
+    required String accountUuid,
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
@@ -1058,6 +1086,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
           sse_encode_String(toAddress, serializer);
           sse_encode_u_64(amountZatoshi, serializer);
           sse_encode_opt_String(memo, serializer);
@@ -1073,7 +1102,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncProposeSendConstMeta,
-        argValues: [dbPath, network, toAddress, amountZatoshi, memo],
+        argValues: [
+          dbPath,
+          network,
+          accountUuid,
+          toAddress,
+          amountZatoshi,
+          memo,
+        ],
         apiImpl: this,
       ),
     );
@@ -1081,7 +1117,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiSyncProposeSendConstMeta => const TaskConstMeta(
     debugName: "propose_send",
-    argNames: ["dbPath", "network", "toAddress", "amountZatoshi", "memo"],
+    argNames: [
+      "dbPath",
+      "network",
+      "accountUuid",
+      "toAddress",
+      "amountZatoshi",
+      "memo",
+    ],
   );
 
   @override
