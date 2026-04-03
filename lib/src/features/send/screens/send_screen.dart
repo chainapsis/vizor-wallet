@@ -203,10 +203,14 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
       log('Send: success, txids=$txidResult');
 
-      // Refresh balance and tx list so pending TX appears immediately
-      await ref.read(syncProvider.notifier).refreshAfterSend();
+      // === Send confirmed at this point — all below is non-critical ===
 
-      // Start iOS TX tracking BGTask for Dynamic Island (iOS 26+, not simulator)
+      try {
+        await ref.read(syncProvider.notifier).refreshAfterSend();
+      } catch (e) {
+        log('Send: refreshAfterSend failed (non-critical): $e');
+      }
+
       if (Platform.isIOS) {
         try {
           const channel = MethodChannel('com.zcash.wallet/background_sync');
@@ -216,11 +220,10 @@ class _SendScreenState extends ConsumerState<SendScreen> {
             log('Send: iOS TX tracking started');
           }
         } catch (e) {
-          log('Send: iOS TX tracking failed: $e');
+          log('Send: iOS TX tracking failed (non-critical): $e');
         }
       }
 
-      // Show success and navigate back to home
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
