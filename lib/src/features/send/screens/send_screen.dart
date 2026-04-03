@@ -49,8 +49,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     try {
       final result = await rust_sync.validateAddress(address: addr);
       setState(() => _addressType = result.isValid ? result.addressType : 'invalid');
-    } catch (_) {
-      setState(() => _addressType = 'invalid');
+    } catch (e) {
+      log('Send: address validation error: $e');
+      setState(() => _addressType = 'error');
     }
   }
 
@@ -405,8 +406,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                   labelText: 'Recipient Address',
                   suffixIcon: _addressType.isNotEmpty
                       ? Icon(
-                          _addressType == 'invalid' ? Icons.error : Icons.check_circle,
-                          color: _addressType == 'invalid'
+                          (_addressType == 'invalid' || _addressType == 'error')
+                              ? Icons.error : Icons.check_circle,
+                          color: (_addressType == 'invalid' || _addressType == 'error')
                               ? colors.error
                               : colors.tertiary,
                         )
@@ -415,7 +417,15 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                 onChanged: (_) => _validateAddress(),
                 maxLines: 2,
               ),
-              if (_addressType.isNotEmpty && _addressType != 'invalid')
+              if (_addressType == 'error')
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text('Address validation failed. Please try again.',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.error,
+                      )),
+                ),
+              if (_addressType.isNotEmpty && _addressType != 'invalid' && _addressType != 'error')
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text('Address type: $_addressType',
@@ -470,7 +480,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: _isSending || _addressType == 'invalid' || _addressType.isEmpty
+                  onPressed: _isSending || _addressType == 'invalid' || _addressType == 'error' || _addressType.isEmpty
                       ? null
                       : _send,
                   child: _isSending
