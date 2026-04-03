@@ -98,6 +98,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<String> crateApiSyncExecuteProposal({
     required String dbPath,
+    required String lightwalletdUrl,
     required BigInt proposalId,
     required List<int> seed,
     String? spendParamsPath,
@@ -380,6 +381,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<String> crateApiSyncExecuteProposal({
     required String dbPath,
+    required String lightwalletdUrl,
     required BigInt proposalId,
     required List<int> seed,
     String? spendParamsPath,
@@ -390,6 +392,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
           sse_encode_u_64(proposalId, serializer);
           sse_encode_list_prim_u_8_loose(seed, serializer);
           sse_encode_opt_String(spendParamsPath, serializer);
@@ -408,6 +411,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         constMeta: kCrateApiSyncExecuteProposalConstMeta,
         argValues: [
           dbPath,
+          lightwalletdUrl,
           proposalId,
           seed,
           spendParamsPath,
@@ -423,6 +427,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "execute_proposal",
         argNames: [
           "dbPath",
+          "lightwalletdUrl",
           "proposalId",
           "seed",
           "spendParamsPath",

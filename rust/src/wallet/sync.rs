@@ -274,9 +274,11 @@ pub fn propose_send(
     Ok(ProposalResult { proposal_id: id, needs_sapling_params: needs_sapling, fee_zatoshi: fee })
 }
 
-/// Execute a previously proposed transfer. Requires seed and optionally Sapling params paths.
-pub fn execute_proposal(
+/// Execute a previously proposed transfer, then broadcast to the network.
+/// Returns comma-separated txids on success.
+pub async fn execute_proposal(
     db_path: &str,
+    lightwalletd_url: &str,
     proposal_id: u64,
     seed_bytes: &[u8],
     spend_params_path: Option<&str>,
@@ -308,7 +310,61 @@ pub fn execute_proposal(
         OvkPolicy::Sender, &stored.proposal,
     ).map_err(|e| format!("Create TX failed: {e}"))?;
 
-    Ok(txids.into_iter().map(|id| format!("{id}")).collect::<Vec<_>>().join(","))
+    // Broadcast each transaction to lightwalletd
+    let txid_strings: Vec<String> = txids.iter().map(|id| format!("{id}")).collect();
+
+    // Open separate read-only connection (WalletDb.conn is private)
+    let read_conn = rusqlite::Connection::open_with_flags(
+        db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ).map_err(|e| format!("Failed to open DB for broadcast: {e}"))?;
+
+    for txid in &txids {
+        let raw_tx = read_conn
+            .query_row(
+                "SELECT raw FROM transactions WHERE txid = ?1",
+                rusqlite::params![txid.as_ref()],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .map_err(|e| format!("Failed to get raw tx for {txid}: {e}"))?;
+
+        broadcast_raw_transaction(lightwalletd_url, &raw_tx).await?;
+        log::info!("send: broadcast {txid} ({} bytes)", raw_tx.len());
+    }
+
+    Ok(txid_strings.join(","))
+}
+
+/// Broadcast a raw transaction to lightwalletd via gRPC.
+async fn broadcast_raw_transaction(lightwalletd_url: &str, raw_tx: &[u8]) -> Result<(), String> {
+    use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+    use zcash_client_backend::proto::service::{
+        compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction,
+    };
+
+    let channel = Endpoint::from_shared(lightwalletd_url.to_string())
+        .map_err(|e| format!("Invalid URL: {e}"))?
+        .tls_config(ClientTlsConfig::new().with_webpki_roots())
+        .map_err(|e| format!("TLS error: {e}"))?
+        .connect()
+        .await
+        .map_err(|e| format!("gRPC connect failed: {e}"))?;
+
+    let mut client = CompactTxStreamerClient::new(channel);
+
+    let resp = client
+        .send_transaction(RawTransaction {
+            data: raw_tx.to_vec(),
+            height: 0,
+        })
+        .await
+        .map_err(|e| format!("SendTransaction gRPC failed: {e}"))?
+        .into_inner();
+
+    if resp.error_code != 0 {
+        return Err(format!("Broadcast rejected: {} (code {})", resp.error_message, resp.error_code));
+    }
+
+    Ok(())
 }
 
 pub(crate) struct ProposalResult {

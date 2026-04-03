@@ -212,6 +212,7 @@ fn wire__crate__api__sync__execute_proposal_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             let api_proposal_id = <u64>::sse_decode(&mut deserializer);
             let api_seed = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_spend_params_path = <Option<String>>::sse_decode(&mut deserializer);
@@ -221,6 +222,7 @@ fn wire__crate__api__sync__execute_proposal_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::sync::execute_proposal(
                         api_db_path,
+                        api_lightwalletd_url,
                         api_proposal_id,
                         api_seed,
                         api_spend_params_path,

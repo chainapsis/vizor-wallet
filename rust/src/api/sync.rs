@@ -298,17 +298,18 @@ pub fn propose_send(
     })
 }
 
-/// Step 2: Execute a previously proposed transfer.
+/// Step 2: Execute a previously proposed transfer and broadcast to the network.
 /// spend_params_path and output_params_path are required only if needs_sapling_params was true.
 pub fn execute_proposal(
-    db_path: String, proposal_id: u64, seed: Vec<u8>,
+    db_path: String, lightwalletd_url: String, proposal_id: u64, seed: Vec<u8>,
     spend_params_path: Option<String>, output_params_path: Option<String>,
 ) -> Result<String, String> {
     catch(|| {
-        wallet_sync::execute_proposal(
-            &db_path, proposal_id, &seed,
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        rt.block_on(wallet_sync::execute_proposal(
+            &db_path, &lightwalletd_url, proposal_id, &seed,
             spend_params_path.as_deref(), output_params_path.as_deref(),
-        )
+        ))
     })
 }
 
