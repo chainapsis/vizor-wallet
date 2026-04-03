@@ -38,8 +38,6 @@ struct SyncWidgetLiveActivity: Widget {
 
     private func syncBanner(context: ActivityViewContext<LiveActivitiesAppAttributes>, defaults: UserDefaults) -> some View {
         let percentage = Double(defaults.string(forKey: context.attributes.prefixedKey("percentage")) ?? "0") ?? 0
-        let scannedHeight = defaults.string(forKey: context.attributes.prefixedKey("scannedHeight")) ?? "0"
-        let chainTipHeight = defaults.string(forKey: context.attributes.prefixedKey("chainTipHeight")) ?? "0"
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -55,9 +53,6 @@ struct SyncWidgetLiveActivity: Widget {
             }
             ProgressView(value: percentage)
                 .tint(.yellow)
-            Text("Block \(scannedHeight) / \(chainTipHeight)")
-                .font(.caption)
-                .foregroundColor(.gray)
         }
         .padding()
         .background(Color.black)

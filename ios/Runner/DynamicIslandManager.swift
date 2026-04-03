@@ -20,25 +20,19 @@ class DynamicIslandManager {
 
     // Cache last sync progress for restoration after TX tracking
     private var lastSyncPercentage: Double = 0
-    private var lastScannedHeight: UInt64 = 0
-    private var lastChainTipHeight: UInt64 = 0
 
     private init() {}
 
     // MARK: - Sync Progress
 
-    func showSyncProgress(percentage: Double, scannedHeight: UInt64, chainTipHeight: UInt64) {
+    func showSyncProgress(percentage: Double) {
         lastSyncPercentage = percentage
-        lastScannedHeight = scannedHeight
-        lastChainTipHeight = chainTipHeight
 
         // Always update UserDefaults so widget has latest data
         updateDefaults(
             displayMode: .sync,
             status: "Syncing...",
             percentage: percentage,
-            scannedHeight: "\(scannedHeight)",
-            chainTipHeight: "\(chainTipHeight)",
             txStatus: nil
         )
 
@@ -58,8 +52,6 @@ class DynamicIslandManager {
             displayMode: .txTrack,
             status: "Tracking \(pendingCount) transaction\(pendingCount == 1 ? "" : "s")",
             percentage: 0,
-            scannedHeight: nil,
-            chainTipHeight: nil,
             txStatus: "pending"
         )
         ensureActivityStarted()
@@ -78,8 +70,6 @@ class DynamicIslandManager {
             displayMode: .txTrack,
             status: status,
             percentage: nil,
-            scannedHeight: nil,
-            chainTipHeight: nil,
             txStatus: remaining > 0 ? "pending" : "done"
         )
         refreshActivity()
@@ -91,8 +81,6 @@ class DynamicIslandManager {
             displayMode: .sync,
             status: "Syncing...",
             percentage: lastSyncPercentage,
-            scannedHeight: "\(lastScannedHeight)",
-            chainTipHeight: "\(lastChainTipHeight)",
             txStatus: nil
         )
         refreshActivity()
@@ -146,8 +134,6 @@ class DynamicIslandManager {
         displayMode: DisplayMode,
         status: String?,
         percentage: Double?,
-        scannedHeight: String?,
-        chainTipHeight: String?,
         txStatus: String?
     ) {
         guard let id = activityId ?? self.activityId else { return }
@@ -155,8 +141,6 @@ class DynamicIslandManager {
         defaults?.set(displayMode.rawValue, forKey: prefix + "displayMode")
         if let status { defaults?.set(status, forKey: prefix + "status") }
         if let percentage { defaults?.set(String(percentage), forKey: prefix + "percentage") }
-        if let scannedHeight { defaults?.set(scannedHeight, forKey: prefix + "scannedHeight") }
-        if let chainTipHeight { defaults?.set(chainTipHeight, forKey: prefix + "chainTipHeight") }
         if let txStatus { defaults?.set(txStatus, forKey: prefix + "txStatus") }
     }
 }
