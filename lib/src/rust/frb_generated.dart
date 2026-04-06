@@ -93,6 +93,7 @@ abstract class RustLibApi extends BaseApi {
     required String network,
     required String dbPath,
     BigInt? birthdayHeight,
+    String? accountName,
   });
 
   Future<void> crateApiSyncDecryptAndStoreTransaction({
@@ -185,6 +186,7 @@ abstract class RustLibApi extends BaseApi {
     BigInt? birthdayHeight,
     required String network,
     required String dbPath,
+    String? accountName,
   });
 
   Future<void> crateApiSimpleInitApp();
@@ -350,6 +352,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String network,
     required String dbPath,
     BigInt? birthdayHeight,
+    String? accountName,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -358,6 +361,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(network, serializer);
           sse_encode_String(dbPath, serializer);
           sse_encode_opt_box_autoadd_u_64(birthdayHeight, serializer);
+          sse_encode_opt_String(accountName, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -370,7 +374,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiWalletCreateWalletConstMeta,
-        argValues: [network, dbPath, birthdayHeight],
+        argValues: [network, dbPath, birthdayHeight, accountName],
         apiImpl: this,
       ),
     );
@@ -378,7 +382,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiWalletCreateWalletConstMeta => const TaskConstMeta(
     debugName: "create_wallet",
-    argNames: ["network", "dbPath", "birthdayHeight"],
+    argNames: ["network", "dbPath", "birthdayHeight", "accountName"],
   );
 
   @override
@@ -980,6 +984,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     BigInt? birthdayHeight,
     required String network,
     required String dbPath,
+    String? accountName,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -989,6 +994,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_opt_box_autoadd_u_64(birthdayHeight, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(dbPath, serializer);
+          sse_encode_opt_String(accountName, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1001,7 +1007,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiWalletImportWalletConstMeta,
-        argValues: [mnemonic, birthdayHeight, network, dbPath],
+        argValues: [mnemonic, birthdayHeight, network, dbPath, accountName],
         apiImpl: this,
       ),
     );
@@ -1009,7 +1015,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiWalletImportWalletConstMeta => const TaskConstMeta(
     debugName: "import_wallet",
-    argNames: ["mnemonic", "birthdayHeight", "network", "dbPath"],
+    argNames: [
+      "mnemonic",
+      "birthdayHeight",
+      "network",
+      "dbPath",
+      "accountName",
+    ],
   );
 
   @override

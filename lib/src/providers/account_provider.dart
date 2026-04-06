@@ -127,6 +127,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _deleteExistingDb(dbPath);
       final result = await rust_wallet.createWallet(
         network: network, dbPath: dbPath, birthdayHeight: birthday,
+        accountName: accountName,
       );
       mnemonic = result.mnemonic;
       accountUuid = result.accountUuid;
@@ -188,6 +189,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         mnemonic: mnemonic,
         birthdayHeight: birthdayHeight != null ? BigInt.from(birthdayHeight) : null,
         network: network, dbPath: dbPath,
+        accountName: accountName,
       );
       accountUuid = result.accountUuid;
       unifiedAddress = result.unifiedAddress;
