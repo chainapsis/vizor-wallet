@@ -22,10 +22,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
-      ref.read(syncProvider.notifier).startSync();
-      _checkBackgroundSyncAvailability();
-    });
+    _checkBackgroundSyncAvailability();
   }
 
   Future<void> _checkBackgroundSyncAvailability() async {

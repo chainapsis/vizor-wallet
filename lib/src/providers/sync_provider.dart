@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../main.dart' show log;
 import '../core/config/network_config.dart';
 import '../rust/api/sync.dart' as rust_sync;
+import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_provider.dart';
 import '../services/background_sync_service.dart' as bg_sync;
 
@@ -76,11 +77,14 @@ class SyncState {
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _backgroundMode = false;
+  bool _isSyncing = false;
+  bool _isInForeground = true;
   int _lastLoggedHeight = 0;
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
   StreamSubscription? _eventChannelSub;
   AppLifecycleListener? _lifecycleListener;
+  Timer? _pollTimer;
 
   @override
   Future<SyncState> build() async {
@@ -111,14 +115,20 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       }
     });
 
-    // Refresh balance when app returns to foreground
+    // App lifecycle management
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
+        _isInForeground = true;
         _refreshBalance();
         if (_backgroundMode && rust_sync.getSyncMode() == 0) {
           _backgroundMode = false;
-          startSync();
         }
+        _checkAndSync();
+        _startPolling();
+      },
+      onHide: () {
+        _isInForeground = false;
+        _stopPolling();
       },
     );
 
@@ -126,7 +136,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _syncSub?.cancel();
       _eventChannelSub?.cancel();
       _lifecycleListener?.dispose();
+      _pollTimer?.cancel();
     });
+
+    // Auto-start sync when an account exists
+    final accountState = ref.watch(accountProvider).value;
+    if (accountState != null && accountState.hasAccounts) {
+      Future.microtask(() => _autoSync());
+    }
 
     return SyncState();
   }
@@ -134,6 +151,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // ======================== Sync Control ========================
 
   Future<void> startSync() async {
+    if (_isSyncing || rust_sync.isSyncRunning()) {
+      log('Sync: already running, skipping');
+      return;
+    }
+    _isSyncing = true;
     _backgroundMode = false;
     _lastLoggedHeight = 0;
     state = AsyncData(SyncState(isSyncing: true));
@@ -163,11 +185,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ),
         onDone: () {
           log('Sync: stream ended');
+          _isSyncing = false;
           _onSyncDone();
           if (!completer.isCompleted) completer.complete();
         },
         onError: (e) {
           log('Sync: stream error: $e');
+          _isSyncing = false;
           state = AsyncData(SyncState(error: e.toString()));
           if (!completer.isCompleted) completer.completeError(e);
         },
@@ -176,6 +200,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       await completer.future;
     } catch (e, st) {
       log('SyncNotifier: ERROR: $e\n$st');
+      _isSyncing = false;
       state = AsyncData(SyncState(error: e.toString()));
     }
   }
@@ -184,6 +209,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     rust_sync.cancelFullSync();
     _syncSub?.cancel();
     _syncSub = null;
+    _isSyncing = false;
     if (_backgroundMode) {
       bg_sync.stopBackgroundSync();
       _backgroundMode = false;
@@ -251,6 +277,43 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     return bg_sync.isBackgroundSyncAvailable();
   }
 
+  // ======================== Auto-Sync & Polling ========================
+
+  Future<void> _autoSync() async {
+    await startSync();
+    _startPolling();
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    if (!_isInForeground || _backgroundMode) return;
+    _pollTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _checkAndSync(),
+    );
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  Future<void> _checkAndSync() async {
+    if (_isSyncing || _backgroundMode || !_isInForeground) return;
+    try {
+      final tip = await rust_wallet.getLatestBlockHeight(
+        lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
+      );
+      final lastSynced = state.value?.chainTipHeight ?? 0;
+      if (tip.toInt() > lastSynced) {
+        log('AutoSync: new blocks (tip=$tip, last=$lastSynced)');
+        await startSync();
+      }
+    } catch (e) {
+      log('AutoSync: tip check failed: $e');
+    }
+  }
+
   // ======================== Progress Handling ========================
 
   void _onSyncDone() {
@@ -310,6 +373,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       totalBalance: total ?? prev?.totalBalance,
       recentTransactions: recentTxs,
     ));
+
+    // Background sync completed → switch back to foreground mode
+    if (isBackground && isComplete && _backgroundMode) {
+      log('SyncNotifier: background sync completed, switching to foreground mode');
+      _backgroundMode = false;
+      _startPolling();
+    }
 
     // Update Android notification
     if (_backgroundMode && Platform.isAndroid) {
