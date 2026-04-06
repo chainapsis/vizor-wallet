@@ -32,9 +32,9 @@ class WalletNotifier extends AsyncNotifier<WalletState> {
         );
       },
       loading: () => const WalletState(),
-      error: (e, _) {
+      error: (e, st) {
         log('WalletNotifier: error from accountProvider: $e');
-        return const WalletState();
+        Error.throwWithStackTrace(e, st);
       },
     );
   }
