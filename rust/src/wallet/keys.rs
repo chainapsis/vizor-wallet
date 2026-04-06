@@ -4,12 +4,13 @@ use bip0039::{Count, English, Mnemonic};
 use rand::rngs::OsRng;
 use secrecy::{ExposeSecret, SecretVec};
 use zcash_client_backend::data_api::{
-    Account as _, AccountBirthday, WalletRead, WalletWrite,
+    Account as _, AccountBirthday, AccountPurpose, WalletRead, WalletWrite, Zip32Derivation,
     chain::ChainState,
 };
 use zcash_client_sqlite::{AccountUuid, WalletDb, util::SystemClock, wallet::init::init_wallet_db};
-use zcash_keys::keys::{ReceiverRequirement, UnifiedAddressRequest};
+use zcash_keys::keys::{ReceiverRequirement, UnifiedAddressRequest, UnifiedSpendingKey};
 use zcash_primitives::block::BlockHash;
+use zip32::fingerprint::SeedFingerprint;
 use zcash_protocol::consensus::{BlockHeight, Network, NetworkUpgrade, Parameters};
 
 /// Generate a new 24-word BIP-39 mnemonic phrase.
@@ -69,6 +70,8 @@ fn make_birthday(network: Network, birthday_height: Option<u64>) -> AccountBirth
 }
 
 /// Add a new account to the wallet database. Returns (account_uuid, unified_address).
+/// Uses import_account_ufvk with AccountPurpose::Spending so that accounts from
+/// different seeds can coexist in the same DB (create_account enforces single-seed).
 pub fn add_account(
     db_path: &str,
     network: Network,
@@ -81,11 +84,23 @@ pub fn add_account(
 
     let birthday = make_birthday(network, birthday_height);
 
-    let (account_id, usk) = db
-        .create_account(name, seed, &birthday, None)
-        .map_err(|e| format!("Failed to create account: {e}"))?;
-
+    // Derive USK and UFVK from seed
+    let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
+        .ok_or("Invalid seed length for fingerprint")?;
+    let account_index = zip32::AccountId::ZERO;
+    let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), account_index)
+        .map_err(|e| format!("USK derivation failed: {e:?}"))?;
     let ufvk = usk.to_unified_full_viewing_key();
+
+    // Import as UFVK with Spending purpose + derivation info
+    let derivation = Zip32Derivation::new(seed_fp, account_index);
+    let purpose = AccountPurpose::Spending { derivation: Some(derivation) };
+
+    let account = db
+        .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
+        .map_err(|e| format!("Failed to import account: {e}"))?;
+
+    let account_id = account.id();
     let (ua, _di) = ufvk
         .default_address(shielded_address_request())
         .map_err(|e| format!("Failed to derive address: {e}"))?;
