@@ -90,11 +90,14 @@ impl BlockSource for MemoryBlockSource {
 <h3 id="sync-scanning">5.4 Trial Decryption &amp; 노트 발견</h3>
 <p><code>zcash_client_backend</code>의 <code>scan_cached_blocks()</code>가 캐시된 블록의 모든 shielded 출력에 trial decryption을 수행한다:</p>
 <ul>
-  <li>각 Sapling 출력에 대해: 월렛의 Sapling IVK로 복호화 시도</li>
-  <li>각 Orchard 액션에 대해: 월렛의 Orchard IVK로 복호화 시도</li>
-  <li>복호화 성공 = 이 월렛의 노트 &rarr; 월렛 DB에 저장</li>
+  <li>각 Sapling 출력에 대해: DB에 있는 <strong>모든 계정</strong>의 Sapling IVK로 복호화 시도</li>
+  <li>각 Orchard 액션에 대해: DB에 있는 <strong>모든 계정</strong>의 Orchard IVK로 복호화 시도</li>
+  <li>복호화 성공 = 해당 계정의 노트 &rarr; 월렛 DB에 저장 (어떤 계정의 것인지 자동 판별)</li>
   <li>Nullifier를 추적하여 노트가 사용되었는지 감지</li>
 </ul>
+<div class="note">
+  <p><strong>멀티 계정과 Sync:</strong> Sync는 계정에 무관하게 실행된다. <code>run_sync_inner()</code>는 <code>account_uuid</code> 파라미터를 받지 않으며, DB에 등록된 모든 계정의 UFVK로 trial decryption을 수행한다. 잔액과 트랜잭션 내역 조회만 <code>account_uuid</code>로 특정 계정을 필터링한다.</p>
+</div>
 
 <h3 id="sync-progress">5.5 진행률 보고</h3>
 <p>진행률은 scan-queue 기반으로 계산한다. 매 배치 후 <code>suggest_scan_ranges()</code>에서 남은 블록 수(remaining)와 전체 블록 수(total, <code>Ignored</code> 제외)를 계산하여 <code>pct = 1.0 - remaining / total</code>로 산출한다. 이 방식은 스캔 순서(ChainTip 우선, FoundNote, Historic)에 관계없이 정확하며, 노트가 없는 지갑에서도 올바르게 동작한다.</p>

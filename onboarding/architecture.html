@@ -37,7 +37,7 @@
   <tr>
     <td><span class="badge dart">Dart UI</span></td>
     <td>Dart / Flutter</td>
-    <td>UI 렌더링, 상태 관리(Riverpod), 네비게이션(GoRouter), 보안 저장소(iOS Keychain / Android Keystore). Sync는 Rust에서 실행되며 Dart는 Stream으로 진행률을 수신.</td>
+    <td>UI 렌더링, 상태 관리(Riverpod), 네비게이션(GoRouter), 보안 저장소(iOS Keychain / Android Keystore). 멀티 계정 지원: <code>AccountProvider</code>가 계정 목록, 활성 계정, per-account 니모닉을 관리. <code>WalletProvider</code>는 <code>AccountProvider</code>에 위임. Sync는 Rust에서 실행되며 Dart는 Stream으로 진행률을 수신. 모든 잔액/내역/전송/수신 함수는 <code>account_uuid</code> 파라미터로 계정별 분리.</td>
     <td><code>lib/src/providers/</code>, <code>lib/src/features/</code>, <code>lib/app.dart</code></td>
   </tr>
 </table>
@@ -72,7 +72,10 @@
                                     |
                     +---------------+---------------+
                     |          zcash_client_sqlite              |
-                    |              (WalletDb)                   |
+                    |    (WalletDb — 멀티 계정, 단일 DB)        |
+                    |    First account = Derived (create_account)|
+                    |    Additional = Imported (import_account_ufvk)|
+                    |    AccountUuid로 계정 식별                 |
                     +-------------------------------------------+
                                     |
                             SQLite Database

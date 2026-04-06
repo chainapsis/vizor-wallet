@@ -14,29 +14,50 @@
 
 <h3 id="dart-providers">4.1 Riverpod Providers</h3>
 
+<p><strong><code>accountProvider</code></strong> (<code>AsyncNotifierProvider&lt;AccountNotifier, AccountState&gt;</code>)</p>
+<p>멀티 계정의 중심 provider. 계정 목록, 활성 계정, per-account 니모닉을 관리한다.</p>
+<ul>
+  <li><code>build()</code>에서: secure storage에서 계정 목록(<code>zcash_accounts</code>)과 활성 계정(<code>zcash_active_account</code>)을 로드. 활성 계정의 주소를 Rust에서 조회.</li>
+  <li><code>createAccount({name?})</code>: 첫 번째 계정이면 <code>create_wallet()</code> (Derived), 추가 계정이면 <code>generate_mnemonic()</code> + <code>add_account()</code> (Imported). birthday는 chain tip에서 가져옴. 니모닉은 <code>zcash_account_mnemonic_{uuid}</code>로 per-account 저장.</li>
+  <li><code>importAccount({mnemonic, birthdayHeight?, name?})</code>: 첫 번째이면 <code>import_wallet()</code>, 추가이면 <code>add_account()</code>.</li>
+  <li><code>switchAccount(uuid)</code>: 활성 계정 전환. secure storage 업데이트 + 주소 조회.</li>
+  <li><code>renameAccount(uuid, newName)</code>: 계정 이름 변경.</li>
+  <li><code>getActiveMnemonic()</code>: 활성 계정의 니모닉을 secure storage에서 조회. 전송 시 seed 유도에 사용.</li>
+  <li><code>AccountState</code>: <code>{ accounts: List&lt;AccountInfo&gt;, activeAccountUuid, activeAddress }</code></li>
+</ul>
+
+<p><strong>Secure Storage 키 구조:</strong></p>
+<ul>
+  <li><code>zcash_accounts</code> — 계정 목록 JSON (<code>[{uuid, name, order}, ...]</code>)</li>
+  <li><code>zcash_account_mnemonic_{uuid}</code> — 계정별 니모닉</li>
+  <li><code>zcash_active_account</code> — 현재 활성 계정 UUID</li>
+  <li><code>zcash_wallet_network</code> — 네트워크 (main/test)</li>
+</ul>
+
 <p><strong><code>walletProvider</code></strong> (<code>AsyncNotifierProvider&lt;WalletNotifier, WalletState&gt;</code>)</p>
 <ul>
-  <li><code>build()</code>에서: 월렛 DB 존재 여부를 확인하고, UFVK에서 주소를 로드</li>
-  <li><code>createWallet()</code>: 니모닉을 생성하고, 계정을 만들고, 니모닉을 secure storage에 저장</li>
-  <li><code>importWallet()</code>: 니모닉을 검증하고, 기존 DB를 삭제하고, 계정을 생성</li>
-  <li><code>WalletState</code>: <code>{ hasWallet, unifiedAddress, network }</code></li>
+  <li><code>build()</code>에서: <code>ref.watch(accountProvider)</code>로 <code>AccountProvider</code>의 상태를 구독하여 자동 갱신. 계정이 있으면 hasWallet=true.</li>
+  <li><code>WalletState</code>: <code>{ hasWallet, unifiedAddress, network, activeAccountUuid }</code></li>
+  <li>직접 계정 생성/가져오기 로직은 없음 — 모두 <code>AccountProvider</code>에 위임.</li>
 </ul>
 
 <p><strong><code>syncProvider</code></strong> (<code>AsyncNotifierProvider&lt;SyncNotifier, SyncState&gt;</code>)</p>
 <ul>
-  <li><code>startSync()</code>: FRB <code>startFullSync(mode: 1)</code> 호출로 <code>Stream&lt;ApiSyncProgressEvent&gt;</code> 수신. <code>stream.listen(_onSyncProgress)</code>로 콜백 등록. <code>_onSyncProgress</code>에서 매 이벤트마다 <code>getBalance()</code> FFI를 호출하여 잔액 갱신. 10초 간격 폴링은 fallback으로 유지.</li>
+  <li><code>startSync()</code>: FRB <code>startFullSync(mode: 1)</code> 호출로 <code>Stream&lt;ApiSyncProgressEvent&gt;</code> 수신. <code>stream.listen(_onSyncProgress)</code>로 콜백 등록. <code>_onSyncProgress</code>에서 매 이벤트마다 <code>getBalance(accountUuid)</code> FFI를 호출하여 활성 계정의 잔액 갱신. Sync 자체는 계정에 무관하게 모든 계정의 노트를 스캔하지만, 잔액/내역 조회는 <code>activeAccountUuid</code>로 특정 계정만 반환.</li>
   <li><code>stopSync()</code>: 통합 <code>cancelFullSync()</code> 호출 (AtomicBool 설정)</li>
   <li><code>enableBackgroundSync()</code>: Android = <code>flutter_foreground_task</code>로 notification만 추가. iOS = <code>setSyncMode(2)</code> + MethodChannel로 BGContinuedProcessingTask 제출.</li>
   <li><code>disableBackgroundSync()</code>: Android = notification 제거. iOS = <code>setSyncMode(1)</code> + <code>while(isSyncRunning()) await 200ms</code> 대기 + foreground sync 재시작.</li>
   <li><code>AppLifecycleListener.onResume</code>: expiration 감지 (mode==0) → foreground sync 재시작</li>
   <li>iOS EventChannel listener: background sync 중 C callback → <code>SyncProgressStreamHandler</code> → Dart로 진행률 수신</li>
-  <li><code>SyncState</code>: <code>{ isSyncing, isBackgroundMode, percentage, scannedHeight, chainTipHeight, transparentBalance, saplingBalance, orchardBalance, totalBalance, error }</code></li>
+  <li><code>SyncState</code>: <code>{ isSyncing, isBackgroundMode, percentage, scannedHeight, chainTipHeight, transparentBalance, saplingBalance, orchardBalance, totalBalance, error, recentTransactions }</code></li>
 </ul>
 
 <h3 id="dart-sync-loop">4.2 Sync 실행</h3>
 <p>Sync 루프는 <strong>Rust</strong>에서 실행된다 (<code>sync_engine.rs</code>). Dart는 <code>startFullSync(mode: 1)</code>을 호출하여 <code>Stream&lt;ApiSyncProgressEvent&gt;</code>를 수신하고, <code>stream.listen()</code>으로 진행률 콜백을 등록한다.</p>
 
 <pre><code>// sync_provider.dart (간소화)
+final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+
 final stream = rust_sync.startFullSync(
   dbPath: dbPath,
   lightwalletdUrl: 'https://zec.rocks:443',
@@ -47,11 +68,15 @@ final stream = rust_sync.startFullSync(
 stream.listen(_onSyncProgress);
 
 void _onSyncProgress(ApiSyncProgressEvent event) {
-  // 매 batch마다 balance 갱신
-  final balance = await rust_sync.getBalance(dbPath: dbPath, network: 'main');
-  // hasNewTx 또는 isComplete이면 최근 트랜잭션도 갱신
+  // 매 batch마다 활성 계정의 balance 갱신
+  final balance = await rust_sync.getBalance(
+    dbPath: dbPath, network: 'main', accountUuid: accountUuid,
+  );
+  // hasNewTx 또는 isComplete이면 활성 계정의 최근 트랜잭션도 갱신
   if (event.hasNewTx || event.isComplete) {
-    final txs = await rust_sync.getTransactionHistory(dbPath: dbPath, network: 'main', limit: 10);
+    final txs = await rust_sync.getTransactionHistory(
+      dbPath: dbPath, network: 'main', limit: 10, accountUuid: accountUuid,
+    );
     // state에 recentTransactions 업데이트
   }
   state = state.copyWith(
@@ -60,6 +85,7 @@ void _onSyncProgress(ApiSyncProgressEvent event) {
     totalBalance: balance.total,
   );
 }
+// Sync는 모든 계정을 스캔하지만, 잔액/내역은 activeAccountUuid로 필터
 // 폴링 없음 — 모든 상태 업데이트는 stream, EventChannel, onResume으로 구동</code></pre>
 
 <p><strong>Rust 내부 sync 루프 (<code>run_sync_inner</code>):</strong></p>

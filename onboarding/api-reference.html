@@ -16,28 +16,46 @@
 <table>
   <tr><th>Dart Function</th><th>Rust Function</th><th>Sync?</th><th>설명</th></tr>
   <tr>
-    <td><code>createWallet({network, dbPath})</code></td>
-    <td><code>create_wallet(network, db_path)</code></td>
+    <td><code>createWallet({network, dbPath, birthdayHeight?, accountName?})</code></td>
+    <td><code>create_wallet(network, db_path, birthday_height, account_name)</code></td>
     <td>async</td>
-    <td>니모닉 생성, 계정 생성, <code>WalletCreationResult { mnemonic, unifiedAddress }</code> 반환</td>
+    <td>첫 번째 계정 (Derived). <code>WalletCreationResult { mnemonic, unifiedAddress, accountUuid }</code> 반환</td>
   </tr>
   <tr>
-    <td><code>importWallet({mnemonic, birthdayHeight?, network, dbPath})</code></td>
-    <td><code>import_wallet(mnemonic, birthday_height, network, db_path)</code></td>
+    <td><code>importWallet({mnemonic, birthdayHeight?, network, dbPath, accountName?})</code></td>
+    <td><code>import_wallet(mnemonic, birthday_height, network, db_path, account_name)</code></td>
     <td>async</td>
-    <td>니모닉에서 가져오기, <code>WalletImportResult { unifiedAddress }</code> 반환</td>
+    <td>첫 번째 계정을 니모닉에서 가져오기 (Derived). <code>WalletImportResult { unifiedAddress, accountUuid }</code> 반환</td>
   </tr>
   <tr>
-    <td><code>getUnifiedAddress({dbPath, network})</code></td>
-    <td><code>get_unified_address(db_path, network)</code></td>
+    <td><code>addAccount({dbPath, network, name, mnemonic, birthdayHeight?})</code></td>
+    <td><code>add_account(db_path, network, name, mnemonic, birthday_height)</code></td>
     <td>async</td>
-    <td>DB에서 shielded UA (Sapling+Orchard) 반환</td>
+    <td>추가 계정 (Imported via import_account_ufvk). 다른 seed 가능. <code>AccountCreationResult { accountUuid, unifiedAddress }</code> 반환</td>
   </tr>
   <tr>
-    <td><code>getTransparentAddress({dbPath, network})</code></td>
-    <td><code>get_transparent_address(db_path, network)</code></td>
+    <td><code>listAccounts({dbPath, network})</code></td>
+    <td><code>list_accounts(db_path, network)</code></td>
     <td>async</td>
-    <td>DB에서 transparent 전용 주소 반환</td>
+    <td>DB의 모든 계정 조회. <code>List&lt;AccountInfo { uuid, name, unifiedAddress }&gt;</code> 반환</td>
+  </tr>
+  <tr>
+    <td><code>generateMnemonic()</code></td>
+    <td><code>generate_mnemonic()</code></td>
+    <td><strong>sync</strong></td>
+    <td>새 24단어 BIP-39 니모닉 생성</td>
+  </tr>
+  <tr>
+    <td><code>getUnifiedAddress({dbPath, network, accountUuid?})</code></td>
+    <td><code>get_unified_address(db_path, network, account_uuid)</code></td>
+    <td>async</td>
+    <td>특정 계정의 shielded UA (Sapling+Orchard) 반환. uuid 생략 시 첫 번째 계정.</td>
+  </tr>
+  <tr>
+    <td><code>getTransparentAddress({dbPath, network, accountUuid?})</code></td>
+    <td><code>get_transparent_address(db_path, network, account_uuid)</code></td>
+    <td>async</td>
+    <td>특정 계정의 transparent 전용 주소 반환. uuid 생략 시 첫 번째 계정.</td>
   </tr>
   <tr>
     <td><code>walletExists({dbPath})</code></td>
@@ -93,14 +111,14 @@
     <td>Trial decryption. TreeState는 개별 필드로 전달 (network, height, hash, time, saplingTree, orchardTree).</td>
   </tr>
   <tr>
-    <td><code>getBalance({dbPath, network})</code></td>
-    <td><code>get_balance(db_path, network)</code></td>
-    <td><code>WalletBalance { transparent, sapling, orchard, transparent_pending, sapling_pending, orchard_pending, total }</code> 반환 (zatoshi 단위). total은 confirmed + pending 합산.</td>
+    <td><code>getBalance({dbPath, network, accountUuid})</code></td>
+    <td><code>get_balance(db_path, network, account_uuid)</code></td>
+    <td>특정 계정의 <code>WalletBalance { transparent, sapling, orchard, transparent_pending, sapling_pending, orchard_pending, total }</code> 반환 (zatoshi 단위). total은 confirmed + pending 합산.</td>
   </tr>
   <tr>
-    <td><code>getTransactionHistory({dbPath, network, limit})</code></td>
-    <td><code>get_transaction_history(db_path, network, limit)</code></td>
-    <td><code>List&lt;TransactionInfo&gt;</code> 반환. limit으로 최근 N건 제한. null이면 전체.</td>
+    <td><code>getTransactionHistory({dbPath, network, limit, accountUuid})</code></td>
+    <td><code>get_transaction_history(db_path, network, limit, account_uuid)</code></td>
+    <td>특정 계정의 <code>List&lt;TransactionInfo&gt;</code> 반환. limit으로 최근 N건 제한. null이면 전체.</td>
   </tr>
   <tr>
     <td><code>getBlocksDir({cachePath})</code></td>
@@ -118,9 +136,9 @@
     <td><code>AddressValidationResult { isValid, addressType }</code> 반환 (unified/sapling/transparent/invalid)</td>
   </tr>
   <tr>
-    <td><code>getNextAvailableAddress({dbPath, network})</code></td>
-    <td><code>get_next_available_address(...)</code></td>
-    <td>다음 diversified UA 생성 (zodl 패턴: 매번 다른 diversifier)</td>
+    <td><code>getNextAvailableAddress({dbPath, network, accountUuid})</code></td>
+    <td><code>get_next_available_address(db_path, network, account_uuid)</code></td>
+    <td>특정 계정의 다음 diversified UA 생성 (zodl 패턴: 매번 다른 diversifier)</td>
   </tr>
   <tr>
     <td><code>getTransactionDataRequests({dbPath, network})</code></td>
@@ -144,35 +162,42 @@
   </tr>
 </table>
 
-<h3 id="api-send">6.3 Send 함수 (2단계)</h3>
-<p>전송은 propose → execute 2단계로 분리되어, Sapling proving parameters가 필요한지 사전에 확인할 수 있다.</p>
+<h3 id="api-send">6.3 Send 함수 (3단계: estimate → propose → execute)</h3>
+<p>전송은 estimate → propose → execute로 분리된다. 모든 함수가 <code>account_uuid</code>를 받아 계정별로 동작한다. ZEC 금액은 integer-only 파싱으로 zatoshi로 변환 (부동소수점 사용하지 않음).</p>
 <table>
   <tr><th>Dart Function</th><th>Rust Function</th><th>설명</th></tr>
   <tr>
-    <td><code>proposeSend({dbPath, network, toAddress, amountZatoshi, memo?})</code></td>
-    <td><code>propose_send(...)</code></td>
-    <td>전송 제안. <code>ProposalResult { proposalId, needsSaplingParams, feeZatoshi }</code> 반환. Proof 생성 없음, params 불필요.</td>
+    <td><code>estimateFee({dbPath, network, accountUuid, toAddress, amountZatoshi, memo?})</code></td>
+    <td><code>estimate_fee(...)</code></td>
+    <td>수수료 추정. proposal 저장 없이 수수료만 반환 (zatoshi). 전송 전 사용자에게 표시.</td>
   </tr>
   <tr>
-    <td><code>executeProposal({dbPath, proposalId, seed, spendParamsPath?, outputParamsPath?})</code></td>
+    <td><code>proposeSend({dbPath, network, accountUuid, toAddress, amountZatoshi, memo?})</code></td>
+    <td><code>propose_send(...)</code></td>
+    <td>전송 제안. <code>ProposalResult { proposalId, needsSaplingParams, feeZatoshi }</code> 반환. 내부적으로 <code>StoredProposal { proposal, network, account_id }</code>에 계정 ID 포함하여 메모리에 저장.</td>
+  </tr>
+  <tr>
+    <td><code>executeProposal({dbPath, lightwalletdUrl, proposalId, seed, spendParamsPath?, outputParamsPath?})</code></td>
     <td><code>execute_proposal(...)</code></td>
-    <td>제안 실행. zk-SNARK proof 생성 + 서명. <code>needsSaplingParams</code>가 true였을 경우에만 params 경로 필요.</td>
+    <td>제안 실행. zk-SNARK proof 생성 + 서명 + gRPC broadcast. Orchard-only TX에는 no-op Sapling prover 사용 (params 불필요). 니모닉은 <code>AccountProvider.getActiveMnemonic()</code>에서 조회하여 seed 유도. 친화적 에러 메시지 반환.</td>
   </tr>
 </table>
 
 <div class="note">
-  <p><strong>Sapling Proving Parameters:</strong> Sapling proof 생성에 <code>sapling-spend.params</code> (~47MB) + <code>sapling-output.params</code> (~3.5MB) 파일이 필요하다. Orchard (Halo 2)는 trusted setup이 없어 파라미터 파일이 불필요하다. <code>propose_send()</code>의 <code>needsSaplingParams</code> 플래그로 필요 여부를 사전에 확인한 후, 필요 시 <code>https://download.z.cash/downloads/</code>에서 다운로드하고 SHA-1 검증 후 저장한다. 한 번만 다운로드하면 이후에는 로컬 파일을 사용한다.</p>
+  <p><strong>Sapling Proving Parameters:</strong> Sapling proof 생성에 <code>sapling-spend.params</code> (~47MB) + <code>sapling-output.params</code> (~3.5MB) 파일이 필요하다. Orchard (Halo 2)는 trusted setup이 없어 파라미터 파일이 불필요하다. <code>propose_send()</code>의 <code>needsSaplingParams</code> 플래그로 필요 여부를 사전에 확인한 후, 필요 시 <code>https://download.z.cash/downloads/</code>에서 다운로드하고 SHA-1 검증 후 저장한다. 한 번만 다운로드하면 이후에는 로컬 파일을 사용한다. Orchard-only TX (needsSaplingParams=false)에서는 no-op Sapling prover가 사용되어 params 파일이 전혀 필요 없다.</p>
 </div>
 
 <h3 id="api-structs">6.4 데이터 구조체</h3>
-<pre><code>// Wallet
-WalletCreationResult { mnemonic: String, unifiedAddress: String }
-WalletImportResult   { unifiedAddress: String }
+<pre><code>// Wallet (멀티 계정)
+WalletCreationResult  { mnemonic: String, unifiedAddress: String, accountUuid: String }
+WalletImportResult    { unifiedAddress: String, accountUuid: String }
+AccountCreationResult { accountUuid: String, unifiedAddress: String }
+AccountInfo           { uuid: String, name: String, unifiedAddress: String }
 
 // Sync
 SyncProgress   { scannedHeight: u64, chainTipHeight: u64, isSyncing: bool }
 WalletBalance  { transparent: u64, sapling: u64, orchard: u64,
-                 saplingPending: u64, orchardPending: u64, total: u64 }
+                 transparentPending: u64, saplingPending: u64, orchardPending: u64, total: u64 }
 ScanRangeInfo  { start: u64, end: u64, priority: u8 }
 ScanResult     { blocksScanned: u64 }
 SubtreeRoot    { completingBlockHeight: u64, rootHash: Vec&lt;u8&gt; }
@@ -181,6 +206,7 @@ BlockMetaInfo  { height: u64, hash: Vec&lt;u8&gt;, time: u32,
 
 // Send
 ProposalResult { proposalId: u64, needsSaplingParams: bool, feeZatoshi: u64 }
+// Internal: StoredProposal { proposal, network, account_id } — account_id 포함
 
 // Enhancement
 TxDataRequest     { requestType: String, txid: String?, address: String?,

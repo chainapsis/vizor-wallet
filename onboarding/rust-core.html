@@ -22,9 +22,14 @@
                           # Uses current_thread tokio runtime (inherits iOS .utility QoS)
   api/
     mod.rs                # API 모듈 선언
-    wallet.rs             # FRB 노출 wallet 함수 (7개), get_latest_block_height()
+    wallet.rs             # FRB 노출 wallet 함수: create_wallet, import_wallet,
+                          # add_account, list_accounts, generate_mnemonic,
+                          # get_unified_address(account_uuid), get_transparent_address(account_uuid),
+                          # get_latest_block_height 등
     sync.rs               # FRB 노출: start_full_sync(), cancel_full_sync(),
-                          # get_balance(), get_transaction_history(limit), send 등
+                          # get_balance(account_uuid), get_transaction_history(account_uuid, limit),
+                          # propose_send(account_uuid), estimate_fee(account_uuid),
+                          # get_next_available_address(account_uuid) 등
     simple.rs             # init_app() — setup_default_user_utils() + log level filter (Info)
   wallet/
     mod.rs                # 내부 모듈 선언
@@ -56,7 +61,12 @@
   <li><strong>Orchard:</strong> Pallas 곡선 위의 ZIP-32 HD 유도</li>
 </ul>
 
-<p><strong>계정 생성:</strong> <code>WalletDb::create_account()</code>은 Unified Full Viewing Key (UFVK)만 데이터베이스에 저장한다. Spending key는 DB에 영속화하지 않는다.</p>
+<p><strong>계정 생성 (멀티 계정 모델):</strong> 단일 DB에 여러 계정이 공존한다. 두 가지 계정 유형이 있다:</p>
+<ul>
+  <li><strong>Derived (첫 번째 계정):</strong> <code>WalletDb::create_account()</code>으로 생성. seed relevance check를 위해 최소 하나의 Derived 계정이 필요하다.</li>
+  <li><strong>Imported (추가 계정):</strong> <code>WalletDb::import_account_ufvk()</code>로 생성. 다른 seed에서 USK를 유도하고 UFVK를 추출하여 <code>AccountPurpose::Spending { derivation: Some(Zip32Derivation) }</code>로 import한다. 이렇게 하면 서로 다른 seed의 계정이 같은 DB에 공존할 수 있다 (<code>create_account</code>은 단일 seed만 허용).</li>
+</ul>
+<p>DB에는 UFVK만 저장되며, spending key는 영속화하지 않는다. 각 계정은 <code>AccountUuid</code>로 식별된다.</p>
 
 <p><strong>주소 인코딩:</strong> Unified Address는 <code>Require Orchard + Require Sapling + Omit Transparent</code>로 생성하며, zodl/Zashi 월렛 동작과 일치한다. <code>shielded_address_request()</code> 헬퍼 함수가 이를 제어한다.</p>
 
@@ -78,12 +88,13 @@
   <tr><th>Function</th><th>역할</th></tr>
   <tr><td><code>start_full_sync(mode)</code></td><td>통합 sync 실행 (gRPC + scan + enhancement). <code>Stream&lt;ApiSyncProgressEvent&gt;</code> 반환. mode 파라미터로 foreground(1)/background(2) 구분.</td></tr>
   <tr><td><code>cancel_full_sync()</code></td><td>AtomicBool로 sync 취소 신호. sync</td></tr>
-  <tr><td><code>get_balance()</code></td><td><code>WalletBalance { transparent, sapling, orchard, transparent_pending, sapling_pending, orchard_pending, total }</code> 반환 (zatoshi). total은 confirmed + pending 합산.</td></tr>
-  <tr><td><code>get_transaction_history(limit)</code></td><td>v_transactions SQL view에서 TX 내역 조회. limit 파라미터로 최근 N건 제한 가능.</td></tr>
+  <tr><td><code>get_balance(account_uuid)</code></td><td>계정별 <code>WalletBalance { transparent, sapling, orchard, transparent_pending, sapling_pending, orchard_pending, total }</code> 반환 (zatoshi). total은 confirmed + pending 합산.</td></tr>
+  <tr><td><code>get_transaction_history(account_uuid, limit)</code></td><td>계정별 v_transactions SQL view에서 TX 내역 조회. limit 파라미터로 최근 N건 제한 가능.</td></tr>
   <tr><td><code>validate_address()</code></td><td>주소 타입 검증 (unified/sapling/transparent/invalid)</td></tr>
-  <tr><td><code>get_next_available_address()</code></td><td>다음 diversified UA 생성</td></tr>
-  <tr><td><code>propose_send()</code></td><td>전송 제안: 노트 선택 + ZIP-317 수수료 계산</td></tr>
-  <tr><td><code>execute_proposal()</code></td><td>제안 실행: zk-SNARK proof 생성 + 서명</td></tr>
+  <tr><td><code>get_next_available_address(account_uuid)</code></td><td>계정별 다음 diversified UA 생성</td></tr>
+  <tr><td><code>propose_send(account_uuid)</code></td><td>계정별 전송 제안: 노트 선택 + ZIP-317 수수료 계산. Integer-only ZEC-to-zatoshi 변환 (부동소수점 사용하지 않음). <code>StoredProposal</code>에 <code>account_id</code> 포함.</td></tr>
+  <tr><td><code>estimate_fee(account_uuid)</code></td><td>계정별 수수료 추정 (proposal 저장 없이). 전송 전 실제 수수료를 사용자에게 표시.</td></tr>
+  <tr><td><code>execute_proposal()</code></td><td>제안 실행: zk-SNARK proof 생성 + 서명. Orchard-only TX에는 no-op Sapling prover 사용. TX broadcast via gRPC. 친화적 에러 메시지 반환.</td></tr>
   <tr><td><code>rewind_to_height()</code></td><td>chain reorg 시 롤백</td></tr>
 </table>
 
@@ -114,7 +125,7 @@
 <p>이것은 <code>librustzcash</code>의 의도적인 설계이며, 우리의 선택이 아니다:</p>
 <ul>
   <li><code>WalletDb</code>에는 <strong>Unified Full Viewing Key (UFVK)</strong>만 저장된다 — 트랜잭션 감지와 잔액 계산에는 충분하지만, 자금을 사용할 수는 없다.</li>
-  <li><strong>니모닉 / seed</strong>는 Dart의 <code>flutter_secure_storage</code>(iOS Keychain / Android Keystore)에 저장되며, OS에 의해 rest 상태에서 암호화된다.</li>
+  <li><strong>니모닉 / seed</strong>는 Dart의 <code>flutter_secure_storage</code>(iOS Keychain / Android Keystore)에 계정별로 저장된다 (<code>zcash_account_mnemonic_{uuid}</code>). OS에 의해 rest 상태에서 암호화된다.</li>
   <li>Spending key는 트랜잭션 서명이 필요할 때만 seed에서 즉석에서 유도되고, FFI를 통해 Rust에 전달되며, 사용 후 <code>secrecy::SecretVec</code>으로 메모리 제로화된다.</li>
   <li><code>mnemonic_to_seed()</code>는 <code>SecretVec&lt;u8&gt;</code>을 반환한다. plain <code>Vec&lt;u8&gt;</code>이 아니므로 drop 시 자동 제로화된다.</li>
   <li>모든 API 함수 (<code>api/wallet.rs</code>, <code>api/sync.rs</code>)에 <code>catch_unwind</code> panic guard가 적용되어 있다. Rust panic이 발생해도 Flutter 프로세스가 크래시하지 않고 <code>Result::Err("Rust panic: ...")</code>으로 변환된다.</li>

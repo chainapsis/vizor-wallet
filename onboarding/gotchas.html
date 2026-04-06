@@ -59,6 +59,26 @@
     <td>Rust 암호학 연산이 debug 빌드에서 5-10배 느림 (opt-level=0). sync 성능 테스트는 반드시 <code>--release</code>로.</td>
   </tr>
   <tr>
+    <td>Derived vs Imported 계정</td>
+    <td>첫 번째 계정은 반드시 <code>create_account()</code>으로 생성 (Derived)해야 한다. 이후 <code>init_wallet_db(seed)</code>가 seed relevance를 확인하기 때문. 추가 계정은 <code>import_account_ufvk()</code>로 생성 (Imported) — 다른 seed 가능. <code>create_account</code>은 단일 seed만 허용하므로 두 번째 seed로 호출하면 seed fingerprint 불일치 에러 발생.</td>
+  </tr>
+  <tr>
+    <td>Seed Fingerprint 불일치</td>
+    <td><code>ensure_db_initialized_with_seed()</code>를 다른 seed로 호출하면 안 된다. DB 초기화는 첫 번째 계정 seed로만 수행. 추가 계정의 seed는 <code>add_account()</code>에서 USK/UFVK 유도에만 사용되며, DB 초기화에는 관여하지 않는다.</td>
+  </tr>
+  <tr>
+    <td>Per-account 니모닉 저장</td>
+    <td>니모닉은 <code>zcash_account_mnemonic_{uuid}</code> 키로 secure storage에 계정별로 저장된다. 계정 UUID는 Rust DB에서 자동 생성되므로, 반드시 <code>create_wallet</code>/<code>add_account</code> 반환값의 <code>accountUuid</code>를 사용해야 한다.</td>
+  </tr>
+  <tr>
+    <td>Sync는 계정 무관</td>
+    <td><code>start_full_sync()</code>와 <code>run_sync_inner()</code>는 <code>account_uuid</code>를 받지 않는다. DB에 등록된 모든 계정의 UFVK로 trial decryption을 수행한다. 잔액/내역 조회만 <code>account_uuid</code>로 필터링.</td>
+  </tr>
+  <tr>
+    <td>Integer-only ZEC 파싱</td>
+    <td>ZEC 금액을 zatoshi로 변환할 때 부동소수점을 사용하지 않는다. 소수점 기준으로 문자열을 분리하여 정수 연산만으로 변환. <code>0.1 ZEC</code>을 <code>double</code>로 파싱하면 <code>9999999</code>가 될 수 있다 (IEEE 754 오차).</td>
+  </tr>
+  <tr>
     <td>Wallet Creation Birthday</td>
     <td>새 지갑 생성 시 lightwalletd에서 chain tip을 birthday로 가져옴. 네트워크 실패 시 지갑 생성 차단 (full scan 방지). DB 삭제는 birthday fetch 성공 후에만.</td>
   </tr>
