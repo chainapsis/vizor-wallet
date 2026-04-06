@@ -21,6 +21,9 @@ final _routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
     redirect: (context, state) {
+      // Don't redirect on error — let the error screen show instead of onboarding
+      if (walletAsync.hasError) return null;
+
       final wallet = walletAsync.value;
       final hasWallet = wallet?.hasWallet ?? false;
       final isOnboarding = state.matchedLocation == '/welcome' ||
@@ -37,6 +40,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         redirect: (_, _) {
+          if (walletAsync.hasError) return '/home'; // home shows error state
           final wallet = walletAsync.value;
           final hasWallet = wallet?.hasWallet ?? false;
           return hasWallet ? '/home' : '/welcome';
