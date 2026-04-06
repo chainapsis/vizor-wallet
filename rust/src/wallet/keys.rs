@@ -37,7 +37,21 @@ pub fn parse_network(network: &str) -> Result<Network, String> {
 }
 
 /// Initialize the wallet database schema. Idempotent — safe to call multiple times.
+/// Called without seed to avoid SeedNotRelevant errors when only Imported accounts exist.
 pub fn ensure_db_initialized(
+    db_path: &str,
+    network: Network,
+) -> Result<(), String> {
+    let mut db = WalletDb::for_path(db_path, network, SystemClock, OsRng)
+        .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+    init_wallet_db(&mut db, None)
+        .map_err(|e| format!("Failed to init wallet DB: {e}"))?;
+    Ok(())
+}
+
+/// Initialize DB with seed for the first account (creates a Derived account).
+/// The seed is needed so that seed-requiring migrations can run in the future.
+fn ensure_db_initialized_with_seed(
     db_path: &str,
     network: Network,
     seed: &SecretVec<u8>,
@@ -69,9 +83,10 @@ fn make_birthday(network: Network, birthday_height: Option<u64>) -> AccountBirth
     }
 }
 
-/// Add a new account to the wallet database. Returns (account_uuid, unified_address).
+/// Add an additional account (from a different seed) to the wallet database.
 /// Uses import_account_ufvk with AccountPurpose::Spending so that accounts from
 /// different seeds can coexist in the same DB (create_account enforces single-seed).
+/// The first account should be created via init_db_and_create_account (Derived).
 pub fn add_account(
     db_path: &str,
     network: Network,
@@ -109,7 +124,8 @@ pub fn add_account(
     Ok((uuid_str, ua.encode(&network)))
 }
 
-/// Init DB + create account. Returns (account_uuid, unified_address).
+/// Init DB + create first account as Derived (so seed relevance checks pass on future migrations).
+/// Returns (account_uuid, unified_address).
 pub fn init_db_and_create_account(
     db_path: &str,
     network: Network,
@@ -117,8 +133,26 @@ pub fn init_db_and_create_account(
     birthday_height: Option<u64>,
     name: &str,
 ) -> Result<(String, String), String> {
-    ensure_db_initialized(db_path, network, seed)?;
-    add_account(db_path, network, name, seed, birthday_height)
+    ensure_db_initialized_with_seed(db_path, network, seed)?;
+
+    let mut db = WalletDb::for_path(db_path, network, SystemClock, OsRng)
+        .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+
+    let birthday = make_birthday(network, birthday_height);
+
+    // First account uses create_account (Derived) — ensures at least one Derived account
+    // exists for future init_wallet_db seed relevance checks.
+    let (account_id, usk) = db
+        .create_account(name, seed, &birthday, None)
+        .map_err(|e| format!("Failed to create account: {e}"))?;
+
+    let ufvk = usk.to_unified_full_viewing_key();
+    let (ua, _di) = ufvk
+        .default_address(shielded_address_request())
+        .map_err(|e| format!("Failed to derive address: {e}"))?;
+
+    let uuid_str = account_id.expose_uuid().to_string();
+    Ok((uuid_str, ua.encode(&network)))
 }
 
 pub struct AccountInfo {
