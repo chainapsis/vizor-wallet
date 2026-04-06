@@ -27,6 +27,40 @@ Removes the app from the booted iOS simulator including Keychain data. This is n
 
 Flutter + Rust FFI via `flutter_rust_bridge` v2. All Zcash cryptography and sync run in Rust (`librustzcash` crates). Dart handles UI, state management (Riverpod), and secure storage only. Supports iOS, Android, and macOS.
 
+### Multi-Account Model
+
+Single DB (`zcash_wallet.db`) holds multiple accounts from different seeds. Single sync loop decrypts notes for all accounts simultaneously via `scan_cached_blocks` (uses all UFVKs). UI shows one "active account" at a time.
+
+**Account creation strategy** (due to `zcash_client_sqlite` constraints):
+- **First account**: `create_account()` → `AccountSource::Derived`. Uses `init_wallet_db(seed)` so the seed is stored for future schema migrations.
+- **Additional accounts (different seeds)**: `import_account_ufvk(AccountPurpose::Spending { derivation })` → `AccountSource::Imported`. Bypasses the single-seed fingerprint constraint in `create_account`.
+- **DB init for additional accounts**: `init_wallet_db(None)` (no seed) to avoid `SeedNotRelevant` error when only Imported accounts exist.
+
+**Account identification**: `AccountUuid` (UUID string like `"550e8400-e29b-41d4-a716-446655440000"`). Passed as `String` between Dart and Rust via `Uuid::parse_str()` / `Uuid::to_string()`.
+
+**Mnemonic storage**: Per-account in Flutter secure storage (`zcash_account_mnemonic_{uuid}`). Account list stored as JSON in `zcash_accounts` key. Active account in `zcash_active_account` key.
+
+### Dart Provider Structure
+
+```
+AccountProvider (account_provider.dart)
+  ├── Manages account list, active account, per-account mnemonics
+  ├── createAccount() — first: create_wallet, additional: generateMnemonic + addAccount
+  ├── importAccount() — first: import_wallet, additional: addAccount
+  ├── switchAccount() — updates active, refreshes address
+  └── getActiveMnemonic() — reads from secure storage
+
+WalletProvider (wallet_provider.dart)
+  ├── Watches AccountProvider
+  ├── Exposes hasWallet, unifiedAddress, activeAccountUuid
+  └── Propagates errors (does NOT mask as empty state)
+
+SyncProvider (sync_provider.dart)
+  ├── Passes activeAccountUuid to getBalance, getTransactionHistory
+  ├── Sync itself is account-agnostic (covers all accounts)
+  └── refreshAfterSend() called after account switch for immediate update
+```
+
 ### Sync Engine (Rust-only)
 
 The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single call from Dart (`startFullSync()`) triggers the full pipeline:
@@ -52,20 +86,29 @@ rust/src/
 ├── api/
 │   ├── mod.rs          # pub mod simple, sync, wallet
 │   ├── simple.rs       # init_app() with setup_default_user_utils() + log level filter
-│   ├── wallet.rs       # FRB: create_wallet(birthday), import_wallet, get_latest_block_height
+│   ├── wallet.rs       # FRB: create_wallet, import_wallet, add_account, list_accounts,
+│   │                    # generate_mnemonic, get_unified_address(account_uuid),
+│   │                    # get_transparent_address(account_uuid), get_latest_block_height
 │   └── sync.rs         # FRB: start_full_sync(StreamSink, mode), cancel_full_sync(),
 │                        # set_sync_mode(), get_sync_mode(), is_sync_running(),
-│                        # get_balance(), get_transaction_history(limit), send, etc.
+│                        # get_balance(account_uuid), get_transaction_history(account_uuid),
+│                        # propose_send(account_uuid), estimate_fee(account_uuid),
+│                        # execute_proposal, get_next_available_address(account_uuid)
 │                        # DESIRED_SYNC_MODE, SYNC_RUNNING, SYNC_CANCEL globals
 ├── ffi.rs              # C FFI for Swift: zcash_run_full_sync(), zcash_cancel_sync(),
 │                        # zcash_get/set_sync_mode(), zcash_is_sync_running()
+│                        # TX tracking: zcash_get_pending_txs(), zcash_check_tx_status()
 │                        # Validates C strings, logs all errors, checks mode before starting
 │                        # Uses current_thread tokio runtime (inherits iOS .utility QoS)
 │                        # Located outside api/ to avoid FRB codegen picking it up
 ├── wallet/
 │   ├── mod.rs          # pub mod keys, sync, sync_engine
-│   ├── keys.rs         # Key derivation, mnemonic, account creation
-│   ├── sync.rs         # Individual wallet operations (balance, send, history, etc.)
+│   ├── keys.rs         # Key derivation, mnemonic, account creation (Derived + Imported),
+│   │                    # list_accounts, ensure_db_initialized, parse_account_uuid
+│   ├── sync.rs         # Per-account wallet operations (balance, send, history, etc.)
+│   │                    # All per-account functions take account_uuid parameter
+│   │                    # NoOp Sapling provers for Orchard-only transactions
+│   │                    # TX broadcast via gRPC SendTransaction
 │   └── sync_engine.rs  # Unified sync loop: run_sync_inner()
 │                        # MemoryBlockSource (BlockSource trait impl)
 │                        # Single DB connection reused across entire sync
@@ -155,7 +198,23 @@ Key files:
 - `ios/Runner/SyncProgressStreamHandler.swift` — bridges C callback → Dart EventChannel
 - `ios/Runner/zcash_sync.h` — C header for all FFI functions
 
-System provides progress UI (Dynamic Island / Lock Screen) via `task.progress`. Progress uses scan-queue percentage scaled to 0-10000. Heartbeat fills gaps between batch callbacks.
+### iOS TX Tracking
+
+Separate `BGContinuedProcessingTask` (`com.zcash.zcashWallet.txtrack`) polls lightwalletd `GetTransaction` every 5s to detect when pending transactions are mined or expired.
+
+- `TxTrackManager.swift` — manages BGTask lifecycle, poll loop with `cancelled` flag
+- `DynamicIslandManager.swift` — Live Activity lifecycle, priority switching (TX tracking > sync)
+- Widget extension (`SyncWidget/`) — dual UI for sync progress and TX tracking states
+
+### Send Flow
+
+2-step: `propose_send(account_uuid)` → confirmation dialog (shows fee) → `execute_proposal()` → broadcast via `SendTransaction` gRPC.
+
+- Integer-only ZEC-to-zatoshi parsing (no floating-point)
+- Real fee estimation via `estimate_fee(account_uuid)` on each keystroke
+- No-op Sapling provers for Orchard-only TXs (avoids 50MB param download)
+- Post-send: `refreshAfterSend()` for immediate pending TX display
+- Friendly error messages via `_friendlyError()` pattern matching
 
 ### Wallet Creation
 
@@ -165,13 +224,15 @@ System provides progress UI (Dynamic Island / Lock Screen) via `task.progress`. 
 
 FRB codegen works best with simple types. Keep the `rust/src/api/` surface limited to primitives, `String`, and flat structs. Do all complex Zcash type manipulation inside `rust/src/wallet/` and return simple results through `rust/src/api/`.
 
+All per-account API functions take `account_uuid: String`. Sync-level operations (`start_full_sync`, etc.) operate on all accounts and do NOT take account_uuid.
+
 ### Key Security Model
 
-`zcash_client_sqlite` intentionally does NOT store spending keys in the DB — only viewing keys (UFVK). The mnemonic/seed lives in Flutter's `flutter_secure_storage` (iOS Keychain / Android Keystore) and is passed to Rust only when needed for transaction signing.
+`zcash_client_sqlite` intentionally does NOT store spending keys in the DB — only viewing keys (UFVK). The mnemonic/seed lives in Flutter's `flutter_secure_storage` (iOS Keychain / Android Keystore) per-account (`zcash_account_mnemonic_{uuid}`) and is passed to Rust only when needed for transaction signing. Seed is scoped in a block and dropped before network I/O (broadcast).
 
 ### WalletDb Initialization
 
-`WalletDb::for_path()` requires 4 params: `(path, Network, SystemClock, OsRng)`. `init_wallet_db()` must be called before `create_account()` — it runs schema migrations.
+`WalletDb::for_path()` requires 4 params: `(path, Network, SystemClock, OsRng)`. `init_wallet_db()` must be called before `create_account()` — it runs schema migrations. First account uses `init_wallet_db(Some(seed))` for migration support; subsequent DB opens use `init_wallet_db(None)`.
 
 ### Dart Sync Provider
 
@@ -186,6 +247,7 @@ FRB codegen works best with simple types. Keep the `rust/src/api/` surface limit
 - iOS EventChannel listener for background sync progress with all fields (isSyncing, isComplete, hasNewTx)
 - No polling — all state updates driven by stream events, EventChannel, and onResume
 - `SyncState.recentTransactions`: latest 10 transactions, updated on `hasNewTx`, sync completion, and app resume
+- All balance/history queries pass `activeAccountUuid` from `AccountProvider`
 - `background_sync_service.dart`: platform abstraction (Android foreground service + iOS MethodChannel)
 
 ## Testing
@@ -202,6 +264,8 @@ Pinned in `rust/Cargo.toml`. Key crates: `zcash_client_backend` 0.21.2, `zcash_c
 `tonic` 0.14 with `tls-ring` + `tls-webpki-roots` features for gRPC TLS. `rustls` 0.23+ requires explicit crypto provider — `tls-ring` provides this.
 
 `log` 0.4 for Rust logging — forwarded to Flutter console via FRB. Level set to `Info` in `init_app()`.
+
+Additional crates for multi-account: `uuid` 1.1, `zip32` 0.2, `jubjub` 0.10, `bls12_381` 0.8, `rand_core` 0.6.
 
 ## Ignored Paths
 
