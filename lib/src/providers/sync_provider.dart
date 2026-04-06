@@ -120,8 +120,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       onResume: () {
         _isInForeground = true;
         _refreshBalance();
-        if (_backgroundMode && rust_sync.getSyncMode() == 0) {
-          _backgroundMode = false;
+        if (_backgroundMode) {
+          if (!rust_sync.isSyncRunning()) {
+            log('SyncNotifier: background sync finished while backgrounded');
+            _backgroundMode = false;
+          } else if (rust_sync.getSyncMode() == 0) {
+            log('SyncNotifier: background sync expired');
+            _backgroundMode = false;
+          }
         }
         _checkAndSync();
         _startPolling();
