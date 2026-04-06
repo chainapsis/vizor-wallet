@@ -98,9 +98,9 @@ impl chain::BlockSource for MemoryBlockSource {
 
 // ==================== Main sync ====================
 
-/// Run the full sync loop. This is the unified entry point called by both Dart (FRB) and Swift (C FFI).
-/// `running_mode`: the mode this sync was started in (1=foreground, 2=background).
-/// `desired_mode`: shared atomic — if it changes to a different value, sync exits gracefully.
+/// Run the full sync loop with automatic retry on failure.
+/// Retries up to 3 times with exponential backoff (2s, 4s, 8s).
+/// This is the unified entry point called by both Dart (FRB) and Swift (C FFI).
 pub async fn run_sync_inner(
     db_data_path: &str,
     lightwalletd_url: &str,
@@ -109,6 +109,44 @@ pub async fn run_sync_inner(
     running_mode: u8,
     desired_mode: &AtomicU8,
     progress_fn: impl Fn(SyncProgressEvent) + Send + Sync,
+) -> Result<(), String> {
+    const MAX_RETRIES: u32 = 3;
+    let mut last_err = String::new();
+
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            let delay_secs = 1u64 << attempt; // 2, 4, 8
+            log::warn!("[{}] sync: retry {}/{} in {}s (error: {})", elapsed(), attempt, MAX_RETRIES, delay_secs, last_err);
+            tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+            if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+                log::info!("[{}] sync: cancelled/mode changed during retry wait", elapsed());
+                return Ok(());
+            }
+        }
+
+        match run_sync_impl(db_data_path, lightwalletd_url, network, cancel.clone(), running_mode, desired_mode, &progress_fn).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_err = e;
+                if attempt == MAX_RETRIES {
+                    log::error!("[{}] sync: all {} retries exhausted", elapsed(), MAX_RETRIES);
+                }
+            }
+        }
+    }
+
+    Err(last_err)
+}
+
+/// Inner sync implementation. Called by run_sync_inner (with retry wrapper).
+async fn run_sync_impl(
+    db_data_path: &str,
+    lightwalletd_url: &str,
+    network: Network,
+    cancel: Arc<AtomicBool>,
+    running_mode: u8,
+    desired_mode: &AtomicU8,
+    progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), String> {
     let batch_size = if running_mode == 2 { BATCH_SIZE_BACKGROUND } else { BATCH_SIZE_FOREGROUND };
     *SYNC_START.lock().unwrap() = Some(std::time::Instant::now());
