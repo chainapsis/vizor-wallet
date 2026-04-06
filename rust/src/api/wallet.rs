@@ -122,7 +122,8 @@ pub fn add_account(
         let network = keys::parse_network(&network)?;
         let seed = keys::mnemonic_to_seed(&mnemonic)?;
 
-        keys::ensure_db_initialized(&db_path, network, &seed)?;
+        // DB is already initialized by the first account — do not call ensure_db_initialized
+        // with a different seed (seed fingerprint mismatch would cause an error).
         let (account_uuid, unified_address) =
             keys::add_account(&db_path, network, &name, &seed, birthday_height)?;
 

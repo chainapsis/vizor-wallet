@@ -96,7 +96,8 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       final dir = await getApplicationDocumentsDirectory();
       final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
       final memo = _memoController.text.trim();
-      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid ?? '';
+      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+      if (accountUuid == null) { setState(() => _amountError = null); return; }
       final fee = await rust_sync.estimateFee(
         dbPath: dbPath,
         network: 'main',
@@ -211,7 +212,11 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
       // Step 1: Propose transfer
       log('Send: proposing transfer');
-      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid ?? '';
+      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+      if (accountUuid == null) {
+        setState(() { _error = 'No active account'; _isSending = false; });
+        return;
+      }
       final proposal = await rust_sync.proposeSend(
         dbPath: dbPath,
         network: 'main',

@@ -120,18 +120,17 @@ class AccountsScreen extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               final newName = controller.text.trim();
               if (newName.isNotEmpty) {
-                ref.read(accountProvider.notifier).renameAccount(account.uuid, newName);
+                await ref.read(accountProvider.notifier).renameAccount(account.uuid, newName);
               }
-              Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
             child: const Text('Rename'),
           ),
         ],
       ),
-    );
-    controller.dispose;
+    ).then((_) => controller.dispose());
   }
 }
