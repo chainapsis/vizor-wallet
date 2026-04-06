@@ -144,6 +144,7 @@ fn wire__crate__api__wallet__create_wallet_impl(
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_birthday_height = <Option<u64>>::sse_decode(&mut deserializer);
+            let api_account_name = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -151,6 +152,7 @@ fn wire__crate__api__wallet__create_wallet_impl(
                         api_network,
                         api_db_path,
                         api_birthday_height,
+                        api_account_name,
                     )?;
                     Ok(output_ok)
                 })())
@@ -799,6 +801,7 @@ fn wire__crate__api__wallet__import_wallet_impl(
             let api_birthday_height = <Option<u64>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_account_name = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -807,6 +810,7 @@ fn wire__crate__api__wallet__import_wallet_impl(
                         api_birthday_height,
                         api_network,
                         api_db_path,
+                        api_account_name,
                     )?;
                     Ok(output_ok)
                 })())

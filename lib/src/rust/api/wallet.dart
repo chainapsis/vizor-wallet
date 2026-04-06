@@ -20,10 +20,12 @@ Future<WalletCreationResult> createWallet({
   required String network,
   required String dbPath,
   BigInt? birthdayHeight,
+  String? accountName,
 }) => RustLib.instance.api.crateApiWalletCreateWallet(
   network: network,
   dbPath: dbPath,
   birthdayHeight: birthdayHeight,
+  accountName: accountName,
 );
 
 /// Import an existing wallet from a mnemonic phrase.
@@ -32,11 +34,13 @@ Future<WalletImportResult> importWallet({
   BigInt? birthdayHeight,
   required String network,
   required String dbPath,
+  String? accountName,
 }) => RustLib.instance.api.crateApiWalletImportWallet(
   mnemonic: mnemonic,
   birthdayHeight: birthdayHeight,
   network: network,
   dbPath: dbPath,
+  accountName: accountName,
 );
 
 /// Add an additional account to an existing wallet database.

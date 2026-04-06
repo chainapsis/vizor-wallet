@@ -94,15 +94,16 @@ pub fn add_account(
     Ok((uuid_str, ua.encode(&network)))
 }
 
-/// Legacy wrapper: init DB + create account named "default". Returns unified address.
+/// Init DB + create account. Returns (account_uuid, unified_address).
 pub fn init_db_and_create_account(
     db_path: &str,
     network: Network,
     seed: &SecretVec<u8>,
     birthday_height: Option<u64>,
+    name: &str,
 ) -> Result<(String, String), String> {
     ensure_db_initialized(db_path, network, seed)?;
-    add_account(db_path, network, "default", seed, birthday_height)
+    add_account(db_path, network, name, seed, birthday_height)
 }
 
 pub struct AccountInfo {
@@ -274,7 +275,7 @@ mod tests {
         let seed = mnemonic_to_seed(&phrase).unwrap();
 
         let (_uuid, address) =
-            init_db_and_create_account(db_path_str, Network::MainNetwork, &seed, None).unwrap();
+            init_db_and_create_account(db_path_str, Network::MainNetwork, &seed, None, "test").unwrap();
 
         // Mainnet unified addresses start with "u1"
         assert!(
@@ -297,7 +298,7 @@ mod tests {
         let seed = mnemonic_to_seed(&phrase).unwrap();
 
         let (_, address) =
-            init_db_and_create_account(db_path_str, Network::TestNetwork, &seed, None).unwrap();
+            init_db_and_create_account(db_path_str, Network::TestNetwork, &seed, None, "test").unwrap();
 
         assert!(
             address.starts_with("utest1"),
@@ -313,13 +314,13 @@ mod tests {
         let temp1 = tempfile::tempdir().unwrap();
         let db1 = temp1.path().join("wallet.db");
         let (_, addr1) =
-            init_db_and_create_account(db1.to_str().unwrap(), Network::MainNetwork, &seed, None)
+            init_db_and_create_account(db1.to_str().unwrap(), Network::MainNetwork, &seed, None, "test")
                 .unwrap();
 
         let temp2 = tempfile::tempdir().unwrap();
         let db2 = temp2.path().join("wallet.db");
         let (_, addr2) =
-            init_db_and_create_account(db2.to_str().unwrap(), Network::MainNetwork, &seed, None)
+            init_db_and_create_account(db2.to_str().unwrap(), Network::MainNetwork, &seed, None, "test")
                 .unwrap();
 
         assert_eq!(addr1, addr2, "Same seed should produce same address");
@@ -337,7 +338,7 @@ mod tests {
         let seed = mnemonic_to_seed(&phrase).unwrap();
 
         let (_, address) =
-            init_db_and_create_account(db_path_str, Network::MainNetwork, &seed, None).unwrap();
+            init_db_and_create_account(db_path_str, Network::MainNetwork, &seed, None, "test").unwrap();
 
         // Decode and verify receiver types
         let za = zcash_address::ZcashAddress::try_from_encoded(&address).unwrap();

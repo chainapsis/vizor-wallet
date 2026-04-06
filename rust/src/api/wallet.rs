@@ -79,13 +79,14 @@ pub fn get_latest_block_height(lightwalletd_url: String) -> Result<u64, String> 
 
 /// Create a new Zcash wallet with a fresh mnemonic.
 /// birthday_height should be the current chain tip (from get_latest_block_height).
-pub fn create_wallet(network: String, db_path: String, birthday_height: Option<u64>) -> Result<WalletCreationResult, String> {
+pub fn create_wallet(network: String, db_path: String, birthday_height: Option<u64>, account_name: Option<String>) -> Result<WalletCreationResult, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
         let mnemonic = keys::generate_mnemonic();
         let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let name = account_name.as_deref().unwrap_or("Account 1");
 
-        let (account_uuid, unified_address) = keys::init_db_and_create_account(&db_path, network, &seed, birthday_height)?;
+        let (account_uuid, unified_address) = keys::init_db_and_create_account(&db_path, network, &seed, birthday_height, name)?;
 
         Ok(WalletCreationResult {
             mnemonic,
@@ -101,13 +102,15 @@ pub fn import_wallet(
     birthday_height: Option<u64>,
     network: String,
     db_path: String,
+    account_name: Option<String>,
 ) -> Result<WalletImportResult, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
         let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let name = account_name.as_deref().unwrap_or("Account 1");
 
         let (account_uuid, unified_address) =
-            keys::init_db_and_create_account(&db_path, network, &seed, birthday_height)?;
+            keys::init_db_and_create_account(&db_path, network, &seed, birthday_height, name)?;
 
         Ok(WalletImportResult { unified_address, account_uuid })
     })

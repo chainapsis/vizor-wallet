@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../providers/account_provider.dart';
+import '../../../providers/sync_provider.dart';
 
 class AccountsScreen extends ConsumerWidget {
   const AccountsScreen({super.key});
@@ -58,6 +59,7 @@ class AccountsScreen extends ConsumerWidget {
               onTap: () async {
                 if (!isActive) {
                   await ref.read(accountProvider.notifier).switchAccount(account.uuid);
+                  await ref.read(syncProvider.notifier).refreshAfterSend();
                 }
                 if (context.mounted) context.pop();
               },
