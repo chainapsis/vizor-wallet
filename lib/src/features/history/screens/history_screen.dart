@@ -30,7 +30,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     try {
       final dir = await getApplicationDocumentsDirectory();
       final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
-      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid ?? '';
+      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+      if (accountUuid == null) return;
       final txs = await rust_sync.getTransactionHistory(
         dbPath: dbPath,
         network: 'main',

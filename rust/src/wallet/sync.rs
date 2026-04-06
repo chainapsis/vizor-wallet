@@ -272,7 +272,7 @@ pub fn propose_send(
     let mut store = PROPOSAL_STORE.lock().map_err(|e| format!("Lock error: {e}"))?;
     let id = store.next_id;
     store.next_id += 1;
-    store.proposals.insert(id, StoredProposal { proposal, network });
+    store.proposals.insert(id, StoredProposal { proposal, network, account_id });
 
     Ok(ProposalResult { proposal_id: id, needs_sapling_params: needs_sapling, fee_zatoshi: fee })
 }
@@ -332,7 +332,7 @@ pub async fn execute_proposal(
     drop(store);
 
     let mut db = open_wallet_db(db_path, network)?;
-    let account_id = get_first_account_id(&db)?;
+    let account_id = stored.account_id;
     let account = db.get_account(account_id).map_err(|e| format!("{e}"))?.ok_or("Account not found")?;
 
     // Scope seed/USK so they are dropped before network I/O (broadcast)
@@ -452,6 +452,7 @@ use std::sync::Mutex;
 struct StoredProposal {
     proposal: zcash_client_backend::proposal::Proposal<StandardFeeRule, zcash_client_sqlite::ReceivedNoteId>,
     network: Network,
+    account_id: AccountUuid,
 }
 
 static PROPOSAL_STORE: std::sync::LazyLock<Mutex<ProposalStore>> =

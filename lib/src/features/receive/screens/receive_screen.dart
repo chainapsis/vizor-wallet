@@ -34,7 +34,8 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     try {
       final dir = await getApplicationDocumentsDirectory();
       final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
-      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid ?? '';
+      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+      if (accountUuid == null) return;
       final newAddr = await rust_sync.getNextAvailableAddress(
         dbPath: dbPath,
         network: 'main',

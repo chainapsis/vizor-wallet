@@ -44,11 +44,10 @@ class AccountState {
 
   AccountInfo? get activeAccount {
     if (activeAccountUuid == null) return null;
-    try {
-      return accounts.firstWhere((a) => a.uuid == activeAccountUuid);
-    } catch (_) {
-      return null;
+    for (final a in accounts) {
+      if (a.uuid == activeAccountUuid) return a;
     }
+    return null;
   }
 
   AccountState copyWith({
@@ -105,6 +104,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   /// Create a new wallet with a fresh mnemonic. Returns the mnemonic.
   Future<String> createAccount({String? name}) async {
+    try {
     final dbPath = await _getDbPath();
     final network = await _getNetwork();
     final networkConfig = network == 'main' ? ZcashNetwork.mainnet : ZcashNetwork.testnet;
@@ -160,6 +160,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
     log('createAccount: success, uuid=$accountUuid');
     return mnemonic;
+    } catch (e, st) {
+      log('createAccount: ERROR: $e\n$st');
+      rethrow;
+    }
   }
 
   /// Import a wallet from mnemonic.
@@ -168,6 +172,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     int? birthdayHeight,
     String? name,
   }) async {
+    try {
     final dbPath = await _getDbPath();
     final network = await _getNetwork();
     final accounts = state.value?.accounts ?? [];
@@ -212,6 +217,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     ));
 
     log('importAccount: success, uuid=$accountUuid');
+    } catch (e, st) {
+      log('importAccount: ERROR: $e\n$st');
+      rethrow;
+    }
   }
 
   /// Switch active account.

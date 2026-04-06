@@ -276,7 +276,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final dbPath = await _getDbPath();
     final network = ZcashNetwork.mainnet.name;
     final accountUuid = _getActiveAccountUuid();
-    if (accountUuid == null) return;
+    if (accountUuid == null) { log('SyncNotifier: no active account, skipping refresh'); return; }
 
     BigInt? transparent, sapling, orchard, total;
     try {
@@ -331,7 +331,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final dbPath = await _getDbPath();
     final network = ZcashNetwork.mainnet.name;
     final accountUuid = _getActiveAccountUuid();
-    if (accountUuid == null) return;
+    if (accountUuid == null) { log('SyncNotifier: no active account, skipping refresh'); return; }
 
     BigInt? transparent, sapling, orchard, total;
     try {
