@@ -323,8 +323,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
       );
       final lastSynced = state.value?.chainTipHeight ?? 0;
-      if (tip.toInt() > lastSynced) {
-        log('AutoSync: new blocks (tip=$tip, last=$lastSynced)');
+      final syncComplete = (state.value?.percentage ?? 0) >= 1.0;
+      if (!syncComplete || tip.toInt() > lastSynced) {
+        log('AutoSync: needs sync (tip=$tip, last=$lastSynced, complete=$syncComplete)');
         await startSync();
       }
     } catch (e) {
