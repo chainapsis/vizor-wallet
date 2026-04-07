@@ -87,7 +87,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _bgDelegate = BackgroundSyncDelegate.create();
     _bgDelegate.setupListeners(
       onStopRequested: () => stopSync(),
-      onBackgroundProgress: (event) => _onSyncProgress(event),
+      onBackgroundProgress: (event) {
+        _onSyncProgress(event).catchError((e, st) {
+          log('SyncNotifier: background progress handling failed: $e');
+        });
+      },
     );
 
     // App lifecycle management
