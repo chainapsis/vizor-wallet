@@ -108,13 +108,8 @@ class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
 
   @override
   void onSyncDone() {
-    if (_active) {
-      _active = false;
-      bg_sync.stopBackgroundSync().catchError((e) {
-        log('BackgroundSyncDelegate(Android): failed to stop background service: $e');
-      });
-      log('BackgroundSyncDelegate(Android): sync completed, notification removed');
-    }
+    // Android background mode = notification only. Keep it active across
+    // sync cycles until the user explicitly disables it.
   }
 
   @override
