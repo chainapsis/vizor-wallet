@@ -225,7 +225,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   static Future<bool> isBackgroundSyncAvailable() async {
-    return BackgroundSyncDelegate.create().isAvailable();
+    try {
+      return await BackgroundSyncDelegate.create().isAvailable();
+    } catch (e) {
+      log('SyncNotifier: background sync availability check failed: $e');
+      return false;
+    }
   }
 
   // ======================== Auto-Sync & Polling ========================
