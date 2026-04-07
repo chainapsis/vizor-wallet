@@ -114,14 +114,16 @@ impl BlockSource for MemoryBlockSource {
 <p>elapsed 시간 기준(<code>SYNC_START</code>)은 <code>run_sync_inner</code>에서 한 번만 설정되어 retry 간에도 일관된 로그를 출력한다.</p>
 
 <h3 id="sync-auto">5.7 자동 Sync (Dart)</h3>
-<p><code>SyncProvider</code>는 <code>accountProvider</code>를 <code>ref.listen</code>으로 감시하여 계정이 처음 생성되면 자동으로 sync를 시작한다 (<code>ref.watch</code>가 아니므로 계정 전환/rename 시 rebuild되지 않는다). Sync 완료 후에는 10초마다 <code>getLatestBlockHeight()</code>를 polling하여 새 블록이 감지되면 재sync한다.</p>
+<p><code>SyncProvider</code>는 <code>accountProvider</code>를 <code>ref.listen</code>으로 감시하여 계정 수가 증가하면 자동으로 sync를 시작한다 (<code>ref.watch</code>가 아니므로 계정 전환/rename 시 rebuild되지 않는다). <code>startSync()</code>은 <strong>fire-and-forget</strong>으로, FRB stream listener를 등록하고 즉시 return한다 (Completer 없음). Sync 완료 후에는 10초마다 <code>getLatestBlockHeight()</code>를 polling하여 새 블록이 감지되거나 이전 sync가 미완료면 재sync한다.</p>
 
 <ul>
   <li><strong>중복 방지:</strong> <code>_isSyncing</code> (Dart) + <code>isSyncRunning()</code> (Rust AtomicBool) 이중 가드</li>
+  <li><strong>Generation counter:</strong> <code>stopSync()</code>가 <code>_syncGen</code>을 증가시키고, <code>startSync</code>의 <code>.then()</code> 콜백에서 체크하여 stop 후 pending 작업 무효화</li>
   <li><strong>Polling 겹침 방지:</strong> <code>_checkAndSync()</code> 진입 시 polling 중단, 완료 후 재시작</li>
-  <li><strong>Lifecycle:</strong> <code>onHide</code>에서 polling 중단, <code>onResume</code>에서 즉시 체크 + polling 재개</li>
-  <li><strong>Background sync 복귀:</strong> <code>onResume</code>에서 <code>isSyncRunning() == false</code>이면 background sync 완료로 판단 → foreground 모드 전환</li>
-  <li><strong>에러 복구:</strong> 초기 sync 실패해도 polling은 항상 시작 → 10초 후 자동 재시도</li>
+  <li><strong>Polling 시작 경로 3곳만:</strong> <code>_onSyncDone</code>, <code>_checkAndSync</code>, 계정 생성 시</li>
+  <li><strong>Lifecycle:</strong> <code>onHide</code>에서 polling 중단, <code>onResume</code>에서 <code>delegate.onResume()</code> + <code>_checkAndSync()</code></li>
+  <li><strong>Background sync:</strong> <code>BackgroundSyncDelegate</code>에 위임 (Android/iOS/NoOp). <code>shouldSuppressPolling</code>으로 플랫폼별 polling 제어</li>
+  <li><strong>에러 복구:</strong> sync 에러 시 polling 유지 → 10초 후 자동 재시도</li>
 </ul>
 
 <p>Dart의 <code>stream.listen()</code> 콜백에서 <code>getBalance()</code> FFI를 호출하여 balance를 갱신하고, <code>hasNewTx || isComplete</code>이면 <code>getTransactionHistory(limit: 10)</code>도 호출한다. iOS background sync에서는 C callback → <code>SyncProgressStreamHandler</code> → EventChannel로 전달되며, isSyncing, isComplete, hasNewTx 등 모든 필드가 포함된다.</p>

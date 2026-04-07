@@ -44,62 +44,63 @@
 <p><strong><code>syncProvider</code></strong> (<code>AsyncNotifierProvider&lt;SyncNotifier, SyncState&gt;</code>)</p>
 <p><strong>자동 Sync:</strong></p>
 <ul>
-  <li><code>build()</code>에서 <code>ref.listen(accountProvider)</code>로 계정 생성 감지 + <code>ref.read</code>로 초기 체크 — rebuild 없이 <code>_autoSync()</code> 실행</li>
-  <li><code>_autoSync()</code>: <code>startSync()</code> 실행 (try-catch로 에러 시 UI에 표시) → 항상 polling 시작</li>
-  <li><code>_checkAndSync()</code>: 10초마다 <code>getLatestBlockHeight()</code> polling → 새 블록 감지 시 재sync</li>
+  <li><code>build()</code>에서 <code>ref.listen(accountProvider)</code>로 계정 수 변화 감지 + <code>ref.read</code>로 초기 체크 — rebuild 없이 <code>startSync()</code> + <code>_startPolling()</code></li>
+  <li><code>startSync()</code>은 <strong>fire-and-forget</strong>: FRB stream listener를 등록하고 즉시 return. Completer 없음</li>
+  <li><code>_syncGen</code> generation counter: <code>stopSync()</code>가 증가시키고, <code>.then()</code> 콜백에서 체크하여 유저 stop 후 pending 작업 무효화</li>
+  <li><code>_checkAndSync()</code>: 10초마다 <code>getLatestBlockHeight()</code> polling → 새 블록 감지 또는 이전 sync 미완료 시 재sync</li>
   <li>중복 방지: <code>_isSyncing</code> (Dart) + <code>isSyncRunning()</code> (Rust) 이중 가드</li>
-  <li>Polling 겹침 방지: <code>_checkAndSync</code> 진입 시 polling 중단, 완료 후 재시작</li>
 </ul>
 <p><strong>Sync 제어:</strong></p>
 <ul>
-  <li><code>startSync()</code>: FRB <code>startFullSync(mode: 1)</code> 호출로 <code>Stream&lt;ApiSyncProgressEvent&gt;</code> 수신. 매 이벤트마다 <code>getBalance(accountUuid)</code>로 활성 계정 잔액 갱신.</li>
-  <li><code>stopSync()</code>: 통합 <code>cancelFullSync()</code> 호출 (AtomicBool 설정)</li>
-  <li><code>enableBackgroundSync()</code>: Android = notification만 추가. iOS = <code>setSyncMode(2)</code> + BGTask 제출.</li>
-  <li><code>disableBackgroundSync()</code>: Android = notification 제거. iOS = <code>setSyncMode(1)</code> + 대기 + foreground sync 재시작.</li>
+  <li><code>stopSync()</code>: <code>++_syncGen</code> + <code>cancelFullSync()</code> + <code>_stopPolling()</code>. 다음 app resume에서 재개</li>
+  <li>Background sync는 <code>BackgroundSyncDelegate</code>에 위임 (Platform 분기 없음)</li>
+  <li><code>disableBackgroundSync()</code>: <code>delegate.disable()</code>가 <code>bool</code> 반환 — iOS=<code>true</code>(fg 재시작 필요), Android=<code>false</code></li>
+</ul>
+<p><strong>BackgroundSyncDelegate</strong> (<code>background_sync_delegate.dart</code>):</p>
+<ul>
+  <li>Abstract 인터페이스 + Android/iOS/NoOp 구현체. 모든 <code>Platform.isAndroid</code>/<code>Platform.isIOS</code> 분기가 여기에 격리됨</li>
+  <li><code>shouldSuppressPolling</code>: Android=<code>false</code> (notification뿐), iOS=<code>_active</code> (BGTask가 sync 관리)</li>
+  <li>Android <code>onSyncDone()</code>: <code>_active</code> 유지 (notification은 유저가 disable할 때까지 지속)</li>
+  <li>iOS <code>onResume()</code>: bg sync 완료/expiration 감지 → <code>_active</code> 리셋</li>
 </ul>
 <p><strong>Lifecycle:</strong></p>
 <ul>
-  <li><code>onResume</code>: balance 새로고침 + background sync 완료 감지 (<code>!isSyncRunning()</code>) 또는 expiration 감지 (<code>mode==0</code>) → foreground 모드 전환 + 즉시 체크 + polling 재개</li>
-  <li><code>onHide</code>: polling 중단 (background에서 네트워크 낭비 방지)</li>
-  <li>iOS EventChannel listener: background sync 완료 시 (<code>isComplete</code>) foreground 모드 자동 전환</li>
-  <li><code>SyncState</code>: <code>{ isSyncing, isBackgroundMode, percentage, scannedHeight, chainTipHeight, transparentBalance, saplingBalance, orchardBalance, totalBalance, error, recentTransactions }</code></li>
+  <li><code>onResume</code>: balance 새로고침 → <code>delegate.onResume()</code> → <code>_checkAndSync()</code> (내부에서 polling 시작)</li>
+  <li><code>onHide</code>: polling 중단</li>
+  <li>Polling 시작 경로는 3곳만: <code>_onSyncDone</code>, <code>_checkAndSync</code>, 계정 생성 시</li>
 </ul>
 
 <h3 id="dart-sync-loop">4.2 Sync 실행</h3>
 <p>Sync 루프는 <strong>Rust</strong>에서 실행된다 (<code>sync_engine.rs</code>). Dart는 <code>startFullSync(mode: 1)</code>을 호출하여 <code>Stream&lt;ApiSyncProgressEvent&gt;</code>를 수신하고, <code>stream.listen()</code>으로 진행률 콜백을 등록한다.</p>
 
 <pre><code>// sync_provider.dart (간소화)
-final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+// startSync()은 fire-and-forget — stream listener를 등록하고 즉시 return
+void startSync() {
+  if (_isSyncing || rust_sync.isSyncRunning()) return;
+  _isSyncing = true;
+  final gen = ++_syncGen;  // stopSync가 증가시켜서 pending 콜백 무효화
 
-final stream = rust_sync.startFullSync(
-  dbPath: dbPath,
-  lightwalletdUrl: 'https://zec.rocks:443',
-  network: 'main',
-  mode: 1, // foreground
-);
-
-stream.listen(_onSyncProgress);
-
-void _onSyncProgress(ApiSyncProgressEvent event) {
-  // 매 batch마다 활성 계정의 balance 갱신
-  final balance = await rust_sync.getBalance(
-    dbPath: dbPath, network: 'main', accountUuid: accountUuid,
-  );
-  // hasNewTx 또는 isComplete이면 활성 계정의 최근 트랜잭션도 갱신
-  if (event.hasNewTx || event.isComplete) {
-    final txs = await rust_sync.getTransactionHistory(
-      dbPath: dbPath, network: 'main', limit: 10, accountUuid: accountUuid,
+  _getDbPath().then((dbPath) {
+    if (gen != _syncGen) return; // stopSync 호출됨
+    final stream = rust_sync.startFullSync(...);
+    _syncSub = stream.listen(
+      _onSyncProgress,
+      onDone: () {
+        if (gen != _syncGen) return;
+        _isSyncing = false;
+        _onSyncDone();  // → _refreshBalance() + _startPolling()
+      },
+      onError: (e) {
+        if (gen != _syncGen) return;
+        _isSyncing = false;
+        state = AsyncData(SyncState(error: e.toString()));
+        _startPolling(); // 에러 후에도 polling 유지 → 자동 재시도
+      },
     );
-    // state에 recentTransactions 업데이트
-  }
-  state = state.copyWith(
-    percentage: event.percentage,
-    scannedHeight: event.scannedHeight,
-    totalBalance: balance.total,
-  );
+  });
 }
 // Sync는 모든 계정을 스캔하지만, 잔액/내역은 activeAccountUuid로 필터
-// 폴링 없음 — 모든 상태 업데이트는 stream, EventChannel, onResume으로 구동</code></pre>
+// Polling 10초마다 getLatestBlockHeight → 새 블록 또는 미완료 시 재sync</code></pre>
 
 <p><strong>Rust 내부 sync (<code>run_sync_inner</code> → <code>run_sync_impl</code>):</strong></p>
 <pre><code>run_sync_inner (retry wrapper):
