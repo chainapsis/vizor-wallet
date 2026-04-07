@@ -102,7 +102,9 @@ class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
   void onSyncDone() {
     if (_active) {
       _active = false;
-      bg_sync.stopBackgroundSync();
+      bg_sync.stopBackgroundSync().catchError((e) {
+        log('BackgroundSyncDelegate(Android): failed to stop background service: $e');
+      });
       log('BackgroundSyncDelegate(Android): sync completed, notification removed');
     }
   }
