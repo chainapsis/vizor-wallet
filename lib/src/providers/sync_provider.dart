@@ -75,17 +75,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   late final BackgroundSyncDelegate _bgDelegate;
   bool _isSyncing = false;
   bool _isInForeground = true;
-  bool _userStopped = false;
   int _lastLoggedHeight = 0;
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
-  Completer<void>? _syncCompleter;
   AppLifecycleListener? _lifecycleListener;
   Timer? _pollTimer;
 
   @override
   Future<SyncState> build() async {
-    // Platform-specific background sync delegate
     _bgDelegate = BackgroundSyncDelegate.create();
     _bgDelegate.setupListeners(
       onStopRequested: () => stopSync(),
@@ -96,14 +93,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       },
     );
 
-    // App lifecycle management
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
         _isInForeground = true;
-        _userStopped = false; // reset on app resume
         _refreshBalance();
         _bgDelegate.onResume();
-        _checkAndSync(); // _checkAndSync calls _startPolling() on completion
+        _checkAndSync();
       },
       onHide: () {
         _isInForeground = false;
@@ -124,25 +119,26 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // reset UI state.
     //
     // Two cases:
-    // 1. First account created (0→1): _autoSync starts sync + polling.
-    // 2. Additional account added (N→N+1): startSync rescans from the new
-    //    account's birthday height. Without this, the new account would show
-    //    empty until a new block triggers polling, since _checkAndSync only
-    //    compares chain tip (not account-level scan progress).
+    // 1. First account created (0→1): start sync + polling.
+    // 2. Additional account added (N→N+1): start sync to rescan from new
+    //    account's birthday height. Rust sync loop picks up new ranges via
+    //    suggest_scan_ranges() even mid-sync; _isSyncing guard prevents duplicates.
     ref.listen(accountProvider, (prev, next) {
       final prevCount = prev?.value?.accounts.length ?? 0;
       final nextCount = next.value?.accounts.length ?? 0;
-      if (prevCount == 0 && nextCount > 0) {
-        _autoSync();
-      } else if (nextCount > prevCount) {
+      if (nextCount > prevCount) {
         startSync();
+        _startPolling();
       }
     });
 
     // Initial check: if accounts already exist at build time
     final accountState = ref.read(accountProvider).value;
     if (accountState != null && accountState.hasAccounts) {
-      Future.microtask(() => _autoSync());
+      Future.microtask(() {
+        startSync();
+        _startPolling();
+      });
     }
 
     return SyncState();
@@ -150,7 +146,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   // ======================== Sync Control ========================
 
-  Future<void> startSync() async {
+  /// Fire-and-forget: sets up FRB stream and returns immediately.
+  /// Stream events update state via _onSyncProgress. Completion handled by _onSyncDone.
+  void startSync() {
     if (_isSyncing || rust_sync.isSyncRunning()) {
       log('Sync: already running, skipping');
       return;
@@ -159,19 +157,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _lastLoggedHeight = 0;
     state = AsyncData(SyncState(isSyncing: true));
 
-    try {
-      final dbPath = await _getDbPath();
+    _getDbPath().then((dbPath) {
       final network = ZcashNetwork.mainnet;
-
       log('Sync: starting foreground sync');
       final stream = rust_sync.startFullSync(
         dbPath: dbPath,
         lightwalletdUrl: network.lightwalletdUrl,
         network: network.name,
-        mode: 1, // foreground
+        mode: 1,
       );
-
-      _syncCompleter = Completer<void>();
       _syncSub = stream.listen(
         (event) => _onSyncProgress(SyncProgressEvent(
           scannedHeight: event.scannedHeight.toInt(),
@@ -185,37 +179,30 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           log('Sync: stream ended');
           _isSyncing = false;
           _onSyncDone();
-          if (_syncCompleter != null && !_syncCompleter!.isCompleted) _syncCompleter!.complete();
         },
         onError: (e) {
           log('Sync: stream error: $e');
           _isSyncing = false;
           state = AsyncData(SyncState(error: e.toString()));
-          if (_syncCompleter != null && !_syncCompleter!.isCompleted) _syncCompleter!.completeError(e);
+          _startPolling(); // keep polling so auto-retry works
         },
       );
-
-      await _syncCompleter!.future;
-    } catch (e, st) {
+    }).catchError((e, st) {
       log('SyncNotifier: ERROR: $e\n$st');
       _isSyncing = false;
       state = AsyncData(SyncState(error: e.toString()));
-    }
+      _startPolling();
+    });
   }
 
-  Future<void> stopSync() async {
+  void stopSync() {
     rust_sync.cancelFullSync();
     _syncSub?.cancel();
     _syncSub = null;
     _isSyncing = false;
-    _userStopped = true;
     _stopPolling();
-    if (_syncCompleter != null && !_syncCompleter!.isCompleted) {
-      _syncCompleter!.complete();
-    }
-    _syncCompleter = null;
     if (_bgDelegate.isActive) {
-      await _bgDelegate.disable();
+      _bgDelegate.disable();
     }
     final prev = state.value;
     state = AsyncData(SyncState(
@@ -243,7 +230,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final needsResync = await _bgDelegate.disable();
     log('SyncNotifier: background sync disabled');
     if (needsResync) {
-      await startSync();
+      startSync();
     }
   }
 
@@ -256,21 +243,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
   }
 
-  // ======================== Auto-Sync & Polling ========================
-
-  Future<void> _autoSync() async {
-    try {
-      await startSync();
-    } catch (e, st) {
-      log('SyncNotifier: autoSync failed: $e\n$st');
-      state = AsyncData(SyncState(error: 'Auto-sync failed: $e'));
-    }
-    _startPolling();
-  }
+  // ======================== Polling ========================
 
   void _startPolling() {
     _pollTimer?.cancel();
-    if (!_isInForeground || _bgDelegate.shouldSuppressPolling || _userStopped) return;
+    if (!_isInForeground || _bgDelegate.shouldSuppressPolling) return;
     _pollTimer = Timer.periodic(
       const Duration(seconds: 10),
       (_) async {
@@ -300,7 +277,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       final syncComplete = (state.value?.percentage ?? 0) >= 1.0;
       if (!syncComplete || tip.toInt() > lastSynced) {
         log('AutoSync: needs sync (tip=$tip, last=$lastSynced, complete=$syncComplete)');
-        await startSync();
+        startSync();
       }
     } catch (e) {
       log('AutoSync: tip check failed: $e');
