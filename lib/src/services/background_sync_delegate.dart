@@ -61,6 +61,7 @@ abstract class BackgroundSyncDelegate {
 
 class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
   bool _active = false;
+  StreamSubscription? _portSub;
 
   @override
   bool get isActive => _active;
@@ -70,7 +71,12 @@ class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
     required void Function() onStopRequested,
     required void Function(SyncProgressEvent) onBackgroundProgress,
   }) {
-    FlutterForegroundTask.receivePort?.listen((message) {
+    final port = FlutterForegroundTask.receivePort;
+    if (port == null) {
+      log('BackgroundSyncDelegate(Android): WARNING: receivePort is null, stop-from-notification unavailable');
+      return;
+    }
+    _portSub = port.listen((message) {
       if (message == 'stop_sync') {
         log('BackgroundSyncDelegate(Android): stop requested from notification');
         onStopRequested();
@@ -79,7 +85,9 @@ class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
   }
 
   @override
-  void disposeListeners() {}
+  void disposeListeners() {
+    _portSub?.cancel();
+  }
 
   @override
   Future<void> enable() async {
