@@ -100,11 +100,31 @@ impl BlockSource for MemoryBlockSource {
 </div>
 
 <h3 id="sync-progress">5.5 진행률 보고</h3>
-<p>진행률은 scan-queue 기반으로 계산한다. 매 배치 후 <code>suggest_scan_ranges()</code>에서 남은 블록 수(remaining)와 전체 블록 수(total, <code>Ignored</code> 제외)를 계산하여 <code>pct = 1.0 - remaining / total</code>로 산출한다. 이 방식은 스캔 순서(ChainTip 우선, FoundNote, Historic)에 관계없이 정확하며, 노트가 없는 지갑에서도 올바르게 동작한다.</p>
+<p>진행률은 <strong>initial_total 기반</strong>으로 계산한다. sync loop 진입 전에 <code>suggest_scan_ranges()</code>로 전체 스캔 대상 블록 수(<code>initial_total</code>)를 한 번 기록한다. 매 배치 후 남은 블록 수(<code>remaining</code>)를 다시 계산하여 <code>pct = 1.0 - remaining / initial_total</code>로 산출한다.</p>
+
+<div class="note">
+  <p><strong>왜 per-batch total이 아닌 initial_total인가:</strong> <code>suggest_scan_ranges()</code>는 이미 스캔된(Scanned) 범위를 반환하지 않는다. 따라서 매 배치마다 total을 재계산하면 <code>total == remaining</code>이 되어 항상 0%가 된다. initial_total은 스캔 시작 전에 기록하므로 이 문제가 없다.</p>
+</div>
 
 <p>각 progress event에는 <code>has_new_tx</code> 플래그가 포함된다. <code>ScanSummary</code>의 received/spent note count &gt; 0이면 true이며, Dart에서 이를 감지하여 최근 10건의 트랜잭션을 조회한다.</p>
 
-<p>Dart의 <code>stream.listen()</code> 콜백에서 <code>getBalance()</code> FFI를 호출하여 balance를 갱신하고, <code>hasNewTx || isComplete</code>이면 <code>getTransactionHistory(limit: 10)</code>도 호출한다. 폴링은 없으며, 모든 상태 업데이트는 stream, EventChannel, onResume에 의해 구동된다. iOS background sync에서는 C callback &rarr; <code>SyncProgressStreamHandler</code> &rarr; EventChannel로 전달되며, isSyncing, isComplete, hasNewTx 등 모든 필드가 포함된다.</p>
+<h3 id="sync-retry">5.6 자동 Retry</h3>
+<p><code>run_sync_inner()</code>는 <code>run_sync_impl()</code>을 retry wrapper로 감싸서, 실패 시 최대 3회 재시도한다 (exponential backoff: 2초, 4초, 8초). retry 대기 중에도 cancel/mode 변경을 체크하여 불필요한 재시도를 방지한다. 3회 모두 실패하면 마지막 에러를 caller에 반환하여 Dart에서 UI로 표시한다.</p>
+
+<p>elapsed 시간 기준(<code>SYNC_START</code>)은 <code>run_sync_inner</code>에서 한 번만 설정되어 retry 간에도 일관된 로그를 출력한다.</p>
+
+<h3 id="sync-auto">5.7 자동 Sync (Dart)</h3>
+<p><code>SyncProvider</code>는 <code>accountProvider</code>를 watch하여 계정이 존재하면 자동으로 sync를 시작한다. Sync 완료 후에는 10초마다 <code>getLatestBlockHeight()</code>를 polling하여 새 블록이 감지되면 재sync한다.</p>
+
+<ul>
+  <li><strong>중복 방지:</strong> <code>_isSyncing</code> (Dart) + <code>isSyncRunning()</code> (Rust AtomicBool) 이중 가드</li>
+  <li><strong>Polling 겹침 방지:</strong> <code>_checkAndSync()</code> 진입 시 polling 중단, 완료 후 재시작</li>
+  <li><strong>Lifecycle:</strong> <code>onHide</code>에서 polling 중단, <code>onResume</code>에서 즉시 체크 + polling 재개</li>
+  <li><strong>Background sync 복귀:</strong> <code>onResume</code>에서 <code>isSyncRunning() == false</code>이면 background sync 완료로 판단 → foreground 모드 전환</li>
+  <li><strong>에러 복구:</strong> 초기 sync 실패해도 polling은 항상 시작 → 10초 후 자동 재시도</li>
+</ul>
+
+<p>Dart의 <code>stream.listen()</code> 콜백에서 <code>getBalance()</code> FFI를 호출하여 balance를 갱신하고, <code>hasNewTx || isComplete</code>이면 <code>getTransactionHistory(limit: 10)</code>도 호출한다. iOS background sync에서는 C callback → <code>SyncProgressStreamHandler</code> → EventChannel로 전달되며, isSyncing, isComplete, hasNewTx 등 모든 필드가 포함된다.</p>
 
 <div class="nav">
   <a href="dart-layer.html">&larr; 이전: Dart / Flutter 레이어</a>

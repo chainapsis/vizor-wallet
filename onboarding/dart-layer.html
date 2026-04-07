@@ -42,13 +42,26 @@
 </ul>
 
 <p><strong><code>syncProvider</code></strong> (<code>AsyncNotifierProvider&lt;SyncNotifier, SyncState&gt;</code>)</p>
+<p><strong>자동 Sync:</strong></p>
 <ul>
-  <li><code>startSync()</code>: FRB <code>startFullSync(mode: 1)</code> 호출로 <code>Stream&lt;ApiSyncProgressEvent&gt;</code> 수신. <code>stream.listen(_onSyncProgress)</code>로 콜백 등록. <code>_onSyncProgress</code>에서 매 이벤트마다 <code>getBalance(accountUuid)</code> FFI를 호출하여 활성 계정의 잔액 갱신. Sync 자체는 계정에 무관하게 모든 계정의 노트를 스캔하지만, 잔액/내역 조회는 <code>activeAccountUuid</code>로 특정 계정만 반환.</li>
+  <li><code>build()</code>에서 <code>ref.watch(accountProvider)</code> — 계정이 존재하면 <code>_autoSync()</code> 자동 실행</li>
+  <li><code>_autoSync()</code>: <code>startSync()</code> 실행 (try-catch로 에러 시 UI에 표시) → 항상 polling 시작</li>
+  <li><code>_checkAndSync()</code>: 10초마다 <code>getLatestBlockHeight()</code> polling → 새 블록 감지 시 재sync</li>
+  <li>중복 방지: <code>_isSyncing</code> (Dart) + <code>isSyncRunning()</code> (Rust) 이중 가드</li>
+  <li>Polling 겹침 방지: <code>_checkAndSync</code> 진입 시 polling 중단, 완료 후 재시작</li>
+</ul>
+<p><strong>Sync 제어:</strong></p>
+<ul>
+  <li><code>startSync()</code>: FRB <code>startFullSync(mode: 1)</code> 호출로 <code>Stream&lt;ApiSyncProgressEvent&gt;</code> 수신. 매 이벤트마다 <code>getBalance(accountUuid)</code>로 활성 계정 잔액 갱신.</li>
   <li><code>stopSync()</code>: 통합 <code>cancelFullSync()</code> 호출 (AtomicBool 설정)</li>
-  <li><code>enableBackgroundSync()</code>: Android = <code>flutter_foreground_task</code>로 notification만 추가. iOS = <code>setSyncMode(2)</code> + MethodChannel로 BGContinuedProcessingTask 제출.</li>
-  <li><code>disableBackgroundSync()</code>: Android = notification 제거. iOS = <code>setSyncMode(1)</code> + <code>while(isSyncRunning()) await 200ms</code> 대기 + foreground sync 재시작.</li>
-  <li><code>AppLifecycleListener.onResume</code>: expiration 감지 (mode==0) → foreground sync 재시작</li>
-  <li>iOS EventChannel listener: background sync 중 C callback → <code>SyncProgressStreamHandler</code> → Dart로 진행률 수신</li>
+  <li><code>enableBackgroundSync()</code>: Android = notification만 추가. iOS = <code>setSyncMode(2)</code> + BGTask 제출.</li>
+  <li><code>disableBackgroundSync()</code>: Android = notification 제거. iOS = <code>setSyncMode(1)</code> + 대기 + foreground sync 재시작.</li>
+</ul>
+<p><strong>Lifecycle:</strong></p>
+<ul>
+  <li><code>onResume</code>: balance 새로고침 + background sync 완료 감지 (<code>!isSyncRunning()</code>) 또는 expiration 감지 (<code>mode==0</code>) → foreground 모드 전환 + 즉시 체크 + polling 재개</li>
+  <li><code>onHide</code>: polling 중단 (background에서 네트워크 낭비 방지)</li>
+  <li>iOS EventChannel listener: background sync 완료 시 (<code>isComplete</code>) foreground 모드 자동 전환</li>
   <li><code>SyncState</code>: <code>{ isSyncing, isBackgroundMode, percentage, scannedHeight, chainTipHeight, transparentBalance, saplingBalance, orchardBalance, totalBalance, error, recentTransactions }</code></li>
 </ul>
 
@@ -88,23 +101,31 @@ void _onSyncProgress(ApiSyncProgressEvent event) {
 // Sync는 모든 계정을 스캔하지만, 잔액/내역은 activeAccountUuid로 필터
 // 폴링 없음 — 모든 상태 업데이트는 stream, EventChannel, onResume으로 구동</code></pre>
 
-<p><strong>Rust 내부 sync 루프 (<code>run_sync_inner</code>):</strong></p>
-<pre><code>1. tonic gRPC로 zec.rocks:443에 TLS 연결 (tls-ring)
-2. getLatestBlock() → update_chain_tip()
-3. getSubtreeRoots() → put_subtree_roots() (incremental)
-4. 루프 (100블록 batch):
-   a. cancel/mode 체크
-   b. suggest_scan_ranges() → 최고 우선순위 범위 선택
-   c. getBlockRange() → CompactBlock을 메모리에 저장 (MemoryBlockSource)
-   d. cancel/mode 체크
-   e. getTreeState(start - 1) → ChainState 생성
-   f. scan_cached_blocks(MemoryBlockSource)
-   g. cancel/mode 체크
-   h. run_enhancement()
-   i. suggest_scan_ranges()로 remaining/total 계산 → percentage = 1.0 - remaining/total
-   j. ScanSummary에서 has_new_tx 판별 (received/spent note count > 0)
-   k. progress_fn 콜백 → StreamSink.add() (Dart) 또는 C callback (Swift)
-5. 모든 범위 완료 → final progress (percentage=1.0, is_complete=true) → 반환</code></pre>
+<p><strong>Rust 내부 sync (<code>run_sync_inner</code> → <code>run_sync_impl</code>):</strong></p>
+<pre><code>run_sync_inner (retry wrapper):
+  SYNC_START 설정 (한 번만, retry 간 elapsed 일관)
+  최대 4회 시도 (1 + 3 retry, backoff 2s/4s/8s)
+  retry 대기 중에도 cancel/mode 체크
+  모든 시도 실패 → 마지막 에러 반환 → Dart에서 sync.error로 UI 표시
+
+run_sync_impl (단일 시도):
+  1. tonic gRPC로 zec.rocks:443에 TLS 연결 (tls-ring)
+  2. getLatestBlock() → update_chain_tip()
+  3. getSubtreeRoots() → put_subtree_roots() (incremental)
+  4. suggest_scan_ranges()로 initial_total 계산 (스캔 전 전체 블록 수)
+  5. 루프 (100블록 batch):
+     a. cancel/mode 체크
+     b. suggest_scan_ranges() → 최고 우선순위 범위 선택
+     c. getBlockRange() → MemoryBlockSource
+     d. cancel/mode 체크
+     e. getTreeState(start - 1) → ChainState
+     f. scan_cached_blocks(MemoryBlockSource)
+     g. cancel/mode 체크
+     h. run_enhancement()
+     i. remaining 계산 → pct = 1.0 - remaining / initial_total
+     j. has_new_tx 판별 (ScanSummary note count > 0)
+     k. progress_fn 콜백 → StreamSink (Dart) 또는 C callback (Swift)
+  6. 모든 범위 완료 → final progress (pct=1.0, is_complete=true)</code></pre>
 
 <h3 id="dart-enhancement">4.6 Enhancement 루프</h3>
 <p>매 scan batch 후 Rust sync 루프 내에서 실행된다. compact block에서 발견된 노트의 전체 TX 데이터를 lightwalletd에서 가져온다:</p>
