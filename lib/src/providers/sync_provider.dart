@@ -185,13 +185,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
   }
 
-  void stopSync() {
+  Future<void> stopSync() async {
     rust_sync.cancelFullSync();
     _syncSub?.cancel();
     _syncSub = null;
     _isSyncing = false;
     if (_bgDelegate.isActive) {
-      _bgDelegate.disable();
+      await _bgDelegate.disable();
     }
     final prev = state.value;
     state = AsyncData(SyncState(
