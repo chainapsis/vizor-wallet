@@ -344,6 +344,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       }
     }
 
+    // Update delegate BEFORE state so isActive reflects completion
+    _bgDelegate.onProgress(event);
+
     state = AsyncData(SyncState(
       isSyncing: event.isSyncing && !event.isComplete,
       isBackgroundMode: event.isBackground || _bgDelegate.isActive,
@@ -356,8 +359,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       totalBalance: total ?? prev?.totalBalance,
       recentTransactions: recentTxs,
     ));
-
-    _bgDelegate.onProgress(event);
 
     // If background sync completed, start polling for next sync cycle
     if (event.isBackground && event.isComplete && !_bgDelegate.isActive) {
