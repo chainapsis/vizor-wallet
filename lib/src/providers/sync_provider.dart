@@ -145,8 +145,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _pollTimer?.cancel();
     });
 
-    // Auto-start sync when an account exists
-    final accountState = ref.watch(accountProvider).value;
+    // Auto-start sync when accounts become available (without triggering rebuild)
+    ref.listen(accountProvider, (prev, next) {
+      final hadAccounts = prev?.value?.hasAccounts ?? false;
+      final hasAccounts = next.value?.hasAccounts ?? false;
+      if (!hadAccounts && hasAccounts) {
+        _autoSync();
+      }
+    });
+
+    // Initial check: if accounts already exist at build time
+    final accountState = ref.read(accountProvider).value;
     if (accountState != null && accountState.hasAccounts) {
       Future.microtask(() => _autoSync());
     }
