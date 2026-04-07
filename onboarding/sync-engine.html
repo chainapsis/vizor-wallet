@@ -114,7 +114,7 @@ impl BlockSource for MemoryBlockSource {
 <p>elapsed 시간 기준(<code>SYNC_START</code>)은 <code>run_sync_inner</code>에서 한 번만 설정되어 retry 간에도 일관된 로그를 출력한다.</p>
 
 <h3 id="sync-auto">5.7 자동 Sync (Dart)</h3>
-<p><code>SyncProvider</code>는 <code>accountProvider</code>를 watch하여 계정이 존재하면 자동으로 sync를 시작한다. Sync 완료 후에는 10초마다 <code>getLatestBlockHeight()</code>를 polling하여 새 블록이 감지되면 재sync한다.</p>
+<p><code>SyncProvider</code>는 <code>accountProvider</code>를 <code>ref.listen</code>으로 감시하여 계정이 처음 생성되면 자동으로 sync를 시작한다 (<code>ref.watch</code>가 아니므로 계정 전환/rename 시 rebuild되지 않는다). Sync 완료 후에는 10초마다 <code>getLatestBlockHeight()</code>를 polling하여 새 블록이 감지되면 재sync한다.</p>
 
 <ul>
   <li><strong>중복 방지:</strong> <code>_isSyncing</code> (Dart) + <code>isSyncRunning()</code> (Rust AtomicBool) 이중 가드</li>

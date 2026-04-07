@@ -44,7 +44,7 @@
 <p><strong><code>syncProvider</code></strong> (<code>AsyncNotifierProvider&lt;SyncNotifier, SyncState&gt;</code>)</p>
 <p><strong>자동 Sync:</strong></p>
 <ul>
-  <li><code>build()</code>에서 <code>ref.watch(accountProvider)</code> — 계정이 존재하면 <code>_autoSync()</code> 자동 실행</li>
+  <li><code>build()</code>에서 <code>ref.listen(accountProvider)</code>로 계정 생성 감지 + <code>ref.read</code>로 초기 체크 — rebuild 없이 <code>_autoSync()</code> 실행</li>
   <li><code>_autoSync()</code>: <code>startSync()</code> 실행 (try-catch로 에러 시 UI에 표시) → 항상 polling 시작</li>
   <li><code>_checkAndSync()</code>: 10초마다 <code>getLatestBlockHeight()</code> polling → 새 블록 감지 시 재sync</li>
   <li>중복 방지: <code>_isSyncing</code> (Dart) + <code>isSyncRunning()</code> (Rust) 이중 가드</li>
