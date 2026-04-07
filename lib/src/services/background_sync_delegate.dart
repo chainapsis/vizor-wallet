@@ -43,7 +43,8 @@ abstract class BackgroundSyncDelegate {
   void disposeListeners();
 
   Future<void> enable();
-  Future<void> disable();
+  /// Returns true if foreground sync needs to be restarted after disabling.
+  Future<bool> disable();
   Future<bool> isAvailable();
 
   void onSyncDone();
@@ -97,10 +98,11 @@ class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
   }
 
   @override
-  Future<void> disable() async {
+  Future<bool> disable() async {
     _active = false;
     await bg_sync.stopBackgroundSync();
     log('BackgroundSyncDelegate(Android): disabled');
+    return false; // sync never stopped, no restart needed
   }
 
   @override
@@ -178,7 +180,7 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
   }
 
   @override
-  Future<void> disable() async {
+  Future<bool> disable() async {
     rust_sync.setSyncMode(mode: 1);
     await bg_sync.stopBackgroundSync();
     var waited = 0;
@@ -191,6 +193,7 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
     }
     _active = false;
     log('BackgroundSyncDelegate(iOS): disabled');
+    return true; // bg sync stopped, foreground restart needed
   }
 
   @override
@@ -240,7 +243,7 @@ class NoOpBackgroundSyncDelegate implements BackgroundSyncDelegate {
   Future<void> enable() async {}
 
   @override
-  Future<void> disable() async {}
+  Future<bool> disable() async => false;
 
   @override
   Future<bool> isAvailable() async => false;

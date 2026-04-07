@@ -224,9 +224,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<void> disableBackgroundSync() async {
     if (!_bgDelegate.isActive) return;
-    await _bgDelegate.disable();
-    log('SyncNotifier: background sync disabled, restarting foreground sync');
-    await startSync();
+    final needsResync = await _bgDelegate.disable();
+    log('SyncNotifier: background sync disabled');
+    if (needsResync) {
+      await startSync();
+    }
   }
 
   static Future<bool> isBackgroundSyncAvailable() async {
