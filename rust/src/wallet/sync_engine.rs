@@ -259,12 +259,13 @@ async fn run_sync_impl(
             .filter(|r| r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned)
             .map(|r| u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start)) as u64)
             .sum();
-        // If remaining increased (e.g. new account added mid-sync), expand initial_total
-        // so progress never goes backward.
-        if remaining > prev_remaining {
-            let added = remaining - prev_remaining;
-            initial_total += added;
-            log::info!("[{}] sync: new scan ranges detected (+{}), adjusted total to {}", elapsed(), added, initial_total);
+        // Adjust initial_total if new ranges appeared (e.g. new account added mid-sync).
+        // Use scanned + remaining as the true total, so progress never goes backward.
+        let scanned_so_far = initial_total.saturating_sub(prev_remaining);
+        let new_total = scanned_so_far + remaining;
+        if new_total > initial_total {
+            log::info!("[{}] sync: new scan ranges detected, adjusted total {} -> {}", elapsed(), initial_total, new_total);
+            initial_total = new_total;
         }
         prev_remaining = remaining;
         let pct = if initial_total > 0 { 1.0 - (remaining as f64 / initial_total as f64) } else { 1.0 };
