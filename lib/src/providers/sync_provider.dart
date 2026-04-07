@@ -290,6 +290,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _syncSub = null;
     _bgDelegate.onSyncDone();
     _refreshBalance();
+    _startPolling();
   }
 
   Future<void> _onSyncProgress(SyncProgressEvent event) async {
