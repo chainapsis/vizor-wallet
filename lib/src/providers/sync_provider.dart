@@ -75,6 +75,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   late final BackgroundSyncDelegate _bgDelegate;
   bool _isSyncing = false;
   bool _isInForeground = true;
+  bool _userStopped = false;
   int _lastLoggedHeight = 0;
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
@@ -99,6 +100,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
         _isInForeground = true;
+        _userStopped = false; // reset on app resume
         _refreshBalance();
         _bgDelegate.onResume();
         _checkAndSync(); // _checkAndSync calls _startPolling() on completion
@@ -206,7 +208,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _syncSub?.cancel();
     _syncSub = null;
     _isSyncing = false;
-    _stopPolling(); // user-initiated stop should also stop auto-retry polling
+    _userStopped = true;
+    _stopPolling();
     if (_syncCompleter != null && !_syncCompleter!.isCompleted) {
       _syncCompleter!.complete();
     }
@@ -267,7 +270,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void _startPolling() {
     _pollTimer?.cancel();
-    if (!_isInForeground || _bgDelegate.shouldSuppressPolling) return;
+    if (!_isInForeground || _bgDelegate.shouldSuppressPolling || _userStopped) return;
     _pollTimer = Timer.periodic(
       const Duration(seconds: 10),
       (_) async {
