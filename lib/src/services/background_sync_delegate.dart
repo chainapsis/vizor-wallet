@@ -138,16 +138,20 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
   }) {
     _eventChannelSub = _progressChannel.receiveBroadcastStream().listen(
       (event) {
-        final map = event as Map;
-        onBackgroundProgress(SyncProgressEvent(
-          scannedHeight: (map['scannedHeight'] as num).toInt(),
-          chainTipHeight: (map['chainTipHeight'] as num).toInt(),
-          percentage: (map['percentage'] as num).toDouble(),
-          isSyncing: map['isSyncing'] as bool,
-          isComplete: map['isComplete'] as bool,
-          hasNewTx: map['hasNewTx'] as bool,
-          isBackground: true,
-        ));
+        try {
+          final map = event as Map;
+          onBackgroundProgress(SyncProgressEvent(
+            scannedHeight: (map['scannedHeight'] as num?)?.toInt() ?? 0,
+            chainTipHeight: (map['chainTipHeight'] as num?)?.toInt() ?? 0,
+            percentage: (map['percentage'] as num?)?.toDouble() ?? 0.0,
+            isSyncing: map['isSyncing'] as bool? ?? false,
+            isComplete: map['isComplete'] as bool? ?? false,
+            hasNewTx: map['hasNewTx'] as bool? ?? false,
+            isBackground: true,
+          ));
+        } catch (e) {
+          log('BackgroundSyncDelegate(iOS): failed to parse progress event: $e');
+        }
       },
       onError: (e) {
         log('BackgroundSyncDelegate(iOS): EventChannel error: $e');
