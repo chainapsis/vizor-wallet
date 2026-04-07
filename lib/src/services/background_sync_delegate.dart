@@ -174,7 +174,6 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
 
   @override
   Future<void> disable() async {
-    _active = false;
     rust_sync.setSyncMode(mode: 1);
     await bg_sync.stopBackgroundSync();
     var waited = 0;
@@ -185,6 +184,7 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
     if (rust_sync.isSyncRunning()) {
       log('BackgroundSyncDelegate(iOS): WARNING: timed out waiting for bg sync to stop');
     }
+    _active = false;
     log('BackgroundSyncDelegate(iOS): disabled');
   }
 
