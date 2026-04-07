@@ -35,6 +35,11 @@ class SyncProgressEvent {
 abstract class BackgroundSyncDelegate {
   bool get isActive;
 
+  /// Whether auto-sync polling should be suppressed while background mode is active.
+  /// iOS: true (BGTask manages sync, polling would interfere).
+  /// Android: false (background mode is just a notification, polling still needed).
+  bool get shouldSuppressPolling;
+
   void setupListeners({
     required void Function() onStopRequested,
     required void Function(SyncProgressEvent) onBackgroundProgress,
@@ -66,6 +71,9 @@ class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
 
   @override
   bool get isActive => _active;
+
+  @override
+  bool get shouldSuppressPolling => false; // notification only, polling still needed
 
   @override
   void setupListeners({
@@ -137,6 +145,9 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
 
   @override
   bool get isActive => _active;
+
+  @override
+  bool get shouldSuppressPolling => _active; // BGTask manages sync
 
   @override
   void setupListeners({
@@ -229,6 +240,9 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
 class NoOpBackgroundSyncDelegate implements BackgroundSyncDelegate {
   @override
   bool get isActive => false;
+
+  @override
+  bool get shouldSuppressPolling => false;
 
   @override
   void setupListeners({

@@ -116,12 +116,24 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _pollTimer?.cancel();
     });
 
-    // Auto-start sync when accounts become available (without triggering rebuild)
+    // Auto-start sync on account changes.
+    // Uses ref.listen (not ref.watch) to avoid rebuilding SyncNotifier on every
+    // account state change (switch, rename), which would cancel active sync and
+    // reset UI state.
+    //
+    // Two cases:
+    // 1. First account created (0→1): _autoSync starts sync + polling.
+    // 2. Additional account added (N→N+1): startSync rescans from the new
+    //    account's birthday height. Without this, the new account would show
+    //    empty until a new block triggers polling, since _checkAndSync only
+    //    compares chain tip (not account-level scan progress).
     ref.listen(accountProvider, (prev, next) {
-      final hadAccounts = prev?.value?.hasAccounts ?? false;
-      final hasAccounts = next.value?.hasAccounts ?? false;
-      if (!hadAccounts && hasAccounts) {
+      final prevCount = prev?.value?.accounts.length ?? 0;
+      final nextCount = next.value?.accounts.length ?? 0;
+      if (prevCount == 0 && nextCount > 0) {
         _autoSync();
+      } else if (nextCount > prevCount) {
+        startSync();
       }
     });
 
@@ -254,7 +266,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void _startPolling() {
     _pollTimer?.cancel();
-    if (!_isInForeground || _bgDelegate.isActive) return;
+    if (!_isInForeground || _bgDelegate.shouldSuppressPolling) return;
     _pollTimer = Timer.periodic(
       const Duration(seconds: 10),
       (_) async {
@@ -273,7 +285,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> _checkAndSync() async {
-    if (_isSyncing || _bgDelegate.isActive || !_isInForeground) return;
+    if (_isSyncing || _bgDelegate.shouldSuppressPolling || !_isInForeground) return;
     _stopPolling();
     try {
       final tip = await rust_wallet.getLatestBlockHeight(
