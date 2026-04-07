@@ -183,13 +183,14 @@ async fn run_sync_impl(
     download_subtree_roots(&mut client, &mut db).await?;
 
     // 4. Calculate initial scan target (before any scanning)
-    let initial_total: u64 = {
+    let mut initial_total: u64 = {
         let ranges = db.suggest_scan_ranges().map_err(|e| err(&format!("suggest_scan_ranges: {e}")))?;
         ranges.iter()
             .filter(|r| r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned)
             .map(|r| u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start)) as u64)
             .sum()
     };
+    let mut prev_remaining = initial_total;
     log::info!("[{}] sync: {} blocks to scan", elapsed(), initial_total);
 
     // 5. Sync loop
@@ -258,6 +259,14 @@ async fn run_sync_impl(
             .filter(|r| r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned)
             .map(|r| u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start)) as u64)
             .sum();
+        // If remaining increased (e.g. new account added mid-sync), expand initial_total
+        // so progress never goes backward.
+        if remaining > prev_remaining {
+            let added = remaining - prev_remaining;
+            initial_total += added;
+            log::info!("[{}] sync: new scan ranges detected (+{}), adjusted total to {}", elapsed(), added, initial_total);
+        }
+        prev_remaining = remaining;
         let pct = if initial_total > 0 { 1.0 - (remaining as f64 / initial_total as f64) } else { 1.0 };
         let progress = SyncProgressEvent {
             scanned_height: u32::from(end) as u64,
