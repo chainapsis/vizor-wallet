@@ -76,6 +76,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _isSyncing = false;
   bool _isInForeground = true;
   int _lastLoggedHeight = 0;
+  int _syncGen = 0; // incremented by stopSync to invalidate pending startSync
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
   AppLifecycleListener? _lifecycleListener;
@@ -155,9 +156,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     _isSyncing = true;
     _lastLoggedHeight = 0;
+    final gen = ++_syncGen;
     state = AsyncData(SyncState(isSyncing: true));
 
     _getDbPath().then((dbPath) {
+      if (gen != _syncGen) return; // stopSync was called, abort
       final network = ZcashNetwork.mainnet;
       log('Sync: starting foreground sync');
       final stream = rust_sync.startFullSync(
@@ -176,18 +179,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           hasNewTx: event.hasNewTx,
         )),
         onDone: () {
+          if (gen != _syncGen) return; // stopSync was called
           log('Sync: stream ended');
           _isSyncing = false;
           _onSyncDone();
         },
         onError: (e) {
+          if (gen != _syncGen) return;
           log('Sync: stream error: $e');
           _isSyncing = false;
           state = AsyncData(SyncState(error: e.toString()));
-          _startPolling(); // keep polling so auto-retry works
+          _startPolling();
         },
       );
     }).catchError((e, st) {
+      if (gen != _syncGen) return;
       log('SyncNotifier: ERROR: $e\n$st');
       _isSyncing = false;
       state = AsyncData(SyncState(error: e.toString()));
@@ -196,6 +202,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   void stopSync() {
+    ++_syncGen; // invalidate pending startSync callbacks
     rust_sync.cancelFullSync();
     _syncSub?.cancel();
     _syncSub = null;
