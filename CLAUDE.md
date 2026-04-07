@@ -61,7 +61,7 @@ WalletProvider (wallet_provider.dart)
   └── Propagates errors (does NOT mask as empty state)
 
 SyncProvider (sync_provider.dart)
-  ├── Watches AccountProvider — auto-starts sync when account exists
+  ├── Listens to AccountProvider (ref.listen, not watch) — auto-starts sync on first account creation
   ├── Polls getLatestBlockHeight every 10s after sync completes
   ├── Re-syncs automatically when new blocks detected
   ├── Duplicate sync guard: _isSyncing (Dart) + isSyncRunning() (Rust)
