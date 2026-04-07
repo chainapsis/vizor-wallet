@@ -96,8 +96,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         _isInForeground = true;
         _refreshBalance();
         _bgDelegate.onResume();
-        _checkAndSync();
-        _startPolling();
+        _checkAndSync(); // _checkAndSync calls _startPolling() on completion
       },
       onHide: () {
         _isInForeground = false;
