@@ -1,20 +1,16 @@
 import 'dart:async';
-import 'dart:io';
 
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'dart:io' show Platform;
 
 import '../../main.dart' show log;
 import '../core/config/network_config.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/wallet.dart' as rust_wallet;
+import '../services/background_sync_delegate.dart';
 import 'account_provider.dart';
-import '../services/background_sync_service.dart' as bg_sync;
-
-const _progressChannel = EventChannel('com.zcash.wallet/sync_progress');
 
 class SyncState {
   final bool isSyncing;
@@ -76,59 +72,30 @@ class SyncState {
 }
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
-  bool _backgroundMode = false;
+  late final BackgroundSyncDelegate _bgDelegate;
   bool _isSyncing = false;
   bool _isInForeground = true;
   int _lastLoggedHeight = 0;
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
-  StreamSubscription? _eventChannelSub;
   AppLifecycleListener? _lifecycleListener;
   Timer? _pollTimer;
 
   @override
   Future<SyncState> build() async {
-    // Listen for iOS background sync progress via EventChannel
-    if (Platform.isIOS) {
-      _eventChannelSub = _progressChannel.receiveBroadcastStream().listen(
-        (event) {
-          final map = event as Map;
-          _onSyncProgress(
-            scannedHeight: (map['scannedHeight'] as num).toInt(),
-            chainTipHeight: (map['chainTipHeight'] as num).toInt(),
-            percentage: (map['percentage'] as num).toDouble(),
-            isBackground: true,
-            isSyncing: map['isSyncing'] as bool,
-            isComplete: map['isComplete'] as bool,
-            hasNewTx: map['hasNewTx'] as bool,
-          );
-        },
-        onError: (e) { log('SyncNotifier: EventChannel error: $e'); },
-      );
-    }
-
-    // Listen for Android foreground service stop signal
-    FlutterForegroundTask.receivePort?.listen((message) {
-      if (message == 'stop_sync') {
-        log('SyncNotifier: received stop_sync from notification');
-        stopSync();
-      }
-    });
+    // Platform-specific background sync delegate
+    _bgDelegate = BackgroundSyncDelegate.create();
+    _bgDelegate.setupListeners(
+      onStopRequested: () => stopSync(),
+      onBackgroundProgress: (event) => _onSyncProgress(event),
+    );
 
     // App lifecycle management
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
         _isInForeground = true;
         _refreshBalance();
-        if (_backgroundMode) {
-          if (!rust_sync.isSyncRunning()) {
-            log('SyncNotifier: background sync finished while backgrounded');
-            _backgroundMode = false;
-          } else if (rust_sync.getSyncMode() == 0) {
-            log('SyncNotifier: background sync expired');
-            _backgroundMode = false;
-          }
-        }
+        _bgDelegate.onResume();
         _checkAndSync();
         _startPolling();
       },
@@ -140,7 +107,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     ref.onDispose(() {
       _syncSub?.cancel();
-      _eventChannelSub?.cancel();
+      _bgDelegate.disposeListeners();
       _lifecycleListener?.dispose();
       _pollTimer?.cancel();
     });
@@ -171,7 +138,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
     _isSyncing = true;
-    _backgroundMode = false;
     _lastLoggedHeight = 0;
     state = AsyncData(SyncState(isSyncing: true));
 
@@ -189,15 +155,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
       final completer = Completer<void>();
       _syncSub = stream.listen(
-        (event) => _onSyncProgress(
+        (event) => _onSyncProgress(SyncProgressEvent(
           scannedHeight: event.scannedHeight.toInt(),
           chainTipHeight: event.chainTipHeight.toInt(),
           percentage: event.percentage,
-          isBackground: false,
           isSyncing: event.isSyncing,
           isComplete: event.isComplete,
           hasNewTx: event.hasNewTx,
-        ),
+        )),
         onDone: () {
           log('Sync: stream ended');
           _isSyncing = false;
@@ -225,12 +190,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _syncSub?.cancel();
     _syncSub = null;
     _isSyncing = false;
-    if (_backgroundMode) {
-      bg_sync.stopBackgroundSync();
-      _backgroundMode = false;
+    if (_bgDelegate.isActive) {
+      _bgDelegate.disable();
     }
-    // Stream is cancelled — no more events will arrive.
-    // Update UI immediately to reflect stopped state.
     final prev = state.value;
     state = AsyncData(SyncState(
       isSyncing: false,
@@ -247,49 +209,20 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> enableBackgroundSync() async {
-    if (_backgroundMode) return;
-    _backgroundMode = true;
-
-    if (Platform.isAndroid) {
-      // Android: just add notification, sync continues via same FRB stream
-      await bg_sync.startBackgroundSync();
-    } else if (Platform.isIOS) {
-      // iOS: switch mode → Rust foreground sync exits → BGTask takes over
-      rust_sync.setSyncMode(mode: 2);
-      await bg_sync.startBackgroundSync();
-    }
-
+    if (_bgDelegate.isActive) return;
+    await _bgDelegate.enable();
     log('SyncNotifier: background sync enabled');
   }
 
   Future<void> disableBackgroundSync() async {
-    if (!_backgroundMode) return;
-    _backgroundMode = false;
-
-    if (Platform.isAndroid) {
-      // Android: just remove notification, sync continues
-      await bg_sync.stopBackgroundSync();
-    } else if (Platform.isIOS) {
-      // iOS: switch mode → Rust background sync exits at next batch
-      rust_sync.setSyncMode(mode: 1);
-      await bg_sync.stopBackgroundSync();
-      // Wait for background sync to stop (max 120 seconds)
-      var waited = 0;
-      while (rust_sync.isSyncRunning() && waited < 120000) {
-        await Future.delayed(const Duration(milliseconds: 200));
-        waited += 200;
-      }
-      if (rust_sync.isSyncRunning()) {
-        log('SyncNotifier: WARNING: timed out waiting for bg sync to stop');
-      }
-      startSync();
-    }
-
+    if (!_bgDelegate.isActive) return;
+    await _bgDelegate.disable();
+    startSync();
     log('SyncNotifier: background sync disabled');
   }
 
   static Future<bool> isBackgroundSyncAvailable() async {
-    return bg_sync.isBackgroundSyncAvailable();
+    return BackgroundSyncDelegate.create().isAvailable();
   }
 
   // ======================== Auto-Sync & Polling ========================
@@ -306,7 +239,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void _startPolling() {
     _pollTimer?.cancel();
-    if (!_isInForeground || _backgroundMode) return;
+    if (!_isInForeground || _bgDelegate.isActive) return;
     _pollTimer = Timer.periodic(
       const Duration(seconds: 10),
       (_) async {
@@ -325,7 +258,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> _checkAndSync() async {
-    if (_isSyncing || _backgroundMode || !_isInForeground) return;
+    if (_isSyncing || _bgDelegate.isActive || !_isInForeground) return;
     _stopPolling();
     try {
       final tip = await rust_wallet.getLatestBlockHeight(
@@ -347,27 +280,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void _onSyncDone() {
     _syncSub = null;
-    // Android background sync uses the same FRB stream (isBackground is always false),
-    // so the EventChannel-based completion check doesn't apply. Reset here instead.
-    if (_backgroundMode && Platform.isAndroid) {
-      log('SyncNotifier: Android background sync completed, switching to foreground mode');
-      _backgroundMode = false;
-    }
+    _bgDelegate.onSyncDone();
     _refreshBalance();
   }
 
-  Future<void> _onSyncProgress({
-    required int scannedHeight,
-    required int chainTipHeight,
-    required double percentage,
-    required bool isBackground,
-    required bool isSyncing,
-    required bool isComplete,
-    required bool hasNewTx,
-  }) async {
-    if (scannedHeight != _lastLoggedHeight) {
-      log('Sync: ${(percentage * 100).toStringAsFixed(1)}% ($scannedHeight/$chainTipHeight)');
-      _lastLoggedHeight = scannedHeight;
+  Future<void> _onSyncProgress(SyncProgressEvent event) async {
+    if (event.scannedHeight != _lastLoggedHeight) {
+      log('Sync: ${(event.percentage * 100).toStringAsFixed(1)}% (${event.scannedHeight}/${event.chainTipHeight})');
+      _lastLoggedHeight = event.scannedHeight;
     }
 
     final prev = state.value;
@@ -388,7 +308,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
 
     var recentTxs = prev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
-    if (hasNewTx || isComplete) {
+    if (event.hasNewTx || event.isComplete) {
       try {
         recentTxs = await rust_sync.getTransactionHistory(dbPath: dbPath, network: network, limit: 10, accountUuid: accountUuid);
       } catch (e) {
@@ -397,11 +317,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
 
     state = AsyncData(SyncState(
-      isSyncing: isSyncing && !isComplete,
-      isBackgroundMode: isBackground || _backgroundMode,
-      percentage: percentage,
-      scannedHeight: scannedHeight,
-      chainTipHeight: chainTipHeight,
+      isSyncing: event.isSyncing && !event.isComplete,
+      isBackgroundMode: event.isBackground || _bgDelegate.isActive,
+      percentage: event.percentage,
+      scannedHeight: event.scannedHeight,
+      chainTipHeight: event.chainTipHeight,
       transparentBalance: transparent ?? prev?.transparentBalance,
       saplingBalance: sapling ?? prev?.saplingBalance,
       orchardBalance: orchard ?? prev?.orchardBalance,
@@ -409,20 +329,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       recentTransactions: recentTxs,
     ));
 
-    // Background sync completed → switch back to foreground mode
-    if (isBackground && isComplete && _backgroundMode) {
-      log('SyncNotifier: background sync completed, switching to foreground mode');
-      _backgroundMode = false;
-      _startPolling();
-    }
+    _bgDelegate.onProgress(event);
 
-    // Update Android notification
-    if (_backgroundMode && Platform.isAndroid) {
-      bg_sync.updateBackgroundSyncProgress(
-        percentage: percentage,
-        scannedHeight: scannedHeight,
-        chainTipHeight: chainTipHeight,
-      );
+    // If background sync completed, start polling for next sync cycle
+    if (event.isBackground && event.isComplete && !_bgDelegate.isActive) {
+      _startPolling();
     }
   }
 
@@ -458,7 +369,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     state = AsyncData(SyncState(
       isSyncing: prev?.isSyncing ?? false,
-      isBackgroundMode: _backgroundMode,
+      isBackgroundMode: _bgDelegate.isActive,
       percentage: prev?.percentage ?? 0.0,
       scannedHeight: prev?.scannedHeight ?? 0,
       chainTipHeight: prev?.chainTipHeight ?? 0,
