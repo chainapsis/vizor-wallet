@@ -347,6 +347,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void _onSyncDone() {
     _syncSub = null;
+    // Android background sync uses the same FRB stream (isBackground is always false),
+    // so the EventChannel-based completion check doesn't apply. Reset here instead.
+    if (_backgroundMode && Platform.isAndroid) {
+      log('SyncNotifier: Android background sync completed, switching to foreground mode');
+      _backgroundMode = false;
+    }
     _refreshBalance();
   }
 
