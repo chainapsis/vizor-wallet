@@ -286,7 +286,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // ======================== Auto-Sync & Polling ========================
 
   Future<void> _autoSync() async {
-    await startSync();
+    try {
+      await startSync();
+    } catch (e, st) {
+      log('SyncNotifier: autoSync failed: $e\n$st');
+      state = AsyncData(SyncState(error: 'Auto-sync failed: $e'));
+    }
     _startPolling();
   }
 
@@ -295,7 +300,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (!_isInForeground || _backgroundMode) return;
     _pollTimer = Timer.periodic(
       const Duration(seconds: 10),
-      (_) => _checkAndSync(),
+      (_) async {
+        try {
+          await _checkAndSync();
+        } catch (e) {
+          log('AutoSync: polling error: $e');
+        }
+      },
     );
   }
 
@@ -306,6 +317,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<void> _checkAndSync() async {
     if (_isSyncing || _backgroundMode || !_isInForeground) return;
+    _stopPolling();
     try {
       final tip = await rust_wallet.getLatestBlockHeight(
         lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
@@ -318,6 +330,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     } catch (e) {
       log('AutoSync: tip check failed: $e');
     }
+    _startPolling();
   }
 
   // ======================== Progress Handling ========================

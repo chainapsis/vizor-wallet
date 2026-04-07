@@ -112,6 +112,7 @@ pub async fn run_sync_inner(
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
     let mut last_err = String::new();
+    *SYNC_START.lock().unwrap() = Some(std::time::Instant::now());
 
     for attempt in 0..=MAX_RETRIES {
         if attempt > 0 {
@@ -119,7 +120,7 @@ pub async fn run_sync_inner(
             log::warn!("[{}] sync: retry {}/{} in {}s (error: {})", elapsed(), attempt, MAX_RETRIES, delay_secs, last_err);
             tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
             if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
-                log::info!("[{}] sync: cancelled/mode changed during retry wait", elapsed());
+                log::warn!("[{}] sync: cancelled/mode changed during retry wait (pending error: {})", elapsed(), last_err);
                 return Ok(());
             }
         }
@@ -149,7 +150,6 @@ async fn run_sync_impl(
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), String> {
     let batch_size = if running_mode == 2 { BATCH_SIZE_BACKGROUND } else { BATCH_SIZE_FOREGROUND };
-    *SYNC_START.lock().unwrap() = Some(std::time::Instant::now());
     log::info!("[{}] sync: starting (mode={}, batch={})", elapsed(), running_mode, batch_size);
 
     // 1. Connect gRPC
