@@ -78,6 +78,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   int _lastLoggedHeight = 0;
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
+  Completer<void>? _syncCompleter;
   AppLifecycleListener? _lifecycleListener;
   Timer? _pollTimer;
 
@@ -156,7 +157,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         mode: 1, // foreground
       );
 
-      final completer = Completer<void>();
+      _syncCompleter = Completer<void>();
       _syncSub = stream.listen(
         (event) => _onSyncProgress(SyncProgressEvent(
           scannedHeight: event.scannedHeight.toInt(),
@@ -170,17 +171,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           log('Sync: stream ended');
           _isSyncing = false;
           _onSyncDone();
-          if (!completer.isCompleted) completer.complete();
+          if (_syncCompleter != null && !_syncCompleter!.isCompleted) _syncCompleter!.complete();
         },
         onError: (e) {
           log('Sync: stream error: $e');
           _isSyncing = false;
           state = AsyncData(SyncState(error: e.toString()));
-          if (!completer.isCompleted) completer.completeError(e);
+          if (_syncCompleter != null && !_syncCompleter!.isCompleted) _syncCompleter!.completeError(e);
         },
       );
 
-      await completer.future;
+      await _syncCompleter!.future;
     } catch (e, st) {
       log('SyncNotifier: ERROR: $e\n$st');
       _isSyncing = false;
@@ -193,6 +194,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _syncSub?.cancel();
     _syncSub = null;
     _isSyncing = false;
+    if (_syncCompleter != null && !_syncCompleter!.isCompleted) {
+      _syncCompleter!.complete();
+    }
+    _syncCompleter = null;
     if (_bgDelegate.isActive) {
       await _bgDelegate.disable();
     }
