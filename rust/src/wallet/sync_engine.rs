@@ -118,10 +118,12 @@ pub async fn run_sync_inner(
         if attempt > 0 {
             let delay_secs = 1u64 << attempt; // 2, 4, 8
             log::warn!("[{}] sync: retry {}/{} in {}s (error: {})", elapsed(), attempt, MAX_RETRIES, delay_secs, last_err);
-            tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
-            if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
-                log::warn!("[{}] sync: cancelled/mode changed during retry wait (pending error: {})", elapsed(), last_err);
-                return Ok(());
+            for _ in 0..delay_secs {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+                    log::warn!("[{}] sync: cancelled/mode changed during retry wait (pending error: {})", elapsed(), last_err);
+                    return Ok(());
+                }
             }
         }
 
