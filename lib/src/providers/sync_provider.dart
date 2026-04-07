@@ -286,7 +286,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> _checkAndSync() async {
-    if (_isSyncing || _bgDelegate.shouldSuppressPolling || !_isInForeground) return;
+    final hasAccounts = ref.read(accountProvider).value?.hasAccounts ?? false;
+    if (_isSyncing || _bgDelegate.shouldSuppressPolling || !_isInForeground || !hasAccounts) return;
     _stopPolling();
     try {
       final tip = await rust_wallet.getLatestBlockHeight(
