@@ -206,6 +206,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _syncSub?.cancel();
     _syncSub = null;
     _isSyncing = false;
+    _stopPolling(); // user-initiated stop should also stop auto-retry polling
     if (_syncCompleter != null && !_syncCompleter!.isCompleted) {
       _syncCompleter!.complete();
     }
