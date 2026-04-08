@@ -15,9 +15,8 @@ else
   echo "No app container found"
 fi
 
-# Remove keychain items (flutter_secure_storage)
-security delete-generic-password -s "flutter_secure_storage_service" 2>/dev/null && \
-  echo "Removed keychain items" || \
-  echo "No keychain items found"
+# flutter_secure_storage uses data protection keychain (usesDataProtectionKeychain: true),
+# which is stored inside the app container's Data/Library. Removing that directory above
+# also clears all keychain items. No separate `security delete-generic-password` needed.
 
-echo "macOS app cleared (container + keychain)"
+echo "macOS app cleared (DB + keychain + preferences)"
