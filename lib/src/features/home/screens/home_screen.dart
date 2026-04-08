@@ -1,3 +1,4 @@
+import 'dart:io' show Platform, exit;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,7 +50,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     // 2. Delete DB + keychain + reset state
     await ref.read(accountProvider.notifier).resetWallet();
-    // 3. Router will redirect to onboarding (hasWallet=false)
+    // 3. Exit app — next launch starts fresh
+    exit(0);
   }
 
   Future<void> _checkBackgroundSyncAvailability() async {
@@ -149,7 +151,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           Row(
             children: [
-              if (kDebugMode)
+              if (kDebugMode && Platform.isMacOS)
                 IconButton(
                   icon: Icon(Icons.delete_forever, color: colors.error),
                   onPressed: () => _resetWallet(context),
