@@ -37,7 +37,7 @@ pub struct SyncProgressEvent {
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-const BATCH_SIZE_FOREGROUND: u32 = 3000;
+const BATCH_SIZE_FOREGROUND: u32 = 300;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const BATCH_SIZE_FOREGROUND: u32 = 100;
 const BATCH_SIZE_BACKGROUND: u32 = 100;
