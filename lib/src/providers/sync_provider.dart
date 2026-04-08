@@ -179,10 +179,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           hasNewTx: event.hasNewTx,
         )),
         onDone: () {
-          if (gen != _syncGen) return; // stopSync was called
           log('Sync: stream ended');
-          _isSyncing = false;
-          _onSyncDone();
+          _syncSub = null;
+          // Sync completion is handled in _onSyncProgress when isComplete=true.
+          // onDone fires synchronously after the final event, but _onSyncProgress
+          // is async (awaiting getBalance). If we call _onSyncDone here, it races
+          // with the final _onSyncProgress and reads stale state.
         },
         onError: (e) {
           if (gen != _syncGen) return;
@@ -294,13 +296,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   // ======================== Progress Handling ========================
 
-  void _onSyncDone() {
-    _syncSub = null;
-    _bgDelegate.onSyncDone();
-    _refreshBalance();
-    _startPolling();
-  }
-
   Future<void> _onSyncProgress(SyncProgressEvent event) async {
     if (event.scannedHeight != _lastLoggedHeight) {
       log('Sync: ${(event.percentage * 100).toStringAsFixed(1)}% (${event.scannedHeight}/${event.chainTipHeight})');
@@ -349,8 +344,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       recentTransactions: recentTxs,
     ));
 
-    // If background sync completed, start polling for next sync cycle
-    if (event.isBackground && event.isComplete && !_bgDelegate.isActive) {
+    // Handle sync completion here (not in onDone) to avoid race with async state update.
+    if (event.isComplete) {
+      _isSyncing = false;
+      _bgDelegate.onSyncDone();
       _startPolling();
     }
   }
