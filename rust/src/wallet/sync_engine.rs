@@ -36,6 +36,9 @@ pub struct SyncProgressEvent {
     pub has_new_tx: bool,
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+const BATCH_SIZE_FOREGROUND: u32 = 3000;
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const BATCH_SIZE_FOREGROUND: u32 = 100;
 const BATCH_SIZE_BACKGROUND: u32 = 100;
 const SAPLING_ACTIVATION_HEIGHT: u32 = 419200;
