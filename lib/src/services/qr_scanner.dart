@@ -6,19 +6,21 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../main.dart' show log;
 import '../rust/api/keystone.dart' as rust_keystone;
 
-/// Cycles through camera facings: back → front → external → back.
-const _cameraFacings = [CameraFacing.back, CameraFacing.front, CameraFacing.external];
+/// Default camera facing per platform.
+/// Mobile: back camera for QR scanning.
+/// Desktop: external webcam if available (handled by patched mobile_scanner).
+CameraFacing get _defaultFacing =>
+    (Platform.isMacOS || Platform.isWindows || Platform.isLinux)
+        ? CameraFacing.external
+        : CameraFacing.back;
 
 /// QR scanner abstraction. Uses mobile_scanner on macOS/iOS/Android.
-/// Windows/Linux implementations can be added later.
 class QrScanner {
   QrScanner._();
 
-  /// Whether QR scanning is available on this platform.
   static bool get isAvailable =>
       Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
 
-  /// Scan a single QR code. Returns the decoded string, or null if cancelled.
   static Future<String?> scan(BuildContext context) async {
     if (!isAvailable) {
       throw UnsupportedError('QR scanning not available on this platform');
@@ -29,9 +31,6 @@ class QrScanner {
     );
   }
 
-  /// Scan animated QR codes (multi-part UR from Keystone).
-  /// Accumulates UR parts until complete. Returns the full decoded data bytes,
-  /// or null if cancelled. [onProgress] reports 0-100.
   static Future<ScanResult?> scanAnimatedUr(
     BuildContext context, {
     void Function(int progress)? onProgress,
@@ -48,7 +47,6 @@ class QrScanner {
   }
 }
 
-/// Result from animated UR scan.
 class ScanResult {
   final String urType;
   final List<int> data;
@@ -65,21 +63,19 @@ class _SingleScanScreen extends StatefulWidget {
 }
 
 class _SingleScanScreenState extends State<_SingleScanScreen> {
-  final _controller = MobileScannerController();
+  late final MobileScannerController _controller;
   bool _scanned = false;
-  int _facingIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = MobileScannerController(facing: _defaultFacing);
+  }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  void _cycleCamera() {
-    _facingIndex = (_facingIndex + 1) % _cameraFacings.length;
-    _controller.switchCamera(
-      SelectCamera(facingDirection: _cameraFacings[_facingIndex]),
-    );
   }
 
   @override
@@ -91,13 +87,6 @@ class _SingleScanScreenState extends State<_SingleScanScreen> {
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.cameraswitch),
-            tooltip: 'Switch Camera',
-            onPressed: _cycleCamera,
-          ),
-        ],
       ),
       body: MobileScanner(
         controller: _controller,
@@ -126,11 +115,16 @@ class _AnimatedUrScanScreen extends StatefulWidget {
 }
 
 class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
-  final _controller = MobileScannerController();
+  late final MobileScannerController _controller;
   int _progress = 0;
   bool _complete = false;
-  int _facingIndex = 0;
   final Set<String> _seenParts = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = MobileScannerController(facing: _defaultFacing);
+  }
 
   @override
   void dispose() {
@@ -144,13 +138,11 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
     final value = barcode?.rawValue;
     if (value == null || value.isEmpty) return;
 
-    // Skip duplicate parts (case-insensitive since UR encoding varies)
     final normalized = value.toLowerCase();
     if (_seenParts.contains(normalized)) return;
     _seenParts.add(normalized);
 
     try {
-      log('QrScanner: scanned part (${value.length} chars): ${value.substring(0, value.length.clamp(0, 80))}...');
       final result = await rust_keystone.decodeUrPart(part_: value);
       setState(() { _progress = result.progress; });
       widget.onProgress?.call(result.progress);
@@ -165,7 +157,6 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
       }
     } catch (e) {
       log('QrScanner: UR part decode error: $e');
-      // Continue scanning — might be a non-UR QR or corrupted frame
     }
   }
 
@@ -180,18 +171,6 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.cameraswitch),
-            tooltip: 'Switch Camera',
-            onPressed: () {
-              _facingIndex = (_facingIndex + 1) % _cameraFacings.length;
-              _controller.switchCamera(
-                SelectCamera(facingDirection: _cameraFacings[_facingIndex]),
-              );
-            },
-          ),
-        ],
       ),
       body: Stack(
         children: [
@@ -199,7 +178,6 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
             controller: _controller,
             onDetect: _onDetect,
           ),
-          // Progress indicator at bottom
           Positioned(
             left: 0, right: 0, bottom: 0,
             child: Container(
