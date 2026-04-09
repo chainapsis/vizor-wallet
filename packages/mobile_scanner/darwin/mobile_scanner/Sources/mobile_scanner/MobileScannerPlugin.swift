@@ -405,6 +405,9 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
         }
 
         device.addObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode), options: .new, context: nil)
+#if os(macOS)
+        isTorchObserverRegistered = true
+#endif
 #if os(iOS)
         device.addObserver(self, forKeyPath: #keyPath(AVCaptureDevice.videoZoomFactor), options: [.new, .initial], context: nil)
 #endif
@@ -872,8 +875,13 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
         }
 
         if let device = device {
+#if os(macOS)
+            if isTorchObserverRegistered {
+                device.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode))
+                isTorchObserverRegistered = false
+            }
+#else
             device.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode))
-#if os(iOS)
             device.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.videoZoomFactor))
 #endif
             self.device = nil
@@ -892,22 +900,42 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
 
     // MARK: - macOS Camera Hot-Swap
 #if os(macOS)
+    /// Whether a KVO observer is currently registered on `device` for torchMode.
+    private var isTorchObserverRegistered = false
+
+    private static var externalDeviceType: AVCaptureDevice.DeviceType {
+        if #available(macOS 14.0, *) {
+            return .external
+        } else {
+            return .externalUnknown
+        }
+    }
+
     private func setupDeviceObservers() {
         deviceDisconnectedObserver = NotificationCenter.default.addObserver(
-            forName: .AVCaptureDeviceWasDisconnected, object: nil, queue: .main
+            forName: .AVCaptureDeviceWasDisconnected, object: nil, queue: nil
         ) { [weak self] notification in
-            guard let self = self, let disconnected = notification.object as? AVCaptureDevice else { return }
-            // Only act if the disconnected device is the one we're using
-            guard disconnected.uniqueID == self.device?.uniqueID else { return }
-            self.switchToNextAvailableCamera()
+            guard let self = self else { return }
+            // Capture device strongly before it goes nil (weak reference)
+            let currentDevice = self.device
+            guard let disconnected = notification.object as? AVCaptureDevice,
+                  disconnected.uniqueID == currentDevice?.uniqueID else { return }
+            DispatchQueue.global(qos: .userInitiated).async {
+                self.switchToNextAvailableCamera(oldDevice: currentDevice)
+            }
         }
         deviceConnectedObserver = NotificationCenter.default.addObserver(
-            forName: .AVCaptureDeviceWasConnected, object: nil, queue: .main
+            forName: .AVCaptureDeviceWasConnected, object: nil, queue: nil
         ) { [weak self] notification in
-            guard let self = self, let connected = notification.object as? AVCaptureDevice else { return }
+            guard let self = self else { return }
+            guard let connected = notification.object as? AVCaptureDevice else { return }
+            let currentDevice = self.device
             // If an external camera was connected and we're on built-in, switch to it
-            if connected.deviceType == .externalUnknown && self.device?.deviceType == .builtInWideAngleCamera {
-                self.switchToCamera(connected)
+            if connected.deviceType == MobileScannerPlugin.externalDeviceType
+                && currentDevice?.deviceType == .builtInWideAngleCamera {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    self.switchToCamera(connected, oldDevice: currentDevice)
+                }
             }
         }
     }
@@ -923,22 +951,27 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
         }
     }
 
-    private func switchToNextAvailableCamera() {
-        guard let session = captureSession else { return }
+    private func switchToNextAvailableCamera(oldDevice: AVCaptureDevice?) {
         let newDevice = MobileScannerCameraSelector.selectCamera(position: .unspecified, lensType: 0)
         guard let newDevice = newDevice else { return }
-        switchToCamera(newDevice)
+        switchToCamera(newDevice, oldDevice: oldDevice)
     }
 
-    private func switchToCamera(_ newDevice: AVCaptureDevice) {
+    private func switchToCamera(_ newDevice: AVCaptureDevice, oldDevice: AVCaptureDevice?) {
         guard let session = captureSession else { return }
         session.beginConfiguration()
-        // Remove old input
+
+        // Remove old inputs
         for input in session.inputs {
             session.removeInput(input)
         }
-        // Remove old observer
-        device?.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode))
+
+        // Remove old KVO observer safely
+        if let oldDevice = oldDevice, isTorchObserverRegistered {
+            oldDevice.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode))
+            isTorchObserverRegistered = false
+        }
+
         // Add new input
         do {
             let input = try AVCaptureDeviceInput(device: newDevice)
@@ -946,10 +979,14 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
                 session.addInput(input)
                 self.device = newDevice
                 newDevice.addObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode), options: .new, context: nil)
+                isTorchObserverRegistered = true
+            } else {
+                NSLog("MobileScanner: cannot add input for \(newDevice.localizedName)")
             }
         } catch {
-            // Failed to switch — keep going with whatever we have
+            NSLog("MobileScanner: failed to switch camera: \(error.localizedDescription)")
         }
+
         session.commitConfiguration()
     }
 #endif
