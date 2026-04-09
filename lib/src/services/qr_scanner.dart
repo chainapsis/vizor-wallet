@@ -6,6 +6,9 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../main.dart' show log;
 import '../rust/api/keystone.dart' as rust_keystone;
 
+/// Cycles through camera facings: back → front → external → back.
+const _cameraFacings = [CameraFacing.back, CameraFacing.front, CameraFacing.external];
+
 /// QR scanner abstraction. Uses mobile_scanner on macOS/iOS/Android.
 /// Windows/Linux implementations can be added later.
 class QrScanner {
@@ -64,11 +67,19 @@ class _SingleScanScreen extends StatefulWidget {
 class _SingleScanScreenState extends State<_SingleScanScreen> {
   final _controller = MobileScannerController();
   bool _scanned = false;
+  int _facingIndex = 0;
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  void _cycleCamera() {
+    _facingIndex = (_facingIndex + 1) % _cameraFacings.length;
+    _controller.switchCamera(
+      SelectCamera(facingDirection: _cameraFacings[_facingIndex]),
+    );
   }
 
   @override
@@ -84,7 +95,7 @@ class _SingleScanScreenState extends State<_SingleScanScreen> {
           IconButton(
             icon: const Icon(Icons.cameraswitch),
             tooltip: 'Switch Camera',
-            onPressed: () => _controller.switchCamera(),
+            onPressed: _cycleCamera,
           ),
         ],
       ),
@@ -118,6 +129,7 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
   final _controller = MobileScannerController();
   int _progress = 0;
   bool _complete = false;
+  int _facingIndex = 0;
   final Set<String> _seenParts = {};
 
   @override
@@ -172,7 +184,12 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
           IconButton(
             icon: const Icon(Icons.cameraswitch),
             tooltip: 'Switch Camera',
-            onPressed: () => _controller.switchCamera(),
+            onPressed: () {
+              _facingIndex = (_facingIndex + 1) % _cameraFacings.length;
+              _controller.switchCamera(
+                SelectCamera(facingDirection: _cameraFacings[_facingIndex]),
+              );
+            },
           ),
         ],
       ),
