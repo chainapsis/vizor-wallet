@@ -96,6 +96,15 @@ class AccountsScreen extends ConsumerWidget {
                 context.push('/import');
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.usb),
+              title: const Text('Connect Hardware Wallet'),
+              subtitle: const Text('Keystone'),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/import-keystone');
+              },
+            ),
           ],
         ),
       ),

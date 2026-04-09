@@ -11,6 +11,7 @@ import 'src/features/onboarding/screens/welcome_screen.dart';
 import 'src/features/history/screens/history_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
+import 'src/features/keystone/screens/import_keystone_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/providers/wallet_provider.dart';
 
@@ -77,6 +78,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/accounts',
         builder: (_, _) => const AccountsScreen(),
+      ),
+      GoRoute(
+        path: '/import-keystone',
+        builder: (_, _) => const ImportKeystoneScreen(),
       ),
     ],
   );

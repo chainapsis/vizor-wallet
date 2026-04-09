@@ -281,24 +281,40 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         }
       }
 
-      // Step 4: Get seed and execute proposal
-      final mnemonic = await ref.read(accountProvider.notifier).getActiveMnemonic();
-      if (mnemonic == null) {
-        setState(() { _error = 'Mnemonic not found for active account'; _isSending = false; });
+      // Step 4: Sign and execute
+      final isHardware = ref.read(accountProvider.notifier).isActiveAccountHardware;
+
+      String txidResult;
+      if (isHardware) {
+        // Hardware wallet (Keystone): PCZT signing flow
+        // TODO: Implement PCZT creation + Keystone signing + broadcast
+        // 1. create_pczt_from_proposal(proposal_id)
+        // 2. add_proofs_to_pczt (parallel)
+        // 3. redact_pczt_for_signer
+        // 4. KeystoneTransport.select → signPczt(redacted)
+        // 5. create_and_broadcast_from_pczt(proofs, signatures)
+        setState(() { _error = 'Hardware wallet signing not yet implemented'; _isSending = false; });
         return;
+      } else {
+        // Software wallet: mnemonic-based signing
+        final mnemonic = await ref.read(accountProvider.notifier).getActiveMnemonic();
+        if (mnemonic == null) {
+          setState(() { _error = 'Mnemonic not found for active account'; _isSending = false; });
+          return;
+        }
+
+        final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
+
+        log('Send: executing proposal ${proposal.proposalId}');
+        txidResult = await rust_sync.executeProposal(
+          dbPath: dbPath,
+          lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
+          proposalId: proposal.proposalId,
+          seed: seedBytes,
+          spendParamsPath: proposal.needsSaplingParams ? spendPath : null,
+          outputParamsPath: proposal.needsSaplingParams ? outputPath : null,
+        );
       }
-
-      final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
-
-      log('Send: executing proposal ${proposal.proposalId}');
-      final txidResult = await rust_sync.executeProposal(
-        dbPath: dbPath,
-        lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
-        proposalId: proposal.proposalId,
-        seed: seedBytes,
-        spendParamsPath: proposal.needsSaplingParams ? spendPath : null,
-        outputParamsPath: proposal.needsSaplingParams ? outputPath : null,
-      );
 
       log('Send: success, txids=$txidResult');
 
