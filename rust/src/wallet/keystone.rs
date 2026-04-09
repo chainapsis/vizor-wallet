@@ -84,6 +84,145 @@ pub fn decode_accounts_ur(ur_string: &str) -> Result<(Vec<u8>, Vec<KeystoneAccou
     Ok((seed_fp, infos))
 }
 
+// ==================== Multi-part UR (Animated QR) ====================
+
+use std::sync::Mutex;
+
+/// Global stateful UR decoder for accumulating animated QR parts.
+static UR_DECODER: std::sync::LazyLock<Mutex<Option<ur_parse_lib::keystone_ur_decoder::KeystoneURDecoder>>> =
+    std::sync::LazyLock::new(|| Mutex::new(None));
+
+pub struct UrDecodeResult {
+    pub complete: bool,
+    pub progress: u32,
+    pub data: Option<Vec<u8>>,
+    pub ur_type: Option<String>,
+}
+
+/// Reset the UR decoder state. Call before starting a new scan session.
+pub fn reset_ur_decoder() {
+    let mut decoder = UR_DECODER.lock().unwrap();
+    *decoder = None;
+}
+
+/// Feed a single UR part (from one QR frame) to the stateful decoder.
+pub fn decode_ur_part(part: &str) -> Result<UrDecodeResult, String> {
+    use ur_parse_lib::keystone_ur_decoder::{probe_decode, get_type};
+    use ur_registry::zcash::zcash_pczt::ZcashPczt;
+    use ur_registry::zcash::zcash_accounts::ZcashAccounts;
+
+    let mut decoder_guard = UR_DECODER.lock().map_err(|e| format!("Lock: {e}"))?;
+
+    // First part — try single-part decode
+    if decoder_guard.is_none() {
+        let result = probe_decode::<ZcashAccounts>(part.to_string());
+        match result {
+            Ok(r) if r.data.is_some() => {
+                // Single-part UR, complete
+                let accounts = r.data.unwrap();
+                let cbor = accounts.try_into()
+                    .map_err(|e: ur_registry::error::URError| format!("CBOR: {e:?}"))?;
+                return Ok(UrDecodeResult {
+                    complete: true,
+                    progress: 100,
+                    data: Some(cbor),
+                    ur_type: Some("zcash-accounts".into()),
+                });
+            }
+            Ok(r) if r.decoder.is_some() => {
+                // Multi-part, store decoder
+                *decoder_guard = Some(r.decoder.unwrap());
+                let progress = decoder_guard.as_ref().map_or(0, |d| {
+                    // Progress from first part
+                    0 // Will be updated on next parts
+                });
+                return Ok(UrDecodeResult {
+                    complete: false,
+                    progress: progress as u32,
+                    data: None,
+                    ur_type: None,
+                });
+            }
+            _ => {
+                // Try as ZcashPczt
+                let result = probe_decode::<ZcashPczt>(part.to_string());
+                match result {
+                    Ok(r) if r.data.is_some() => {
+                        let pczt = r.data.unwrap();
+                        return Ok(UrDecodeResult {
+                            complete: true,
+                            progress: 100,
+                            data: Some(pczt.get_data()),
+                            ur_type: Some("zcash-pczt".into()),
+                        });
+                    }
+                    Ok(r) if r.decoder.is_some() => {
+                        *decoder_guard = Some(r.decoder.unwrap());
+                        return Ok(UrDecodeResult {
+                            complete: false,
+                            progress: 0,
+                            data: None,
+                            ur_type: None,
+                        });
+                    }
+                    _ => return Err("Unrecognized UR type".into()),
+                }
+            }
+        }
+    }
+
+    // Subsequent parts — feed to existing decoder
+    let decoder = decoder_guard.as_mut().unwrap();
+    // Try decoding as ZcashAccounts first
+    let result = decoder.parse_ur::<ZcashAccounts>(part.to_string())
+        .map_err(|e| format!("UR decode: {e:?}"))?;
+
+    if result.is_complete {
+        let accounts = result.data.ok_or("Decode complete but no data")?;
+        let cbor: Vec<u8> = accounts.try_into()
+            .map_err(|e: ur_registry::error::URError| format!("CBOR: {e:?}"))?;
+        *decoder_guard = None; // Reset
+        return Ok(UrDecodeResult {
+            complete: true,
+            progress: 100,
+            data: Some(cbor),
+            ur_type: Some("zcash-accounts".into()),
+        });
+    }
+
+    Ok(UrDecodeResult {
+        complete: false,
+        progress: result.progress as u32,
+        data: None,
+        ur_type: None,
+    })
+}
+
+/// Encode PCZT bytes into multiple UR parts for animated QR display.
+pub fn encode_pczt_ur_parts(pczt_bytes: &[u8], max_fragment_len: usize) -> Result<Vec<String>, String> {
+    let zcash_pczt = ZcashPczt::new(pczt_bytes.to_vec());
+    let cbor_bytes: Vec<u8> = zcash_pczt.try_into()
+        .map_err(|e: ur_registry::error::URError| format!("CBOR encode: {e:?}"))?;
+
+    let encoder = ur::Encoder::new(
+        &cbor_bytes,
+        max_fragment_len,
+        ZcashPczt::get_registry_type().get_type(),
+    ).map_err(|e| format!("UR encoder: {e}"))?;
+
+    let mut ks_encoder = KeystoneUREncoder::new(encoder);
+    let count = ks_encoder.fragment_count();
+    let mut parts = Vec::with_capacity(count);
+    for _ in 0..count {
+        let part = ks_encoder.next_part()
+            .map_err(|e| format!("UR next_part: {e:?}"))?;
+        parts.push(part.to_uppercase());
+    }
+
+    log::info!("keystone: encoded PCZT into {} UR parts", parts.len());
+    Ok(parts)
+}
+
 // ==================== USB EAPDU Protocol ====================
 
 /// Encode data into EAPDU packets for USB transmission.

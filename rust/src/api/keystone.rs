@@ -30,6 +30,37 @@ pub fn decode_ur_to_pczt(ur_string: String) -> Result<Vec<u8>, String> {
     keystone::decode_ur_to_pczt(&ur_string)
 }
 
+pub use crate::wallet::keystone::UrDecodeResult;
+
+/// Decode a single UR part (from animated QR scan). Stateful — accumulates parts
+/// until the full UR is decoded. Returns progress and optionally the decoded data.
+pub fn decode_ur_part(part: String) -> Result<UrDecodeResult, String> {
+    keystone::decode_ur_part(&part)
+}
+
+/// Encode PCZT bytes into multiple UR parts for animated QR display.
+pub fn encode_pczt_ur_parts(pczt_bytes: Vec<u8>, max_fragment_len: usize) -> Result<Vec<String>, String> {
+    keystone::encode_pczt_ur_parts(&pczt_bytes, max_fragment_len)
+}
+
+/// Reset the UR decoder state (call before starting a new scan session).
+pub fn reset_ur_decoder() {
+    keystone::reset_ur_decoder();
+}
+
+/// Decode ZcashAccounts from raw CBOR bytes (from animated QR scan result).
+pub fn decode_accounts_from_cbor(cbor: Vec<u8>) -> Result<Vec<KeystoneAccountInfo>, String> {
+    let accounts: ur_registry::zcash::zcash_accounts::ZcashAccounts =
+        cbor.try_into().map_err(|e: ur_registry::error::URError| format!("CBOR decode: {e:?}"))?;
+    let seed_fp = accounts.get_seed_fingerprint();
+    Ok(accounts.get_accounts().iter().map(|a| KeystoneAccountInfo {
+        name: a.get_name().unwrap_or_else(|| format!("Keystone {}", a.get_index())),
+        ufvk: a.get_ufvk(),
+        index: a.get_index(),
+        seed_fingerprint: seed_fp.clone(),
+    }).collect())
+}
+
 /// Decode a ZcashAccounts UR string to account info list.
 pub fn decode_accounts_ur(ur_string: String) -> Result<Vec<KeystoneAccountInfo>, String> {
     let (_seed_fp, infos) = keystone::decode_accounts_ur(&ur_string)?;

@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../main.dart' show log;
 import '../rust/api/keystone.dart' as rust_keystone;
+import 'qr_scanner.dart';
 
 /// Abstract transport for communicating with Keystone hardware wallet.
 /// USB and QR implementations handle the actual data exchange.
@@ -95,18 +98,161 @@ class QrKeystoneTransport implements KeystoneTransport {
 
   @override
   Future<List<rust_keystone.KeystoneAccountInfo>> getAccounts() async {
-    // TODO: Open camera, scan animated QR from Keystone device,
-    // decode UR string, call rust_keystone.decodeAccountsUr()
-    throw UnimplementedError('QR account import not yet implemented.');
+    throw UnsupportedError(
+      'QR account import requires a BuildContext.\n'
+      'Use getAccountsWithContext() instead.',
+    );
+  }
+
+  /// Import accounts by scanning Keystone's ZcashAccounts QR.
+  Future<List<rust_keystone.KeystoneAccountInfo>> getAccountsWithContext(
+    BuildContext context,
+  ) async {
+    log('KeystoneQR: scanning for ZcashAccounts QR...');
+    await rust_keystone.resetUrDecoder();
+
+    final result = await QrScanner.scanAnimatedUr(context);
+    if (result == null) throw Exception('Scan cancelled');
+
+    // The decoder returned raw CBOR — decode as ZcashAccounts via the UR string
+    // For single-part scans, the data is already decoded. Re-decode from UR.
+    // Actually, the scan result contains decoded bytes. We need to parse them.
+    // Use decodeAccountsUr which expects a UR string — but we have raw data.
+    // Let's decode directly from the accumulated data.
+    log('KeystoneQR: scan complete, type=${result.urType}');
+
+    // result.data is CBOR bytes of ZcashAccounts
+    // Decode via Rust
+    final accounts = await rust_keystone.decodeAccountsFromCbor(cbor: result.data);
+    log('KeystoneQR: received ${accounts.length} accounts');
+    return accounts;
   }
 
   @override
   Future<Uint8List> signPczt(BuildContext context, Uint8List redactedPczt) async {
-    // TODO:
-    // 1. Encode PCZT to UR: rust_keystone.encodePcztToUr(pcztBytes: redactedPczt)
-    // 2. Display animated QR on screen for Keystone to scan
-    // 3. Open camera to scan signed PCZT QR from Keystone
-    // 4. Decode UR: rust_keystone.decodeUrToPczt(urString: scannedUr)
-    throw UnimplementedError('QR signing not yet implemented.');
+    log('KeystoneQR: encoding PCZT for QR display...');
+
+    // 1. Encode PCZT into animated QR parts
+    final parts = await rust_keystone.encodePcztUrParts(
+      pcztBytes: redactedPczt,
+      maxFragmentLen: BigInt.from(200), // ~200 bytes per QR frame for reliable scanning
+    );
+
+    // 2. Show animated QR + wait for user to confirm Keystone scanned it
+    if (!context.mounted) throw Exception('Context not mounted');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _SignQrDialog(urParts: parts),
+    );
+    if (confirmed != true) throw Exception('Signing cancelled');
+
+    // 3. Scan signed PCZT QR from Keystone
+    if (!context.mounted) throw Exception('Context not mounted');
+    log('KeystoneQR: scanning signed PCZT QR...');
+    await rust_keystone.resetUrDecoder();
+
+    final result = await QrScanner.scanAnimatedUr(context);
+    if (result == null) throw Exception('Scan cancelled');
+
+    log('KeystoneQR: received signed PCZT (${result.data.length} bytes)');
+    return Uint8List.fromList(result.data);
+  }
+}
+
+/// Dialog that shows animated QR for Keystone to scan, with a "Next" button.
+class _SignQrDialog extends StatelessWidget {
+  final List<String> urParts;
+  const _SignQrDialog({required this.urParts});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Show to Keystone'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Point your Keystone device camera at this QR code.'),
+          const SizedBox(height: 16),
+          // Lazy import to avoid circular dependency
+          _buildQrDisplay(),
+          const SizedBox(height: 16),
+          const Text(
+            'After Keystone finishes scanning, tap Next to scan the signed QR.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Next'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQrDisplay() {
+    // Import here to use AnimatedQrDisplay
+    return SizedBox(
+      width: 300,
+      height: 320,
+      child: _AnimatedQr(urParts: urParts),
+    );
+  }
+}
+
+class _AnimatedQr extends StatefulWidget {
+  final List<String> urParts;
+  const _AnimatedQr({required this.urParts});
+
+  @override
+  State<_AnimatedQr> createState() => _AnimatedQrState();
+}
+
+class _AnimatedQrState extends State<_AnimatedQr> {
+  int _index = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.urParts.length > 1) {
+      _timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+        setState(() { _index = (_index + 1) % widget.urParts.length; });
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.urParts.isEmpty) return const SizedBox.shrink();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          color: Colors.white,
+          child: QrImageView(
+            data: widget.urParts[_index],
+            size: 260,
+            errorCorrectionLevel: QrErrorCorrectLevel.L,
+          ),
+        ),
+        if (widget.urParts.length > 1)
+          Text('${_index + 1}/${widget.urParts.length}',
+              style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      ],
+    );
   }
 }

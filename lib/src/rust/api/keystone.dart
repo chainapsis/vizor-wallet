@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import '../wallet/keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// Check if a Keystone device is connected via USB.
@@ -24,6 +25,29 @@ Future<String> encodePcztToUr({required List<int> pcztBytes}) =>
 /// Decode a UR string (from QR scan) to PCZT bytes.
 Future<Uint8List> decodeUrToPczt({required String urString}) =>
     RustLib.instance.api.crateApiKeystoneDecodeUrToPczt(urString: urString);
+
+/// Decode a single UR part (from animated QR scan). Stateful — accumulates parts
+/// until the full UR is decoded. Returns progress and optionally the decoded data.
+Future<UrDecodeResult> decodeUrPart({required String part_}) =>
+    RustLib.instance.api.crateApiKeystoneDecodeUrPart(part_: part_);
+
+/// Encode PCZT bytes into multiple UR parts for animated QR display.
+Future<List<String>> encodePcztUrParts({
+  required List<int> pcztBytes,
+  required BigInt maxFragmentLen,
+}) => RustLib.instance.api.crateApiKeystoneEncodePcztUrParts(
+  pcztBytes: pcztBytes,
+  maxFragmentLen: maxFragmentLen,
+);
+
+/// Reset the UR decoder state (call before starting a new scan session).
+Future<void> resetUrDecoder() =>
+    RustLib.instance.api.crateApiKeystoneResetUrDecoder();
+
+/// Decode ZcashAccounts from raw CBOR bytes (from animated QR scan result).
+Future<List<KeystoneAccountInfo>> decodeAccountsFromCbor({
+  required List<int> cbor,
+}) => RustLib.instance.api.crateApiKeystoneDecodeAccountsFromCbor(cbor: cbor);
 
 /// Decode a ZcashAccounts UR string to account info list.
 Future<List<KeystoneAccountInfo>> decodeAccountsUr({
