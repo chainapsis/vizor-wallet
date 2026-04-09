@@ -125,11 +125,13 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
     final value = barcode?.rawValue;
     if (value == null || value.isEmpty) return;
 
-    // Skip duplicate parts
-    if (_seenParts.contains(value)) return;
-    _seenParts.add(value);
+    // Skip duplicate parts (case-insensitive since UR encoding varies)
+    final normalized = value.toLowerCase();
+    if (_seenParts.contains(normalized)) return;
+    _seenParts.add(normalized);
 
     try {
+      log('QrScanner: scanned part (${value.length} chars): ${value.substring(0, value.length.clamp(0, 80))}...');
       final result = await rust_keystone.decodeUrPart(part_: value);
       setState(() { _progress = result.progress; });
       widget.onProgress?.call(result.progress);

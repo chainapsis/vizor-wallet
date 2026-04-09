@@ -113,9 +113,20 @@ pub fn decode_ur_part(part: &str) -> Result<UrDecodeResult, String> {
 
     let mut decoder_guard = UR_DECODER.lock().map_err(|e| format!("Lock: {e}"))?;
 
+    // ur crate requires lowercase scheme ("ur:" not "UR:")
+    let part_lower = part.to_lowercase();
+
     // First part — try single-part decode
     if decoder_guard.is_none() {
-        let result = probe_decode::<ZcashAccounts>(part.to_string());
+        log::info!("keystone: decode_ur_part first part, trying ZcashAccounts");
+        let result = probe_decode::<ZcashAccounts>(part_lower.clone());
+        log::info!("keystone: probe_decode result: ok={}, data={}, decoder={}",
+            result.is_ok(),
+            result.as_ref().map_or(false, |r| r.data.is_some()),
+            result.as_ref().map_or(false, |r| r.decoder.is_some()));
+        if let Err(ref e) = result {
+            log::warn!("keystone: probe_decode ZcashAccounts error: {e:?}");
+        }
         match result {
             Ok(r) if r.data.is_some() => {
                 // Single-part UR, complete
@@ -145,7 +156,7 @@ pub fn decode_ur_part(part: &str) -> Result<UrDecodeResult, String> {
             }
             _ => {
                 // Try as ZcashPczt
-                let result = probe_decode::<ZcashPczt>(part.to_string());
+                let result = probe_decode::<ZcashPczt>(part_lower.clone());
                 match result {
                     Ok(r) if r.data.is_some() => {
                         let pczt = r.data.unwrap();
@@ -165,7 +176,8 @@ pub fn decode_ur_part(part: &str) -> Result<UrDecodeResult, String> {
                             ur_type: None,
                         });
                     }
-                    _ => return Err("Unrecognized UR type".into()),
+                    Err(e) => return Err(format!("Unrecognized UR type (ZcashPczt attempt: {e:?})")),
+                    _ => return Err("Unrecognized UR type (no data, no decoder)".into()),
                 }
             }
         }
@@ -174,7 +186,7 @@ pub fn decode_ur_part(part: &str) -> Result<UrDecodeResult, String> {
     // Subsequent parts — feed to existing decoder
     let decoder = decoder_guard.as_mut().unwrap();
     // Try decoding as ZcashAccounts first
-    let result = decoder.parse_ur::<ZcashAccounts>(part.to_string())
+    let result = decoder.parse_ur::<ZcashAccounts>(part_lower)
         .map_err(|e| format!("UR decode: {e:?}"))?;
 
     if result.is_complete {
