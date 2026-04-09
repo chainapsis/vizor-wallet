@@ -80,16 +80,16 @@ class MobileScannerCameraSelector {
         }
 #else
         if #available(macOS 10.15, *) {
-            // macOS: include external cameras (USB webcams) alongside built-in
+            // macOS: include external cameras (USB webcams) alongside built-in.
+            // Prefer external cameras when available (better for QR scanning on desktop).
             let discoverySession = AVCaptureDevice.DiscoverySession(
-                deviceTypes: [.builtInWideAngleCamera, .externalUnknown],
+                deviceTypes: [.externalUnknown, .builtInWideAngleCamera],
                 mediaType: .video,
-                position: .unspecified  // external cameras have unspecified position
+                position: .unspecified
             )
-            // If a specific position was requested, try to match it first
-            if position != .unspecified,
-               let device = discoverySession.devices.first(where: { $0.position == position }) {
-                return device
+            // Prefer external camera first, then built-in
+            if let external = discoverySession.devices.first(where: { $0.deviceType == .externalUnknown }) {
+                return external
             }
             if let device = discoverySession.devices.first {
                 return device
