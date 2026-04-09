@@ -89,7 +89,9 @@ pub fn decode_accounts_ur(ur_string: &str) -> Result<(Vec<u8>, Vec<KeystoneAccou
 use std::sync::Mutex;
 
 /// Global stateful UR decoder for accumulating animated QR parts.
-static UR_DECODER: std::sync::LazyLock<Mutex<Option<ur_parse_lib::keystone_ur_decoder::KeystoneURDecoder>>> =
+/// Uses ur::Decoder directly instead of KeystoneURDecoder to avoid
+/// URType registration issues (zcash-accounts not in URType::from()).
+static UR_DECODER: std::sync::LazyLock<Mutex<Option<ur::Decoder>>> =
     std::sync::LazyLock::new(|| Mutex::new(None));
 
 pub struct UrDecodeResult {
@@ -106,107 +108,77 @@ pub fn reset_ur_decoder() {
 }
 
 /// Feed a single UR part (from one QR frame) to the stateful decoder.
+/// Uses ur::Decoder directly to avoid URType registration issues.
 pub fn decode_ur_part(part: &str) -> Result<UrDecodeResult, String> {
-    use ur_parse_lib::keystone_ur_decoder::{probe_decode, get_type};
-    use ur_registry::zcash::zcash_pczt::ZcashPczt;
-    use ur_registry::zcash::zcash_accounts::ZcashAccounts;
-
     let mut decoder_guard = UR_DECODER.lock().map_err(|e| format!("Lock: {e}"))?;
 
-    // ur crate requires lowercase scheme ("ur:" not "UR:")
+    // ur crate requires lowercase scheme
     let part_lower = part.to_lowercase();
 
-    // First part — try single-part decode
+    // Extract UR type from the part string (e.g., "ur:zcash-accounts/..." → "zcash-accounts")
+    let ur_type = part_lower.strip_prefix("ur:")
+        .and_then(|s| s.split('/').next())
+        .map(|s| s.to_string());
+
+    // Initialize decoder on first part
     if decoder_guard.is_none() {
-        log::info!("keystone: decode_ur_part first part, trying ZcashAccounts");
-        let result = probe_decode::<ZcashAccounts>(part_lower.clone());
-        log::info!("keystone: probe_decode result: ok={}, data={}, decoder={}",
-            result.is_ok(),
-            result.as_ref().map_or(false, |r| r.data.is_some()),
-            result.as_ref().map_or(false, |r| r.decoder.is_some()));
-        if let Err(ref e) = result {
-            log::warn!("keystone: probe_decode ZcashAccounts error: {e:?}");
-        }
-        match result {
-            Ok(r) if r.data.is_some() => {
-                // Single-part UR, complete
-                let accounts = r.data.unwrap();
-                let cbor = accounts.try_into()
-                    .map_err(|e: ur_registry::error::URError| format!("CBOR: {e:?}"))?;
+        // Try single-part decode first
+        let decoded = ur::decode(&part_lower)
+            .map_err(|e| format!("UR decode: {e}"))?;
+
+        match decoded.0 {
+            ur::ur::Kind::SinglePart => {
+                let cbor = decoded.1;
+                log::info!("keystone: single-part UR decoded ({} bytes, type={:?})", cbor.len(), ur_type);
                 return Ok(UrDecodeResult {
                     complete: true,
                     progress: 100,
                     data: Some(cbor),
-                    ur_type: Some("zcash-accounts".into()),
+                    ur_type,
                 });
             }
-            Ok(r) if r.decoder.is_some() => {
-                // Multi-part, store decoder
-                *decoder_guard = Some(r.decoder.unwrap());
-                let progress = decoder_guard.as_ref().map_or(0, |d| {
-                    // Progress from first part
-                    0 // Will be updated on next parts
-                });
+            ur::ur::Kind::MultiPart => {
+                let mut decoder = ur::Decoder::default();
+                decoder.receive(&part_lower)
+                    .map_err(|e| format!("UR receive: {e}"))?;
+                let progress = decoder.progress();
+                log::info!("keystone: multi-part UR started (type={:?}, progress={}%)", ur_type, progress);
+                *decoder_guard = Some(decoder);
                 return Ok(UrDecodeResult {
                     complete: false,
                     progress: progress as u32,
                     data: None,
-                    ur_type: None,
+                    ur_type,
                 });
-            }
-            _ => {
-                // Try as ZcashPczt
-                let result = probe_decode::<ZcashPczt>(part_lower.clone());
-                match result {
-                    Ok(r) if r.data.is_some() => {
-                        let pczt = r.data.unwrap();
-                        return Ok(UrDecodeResult {
-                            complete: true,
-                            progress: 100,
-                            data: Some(pczt.get_data()),
-                            ur_type: Some("zcash-pczt".into()),
-                        });
-                    }
-                    Ok(r) if r.decoder.is_some() => {
-                        *decoder_guard = Some(r.decoder.unwrap());
-                        return Ok(UrDecodeResult {
-                            complete: false,
-                            progress: 0,
-                            data: None,
-                            ur_type: None,
-                        });
-                    }
-                    Err(e) => return Err(format!("Unrecognized UR type (ZcashPczt attempt: {e:?})")),
-                    _ => return Err("Unrecognized UR type (no data, no decoder)".into()),
-                }
             }
         }
     }
 
     // Subsequent parts — feed to existing decoder
     let decoder = decoder_guard.as_mut().unwrap();
-    // Try decoding as ZcashAccounts first
-    let result = decoder.parse_ur::<ZcashAccounts>(part_lower)
-        .map_err(|e| format!("UR decode: {e:?}"))?;
+    decoder.receive(&part_lower)
+        .map_err(|e| format!("UR receive: {e}"))?;
 
-    if result.is_complete {
-        let accounts = result.data.ok_or("Decode complete but no data")?;
-        let cbor: Vec<u8> = accounts.try_into()
-            .map_err(|e: ur_registry::error::URError| format!("CBOR: {e:?}"))?;
-        *decoder_guard = None; // Reset
+    if decoder.complete() {
+        let cbor = decoder.message()
+            .map_err(|e| format!("UR message: {e}"))?
+            .ok_or("Decoder complete but no message")?;
+        log::info!("keystone: multi-part UR complete ({} bytes, type={:?})", cbor.len(), ur_type);
+        *decoder_guard = None; // Reset for next scan
         return Ok(UrDecodeResult {
             complete: true,
             progress: 100,
             data: Some(cbor),
-            ur_type: Some("zcash-accounts".into()),
+            ur_type,
         });
     }
 
+    let progress = decoder.progress();
     Ok(UrDecodeResult {
         complete: false,
-        progress: result.progress as u32,
+        progress: progress as u32,
         data: None,
-        ur_type: None,
+        ur_type,
     })
 }
 
