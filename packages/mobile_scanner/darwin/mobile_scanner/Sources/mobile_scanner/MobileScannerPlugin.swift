@@ -49,6 +49,9 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
 
 #if os(iOS)
     var interfaceOrientationObserver: NSObjectProtocol?
+#else
+    var deviceConnectedObserver: NSObjectProtocol?
+    var deviceDisconnectedObserver: NSObjectProtocol?
 #endif
 
     private var stopped: Bool {
@@ -467,6 +470,9 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
 #if os(iOS)
         // Set up observer to update video orientation when interface orientation changes
         setupInterfaceOrientationObserver()
+#else
+        // macOS: observe camera connect/disconnect for hot-swap
+        setupDeviceObservers()
 #endif
 
         DispatchQueue.global(qos: .background).async {
@@ -849,6 +855,8 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
     private func releaseCamera() {
 #if os(iOS)
         removeInterfaceOrientationObserver()
+#else
+        removeDeviceObservers()
 #endif
 
         if let captureSession = captureSession {
@@ -881,6 +889,70 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
         registry.unregisterTexture(textureId)
         textureId = nil
     }
+
+    // MARK: - macOS Camera Hot-Swap
+#if os(macOS)
+    private func setupDeviceObservers() {
+        deviceDisconnectedObserver = NotificationCenter.default.addObserver(
+            forName: .AVCaptureDeviceWasDisconnected, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let self = self, let disconnected = notification.object as? AVCaptureDevice else { return }
+            // Only act if the disconnected device is the one we're using
+            guard disconnected.uniqueID == self.device?.uniqueID else { return }
+            self.switchToNextAvailableCamera()
+        }
+        deviceConnectedObserver = NotificationCenter.default.addObserver(
+            forName: .AVCaptureDeviceWasConnected, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let self = self, let connected = notification.object as? AVCaptureDevice else { return }
+            // If an external camera was connected and we're on built-in, switch to it
+            if connected.deviceType == .externalUnknown && self.device?.deviceType == .builtInWideAngleCamera {
+                self.switchToCamera(connected)
+            }
+        }
+    }
+
+    private func removeDeviceObservers() {
+        if let observer = deviceDisconnectedObserver {
+            NotificationCenter.default.removeObserver(observer)
+            deviceDisconnectedObserver = nil
+        }
+        if let observer = deviceConnectedObserver {
+            NotificationCenter.default.removeObserver(observer)
+            deviceConnectedObserver = nil
+        }
+    }
+
+    private func switchToNextAvailableCamera() {
+        guard let session = captureSession else { return }
+        let newDevice = MobileScannerCameraSelector.selectCamera(position: .unspecified, lensType: 0)
+        guard let newDevice = newDevice else { return }
+        switchToCamera(newDevice)
+    }
+
+    private func switchToCamera(_ newDevice: AVCaptureDevice) {
+        guard let session = captureSession else { return }
+        session.beginConfiguration()
+        // Remove old input
+        for input in session.inputs {
+            session.removeInput(input)
+        }
+        // Remove old observer
+        device?.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode))
+        // Add new input
+        do {
+            let input = try AVCaptureDeviceInput(device: newDevice)
+            if session.canAddInput(input) {
+                session.addInput(input)
+                self.device = newDevice
+                newDevice.addObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode), options: .new, context: nil)
+            }
+        } catch {
+            // Failed to switch — keep going with whatever we have
+        }
+        session.commitConfiguration()
+    }
+#endif
 
     func analyzeImage(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
         // The iOS Simulator cannot use some of the GPU features that are required for the Vision API.
