@@ -58,6 +58,25 @@ Future<AccountCreationResult> addAccount({
   birthdayHeight: birthdayHeight,
 );
 
+/// Import a hardware wallet account using a UFVK (no mnemonic/seed needed).
+Future<AccountCreationResult> importHardwareAccount({
+  required String dbPath,
+  required String network,
+  required String name,
+  required String ufvkString,
+  required List<int> seedFingerprint,
+  required int zip32Index,
+  BigInt? birthdayHeight,
+}) => RustLib.instance.api.crateApiWalletImportHardwareAccount(
+  dbPath: dbPath,
+  network: network,
+  name: name,
+  ufvkString: ufvkString,
+  seedFingerprint: seedFingerprint,
+  zip32Index: zip32Index,
+  birthdayHeight: birthdayHeight,
+);
+
 /// List all accounts in the wallet database.
 Future<List<AccountInfo>> listAccounts({
   required String dbPath,

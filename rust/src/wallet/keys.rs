@@ -124,6 +124,55 @@ pub fn add_account(
     Ok((uuid_str, ua.encode(&network)))
 }
 
+/// Import a hardware wallet account using a UFVK string (no seed/mnemonic needed).
+/// The UFVK is obtained from the hardware device. Seed fingerprint and zip32 index
+/// are provided by the device for Zip32Derivation metadata.
+pub fn import_hardware_account(
+    db_path: &str,
+    network: Network,
+    name: &str,
+    ufvk_string: &str,
+    seed_fingerprint_bytes: &[u8],
+    zip32_index: u32,
+    birthday_height: Option<u64>,
+) -> Result<(String, String), String> {
+    // Ensure DB is initialized (without seed — hardware wallet has no local seed)
+    ensure_db_initialized(db_path, network)?;
+
+    let mut db = WalletDb::for_path(db_path, network, SystemClock, OsRng)
+        .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+
+    let birthday = make_birthday(network, birthday_height);
+
+    // Parse UFVK from string
+    let ufvk = zcash_keys::keys::UnifiedFullViewingKey::decode(&network, ufvk_string)
+        .map_err(|e| format!("Failed to parse UFVK: {e}"))?;
+
+    // Build seed fingerprint from bytes
+    let fp_bytes: [u8; 32] = seed_fingerprint_bytes.try_into()
+        .map_err(|_| "Seed fingerprint must be 32 bytes")?;
+    let seed_fp = SeedFingerprint::from_bytes(fp_bytes);
+    let account_index = zip32::AccountId::try_from(zip32_index)
+        .map_err(|_| "Invalid zip32 account index")?;
+
+    let derivation = Zip32Derivation::new(seed_fp, account_index);
+    let purpose = AccountPurpose::Spending { derivation: Some(derivation) };
+
+    let account = db
+        .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
+        .map_err(|e| format!("Failed to import hardware account: {e}"))?;
+
+    let account_id = account.id();
+    let (ua, _di) = ufvk
+        .default_address(shielded_address_request())
+        .map_err(|e| format!("Failed to derive address: {e}"))?;
+
+    let uuid_str = account_id.expose_uuid().to_string();
+    let addr_str: String = ua.encode(&network);
+    log::info!("Imported hardware account: uuid={}, address={}", uuid_str, addr_str);
+    Ok((uuid_str, ua.encode(&network)))
+}
+
 /// Init DB + create first account as Derived (so seed relevance checks pass on future migrations).
 /// Returns (account_uuid, unified_address).
 pub fn init_db_and_create_account(

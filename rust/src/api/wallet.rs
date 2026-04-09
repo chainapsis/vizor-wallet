@@ -134,6 +134,22 @@ pub fn add_account(
     })
 }
 
+/// Import a hardware wallet account using a UFVK (no mnemonic/seed needed).
+pub fn import_hardware_account(
+    db_path: String, network: String, name: String,
+    ufvk_string: String, seed_fingerprint: Vec<u8>, zip32_index: u32,
+    birthday_height: Option<u64>,
+) -> Result<AccountCreationResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let (account_uuid, unified_address) = keys::import_hardware_account(
+            &db_path, network, &name, &ufvk_string,
+            &seed_fingerprint, zip32_index, birthday_height,
+        )?;
+        Ok(AccountCreationResult { account_uuid, unified_address })
+    })
+}
+
 /// List all accounts in the wallet database.
 pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo>, String> {
     catch(|| {

@@ -17,15 +17,17 @@ class AccountInfo {
   final String uuid;
   final String name;
   final int order;
+  final bool isHardware;
 
-  const AccountInfo({required this.uuid, required this.name, required this.order});
+  const AccountInfo({required this.uuid, required this.name, required this.order, this.isHardware = false});
 
-  Map<String, dynamic> toJson() => {'uuid': uuid, 'name': name, 'order': order};
+  Map<String, dynamic> toJson() => {'uuid': uuid, 'name': name, 'order': order, 'isHardware': isHardware};
 
   factory AccountInfo.fromJson(Map<String, dynamic> json) => AccountInfo(
     uuid: json['uuid'] as String,
     name: json['name'] as String,
     order: json['order'] as int? ?? 0,
+    isHardware: json['isHardware'] as bool? ?? false,
   );
 }
 
@@ -267,6 +269,52 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     await _storage.deleteAll();
     state = const AsyncData(AccountState());
     log('resetWallet: all data cleared');
+  }
+
+  /// Import a hardware wallet account using UFVK from Keystone.
+  Future<void> importKeystoneAccount({
+    required String name,
+    required String ufvk,
+    required List<int> seedFingerprint,
+    required int zip32Index,
+  }) async {
+    try {
+      final dbPath = await _getDbPath();
+      final network = await _getNetwork();
+
+      final result = await rust_wallet.importHardwareAccount(
+        dbPath: dbPath, network: network, name: name,
+        ufvkString: ufvk, seedFingerprint: seedFingerprint,
+        zip32Index: zip32Index, birthdayHeight: null,
+      );
+      final accountUuid = result.accountUuid;
+      final address = result.unifiedAddress;
+
+      // Save account info (no mnemonic — hardware wallet)
+      final prev = state.value ?? const AccountState();
+      final newAccount = AccountInfo(
+        uuid: accountUuid, name: name, order: prev.accounts.length, isHardware: true,
+      );
+      final updated = [...prev.accounts, newAccount];
+      await _saveAccounts(updated);
+      await _storage.write(key: _activeAccountKey, value: accountUuid);
+
+      state = AsyncData(AccountState(
+        accounts: updated,
+        activeAccountUuid: accountUuid,
+        activeAddress: address,
+      ));
+      log('importKeystoneAccount: uuid=$accountUuid, address=$address');
+    } catch (e, st) {
+      log('importKeystoneAccount: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  /// Check if the active account is a hardware wallet account.
+  bool get isActiveAccountHardware {
+    final active = state.value?.activeAccount;
+    return active?.isHardware ?? false;
   }
 
   /// Get the mnemonic for the active account.

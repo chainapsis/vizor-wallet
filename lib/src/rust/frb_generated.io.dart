@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/keystone.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';
 import 'api/wallet.dart';
@@ -61,10 +62,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
+  KeystoneAccountInfo dco_decode_keystone_account_info(dynamic raw);
+
+  @protected
   List<AccountInfo> dco_decode_list_account_info(dynamic raw);
 
   @protected
   List<BlockMetaInfo> dco_decode_list_block_meta_info(dynamic raw);
+
+  @protected
+  List<KeystoneAccountInfo> dco_decode_list_keystone_account_info(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -187,10 +194,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
+  KeystoneAccountInfo sse_decode_keystone_account_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
 
   @protected
   List<BlockMetaInfo> sse_decode_list_block_meta_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<KeystoneAccountInfo> sse_decode_list_keystone_account_info(
     SseDeserializer deserializer,
   );
 
@@ -334,6 +351,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
+  void sse_encode_keystone_account_info(
+    KeystoneAccountInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_account_info(
     List<AccountInfo> self,
     SseSerializer serializer,
@@ -342,6 +365,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_block_meta_info(
     List<BlockMetaInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_keystone_account_info(
+    List<KeystoneAccountInfo> self,
     SseSerializer serializer,
   );
 
