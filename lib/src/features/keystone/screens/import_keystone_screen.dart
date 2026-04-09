@@ -6,6 +6,7 @@ import '../../../../main.dart' show log;
 import '../../../providers/account_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/keystone_transport.dart';
+import '../../../services/qr_scanner.dart';
 
 class ImportKeystoneScreen extends ConsumerStatefulWidget {
   const ImportKeystoneScreen({super.key});
@@ -26,14 +27,16 @@ class _ImportKeystoneScreenState extends ConsumerState<ImportKeystoneScreen> {
   }
 
   Future<void> _connectAndGetAccounts() async {
+    if (!QrScanner.isAvailable) {
+      setState(() { _error = 'QR scanning not available on this platform'; _isLoading = false; });
+      return;
+    }
+
     setState(() { _isLoading = true; _error = null; });
 
     try {
-      final transport = await KeystoneTransport.select(context);
-      if (transport == null || !mounted) return;
-
-      setState(() { _isLoading = true; });
-      final accounts = await transport.getAccounts();
+      final qrTransport = QrKeystoneTransport();
+      final accounts = await qrTransport.getAccountsWithContext(context);
 
       if (!mounted) return;
       setState(() { _accounts = accounts; _isLoading = false; });
