@@ -400,3 +400,26 @@ pub fn get_transaction_history(db_path: String, network: String, limit: Option<u
 pub fn get_blocks_dir(cache_path: String) -> String {
     wallet_sync::get_blocks_dir(&cache_path)
 }
+
+// ======================== PCZT (Hardware Wallet) ========================
+
+/// Create a PCZT from a stored proposal for hardware wallet signing.
+pub fn create_pczt_from_proposal(
+    db_path: String, network: String, proposal_id: u64,
+) -> Result<Vec<u8>, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        wallet_sync::create_pczt_from_proposal(&db_path, network, proposal_id)
+    })
+}
+
+/// Extract transaction from signed PCZT and broadcast to network.
+pub async fn extract_and_broadcast_pczt(
+    db_path: String, lightwalletd_url: String, network: String,
+    signed_pczt_bytes: Vec<u8>,
+) -> Result<String, String> {
+    let network = keys::parse_network(&network)?;
+    wallet_sync::extract_and_broadcast_pczt(
+        &db_path, &lightwalletd_url, network, &signed_pczt_bytes,
+    ).await
+}

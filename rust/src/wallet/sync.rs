@@ -463,6 +463,85 @@ struct ProposalStore {
     next_id: u64,
 }
 
+// ======================== PCZT (Hardware Wallet) ========================
+
+/// Create a PCZT from a stored proposal (for hardware wallet signing).
+pub fn create_pczt_from_proposal(
+    db_path: &str, network: Network, proposal_id: u64,
+) -> Result<Vec<u8>, String> {
+    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
+    use zcash_client_backend::wallet::OvkPolicy;
+
+    let store = PROPOSAL_STORE.lock().map_err(|e| format!("Lock: {e}"))?;
+    let stored = store.proposals.get(&proposal_id)
+        .ok_or("Proposal not found")?;
+
+    let mut db = open_wallet_db(db_path, network)?;
+    let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+        &mut db, &network, stored.account_id, OvkPolicy::Sender, &stored.proposal,
+    ).map_err(|e| format!("Create PCZT failed: {e}"))?;
+
+    Ok(pczt.serialize())
+}
+
+/// Extract a transaction from a signed PCZT and broadcast it.
+/// `signed_pczt_bytes` contains the PCZT with signatures from the hardware device.
+pub async fn extract_and_broadcast_pczt(
+    db_path: &str, lightwalletd_url: &str, network: Network,
+    signed_pczt_bytes: &[u8],
+) -> Result<String, String> {
+    use zcash_client_backend::data_api::wallet::extract_and_store_transaction_from_pczt;
+
+    let pczt = pczt::Pczt::parse(signed_pczt_bytes)
+        .map_err(|e| format!("Parse signed PCZT: {e:?}"))?;
+
+    let mut db = open_wallet_db(db_path, network)?;
+
+    let orchard_vk = orchard::circuit::VerifyingKey::build();
+
+    let txid = extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
+        &mut db,
+        pczt,
+        None, // sapling_vk — None for Orchard-only
+        Some(&orchard_vk),
+    ).map_err(|e| format!("Extract TX from PCZT: {e}"))?;
+
+    // Broadcast
+    let channel = tonic::transport::Endpoint::from_shared(lightwalletd_url.to_string())
+        .map_err(|e| format!("Invalid URL: {e}"))?
+        .tls_config(tonic::transport::ClientTlsConfig::new().with_webpki_roots())
+        .map_err(|e| format!("TLS: {e}"))?
+        .connect()
+        .await
+        .map_err(|e| format!("gRPC connect: {e}"))?;
+
+    let mut client = zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(channel);
+
+    let raw_tx = db.get_transaction(txid)
+        .map_err(|e| format!("Get TX: {e}"))?
+        .ok_or("Transaction not found after extraction")?;
+
+    let tx_bytes = {
+        let mut buf = Vec::new();
+        raw_tx.write(&mut buf).map_err(|e| format!("Serialize TX: {e}"))?;
+        buf
+    };
+
+    let response = client.send_transaction(
+        zcash_client_backend::proto::service::RawTransaction {
+            data: tx_bytes,
+            height: 0,
+        }
+    ).await.map_err(|e| format!("Broadcast: {e}"))?;
+
+    let msg = response.into_inner().error_message;
+    if !msg.is_empty() {
+        return Err(format!("Broadcast rejected: {msg}"));
+    }
+
+    Ok(txid.to_string())
+}
+
 // ======================== Diversified Address ========================
 
 pub fn get_next_available_address(db_path: &str, network: Network, account_uuid: &str) -> Result<String, String> {

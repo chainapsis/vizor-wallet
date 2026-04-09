@@ -1876,12 +1876,27 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ea1cd05607eee33d320860c8e1159e78770f1d1909748c72f53959e106c6899"
 dependencies = [
+ "blake2b_simd",
+ "bls12_381",
  "document-features",
+ "ff",
  "getset",
+ "jubjub",
+ "nonempty 0.11.0",
+ "orchard",
+ "pasta_curves",
  "postcard",
+ "rand_core",
+ "redjubjub",
+ "sapling-crypto",
+ "secp256k1",
  "serde",
  "serde_with",
+ "zcash_note_encryption",
+ "zcash_primitives",
  "zcash_protocol",
+ "zcash_script",
+ "zcash_transparent",
 ]
 
 [[package]]
@@ -3230,6 +3245,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "458f7a779bf54acc9f347480ac654f68407d3aab21269a6e3c9f922acd9e2da9"
 dependencies = [
  "getrandom 0.3.4",
+ "serde",
 ]
 
 [[package]]
@@ -3542,13 +3558,16 @@ dependencies = [
  "nonempty 0.11.0",
  "orchard",
  "pasta_curves",
+ "pczt",
  "percent-encoding",
+ "postcard",
  "prost 0.14.3",
  "rand_core",
  "rayon",
  "sapling-crypto",
  "secp256k1",
  "secrecy",
+ "serde",
  "shardtree",
  "subtle",
  "time",
@@ -3599,6 +3618,7 @@ dependencies = [
  "schemerz-rusqlite",
  "secp256k1",
  "secrecy",
+ "serde",
  "shardtree",
  "static_assertions",
  "subtle",

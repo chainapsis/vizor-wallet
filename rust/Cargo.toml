@@ -14,8 +14,8 @@ zcash_primitives = "0.26.4"
 zcash_address = "0.10.1"
 zcash_keys = { version = "0.12.0", features = ["orchard"] }
 zcash_protocol = "0.7.2"
-zcash_client_backend = { version = "0.21.2", features = ["orchard", "transparent-inputs", "lightwalletd-tonic", "sync"] }
-zcash_client_sqlite = { version = "0.19.5", features = ["orchard", "transparent-inputs", "unstable"] }
+zcash_client_backend = { version = "0.21.2", features = ["orchard", "transparent-inputs", "lightwalletd-tonic", "sync", "pczt"] }
+zcash_client_sqlite = { version = "0.19.5", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
 orchard = "0.11"
 sapling-crypto = { version = "0.5", default-features = false }
