@@ -163,14 +163,16 @@ pub fn import_hardware_account(
         .map_err(|e| format!("Failed to import hardware account: {e}"))?;
 
     let account_id = account.id();
+    // Hardware wallets (Keystone) have Orchard + transparent but no Sapling,
+    // so use Orchard-only address request instead of the standard shielded request.
     let (ua, _di) = ufvk
-        .default_address(shielded_address_request())
+        .default_address(orchard_address_request())
         .map_err(|e| format!("Failed to derive address: {e}"))?;
 
     let uuid_str = account_id.expose_uuid().to_string();
     let addr_str: String = ua.encode(&network);
     log::info!("Imported hardware account: uuid={}, address={}", uuid_str, addr_str);
-    Ok((uuid_str, ua.encode(&network)))
+    Ok((uuid_str, addr_str))
 }
 
 /// Init DB + create first account as Derived (so seed relevance checks pass on future migrations).
@@ -279,8 +281,11 @@ pub fn get_address_from_db(db_path: &str, network: Network, account_uuid: Option
         .ufvk()
         .ok_or("Account does not have a UFVK")?;
 
+    // Try standard shielded request (Orchard + Sapling), fall back to Orchard-only
+    // for hardware wallets that don't have Sapling keys.
     let (ua, _di) = ufvk
         .default_address(shielded_address_request())
+        .or_else(|_| ufvk.default_address(orchard_address_request()))
         .map_err(|e| format!("Failed to derive address: {e}"))?;
 
     Ok(ua.encode(&network))
@@ -292,6 +297,17 @@ fn shielded_address_request() -> UnifiedAddressRequest {
     UnifiedAddressRequest::custom(
         ReceiverRequirement::Require, // Orchard
         ReceiverRequirement::Require, // Sapling
+        ReceiverRequirement::Omit,    // Transparent
+    )
+    .expect("valid receiver requirements")
+}
+
+/// Returns an Orchard-only address request for hardware wallets.
+/// Keystone UFVKs typically contain Orchard + transparent but no Sapling.
+fn orchard_address_request() -> UnifiedAddressRequest {
+    UnifiedAddressRequest::custom(
+        ReceiverRequirement::Require, // Orchard
+        ReceiverRequirement::Omit,    // Sapling (not available on Keystone)
         ReceiverRequirement::Omit,    // Transparent
     )
     .expect("valid receiver requirements")
