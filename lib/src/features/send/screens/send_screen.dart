@@ -12,6 +12,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../../../services/keystone_transport.dart';
 
 const _saplingSpendHash = 'a15ab54c2888880e53c823a3063820c728444126';
 const _saplingOutputHash = '0ebc5a1ef3653948e1c46cf7a16071eac4b7e352';
@@ -287,14 +288,32 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       String txidResult;
       if (isHardware) {
         // Hardware wallet (Keystone): PCZT signing flow
-        // TODO: Implement PCZT creation + Keystone signing + broadcast
-        // 1. create_pczt_from_proposal(proposal_id)
-        // 2. add_proofs_to_pczt (parallel)
-        // 3. redact_pczt_for_signer
-        // 4. KeystoneTransport.select → signPczt(redacted)
-        // 5. create_and_broadcast_from_pczt(proofs, signatures)
-        setState(() { _error = 'Hardware wallet signing not yet implemented'; _isSending = false; });
-        return;
+        log('Send: creating PCZT from proposal ${proposal.proposalId}');
+        final pcztBytes = await rust_sync.createPcztFromProposal(
+          dbPath: dbPath,
+          network: ZcashNetwork.mainnet.name,
+          proposalId: proposal.proposalId,
+        );
+
+        // Select transport and sign
+        if (!mounted) return;
+        final transport = await KeystoneTransport.select(context);
+        if (transport == null || !mounted) {
+          setState(() { _isSending = false; });
+          return;
+        }
+
+        log('Send: signing PCZT via ${transport.name}');
+        final signedPczt = await transport.signPczt(context, pcztBytes);
+
+        // Extract TX and broadcast
+        log('Send: extracting and broadcasting signed PCZT');
+        txidResult = await rust_sync.extractAndBroadcastPczt(
+          dbPath: dbPath,
+          lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
+          network: ZcashNetwork.mainnet.name,
+          signedPcztBytes: signedPczt,
+        );
       } else {
         // Software wallet: mnemonic-based signing
         final mnemonic = await ref.read(accountProvider.notifier).getActiveMnemonic();

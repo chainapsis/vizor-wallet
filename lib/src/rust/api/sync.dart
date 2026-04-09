@@ -252,6 +252,30 @@ Future<List<TransactionInfo>> getTransactionHistory({
 String getBlocksDir({required String cachePath}) =>
     RustLib.instance.api.crateApiSyncGetBlocksDir(cachePath: cachePath);
 
+/// Create a PCZT from a stored proposal for hardware wallet signing.
+Future<Uint8List> createPcztFromProposal({
+  required String dbPath,
+  required String network,
+  required BigInt proposalId,
+}) => RustLib.instance.api.crateApiSyncCreatePcztFromProposal(
+  dbPath: dbPath,
+  network: network,
+  proposalId: proposalId,
+);
+
+/// Extract transaction from signed PCZT and broadcast to network.
+Future<String> extractAndBroadcastPczt({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required List<int> signedPcztBytes,
+}) => RustLib.instance.api.crateApiSyncExtractAndBroadcastPczt(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  signedPcztBytes: signedPcztBytes,
+);
+
 class AddressValidationResult {
   final bool isValid;
   final String addressType;
