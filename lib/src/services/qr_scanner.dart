@@ -80,6 +80,13 @@ class _SingleScanScreenState extends State<_SingleScanScreen> {
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.cameraswitch),
+            tooltip: 'Switch Camera',
+            onPressed: () => _controller.switchCamera(),
+          ),
+        ],
       ),
       body: MobileScanner(
         controller: _controller,
@@ -161,6 +168,13 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.cameraswitch),
+            tooltip: 'Switch Camera',
+            onPressed: () => _controller.switchCamera(),
+          ),
+        ],
       ),
       body: Stack(
         children: [
