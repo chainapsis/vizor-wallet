@@ -447,7 +447,12 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
                 message: error.localizedDescription, details: nil))
             return
         }
+#if os(macOS)
+        // Higher resolution helps with dense QR codes from hardware wallets
+        captureSession!.sessionPreset = AVCaptureSession.Preset.photo
+#else
         captureSession!.sessionPreset = AVCaptureSession.Preset.high
+#endif
 
         let videoOutput = AVCaptureVideoDataOutput()
 
@@ -467,6 +472,19 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
                 connection.isVideoMirrored = true
             }
         }
+
+#if os(macOS)
+        // macOS: enable autofocus for better QR code recognition with webcams
+        if device.isFocusModeSupported(.continuousAutoFocus) {
+            do {
+                try device.lockForConfiguration()
+                device.focusMode = .continuousAutoFocus
+                device.unlockForConfiguration()
+            } catch {
+                NSLog("MobileScanner: failed to set autofocus: \(error)")
+            }
+        }
+#endif
 
         captureSession!.commitConfiguration()
 
