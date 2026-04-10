@@ -331,20 +331,42 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// sync is already idle.
   Future<void> restartSync() async {
     stopSync();
-    // `cancelFullSync` sets an atomic that the Rust loop checks at
-    // batch boundaries, so it takes up to one batch worth of work to
-    // actually stop. Poll `isSyncRunning` with a 5s ceiling (same
-    // shape the `_resetWallet` path in `home_screen.dart` uses) so
-    // the new sync can't race the old one for the single-run lock.
+    // `cancelFullSync` / `stopMempoolObserver` set atomics that
+    // the Rust loop and the mempool observer check at their own
+    // cadence (batch boundaries for sync, the 100ms cancel-aware
+    // sleep for the observer), so they take up to one batch /
+    // one message worth of work to actually stop. We must wait
+    // for BOTH of them to clear before starting a fresh session:
+    //
+    //   * `isSyncRunning()` — the next `startFullSync` will
+    //     reject until the old single-run lock drops.
+    //   * `isMempoolObserverRunning()` — the next
+    //     `_startMempoolObserver` will log "already running" and
+    //     skip without retry if the old observer is still
+    //     winding down. Without waiting here the new sync
+    //     session would silently lose mempool streaming for
+    //     its entire run (Codex adversarial-review finding 1).
+    //
+    // 5s ceiling matches the original `restartSync` behaviour
+    // and the `_resetWallet` path in `home_screen.dart`. Neither
+    // the sync loop's post-batch cancel check nor the observer's
+    // 100ms cancel slice should take anywhere near that long,
+    // but a network stall mid-broadcast can extend it.
     var waited = 0;
-    while (rust_sync.isSyncRunning() && waited < 5000) {
+    while ((rust_sync.isSyncRunning() || rust_sync.isMempoolObserverRunning())
+        && waited < 5000) {
       await Future.delayed(const Duration(milliseconds: 100));
       waited += 100;
     }
     if (rust_sync.isSyncRunning()) {
-      log('SyncNotifier: restartSync timed out waiting for Rust loop to '
-          'stop after 5s; starting anyway (the startSync guard will '
-          'log if the old run is still around)');
+      log('SyncNotifier: restartSync timed out waiting for Rust sync '
+          'loop to stop after 5s; starting anyway (the startSync '
+          'guard will log if the old run is still around)');
+    }
+    if (rust_sync.isMempoolObserverRunning()) {
+      log('SyncNotifier: restartSync timed out waiting for mempool '
+          'observer to stop after 5s; the new observer start will '
+          'skip and the new session runs without streaming');
     }
     startSync();
     _startPolling();
