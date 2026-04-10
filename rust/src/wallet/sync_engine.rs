@@ -43,7 +43,6 @@ use zcash_protocol::consensus::{BlockHeight, BranchId, Network};
 
 /// Classified sync-engine failure. Carries enough information for the retry
 /// wrapper to pick the right recovery strategy via `recovery_strategy`.
-#[allow(dead_code)] // constructed by follow-up commits that start using it
 #[derive(Debug, Clone)]
 pub(crate) enum SyncError {
     /// `scan_cached_blocks` reported a `PrevHashMismatch` or
@@ -51,6 +50,7 @@ pub(crate) enum SyncError {
     /// stored chain state no longer agrees with the one lightwalletd is
     /// serving. Recovery is to `truncate_to_height(at_height - REWIND_DISTANCE)`
     /// and restart the scan loop from the rewound state.
+    #[allow(dead_code)] // constructed by commit 1.3 (continuity detection)
     Continuity { at_height: u64, detail: String },
 
     /// Transient network or gRPC failure. The existing exponential-backoff
@@ -72,8 +72,8 @@ pub(crate) enum SyncError {
 }
 
 /// Strategy the sync loop should apply when it encounters a `SyncError`.
-#[allow(dead_code)] // constructed by follow-up commits that start using it
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // Rewind variant is constructed by commit 1.4
 pub(crate) enum RecoveryStrategy {
     /// Retry the failing operation after exponential backoff. The outer
     /// `run_sync_inner` wrapper already implements this with a 3-retry,
@@ -95,24 +95,56 @@ pub(crate) enum RecoveryStrategy {
 /// The actual rewind height may land earlier than `at_height - REWIND_DISTANCE`
 /// because `truncate_to_height` only accepts checkpoint boundaries; that's
 /// librustzcash's responsibility to enforce.
-#[allow(dead_code)] // consumed by the reorg-recovery commit
+#[allow(dead_code)] // consumed by the reorg-recovery commit (1.4)
 pub(crate) const REWIND_DISTANCE: u64 = 10;
 
-#[allow(dead_code)] // consumed by follow-up commits
 impl SyncError {
+    /// Log and construct a `Network` error in one step.
+    pub(crate) fn net(msg: impl Into<String>) -> Self {
+        let msg = msg.into();
+        log::error!("sync: {msg}");
+        SyncError::Network(msg)
+    }
+
+    /// Log and construct a `Db` error in one step.
+    pub(crate) fn db(msg: impl Into<String>) -> Self {
+        let msg = msg.into();
+        log::error!("sync: {msg}");
+        SyncError::Db(msg)
+    }
+
+    /// Log and construct a `Parse` error in one step.
+    pub(crate) fn parse(msg: impl Into<String>) -> Self {
+        let msg = msg.into();
+        log::error!("sync: {msg}");
+        SyncError::Parse(msg)
+    }
+
+    /// Log and construct an `Other` error in one step. Used for call sites
+    /// that don't fit a specific category (and for `scan_cached_blocks` until
+    /// commit 1.3 teaches the sync loop to recognise continuity errors).
+    pub(crate) fn other(msg: impl Into<String>) -> Self {
+        let msg = msg.into();
+        log::error!("sync: {msg}");
+        SyncError::Other(msg)
+    }
+
     /// Whether this error is a chain reorg requiring rewind recovery.
+    #[allow(dead_code)] // consumed by commit 1.4
     pub(crate) fn is_continuity(&self) -> bool {
         matches!(self, SyncError::Continuity { .. })
     }
 
     /// Whether the error looks transient and worth retrying via plain backoff
     /// (no rewind, no caller intervention).
+    #[allow(dead_code)] // consumed by commit 1.6
     pub(crate) fn is_transient(&self) -> bool {
         matches!(self, SyncError::Network(_) | SyncError::Other(_))
     }
 
     /// The height at which a continuity break was detected, if this is a
     /// `Continuity` error.
+    #[allow(dead_code)] // consumed by commit 1.4
     pub(crate) fn continuity_height(&self) -> Option<u64> {
         match self {
             SyncError::Continuity { at_height, .. } => Some(*at_height),
@@ -121,6 +153,7 @@ impl SyncError {
     }
 
     /// Map this error to the recovery action the sync loop should take.
+    #[allow(dead_code)] // consumed by commit 1.4 + 1.6
     pub(crate) fn recovery_strategy(&self) -> RecoveryStrategy {
         match self {
             SyncError::Continuity { at_height, .. } => RecoveryStrategy::Rewind {
@@ -256,7 +289,13 @@ pub async fn run_sync_inner(
         match run_sync_impl(db_data_path, lightwalletd_url, network, cancel.clone(), running_mode, desired_mode, &progress_fn).await {
             Ok(()) => return Ok(()),
             Err(e) => {
-                last_err = e;
+                // Collapse the typed `SyncError` down to a string at the
+                // public boundary. Follow-up commits will inspect the typed
+                // variant *before* this conversion (commit 1.4 for rewind
+                // recovery, commit 1.6 for per-category retry policy). For
+                // now the retry wrapper stays category-agnostic and treats
+                // every error as "retry with backoff".
+                last_err = e.to_string();
                 if attempt == MAX_RETRIES {
                     log::error!("[{}] sync: all {} retries exhausted", elapsed(), MAX_RETRIES);
                 }
@@ -276,18 +315,18 @@ async fn run_sync_impl(
     running_mode: u8,
     desired_mode: &AtomicU8,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
-) -> Result<(), String> {
+) -> Result<(), SyncError> {
     let batch_size = if running_mode == 2 { BATCH_SIZE_BACKGROUND } else { BATCH_SIZE_FOREGROUND };
     log::info!("[{}] sync: starting (mode={}, batch={})", elapsed(), running_mode, batch_size);
 
     // 1. Connect gRPC
     let channel = Endpoint::from_shared(lightwalletd_url.to_string())
-        .map_err(|e| err(&format!("Invalid URL: {e}")))?
+        .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
         .tls_config(ClientTlsConfig::new().with_webpki_roots())
-        .map_err(|e| err(&format!("TLS error: {e}")))?
+        .map_err(|e| SyncError::net(format!("TLS error: {e}")))?
         .connect()
         .await
-        .map_err(|e| err(&format!("gRPC connect failed: {e}")))?;
+        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
 
     let mut client = CompactTxStreamerClient::new(channel);
 
@@ -298,19 +337,22 @@ async fn run_sync_impl(
     let tip = client
         .get_latest_block(ChainSpec::default())
         .await
-        .map_err(|e| err(&format!("get_latest_block: {e}")))?
+        .map_err(|e| SyncError::net(format!("get_latest_block: {e}")))?
         .into_inner();
     let tip_height = BlockHeight::from_u32(tip.height as u32);
     log::info!("[{}] sync: chain tip = {}", elapsed(), tip.height);
 
-    db.update_chain_tip(tip_height).map_err(|e| err(&format!("update_chain_tip: {e}")))?;
+    db.update_chain_tip(tip_height)
+        .map_err(|e| SyncError::db(format!("update_chain_tip: {e}")))?;
 
     // 3. Download subtree roots (incremental)
     download_subtree_roots(&mut client, &mut db).await?;
 
     // 4. Calculate initial scan target (before any scanning)
     let mut initial_total: u64 = {
-        let ranges = db.suggest_scan_ranges().map_err(|e| err(&format!("suggest_scan_ranges: {e}")))?;
+        let ranges = db
+            .suggest_scan_ranges()
+            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         ranges.iter()
             .filter(|r| r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned)
             .map(|r| u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start)) as u64)
@@ -330,7 +372,9 @@ async fn run_sync_impl(
             return Ok(());
         }
 
-        let ranges = db.suggest_scan_ranges().map_err(|e| err(&format!("suggest_scan_ranges: {e}")))?;
+        let ranges = db
+            .suggest_scan_ranges()
+            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
 
         let range = match ranges.iter().find(|r| {
             r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned
@@ -358,14 +402,19 @@ async fn run_sync_impl(
             let ts = client
                 .get_tree_state(BlockId { height: u32::from(start - 1) as u64, hash: vec![] })
                 .await
-                .map_err(|e| err(&format!("get_tree_state: {e}")))?
+                .map_err(|e| SyncError::net(format!("get_tree_state: {e}")))?
                 .into_inner();
-            ts.to_chain_state().map_err(|e| err(&format!("parse tree state: {e}")))?
+            ts.to_chain_state()
+                .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))?
         };
 
-        // Scan from memory
+        // Scan from memory. Errors are bucketed as `Other` for now — commit 1.3
+        // teaches this call site to recognise librustzcash's continuity errors
+        // (`PrevHashMismatch` / `BlockHeightDiscontinuity`) and map them to
+        // `SyncError::Continuity` so the reorg-recovery path in commit 1.4 can
+        // trigger a rewind.
         let scan_summary = scan_cached_blocks(&network, &block_source, &mut db, start, &from_state, batch_size as usize)
-            .map_err(|e| err(&format!("scan: {e}")))?;
+            .map_err(|e| SyncError::other(format!("scan: {e}")))?;
 
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: exiting after scan", elapsed());
@@ -380,7 +429,9 @@ async fn run_sync_impl(
             || scan_summary.spent_sapling_note_count() > 0
             || scan_summary.received_orchard_note_count() > 0
             || scan_summary.spent_orchard_note_count() > 0;
-        let post_ranges = db.suggest_scan_ranges().map_err(|e| err(&format!("suggest_scan_ranges: {e}")))?;
+        let post_ranges = db
+            .suggest_scan_ranges()
+            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         let remaining: u64 = post_ranges.iter()
             .filter(|r| r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned)
             .map(|r| u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start)) as u64)
@@ -424,24 +475,20 @@ async fn run_sync_impl(
 
 // ==================== Helpers ====================
 
-/// Log and return an error string.
-fn err(msg: &str) -> String {
-    log::error!("sync: {msg}");
-    msg.to_string()
-}
-
-fn open_db(path: &str, network: Network) -> Result<WalletDatabase, String> {
+fn open_db(path: &str, network: Network) -> Result<WalletDatabase, SyncError> {
     WalletDb::for_path(path, network, SystemClock, OsRng)
-        .map_err(|e| err(&format!("DB open: {e}")))
+        .map_err(|e| SyncError::db(format!("DB open: {e}")))
 }
 
 
 async fn download_subtree_roots(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
-) -> Result<(), String> {
+) -> Result<(), SyncError> {
     let (sap_start, orch_start) = {
-        let summary = db.get_wallet_summary(ConfirmationsPolicy::default()).map_err(|e| format!("{e}"))?;
+        let summary = db
+            .get_wallet_summary(ConfirmationsPolicy::default())
+            .map_err(|e| SyncError::db(format!("get_wallet_summary: {e}")))?;
         match summary {
             Some(s) => (s.next_sapling_subtree_index(), s.next_orchard_subtree_index()),
             None => (0, 0),
@@ -457,18 +504,27 @@ async fn download_subtree_roots(
             max_entries: 0,
         })
         .await
-        .map_err(|e| err(&format!("sapling subtree roots: {e}")))?
+        .map_err(|e| SyncError::net(format!("sapling subtree roots: {e}")))?
         .into_inner();
 
     let mut roots = Vec::new();
-    while let Some(root) = stream.message().await.map_err(|e| format!("{e}"))? {
-        let bytes: [u8; 32] = root.root_hash[..32].try_into().map_err(|_| "bad hash")?;
-        let node = Option::from(sapling_crypto::Node::from_bytes(bytes)).ok_or("bad sapling node")?;
+    while let Some(root) = stream
+        .message()
+        .await
+        .map_err(|e| SyncError::net(format!("sapling subtree roots stream: {e}")))?
+    {
+        let bytes: [u8; 32] = root
+            .root_hash[..32]
+            .try_into()
+            .map_err(|_| SyncError::parse("sapling subtree root: bad hash length".to_string()))?;
+        let node = Option::from(sapling_crypto::Node::from_bytes(bytes))
+            .ok_or_else(|| SyncError::parse("sapling subtree root: bad node bytes".to_string()))?;
         roots.push(CommitmentTreeRoot::from_parts(BlockHeight::from_u32(root.completing_block_height as u32), node));
     }
     log::info!("[{}] sync: downloaded {} sapling subtree roots", elapsed(), roots.len());
     if !roots.is_empty() {
-        db.put_sapling_subtree_roots(sap_start, roots.as_slice()).map_err(|e| err(&format!("put_sapling_subtree_roots: {e}")))?;
+        db.put_sapling_subtree_roots(sap_start, roots.as_slice())
+            .map_err(|e| SyncError::db(format!("put_sapling_subtree_roots: {e}")))?;
     }
 
     // Orchard
@@ -479,18 +535,27 @@ async fn download_subtree_roots(
             max_entries: 0,
         })
         .await
-        .map_err(|e| err(&format!("orchard subtree roots: {e}")))?
+        .map_err(|e| SyncError::net(format!("orchard subtree roots: {e}")))?
         .into_inner();
 
     let mut roots = Vec::new();
-    while let Some(root) = stream.message().await.map_err(|e| format!("{e}"))? {
-        let bytes: [u8; 32] = root.root_hash[..32].try_into().map_err(|_| "bad hash")?;
-        let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&bytes)).ok_or("bad orchard node")?;
+    while let Some(root) = stream
+        .message()
+        .await
+        .map_err(|e| SyncError::net(format!("orchard subtree roots stream: {e}")))?
+    {
+        let bytes: [u8; 32] = root
+            .root_hash[..32]
+            .try_into()
+            .map_err(|_| SyncError::parse("orchard subtree root: bad hash length".to_string()))?;
+        let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&bytes))
+            .ok_or_else(|| SyncError::parse("orchard subtree root: bad node bytes".to_string()))?;
         roots.push(CommitmentTreeRoot::from_parts(BlockHeight::from_u32(root.completing_block_height as u32), node));
     }
     log::info!("[{}] sync: downloaded {} orchard subtree roots", elapsed(), roots.len());
     if !roots.is_empty() {
-        db.put_orchard_subtree_roots(orch_start, roots.as_slice()).map_err(|e| err(&format!("put_orchard_subtree_roots: {e}")))?;
+        db.put_orchard_subtree_roots(orch_start, roots.as_slice())
+            .map_err(|e| SyncError::db(format!("put_orchard_subtree_roots: {e}")))?;
     }
 
     log::info!("[{}] sync: subtree roots done", elapsed());
@@ -501,18 +566,22 @@ async fn download_blocks(
     client: &mut CompactTxStreamerClient<Channel>,
     start: BlockHeight,
     end: BlockHeight,
-) -> Result<MemoryBlockSource, String> {
+) -> Result<MemoryBlockSource, SyncError> {
     let mut stream = client
         .get_block_range(BlockRange {
             start: Some(BlockId { height: u32::from(start) as u64, hash: vec![] }),
             end: Some(BlockId { height: u32::from(end) as u64, hash: vec![] }),
         })
         .await
-        .map_err(|e| err(&format!("get_block_range: {e}")))?
+        .map_err(|e| SyncError::net(format!("get_block_range: {e}")))?
         .into_inner();
 
     let mut blocks = Vec::new();
-    while let Some(block) = stream.message().await.map_err(|e| format!("{e}"))? {
+    while let Some(block) = stream
+        .message()
+        .await
+        .map_err(|e| SyncError::net(format!("get_block_range stream: {e}")))?
+    {
         blocks.push(block);
     }
 
@@ -523,11 +592,13 @@ async fn run_enhancement(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
     network: Network,
-) -> Result<(), String> {
+) -> Result<(), SyncError> {
     let mut failed_txids = std::collections::HashSet::new();
 
     for _ in 0..3 {
-        let requests = db.transaction_data_requests().map_err(|e| err(&format!("transaction_data_requests: {e}")))?;
+        let requests = db
+            .transaction_data_requests()
+            .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?;
         if requests.is_empty() { break; }
 
         let actionable = requests.iter().any(|r| match r {
