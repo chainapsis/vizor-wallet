@@ -21,9 +21,15 @@ class SyncState {
   final BigInt transparentBalance;
   final BigInt saplingBalance;
   final BigInt orchardBalance;
+  /// Sum of spendable balances across all pools. Use for "available to send".
+  final BigInt spendableBalance;
+  /// Sum of spendable + pending across all pools. Use for "total holdings".
   final BigInt totalBalance;
   final String? error;
   final List<rust_sync.TransactionInfo> recentTransactions;
+
+  /// Amount waiting for confirmations (e.g. change from a recently sent tx).
+  BigInt get pendingBalance => totalBalance - spendableBalance;
 
   SyncState({
     this.isSyncing = false,
@@ -34,12 +40,14 @@ class SyncState {
     BigInt? transparentBalance,
     BigInt? saplingBalance,
     BigInt? orchardBalance,
+    BigInt? spendableBalance,
     BigInt? totalBalance,
     this.error,
     this.recentTransactions = const [],
   })  : transparentBalance = transparentBalance ?? BigInt.zero,
         saplingBalance = saplingBalance ?? BigInt.zero,
         orchardBalance = orchardBalance ?? BigInt.zero,
+        spendableBalance = spendableBalance ?? BigInt.zero,
         totalBalance = totalBalance ?? BigInt.zero;
 
   SyncState copyWith({
@@ -51,6 +59,7 @@ class SyncState {
     BigInt? transparentBalance,
     BigInt? saplingBalance,
     BigInt? orchardBalance,
+    BigInt? spendableBalance,
     BigInt? totalBalance,
     String? error,
     List<rust_sync.TransactionInfo>? recentTransactions,
@@ -64,6 +73,7 @@ class SyncState {
       transparentBalance: transparentBalance ?? this.transparentBalance,
       saplingBalance: saplingBalance ?? this.saplingBalance,
       orchardBalance: orchardBalance ?? this.orchardBalance,
+      spendableBalance: spendableBalance ?? this.spendableBalance,
       totalBalance: totalBalance ?? this.totalBalance,
       error: error ?? this.error,
       recentTransactions: recentTransactions ?? this.recentTransactions,
@@ -310,7 +320,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     // Only fetch balance/history when there are new transactions or sync is complete.
     // Skipping intermediate batches avoids opening a new DB connection per batch.
-    BigInt? transparent, sapling, orchard, total;
+    BigInt? transparent, sapling, orchard, spendable, total;
     var recentTxs = prev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
     if (event.hasNewTx || event.isComplete) {
       try {
@@ -318,6 +328,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparent = balance.transparent;
         sapling = balance.sapling;
         orchard = balance.orchard;
+        spendable = balance.spendable;
         total = balance.total;
       } catch (e) {
         log('SyncNotifier: balance fetch failed: $e');
@@ -341,6 +352,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       transparentBalance: transparent ?? prev?.transparentBalance,
       saplingBalance: sapling ?? prev?.saplingBalance,
       orchardBalance: orchard ?? prev?.orchardBalance,
+      spendableBalance: spendable ?? prev?.spendableBalance,
       totalBalance: total ?? prev?.totalBalance,
       recentTransactions: recentTxs,
     ));
@@ -365,12 +377,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final accountUuid = _getActiveAccountUuid();
     if (accountUuid == null) { log('SyncNotifier: no active account, skipping refresh'); return; }
 
-    BigInt? transparent, sapling, orchard, total;
+    BigInt? transparent, sapling, orchard, spendable, total;
     try {
       final balance = await rust_sync.getBalance(dbPath: dbPath, network: network, accountUuid: accountUuid);
       transparent = balance.transparent;
       sapling = balance.sapling;
       orchard = balance.orchard;
+      spendable = balance.spendable;
       total = balance.total;
     } catch (e) {
       log('SyncNotifier: balance refresh failed: $e');
@@ -392,6 +405,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       transparentBalance: transparent ?? prev?.transparentBalance,
       saplingBalance: sapling ?? prev?.saplingBalance,
       orchardBalance: orchard ?? prev?.orchardBalance,
+      spendableBalance: spendable ?? prev?.spendableBalance,
       totalBalance: total ?? prev?.totalBalance,
       recentTransactions: recentTxs,
     ));

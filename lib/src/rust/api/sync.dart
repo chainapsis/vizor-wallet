@@ -598,6 +598,11 @@ class WalletBalance {
   final BigInt transparentPending;
   final BigInt saplingPending;
   final BigInt orchardPending;
+
+  /// Sum of spendable balances across all pools. Use this for "available to send".
+  final BigInt spendable;
+
+  /// Sum of spendable + pending across all pools. Use this for "total holdings".
   final BigInt total;
 
   const WalletBalance({
@@ -607,6 +612,7 @@ class WalletBalance {
     required this.transparentPending,
     required this.saplingPending,
     required this.orchardPending,
+    required this.spendable,
     required this.total,
   });
 
@@ -618,6 +624,7 @@ class WalletBalance {
       transparentPending.hashCode ^
       saplingPending.hashCode ^
       orchardPending.hashCode ^
+      spendable.hashCode ^
       total.hashCode;
 
   @override
@@ -631,5 +638,6 @@ class WalletBalance {
           transparentPending == other.transparentPending &&
           saplingPending == other.saplingPending &&
           orchardPending == other.orchardPending &&
+          spendable == other.spendable &&
           total == other.total;
 }

@@ -60,7 +60,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
   BigInt _getSpendableBalance() {
     final syncState = ref.read(syncProvider).value;
-    return syncState?.totalBalance ?? BigInt.zero;
+    return syncState?.spendableBalance ?? BigInt.zero;
   }
 
   Future<void> _validateAmount() async {
@@ -512,7 +512,8 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final syncState = ref.watch(syncProvider).value;
-    final spendable = syncState?.totalBalance ?? BigInt.zero;
+    final spendable = syncState?.spendableBalance ?? BigInt.zero;
+    final pending = syncState?.pendingBalance ?? BigInt.zero;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Send ZEC')),
@@ -542,6 +543,13 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       )),
+                    if (pending > BigInt.zero) ...[
+                      const SizedBox(height: 4),
+                      Text('+ ${_formatZec(pending)} ZEC pending confirmations',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        )),
+                    ],
                   ],
                 ),
               ),
