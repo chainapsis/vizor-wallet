@@ -358,7 +358,6 @@ async fn broadcast_raw_transaction(
 /// lightwalletd accepted the broadcast (either on the first try or
 /// the single retry). `failed` is everything else; per-tx failures
 /// are always logged before being counted and never propagated up.
-#[allow(dead_code)] // consumed by run_sync_impl in commit 3.3
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct ResubmitStats {
     pub attempted: usize,
@@ -399,7 +398,6 @@ pub(crate) struct ResubmitStats {
 /// and `log::warn!` for per-tx failures / retries so an operator
 /// can grep the live-stream log for `resubmit:` and see what the
 /// wallet is doing without enabling DEBUG everywhere.
-#[allow(dead_code)] // consumed by run_sync_impl in commit 3.3
 pub(crate) async fn resubmit_pending_transactions(
     db_path: &str,
     client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
