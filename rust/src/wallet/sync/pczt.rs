@@ -85,7 +85,7 @@ use super::{open_wallet_db, PROPOSAL_STORE};
 /// before reaching this function (e.g. the confirmation dialog is
 /// cancelled), Dart is expected to call [`discard_proposal`]
 /// explicitly to release the stored proposal.
-pub(crate) fn create_pczt_from_proposal(
+pub fn create_pczt_from_proposal(
     db_path: &str,
     network: Network,
     proposal_id: u64,
@@ -123,7 +123,7 @@ pub(crate) fn create_pczt_from_proposal(
 /// dialog, cancels the Sapling params download prompt). Idempotent:
 /// safe to call for a proposal that has already been consumed or
 /// never existed.
-pub(crate) fn discard_proposal(proposal_id: u64) {
+pub fn discard_proposal(proposal_id: u64) {
     if let Ok(mut store) = PROPOSAL_STORE.lock() {
         store.proposals.remove(&proposal_id);
     }
@@ -140,7 +140,7 @@ pub(crate) fn discard_proposal(proposal_id: u64) {
 /// the Zashi / zcash-android-wallet-sdk hardware-wallet flow: the
 /// hardware device only signs Orchard spends, the phone generates
 /// all ZK proofs.
-pub(crate) fn add_proofs_to_pczt(
+pub fn add_proofs_to_pczt(
     pczt_bytes: &[u8],
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
@@ -182,7 +182,7 @@ pub(crate) fn add_proofs_to_pczt(
 /// Redact information from a PCZT that the signer role doesn't need
 /// (witnesses, proprietary metadata). Produces the bytes to send to
 /// the hardware wallet for signing.
-pub(crate) fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
+pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     use pczt::roles::redactor::Redactor;
 
     let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
@@ -217,7 +217,7 @@ pub(crate) fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, Strin
 ///
 /// Ordering is critical here. See invariants (1) and (2) in the
 /// module-level docstring.
-pub(crate) async fn extract_and_broadcast_pczt(
+pub async fn extract_and_broadcast_pczt(
     db_path: &str,
     lightwalletd_url: &str,
     network: Network,

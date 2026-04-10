@@ -37,7 +37,7 @@ pub(crate) struct WalletBalance {
     pub orchard_pending: u64,
 }
 
-pub(crate) fn get_wallet_balance(
+pub fn get_wallet_balance(
     db_path: &str,
     network: Network,
     account_uuid: &str,
@@ -82,7 +82,7 @@ pub(crate) fn get_wallet_balance(
 
 // ======================== Diversified Address ========================
 
-pub(crate) fn get_next_available_address(
+pub fn get_next_available_address(
     db_path: &str,
     network: Network,
     account_uuid: &str,
@@ -113,7 +113,7 @@ pub(crate) struct TxDataRequest {
     pub block_range_end: Option<u64>,
 }
 
-pub(crate) fn get_transaction_data_requests(
+pub fn get_transaction_data_requests(
     db_path: &str,
     network: Network,
 ) -> Result<Vec<TxDataRequest>, String> {
@@ -156,7 +156,7 @@ pub(crate) fn get_transaction_data_requests(
         .collect())
 }
 
-pub(crate) fn decrypt_and_store_transaction(
+pub fn decrypt_and_store_transaction(
     db_path: &str,
     network: Network,
     tx_bytes: &[u8],
@@ -175,7 +175,7 @@ pub(crate) fn decrypt_and_store_transaction(
         .map_err(|e| format!("Failed to decrypt/store transaction: {e}"))
 }
 
-pub(crate) fn set_transaction_status(
+pub fn set_transaction_status(
     db_path: &str,
     network: Network,
     txid_hex: &str,
@@ -210,7 +210,7 @@ pub(crate) struct TransactionInfo {
     pub block_time: u64,
 }
 
-pub(crate) fn get_transaction_history(
+pub fn get_transaction_history(
     db_path: &str,
     _network: Network,
     limit: Option<u32>,
@@ -282,7 +282,7 @@ pub(crate) struct PendingTxInfo {
 
 /// Get all pending (unmined, unexpired) transactions that we
 /// created (have raw bytes).
-pub(crate) fn get_pending_transactions(db_path: &str) -> Result<Vec<PendingTxInfo>, String> {
+pub fn get_pending_transactions(db_path: &str) -> Result<Vec<PendingTxInfo>, String> {
     let conn = rusqlite::Connection::open_with_flags(
         db_path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -317,7 +317,7 @@ pub(crate) fn get_pending_transactions(db_path: &str) -> Result<Vec<PendingTxInf
 /// Check if a transaction has been mined by querying lightwalletd.
 /// Returns: `0` = still in mempool, `> 0` = mined at that height,
 /// `-1` = error / not found.
-pub(crate) async fn check_tx_mined(lightwalletd_url: &str, txid_bytes: &[u8]) -> i64 {
+pub async fn check_tx_mined(lightwalletd_url: &str, txid_bytes: &[u8]) -> i64 {
     use zcash_client_backend::proto::service::TxFilter;
 
     let (mut client, _tor_guard) =

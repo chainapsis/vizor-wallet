@@ -77,7 +77,7 @@ pub(crate) struct ProposalResult {
     pub fee_zatoshi: u64,
 }
 
-pub(crate) fn propose_send(
+pub fn propose_send(
     db_path: &str,
     network: Network,
     account_uuid: &str,
@@ -154,7 +154,7 @@ pub(crate) fn propose_send(
 /// Estimate the fee for a transfer without storing the proposal.
 /// Used for validation only — does not consume resources in
 /// `PROPOSAL_STORE`.
-pub(crate) fn estimate_fee(
+pub fn estimate_fee(
     db_path: &str,
     network: Network,
     account_uuid: &str,
@@ -211,7 +211,7 @@ pub(crate) fn estimate_fee(
 /// before any fallible work, mirroring `create_pczt_from_proposal`
 /// in `sync/pczt.rs`. A second call with the same id returns
 /// "Proposal not found".
-pub(crate) async fn execute_proposal(
+pub async fn execute_proposal(
     db_path: &str,
     lightwalletd_url: &str,
     proposal_id: u64,
