@@ -83,6 +83,84 @@ pub(crate) fn get_tor_dir() -> Result<PathBuf, String> {
         .ok_or_else(|| "Tor enabled but TOR_DIR not set; call set_tor_dir() first".to_string())
 }
 
+/// Downloads the file at `url` over Tor, verifies its SHA-1 digest
+/// against `expected_sha1_hex`, and saves it atomically to
+/// `dest_path`. **Only valid when Tor is currently enabled.** If
+/// `USE_TOR` is false this errors out — the Dart caller is expected
+/// to branch on `is_tor_enabled()` and use its own plain-HTTPS path
+/// when Tor is off.
+///
+/// Exists so the Sapling parameter download path in the Dart send
+/// flow (`send_screen.dart`) can respect the Tor toggle instead of
+/// always going out over plain HTTPS. Before this function, a user
+/// who enabled Tor and then kicked off a spend that required
+/// Sapling params would still leak their IP to the params host
+/// mid-flow, which completely undercut the Tor privacy boundary.
+///
+/// The "Tor-only" split means we don't have to pull in a new
+/// hyper-rustls dep tree just to have a Rust-side plain HTTPS
+/// client. The user who flipped Tor off has explicitly opted out
+/// of the Tor privacy boundary, so reusing Dart's existing
+/// `HttpClient` for that path is correct and simpler.
+///
+/// Writes to `{dest_path}.tmp` then atomically renames on success;
+/// on SHA-1 mismatch the temp file is left in place for post-
+/// mortem and the function errors without touching `dest_path`.
+pub async fn download_file_over_tor_with_sha1(
+    url: String,
+    dest_path: String,
+    expected_sha1_hex: String,
+) -> Result<(), String> {
+    use sha1::{Digest, Sha1};
+    use std::path::PathBuf;
+
+    if !USE_TOR.load(Ordering::Relaxed) {
+        return Err(
+            "download_file_over_tor_with_sha1 called while Tor is \
+             disabled; the Dart caller should fall back to its \
+             plain-HTTPS path when is_tor_enabled() is false"
+                .to_string(),
+        );
+    }
+
+    let tor_dir = get_tor_dir()?;
+    let bytes = crate::wallet::tor::http_get_bytes(tor_dir, &url)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Verify SHA-1 before touching `dest_path`. A mismatch is a
+    // security-relevant condition (wrong params → wrong proofs),
+    // so we fail noisily rather than overwrite an existing good
+    // file.
+    let mut hasher = Sha1::new();
+    hasher.update(&bytes);
+    let actual_hex = hex::encode(hasher.finalize());
+    if actual_hex != expected_sha1_hex.to_lowercase() {
+        return Err(format!(
+            "SHA-1 mismatch for {url}: expected {expected_sha1_hex}, got {actual_hex}"
+        ));
+    }
+
+    let dest = PathBuf::from(&dest_path);
+    let tmp = PathBuf::from(format!("{dest_path}.tmp"));
+    if let Some(parent) = dest.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+    }
+    tokio::fs::write(&tmp, &bytes)
+        .await
+        .map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    tokio::fs::rename(&tmp, &dest)
+        .await
+        .map_err(|e| format!("rename {} -> {}: {e}", tmp.display(), dest.display()))?;
+    log::info!(
+        "download_file_over_tor_with_sha1: saved {dest_path} ({} bytes) via Tor",
+        bytes.len()
+    );
+    Ok(())
+}
+
 /// Put arti's background circuit-maintenance tasks to sleep (when
 /// `dormant = true`) or wake them back up (`dormant = false`). Called
 /// by the Dart `sync_provider` on `AppLifecycleListener.onHide` and

@@ -60,6 +60,12 @@ tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring
 # "no process-level CryptoProvider installed".
 rustls = "0.23"
 
+# Needed to collect response bodies when routing Sapling params downloads
+# through zcash_client_backend::tor::Client::http_get. Already transitive
+# via zcash_client_backend's `tor` feature; promoting to a direct dep so
+# `use http_body_util::BodyExt;` resolves inside wallet/tor.rs.
+http-body-util = "0.1"
+
 # SQLite (re-exported by zcash_client_sqlite but needed for Connection type)
 rusqlite = "0.37"
 
@@ -68,6 +74,8 @@ log = "0.4"
 
 # Hex encoding
 hex = "0.4"
+# SHA-1 for the Sapling params download integrity check
+sha1 = "0.10"
 
 # Keystone hardware wallet
 ur = { git = "https://github.com/KeystoneHQ/ur-rs", tag = "0.3.3" }

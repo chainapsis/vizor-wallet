@@ -367,9 +367,7 @@ pub async fn execute_proposal(
         // seed + usk dropped here, before broadcast
     };
 
-    // Connect to lightwalletd once for all broadcasts
-    use zcash_client_backend::proto::service::RawTransaction;
-
+    // Connect to lightwalletd once for all broadcasts.
     let (mut client, _tor_guard) =
         crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
             .await

@@ -32,6 +32,39 @@ bool isTorEnabled() => RustLib.instance.api.crateApiSyncIsTorEnabled();
 void setTorDir({required String torDir}) =>
     RustLib.instance.api.crateApiSyncSetTorDir(torDir: torDir);
 
+/// Downloads the file at `url` over Tor, verifies its SHA-1 digest
+/// against `expected_sha1_hex`, and saves it atomically to
+/// `dest_path`. **Only valid when Tor is currently enabled.** If
+/// `USE_TOR` is false this errors out — the Dart caller is expected
+/// to branch on `is_tor_enabled()` and use its own plain-HTTPS path
+/// when Tor is off.
+///
+/// Exists so the Sapling parameter download path in the Dart send
+/// flow (`send_screen.dart`) can respect the Tor toggle instead of
+/// always going out over plain HTTPS. Before this function, a user
+/// who enabled Tor and then kicked off a spend that required
+/// Sapling params would still leak their IP to the params host
+/// mid-flow, which completely undercut the Tor privacy boundary.
+///
+/// The "Tor-only" split means we don't have to pull in a new
+/// hyper-rustls dep tree just to have a Rust-side plain HTTPS
+/// client. The user who flipped Tor off has explicitly opted out
+/// of the Tor privacy boundary, so reusing Dart's existing
+/// `HttpClient` for that path is correct and simpler.
+///
+/// Writes to `{dest_path}.tmp` then atomically renames on success;
+/// on SHA-1 mismatch the temp file is left in place for post-
+/// mortem and the function errors without touching `dest_path`.
+Future<void> downloadFileOverTorWithSha1({
+  required String url,
+  required String destPath,
+  required String expectedSha1Hex,
+}) => RustLib.instance.api.crateApiSyncDownloadFileOverTorWithSha1(
+  url: url,
+  destPath: destPath,
+  expectedSha1Hex: expectedSha1Hex,
+);
+
 /// Put arti's background circuit-maintenance tasks to sleep (when
 /// `dormant = true`) or wake them back up (`dormant = false`). Called
 /// by the Dart `sync_provider` on `AppLifecycleListener.onHide` and

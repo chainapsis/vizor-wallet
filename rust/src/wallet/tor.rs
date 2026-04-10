@@ -118,6 +118,57 @@ pub(crate) async fn connect_lightwalletd(
     Ok((conn, isolated))
 }
 
+/// HTTP GET over Tor that returns the response body as a byte vector.
+///
+/// Thin wrapper around `zcash_client_backend::tor::Client::http_get`
+/// with a body-collecting closure. Used by the Sapling parameter
+/// download path so a Tor-enabled wallet doesn't leak "I'm about to
+/// spend to a Sapling address" to the params host just because the
+/// params download went out over plain HTTPS.
+///
+/// Retries up to 3 times with the default retry policy (no custom
+/// filter). Treats any non-2xx response as an error rather than
+/// returning it, since the caller verifies a known SHA-1 and has no
+/// use for partial data.
+pub(crate) async fn http_get_bytes(
+    tor_dir: PathBuf,
+    url: &str,
+) -> Result<Vec<u8>, SyncError> {
+    use http_body_util::BodyExt;
+    use zcash_client_backend::tor::Error as TorError;
+    use zcash_client_backend::tor::http::HttpError;
+
+    let client = get_or_init_client(tor_dir).await?;
+    let uri: Uri = url.parse().map_err(|e| {
+        SyncError::net(format!("tor http_get: invalid URL {url}: {e}"))
+    })?;
+
+    let response = client
+        .http_get(
+            uri,
+            |b| b,
+            |incoming| async move {
+                let collected = incoming
+                    .collect()
+                    .await
+                    .map_err(|e| TorError::Http(HttpError::Hyper(e)))?;
+                Ok::<_, TorError>(collected.to_bytes().to_vec())
+            },
+            3,
+            |_| None,
+        )
+        .await
+        .map_err(|e| SyncError::net(format!("tor http_get {url}: {e}")))?;
+
+    if !response.status().is_success() {
+        return Err(SyncError::net(format!(
+            "tor http_get {url}: HTTP {}",
+            response.status(),
+        )));
+    }
+    Ok(response.into_body())
+}
+
 /// Flips the process-wide Tor client into or out of `DormantMode::Soft`.
 /// Call with `true` when the app goes to background to stop arti's
 /// circuit-maintenance background tasks, and `false` on foreground to
