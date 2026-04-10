@@ -348,6 +348,132 @@ async fn broadcast_raw_transaction(
     Ok(())
 }
 
+// ======================== Auto-Resubmit ========================
+
+/// Summary of a single [`resubmit_pending_transactions`] pass.
+///
+/// `attempted` counts the candidates pulled from the DB — one entry
+/// per unmined, unexpired, outbound wallet transaction visible at
+/// the requested height. `succeeded` is the subset where
+/// lightwalletd accepted the broadcast (either on the first try or
+/// the single retry). `failed` is everything else; per-tx failures
+/// are always logged before being counted and never propagated up.
+#[allow(dead_code)] // consumed by run_sync_impl in commit 3.3
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct ResubmitStats {
+    pub attempted: usize,
+    pub succeeded: usize,
+    pub failed: usize,
+}
+
+/// Auto-resubmit every wallet-created unmined, unexpired,
+/// outbound transaction we still have bytes for.
+///
+/// Mirrors zcash-android-wallet-sdk's `resubmitUnminedTransactions`
+/// behaviour:
+///
+///   * The candidate list comes from
+///     [`crate::wallet::sync::transactions::get_resubmittable_txs`]
+///     — the same SQL predicate the SDK uses
+///     (`mined_height IS NULL AND expiry_height > current_tip AND
+///     account_balance_delta < 0`).
+///   * Each failed broadcast retries exactly **once**, matching
+///     `TRANSACTION_RESUBMIT_RETRIES = 1` in the SDK. After that we
+///     log and move on rather than aborting the whole pass — a
+///     single flaky tx must not stop us from retrying the others,
+///     and the main sync loop is expected to call this helper
+///     again at the next batch boundary.
+///   * Errors from `get_resubmittable_txs` itself (DB open or
+///     query failure) are logged and returned as an all-zero
+///     `ResubmitStats`; resubmit is a best-effort background job,
+///     never a fatal-to-sync operation.
+///
+/// The caller owns the gRPC client. In the sync loop the same
+/// client that downloaded the compact blocks is threaded straight
+/// through, so auto-resubmit inherits the same transport (plain
+/// TLS or Tor) and the same connection state. That matters for Tor
+/// — spawning a fresh isolated circuit per resubmit pass would
+/// defeat the point of sharing a client with the active scan.
+///
+/// Logging uses `log::info!` for the "broadcasting N txs" entry
+/// and `log::warn!` for per-tx failures / retries so an operator
+/// can grep the live-stream log for `resubmit:` and see what the
+/// wallet is doing without enabling DEBUG everywhere.
+#[allow(dead_code)] // consumed by run_sync_impl in commit 3.3
+pub(crate) async fn resubmit_pending_transactions(
+    db_path: &str,
+    client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
+    current_height: u32,
+) -> ResubmitStats {
+    let candidates = match super::transactions::get_resubmittable_txs(db_path, current_height) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!(
+                "resubmit: failed to query resubmittable txs at height {current_height}: {e}",
+            );
+            return ResubmitStats::default();
+        }
+    };
+
+    if candidates.is_empty() {
+        return ResubmitStats::default();
+    }
+
+    log::info!(
+        "resubmit: broadcasting {} unmined tx(s) at height {current_height}",
+        candidates.len(),
+    );
+
+    let mut stats = ResubmitStats {
+        attempted: candidates.len(),
+        succeeded: 0,
+        failed: 0,
+    };
+
+    for tx in &candidates {
+        let txid_hex = hex::encode(&tx.txid_bytes);
+        match broadcast_raw_transaction(client, &tx.raw_tx).await {
+            Ok(()) => {
+                log::info!(
+                    "resubmit: {txid_hex} ok (expiry={}, bytes={})",
+                    tx.expiry_height,
+                    tx.raw_tx.len(),
+                );
+                stats.succeeded += 1;
+            }
+            Err(first_err) => {
+                // One retry, matching zcash-android-wallet-sdk's
+                // `TRANSACTION_RESUBMIT_RETRIES = 1`. Any remaining
+                // failure is logged and counted; the next sync
+                // batch will try again from scratch.
+                log::warn!("resubmit: {txid_hex} first attempt failed: {first_err}");
+                match broadcast_raw_transaction(client, &tx.raw_tx).await {
+                    Ok(()) => {
+                        log::info!("resubmit: {txid_hex} ok on retry");
+                        stats.succeeded += 1;
+                    }
+                    Err(retry_err) => {
+                        log::warn!(
+                            "resubmit: {txid_hex} retry failed: {retry_err} \
+                             (will try again next scan batch)",
+                        );
+                        stats.failed += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    log::info!(
+        "resubmit: pass complete — {} succeeded, {} failed of {} attempted",
+        stats.succeeded,
+        stats.failed,
+        stats.attempted,
+    );
+
+    stats
+}
+
 /// ZIP-317 change-strategy / input-selector factory used by both
 /// `propose_send` and `estimate_fee`. Keeps the configuration
 /// (Orchard-preferred change, minimum 0.1 ZEC output split) in one

@@ -288,7 +288,6 @@ pub(crate) struct PendingTxInfo {
 /// back into `send_transaction` — no re-encoding required. The
 /// resubmit path at `sync::send::resubmit_pending_transactions`
 /// consumes this struct directly.
-#[allow(dead_code)] // fields consumed by sync::send::resubmit_pending_transactions in commit 3.2
 pub(crate) struct ResubmittableTx {
     pub txid_bytes: Vec<u8>,
     pub raw_tx: Vec<u8>,
@@ -321,7 +320,6 @@ pub(crate) struct ResubmittableTx {
 /// `SELECT DISTINCT` on `(txid, raw, expiry_height)` to collapse
 /// that into a single broadcast instead of double-sending the same
 /// bytes.
-#[allow(dead_code)] // consumed by sync::send::resubmit_pending_transactions in commit 3.2
 pub(crate) fn get_resubmittable_txs(
     db_path: &str,
     current_height: u32,
