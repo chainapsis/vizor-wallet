@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`
+// These functions are ignored because they are not marked as `pub`: `catch`, `get_tor_dir`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
@@ -15,6 +15,22 @@ void setSyncMode({required int mode}) =>
 
 /// Get the current desired sync mode.
 int getSyncMode() => RustLib.instance.api.crateApiSyncGetSyncMode();
+
+/// Enable or disable Tor routing for future lightwalletd connections.
+/// An in-flight sync keeps using whatever transport it was started
+/// with; the toggle only affects the next `open_lwd_channel` call.
+void setTorEnabled({required bool enabled}) =>
+    RustLib.instance.api.crateApiSyncSetTorEnabled(enabled: enabled);
+
+/// Check whether Tor routing is currently enabled.
+bool isTorEnabled() => RustLib.instance.api.crateApiSyncIsTorEnabled();
+
+/// Set the on-disk directory arti uses for its consensus cache and
+/// guard-node state. Must be called before the first `set_tor_enabled(true)`
+/// the Dart side issues. Subsequent calls are ignored (the directory
+/// is pinned after the first Tor bootstrap).
+void setTorDir({required String torDir}) =>
+    RustLib.instance.api.crateApiSyncSetTorDir(torDir: torDir);
 
 /// Start a full sync. Streams progress events to Dart via StreamSink.
 /// mode: 1=foreground, 2=background. Sync exits if desired mode changes.

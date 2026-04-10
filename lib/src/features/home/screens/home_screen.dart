@@ -165,6 +165,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               if (isDesktopLayoutPlatform) _buildLayoutToggle(context),
               IconButton(
+                icon: Icon(Icons.settings, color: colors.onSurface),
+                onPressed: () => context.push('/settings'),
+              ),
+              IconButton(
                 icon: Icon(Icons.qr_code_scanner, color: colors.onSurface),
                 onPressed: () {},
               ),
