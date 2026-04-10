@@ -376,10 +376,21 @@ async fn run_sync_impl(
     let mut prev_remaining = initial_total;
     log::info!("[{}] sync: {} blocks to scan", elapsed(), initial_total);
 
-    // Bounded counter for reorg-triggered rewinds inside this one sync run.
-    // A value >= MAX_REWINDS_PER_RUN causes the next continuity error to
-    // bail out with the error instead of rewinding again.
-    let mut rewinds_this_run: u32 = 0;
+    // Bounded counters for reorg-triggered rewinds inside this one sync run,
+    // split between the verify phase and the main scan phase. Separate
+    // budgets match zcash-android-wallet-sdk's pattern of running a
+    // dedicated verify-first loop before the main scan, so a flapping
+    // verify range can't eat the main scan's rewind budget.
+    let mut verify_rewinds_this_run: u32 = 0;
+    let mut main_rewinds_this_run: u32 = 0;
+
+    // Phase-transition markers used only for logging. Progress through the
+    // scan queue is implicitly ordered by `ScanPriority::Verify` >
+    // everything else, so an explicit state machine isn't needed — we just
+    // log when we first see a verify range and when we first see a
+    // non-verify range so diagnosis of a reorg-heavy sync is easier.
+    let mut verify_phase_announced = false;
+    let mut main_phase_announced = false;
 
     // 5. Sync loop
     loop {
@@ -403,9 +414,36 @@ async fn run_sync_impl(
             None => break, // Fully synced
         };
 
+        // Phase bookkeeping. `ScanPriority::Verify` ranges are
+        // librustzcash's "please re-check these blocks to confirm their
+        // chain linkage" signal, and always sort ahead of ChainTip /
+        // Historic / etc. via `suggest_scan_ranges` (ORDER BY priority
+        // DESC), so seeing a non-Verify range means the verify phase has
+        // drained. The announcement booleans keep this purely for logs;
+        // the rewind counters below are what actually matter.
+        let is_verify_phase = range.priority() == ScanPriority::Verify;
+        if is_verify_phase && !verify_phase_announced {
+            log::info!("[{}] sync: entering verify phase", elapsed());
+            verify_phase_announced = true;
+        } else if !is_verify_phase && !main_phase_announced {
+            if verify_phase_announced {
+                log::info!("[{}] sync: verify phase complete, entering main scan", elapsed());
+            } else {
+                log::info!("[{}] sync: entering main scan phase (no verify work)", elapsed());
+            }
+            main_phase_announced = true;
+        }
+
         let start = range.block_range().start;
         let end = std::cmp::min(start + batch_size, range.block_range().end);
-        log::info!("[{}] sync: scanning {}-{} (priority {:?})", elapsed(), u32::from(start), u32::from(end) - 1, range.priority());
+        log::info!(
+            "[{}] sync: scanning {}-{} (priority {:?}{})",
+            elapsed(),
+            u32::from(start),
+            u32::from(end) - 1,
+            range.priority(),
+            if is_verify_phase { ", verify phase" } else { "" },
+        );
 
         // Download blocks into memory
         let block_source = download_blocks(&mut client, start, end - 1).await?;
@@ -452,28 +490,34 @@ async fn run_sync_impl(
         // Handle the scan result. On a reorg we rewind the wallet to
         // `at_height - REWIND_DISTANCE` (bounded by `truncate_to_height`'s
         // nearest checkpoint) and restart the scan loop. librustzcash's
-        // `suggest_scan_ranges` will produce a fresh range list after the
+        // `suggest_scan_ranges` produces a fresh range list after the
         // truncate, so a `continue` is enough — no manual bookkeeping.
         //
-        // `rewinds_this_run` caps runaway rewinds: if the chain is flapping
-        // between forks faster than a single sync run can keep up, we let
-        // the continuity error propagate and the outer retry wrapper (or
-        // the Dart polling loop on the next sync) gets a fresh budget.
+        // Rewind budget is phase-scoped: verify-phase rewinds and
+        // main-phase rewinds each have their own cap of
+        // `MAX_REWINDS_PER_RUN`. A verify range that keeps flapping won't
+        // exhaust the budget the main scan needs to handle an unrelated
+        // later reorg.
         let scan_summary = match scan_result {
             Ok(s) => s,
             Err(sync_err) => match sync_err.recovery_strategy() {
                 RecoveryStrategy::Rewind { to_height } => {
-                    if rewinds_this_run >= MAX_REWINDS_PER_RUN {
+                    let (phase_name, current_rewinds) = if is_verify_phase {
+                        ("verify", &mut verify_rewinds_this_run)
+                    } else {
+                        ("main", &mut main_rewinds_this_run)
+                    };
+                    if *current_rewinds >= MAX_REWINDS_PER_RUN {
                         log::error!(
-                            "[{}] sync: reorg rewind budget exhausted ({}/{}); \
-                             propagating error",
+                            "[{}] sync: {phase_name} rewind budget exhausted \
+                             ({}/{}); propagating error",
                             elapsed(),
-                            rewinds_this_run,
+                            *current_rewinds,
                             MAX_REWINDS_PER_RUN,
                         );
                         return Err(sync_err);
                     }
-                    rewinds_this_run += 1;
+                    *current_rewinds += 1;
                     db.truncate_to_height(BlockHeight::from_u32(to_height as u32))
                         .map_err(|e| {
                             SyncError::db(format!(
@@ -481,10 +525,10 @@ async fn run_sync_impl(
                             ))
                         })?;
                     log::info!(
-                        "[{}] sync: rewound to {to_height} after reorg \
+                        "[{}] sync: {phase_name} rewound to {to_height} after reorg \
                          (attempt {}/{}); restarting scan loop",
                         elapsed(),
-                        rewinds_this_run,
+                        *current_rewinds,
                         MAX_REWINDS_PER_RUN,
                     );
                     continue;
