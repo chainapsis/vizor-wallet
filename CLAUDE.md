@@ -37,16 +37,28 @@ Flutter + Rust FFI via `flutter_rust_bridge` v2. All Zcash cryptography and sync
 Single DB (`zcash_wallet.db`) holds multiple accounts from different seeds. Single sync loop decrypts notes for all accounts simultaneously via `scan_cached_blocks` (uses all UFVKs). UI shows one "active account" at a time.
 
 **Account creation strategy** (due to `zcash_client_sqlite` constraints):
-- **First account**: `create_account()` → `AccountSource::Derived`. Uses `init_wallet_db(seed)` so the seed is stored for future schema migrations.
-- **Additional accounts (different seeds)**: `import_account_ufvk(AccountPurpose::Spending { derivation })` → `AccountSource::Imported`. Bypasses the single-seed fingerprint constraint in `create_account`.
-- **DB init for additional accounts**: `init_wallet_db(None)` (no seed) to avoid `SeedNotRelevant` error when only Imported accounts exist.
+- **First account**: `create_account()` → `AccountSource::Derived`. Uses `init_wallet_db(Some(seed))` so the seed fingerprint is pinned to the DB and future seed-requiring migrations can verify relevance.
+- **Additional accounts (even if derived from a known software mnemonic)**: `import_account_ufvk(AccountPurpose::Spending { derivation })` → `AccountSource::Imported`. We have to go through this path because `create_account` enforces a single-seed fingerprint per DB, so the second software account with a different mnemonic would be rejected. Derivation metadata (`Zip32Derivation { seed_fp, account_index }`) is attached to the `Imported` record so the account's origin is at least known, but librustzcash never stores the seed itself for imported accounts.
+- **DB init after the first account**: remains `init_wallet_db(None)`. Calling `init_wallet_db(Some(other_seed))` after the first account would fail the seed relevance check if `other_seed` doesn't match the pinned `Derived` account.
 
-**Hardware-first wallet constraint** (Keystone). The first account in any wallet **must** be a software (`Derived`) account. `importKeystoneAccount` rejects the call when `accounts.isEmpty`; `import_hardware_account` on the Rust side backstops the same invariant. Rationale:
-- Hardware wallets have no local seed, so `import_hardware_account` calls `init_wallet_db(None)` and creates an `Imported` account.
-- Per `zcash_client_sqlite::wallet::init::init_wallet_db` docs, *"seed-requiring migrations cannot be applied to imported accounts"*. An `Imported`-only DB returns `SeedNotRelevant` from any later `init_wallet_db(Some(seed))` (the library checks `SeedRelevance::NoDerivedAccounts`).
-- A DB that enters Imported-only state is therefore stuck at its current schema version for any future seed-requiring migration. `create_account()` cannot later rescue it because that call itself needs seed-aware init.
-- The invariant "first account is Derived" guarantees that every wallet has at least one account that future seed-requiring migrations can verify against. Hardware accounts are always added on top of an existing software wallet.
-- If this constraint becomes a problem in production (e.g. users want to avoid managing a software mnemonic when they only want Keystone), revisit the tradeoff: either relax it and accept the migration risk + document a re-import recovery path, or block it as we do now. The current choice is the conservative one.
+**Multi-account migration limitation.** librustzcash `init_wallet_db` docs explicitly state:
+
+> *"Note that currently only one seed can be provided; as such, wallets containing accounts derived from several different seeds are unsupported, and will result in an error."*
+>
+> *"We do not check whether the seed is relevant to any imported account, because that would require brute-forcing the ZIP 32 account index space. Consequentially, seed-requiring migrations cannot be applied to imported accounts."*
+
+What this means for our DB shape:
+- **First account** (`Derived`, known seed): future seed-requiring migrations run correctly for this account.
+- **Every account after the first** (`Imported`, different seed fingerprint): the DB holds derivation metadata but not the seed, and librustzcash's migration machinery cannot distinguish "software account with a second seed we happen to know" from "external account imported from another wallet entirely." Both look like `AccountSource::Imported` with a non-matching fingerprint. The hardware (Keystone) case is a special instance of this general pattern, not a separate problem.
+- What happens to 2nd+ accounts during a seed-requiring migration depends entirely on how the individual migration is written. Schema-only migrations (the common case) apply unchanged. UFVK-based re-derivation migrations also work. Migrations that strictly need the per-account seed for an `Imported` record either skip the step, run a best-effort fallback, or — in the worst case — refuse to complete.
+- The correct mental model: **our wallet behaves as a multi-seed wallet inside librustzcash's officially-unsupported envelope**. Everything works today because current migrations tolerate `Imported` accounts. A future migration that doesn't is a real risk, and there is no clean in-library escape hatch because `create_account` cannot be called on a DB that already holds unrelated `Imported` accounts.
+
+**Hardware-first wallet constraint** (Keystone). Enforcing the general rule above, the first account in any wallet **must** be a software (`Derived`) account. `importKeystoneAccount` in `lib/src/providers/account_provider.dart` rejects the call when `accounts.isEmpty`, and `import_hardware_account` in `rust/src/wallet/keys.rs` backstops the same invariant by scanning `AccountSource::Derived` before proceeding. This does not make the multi-account migration limitation go away — it only guarantees that:
+- `init_wallet_db(Some(seed))` has at least one `Derived` account to verify against, so future seed-requiring migrations can at least *start* (an `Imported`-only DB would fail the relevance check with `SeedRelevance::NoDerivedAccounts` and refuse to open).
+- The first account in every wallet is always fully covered by any seed-requiring migration.
+- `create_account()` cannot rescue a DB that has already fallen into `Imported`-only state — that call itself needs seed-aware init, which re-fails the relevance check. Once you are in the bad state, you are stuck there. Forcing the first account to be `Derived` is the only way to prevent it at DB-creation time.
+
+**Production tradeoff** (to revisit before release). Blocking hardware-first bootstrap gives the strongest migration guarantee but is hostile to Keystone-only users (they are forced to create or import a software mnemonic first). Alternatives considered: a hidden throwaway-mnemonic bootstrap (hacky, confuses the account list), or accepting the risk and documenting a re-import recovery flow when a future seed-requiring migration lands (simpler UX but requires users to re-scan from Keystone birthday when it happens). The current branch takes the conservative block. The actual production decision is deferred.
 
 **Account identification**: `AccountUuid` (UUID string like `"550e8400-e29b-41d4-a716-446655440000"`). Passed as `String` between Dart and Rust via `Uuid::parse_str()` / `Uuid::to_string()`.
 
