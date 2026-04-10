@@ -150,35 +150,104 @@ where
         log::info!("mempool: observer connected");
         consecutive_errors = 0;
 
-        // Consume the stream until EOF or error.
-        loop {
-            if cancel.load(Ordering::Relaxed) {
-                log::info!("mempool: observer cancelled mid-stream");
-                return Ok(());
+        // Consume the stream until EOF, error, or cancel.
+        //
+        // The naive version of this loop — `loop { if cancel { bail }
+        // else stream.message().await }` — only notices a cancel
+        // *between* stream messages. In practice lightwalletd
+        // closes the mempool stream only when a new block is
+        // mined, which on Zcash mainnet is ~75s per block. That
+        // means a `stop_mempool_observer()` call can take up to
+        // ~75s to actually take effect while we're blocked inside
+        // `stream.message().await`, and the Dart-side 5s wait
+        // loop in `restartSync` times out long before the
+        // observer actually releases. The next `startSync` then
+        // sees the old observer still running and skips starting
+        // a new one — the exact regression Codex 3rd-round review
+        // flagged.
+        //
+        // `tokio::select!` fixes this: we race the gRPC read
+        // against a 100ms cancel poll, and when the cancel poll
+        // wins we drop the in-flight `message()` future. Dropping
+        // a tonic streaming future cancels the underlying HTTP/2
+        // read, so teardown is bounded by the poll cadence rather
+        // than by the server's next block boundary.
+        let stream_exit = loop {
+            tokio::select! {
+                // Bias toward the cancel branch so a cancel that
+                // fires while `message()` is already ready still
+                // takes priority. This avoids consuming one more
+                // mempool tx after the user pressed stop.
+                biased;
+                _ = watch_for_cancel(&cancel) => {
+                    log::info!("mempool: observer cancelled mid-stream");
+                    return Ok(());
+                }
+                msg = stream.message() => {
+                    match msg {
+                        Ok(Some(raw_tx)) => {
+                            handle_mempool_tx(&db_path, &raw_tx, &emit);
+                        }
+                        Ok(None) => {
+                            // Clean EOF. lightwalletd documents this
+                            // as the normal case when a new block is
+                            // mined (see the comment on
+                            // `start_mempool_stream`). Reconnect
+                            // without bumping the error counter.
+                            log::debug!(
+                                "mempool: stream closed by server (new block?)"
+                            );
+                            break StreamExit::CleanEof;
+                        }
+                        Err(e) => {
+                            log::warn!("mempool: stream error: {e}");
+                            consecutive_errors += 1;
+                            break StreamExit::Error;
+                        }
+                    }
+                }
             }
-            match stream.message().await {
-                Ok(Some(raw_tx)) => {
-                    handle_mempool_tx(&db_path, &raw_tx, &emit);
-                }
-                Ok(None) => {
-                    // Clean EOF. lightwalletd documents this as
-                    // the normal case when a new block is mined
-                    // (see comment on `start_mempool_stream`).
-                    // Sleep briefly and reconnect without
-                    // incrementing the error counter.
-                    log::debug!("mempool: stream closed by server (new block?)");
-                    break;
-                }
-                Err(e) => {
-                    log::warn!("mempool: stream error: {e}");
-                    consecutive_errors += 1;
-                    break;
-                }
-            }
-        }
+        };
+
+        // Drop the stream before the reconnect sleep so the old
+        // HTTP/2 read is torn down promptly. (The select arm that
+        // broke us out already cancelled the in-flight `message`,
+        // but the `Streaming<T>` value itself still holds the
+        // tonic channel state; letting it live through the sleep
+        // would keep the server-side subscription alive a bit
+        // longer than necessary.)
+        drop(stream);
+        let _ = stream_exit;
 
         // Short sleep before reconnect. Cancel-aware.
         sleep_respecting_cancel(INITIAL_BACKOFF, &cancel).await;
+    }
+}
+
+/// Why the inner `tokio::select!` loop broke out of its stream
+/// consumption. Used only for its symbol — the outer loop
+/// currently treats clean EOF and tonic errors identically
+/// (reconnect with 1s backoff for EOF, 1s/30s ladder for errors
+/// is governed by `consecutive_errors` instead), but keeping
+/// the enum makes future "EOF is normal / error backs off more
+/// aggressively" tweaks a local change instead of a signature
+/// churn.
+enum StreamExit {
+    CleanEof,
+    Error,
+}
+
+/// Returns when `cancel` flips to `true`. Used inside the
+/// observer's `tokio::select!` so a cancel arriving while the
+/// tonic stream is blocked inside `message().await` preempts
+/// the read within at most 100ms instead of waiting for the
+/// server's next block-boundary EOF.
+async fn watch_for_cancel(cancel: &Arc<AtomicBool>) {
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
@@ -366,6 +435,29 @@ mod tests {
         assert!(
             elapsed < Duration::from_millis(500),
             "sleep must return early after cancel: elapsed={elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn watch_for_cancel_returns_when_flag_flips() {
+        // `watch_for_cancel` is used inside the observer's
+        // `tokio::select!` to preempt a stream read that's stuck
+        // waiting on lightwalletd. If it didn't return promptly
+        // after `cancel` flipped, the select arm would never
+        // win and `stop_mempool_observer` would silently wait
+        // for the next block-boundary EOF (~75s on mainnet).
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_clone = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            cancel_clone.store(true, Ordering::Relaxed);
+        });
+        let start = Instant::now();
+        watch_for_cancel(&cancel).await;
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "watch_for_cancel must return promptly after cancel: {elapsed:?}"
         );
     }
 
