@@ -7,7 +7,7 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use zcash_client_backend::{
     data_api::{
         WalletCommitmentTrees, WalletRead, WalletWrite,
-        chain::{self, scan_cached_blocks, CommitmentTreeRoot},
+        chain::{self, error::Error as ChainError, scan_cached_blocks, CommitmentTreeRoot},
         scanning::ScanPriority,
         wallet::{ConfirmationsPolicy, decrypt_and_store_transaction},
         TransactionDataRequest, TransactionStatus,
@@ -50,7 +50,6 @@ pub(crate) enum SyncError {
     /// stored chain state no longer agrees with the one lightwalletd is
     /// serving. Recovery is to `truncate_to_height(at_height - REWIND_DISTANCE)`
     /// and restart the scan loop from the rewound state.
-    #[allow(dead_code)] // constructed by commit 1.3 (continuity detection)
     Continuity { at_height: u64, detail: String },
 
     /// Transient network or gRPC failure. The existing exponential-backoff
@@ -99,6 +98,17 @@ pub(crate) enum RecoveryStrategy {
 pub(crate) const REWIND_DISTANCE: u64 = 10;
 
 impl SyncError {
+    /// Log and construct a `Continuity` error in one step.
+    ///
+    /// Uses `log::warn!` rather than `log::error!` because a reorg is an
+    /// expected, recoverable event — the reorg-recovery path in commit 1.4
+    /// will rewind the wallet and restart the scan loop automatically.
+    pub(crate) fn continuity(at_height: u64, detail: impl Into<String>) -> Self {
+        let detail = detail.into();
+        log::warn!("sync: chain continuity broken at height {at_height}: {detail}");
+        SyncError::Continuity { at_height, detail }
+    }
+
     /// Log and construct a `Network` error in one step.
     pub(crate) fn net(msg: impl Into<String>) -> Self {
         let msg = msg.into();
@@ -408,13 +418,27 @@ async fn run_sync_impl(
                 .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))?
         };
 
-        // Scan from memory. Errors are bucketed as `Other` for now — commit 1.3
-        // teaches this call site to recognise librustzcash's continuity errors
-        // (`PrevHashMismatch` / `BlockHeightDiscontinuity`) and map them to
-        // `SyncError::Continuity` so the reorg-recovery path in commit 1.4 can
-        // trigger a rewind.
-        let scan_summary = scan_cached_blocks(&network, &block_source, &mut db, start, &from_state, batch_size as usize)
-            .map_err(|e| SyncError::other(format!("scan: {e}")))?;
+        // Scan from memory. Split librustzcash's `ChainError::Scan` variants
+        // into `SyncError::Continuity` vs `SyncError::Other` so the reorg
+        // recovery loop (commit 1.4) has something to match on. Continuity
+        // errors (`PrevHashMismatch`, `BlockHeightDiscontinuity`) carry the
+        // height at which the mismatch was detected — that's the input to
+        // `truncate_to_height(at - REWIND_DISTANCE)`.
+        let scan_summary = scan_cached_blocks(
+            &network,
+            &block_source,
+            &mut db,
+            start,
+            &from_state,
+            batch_size as usize,
+        )
+        .map_err(|e| match e {
+            ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
+                let at_height = u32::from(scan_err.at_height()) as u64;
+                SyncError::continuity(at_height, scan_err.to_string())
+            }
+            other => SyncError::other(format!("scan: {other}")),
+        })?;
 
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: exiting after scan", elapsed());
@@ -796,5 +820,30 @@ mod sync_error_tests {
         assert!(format!("{}", SyncError::Db("x".into())).starts_with("db: "));
         assert!(format!("{}", SyncError::Parse("x".into())).starts_with("parse: "));
         assert!(format!("{}", SyncError::Other("x".into())).starts_with("other: "));
+    }
+
+    #[test]
+    fn continuity_constructor_records_height_and_detail() {
+        // Exercise the `SyncError::continuity` constructor the `scan_cached_blocks`
+        // call site uses. Follow-up commit 1.4 matches against this variant to
+        // decide whether to rewind.
+        let e = SyncError::continuity(2_500_000, "prev_hash mismatch at 2500000");
+        assert!(e.is_continuity());
+        assert_eq!(e.continuity_height(), Some(2_500_000));
+        match &e {
+            SyncError::Continuity { at_height, detail } => {
+                assert_eq!(*at_height, 2_500_000);
+                assert_eq!(detail, "prev_hash mismatch at 2500000");
+            }
+            other => panic!("expected Continuity, got {other:?}"),
+        }
+        // And the recovery strategy should rewind 10 blocks back from the
+        // detected height.
+        assert_eq!(
+            e.recovery_strategy(),
+            RecoveryStrategy::Rewind {
+                to_height: 2_500_000 - REWIND_DISTANCE,
+            },
+        );
     }
 }
