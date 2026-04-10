@@ -1,6 +1,7 @@
 use std::panic;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use flutter_rust_bridge::frb;
 
@@ -22,6 +23,64 @@ pub fn set_sync_mode(mode: u8) {
 #[frb(sync)]
 pub fn get_sync_mode() -> u8 {
     DESIRED_SYNC_MODE.load(Ordering::SeqCst)
+}
+
+// ======================== Tor Routing ========================
+//
+// `USE_TOR` decides whether `sync_engine::open_lwd_channel` tunnels its
+// lightwalletd connection through `zcash_client_backend::tor::Client`
+// (which itself wraps arti-client) or uses plain tonic TLS. The flag is
+// observed at connect time — toggling it mid-sync doesn't kill the
+// current connection, only the next one picks up the new value.
+//
+// `TOR_DIR` holds the on-disk directory arti uses for its consensus
+// cache and guard-node state. The Dart layer sets it once at startup
+// (typically `<app_support>/tor`) before enabling Tor; attempting to
+// enable Tor without setting it first errors out with a clear message
+// rather than inventing a default path.
+
+pub(crate) static USE_TOR: AtomicBool = AtomicBool::new(false);
+pub(crate) static TOR_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Enable or disable Tor routing for future lightwalletd connections.
+/// An in-flight sync keeps using whatever transport it was started
+/// with; the toggle only affects the next `open_lwd_channel` call.
+#[frb(sync)]
+pub fn set_tor_enabled(enabled: bool) {
+    USE_TOR.store(enabled, Ordering::SeqCst);
+    log::info!("tor: USE_TOR = {enabled}");
+}
+
+/// Check whether Tor routing is currently enabled.
+#[frb(sync)]
+pub fn is_tor_enabled() -> bool {
+    USE_TOR.load(Ordering::SeqCst)
+}
+
+/// Set the on-disk directory arti uses for its consensus cache and
+/// guard-node state. Must be called before the first `set_tor_enabled(true)`
+/// the Dart side issues. Subsequent calls are ignored (the directory
+/// is pinned after the first Tor bootstrap).
+#[frb(sync)]
+pub fn set_tor_dir(tor_dir: String) {
+    let path = PathBuf::from(tor_dir);
+    match TOR_DIR.set(path.clone()) {
+        Ok(()) => log::info!("tor: TOR_DIR set to {}", path.display()),
+        Err(_) => log::warn!(
+            "tor: TOR_DIR already set; ignoring new value {}",
+            path.display(),
+        ),
+    }
+}
+
+/// Returns the configured Tor directory, or an error if Tor is
+/// enabled but `set_tor_dir` was never called. Used by
+/// `sync_engine::open_lwd_channel`.
+pub(crate) fn get_tor_dir() -> Result<PathBuf, String> {
+    TOR_DIR
+        .get()
+        .cloned()
+        .ok_or_else(|| "Tor enabled but TOR_DIR not set; call set_tor_dir() first".to_string())
 }
 
 // ======================== Full Sync ========================

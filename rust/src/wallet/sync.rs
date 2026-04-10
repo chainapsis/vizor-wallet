@@ -370,9 +370,10 @@ pub async fn execute_proposal(
     // Connect to lightwalletd once for all broadcasts
     use zcash_client_backend::proto::service::RawTransaction;
 
-    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
-        .await
-        .map_err(|e| e.to_string())?;
+    let (mut client, _tor_guard) =
+        crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+            .await
+            .map_err(|e| e.to_string())?;
 
     // Broadcast each transaction
     let txid_strings: Vec<String> = txids.iter().map(|id| format!("{id}")).collect();
@@ -689,9 +690,10 @@ pub async fn extract_and_broadcast_pczt(
 
     // Step 2: broadcast. On any failure here, the DB is untouched, so the
     // wallet's view of spendable notes is unchanged.
-    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
-        .await
-        .map_err(|e| e.to_string())?;
+    let (mut client, _tor_guard) =
+        crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let resp = client.send_transaction(
         zcash_client_backend::proto::service::RawTransaction {
@@ -1030,13 +1032,14 @@ pub fn get_pending_transactions(db_path: &str) -> Result<Vec<PendingTxInfo>, Str
 pub async fn check_tx_mined(lightwalletd_url: &str, txid_bytes: &[u8]) -> i64 {
     use zcash_client_backend::proto::service::TxFilter;
 
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(c) => c,
-        Err(e) => {
-            log::warn!("txtrack: {e}");
-            return -1;
-        }
-    };
+    let (mut client, _tor_guard) =
+        match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
+            Ok(pair) => pair,
+            Err(e) => {
+                log::warn!("txtrack: {e}");
+                return -1;
+            }
+        };
 
     let filter = TxFilter {
         block: None,

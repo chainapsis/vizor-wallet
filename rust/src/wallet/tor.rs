@@ -56,16 +56,16 @@ use crate::wallet::sync_engine::SyncError;
 /// `Arc`-reference-counted state).
 static TOR_CLIENT: OnceCell<TorClient> = OnceCell::const_new();
 
-/// A lightwalletd gRPC connection routed over an isolated Tor circuit.
+/// Type returned by [`connect_lightwalletd`] alongside the
+/// `CompactTxStreamerClient`. Callers must hold this alive for as long
+/// as they use the accompanying client — dropping it tears down the
+/// underlying Tor circuit.
 ///
-/// `client` is the usable `CompactTxStreamerClient`. `_isolated` is a
-/// drop guard keeping the backing circuit alive for the lifetime of
-/// this struct — the callers must hold the whole `LwdTorConnection` for
-/// as long as they use `client`, not just `client` alone.
-pub(crate) struct LwdTorConnection {
-    pub client: CompactTxStreamerClient<Channel>,
-    _isolated: TorClient,
-}
+/// Exposed as a plain `TorClient` rather than wrapped in a struct so
+/// the caller can destructure the return of `connect_lightwalletd`
+/// into independent `let` bindings; the guard naturally lives for the
+/// scope of the enclosing function without further ceremony.
+pub(crate) type IsolatedCircuitGuard = TorClient;
 
 /// Returns a handle to the process-wide Tor client, bootstrapping it
 /// on first call. `tor_dir` must be a writable directory the app owns
@@ -99,12 +99,13 @@ pub(crate) async fn get_or_init_client(tor_dir: PathBuf) -> Result<TorClient, Sy
 }
 
 /// Opens a new lightwalletd gRPC connection over a freshly-isolated
-/// Tor circuit. Callers must keep the returned `LwdTorConnection` alive
-/// for as long as they use its inner `CompactTxStreamerClient`.
+/// Tor circuit. Returns `(client, circuit_guard)`: the caller must
+/// keep `circuit_guard` in scope for as long as they use `client` so
+/// the underlying Tor circuit is not dropped mid-stream.
 pub(crate) async fn connect_lightwalletd(
     tor_dir: PathBuf,
     lightwalletd_url: &str,
-) -> Result<LwdTorConnection, SyncError> {
+) -> Result<(CompactTxStreamerClient<Channel>, IsolatedCircuitGuard), SyncError> {
     let client = get_or_init_client(tor_dir).await?;
     let uri: Uri = lightwalletd_url
         .parse()
@@ -114,10 +115,7 @@ pub(crate) async fn connect_lightwalletd(
         .connect_to_lightwalletd(uri)
         .await
         .map_err(|e| SyncError::net(format!("tor lwd connect: {e}")))?;
-    Ok(LwdTorConnection {
-        client: conn,
-        _isolated: isolated,
-    })
+    Ok((conn, isolated))
 }
 
 /// Flips the process-wide Tor client into or out of `DormantMode::Soft`.

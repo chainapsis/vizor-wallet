@@ -359,8 +359,11 @@ async fn run_sync_impl(
     let batch_size = if running_mode == 2 { BATCH_SIZE_BACKGROUND } else { BATCH_SIZE_FOREGROUND };
     log::info!("[{}] sync: starting (mode={}, batch={})", elapsed(), running_mode, batch_size);
 
-    // 1. Connect gRPC
-    let mut client = open_lwd_channel(lightwalletd_url).await?;
+    // 1. Connect gRPC. `_tor_guard` keeps the isolated Tor circuit
+    //    alive for the rest of this function when Tor is enabled, and
+    //    is `None` in the plain-TLS case. Do not move it into a
+    //    sub-scope — its lifetime must match `client`'s.
+    let (mut client, _tor_guard) = open_lwd_channel(lightwalletd_url).await?;
 
     // Open DB once — reused for the entire sync
     let mut db = open_db(db_data_path, network)?;
@@ -713,25 +716,49 @@ fn open_db(path: &str, network: Network) -> Result<WalletDatabase, SyncError> {
         .map_err(|e| SyncError::db(format!("DB open: {e}")))
 }
 
-/// Opens a tonic gRPC channel to the given lightwalletd URL and wraps it as
-/// a `CompactTxStreamerClient`. Centralises the TLS + connect flow so every
-/// lightwalletd connection in the crate uses identical settings, and so a
-/// later Phase 2 commit has exactly one place to add the Tor-routing branch.
+/// Drop guard keeping the Tor circuit alive for a lightwalletd
+/// connection opened via `open_lwd_channel`. `None` for the plain-TLS
+/// path; `Some(_)` for the Tor path. Callers must bind this alongside
+/// the returned client so the guard lives as long as the client does.
+pub(crate) type LwdTorGuard = Option<crate::wallet::tor::IsolatedCircuitGuard>;
+
+/// Opens a tonic gRPC channel to the given lightwalletd URL and returns
+/// `(client, tor_guard)`. Branches on the `USE_TOR` atomic in
+/// `api::sync`: if enabled, the connection is routed through an
+/// isolated Tor circuit via `wallet::tor::connect_lightwalletd`, and
+/// `tor_guard` carries the `IsolatedCircuitGuard` that must stay alive
+/// for as long as the returned client. If disabled, the connection
+/// goes through plain tonic TLS and `tor_guard` is `None`.
 ///
-/// Callers outside this module surface the `SyncError` as a `String` via
-/// `.map_err(|e| e.to_string())`; this crate's public FRB surface still
-/// returns `Result<_, String>` for FFI compat.
+/// Callers bind both results into `let` statements at function scope:
+///
+/// ```ignore
+/// let (mut client, _tor_guard) = open_lwd_channel(url).await?;
+/// // use `client` as before; `_tor_guard` just lives alongside it.
+/// ```
+///
+/// Callers outside this module still surface the `SyncError` as a
+/// `String` via `.map_err(|e| e.to_string())`; the crate's public FRB
+/// surface returns `Result<_, String>` for FFI compat.
 pub(crate) async fn open_lwd_channel(
     lightwalletd_url: &str,
-) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
-    let channel = Endpoint::from_shared(lightwalletd_url.to_string())
-        .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
-        .tls_config(ClientTlsConfig::new().with_webpki_roots())
-        .map_err(|e| SyncError::net(format!("TLS error: {e}")))?
-        .connect()
-        .await
-        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
-    Ok(CompactTxStreamerClient::new(channel))
+) -> Result<(CompactTxStreamerClient<Channel>, LwdTorGuard), SyncError> {
+    if crate::api::sync::USE_TOR.load(Ordering::Relaxed) {
+        let tor_dir = crate::api::sync::get_tor_dir().map_err(SyncError::net)?;
+        let (client, guard) =
+            crate::wallet::tor::connect_lightwalletd(tor_dir, lightwalletd_url).await?;
+        log::info!("sync: lightwalletd connected via Tor");
+        Ok((client, Some(guard)))
+    } else {
+        let channel = Endpoint::from_shared(lightwalletd_url.to_string())
+            .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
+            .tls_config(ClientTlsConfig::new().with_webpki_roots())
+            .map_err(|e| SyncError::net(format!("TLS error: {e}")))?
+            .connect()
+            .await
+            .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
+        Ok((CompactTxStreamerClient::new(channel), None))
+    }
 }
 
 /// Returns `true` when `err` wraps a transient SQLite lock-contention
