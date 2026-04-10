@@ -743,7 +743,13 @@ pub(crate) type LwdTorGuard = Option<crate::wallet::tor::IsolatedCircuitGuard>;
 pub(crate) async fn open_lwd_channel(
     lightwalletd_url: &str,
 ) -> Result<(CompactTxStreamerClient<Channel>, LwdTorGuard), SyncError> {
-    if crate::api::sync::USE_TOR.load(Ordering::Relaxed) {
+    // `SeqCst` pairs with the `SeqCst` store in
+    // `api::sync::set_tor_enabled`. A `Relaxed` load here would let a
+    // concurrent reader on ARM observe the stale pre-toggle value and
+    // legally pick the wrong transport for this connection, which is
+    // exactly the privacy-boundary race the Tor toggle is supposed to
+    // prevent. Use the same ordering on both ends.
+    if crate::api::sync::USE_TOR.load(Ordering::SeqCst) {
         let tor_dir = crate::api::sync::get_tor_dir().map_err(SyncError::net)?;
         let (client, guard) =
             crate::wallet::tor::connect_lightwalletd(tor_dir, lightwalletd_url).await?;

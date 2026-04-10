@@ -114,7 +114,13 @@ pub async fn download_file_over_tor_with_sha1(
     use sha1::{Digest, Sha1};
     use std::path::PathBuf;
 
-    if !USE_TOR.load(Ordering::Relaxed) {
+    // `SeqCst` pairs with `set_tor_enabled`'s `SeqCst` store. A
+    // `Relaxed` load here would let a toggle flip on another thread
+    // be observed out-of-order and route the Sapling params download
+    // over the stale transport — either leaking IP to the params
+    // host after the user enabled Tor, or erroring out after the
+    // user disabled it. Neither is acceptable for a privacy toggle.
+    if !USE_TOR.load(Ordering::SeqCst) {
         return Err(
             "download_file_over_tor_with_sha1 called while Tor is \
              disabled; the Dart caller should fall back to its \
