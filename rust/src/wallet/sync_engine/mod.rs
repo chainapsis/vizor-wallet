@@ -1,4 +1,3 @@
-use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
@@ -13,7 +12,6 @@ use zcash_client_backend::{
         TransactionDataRequest, TransactionStatus,
     },
     proto::{
-        compact_formats::CompactBlock,
         service::{
             self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange,
             ChainSpec, GetSubtreeRootsArg, TxFilter,
@@ -25,8 +23,10 @@ use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId, Network};
 
+mod block_source;
 mod error;
 
+use block_source::MemoryBlockSource;
 pub(crate) use error::{SyncError, RecoveryStrategy, REWIND_DISTANCE, MAX_REWINDS_PER_RUN};
 
 /// Progress event sent to caller (Dart or Swift).
@@ -57,51 +57,6 @@ fn elapsed() -> String {
 }
 
 type WalletDatabase = WalletDb<rusqlite::Connection, Network, SystemClock, OsRng>;
-
-// ==================== In-memory BlockSource ====================
-
-struct MemoryBlockSource {
-    blocks: Vec<CompactBlock>,
-}
-
-#[derive(Debug)]
-struct MemoryBlockSourceError(String);
-
-impl fmt::Display for MemoryBlockSourceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::error::Error for MemoryBlockSourceError {}
-
-impl chain::BlockSource for MemoryBlockSource {
-    type Error = MemoryBlockSourceError;
-
-    fn with_blocks<F, WalletErrT>(
-        &self,
-        from_height: Option<BlockHeight>,
-        limit: Option<usize>,
-        mut with_block: F,
-    ) -> Result<(), chain::error::Error<WalletErrT, Self::Error>>
-    where
-        F: FnMut(CompactBlock) -> Result<(), chain::error::Error<WalletErrT, Self::Error>>,
-    {
-        let start = from_height.map(u32::from).unwrap_or(0);
-        let mut count = 0usize;
-        for block in &self.blocks {
-            if (block.height as u32) < start {
-                continue;
-            }
-            if let Some(lim) = limit {
-                if count >= lim { break; }
-            }
-            with_block(block.clone())?;
-            count += 1;
-        }
-        Ok(())
-    }
-}
 
 // ==================== Main sync ====================
 
@@ -746,7 +701,7 @@ async fn download_blocks(
         blocks.push(block);
     }
 
-    Ok(MemoryBlockSource { blocks })
+    Ok(MemoryBlockSource::new(blocks))
 }
 
 async fn run_enhancement(
