@@ -83,6 +83,28 @@ pub(crate) fn get_tor_dir() -> Result<PathBuf, String> {
         .ok_or_else(|| "Tor enabled but TOR_DIR not set; call set_tor_dir() first".to_string())
 }
 
+/// Put arti's background circuit-maintenance tasks to sleep (when
+/// `dormant = true`) or wake them back up (`dormant = false`). Called
+/// by the Dart `sync_provider` on `AppLifecycleListener.onHide` and
+/// `onResume` so the app stops burning CPU on Tor directory updates
+/// while the user is away.
+///
+/// No-op when Tor has never been set up in this run (TOR_DIR unset or
+/// the underlying `wallet::tor::TOR_CLIENT` never bootstrapped), so
+/// the Dart side can call this unconditionally from its lifecycle
+/// hooks without guarding on `is_tor_enabled()` first.
+pub async fn set_tor_dormant(dormant: bool) -> Result<(), String> {
+    let tor_dir = match get_tor_dir() {
+        Ok(p) => p,
+        // Tor directory was never configured — nothing to toggle.
+        // This is the common case when the user has Tor disabled.
+        Err(_) => return Ok(()),
+    };
+    crate::wallet::tor::set_dormant(tor_dir, dormant)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ======================== Full Sync ========================
 
 /// Progress event streamed to Dart during sync.
