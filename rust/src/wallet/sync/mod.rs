@@ -22,16 +22,29 @@ mod pczt;
 mod send;
 mod transactions;
 
-pub(crate) use pczt::{
+// Re-export the split submodules at the `wallet::sync` path so every
+// `crate::wallet::sync::propose_send` / `::get_wallet_balance` /
+// `::extract_and_broadcast_pczt` etc. call path keeps resolving with
+// the same visibility the monolithic `sync.rs` had before the refactor.
+// Functions were `pub fn` in the old file → `pub use`. Return-value
+// structs were `pub(crate) struct` → `pub(crate) use` (they're
+// reachable from anywhere in the crate but not re-exported to
+// downstream consumers, which matches the pre-refactor surface
+// exactly).
+pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, discard_proposal, extract_and_broadcast_pczt,
     redact_pczt_for_signer,
 };
-pub(crate) use send::{estimate_fee, execute_proposal, propose_send};
-pub(crate) use transactions::{
+pub use send::{estimate_fee, execute_proposal, propose_send};
+pub use transactions::{
     check_tx_mined, decrypt_and_store_transaction, get_next_available_address,
     get_pending_transactions, get_transaction_data_requests, get_transaction_history,
     get_wallet_balance, set_transaction_status,
 };
+#[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
+pub(crate) use send::ProposalResult;
+#[allow(unused_imports)] // ditto
+pub(crate) use transactions::{PendingTxInfo, TransactionInfo, TxDataRequest, WalletBalance};
 
 pub(super) type WalletDatabase = WalletDb<rusqlite::Connection, Network, SystemClock, OsRng>;
 
