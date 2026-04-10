@@ -2,12 +2,7 @@
 
 use crate::wallet::keystone;
 
-pub struct KeystoneAccountInfo {
-    pub name: String,
-    pub ufvk: String,
-    pub index: u32,
-    pub seed_fingerprint: Vec<u8>,
-}
+pub use crate::wallet::keystone::{KeystoneAccountInfo, UrDecodeResult};
 
 /// Check if a Keystone device is connected via USB.
 pub async fn is_keystone_connected() -> bool {
@@ -30,22 +25,17 @@ pub fn decode_ur_to_pczt(ur_string: String) -> Result<Vec<u8>, String> {
     keystone::decode_ur_to_pczt(&ur_string)
 }
 
-pub use crate::wallet::keystone::UrDecodeResult;
-
 /// Decode a single UR part (from animated QR scan). Stateful — accumulates parts
-/// until the full UR is decoded. Returns progress and optionally the decoded data.
-pub fn decode_ur_part(part: String) -> Result<UrDecodeResult, String> {
-    keystone::decode_ur_part(&part)
+/// until the full UR is decoded. `expected_ur_type` pins the scan to one UR
+/// registry type (e.g. `"zcash-pczt"`); parts of any other type are rejected.
+/// The session auto-resets on completion or when the expected type changes.
+pub fn decode_ur_part(part: String, expected_ur_type: String) -> Result<UrDecodeResult, String> {
+    keystone::decode_ur_part(&part, &expected_ur_type)
 }
 
 /// Encode PCZT bytes into multiple UR parts for animated QR display.
 pub fn encode_pczt_ur_parts(pczt_bytes: Vec<u8>, max_fragment_len: usize) -> Result<Vec<String>, String> {
     keystone::encode_pczt_ur_parts(&pczt_bytes, max_fragment_len)
-}
-
-/// Reset the UR decoder state (call before starting a new scan session).
-pub fn reset_ur_decoder() {
-    keystone::reset_ur_decoder();
 }
 
 /// Decode ZcashAccounts from raw CBOR bytes (from animated QR scan result).
@@ -71,13 +61,5 @@ pub fn decode_pczt_from_cbor(cbor: Vec<u8>) -> Result<Vec<u8>, String> {
 /// Decode a ZcashAccounts UR string to account info list.
 pub fn decode_accounts_ur(ur_string: String) -> Result<Vec<KeystoneAccountInfo>, String> {
     let (_seed_fp, infos) = keystone::decode_accounts_ur(&ur_string)?;
-    Ok(infos
-        .into_iter()
-        .map(|i| KeystoneAccountInfo {
-            name: i.name,
-            ufvk: i.ufvk,
-            index: i.index,
-            seed_fingerprint: i.seed_fingerprint,
-        })
-        .collect())
+    Ok(infos)
 }

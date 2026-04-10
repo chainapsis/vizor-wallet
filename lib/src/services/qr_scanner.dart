@@ -31,8 +31,12 @@ class QrScanner {
     );
   }
 
+  /// Scan an animated UR QR. [expectedUrType] pins the scan to a single UR
+  /// registry type (e.g. `"zcash-pczt"` or `"zcash-accounts"`); frames of any
+  /// other type are rejected so the caller never sees mismatched CBOR later.
   static Future<ScanResult?> scanAnimatedUr(
     BuildContext context, {
+    required String expectedUrType,
     void Function(int progress)? onProgress,
   }) async {
     if (!isAvailable) {
@@ -41,7 +45,10 @@ class QrScanner {
     return Navigator.push<ScanResult>(
       context,
       MaterialPageRoute(
-        builder: (_) => _AnimatedUrScanScreen(onProgress: onProgress),
+        builder: (_) => _AnimatedUrScanScreen(
+          expectedUrType: expectedUrType,
+          onProgress: onProgress,
+        ),
       ),
     );
   }
@@ -106,9 +113,13 @@ class _SingleScanScreenState extends State<_SingleScanScreen> {
 // ==================== Animated UR Scan Screen ====================
 
 class _AnimatedUrScanScreen extends StatefulWidget {
+  final String expectedUrType;
   final void Function(int progress)? onProgress;
 
-  const _AnimatedUrScanScreen({this.onProgress});
+  const _AnimatedUrScanScreen({
+    required this.expectedUrType,
+    this.onProgress,
+  });
 
   @override
   State<_AnimatedUrScanScreen> createState() => _AnimatedUrScanScreenState();
@@ -143,7 +154,10 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
     _seenParts.add(normalized);
 
     try {
-      final result = await rust_keystone.decodeUrPart(part_: value);
+      final result = await rust_keystone.decodeUrPart(
+        part_: value,
+        expectedUrType: widget.expectedUrType,
+      );
       setState(() { _progress = result.progress; });
       widget.onProgress?.call(result.progress);
 

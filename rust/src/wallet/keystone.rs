@@ -96,10 +96,18 @@ pub fn decode_accounts_ur(ur_string: &str) -> Result<(Vec<u8>, Vec<KeystoneAccou
 
 use std::sync::Mutex;
 
-/// Global stateful UR decoder for accumulating animated QR parts.
+/// In-flight multi-part UR scan session. Holds both the decoder and the
+/// UR type it was initialized with so we can detect (and auto-reset on) a
+/// fresh scan of a different type.
+struct UrSession {
+    decoder: ur::Decoder,
+    ur_type: String,
+}
+
+/// Global stateful UR scan session. `None` means no session in flight.
 /// Uses ur::Decoder directly instead of KeystoneURDecoder to avoid
 /// URType registration issues (zcash-accounts not in URType::from()).
-static UR_DECODER: std::sync::LazyLock<Mutex<Option<ur::Decoder>>> =
+static UR_SESSION: std::sync::LazyLock<Mutex<Option<UrSession>>> =
     std::sync::LazyLock::new(|| Mutex::new(None));
 
 pub struct UrDecodeResult {
@@ -109,40 +117,61 @@ pub struct UrDecodeResult {
     pub ur_type: Option<String>,
 }
 
-/// Reset the UR decoder state. Call before starting a new scan session.
-pub fn reset_ur_decoder() {
-    let mut decoder = UR_DECODER.lock().unwrap();
-    *decoder = None;
+/// Extract the UR type (e.g. `"zcash-pczt"`) from a lowercased UR string.
+fn parse_ur_type(part_lower: &str) -> Option<&str> {
+    part_lower.strip_prefix("ur:").and_then(|s| s.split('/').next())
 }
 
-/// Feed a single UR part (from one QR frame) to the stateful decoder.
-/// Uses ur::Decoder directly to avoid URType registration issues.
-pub fn decode_ur_part(part: &str) -> Result<UrDecodeResult, String> {
-    let mut decoder_guard = UR_DECODER.lock().map_err(|e| format!("Lock: {e}"))?;
+/// Feed one UR part from a QR frame into the active scan session.
+///
+/// `expected_ur_type` pins the scan to one UR registry type (e.g.
+/// `"zcash-pczt"` or `"zcash-accounts"`). If a part arrives with a different
+/// type, this returns an error — catching scan-of-wrong-code up front instead
+/// of producing a confusing CBOR decode failure later.
+///
+/// The session auto-resets when (a) a new scan starts, (b) the expected type
+/// changes from the in-flight one, or (c) the multi-part decoder completes.
+/// Callers never need to reset manually.
+pub fn decode_ur_part(part: &str, expected_ur_type: &str) -> Result<UrDecodeResult, String> {
+    let mut session_guard = UR_SESSION.lock().map_err(|e| format!("Lock: {e}"))?;
 
     // ur crate requires lowercase scheme
     let part_lower = part.to_lowercase();
 
-    // Extract UR type from the part string (e.g., "ur:zcash-accounts/..." → "zcash-accounts")
-    let ur_type = part_lower.strip_prefix("ur:")
-        .and_then(|s| s.split('/').next())
-        .map(|s| s.to_string());
+    let part_type = parse_ur_type(&part_lower)
+        .ok_or_else(|| "Invalid UR: missing type prefix".to_string())?;
 
-    // Initialize decoder on first part
-    if decoder_guard.is_none() {
-        // Try single-part decode first
-        let decoded = ur::decode(&part_lower)
+    if part_type != expected_ur_type {
+        return Err(format!(
+            "Unexpected UR type: got {part_type:?}, expected {expected_ur_type:?}"
+        ));
+    }
+
+    // If there's an in-flight session for a different type, discard it —
+    // we're starting a new scan.
+    if session_guard
+        .as_ref()
+        .is_some_and(|s| s.ur_type != expected_ur_type)
+    {
+        *session_guard = None;
+    }
+
+    // Initialize decoder on the first part of a new session.
+    if session_guard.is_none() {
+        let (kind, cbor) = ur::decode(&part_lower)
             .map_err(|e| format!("UR decode: {e}"))?;
 
-        match decoded.0 {
+        match kind {
             ur::ur::Kind::SinglePart => {
-                let cbor = decoded.1;
-                log::info!("keystone: single-part UR decoded ({} bytes, type={:?})", cbor.len(), ur_type);
+                log::info!(
+                    "keystone: single-part UR decoded ({} bytes, type={expected_ur_type})",
+                    cbor.len()
+                );
                 return Ok(UrDecodeResult {
                     complete: true,
                     progress: 100,
                     data: Some(cbor),
-                    ur_type,
+                    ur_type: Some(expected_ur_type.to_string()),
                 });
             }
             ur::ur::Kind::MultiPart => {
@@ -150,43 +179,51 @@ pub fn decode_ur_part(part: &str) -> Result<UrDecodeResult, String> {
                 decoder.receive(&part_lower)
                     .map_err(|e| format!("UR receive: {e}"))?;
                 let progress = decoder.progress();
-                log::info!("keystone: multi-part UR started (type={:?}, progress={}%)", ur_type, progress);
-                *decoder_guard = Some(decoder);
+                log::info!(
+                    "keystone: multi-part UR started (type={expected_ur_type}, progress={progress}%)"
+                );
+                *session_guard = Some(UrSession {
+                    decoder,
+                    ur_type: expected_ur_type.to_string(),
+                });
                 return Ok(UrDecodeResult {
                     complete: false,
                     progress: progress as u32,
                     data: None,
-                    ur_type,
+                    ur_type: Some(expected_ur_type.to_string()),
                 });
             }
         }
     }
 
-    // Subsequent parts — feed to existing decoder
-    let decoder = decoder_guard.as_mut().unwrap();
-    decoder.receive(&part_lower)
+    // Subsequent parts — feed to existing decoder.
+    let session = session_guard.as_mut().unwrap();
+    session.decoder.receive(&part_lower)
         .map_err(|e| format!("UR receive: {e}"))?;
 
-    if decoder.complete() {
-        let cbor = decoder.message()
+    if session.decoder.complete() {
+        let cbor = session.decoder.message()
             .map_err(|e| format!("UR message: {e}"))?
             .ok_or("Decoder complete but no message")?;
-        log::info!("keystone: multi-part UR complete ({} bytes, type={:?})", cbor.len(), ur_type);
-        *decoder_guard = None; // Reset for next scan
+        log::info!(
+            "keystone: multi-part UR complete ({} bytes, type={expected_ur_type})",
+            cbor.len()
+        );
+        *session_guard = None; // auto-reset for next scan
         return Ok(UrDecodeResult {
             complete: true,
             progress: 100,
             data: Some(cbor),
-            ur_type,
+            ur_type: Some(expected_ur_type.to_string()),
         });
     }
 
-    let progress = decoder.progress();
+    let progress = session.decoder.progress();
     Ok(UrDecodeResult {
         complete: false,
         progress: progress as u32,
         data: None,
-        ur_type,
+        ur_type: Some(expected_ur_type.to_string()),
     })
 }
 

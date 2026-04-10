@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../providers/account_provider.dart';
-import '../../../rust/api/keystone.dart' as rust_keystone;
+import '../../../rust/wallet/keystone.dart' show KeystoneAccountInfo;
 import '../../../services/keystone_transport.dart';
 import '../../../services/qr_scanner.dart';
 
@@ -16,7 +16,7 @@ class ImportKeystoneScreen extends ConsumerStatefulWidget {
 }
 
 class _ImportKeystoneScreenState extends ConsumerState<ImportKeystoneScreen> {
-  List<rust_keystone.KeystoneAccountInfo>? _accounts;
+  List<KeystoneAccountInfo>? _accounts;
   bool _isLoading = false;
   String? _error;
 
@@ -36,7 +36,7 @@ class _ImportKeystoneScreenState extends ConsumerState<ImportKeystoneScreen> {
 
     try {
       final qrTransport = QrKeystoneTransport();
-      final accounts = await qrTransport.getAccountsWithContext(context);
+      final accounts = await qrTransport.getAccounts(context);
 
       if (!mounted) return;
       setState(() { _accounts = accounts; _isLoading = false; });
@@ -47,7 +47,7 @@ class _ImportKeystoneScreenState extends ConsumerState<ImportKeystoneScreen> {
     }
   }
 
-  Future<void> _importAccount(rust_keystone.KeystoneAccountInfo info) async {
+  Future<void> _importAccount(KeystoneAccountInfo info) async {
     setState(() { _isLoading = true; _error = null; });
 
     try {

@@ -6,6 +6,34 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+class KeystoneAccountInfo {
+  final String name;
+  final String ufvk;
+  final int index;
+  final Uint8List seedFingerprint;
+
+  const KeystoneAccountInfo({
+    required this.name,
+    required this.ufvk,
+    required this.index,
+    required this.seedFingerprint,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^ ufvk.hashCode ^ index.hashCode ^ seedFingerprint.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KeystoneAccountInfo &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          ufvk == other.ufvk &&
+          index == other.index &&
+          seedFingerprint == other.seedFingerprint;
+}
+
 class UrDecodeResult {
   final bool complete;
   final int progress;

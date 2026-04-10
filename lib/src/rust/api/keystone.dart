@@ -27,9 +27,16 @@ Future<Uint8List> decodeUrToPczt({required String urString}) =>
     RustLib.instance.api.crateApiKeystoneDecodeUrToPczt(urString: urString);
 
 /// Decode a single UR part (from animated QR scan). Stateful — accumulates parts
-/// until the full UR is decoded. Returns progress and optionally the decoded data.
-Future<UrDecodeResult> decodeUrPart({required String part_}) =>
-    RustLib.instance.api.crateApiKeystoneDecodeUrPart(part_: part_);
+/// until the full UR is decoded. `expected_ur_type` pins the scan to one UR
+/// registry type (e.g. `"zcash-pczt"`); parts of any other type are rejected.
+/// The session auto-resets on completion or when the expected type changes.
+Future<UrDecodeResult> decodeUrPart({
+  required String part_,
+  required String expectedUrType,
+}) => RustLib.instance.api.crateApiKeystoneDecodeUrPart(
+  part_: part_,
+  expectedUrType: expectedUrType,
+);
 
 /// Encode PCZT bytes into multiple UR parts for animated QR display.
 Future<List<String>> encodePcztUrParts({
@@ -39,10 +46,6 @@ Future<List<String>> encodePcztUrParts({
   pcztBytes: pcztBytes,
   maxFragmentLen: maxFragmentLen,
 );
-
-/// Reset the UR decoder state (call before starting a new scan session).
-Future<void> resetUrDecoder() =>
-    RustLib.instance.api.crateApiKeystoneResetUrDecoder();
 
 /// Decode ZcashAccounts from raw CBOR bytes (from animated QR scan result).
 Future<List<KeystoneAccountInfo>> decodeAccountsFromCbor({
@@ -57,31 +60,3 @@ Future<Uint8List> decodePcztFromCbor({required List<int> cbor}) =>
 Future<List<KeystoneAccountInfo>> decodeAccountsUr({
   required String urString,
 }) => RustLib.instance.api.crateApiKeystoneDecodeAccountsUr(urString: urString);
-
-class KeystoneAccountInfo {
-  final String name;
-  final String ufvk;
-  final int index;
-  final Uint8List seedFingerprint;
-
-  const KeystoneAccountInfo({
-    required this.name,
-    required this.ufvk,
-    required this.index,
-    required this.seedFingerprint,
-  });
-
-  @override
-  int get hashCode =>
-      name.hashCode ^ ufvk.hashCode ^ index.hashCode ^ seedFingerprint.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is KeystoneAccountInfo &&
-          runtimeType == other.runtimeType &&
-          name == other.name &&
-          ufvk == other.ufvk &&
-          index == other.index &&
-          seedFingerprint == other.seedFingerprint;
-}

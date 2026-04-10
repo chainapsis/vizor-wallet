@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../main.dart' show log;
 import '../rust/api/keystone.dart' as rust_keystone;
+import '../rust/wallet/keystone.dart' show KeystoneAccountInfo;
 import 'qr_scanner.dart';
 
 /// Abstract transport for communicating with Keystone hardware wallet.
@@ -14,8 +15,9 @@ import 'qr_scanner.dart';
 abstract class KeystoneTransport {
   String get name;
 
-  /// Get accounts (UFVKs) from the Keystone device.
-  Future<List<rust_keystone.KeystoneAccountInfo>> getAccounts();
+  /// Get accounts (UFVKs) from the Keystone device. USB implementations may
+  /// ignore [context]; QR implementations use it to present the scan screen.
+  Future<List<KeystoneAccountInfo>> getAccounts(BuildContext context);
 
   /// Sign a redacted PCZT. Returns signed PCZT bytes.
   Future<Uint8List> signPczt(BuildContext context, Uint8List redactedPczt);
@@ -73,7 +75,7 @@ class UsbKeystoneTransport implements KeystoneTransport {
   String get name => 'USB';
 
   @override
-  Future<List<rust_keystone.KeystoneAccountInfo>> getAccounts() async {
+  Future<List<KeystoneAccountInfo>> getAccounts(BuildContext context) async {
     // TODO: Implement USB account retrieval
     // For now, USB account import is not yet supported
     throw UnimplementedError('USB account import not yet supported. Use QR code.');
@@ -96,33 +98,17 @@ class QrKeystoneTransport implements KeystoneTransport {
   @override
   String get name => 'QR Code';
 
-  @override
-  Future<List<rust_keystone.KeystoneAccountInfo>> getAccounts() async {
-    throw UnsupportedError(
-      'QR account import requires a BuildContext.\n'
-      'Use getAccountsWithContext() instead.',
-    );
-  }
-
   /// Import accounts by scanning Keystone's ZcashAccounts QR.
-  Future<List<rust_keystone.KeystoneAccountInfo>> getAccountsWithContext(
-    BuildContext context,
-  ) async {
+  @override
+  Future<List<KeystoneAccountInfo>> getAccounts(BuildContext context) async {
     log('KeystoneQR: scanning for ZcashAccounts QR...');
-    await rust_keystone.resetUrDecoder();
-
-    final result = await QrScanner.scanAnimatedUr(context);
+    final result = await QrScanner.scanAnimatedUr(
+      context,
+      expectedUrType: 'zcash-accounts',
+    );
     if (result == null) throw Exception('Scan cancelled');
 
-    // The decoder returned raw CBOR — decode as ZcashAccounts via the UR string
-    // For single-part scans, the data is already decoded. Re-decode from UR.
-    // Actually, the scan result contains decoded bytes. We need to parse them.
-    // Use decodeAccountsUr which expects a UR string — but we have raw data.
-    // Let's decode directly from the accumulated data.
-    log('KeystoneQR: scan complete, type=${result.urType}');
-
-    // result.data is CBOR bytes of ZcashAccounts
-    // Decode via Rust
+    // result.data is the CBOR-encoded ZcashAccounts envelope. Unwrap in Rust.
     final accounts = await rust_keystone.decodeAccountsFromCbor(cbor: result.data);
     log('KeystoneQR: received ${accounts.length} accounts');
     return accounts;
@@ -150,9 +136,11 @@ class QrKeystoneTransport implements KeystoneTransport {
     // 3. Scan signed PCZT QR from Keystone
     if (!context.mounted) throw Exception('Context not mounted');
     log('KeystoneQR: scanning signed PCZT QR...');
-    await rust_keystone.resetUrDecoder();
 
-    final result = await QrScanner.scanAnimatedUr(context);
+    final result = await QrScanner.scanAnimatedUr(
+      context,
+      expectedUrType: 'zcash-pczt',
+    );
     if (result == null) throw Exception('Scan cancelled');
 
     // result.data is the CBOR-encoded ZcashPczt envelope ({1: bytes}).
