@@ -219,7 +219,6 @@ pub(super) async fn download_subtree_roots(
 /// This helper stays a thin wrapper on `client.get_mempool_stream`
 /// so that error-to-`SyncError::Network` mapping lives in the
 /// same place as every other lwd gRPC call.
-#[allow(dead_code)] // consumed by sync_engine::mempool in commit 3.5
 pub(crate) async fn start_mempool_stream(
     client: &mut CompactTxStreamerClient<Channel>,
 ) -> Result<tonic::Streaming<RawTransaction>, SyncError> {

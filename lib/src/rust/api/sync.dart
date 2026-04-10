@@ -98,6 +98,39 @@ void cancelFullSync() => RustLib.instance.api.crateApiSyncCancelFullSync();
 /// Check if a sync is currently running.
 bool isSyncRunning() => RustLib.instance.api.crateApiSyncIsSyncRunning();
 
+/// Start the background mempool observer.
+///
+/// Blocks until `stop_mempool_observer` is called or the observer
+/// returns on an unrecoverable setup error. Every incoming mempool
+/// tx that can be parsed is pushed to `sink` as an
+/// [`ApiMempoolTxEvent`].
+///
+/// The FRB layer runs this on the Rust isolate thread pool, so
+/// Dart can `await` the call while the observer keeps polling
+/// lightwalletd in the background. Dart is expected to fire this
+/// alongside `start_full_sync` and call `stop_mempool_observer`
+/// alongside `cancel_full_sync` — the two lifecycles are parallel
+/// but separately controlled.
+Stream<ApiMempoolTxEvent> startMempoolObserver({
+  required String dbPath,
+  required String network,
+  required String lightwalletdUrl,
+}) => RustLib.instance.api.crateApiSyncStartMempoolObserver(
+  dbPath: dbPath,
+  network: network,
+  lightwalletdUrl: lightwalletdUrl,
+);
+
+/// Ask the running mempool observer to exit at the next cancel
+/// check (inside the 100ms sleep slices or between stream
+/// messages). Safe to call when no observer is running.
+void stopMempoolObserver() =>
+    RustLib.instance.api.crateApiSyncStopMempoolObserver();
+
+/// Check whether the mempool observer task is currently running.
+bool isMempoolObserverRunning() =>
+    RustLib.instance.api.crateApiSyncIsMempoolObserverRunning();
+
 Future<void> updateChainTip({
   required String dbPath,
   required String network,
@@ -405,6 +438,33 @@ class AddressValidationResult {
           runtimeType == other.runtimeType &&
           isValid == other.isValid &&
           addressType == other.addressType;
+}
+
+/// Event emitted by the mempool observer when a transaction
+/// appears on lightwalletd's mempool stream. Mirrored one-to-one
+/// from `sync_engine::mempool::MempoolTxEvent` for FRB codegen.
+class ApiMempoolTxEvent {
+  /// Lower-case hex of the tx id.
+  final String txidHex;
+
+  /// `true` when the wallet DB already has this txid in its
+  /// `transactions` table with `mined_height IS NULL`. Dart
+  /// uses this flag to decide whether to refresh balance +
+  /// history immediately.
+  final bool matched;
+
+  const ApiMempoolTxEvent({required this.txidHex, required this.matched});
+
+  @override
+  int get hashCode => txidHex.hashCode ^ matched.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiMempoolTxEvent &&
+          runtimeType == other.runtimeType &&
+          txidHex == other.txidHex &&
+          matched == other.matched;
 }
 
 /// Progress event streamed to Dart during sync.

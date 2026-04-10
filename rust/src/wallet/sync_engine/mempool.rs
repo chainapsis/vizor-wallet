@@ -64,7 +64,6 @@ use super::open_lwd_channel;
 /// network just relayed back to us, or any previously-recorded
 /// pending tx that's still in the mempool. Dart consumers use
 /// that flag to decide whether to trigger a balance refresh.
-#[allow(dead_code)] // fields read by the FRB wrapper in commit 3.6
 #[derive(Clone, Debug)]
 pub struct MempoolTxEvent {
     /// Lower-case hex of the txid (stable across consumers).
@@ -95,7 +94,6 @@ pub struct MempoolTxEvent {
 /// heavy work inside `emit` blocks the next mempool tx from being
 /// processed; the Dart-facing FRB wrapper forwards to a
 /// `StreamSink` which is effectively a non-blocking push.
-#[allow(dead_code)] // whole-module helpers consumed by api::sync in commit 3.6
 pub(crate) async fn run_mempool_observer<F>(
     db_path: String,
     _network: Network,

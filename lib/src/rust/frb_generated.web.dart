@@ -28,6 +28,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
   @protected
+  RustStreamSink<ApiMempoolTxEvent>
+  dco_decode_StreamSink_api_mempool_tx_event_Sse(dynamic raw);
+
+  @protected
   RustStreamSink<ApiSyncProgressEvent>
   dco_decode_StreamSink_api_sync_progress_event_Sse(dynamic raw);
 
@@ -42,6 +46,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   AddressValidationResult dco_decode_address_validation_result(dynamic raw);
+
+  @protected
+  ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
 
   @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
@@ -164,6 +171,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
+  RustStreamSink<ApiMempoolTxEvent>
+  sse_decode_StreamSink_api_mempool_tx_event_Sse(SseDeserializer deserializer);
+
+  @protected
   RustStreamSink<ApiSyncProgressEvent>
   sse_decode_StreamSink_api_sync_progress_event_Sse(
     SseDeserializer deserializer,
@@ -182,6 +193,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   AddressValidationResult sse_decode_address_validation_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiMempoolTxEvent sse_decode_api_mempool_tx_event(
     SseDeserializer deserializer,
   );
 
@@ -330,6 +346,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_StreamSink_api_mempool_tx_event_Sse(
+    RustStreamSink<ApiMempoolTxEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_StreamSink_api_sync_progress_event_Sse(
     RustStreamSink<ApiSyncProgressEvent> self,
     SseSerializer serializer,
@@ -350,6 +372,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_address_validation_result(
     AddressValidationResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_mempool_tx_event(
+    ApiMempoolTxEvent self,
     SseSerializer serializer,
   );
 

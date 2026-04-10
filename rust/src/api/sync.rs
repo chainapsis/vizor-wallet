@@ -268,6 +268,103 @@ pub(crate) static SYNC_CANCEL: std::sync::LazyLock<Arc<AtomicBool>> =
 
 pub(crate) static SYNC_RUNNING: AtomicBool = AtomicBool::new(false);
 
+// ======================== Mempool Observer ========================
+
+/// Event emitted by the mempool observer when a transaction
+/// appears on lightwalletd's mempool stream. Mirrored one-to-one
+/// from `sync_engine::mempool::MempoolTxEvent` for FRB codegen.
+pub struct ApiMempoolTxEvent {
+    /// Lower-case hex of the tx id.
+    pub txid_hex: String,
+    /// `true` when the wallet DB already has this txid in its
+    /// `transactions` table with `mined_height IS NULL`. Dart
+    /// uses this flag to decide whether to refresh balance +
+    /// history immediately.
+    pub matched: bool,
+}
+
+/// Guard against double-start. Mirrors the SYNC_RUNNING pattern.
+pub(crate) static MEMPOOL_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Cancel flag consumed by `sync_engine::mempool::run_mempool_observer`.
+/// Separate from `SYNC_CANCEL` because the mempool observer and the
+/// scan loop have independent lifecycles — stopping one does not
+/// automatically stop the other.
+pub(crate) static MEMPOOL_CANCEL: std::sync::LazyLock<Arc<AtomicBool>> =
+    std::sync::LazyLock::new(|| Arc::new(AtomicBool::new(false)));
+
+/// Start the background mempool observer.
+///
+/// Blocks until `stop_mempool_observer` is called or the observer
+/// returns on an unrecoverable setup error. Every incoming mempool
+/// tx that can be parsed is pushed to `sink` as an
+/// [`ApiMempoolTxEvent`].
+///
+/// The FRB layer runs this on the Rust isolate thread pool, so
+/// Dart can `await` the call while the observer keeps polling
+/// lightwalletd in the background. Dart is expected to fire this
+/// alongside `start_full_sync` and call `stop_mempool_observer`
+/// alongside `cancel_full_sync` — the two lifecycles are parallel
+/// but separately controlled.
+pub fn start_mempool_observer(
+    db_path: String,
+    network: String,
+    lightwalletd_url: String,
+    sink: StreamSink<ApiMempoolTxEvent>,
+) -> Result<(), String> {
+    if MEMPOOL_RUNNING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err("Mempool observer already running".into());
+    }
+
+    let result = catch(|| {
+        let network = keys::parse_network(&network)?;
+        let cancel = MEMPOOL_CANCEL.clone();
+        cancel.store(false, Ordering::Relaxed);
+
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        rt.block_on(async {
+            crate::wallet::sync_engine::mempool::run_mempool_observer(
+                db_path,
+                network,
+                lightwalletd_url,
+                cancel,
+                move |event| {
+                    if sink
+                        .add(ApiMempoolTxEvent {
+                            txid_hex: event.txid_hex,
+                            matched: event.matched,
+                        })
+                        .is_err()
+                    {
+                        log::warn!("mempool: StreamSink closed, event not delivered");
+                    }
+                },
+            )
+            .await
+        })
+    });
+
+    MEMPOOL_RUNNING.store(false, Ordering::SeqCst);
+    result
+}
+
+/// Ask the running mempool observer to exit at the next cancel
+/// check (inside the 100ms sleep slices or between stream
+/// messages). Safe to call when no observer is running.
+#[frb(sync)]
+pub fn stop_mempool_observer() {
+    MEMPOOL_CANCEL.store(true, Ordering::Relaxed);
+}
+
+/// Check whether the mempool observer task is currently running.
+#[frb(sync)]
+pub fn is_mempool_observer_running() -> bool {
+    MEMPOOL_RUNNING.load(Ordering::SeqCst)
+}
+
 // ======================== Data Structures ========================
 
 pub struct SyncProgress {
