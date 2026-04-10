@@ -436,3 +436,234 @@ pub async fn check_tx_mined(lightwalletd_url: &str, txid_bytes: &[u8]) -> i64 {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! SQL-predicate regression tests for `get_resubmittable_txs`.
+    //!
+    //! `get_resubmittable_txs` is a thin wrapper around a `v_transactions`
+    //! SELECT, but the SELECT is the entire contract: it's the piece that
+    //! encodes the four resubmit invariants we copied from
+    //! `zcash-android-wallet-sdk`'s `SELECTION_TRX_RESUBMISSION`.
+    //!
+    //! We test against a stand-in schema: a real SQLite DB with a plain
+    //! `v_transactions` table mirroring the columns the production view
+    //! exposes. That's enough for the WHERE clause to exercise each
+    //! filter independently without standing up the whole
+    //! `zcash_client_sqlite` migration stack.
+    //!
+    //! If the production `v_transactions` view ever gains (or loses)
+    //! one of the columns we query here (`txid`, `raw`, `mined_height`,
+    //! `expiry_height`, `account_balance_delta`), the real build breaks
+    //! loudly at the first real query — but these unit tests still
+    //! exercise the logic, so a regression in the SQL text shows up here
+    //! first.
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    /// Build a throwaway SQLite database with a minimal
+    /// `v_transactions` table and return its `NamedTempFile`
+    /// handle. Tests keep the handle alive for the duration of the
+    /// test so the file isn't auto-deleted under them.
+    fn fresh_db() -> NamedTempFile {
+        let file = NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE v_transactions (
+                 txid BLOB NOT NULL,
+                 raw BLOB,
+                 mined_height INTEGER,
+                 expiry_height INTEGER,
+                 account_balance_delta INTEGER NOT NULL
+             );",
+        )
+        .unwrap();
+        file
+    }
+
+    /// Insert one synthetic row into `v_transactions`.
+    fn insert_row(
+        db: &NamedTempFile,
+        txid: &[u8],
+        raw: Option<&[u8]>,
+        mined_height: Option<i64>,
+        expiry_height: Option<i64>,
+        account_balance_delta: i64,
+    ) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "INSERT INTO v_transactions (txid, raw, mined_height, expiry_height, account_balance_delta)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![txid, raw, mined_height, expiry_height, account_balance_delta],
+        )
+        .unwrap();
+    }
+
+    fn fake_txid(byte: u8) -> [u8; 32] {
+        [byte; 32]
+    }
+
+    fn fake_raw() -> Vec<u8> {
+        vec![0xDE, 0xAD, 0xBE, 0xEF]
+    }
+
+    #[test]
+    fn resubmit_excludes_mined_txs() {
+        // A tx with `mined_height IS NOT NULL` is already on-chain;
+        // resubmitting would be pointless at best and could surface a
+        // confusing rejection from lightwalletd.
+        let db = fresh_db();
+        insert_row(
+            &db,
+            &fake_txid(0x01),
+            Some(&fake_raw()),
+            Some(1_000_000), // mined_height set → mined
+            Some(1_000_100),
+            -5_000,
+        );
+        let got = get_resubmittable_txs(db.path().to_str().unwrap(), 900_000).unwrap();
+        assert!(
+            got.is_empty(),
+            "mined tx must not be a resubmit candidate, got {got:?}",
+            got = got.len(),
+        );
+    }
+
+    #[test]
+    fn resubmit_excludes_expired_txs() {
+        // `expiry_height > current_height` is the network's
+        // still-relayable check. A tx whose expiry equals the current
+        // height is already past the window.
+        let db = fresh_db();
+        insert_row(
+            &db,
+            &fake_txid(0x02),
+            Some(&fake_raw()),
+            None,
+            Some(1_000_000), // expiry == current → expired
+            -5_000,
+        );
+        let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert!(got.is_empty(), "tx with expiry==current must be excluded");
+
+        // Walk the boundary: one block below current is definitely expired.
+        let db2 = fresh_db();
+        insert_row(
+            &db2,
+            &fake_txid(0x02),
+            Some(&fake_raw()),
+            None,
+            Some(999_999),
+            -5_000,
+        );
+        let got2 = get_resubmittable_txs(db2.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert!(got2.is_empty(), "tx with expiry<current must be excluded");
+    }
+
+    #[test]
+    fn resubmit_excludes_received_txs() {
+        // `account_balance_delta >= 0` means the account gained or broke
+        // even on this tx — it's an incoming transfer we just happened to
+        // have raw bytes for (e.g. re-read from lightwalletd during a
+        // rescan). Resubmitting "our" received txs back to the network
+        // would be meaningless.
+        let db = fresh_db();
+        insert_row(
+            &db,
+            &fake_txid(0x03),
+            Some(&fake_raw()),
+            None,
+            Some(1_000_100),
+            5_000, // positive delta → inbound
+        );
+        let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert!(got.is_empty(), "received-only tx must be excluded");
+
+        // Also the zero case: a break-even tx shouldn't show up either
+        // (it's still not an "outbound" the wallet needs to keep alive).
+        let db2 = fresh_db();
+        insert_row(
+            &db2,
+            &fake_txid(0x03),
+            Some(&fake_raw()),
+            None,
+            Some(1_000_100),
+            0,
+        );
+        let got2 = get_resubmittable_txs(db2.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert!(got2.is_empty(), "zero-delta tx must be excluded");
+    }
+
+    #[test]
+    fn resubmit_excludes_raw_null_txs() {
+        // `raw IS NULL` means we don't have bytes to broadcast. This row
+        // exists because sync learned about the tx via decrypt-and-store
+        // without the raw bundle, and there's nothing we can resubmit.
+        let db = fresh_db();
+        insert_row(
+            &db,
+            &fake_txid(0x04),
+            None, // raw NULL
+            None,
+            Some(1_000_100),
+            -5_000,
+        );
+        let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert!(got.is_empty(), "raw-null tx must be excluded");
+    }
+
+    #[test]
+    fn resubmit_includes_valid_outbound_pending() {
+        // The happy path: unmined, inside expiry, outbound, raw present.
+        let db = fresh_db();
+        let txid = fake_txid(0x05);
+        let raw = fake_raw();
+        insert_row(
+            &db,
+            &txid,
+            Some(&raw),
+            None,
+            Some(1_000_100),
+            -5_000,
+        );
+        let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert_eq!(got.len(), 1, "outbound pending tx must appear exactly once");
+        assert_eq!(got[0].txid_bytes, txid.to_vec());
+        assert_eq!(got[0].raw_tx, raw);
+        assert_eq!(got[0].expiry_height, 1_000_100);
+    }
+
+    #[test]
+    fn resubmit_dedupes_multi_account_rows() {
+        // A tx that touches two of the wallet's own accounts shows up as
+        // two rows in `v_transactions`. `SELECT DISTINCT txid, raw,
+        // expiry_height` should collapse that to one broadcast — double-
+        // sending identical bytes would be a regression.
+        let db = fresh_db();
+        let txid = fake_txid(0x06);
+        let raw = fake_raw();
+        // Two rows for the same tx, different account-level deltas, both
+        // still outbound at the row level (account-internal transfer with
+        // a net negative for both of the wallet's participating accounts
+        // after fees — contrived but possible).
+        insert_row(&db, &txid, Some(&raw), None, Some(1_000_100), -3_000);
+        insert_row(&db, &txid, Some(&raw), None, Some(1_000_100), -2_000);
+
+        let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert_eq!(
+            got.len(),
+            1,
+            "multi-account rows with same (txid, raw, expiry) must dedupe",
+        );
+    }
+
+    #[test]
+    fn resubmit_returns_empty_when_table_empty() {
+        // Baseline: an empty table must return `Ok(vec![])`, not an
+        // error. `resubmit_pending_transactions` relies on this to
+        // decide the "nothing to do" case.
+        let db = fresh_db();
+        let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert!(got.is_empty());
+    }
+}
