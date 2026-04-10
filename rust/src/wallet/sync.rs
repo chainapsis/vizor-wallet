@@ -368,19 +368,11 @@ pub async fn execute_proposal(
     };
 
     // Connect to lightwalletd once for all broadcasts
-    use tonic::transport::{ClientTlsConfig, Endpoint};
-    use zcash_client_backend::proto::service::{
-        compact_tx_streamer_client::CompactTxStreamerClient, RawTransaction,
-    };
+    use zcash_client_backend::proto::service::RawTransaction;
 
-    let channel = Endpoint::from_shared(lightwalletd_url.to_string())
-        .map_err(|e| format!("Invalid URL: {e}"))?
-        .tls_config(ClientTlsConfig::new().with_webpki_roots())
-        .map_err(|e| format!("TLS error: {e}"))?
-        .connect()
+    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
         .await
-        .map_err(|e| format!("gRPC connect failed: {e}"))?;
-    let mut client = CompactTxStreamerClient::new(channel);
+        .map_err(|e| e.to_string())?;
 
     // Broadcast each transaction
     let txid_strings: Vec<String> = txids.iter().map(|id| format!("{id}")).collect();
@@ -697,15 +689,9 @@ pub async fn extract_and_broadcast_pczt(
 
     // Step 2: broadcast. On any failure here, the DB is untouched, so the
     // wallet's view of spendable notes is unchanged.
-    let channel = tonic::transport::Endpoint::from_shared(lightwalletd_url.to_string())
-        .map_err(|e| format!("Invalid URL: {e}"))?
-        .tls_config(tonic::transport::ClientTlsConfig::new().with_webpki_roots())
-        .map_err(|e| format!("TLS: {e}"))?
-        .connect()
+    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
         .await
-        .map_err(|e| format!("gRPC connect: {e}"))?;
-
-    let mut client = zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(channel);
+        .map_err(|e| e.to_string())?;
 
     let resp = client.send_transaction(
         zcash_client_backend::proto::service::RawTransaction {
@@ -1042,22 +1028,15 @@ pub fn get_pending_transactions(db_path: &str) -> Result<Vec<PendingTxInfo>, Str
 /// Check if a transaction has been mined by querying lightwalletd.
 /// Returns: 0 = still in mempool, >0 = mined at height, -1 = error/not found.
 pub async fn check_tx_mined(lightwalletd_url: &str, txid_bytes: &[u8]) -> i64 {
-    use tonic::transport::{ClientTlsConfig, Endpoint};
-    use zcash_client_backend::proto::service::{
-        compact_tx_streamer_client::CompactTxStreamerClient, TxFilter,
-    };
+    use zcash_client_backend::proto::service::TxFilter;
 
-    let channel = match Endpoint::from_shared(lightwalletd_url.to_string())
-        .and_then(|e| e.tls_config(ClientTlsConfig::new().with_webpki_roots()))
-    {
-        Ok(e) => match e.connect().await {
-            Ok(c) => c,
-            Err(e) => { log::warn!("txtrack: gRPC connect failed: {e}"); return -1; }
-        },
-        Err(e) => { log::warn!("txtrack: endpoint error: {e}"); return -1; }
+    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("txtrack: {e}");
+            return -1;
+        }
     };
-
-    let mut client = CompactTxStreamerClient::new(channel);
 
     let filter = TxFilter {
         block: None,

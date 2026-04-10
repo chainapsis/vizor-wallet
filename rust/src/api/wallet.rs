@@ -52,20 +52,11 @@ pub fn get_latest_block_height(lightwalletd_url: String) -> Result<u64, String> 
     catch(|| {
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
-            use tonic::transport::{ClientTlsConfig, Endpoint};
-            use zcash_client_backend::proto::service::{
-                compact_tx_streamer_client::CompactTxStreamerClient, ChainSpec,
-            };
+            use zcash_client_backend::proto::service::ChainSpec;
 
-            let channel = Endpoint::from_shared(lightwalletd_url)
-                .map_err(|e| format!("Invalid URL: {e}"))?
-                .tls_config(ClientTlsConfig::new().with_webpki_roots())
-                .map_err(|e| format!("TLS error: {e}"))?
-                .connect()
+            let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
                 .await
-                .map_err(|e| format!("gRPC connect failed: {e}"))?;
-
-            let mut client = CompactTxStreamerClient::new(channel);
+                .map_err(|e| e.to_string())?;
             let tip = client
                 .get_latest_block(ChainSpec::default())
                 .await

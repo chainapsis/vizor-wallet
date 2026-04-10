@@ -360,15 +360,7 @@ async fn run_sync_impl(
     log::info!("[{}] sync: starting (mode={}, batch={})", elapsed(), running_mode, batch_size);
 
     // 1. Connect gRPC
-    let channel = Endpoint::from_shared(lightwalletd_url.to_string())
-        .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
-        .tls_config(ClientTlsConfig::new().with_webpki_roots())
-        .map_err(|e| SyncError::net(format!("TLS error: {e}")))?
-        .connect()
-        .await
-        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
-
-    let mut client = CompactTxStreamerClient::new(channel);
+    let mut client = open_lwd_channel(lightwalletd_url).await?;
 
     // Open DB once — reused for the entire sync
     let mut db = open_db(db_data_path, network)?;
@@ -719,6 +711,27 @@ async fn run_sync_impl(
 fn open_db(path: &str, network: Network) -> Result<WalletDatabase, SyncError> {
     WalletDb::for_path(path, network, SystemClock, OsRng)
         .map_err(|e| SyncError::db(format!("DB open: {e}")))
+}
+
+/// Opens a tonic gRPC channel to the given lightwalletd URL and wraps it as
+/// a `CompactTxStreamerClient`. Centralises the TLS + connect flow so every
+/// lightwalletd connection in the crate uses identical settings, and so a
+/// later Phase 2 commit has exactly one place to add the Tor-routing branch.
+///
+/// Callers outside this module surface the `SyncError` as a `String` via
+/// `.map_err(|e| e.to_string())`; this crate's public FRB surface still
+/// returns `Result<_, String>` for FFI compat.
+pub(crate) async fn open_lwd_channel(
+    lightwalletd_url: &str,
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    let channel = Endpoint::from_shared(lightwalletd_url.to_string())
+        .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
+        .tls_config(ClientTlsConfig::new().with_webpki_roots())
+        .map_err(|e| SyncError::net(format!("TLS error: {e}")))?
+        .connect()
+        .await
+        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
+    Ok(CompactTxStreamerClient::new(channel))
 }
 
 /// Returns `true` when `err` wraps a transient SQLite lock-contention
