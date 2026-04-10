@@ -13,12 +13,16 @@
 <h2 id="address">7. 주소 체계</h2>
 
 <h3 id="addr-ua">7.1 Unified Address (Sapling + Orchard)</h3>
-<p>사용자에게 표시되는 기본 주소는 <strong>Sapling과 Orchard receiver만</strong> 포함하는 ZIP-316 Unified Address이다 (transparent 제외). zodl/Zashi 동작과 일치한다.</p>
+<p>Software 계정의 기본 주소는 <strong>Sapling 과 Orchard receiver 만</strong> 포함하는 ZIP-316 Unified Address 이다 (transparent 제외). zodl/Zashi 동작과 일치한다.</p>
 <ul>
   <li>메인넷 접두사: <code>u1...</code></li>
   <li>Receivers: Orchard (Pallas 곡선) + Sapling (Jubjub 곡선)</li>
-  <li>보내는 월렛이 자동으로 지원하는 가장 높은 프라이버시 레벨의 receiver를 선택</li>
+  <li>보내는 월렛이 자동으로 지원하는 가장 높은 프라이버시 레벨의 receiver 를 선택</li>
 </ul>
+
+<div class="note">
+  <p><strong>Keystone 하드웨어 계정 (Orchard-only UA):</strong> Keystone 3 펌웨어는 UFVK 의 Sapling 부분을 export 하지 않는다. 그래서 하드웨어 계정은 <code>orchard_address_request</code> (Orchard <code>Require</code>, Sapling <code>Omit</code>, Transparent <code>Omit</code>) 로 주소를 파생한다 — 결과 UA 는 Orchard receiver 하나만 포함한다. 여전히 유효한 Zcash 주소이지만 Sapling-only 송금 지갑 (구형) 에서는 보낼 수 없다. 자세한 것은 <a href="keystone.html#keystone-import">§9.2 UFVK import</a>.</p>
+</div>
 
 <h3 id="addr-transparent">7.2 Transparent Address</h3>
 <p><code>getTransparentAddress()</code>를 통해 별도의 transparent 전용 주소를 조회할 수 있다. 이것은 동일한 seed에서 BIP-44 경로 <code>m/44'/133'/0'</code>로 유도된 표준 t-address (P2PKH, 메인넷 접두사 <code>t1</code>)이다.</p>

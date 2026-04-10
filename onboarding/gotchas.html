@@ -90,10 +90,58 @@
     <td>iOS QoS</td>
     <td>BGTask handler는 <code>using:nil</code>로 등록, sync 작업은 <code>.utility</code> QoS queue에서 실행. <code>current_thread</code> tokio runtime이 <code>.utility</code>를 상속. Background에서 ~2.5x 느린 건 iOS OS throttling.</td>
   </tr>
+  <tr>
+    <td>Hardware-first 부트스트랩 금지</td>
+    <td>Keystone 계정은 지갑의 첫 계정이 될 수 없다. <code>importKeystoneAccount</code> 와 <code>import_hardware_account</code> 모두 Derived 계정이 하나라도 있어야 통과. 이유: <code>Imported</code>-only DB 는 seed-requiring migration 을 적용할 수 없다 (librustzcash 제약). 자세히는 <a href="keystone.html#keystone-bootstrap">§9.3</a>.</td>
+  </tr>
+  <tr>
+    <td>PCZT broadcast &rarr; persist 순서</td>
+    <td><code>extract_and_broadcast_pczt</code> 는 반드시 broadcast 뒤에 store. 역순이면 lightwalletd 가 거절할 때 DB 에 소비된 노트로 남아 복구 불가. 자세히는 <a href="keystone.html#keystone-invariants">§9.6 (1)</a>.</td>
+  </tr>
+  <tr>
+    <td>PCZT storage fallback chain</td>
+    <td>Primary <code>extract_and_store_transaction_from_pczt</code> 실패 시 <code>decrypt_and_store_transaction</code> 으로 fallback — correctness 는 보존하되 rich metadata 만 손실. 두 경로 모두 실패해야 에러 surface. 절대 "broadcast 성공 + storage 실패" 를 user error 로 보이게 하지 말 것. 자세히는 <a href="keystone.html#keystone-invariants">§9.6 (2)</a>.</td>
+  </tr>
+  <tr>
+    <td>Sapling params 쌍 계약</td>
+    <td><code>add_proofs_to_pczt</code> 와 <code>extract_and_broadcast_pczt</code> 는 <strong>같은 Sapling params 쌍</strong> 을 받아야 한다 — 한쪽은 proving key (<code>LocalTxProver</code>), 한쪽은 verifying key (<code>LocalTxProver::verifying_keys()</code>). 한쪽만 넘기면 Sapling-only recipient 송금이 <code>SaplingRequired</code> 로 실패. <code>send_screen.dart</code> 의 <code>proposal.needsSaplingParams ? spendPath : null</code> 을 두 FFI 호출에 나란히 전달한다. 자세히는 <a href="keystone.html#keystone-invariants">§9.6 (3)</a>.</td>
+  </tr>
+  <tr>
+    <td>PROPOSAL_STORE 라이프사이클</td>
+    <td><code>create_pczt_from_proposal</code> 과 <code>execute_proposal</code> 은 <strong>consume-on-entry</strong> (<code>.remove()</code>). 새 entry point 추가 시 같은 패턴을 따를 것 — <code>.get()</code> 로만 읽으면 memory leak + replayable ID 버그가 재발한다. Dart <code>_send()</code> 는 <code>try/finally</code> + <code>proposalConsumed</code> flag 로 cancel/error 경로에서 <code>discardProposal</code> 호출. Idempotent 라 중복 호출 안전. 자세히는 <a href="keystone.html#keystone-invariants">§9.6 (4)</a>.</td>
+  </tr>
+  <tr>
+    <td><code>reset_ur_session()</code> 은 반드시 sync</td>
+    <td>UR decoder 의 global state reset 을 fire-and-forget <code>Future</code> 로 두면 camera start 와 race 한다. <code>reset_ur_session</code> 은 <code>#[flutter_rust_bridge::frb(sync)]</code> 로 노출되어야 Dart <code>initState</code> 에서 카메라 시작 <strong>전</strong> 완료가 보장된다. 다른 "가벼운 상태 리셋" 류 함수도 같은 판단 기준을 적용할 것.</td>
+  </tr>
+  <tr>
+    <td>UR scanner dedupe 타이밍</td>
+    <td><code>_AnimatedUrScanScreenState._seenParts</code> 는 <code>decodeUrPart</code> <strong>성공 후에만</strong> 추가. 앞에 두면 transient 실패 (잘못된 타입, 블러 프레임, reset race) 가 fragment 를 영구 skip 시켜 fountain code scan 이 100% 에 못 간다. 실패 시 다음 animation cycle 에서 재시도되도록.</td>
+  </tr>
+  <tr>
+    <td>QR <code>_onDetect</code> post-await guard</td>
+    <td><code>_onDetect</code> 는 <code>await decodeUrPart</code> 뒤에 <code>if (!mounted || _complete) return</code> 가드가 필수. Concurrent frame 처리나 scan 중간 dispose 가 disposed widget 에 <code>setState</code> 를 호출하는 race 가 있고, <code>_complete</code> 체크가 없으면 out-of-order 완료 시 progress bar 가 역행.</td>
+  </tr>
+  <tr>
+    <td>Spendable vs Total balance</td>
+    <td><code>WalletBalance</code> 는 <code>spendable</code> (Send 가능한 금액) 과 <code>total</code> (<code>spendable + pending</code>) 두 필드를 가진다. Send screen 은 반드시 <code>spendable</code> 을 써야 한다 — <code>total</code> 을 쓰면 유저가 pending change 로 send 를 시도하게 되고 proposer 가 "insufficient balance" 로 실패한다. Home screen 은 <code>total</code> 표시가 맞다.</td>
+  </tr>
+  <tr>
+    <td><code>SyncState</code> 재구성 시 balance 보존</td>
+    <td><code>stopSync</code>, stream <code>onError</code>, 외부 <code>catchError</code> 등 <code>SyncState</code> 를 재구성하는 경로에서 <strong>모든 balance 필드를 <code>prev?.*</code> 로 carry</strong> 해야 한다. 새 필드가 추가됐을 때 (<code>spendableBalance</code> 같은) 놓치면 transient sync 에러 하나로 balance 가 0 으로 떨어진다.</td>
+  </tr>
+  <tr>
+    <td><code>AccountInfo.copyWith</code> 관례</td>
+    <td><code>renameAccount</code> 같은 account mutation 은 반드시 <code>AccountInfo.copyWith</code> 를 쓸 것 — 생성자 직접 호출은 field-drop 버그 위험 (예: <code>isHardware</code> 를 default false 로 떨어뜨려서 하드웨어 계정이 software 로 재분류되는 버그). 새 필드를 추가하면 <code>copyWith</code> 도 확장.</td>
+  </tr>
+  <tr>
+    <td>Multi-account migration limitation</td>
+    <td>2번째 이후 계정은 전부 <code>AccountSource::Imported</code> (소프트웨어든 하드웨어든). librustzcash 는 multi-seed 를 공식적으로 unsupported 로 선언했고, seed-requiring migration 은 Imported 계정에 적용될 수 없다. "첫 계정은 Derived" 불변은 migration 이 최소한 시작은 하도록 보장하지만, 2+ 계정의 완전한 migration 은 개별 migration 의 작성 방식에 달렸다. 자세히는 <a href="keystone.html#keystone-bootstrap">§9.3</a> 및 <code>CLAUDE.md</code> "Multi-account migration limitation".</td>
+  </tr>
 </table>
 
 <div class="nav">
-  <a href="background-sync.html">&larr; 이전: Background Sync</a>
+  <a href="keystone.html">&larr; 이전: Keystone 하드웨어 지갑</a>
   <a href="dev-commands.html">다음: 개발 명령어 &rarr;</a>
 </div>
 

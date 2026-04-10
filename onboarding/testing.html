@@ -13,8 +13,10 @@
 <h2 id="testing">8. 테스트</h2>
 <p><em>(Background Sync, 알려진 주의사항, 개발 명령어는 아래 섹션 9~11 참조)</em></p>
 
-<h3 id="test-rust">8.1 Rust 단위 테스트 (8개)</h3>
+<h3 id="test-rust">8.1 Rust 단위 테스트 (11개)</h3>
 <pre><code>cd rust && cargo test</code></pre>
+
+<p><strong><code>wallet::keys::tests</code> (8개) — 키 유도 + 주소 파생</strong></p>
 <table>
   <tr><th>Test</th><th>검증 내용</th></tr>
   <tr><td><code>test_generate_mnemonic_is_24_words</code></td><td>생성된 니모닉이 정확히 24단어인지</td></tr>
@@ -26,6 +28,18 @@
   <tr><td><code>test_deterministic_address_from_same_seed</code></td><td>같은 seed가 항상 같은 주소를 생성하는지</td></tr>
   <tr><td><code>test_shielded_address_has_sapling_and_orchard_only</code></td><td>UA에 Sapling+Orchard만 포함되고 transparent가 없는지</td></tr>
 </table>
+
+<p><strong><code>wallet::sync::tests</code> (3개) — PROPOSAL_STORE 라이프사이클</strong></p>
+<table>
+  <tr><th>Test</th><th>검증 내용</th></tr>
+  <tr><td><code>discard_proposal_is_idempotent_for_missing_id</code></td><td>존재하지 않는 id 에 대해 <code>discard_proposal</code> 을 호출해도 안전한지 (idempotent). 취소 경로가 consume 된 proposal 과 실수로 두 번 호출되는 경우를 커버.</td></tr>
+  <tr><td><code>create_pczt_from_proposal_errors_for_missing_id</code></td><td>존재하지 않는 id 로 <code>create_pczt_from_proposal</code> 호출 시 <code>"Proposal not found (expired or already consumed)"</code> 반환. Replay 시도가 깔끔하게 거부되는지 확인.</td></tr>
+  <tr><td><code>discard_proposal_after_create_pczt_failure_is_still_noop</code></td><td>실패한 create 뒤에 <code>discard_proposal</code> 를 호출해도 안전한지 — Dart <code>_send()</code> 의 <code>try/finally</code> cleanup 패턴이 정당한지 확인.</td></tr>
+</table>
+
+<div class="note">
+  <p><strong>Integration 테스트의 한계:</strong> Full insert → consume → replay 사이클을 테스트하려면 실제 wallet DB 와 spendable notes + 체인 tip 이 필요하다. 그건 단위 테스트 범위가 아니고 integration test 쪽에 속한다. 현재 단위 테스트는 "삭제 경로가 idempotent 하고 missing id 가 깔끔히 에러로 처리되는지" 만 커버.</p>
+</div>
 
 <h3 id="test-dart">8.2 Dart 테스트</h3>
 <pre><code>fvm flutter test</code></pre>

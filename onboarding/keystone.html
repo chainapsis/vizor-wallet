@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>9. Keystone 하드웨어 지갑 — Zcash Wallet Onboarding</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p><a href="index.html">&larr; 목차로 돌아가기</a></p>
+
+<h2 id="keystone">9. Keystone 하드웨어 지갑</h2>
+
+<p>Keystone 3 장치와의 통합. 소프트웨어 지갑과 전혀 다른 <strong>키 보관 모델</strong>과 <strong>서명 파이프라인</strong>을 쓰기 때문에 별도의 섹션으로 분리해서 설명한다.</p>
+
+<h3 id="keystone-key-model">9.1 키 보관 모델</h3>
+
+<p>Keystone 지갑은 소프트웨어 지갑과 달리 <strong>USK (Unified Spending Key) 가 phone 에 존재하지 않는다</strong>. 유저가 디바이스를 한 번 꺼내서 UFVK 만 phone 으로 복사하고, 서명은 매번 디바이스에서 수동으로 승인한다.</p>
+
+<table>
+  <tr><th>항목</th><th>소프트웨어 계정</th><th>Keystone 계정</th></tr>
+  <tr>
+    <td>Mnemonic</td>
+    <td>Phone 의 secure storage (<code>zcash_account_mnemonic_{uuid}</code>)</td>
+    <td>Phone 에 존재하지 않음 (디바이스에만)</td>
+  </tr>
+  <tr>
+    <td>USK</td>
+    <td>서명 직전 seed 에서 파생 → 서명 후 drop</td>
+    <td>디바이스 내부에만 존재, phone 은 절대 보지 않음</td>
+  </tr>
+  <tr>
+    <td>UFVK</td>
+    <td>DB 에 저장 (<code>zcash_client_sqlite</code>)</td>
+    <td>DB 에 저장 (QR/UR 로 import)</td>
+  </tr>
+  <tr>
+    <td>DB 상태</td>
+    <td>첫 계정: <code>AccountSource::Derived</code></td>
+    <td>항상 <code>AccountSource::Imported</code> + <code>AccountPurpose::Spending { derivation }</code></td>
+  </tr>
+  <tr>
+    <td><code>getActiveMnemonic()</code></td>
+    <td>니모닉 문자열 반환</td>
+    <td><code>null</code> 반환</td>
+  </tr>
+  <tr>
+    <td>서명 경로</td>
+    <td><code>execute_proposal()</code> 내에서 phone 이 서명</td>
+    <td>PCZT 를 device 에 넘겨서 device 가 서명</td>
+  </tr>
+</table>
+
+<p><code>AccountProvider.isActiveAccountHardware</code> 가 계정의 <code>isHardware</code> 플래그를 기반으로 send 경로를 분기한다 (software <code>executeProposal</code> vs hardware PCZT 파이프라인).</p>
+
+<h3 id="keystone-import">9.2 계정 Import — ZcashAccounts UR</h3>
+
+<p>Keystone 디바이스는 "Connect wallet" 메뉴에서 <strong>ZcashAccounts animated QR</strong> 을 띄운다. Phone 이 이걸 스캔하면 UR-encoded CBOR payload 가 구성된다:</p>
+
+<pre><code>UR:ZCASH-ACCOUNTS/...  (multi-part animated QR)
+  └─ CBOR: ZcashAccounts
+       ├─ seed_fingerprint: [u8; 32]
+       └─ accounts: Vec&lt;ZcashUnifiedFullViewingKey&gt;
+               ├─ ufvk: String (Orchard-only)
+               ├─ index: u32 (ZIP 32 account index)
+               └─ name: Option&lt;String&gt;</code></pre>
+
+<p><strong>Orchard-only UFVK</strong>: 현재 Keystone 펌웨어는 UFVK 의 Sapling 부분을 export 하지 않는다. 그래서 <code>import_hardware_account</code> 는 기본 <code>shielded_address_request</code> (Orchard <code>Require</code> + Sapling <code>Require</code>) 대신 <code>orchard_address_request</code> (Orchard <code>Require</code> + Sapling <code>Omit</code>) 로 fallback 한다:</p>
+
+<pre><code>fn orchard_address_request() -&gt; UnifiedAddressRequest {
+    UnifiedAddressRequest::custom(
+        ReceiverRequirement::Require, // Orchard
+        ReceiverRequirement::Omit,    // Sapling — not in Keystone UFVK
+        ReceiverRequirement::Omit,    // Transparent
+    ).expect("valid receiver requirements")
+}</code></pre>
+
+<p>결과: Keystone 계정의 수신 주소는 <strong>Orchard receiver 하나만</strong> 포함하는 UA. 유효한 Zcash 주소이지만 구형 Sapling-only 지갑한테서는 받을 수 없다.</p>
+
+<h3 id="keystone-bootstrap">9.3 Hardware-first 부트스트랩 제약</h3>
+
+<p><strong>Keystone 계정은 지갑의 첫 계정이 될 수 없다.</strong> 빈 DB 에 Keystone import 를 시도하면 Dart 의 <code>importKeystoneAccount</code> 와 Rust 의 <code>import_hardware_account</code> 둘 다 거부한다.</p>
+
+<p>이유: <code>zcash_client_sqlite</code> 의 <code>init_wallet_db(Some(seed))</code> 는 DB 에 <code>AccountSource::Derived</code> 계정이 하나라도 있어야 seed 관련성 (relevance) 검증에 통과한다. <code>Imported</code> 계정만 있는 DB 는 seed-requiring migration 을 절대 적용할 수 없게 된다 — <code>create_account</code> 조차 사후 구제 경로가 아니다 (그 호출 자체가 seed-aware init 을 요구). 유일한 예방은 "첫 계정은 Derived" 불변 조건을 강제하는 것.</p>
+
+<p>이 제약의 자세한 rationale 은 <code>CLAUDE.md</code> 의 "Multi-account migration limitation" 섹션 참고. 프로덕션 릴리즈 전에 이 tradeoff 는 재검토 예정.</p>
+
+<h3 id="keystone-send">9.4 Send Flow — Three-PCZT 파이프라인</h3>
+
+<p>하드웨어 서명은 <strong>3 개의 PCZT</strong> 를 사용하는 파이프라인이다. Keystone 디바이스는 ZK proof 를 생성할 수 없고 (proving key 가 너무 큼), phone 은 서명할 수 없으므로 (USK 가 디바이스에만 있음), 양쪽이 공통 base PCZT 의 별도 clone 에서 작업하고 phone 이 마지막에 합친다. <code>zcash-android-wallet-sdk</code> / Zashi 패턴과 동일하다.</p>
+
+<pre><code>1. createPcztFromProposal                      → base PCZT (phone)
+   (IO-finalized, no proofs, no signatures)
+      │
+      ├── 2a. addProofsToPczt(base, params?)   → pcztWithProofs   (phone, CPU)
+      │       Orchard proof 항상 생성; proposal.needsSaplingParams
+      │       이면 LocalTxProver 로 Sapling output proof 도 생성
+      │
+      └── 2b. redactPcztForSigner(base)        → redactedPczt     (phone)
+              Witnesses / proprietary metadata 제거 → QR frame 수 최소화
+              → Keystone 디바이스 (animated QR or USB EAPDU)
+              → 디바이스가 Orchard spend_auth_sig 서명
+              → signed PCZT 가 phone 에                  → pcztWithSignatures
+                                                       ↓
+3. extractAndBroadcastPczt(
+     pcztWithProofs, pcztWithSignatures,
+     spend_params?, output_params?,
+   )                                             → txid
+     a. Combiner → TransactionExtractor (in-memory, DB 건드리지 않음)
+     b. gRPC broadcast
+     c. extract_and_store_transaction_from_pczt (primary, rich metadata)
+        실패 시 → decrypt_and_store_transaction (fallback, correctness)
+        둘 다 실패 시 → Err ("tx 는 네트워크에 있음")
+</code></pre>
+
+<h3 id="keystone-roles">9.5 PCZT Role 분담</h3>
+
+<table>
+  <tr><th>Step</th><th>PCZT Role</th><th>Runs on</th><th>필요한 것</th></tr>
+  <tr>
+    <td>1</td>
+    <td>Creator + IoFinalizer</td>
+    <td>Phone</td>
+    <td>Wallet DB (propose 결과)</td>
+  </tr>
+  <tr>
+    <td>2a</td>
+    <td>Prover</td>
+    <td>Phone</td>
+    <td>Orchard proving key (항상); Sapling proving params ~50MB (recipient 에 Sapling output 있을 때)</td>
+  </tr>
+  <tr>
+    <td>2b</td>
+    <td>Redactor</td>
+    <td>Phone</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td>sign</td>
+    <td>Signer</td>
+    <td>Device</td>
+    <td>Device 내 USK (Orchard spend_auth_sig 파생)</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>Combiner + TransactionExtractor</td>
+    <td>Phone</td>
+    <td>Orchard verifying key (항상); Sapling verifying keys (Sapling bundle 있을 때) + Wallet DB</td>
+  </tr>
+</table>
+
+<h3 id="keystone-invariants">9.6 Critical Invariants</h3>
+
+<p>각 항목은 개발 중에 실제로 터진 버그의 원인이다. 깨뜨리면 correctness 또는 data-loss 리그레션이 생긴다.</p>
+
+<h4>(1) <code>extract_and_broadcast_pczt</code> 는 반드시 broadcast 뒤에 persist</h4>
+<p>순서: <code>TransactionExtractor::extract()</code> (메모리 내, DB 건드리지 않음) → <code>send_transaction</code> gRPC → <em>그제서야</em> <code>extract_and_store_transaction_from_pczt</code>.</p>
+<p>Store-then-broadcast 구조는 lightwalletd 가 tx 를 거절했을 때 복구 불가능한 상태를 만든다: DB 는 노트가 소비된 걸로 알고, 네트워크는 tx 를 본 적이 없고, 유저는 수동으로 지갑을 복구해야 한다.</p>
+
+<h4>(2) Broadcast 성공 후 local storage 실패는 send 실패로 surface 되면 안 됨</h4>
+<p>Primary: <code>extract_and_store_transaction_from_pczt</code> — PCZT recipient/memo metadata 를 보존한다 (history 에서 "sent to …" 표시).</p>
+<p>Fallback: <code>decrypt_and_store_transaction</code> — sync 가 chain 에서 자기 자신의 sent tx 를 발견할 때 쓰는 경로와 동일. Correctness 는 보존되고 (nullifier 매칭으로 spent 노트 마킹), PCZT-only 표시 metadata 만 손실. 두 경로 모두 실패해야 에러가 surface 되며, 에러 메시지는 "tx 는 이미 네트워크에 있으니 재시도 말 것" 을 명시해야 한다.</p>
+
+<h4>(3) Sapling params 는 두 함수에 <em>같은 쌍</em> 으로 전달</h4>
+<p>PCZT 에 Sapling bundle 이 있으면 <code>add_proofs_to_pczt</code> 와 <code>extract_and_broadcast_pczt</code> <strong>둘 다</strong> Sapling params 가 필요하다. 한쪽은 <code>LocalTxProver</code> (proving), 한쪽은 <code>LocalTxProver::verifying_keys()</code> (extract + storage). <code>send_screen.dart</code> 가 같은 <code>proposal.needsSaplingParams ? spendPath : null</code> 를 두 FFI 호출에 각각 넘긴다.</p>
+<p>한쪽만 넘기면 — 예를 들어 Sapling-only 주소로 송금 시도하면서 <code>extract_and_broadcast_pczt</code> 에만 <code>None</code> 을 준다면 — extraction 이 <code>SaplingRequired</code> 로 실패한다. 유저는 50MB params 다운로드와 Keystone 서명까지 다 하고서 암호 같은 에러만 본다.</p>
+
+<h4>(4) <code>PROPOSAL_STORE</code> 는 consume-on-entry + 취소 시 explicit discard</h4>
+<p><code>create_pczt_from_proposal</code> 과 <code>execute_proposal</code> 모두 진입 시 <code>.remove()</code> 로 소비한다 (무거운 DB 작업 전에 store lock 을 drop). 같은 <code>proposal_id</code> 로 두 번째 호출 시 <code>"Proposal not found (expired or already consumed)"</code> 반환.</p>
+<p>Dart <code>_send()</code> 는 전체 흐름을 <code>try/finally</code> 로 감싸고 <code>proposalConsumed</code> flag 가 consume 호출 직후 <code>true</code> 로 바뀐다. Finally 블록에서 flag 가 여전히 <code>false</code> 면 <code>discardProposal(proposalId)</code> 를 호출한다. 이로써 confirmation dialog 취소, Sapling params dialog 취소, Sapling 다운로드 중 예외, consume 호출 전의 어떤 에러도 전부 커버된다. <code>discardProposal</code> 은 idempotent.</p>
+
+<h3 id="keystone-ur">9.7 UR (Uniform Resources) 스캐너</h3>
+
+<p>Animated QR 의 UR 프레임을 누적해서 완성된 CBOR payload 를 꺼내는 경로. <code>rust/src/wallet/keystone.rs</code> 에 구현.</p>
+
+<ul>
+  <li><strong>Decoder</strong>: <code>ur::Decoder</code> 를 직접 사용 (<code>KeystoneURDecoder</code> 래퍼는 쓰지 않음 — <code>URType::from()</code> 레지스트리에 <code>zcash-accounts</code> 가 없어서 실패).</li>
+  <li><strong>Global state</strong>: <code>UR_SESSION: Mutex&lt;Option&lt;UrSession&gt;&gt;</code>. <code>ur_type</code> 이 같은 타입의 in-flight 세션과 달라지면 auto-reset. 완료 시에도 auto-reset.</li>
+  <li><strong>Reset entry</strong>: <code>reset_ur_session()</code> 은 <code>#[flutter_rust_bridge::frb(sync)]</code> 로 노출 — Dart scan screen 의 <code>initState</code> 에서 카메라 시작 <strong>전에</strong> 호출되어야 race 가 없다 (fire-and-forget <code>Future</code> 는 카메라 start latency 와 경쟁 가능).</li>
+  <li><strong>Dart dedupe</strong>: <code>_AnimatedUrScanScreenState._seenParts</code> 는 <code>decodeUrPart</code> <strong>성공 후에만</strong> 추가. Fountain-code 기반이라 transient 실패한 fragment 는 다음 animation cycle 에서 자동으로 다시 들어옴.</li>
+  <li><strong>Post-await guard</strong>: <code>_onDetect</code> 는 await 뒤에 <code>if (!mounted || _complete) return</code> 로 late arrival 을 버린다. 동시 frame 처리나 scan 중간 dispose 에서 setState 가 disposed widget 에 호출되는 race 방지.</li>
+</ul>
+
+<h3 id="keystone-files">9.8 관련 파일</h3>
+
+<table>
+  <tr><th>Layer</th><th>Path</th><th>역할</th></tr>
+  <tr>
+    <td>Rust (wallet)</td>
+    <td><code>rust/src/wallet/keystone.rs</code></td>
+    <td>UR encode/decode, USB EAPDU 프로토콜 (<code>KEYSTONE_VID</code> = 0x1209, PID = 0x3001), PCZT single-part helpers</td>
+  </tr>
+  <tr>
+    <td>Rust (wallet)</td>
+    <td><code>rust/src/wallet/sync.rs</code></td>
+    <td><code>create_pczt_from_proposal</code>, <code>add_proofs_to_pczt</code>, <code>redact_pczt_for_signer</code>, <code>extract_and_broadcast_pczt</code>, <code>discard_proposal</code></td>
+  </tr>
+  <tr>
+    <td>Rust (wallet)</td>
+    <td><code>rust/src/wallet/keys.rs</code></td>
+    <td><code>import_hardware_account</code> (<code>AccountSource::Derived</code> backstop 체크 포함)</td>
+  </tr>
+  <tr>
+    <td>Rust (api)</td>
+    <td><code>rust/src/api/keystone.rs</code></td>
+    <td>FRB wrapper: UR decode 함수들 + <code>reset_ur_session</code> (sync)</td>
+  </tr>
+  <tr>
+    <td>Rust (api)</td>
+    <td><code>rust/src/api/sync.rs</code></td>
+    <td>FRB wrapper: PCZT 파이프라인 함수들</td>
+  </tr>
+  <tr>
+    <td>Dart</td>
+    <td><code>lib/src/services/qr_scanner.dart</code></td>
+    <td><code>QrScanner.scanAnimatedUr(context, expectedUrType:)</code>, <code>_AnimatedUrScanScreen</code></td>
+  </tr>
+  <tr>
+    <td>Dart</td>
+    <td><code>lib/src/services/keystone_transport.dart</code></td>
+    <td><code>KeystoneTransport</code> 추상화 + <code>QrKeystoneTransport</code> / <code>UsbKeystoneTransport</code></td>
+  </tr>
+  <tr>
+    <td>Dart</td>
+    <td><code>lib/src/features/keystone/screens/import_keystone_screen.dart</code></td>
+    <td>계정 import UI</td>
+  </tr>
+  <tr>
+    <td>Dart</td>
+    <td><code>lib/src/features/send/screens/send_screen.dart</code></td>
+    <td><code>isActiveAccountHardware</code> 분기로 PCZT 파이프라인 실행</td>
+  </tr>
+  <tr>
+    <td>Dart</td>
+    <td><code>lib/src/providers/account_provider.dart</code></td>
+    <td><code>importKeystoneAccount</code>, <code>isActiveAccountHardware</code>, <code>AccountInfo.copyWith</code></td>
+  </tr>
+</table>
+
+<h3 id="keystone-usb-note">9.9 USB 경로에 대한 주의</h3>
+
+<p>현재 <code>rust/src/wallet/keystone.rs</code> 에 <code>KEYSTONE_VID</code> / <code>KEYSTONE_PID</code> 기반 <strong>EAPDU USB 프로토콜</strong> 코드가 살아있지만, Keystone 3 펌웨어가 Zcash 를 USB 로 지원하지 않기 때문에 런타임 경로는 작동하지 않는다. 코드는 펌웨어 지원이 추가되었을 때 다시 활성화할 수 있도록 보존되어 있다. 프로덕션 릴리즈 전에 이 상태를 재평가할 예정 (UI 에서 가릴지, 플래그로 게이트할지, 코드를 제거할지).</p>
+
+<div class="nav">
+  <a href="background-sync.html">&larr; 이전: Background Sync</a>
+  <a href="gotchas.html">다음: 알려진 주의사항 &rarr;</a>
+</div>
+
+</body>
+</html>

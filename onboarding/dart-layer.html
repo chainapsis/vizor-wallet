@@ -20,10 +20,12 @@
   <li><code>build()</code>에서: secure storage에서 계정 목록(<code>zcash_accounts</code>)과 활성 계정(<code>zcash_active_account</code>)을 로드. 활성 계정의 주소를 Rust에서 조회.</li>
   <li><code>createAccount({name?})</code>: 첫 번째 계정이면 <code>create_wallet()</code> (Derived), 추가 계정이면 <code>generate_mnemonic()</code> + <code>add_account()</code> (Imported). birthday는 chain tip에서 가져옴. 니모닉은 <code>zcash_account_mnemonic_{uuid}</code>로 per-account 저장.</li>
   <li><code>importAccount({mnemonic, birthdayHeight?, name?})</code>: 첫 번째이면 <code>import_wallet()</code>, 추가이면 <code>add_account()</code>.</li>
+  <li><code>importKeystoneAccount({name, ufvk, seedFingerprint, zip32Index})</code>: <strong>하드웨어 UFVK 만</strong> 으로 계정 추가. 빈 계정 목록에서는 거부 (하드웨어-first 부트스트랩 금지 — <a href="keystone.html#keystone-bootstrap">§9.3</a>). <code>isHardware: true</code> 로 마킹. <code>zcash_account_mnemonic_{uuid}</code> 엔트리는 만들지 않는다.</li>
   <li><code>switchAccount(uuid)</code>: 활성 계정 전환. secure storage 업데이트 + 주소 조회.</li>
-  <li><code>renameAccount(uuid, newName)</code>: 계정 이름 변경.</li>
-  <li><code>getActiveMnemonic()</code>: 활성 계정의 니모닉을 secure storage에서 조회. 전송 시 seed 유도에 사용.</li>
-  <li><code>AccountState</code>: <code>{ accounts: List&lt;AccountInfo&gt;, activeAccountUuid, activeAddress }</code></li>
+  <li><code>renameAccount(uuid, newName)</code>: 계정 이름 변경. <code>AccountInfo.copyWith</code> 로 필드 보존 (특히 <code>isHardware</code> — 직접 생성자 호출은 field-drop 버그 주의).</li>
+  <li><code>getActiveMnemonic()</code>: 활성 계정의 니모닉을 secure storage에서 조회. 전송 시 seed 유도에 사용. <strong>하드웨어 계정에 대해서는 <code>null</code> 반환</strong>.</li>
+  <li><code>isActiveAccountHardware</code>: 활성 계정의 <code>isHardware</code> 플래그. Send screen 이 이 값으로 <code>execute_proposal</code> (software) vs PCZT 파이프라인 (hardware) 경로를 분기.</li>
+  <li><code>AccountState</code>: <code>{ accounts: List&lt;AccountInfo&gt;, activeAccountUuid, activeAddress }</code>. <code>AccountInfo</code> 는 <code>{ uuid, name, order, isHardware }</code> 를 가지며 <code>copyWith(name?, order?)</code> 를 제공한다.</li>
 </ul>
 
 <p><strong>Secure Storage 키 구조:</strong></p>
@@ -170,14 +172,16 @@ run_sync_impl (단일 시도):
 <h3 id="dart-routing">4.4 네비게이션 &amp; 라우팅</h3>
 <p>월렛 상태 기반 redirect guard가 있는 <code>go_router</code>를 사용한다:</p>
 <pre><code>Routes:
-  /          -> hasWallet에 따라 /welcome 또는 /home으로 리다이렉트
-  /welcome   -> WelcomeScreen (생성 / 가져오기 선택)
-  /create    -> CreateWalletScreen (24단어 그리드)
-  /import    -> ImportWalletScreen (니모닉 입력)
-  /home      -> HomeScreen (잔액, sync 상태, 주소, Send/Receive/History 버튼)
-  /send      -> SendScreen (주소 검증, 금액, 메모, 2단계 전송)
-  /receive   -> ReceiveScreen (QR 코드, diversified address 생성)
-  /history   -> HistoryScreen (트랜잭션 내역 목록)</code></pre>
+  /                 -> hasWallet에 따라 /welcome 또는 /home으로 리다이렉트
+  /welcome          -> WelcomeScreen (생성 / 가져오기 선택)
+  /create           -> CreateWalletScreen (24단어 그리드)
+  /import           -> ImportWalletScreen (니모닉 입력)
+  /import-keystone  -> ImportKeystoneScreen (QR 스캔으로 Keystone UFVK import)
+  /home             -> HomeScreen (잔액, sync 상태, 주소, Send/Receive/History 버튼)
+  /send             -> SendScreen (주소 검증, 금액, 메모, 전송 — 활성 계정
+                        종류에 따라 software 3단계 또는 hardware PCZT 파이프라인)
+  /receive          -> ReceiveScreen (QR 코드, diversified address 생성)
+  /history          -> HistoryScreen (트랜잭션 내역 목록)</code></pre>
 
 <h3 id="dart-ui">4.5 UI 화면</h3>
 <table>
@@ -185,8 +189,9 @@ run_sync_impl (단일 시도):
   <tr><td>Welcome</td><td><code>features/onboarding/screens/welcome_screen.dart</code></td><td>"Create New Wallet" / "Import Wallet" 버튼</td></tr>
   <tr><td>Create Wallet</td><td><code>features/onboarding/screens/create_wallet_screen.dart</code></td><td>24단어 니모닉 그리드, 백업 확인 체크박스</td></tr>
   <tr><td>Import Wallet</td><td><code>features/onboarding/screens/import_wallet_screen.dart</code></td><td>니모닉 텍스트 입력, 선택적 birthday height, 실시간 유효성 검사</td></tr>
-  <tr><td>Home</td><td><code>features/home/screens/home_screen.dart</code></td><td>잔액 표시, sync 진행률 바, 주소 카드 + 복사, Send/Receive/History 버튼</td></tr>
-  <tr><td>Send</td><td><code>features/send/screens/send_screen.dart</code></td><td>2단계 전송: propose → (조건부 Sapling params 다운로드) → execute. 실시간 주소 타입 검증.</td></tr>
+  <tr><td>Import Keystone</td><td><code>features/keystone/screens/import_keystone_screen.dart</code></td><td>애니메이션 QR 스캔으로 <code>ZcashAccounts</code> UR 을 받아서 UFVK import. 빈 계정 목록에서는 "software 지갑 먼저 만들어야 한다" 에러. 자세히는 <a href="keystone.html#keystone-import">§9.2</a>.</td></tr>
+  <tr><td>Home</td><td><code>features/home/screens/home_screen.dart</code></td><td>잔액 표시 (<code>total</code>, pending 포함), sync 진행률 바, 주소 카드 + 복사, Send/Receive/History 버튼</td></tr>
+  <tr><td>Send</td><td><code>features/send/screens/send_screen.dart</code></td><td>전송 흐름: propose → (조건부 Sapling params 다운로드) → sign + broadcast. 활성 계정이 <code>isHardware == false</code> 이면 <code>executeProposal</code> (software), <code>true</code> 이면 PCZT 파이프라인 (<a href="keystone.html#keystone-send">§9.4</a>). "Available Balance" 는 <code>spendableBalance</code> 를 쓰고, pending 이 있으면 "+ X ZEC pending confirmations" 를 덧붙인다.</td></tr>
   <tr><td>Receive</td><td><code>features/receive/screens/receive_screen.dart</code></td><td>QR 코드 (zcash: URI), 주소 복사, "New Address" 버튼으로 diversified address 생성</td></tr>
   <tr><td>History</td><td><code>features/history/screens/history_screen.dart</code></td><td>트랜잭션 목록: 수신/발신, 금액, 블록 높이, 날짜, 수수료</td></tr>
 </table>

@@ -75,6 +75,12 @@
     <td>async</td>
     <td>니모닉에서 64바이트 raw seed 유도. 전송 시 <code>execute_proposal</code>에 전달.</td>
   </tr>
+  <tr>
+    <td><code>importHardwareAccount({dbPath, network, name, ufvkString, seedFingerprint, zip32Index, birthdayHeight?})</code></td>
+    <td><code>import_hardware_account(...)</code></td>
+    <td>async</td>
+    <td>Keystone UFVK 를 <code>AccountSource::Imported</code> 로 등록. 내부적으로 Derived 계정이 최소 하나 존재하는지 확인 (없으면 거부 — <a href="keystone.html#keystone-bootstrap">§9.3</a>). 주소 파생은 <code>orchard_address_request</code> (Orchard Require / Sapling Omit) 사용. 니모닉은 저장하지 않는다.</td>
+  </tr>
 </table>
 
 <h3 id="api-sync">6.2 Sync &amp; Enhancement 함수</h3>
@@ -113,7 +119,7 @@
   <tr>
     <td><code>getBalance({dbPath, network, accountUuid})</code></td>
     <td><code>get_balance(db_path, network, account_uuid)</code></td>
-    <td>특정 계정의 <code>WalletBalance { transparent, sapling, orchard, transparent_pending, sapling_pending, orchard_pending, total }</code> 반환 (zatoshi 단위). total은 confirmed + pending 합산.</td>
+    <td>특정 계정의 <code>WalletBalance { transparent, sapling, orchard, transparent_pending, sapling_pending, orchard_pending, spendable, total }</code> 반환 (zatoshi 단위). <code>spendable</code> 은 pool 별 spendable 합산 (Send screen "Available Balance"); <code>total</code> 은 <code>spendable + pending</code> 합산 (Home screen 표시). 두 필드를 헷갈리지 말 것 — Send 는 반드시 <code>spendable</code> 을 써야 한다.</td>
   </tr>
   <tr>
     <td><code>getTransactionHistory({dbPath, network, limit, accountUuid})</code></td>
@@ -162,8 +168,10 @@
   </tr>
 </table>
 
-<h3 id="api-send">6.3 Send 함수 (3단계: estimate → propose → execute)</h3>
-<p>전송은 estimate → propose → execute로 분리된다. 모든 함수가 <code>account_uuid</code>를 받아 계정별로 동작한다. ZEC 금액은 integer-only 파싱으로 zatoshi로 변환 (부동소수점 사용하지 않음).</p>
+<h3 id="api-send">6.3 Send 함수</h3>
+<p>전송은 <strong>software</strong> 와 <strong>hardware</strong> 두 경로가 있다. 공통 첫 단계는 <code>estimate_fee</code> / <code>propose_send</code>. 이후 <code>AccountProvider.isActiveAccountHardware</code> 로 분기한다. 모든 함수가 <code>account_uuid</code> / <code>proposal_id</code> 를 받아 계정별로 동작한다. ZEC 금액은 integer-only 파싱으로 zatoshi로 변환 (부동소수점 사용하지 않음).</p>
+
+<h4>공통 (propose / estimate / cancel)</h4>
 <table>
   <tr><th>Dart Function</th><th>Rust Function</th><th>설명</th></tr>
   <tr>
@@ -174,17 +182,59 @@
   <tr>
     <td><code>proposeSend({dbPath, network, accountUuid, toAddress, amountZatoshi, memo?})</code></td>
     <td><code>propose_send(...)</code></td>
-    <td>전송 제안. <code>ProposalResult { proposalId, needsSaplingParams, feeZatoshi }</code> 반환. 내부적으로 <code>StoredProposal { proposal, network, account_id }</code>에 계정 ID 포함하여 메모리에 저장.</td>
+    <td>전송 제안. <code>ProposalResult { proposalId, needsSaplingParams, feeZatoshi }</code> 반환. 내부적으로 <code>StoredProposal { proposal, network, account_id }</code> 를 <code>PROPOSAL_STORE</code> 에 insert.</td>
   </tr>
+  <tr>
+    <td><code>discardProposal({proposalId})</code></td>
+    <td><code>discard_proposal(...)</code></td>
+    <td>저장된 proposal 을 executable 경로로 소비하지 않고 release. Idempotent. <code>send_screen.dart</code> 의 <code>finally</code> 블록이 취소 경로 (confirmation dialog cancel, Sapling dialog cancel, 다운로드 예외 등) 에서 호출.</td>
+  </tr>
+</table>
+
+<h4>Software 경로 (니모닉이 phone 에 있는 계정)</h4>
+<table>
+  <tr><th>Dart Function</th><th>Rust Function</th><th>설명</th></tr>
   <tr>
     <td><code>executeProposal({dbPath, lightwalletdUrl, proposalId, seed, spendParamsPath?, outputParamsPath?})</code></td>
     <td><code>execute_proposal(...)</code></td>
-    <td>제안 실행. zk-SNARK proof 생성 + 서명 + gRPC broadcast. Orchard-only TX에는 no-op Sapling prover 사용 (params 불필요). 니모닉은 <code>AccountProvider.getActiveMnemonic()</code>에서 조회하여 seed 유도. 친화적 에러 메시지 반환.</td>
+    <td>제안 실행. zk-SNARK proof 생성 + 서명 + gRPC broadcast. Orchard-only TX에는 no-op Sapling prover 사용 (params 불필요). 니모닉은 <code>AccountProvider.getActiveMnemonic()</code>에서 조회하여 seed 유도. <strong>PROPOSAL_STORE 에서 consume-on-entry</strong>. 친화적 에러 메시지 반환.</td>
+  </tr>
+</table>
+
+<h4>Hardware 경로 (Keystone PCZT 파이프라인)</h4>
+<p>자세한 흐름과 role 분담은 <a href="keystone.html#keystone-send">§9.4 Three-PCZT 파이프라인</a> 참조.</p>
+<table>
+  <tr><th>Dart Function</th><th>Rust Function</th><th>설명</th></tr>
+  <tr>
+    <td><code>createPcztFromProposal({dbPath, network, proposalId})</code></td>
+    <td><code>create_pczt_from_proposal(...)</code></td>
+    <td>Proposal 을 base PCZT (Creator + IoFinalizer 역할) 로 변환. <strong>PROPOSAL_STORE 에서 consume-on-entry</strong> (execute_proposal 과 동일 패턴). Bytes 반환.</td>
+  </tr>
+  <tr>
+    <td><code>addProofsToPczt({pcztBytes, spendParamsPath?, outputParamsPath?})</code></td>
+    <td><code>add_proofs_to_pczt(...)</code></td>
+    <td>Base PCZT 에 Orchard proof 생성. <code>requires_sapling_proofs()</code> 이면 <code>LocalTxProver</code> 로 Sapling output proof 도 생성. <code>pcztWithProofs</code> bytes 반환.</td>
+  </tr>
+  <tr>
+    <td><code>redactPcztForSigner({pcztBytes})</code></td>
+    <td><code>redact_pczt_for_signer(...)</code></td>
+    <td>Witness / proprietary metadata 를 제거 → QR frame 수 최소화. 하드웨어 디바이스에 넘길 <code>redactedPczt</code> bytes 반환.</td>
+  </tr>
+  <tr>
+    <td>(transport)</td>
+    <td>(Keystone device)</td>
+    <td>Phone 이 animated QR 또는 USB EAPDU 로 <code>redactedPczt</code> 를 디바이스에 전달 → 유저가 디바이스에서 승인 → signed PCZT 반환 → phone 이 스캔하여 <code>pcztWithSignatures</code> 획득. <code>lib/src/services/keystone_transport.dart</code>.</td>
+  </tr>
+  <tr>
+    <td><code>extractAndBroadcastPczt({dbPath, lightwalletdUrl, network, pcztWithProofsBytes, pcztWithSignaturesBytes, spendParamsPath?, outputParamsPath?})</code></td>
+    <td><code>extract_and_broadcast_pczt(...)</code></td>
+    <td>Combiner → TransactionExtractor (verifying key 사용) → gRPC broadcast → primary storage <code>extract_and_store_transaction_from_pczt</code>, 실패 시 fallback <code>decrypt_and_store_transaction</code>. txid 반환. <strong>반드시 broadcast 뒤에 store</strong>. <strong>Sapling params 는 <code>addProofsToPczt</code> 와 동일한 쌍</strong> 으로 전달 — 한쪽만 넘기면 <code>SaplingRequired</code> 로 실패 (<a href="keystone.html#keystone-invariants">§9.6 invariants</a>).</td>
   </tr>
 </table>
 
 <div class="note">
-  <p><strong>Sapling Proving Parameters:</strong> Sapling proof 생성에 <code>sapling-spend.params</code> (~47MB) + <code>sapling-output.params</code> (~3.5MB) 파일이 필요하다. Orchard (Halo 2)는 trusted setup이 없어 파라미터 파일이 불필요하다. <code>propose_send()</code>의 <code>needsSaplingParams</code> 플래그로 필요 여부를 사전에 확인한 후, 필요 시 <code>https://download.z.cash/downloads/</code>에서 다운로드하고 SHA-1 검증 후 저장한다. 한 번만 다운로드하면 이후에는 로컬 파일을 사용한다. Orchard-only TX (needsSaplingParams=false)에서는 no-op Sapling prover가 사용되어 params 파일이 전혀 필요 없다.</p>
+  <p><strong>Sapling Proving Parameters:</strong> Sapling proof 생성에 <code>sapling-spend.params</code> (~47MB) + <code>sapling-output.params</code> (~3.5MB) 파일이 필요하다. Orchard (Halo 2)는 trusted setup이 없어 파라미터 파일이 불필요하다. <code>propose_send()</code>의 <code>needsSaplingParams</code> 플래그로 필요 여부를 사전에 확인한 후, 필요 시 <code>https://download.z.cash/downloads/</code>에서 다운로드하고 SHA-1 검증 후 저장한다. 한 번만 다운로드하면 이후에는 로컬 파일을 사용한다.</p>
+  <p><strong>Software vs hardware:</strong> Software 경로의 <code>executeProposal</code> 은 <code>needsSaplingParams=false</code> 일 때 no-op Sapling prover 를 써서 params 파일이 필요 없다. Hardware 경로는 <code>needsSaplingParams=true</code> 일 때 <strong>같은 params 경로를 <code>addProofsToPczt</code> 와 <code>extractAndBroadcastPczt</code> 양쪽에</strong> 넘겨야 한다 (proving key + verifying key 둘 다 필요).</p>
 </div>
 
 <h3 id="api-structs">6.4 데이터 구조체</h3>
@@ -197,7 +247,9 @@ AccountInfo           { uuid: String, name: String, unifiedAddress: String }
 // Sync
 SyncProgress   { scannedHeight: u64, chainTipHeight: u64, isSyncing: bool }
 WalletBalance  { transparent: u64, sapling: u64, orchard: u64,
-                 transparentPending: u64, saplingPending: u64, orchardPending: u64, total: u64 }
+                 transparentPending: u64, saplingPending: u64, orchardPending: u64,
+                 spendable: u64,   // pool 별 spendable 합산 — Send 용
+                 total: u64 }      // spendable + pending — Home 표시용
 ScanRangeInfo  { start: u64, end: u64, priority: u8 }
 ScanResult     { blocksScanned: u64 }
 SubtreeRoot    { completingBlockHeight: u64, rootHash: Vec&lt;u8&gt; }
@@ -213,7 +265,13 @@ TxDataRequest     { requestType: String, txid: String?, address: String?,
                     blockRangeStart: u64?, blockRangeEnd: u64? }
 TransactionInfo   { txidHex: String, minedHeight: u64, expiredUnmined: bool,
                     accountBalanceDelta: i64, fee: u64, blockTime: u64 }
-AddressValidationResult { isValid: bool, addressType: String }</code></pre>
+AddressValidationResult { isValid: bool, addressType: String }
+
+// Keystone (정의는 crate::wallet::keystone, api 층에서 pub use)
+KeystoneAccountInfo { name: String, ufvk: String, index: u32,
+                      seedFingerprint: Vec<u8> }
+UrDecodeResult      { complete: bool, progress: u32,
+                      data: Option<Vec<u8>>, urType: Option<String> }</code></pre>
 
 <div class="nav">
   <a href="sync-engine.html">&larr; 이전: Sync 엔진 상세</a>

@@ -21,26 +21,52 @@
                           # Validates C strings, logs all errors, checks mode before starting.
                           # Uses current_thread tokio runtime (inherits iOS .utility QoS)
   api/
-    mod.rs                # API 모듈 선언
+    mod.rs                # API 모듈 선언 (simple, sync, wallet, keystone)
     wallet.rs             # FRB 노출 wallet 함수: create_wallet, import_wallet,
                           # add_account, list_accounts, generate_mnemonic,
                           # get_unified_address(account_uuid), get_transparent_address(account_uuid),
-                          # get_latest_block_height 등
+                          # get_latest_block_height,
+                          # import_hardware_account (Keystone UFVK-only import)
     sync.rs               # FRB 노출: start_full_sync(), cancel_full_sync(),
                           # get_balance(account_uuid), get_transaction_history(account_uuid, limit),
                           # propose_send(account_uuid), estimate_fee(account_uuid),
-                          # get_next_available_address(account_uuid) 등
+                          # get_next_available_address(account_uuid),
+                          # create_pczt_from_proposal, add_proofs_to_pczt,
+                          # redact_pczt_for_signer, extract_and_broadcast_pczt,
+                          # discard_proposal   ← hardware PCZT 파이프라인
+    keystone.rs           # FRB 노출 (Keystone 전용):
+                          # is_keystone_connected, keystone_usb_sign_pczt (USB),
+                          # encode_pczt_to_ur, decode_ur_to_pczt,
+                          # encode_pczt_ur_parts, decode_ur_part,
+                          # reset_ur_session (#[frb(sync)]),
+                          # decode_accounts_from_cbor, decode_pczt_from_cbor,
+                          # decode_accounts_ur.
+                          # KeystoneAccountInfo / UrDecodeResult 는 wallet::keystone 에서 pub use
     simple.rs             # init_app() — setup_default_user_utils() + log level filter (Info)
   wallet/
-    mod.rs                # 내부 모듈 선언
+    mod.rs                # 내부 모듈 선언 (keys, sync, sync_engine, keystone)
     keys.rs               # 키 유도, 니모닉, 주소 생성
-    sync.rs               # 잔액 조회, send, history, address validation 등
+                          # init_db_and_create_account (software first-account bootstrap)
+                          # import_hardware_account (Derived-account backstop check)
+    sync.rs               # 잔액 조회, send, history, address validation
+                          # PROPOSAL_STORE: HashMap&lt;u64, StoredProposal&gt;,
+                          #   consume-on-entry from execute_proposal /
+                          #   create_pczt_from_proposal, explicit discard_proposal
+                          # Hardware PCZT pipeline (create → add_proofs / redact →
+                          #   sign → extract_and_broadcast)
     sync_engine.rs        # 통합 sync 루프: run_sync_inner()
                           # MemoryBlockSource (BlockSource trait 구현)
                           # gRPC + scan + enhancement 전부 포함
                           # Single DB connection reused.
                           # Progress: scan-queue based (remaining/total blocks per batch)
-                          # has_new_tx from ScanSummary note counts</code></pre>
+                          # has_new_tx from ScanSummary note counts
+    keystone.rs           # Keystone 하드웨어 월렛 통합:
+                          # - UR (Uniform Resources) encode/decode for animated QR
+                          #   (ur::Decoder 직접 사용, KeystoneURDecoder 는 우회)
+                          # - UR_SESSION: Mutex&lt;Option&lt;UrSession&gt;&gt;, reset_ur_session()
+                          # - USB EAPDU 프로토콜 (KEYSTONE_VID 0x1209, CMD_RESOLVE_UR,
+                          #   encode_eapdu_packets, usb_sign_pczt) — 펌웨어 지원 대비
+                          #   보존 상태</code></pre>
 
 <p><code>api/</code> 레이어가 FFI 경계이며, 파라미터를 파싱하고 <code>wallet/</code>에 위임하는 얇은 래퍼만 포함한다. <code>wallet/</code> 레이어에 실제 Zcash 로직이 들어있다.</p>
 
@@ -68,12 +94,22 @@
 </ul>
 <p>DB에는 UFVK만 저장되며, spending key는 영속화하지 않는다. 각 계정은 <code>AccountUuid</code>로 식별된다.</p>
 
-<p><strong>주소 인코딩:</strong> Unified Address는 <code>Require Orchard + Require Sapling + Omit Transparent</code>로 생성하며, zodl/Zashi 월렛 동작과 일치한다. <code>shielded_address_request()</code> 헬퍼 함수가 이를 제어한다.</p>
+<p><strong>주소 인코딩 (software 계정):</strong> Unified Address는 <code>Require Orchard + Require Sapling + Omit Transparent</code>로 생성하며, zodl/Zashi 월렛 동작과 일치한다. <code>shielded_address_request()</code> 헬퍼 함수가 이를 제어한다.</p>
 
 <pre><code>fn shielded_address_request() -> UnifiedAddressRequest {
     UnifiedAddressRequest::custom(
         ReceiverRequirement::Require, // Orchard
         ReceiverRequirement::Require, // Sapling
+        ReceiverRequirement::Omit,    // Transparent
+    ).expect("valid receiver requirements")
+}</code></pre>
+
+<p><strong>주소 인코딩 (Keystone 계정):</strong> Keystone 디바이스가 UFVK 의 Sapling 부분을 export 하지 않으므로, <code>shielded_address_request</code> 를 그대로 쓰면 "Sapling receiver 가 필요한데 없음" 으로 실패한다. <code>import_hardware_account</code> 는 <code>orchard_address_request</code> 로 fallback 한다 (Sapling 을 <code>Omit</code> 으로). 결과 UA 는 Orchard receiver 하나만 포함. 자세한 것은 <a href="keystone.html#keystone-import">Keystone §9.2</a> 참고.</p>
+
+<pre><code>fn orchard_address_request() -> UnifiedAddressRequest {
+    UnifiedAddressRequest::custom(
+        ReceiverRequirement::Require, // Orchard
+        ReceiverRequirement::Omit,    // Sapling — Keystone UFVK 에 없음
         ReceiverRequirement::Omit,    // Transparent
     ).expect("valid receiver requirements")
 }</code></pre>
@@ -92,14 +128,19 @@
   <tr><td><code>get_transaction_history(account_uuid, limit)</code></td><td>계정별 v_transactions SQL view에서 TX 내역 조회. limit 파라미터로 최근 N건 제한 가능.</td></tr>
   <tr><td><code>validate_address()</code></td><td>주소 타입 검증 (unified/sapling/transparent/invalid)</td></tr>
   <tr><td><code>get_next_available_address(account_uuid)</code></td><td>계정별 다음 diversified UA 생성</td></tr>
-  <tr><td><code>propose_send(account_uuid)</code></td><td>계정별 전송 제안: 노트 선택 + ZIP-317 수수료 계산. Integer-only ZEC-to-zatoshi 변환 (부동소수점 사용하지 않음). <code>StoredProposal</code>에 <code>account_id</code> 포함.</td></tr>
+  <tr><td><code>propose_send(account_uuid)</code></td><td>계정별 전송 제안: 노트 선택 + ZIP-317 수수료 계산. Integer-only ZEC-to-zatoshi 변환 (부동소수점 사용하지 않음). <code>StoredProposal</code>에 <code>account_id</code> 포함. <strong>PROPOSAL_STORE 에 insert</strong>.</td></tr>
   <tr><td><code>estimate_fee(account_uuid)</code></td><td>계정별 수수료 추정 (proposal 저장 없이). 전송 전 실제 수수료를 사용자에게 표시.</td></tr>
-  <tr><td><code>execute_proposal()</code></td><td>제안 실행: zk-SNARK proof 생성 + 서명. Orchard-only TX에는 no-op Sapling prover 사용. TX broadcast via gRPC. 친화적 에러 메시지 반환.</td></tr>
+  <tr><td><code>execute_proposal()</code></td><td>(software) 제안 실행: zk-SNARK proof 생성 + 서명. Orchard-only TX에는 no-op Sapling prover 사용. TX broadcast via gRPC. 친화적 에러 메시지 반환. <strong>PROPOSAL_STORE 에서 consume-on-entry</strong>.</td></tr>
+  <tr><td><code>create_pczt_from_proposal()</code></td><td>(hardware) Proposal 을 PCZT (base) 로 변환. Creator + IoFinalizer role. <strong>PROPOSAL_STORE 에서 consume-on-entry</strong> (execute_proposal 과 동일 패턴).</td></tr>
+  <tr><td><code>add_proofs_to_pczt(pczt, params?)</code></td><td>(hardware) Base PCZT 에 Orchard proof 생성. <code>requires_sapling_proofs()</code> 이면 <code>LocalTxProver</code> 로 Sapling output proof 도 생성. 결과는 <code>pcztWithProofs</code>.</td></tr>
+  <tr><td><code>redact_pczt_for_signer(pczt)</code></td><td>(hardware) Witness / proprietary metadata 제거 → 하드웨어 디바이스에 넘길 minimized PCZT.</td></tr>
+  <tr><td><code>extract_and_broadcast_pczt(proofs, sigs, params?)</code></td><td>(hardware) Combiner → TransactionExtractor (verifying key 필요) → gRPC broadcast → storage (primary <code>extract_and_store_transaction_from_pczt</code>, fallback <code>decrypt_and_store_transaction</code>). <a href="keystone.html#keystone-invariants">Critical invariants</a> 참조.</td></tr>
+  <tr><td><code>discard_proposal(id)</code></td><td>(hardware/software 공용) PROPOSAL_STORE 에서 취소된 proposal 을 명시적으로 제거. Idempotent. Dart <code>_send()</code> finally 블록이 consume 되지 않은 proposal 정리용으로 호출.</td></tr>
   <tr><td><code>rewind_to_height()</code></td><td>chain reorg 시 롤백</td></tr>
 </table>
 
 <div class="note">
-  <p><strong>Legacy 함수:</strong> <code>api/sync.rs</code>에는 이전 Dart-orchestrated sync에서 사용하던 개별 단계 함수들(update_chain_tip, suggest_scan_ranges, write_block_metadata, scan_blocks 등)이 아직 남아있다. FRB 바인딩은 생성되지만 Dart에서 호출되지 않는 dead code이다.</p>
+  <p><strong>Legacy 함수:</strong> <code>api/sync.rs</code>에는 이전 Dart-orchestrated sync에서 사용하던 개별 단계 함수들(update_chain_tip, suggest_scan_ranges, write_block_metadata, scan_blocks 등)이 아직 남아있다. FRB 바인딩은 생성되지만 Dart에서 호출되지 않는 dead code이다. <strong>PCZT 파이프라인 함수들 (create_pczt_from_proposal, add_proofs_to_pczt, redact_pczt_for_signer, extract_and_broadcast_pczt, discard_proposal)</strong> 은 legacy 가 아니라 현재 사용 중인 하드웨어 송금 경로이다.</p>
 </div>
 
 <h3 id="rust-deps">3.4 Zcash Crate 의존성 그래프</h3>
@@ -122,14 +163,23 @@
 </div>
 
 <h3 id="rust-security">3.5 보안 모델: Spending Key 분리</h3>
-<p>이것은 <code>librustzcash</code>의 의도적인 설계이며, 우리의 선택이 아니다:</p>
+<p><code>librustzcash</code>의 의도적인 설계이며, 우리의 선택이 아니다. <code>WalletDb</code> 에는 <strong>Unified Full Viewing Key (UFVK)</strong> 만 저장된다 — 트랜잭션 감지와 잔액 계산에는 충분하지만, 자금을 사용할 수는 없다.</p>
+
+<p><strong>소프트웨어 계정:</strong></p>
 <ul>
-  <li><code>WalletDb</code>에는 <strong>Unified Full Viewing Key (UFVK)</strong>만 저장된다 — 트랜잭션 감지와 잔액 계산에는 충분하지만, 자금을 사용할 수는 없다.</li>
   <li><strong>니모닉 / seed</strong>는 Dart의 <code>flutter_secure_storage</code>(iOS Keychain / Android Keystore)에 계정별로 저장된다 (<code>zcash_account_mnemonic_{uuid}</code>). OS에 의해 rest 상태에서 암호화된다.</li>
   <li>Spending key는 트랜잭션 서명이 필요할 때만 seed에서 즉석에서 유도되고, FFI를 통해 Rust에 전달되며, 사용 후 <code>secrecy::SecretVec</code>으로 메모리 제로화된다.</li>
   <li><code>mnemonic_to_seed()</code>는 <code>SecretVec&lt;u8&gt;</code>을 반환한다. plain <code>Vec&lt;u8&gt;</code>이 아니므로 drop 시 자동 제로화된다.</li>
-  <li>모든 API 함수 (<code>api/wallet.rs</code>, <code>api/sync.rs</code>)에 <code>catch_unwind</code> panic guard가 적용되어 있다. Rust panic이 발생해도 Flutter 프로세스가 크래시하지 않고 <code>Result::Err("Rust panic: ...")</code>으로 변환된다.</li>
 </ul>
+
+<p><strong>Keystone 하드웨어 계정:</strong></p>
+<ul>
+  <li>Phone 에 seed / USK 가 <strong>절대 존재하지 않는다</strong>. Import 시 UFVK 만 QR/UR 로 받아서 DB 에 저장하고, 서명은 매 트랜잭션마다 디바이스로 PCZT 를 넘겨서 수행한다.</li>
+  <li><code>zcash_account_mnemonic_{uuid}</code> 엔트리가 없고, <code>AccountProvider.getActiveMnemonic()</code> 은 하드웨어 계정에 대해 <code>null</code> 을 반환한다.</li>
+  <li>보안 관점에서 "송금 순간에도 phone 이 USK 를 일시적으로라도 보유하지 않는다" 는 것이 하드웨어 지갑의 핵심 보장이다. 우리 구현은 이 보장을 지킨다 — 상세는 <a href="keystone.html">§9 Keystone 하드웨어 지갑</a>.</li>
+</ul>
+
+<p>모든 API 함수 (<code>api/wallet.rs</code>, <code>api/sync.rs</code>, <code>api/keystone.rs</code>) 에 <code>catch_unwind</code> panic guard 가 적용되어 있다. Rust panic 이 발생해도 Flutter 프로세스가 크래시하지 않고 <code>Result::Err("Rust panic: ...")</code> 으로 변환된다.</p>
 
 <div class="nav">
   <a href="ffi.html">&larr; 이전: FRB 통신</a>
