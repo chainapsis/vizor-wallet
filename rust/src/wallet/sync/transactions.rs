@@ -280,6 +280,93 @@ pub(crate) struct PendingTxInfo {
     pub expiry_height: u64,
 }
 
+/// A wallet-created transaction that is eligible for automatic
+/// resubmit: unmined, not past its expiry height, and sending value
+/// out of the wallet.
+///
+/// `raw_tx` is the full serialized transaction bytes ready to feed
+/// back into `send_transaction` — no re-encoding required. The
+/// resubmit path at `sync::send::resubmit_pending_transactions`
+/// consumes this struct directly.
+#[allow(dead_code)] // fields consumed by sync::send::resubmit_pending_transactions in commit 3.2
+pub(crate) struct ResubmittableTx {
+    pub txid_bytes: Vec<u8>,
+    pub raw_tx: Vec<u8>,
+    pub expiry_height: u32,
+}
+
+/// Return every wallet transaction that is eligible for automatic
+/// resubmit at `current_height`.
+///
+/// Mirrors zcash-android-wallet-sdk's `SELECTION_TRX_RESUBMISSION`
+/// predicate — see the Phase 3 design notes for why we follow the
+/// SDK exactly:
+///
+///   * `mined_height IS NULL` — the transaction has not yet been
+///     confirmed in a block.
+///   * `expiry_height > ?current_height` — the transaction is still
+///     valid to relay; once the current tip passes `expiry_height`
+///     the network will drop it and there is nothing we can do by
+///     resubmitting.
+///   * `account_balance_delta < 0` — the net balance change for the
+///     account is negative, i.e. this is an outbound transaction
+///     the wallet originated. Inbound transactions the sync loop
+///     merely discovered on-chain (via `get_transaction` enhance
+///     calls) should never be "resubmitted".
+///   * `raw IS NOT NULL` — we actually have the serialized bytes to
+///     broadcast. Defense-in-depth on top of the delta filter.
+///
+/// A transaction that touches more than one of the wallet's own
+/// accounts shows up as more than one row in `v_transactions`; we
+/// `SELECT DISTINCT` on `(txid, raw, expiry_height)` to collapse
+/// that into a single broadcast instead of double-sending the same
+/// bytes.
+#[allow(dead_code)] // consumed by sync::send::resubmit_pending_transactions in commit 3.2
+pub(crate) fn get_resubmittable_txs(
+    db_path: &str,
+    current_height: u32,
+) -> Result<Vec<ResubmittableTx>, String> {
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .map_err(|e| format!("Failed to open DB: {e}"))?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT txid, raw, expiry_height \
+             FROM v_transactions \
+             WHERE mined_height IS NULL \
+               AND expiry_height > ?1 \
+               AND account_balance_delta < 0 \
+               AND raw IS NOT NULL",
+        )
+        .map_err(|e| format!("SQL error: {e}"))?;
+
+    let rows = stmt
+        .query_map([current_height], |row| {
+            let txid_bytes: Vec<u8> = row.get(0)?;
+            let raw_tx: Vec<u8> = row.get(1)?;
+            // `expiry_height > ?1` in the WHERE clause guarantees a
+            // non-null positive value, but rusqlite still types the
+            // column as nullable — unwrap via COALESCE-equivalent
+            // on the Rust side instead of patching the SQL.
+            let expiry_height: u32 = row
+                .get::<_, Option<i64>>(2)?
+                .map(|h| h.max(0) as u32)
+                .unwrap_or(0);
+            Ok(ResubmittableTx {
+                txid_bytes,
+                raw_tx,
+                expiry_height,
+            })
+        })
+        .map_err(|e| format!("Query error: {e}"))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Row error: {e}"))
+}
+
 /// Get all pending (unmined, unexpired) transactions that we
 /// created (have raw bytes).
 pub fn get_pending_transactions(db_path: &str) -> Result<Vec<PendingTxInfo>, String> {
