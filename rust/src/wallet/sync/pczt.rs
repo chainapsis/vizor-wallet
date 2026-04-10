@@ -1,0 +1,366 @@
+//! Hardware-wallet PCZT pipeline.
+//!
+//! Software sends are handled by `sync/send.rs`. This module owns the
+//! three-PCZT pipeline the hardware (Keystone) send flow uses, which
+//! matches the `zcash-android-wallet-sdk` / Zashi pattern:
+//!
+//! ```text
+//!   1. create_pczt_from_proposal                      → base PCZT (phone)
+//!      (IO-finalized, no proofs, no signatures)
+//!         │
+//!         ├── 2a. add_proofs_to_pczt(base, params?)   → pcztWithProofs   (phone, CPU)
+//!         │       (Orchard proof always; Sapling output proofs if
+//!         │        the proposal has a non-empty Sapling bundle)
+//!         │
+//!         └── 2b. redact_pczt_for_signer(base)        → redactedPczt     (phone)
+//!                 → Keystone device (animated QR or USB)
+//!                 → device signs Orchard spend_auth_sig
+//!                 → signed PCZT back to phone          → pcztWithSignatures
+//!                                                            │
+//!   3. extract_and_broadcast_pczt(                             │
+//!        pcztWithProofs, pcztWithSignatures,                   │
+//!        spend_params?, output_params?,                        │
+//!      )                                               → txid ◄┘
+//! ```
+//!
+//! ## Critical invariants (each of these was a real regression at some point)
+//!
+//! 1. **`extract_and_broadcast_pczt` broadcasts before it persists.**
+//!    Extract the `Transaction` in-memory, send it to the network,
+//!    and *only then* write it to the wallet DB. The naive
+//!    store-then-broadcast path leaves the wallet unrecoverable when
+//!    lightwalletd rejects the tx: the DB thinks the notes are
+//!    spent, the network has no record, and the user has to
+//!    manually rescue the wallet.
+//!
+//! 2. **Local storage failure after a successful broadcast must not
+//!    surface as a send failure.** Primary store path is
+//!    `extract_and_store_transaction_from_pczt` (preserves rich
+//!    PCZT recipient/memo metadata). On failure, fall back to
+//!    `decrypt_and_store_transaction` — the same path sync uses when
+//!    it discovers one of our sent txs on-chain. Spent notes still
+//!    get marked spent via nullifier matching; only the PCZT-only
+//!    display metadata is lost. Only if both paths fail do we
+//!    return an error — and the error explains the tx is on the
+//!    network and not to retry.
+//!
+//! 3. **Sapling params must be passed to BOTH `add_proofs_to_pczt`
+//!    AND `extract_and_broadcast_pczt` whenever the PCZT contains a
+//!    Sapling bundle.** `add_proofs_to_pczt` uses `LocalTxProver` to
+//!    build Sapling output proofs; `extract_and_broadcast_pczt`
+//!    uses `LocalTxProver::verifying_keys()` to validate the
+//!    extracted transaction and to let
+//!    `extract_and_store_transaction_from_pczt` store it. If the
+//!    caller supplied params to `add_proofs_to_pczt` but passed
+//!    `None` here, extraction bails with `SaplingRequired` and the
+//!    user sees a cryptic error after already downloading 50MB of
+//!    params and approving on the device. The Dart call site in
+//!    `send_screen.dart` threads
+//!    `proposal.needsSaplingParams ? spendPath : null` into both —
+//!    keep it that way.
+//!
+//! 4. **`PROPOSAL_STORE` is consume-on-entry for both execute paths,
+//!    plus explicit discard on cancel.** `create_pczt_from_proposal`
+//!    calls `PROPOSAL_STORE.remove()` at the top (dropping the lock
+//!    before any DB work). A second call with the same `proposal_id`
+//!    returns "Proposal not found (expired or already consumed)".
+//!    `discard_proposal` is idempotent; the Dart `finally` cleanup
+//!    calls it when the consume path was never reached (user
+//!    cancelled, exception before the consume call, etc.).
+
+use std::convert::Infallible;
+
+use zcash_proofs::prover::LocalTxProver;
+use zcash_protocol::consensus::Network;
+
+use super::{open_wallet_db, PROPOSAL_STORE};
+
+/// Create a PCZT from a stored proposal (for hardware wallet signing).
+///
+/// This is the hardware-wallet analogue of `execute_proposal`, and
+/// mirrors its lifecycle: the proposal is **removed** from the store
+/// on entry, so any subsequent failure (PCZT creation error,
+/// hardware signing cancel, broadcast rejection) can't leave a
+/// replayable proposal ID behind. If the caller aborts the send flow
+/// before reaching this function (e.g. the confirmation dialog is
+/// cancelled), Dart is expected to call [`discard_proposal`]
+/// explicitly to release the stored proposal.
+pub(crate) fn create_pczt_from_proposal(
+    db_path: &str,
+    network: Network,
+    proposal_id: u64,
+) -> Result<Vec<u8>, String> {
+    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
+    use zcash_client_backend::wallet::OvkPolicy;
+
+    // Consume the proposal up-front (matches execute_proposal), so
+    // that any later failure path leaves the PROPOSAL_STORE clean.
+    let stored = {
+        let mut store = PROPOSAL_STORE.lock().map_err(|e| format!("Lock: {e}"))?;
+        store
+            .proposals
+            .remove(&proposal_id)
+            .ok_or("Proposal not found (expired or already consumed)")?
+        // lock dropped here, before heavy work
+    };
+
+    let mut db = open_wallet_db(db_path, network)?;
+    let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+        &mut db,
+        &network,
+        stored.account_id,
+        OvkPolicy::Sender,
+        &stored.proposal,
+    )
+    .map_err(|e| format!("Create PCZT failed: {e}"))?;
+
+    Ok(pczt.serialize())
+}
+
+/// Release a stored proposal without executing it. Called from the
+/// Dart send flow when the user cancels before
+/// [`create_pczt_from_proposal`] (e.g. dismisses the confirmation
+/// dialog, cancels the Sapling params download prompt). Idempotent:
+/// safe to call for a proposal that has already been consumed or
+/// never existed.
+pub(crate) fn discard_proposal(proposal_id: u64) {
+    if let Ok(mut store) = PROPOSAL_STORE.lock() {
+        store.proposals.remove(&proposal_id);
+    }
+}
+
+/// Add Orchard (and, if needed, Sapling) proofs to a PCZT locally.
+/// Returns a PCZT-with-proofs, which must later be combined with the
+/// signed PCZT returned by the hardware signer.
+///
+/// Sapling params paths are only required when the PCZT contains a
+/// non-empty Sapling bundle (e.g. the recipient is a Sapling-only
+/// address or a Unified Address without an Orchard receiver).
+/// Orchard-only sends can pass `None` for both paths. This matches
+/// the Zashi / zcash-android-wallet-sdk hardware-wallet flow: the
+/// hardware device only signs Orchard spends, the phone generates
+/// all ZK proofs.
+pub(crate) fn add_proofs_to_pczt(
+    pczt_bytes: &[u8],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    use pczt::roles::prover::Prover;
+
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+
+    let mut prover = Prover::new(pczt);
+
+    if prover.requires_orchard_proof() {
+        prover = prover
+            .create_orchard_proof(&orchard::circuit::ProvingKey::build())
+            .map_err(|e| format!("Orchard proof: {e:?}"))?;
+    }
+
+    if prover.requires_sapling_proofs() {
+        match (spend_params_path, output_params_path) {
+            (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
+                let local_prover =
+                    LocalTxProver::new(std::path::Path::new(sp), std::path::Path::new(op));
+                prover = prover
+                    .create_sapling_proofs(&local_prover, &local_prover)
+                    .map_err(|e| format!("Sapling proofs: {e:?}"))?;
+            }
+            _ => {
+                return Err(
+                    "PCZT requires Sapling proofs but no Sapling params were supplied. \
+                     Download sapling-spend.params and sapling-output.params first."
+                        .into(),
+                );
+            }
+        }
+    }
+
+    Ok(prover.finish().serialize())
+}
+
+/// Redact information from a PCZT that the signer role doesn't need
+/// (witnesses, proprietary metadata). Produces the bytes to send to
+/// the hardware wallet for signing.
+pub(crate) fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    use pczt::roles::redactor::Redactor;
+
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+
+    let redacted = Redactor::new(pczt)
+        .redact_global_with(|mut r| r.redact_proprietary("zcash_client_backend:proposal_info"))
+        .redact_orchard_with(|mut r| {
+            r.redact_actions(|mut ar| {
+                ar.clear_spend_witness();
+                ar.redact_output_proprietary("zcash_client_backend:output_info");
+            });
+        })
+        .redact_sapling_with(|mut r| {
+            r.redact_spends(|mut sr| sr.clear_witness());
+            r.redact_outputs(|mut or| {
+                or.redact_proprietary("zcash_client_backend:output_info");
+            });
+        })
+        .redact_transparent_with(|mut r| {
+            r.redact_outputs(|mut or| {
+                or.redact_proprietary("zcash_client_backend:output_info");
+            });
+        })
+        .finish();
+
+    Ok(redacted.serialize())
+}
+
+/// Combine a PCZT-with-proofs and a PCZT-with-signatures, broadcast
+/// the resulting transaction, and persist it to the wallet DB
+/// **only after** the broadcast is accepted.
+///
+/// Ordering is critical here. See invariants (1) and (2) in the
+/// module-level docstring.
+pub(crate) async fn extract_and_broadcast_pczt(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: Network,
+    pczt_with_proofs_bytes: &[u8],
+    pczt_with_signatures_bytes: &[u8],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<String, String> {
+    use pczt::roles::combiner::Combiner;
+    use pczt::roles::tx_extractor::TransactionExtractor;
+    use zcash_client_backend::data_api::wallet::{
+        decrypt_and_store_transaction, extract_and_store_transaction_from_pczt,
+    };
+
+    // Re-parsing and re-combining is cheap compared to ZK proof
+    // validation; we do it twice so we can hand one owned Pczt to
+    // the in-memory extractor and a second owned Pczt to the storage
+    // function after broadcast.
+    fn combine_pczts(proofs: &[u8], sigs: &[u8]) -> Result<pczt::Pczt, String> {
+        let p = pczt::Pczt::parse(proofs)
+            .map_err(|e| format!("Parse PCZT with proofs: {e:?}"))?;
+        let s = pczt::Pczt::parse(sigs)
+            .map_err(|e| format!("Parse PCZT with signatures: {e:?}"))?;
+        Combiner::new(vec![p, s])
+            .combine()
+            .map_err(|e| format!("Combine PCZTs: {e:?}"))
+    }
+
+    let orchard_vk = orchard::circuit::VerifyingKey::build();
+
+    // Load Sapling verifying keys once if the caller supplied params.
+    // The prover keeps the underlying params alive, and
+    // `verifying_keys()` returns owned
+    // `(SpendVerifyingKey, OutputVerifyingKey)`. We hand references
+    // into this tuple to both `TransactionExtractor::with_sapling`
+    // and `extract_and_store_transaction_from_pczt`.
+    let sapling_vks: Option<(
+        sapling_crypto::circuit::SpendVerifyingKey,
+        sapling_crypto::circuit::OutputVerifyingKey,
+    )> = match (spend_params_path, output_params_path) {
+        (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
+            let prover =
+                LocalTxProver::new(std::path::Path::new(sp), std::path::Path::new(op));
+            Some(prover.verifying_keys())
+        }
+        _ => None,
+    };
+
+    // Step 1: extract the Transaction without touching the DB. We
+    // keep `tx` around after broadcast so the fallback storage path
+    // can use it.
+    let tx = {
+        let mut extractor = TransactionExtractor::new(combine_pczts(
+            pczt_with_proofs_bytes,
+            pczt_with_signatures_bytes,
+        )?)
+        .with_orchard(&orchard_vk);
+        if let Some((spend_vk, output_vk)) = sapling_vks.as_ref() {
+            extractor = extractor.with_sapling(spend_vk, output_vk);
+        }
+        extractor
+            .extract()
+            .map_err(|e| format!("Extract TX from PCZT: {e:?}"))?
+    };
+    let txid = tx.txid();
+
+    let tx_bytes = {
+        let mut buf = Vec::new();
+        tx.write(&mut buf).map_err(|e| format!("Serialize TX: {e}"))?;
+        buf
+    };
+
+    // Step 2: broadcast. On any failure here, the DB is untouched,
+    // so the wallet's view of spendable notes is unchanged.
+    let (mut client, _tor_guard) =
+        crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    let resp = client
+        .send_transaction(zcash_client_backend::proto::service::RawTransaction {
+            data: tx_bytes,
+            height: 0,
+        })
+        .await
+        .map_err(|e| format!("Broadcast: {e}"))?
+        .into_inner();
+
+    // zebra-lightwalletd returns the txid in `error_message` on
+    // success, so the only reliable signal is `error_code`.
+    if resp.error_code != 0 {
+        return Err(format!(
+            "Broadcast rejected: {} (code {})",
+            resp.error_message, resp.error_code
+        ));
+    }
+
+    // Step 3: broadcast was accepted. Persist locally so the UI
+    // sees the tx immediately and the spent notes stop showing up
+    // as spendable.
+    let mut db = open_wallet_db(db_path, network)?;
+
+    // Primary path: rich PCZT-aware storage (preserves
+    // recipient/memo). Hand Sapling verifying keys in whenever the
+    // combined PCZT has a Sapling bundle, otherwise librustzcash
+    // rejects the extraction with `SaplingRequired` before we can
+    // store anything.
+    let sapling_vk_pair = sapling_vks.as_ref().map(|(s, o)| (s, o));
+    match extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
+        &mut db,
+        combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?,
+        sapling_vk_pair,
+        Some(&orchard_vk),
+    ) {
+        Ok(_) => return Ok(txid.to_string()),
+        Err(primary_err) => {
+            log::warn!(
+                "keystone: PCZT-aware storage failed after broadcast \
+                 (txid={txid}): {primary_err}. Falling back to chain-style \
+                 decrypt_and_store_transaction; rich recipient metadata \
+                 will not be available in history until the next sync."
+            );
+
+            // Fallback path: same code sync uses when it discovers a
+            // wallet tx on the chain. Marks spent notes correctly
+            // via nullifier matching and picks up any change note
+            // back to us from enc_ciphertext decryption. The
+            // recipient/memo metadata that was only in the PCZT
+            // proprietary fields is lost, but correctness is
+            // preserved — the spent notes no longer appear
+            // spendable.
+            decrypt_and_store_transaction(&network, &mut db, &tx, None).map_err(|fallback_err| {
+                format!(
+                    "Broadcast succeeded (txid={txid}) but both local \
+                     storage paths failed. Primary: {primary_err}. \
+                     Fallback: {fallback_err}. The transaction is on \
+                     the network; check an explorer to confirm, and \
+                     do not attempt to send again until the next \
+                     sync reconciles your balance."
+                )
+            })?;
+        }
+    }
+
+    Ok(txid.to_string())
+}
