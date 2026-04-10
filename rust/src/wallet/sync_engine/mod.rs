@@ -481,13 +481,20 @@ async fn run_sync_impl(
 
         // Post-batch auto-resubmit. Matches zcash-android-wallet-sdk's
         // lines 593/701 call sites (end of verify batch / end of
-        // regular batch). `tip.height` is the height we observed
-        // before the scan loop started; that's the correct height to
-        // pass so `expiry_height > current_height` filters out
-        // anything that expired during this sync. Using the fresh
-        // post-scan tip would be slightly more accurate but risks
-        // filtering out a tx that is about to get mined by the scan
-        // loop we're already inside.
+        // regular batch).
+        //
+        // We deliberately re-fetch the chain tip via
+        // `get_latest_block` before each pass instead of reusing
+        // `tip.height` captured once at the top of `run_sync_impl`.
+        // `get_resubmittable_txs` decides "still inside expiry
+        // window" with `expiry_height > current_height`; using the
+        // stale top-of-sync tip meant a long catch-up session
+        // (several thousand blocks) could keep rebroadcasting txs
+        // whose expiry had already passed against the real chain
+        // tip. Refreshing here is one extra unary gRPC per batch,
+        // which is cheap compared to the batch download itself and
+        // closes the "resubmit expired tx forever" regression
+        // caught by Codex 2nd-round review finding 2.
         //
         // Pre-flight guard matches the one at the startup resubmit
         // call site — if cancel or mode-change landed during
@@ -496,12 +503,13 @@ async fn run_sync_impl(
         // new `send_transaction` RPC. The helper also consults the
         // same closure between candidates and before each retry so
         // a cancel arriving mid-pass stops initiating further
-        // broadcasts (see finding 3 in the Codex review).
+        // broadcasts.
         //
-        // Best-effort: helper swallows per-tx failures, so we ignore
-        // the return value. Re-check cancel/mode afterwards because
-        // even with the internal check the final round-trip may
-        // have completed before the cancel was observed.
+        // Best-effort: helper swallows per-tx failures, we ignore
+        // the return value, and if the tip refresh itself fails we
+        // log and skip the pass rather than falling back to the
+        // stale height (the whole point of the refresh is to avoid
+        // rebroadcasting against a stale expiry window).
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!(
                 "[{}] sync: cancel/mode observed before post-batch resubmit, exiting",
@@ -509,16 +517,30 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        let _ = crate::wallet::sync::resubmit_pending_transactions(
-            db_data_path,
-            &mut client,
-            tip.height as u32,
-            || {
-                cancel.load(Ordering::Relaxed)
-                    || desired_mode.load(Ordering::SeqCst) != running_mode
-            },
-        )
-        .await;
+        match client
+            .get_latest_block(ChainSpec::default())
+            .await
+            .map(|resp| resp.into_inner().height as u32)
+        {
+            Ok(fresh_tip_height) => {
+                let _ = crate::wallet::sync::resubmit_pending_transactions(
+                    db_data_path,
+                    &mut client,
+                    fresh_tip_height,
+                    || {
+                        cancel.load(Ordering::Relaxed)
+                            || desired_mode.load(Ordering::SeqCst) != running_mode
+                    },
+                )
+                .await;
+            }
+            Err(e) => {
+                log::warn!(
+                    "[{}] sync: resubmit tip refresh failed, skipping pass: {e}",
+                    elapsed(),
+                );
+            }
+        }
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: exiting after resubmit pass", elapsed());
             return Ok(());
