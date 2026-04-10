@@ -200,7 +200,6 @@ class _SignQrDialog extends StatelessWidget {
   }
 
   Widget _buildQrDisplay() {
-    // Import here to use AnimatedQrDisplay
     return SizedBox(
       width: 300,
       height: 320,

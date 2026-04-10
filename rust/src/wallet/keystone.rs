@@ -9,8 +9,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use ur_registry::traits::{RegistryItem, To, UR};
 use ur_registry::zcash::zcash_accounts::ZcashAccounts;
 use ur_registry::zcash::zcash_pczt::ZcashPczt;
-use ur_parse_lib::keystone_ur_decoder::probe_decode;
-use ur_parse_lib::keystone_ur_encoder::KeystoneUREncoder;
 
 // ==================== USB Constants ====================
 
@@ -37,37 +35,47 @@ pub struct KeystoneAccountInfo {
 
 // ==================== UR Encoding/Decoding ====================
 
-/// Encode PCZT bytes as a UR string for QR display or USB transmission.
+/// Decode a single-part UR string into the raw CBOR bytes for the given
+/// registry type. Wraps `ur::decode` and enforces that the decoded UR is
+/// single-part (multi-part handled by `decode_ur_part`).
+fn decode_single_part_ur(ur_string: &str) -> Result<Vec<u8>, String> {
+    // ur crate requires lowercase scheme
+    let (kind, cbor) = ur::decode(&ur_string.to_lowercase())
+        .map_err(|e| format!("UR decode failed: {e}"))?;
+    match kind {
+        ur::ur::Kind::SinglePart => Ok(cbor),
+        ur::ur::Kind::MultiPart => Err("Expected single-part UR, got multi-part".into()),
+    }
+}
+
+/// Encode PCZT bytes as a single-part UR string for QR display or USB transmission.
 pub fn encode_pczt_to_ur(pczt_bytes: &[u8]) -> Result<String, String> {
     let zcash_pczt = ZcashPczt::new(pczt_bytes.to_vec());
     let cbor_bytes: Vec<u8> = zcash_pczt.try_into()
         .map_err(|e: ur_registry::error::URError| format!("CBOR encode failed: {e:?}"))?;
-    let encoder = ur::Encoder::new(
+    let mut encoder = ur::Encoder::new(
         &cbor_bytes,
         cbor_bytes.len(), // single part
         ZcashPczt::get_registry_type().get_type(),
     ).map_err(|e| format!("UR encode failed: {e}"))?;
-    let mut ks_encoder = KeystoneUREncoder::new(encoder);
-    let ur_string = ks_encoder.next_part()
-        .map_err(|e| format!("UR next_part failed: {e:?}"))?;
+    let ur_string = encoder.next_part()
+        .map_err(|e| format!("UR next_part failed: {e}"))?;
     Ok(ur_string.to_uppercase())
 }
 
-/// Decode a UR string (from QR scan or USB response) to PCZT bytes.
+/// Decode a single-part UR string (from QR scan or USB response) to PCZT bytes.
 pub fn decode_ur_to_pczt(ur_string: &str) -> Result<Vec<u8>, String> {
-    let result = probe_decode::<ZcashPczt>(ur_string.to_string())
-        .map_err(|e| format!("UR decode failed: {e:?}"))?;
-    match result.data {
-        Some(pczt) => Ok(pczt.get_data()),
-        None => Err("UR decode returned no data".into()),
-    }
+    let cbor = decode_single_part_ur(ur_string)?;
+    let pczt: ZcashPczt = cbor.try_into()
+        .map_err(|e: ur_registry::error::URError| format!("CBOR decode failed: {e:?}"))?;
+    Ok(pczt.get_data())
 }
 
-/// Decode a UR string containing ZcashAccounts.
+/// Decode a single-part UR string containing ZcashAccounts.
 pub fn decode_accounts_ur(ur_string: &str) -> Result<(Vec<u8>, Vec<KeystoneAccountInfo>), String> {
-    let result = probe_decode::<ZcashAccounts>(ur_string.to_string())
-        .map_err(|e| format!("UR decode failed: {e:?}"))?;
-    let accounts = result.data.ok_or("UR decode returned no data")?;
+    let cbor = decode_single_part_ur(ur_string)?;
+    let accounts: ZcashAccounts = cbor.try_into()
+        .map_err(|e: ur_registry::error::URError| format!("CBOR decode failed: {e:?}"))?;
 
     let seed_fp = accounts.get_seed_fingerprint();
     let infos: Vec<KeystoneAccountInfo> = accounts
@@ -188,18 +196,17 @@ pub fn encode_pczt_ur_parts(pczt_bytes: &[u8], max_fragment_len: usize) -> Resul
     let cbor_bytes: Vec<u8> = zcash_pczt.try_into()
         .map_err(|e: ur_registry::error::URError| format!("CBOR encode: {e:?}"))?;
 
-    let encoder = ur::Encoder::new(
+    let mut encoder = ur::Encoder::new(
         &cbor_bytes,
         max_fragment_len,
         ZcashPczt::get_registry_type().get_type(),
     ).map_err(|e| format!("UR encoder: {e}"))?;
 
-    let mut ks_encoder = KeystoneUREncoder::new(encoder);
-    let count = ks_encoder.fragment_count();
+    let count = encoder.fragment_count();
     let mut parts = Vec::with_capacity(count);
     for _ in 0..count {
-        let part = ks_encoder.next_part()
-            .map_err(|e| format!("UR next_part: {e:?}"))?;
+        let part = encoder.next_part()
+            .map_err(|e| format!("UR next_part: {e}"))?;
         parts.push(part.to_uppercase());
     }
 

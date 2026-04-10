@@ -2452,7 +2452,6 @@ dependencies = [
  "tokio",
  "tonic",
  "ur",
- "ur-parse-lib",
  "ur-registry",
  "uuid",
  "zcash_address",
@@ -3207,16 +3206,6 @@ dependencies = [
  "minicbor",
  "phf",
  "rand_xoshiro",
-]
-
-[[package]]
-name = "ur-parse-lib"
-version = "0.2.0"
-source = "git+https://github.com/KeystoneHQ/keystone-sdk-rust#c526d9ccd9b47b978797a038d77ddd406ac91ec5"
-dependencies = [
- "hex",
- "ur",
- "ur-registry",
 ]
 
 [[package]]
