@@ -20,7 +20,7 @@ use zcash_client_backend::{
         },
     },
 };
-use zcash_client_sqlite::{WalletDb, util::SystemClock};
+use zcash_client_sqlite::{WalletDb, error::SqliteClientError, util::SystemClock};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId, Network};
@@ -491,11 +491,26 @@ async fn run_sync_impl(
                 .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))?
         };
 
-        // Scan from memory. Split librustzcash's `ChainError::Scan` variants
-        // into `SyncError::Continuity` vs `SyncError::Other`. Continuity
-        // errors (`PrevHashMismatch`, `BlockHeightDiscontinuity`) carry the
-        // height at which the mismatch was detected — that's the input to
-        // `truncate_to_height(at - REWIND_DISTANCE)`.
+        // Scan from memory. There are three reorg-adjacent signals from
+        // librustzcash that all need to land on `SyncError::Continuity`
+        // so the rewind recovery below fires:
+        //
+        //   - `ChainError::Scan(ScanError::PrevHashMismatch)` / `Scan(
+        //     ScanError::BlockHeightDiscontinuity)` — the compact blocks
+        //     we just downloaded don't chain to what we scanned last
+        //     time. Detected via `is_continuity_error()`.
+        //
+        //   - `ChainError::Wallet(SqliteClientError::BlockConflict(h))` —
+        //     `put_blocks` found an existing row for block `h` with a
+        //     different hash. Per librustzcash: "indicates that a
+        //     required rewind was not performed". Semantically identical
+        //     to a continuity error and equally recoverable via
+        //     `truncate_to_height`, so it gets the same treatment.
+        //
+        // Any other `ChainError::Wallet(e)` is a real DB failure and
+        // becomes `SyncError::Db` (Fatal). Everything else (non-scan,
+        // non-wallet — e.g. block-source errors, unrecognised scan
+        // variants) becomes `SyncError::Other` (retry-with-backoff).
         let scan_result = scan_cached_blocks(
             &network,
             &block_source,
@@ -508,6 +523,16 @@ async fn run_sync_impl(
             ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
                 let at_height = u32::from(scan_err.at_height()) as u64;
                 SyncError::continuity(at_height, scan_err.to_string())
+            }
+            ChainError::Wallet(SqliteClientError::BlockConflict(at)) => {
+                let at_height = u32::from(at) as u64;
+                SyncError::continuity(
+                    at_height,
+                    format!("BlockConflict at {at_height}: wallet rewind required"),
+                )
+            }
+            ChainError::Wallet(wallet_err) => {
+                SyncError::db(format!("scan wallet: {wallet_err}"))
             }
             other => SyncError::other(format!("scan: {other}")),
         });
