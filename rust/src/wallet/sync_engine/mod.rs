@@ -2,31 +2,26 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use rand::rngs::OsRng;
-use tonic::transport::Channel;
 use zcash_client_backend::{
     data_api::{
         WalletRead, WalletWrite,
         chain::{self, error::Error as ChainError, scan_cached_blocks},
         scanning::ScanPriority,
-        wallet::decrypt_and_store_transaction,
-        TransactionDataRequest, TransactionStatus,
     },
-    proto::service::{
-        self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange,
-        ChainSpec, TxFilter,
-    },
+    proto::service::{BlockId, ChainSpec},
 };
 use zcash_client_sqlite::{WalletDb, error::SqliteClientError, util::SystemClock};
 use zcash_primitives::block::BlockHash;
-use zcash_primitives::transaction::Transaction;
-use zcash_protocol::consensus::{BlockHeight, BranchId, Network};
+use zcash_protocol::consensus::{BlockHeight, Network};
 
 mod block_source;
+mod enhance;
 mod error;
 mod lwd;
 
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
+use enhance::run_enhancement;
 pub(crate) use lwd::open_lwd_channel;
 use lwd::{download_blocks, download_subtree_roots};
 
@@ -529,111 +524,6 @@ fn is_sqlite_lock_contention(err: &SqliteClientError) -> bool {
     }
 }
 
-
-async fn run_enhancement(
-    client: &mut CompactTxStreamerClient<Channel>,
-    db: &mut WalletDatabase,
-    network: Network,
-) -> Result<(), SyncError> {
-    let mut failed_txids = std::collections::HashSet::new();
-
-    for _ in 0..3 {
-        let requests = db
-            .transaction_data_requests()
-            .map_err(|e| SyncError::db(format!("transaction_data_requests: {e}")))?;
-        if requests.is_empty() { break; }
-
-        let actionable = requests.iter().any(|r| match r {
-            TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
-            TransactionDataRequest::TransactionsInvolvingAddress(req) => req.block_range_end().is_some(),
-        });
-        if !actionable { break; }
-
-        for req in &requests {
-            match req {
-                TransactionDataRequest::GetStatus(txid) | TransactionDataRequest::Enhancement(txid) => {
-                    let txid_str = format!("{txid}");
-                    if failed_txids.contains(&txid_str) { continue; }
-
-                    let hash = txid.as_ref().to_vec();
-
-                    match client.get_transaction(TxFilter { block: None, index: 0, hash }).await {
-                        Ok(response) => {
-                            let raw = response.into_inner();
-                            if !raw.data.is_empty() {
-                                match Transaction::read(&raw.data[..], BranchId::Sapling) {
-                                    Ok(tx) => {
-                                        let height = if raw.height > 0 { Some(BlockHeight::from_u32(raw.height as u32)) } else { None };
-                                        if let Err(e) = decrypt_and_store_transaction(&network, db, &tx, height) {
-                                            log::error!("sync: decrypt_and_store_transaction failed: {e}");
-                                        }
-                                    }
-                                    Err(e) => log::warn!("sync: Transaction::read failed for {txid_str}: {e}"),
-                                }
-                            }
-                            if matches!(req, TransactionDataRequest::GetStatus(_)) {
-                                let height = raw.height;
-                                let status = if height > 0 {
-                                    TransactionStatus::Mined(BlockHeight::from_u32(height as u32))
-                                } else {
-                                    TransactionStatus::NotInMainChain
-                                };
-                                if let Err(e) = db.set_transaction_status(*txid, status) {
-                                    log::error!("sync: set_transaction_status failed: {e}");
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("sync: get_transaction failed for {txid_str}: {e}");
-                            failed_txids.insert(txid_str);
-                            if let Err(e) = db.set_transaction_status(*txid, TransactionStatus::TxidNotRecognized) {
-                                log::error!("sync: set_transaction_status failed: {e}");
-                            }
-                        }
-                    }
-                }
-                TransactionDataRequest::TransactionsInvolvingAddress(req) => {
-                    let end_height = match req.block_range_end() {
-                        Some(h) => h,
-                        None => continue,
-                    };
-                    let addr_str = zcash_keys::encoding::encode_transparent_address_p(&network, &req.address());
-                    let start = u32::from(req.block_range_start()) as u64;
-                    let end = u32::from(end_height) as u64;
-
-                    match client.get_taddress_txids(service::TransparentAddressBlockFilter {
-                        address: addr_str,
-                        range: Some(BlockRange {
-                            start: Some(BlockId { height: start, hash: vec![] }),
-                            end: Some(BlockId { height: end.saturating_sub(1), hash: vec![] }),
-                        }),
-                    }).await {
-                        Ok(response) => {
-                            let mut stream = response.into_inner();
-                            while let Ok(Some(raw)) = stream.message().await {
-                                if !raw.data.is_empty() {
-                                    match Transaction::read(&raw.data[..], BranchId::Sapling) {
-                                        Ok(tx) => {
-                                            let height = if raw.height > 0 { Some(BlockHeight::from_u32(raw.height as u32)) } else { None };
-                                            if let Err(e) = decrypt_and_store_transaction(&network, db, &tx, height) {
-                                                log::error!("sync: decrypt_and_store_transaction (addr) failed: {e}");
-                                            }
-                                        }
-                                        Err(e) => log::warn!("sync: Transaction::read (addr) failed: {e}"),
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("sync: get_taddress_txids failed: {e}");
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
 
 // ==================== Tests ====================
 //
