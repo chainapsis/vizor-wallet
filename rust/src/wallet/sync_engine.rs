@@ -303,16 +303,41 @@ pub async fn run_sync_inner(
 
         match run_sync_impl(db_data_path, lightwalletd_url, network, cancel.clone(), running_mode, desired_mode, &progress_fn).await {
             Ok(()) => return Ok(()),
-            Err(e) => {
-                // Collapse the typed `SyncError` down to a string at the
-                // public boundary. Follow-up commits will inspect the typed
-                // variant *before* this conversion (commit 1.4 for rewind
-                // recovery, commit 1.6 for per-category retry policy). For
-                // now the retry wrapper stays category-agnostic and treats
-                // every error as "retry with backoff".
-                last_err = e.to_string();
-                if attempt == MAX_RETRIES {
-                    log::error!("[{}] sync: all {} retries exhausted", elapsed(), MAX_RETRIES);
+            Err(sync_err) => {
+                // Inspect the typed error's recovery strategy before
+                // flattening to a `String` at the public boundary. Fatal
+                // variants (`Db`, `Parse`) bail out immediately with no
+                // retry — repeatedly hammering a DB corruption or a
+                // deserialization bug doesn't fix it and just costs time.
+                // Transient variants (`Network`, `Other`) fall through to
+                // the existing exponential-backoff retry path.
+                //
+                // A `Rewind` strategy reaching this layer means the inline
+                // reorg-recovery inside `run_sync_impl` exhausted its
+                // phase budget (commit 1.4). Treat it as a retry-worthy
+                // transient: the next attempt gets a fresh rewind budget,
+                // which is often enough to get past a multi-level reorg
+                // that couldn't be cleared in one run.
+                let strategy = sync_err.recovery_strategy();
+                let err_string = sync_err.to_string();
+                match strategy {
+                    RecoveryStrategy::Fatal => {
+                        log::error!(
+                            "[{}] sync: fatal error, not retrying: {err_string}",
+                            elapsed(),
+                        );
+                        return Err(err_string);
+                    }
+                    RecoveryStrategy::RetryWithBackoff | RecoveryStrategy::Rewind { .. } => {
+                        last_err = err_string;
+                        if attempt == MAX_RETRIES {
+                            log::error!(
+                                "[{}] sync: all {} retries exhausted",
+                                elapsed(),
+                                MAX_RETRIES,
+                            );
+                        }
+                    }
                 }
             }
         }
