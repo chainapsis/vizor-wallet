@@ -283,6 +283,35 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
   }
 
+  /// Cancels the current sync (if any), waits for the Rust loop to
+  /// finish its teardown so `isSyncRunning()` returns `false`, then
+  /// starts a fresh sync and restarts the polling loop. This is the
+  /// right entry point for settings that change the underlying
+  /// transport (e.g. the Tor toggle) and need the next run to use
+  /// the new value — a plain `stopSync()` alone leaves the wallet
+  /// silent for the rest of the session if the toggle fires while
+  /// sync is already idle.
+  Future<void> restartSync() async {
+    stopSync();
+    // `cancelFullSync` sets an atomic that the Rust loop checks at
+    // batch boundaries, so it takes up to one batch worth of work to
+    // actually stop. Poll `isSyncRunning` with a 5s ceiling (same
+    // shape the `_resetWallet` path in `home_screen.dart` uses) so
+    // the new sync can't race the old one for the single-run lock.
+    var waited = 0;
+    while (rust_sync.isSyncRunning() && waited < 5000) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      waited += 100;
+    }
+    if (rust_sync.isSyncRunning()) {
+      log('SyncNotifier: restartSync timed out waiting for Rust loop to '
+          'stop after 5s; starting anyway (the startSync guard will '
+          'log if the old run is still around)');
+    }
+    startSync();
+    _startPolling();
+  }
+
   static Future<bool> isBackgroundSyncAvailable() async {
     try {
       return await BackgroundSyncDelegate.create().isAvailable();

@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,8 +50,18 @@ class TorSettingsNotifier extends Notifier<bool> {
     await storage.write(key: _torEnabledKey, value: enabled ? '1' : '0');
     rust_sync.setTorEnabled(enabled: enabled);
     state = enabled;
-    log('tor: toggle -> $enabled, stopping sync so next run uses new transport');
-    ref.read(syncProvider.notifier).stopSync();
+    log('tor: toggle -> $enabled, restarting sync with new transport');
+    // Must be `restartSync`, not a bare `stopSync`. `stopSync` alone
+    // leaves the wallet permanently silent if the toggle fires while
+    // sync is idle between polls — there's no auto-restart path for
+    // that case. `restartSync` stops the current run (if any), waits
+    // for the Rust loop to finish tearing down, and immediately
+    // starts a fresh run with the new transport.
+    //
+    // Fire-and-forget: the lifecycle of `setEnabled` is a setting
+    // toggle, not a "wait for sync to be healthy" operation. Errors
+    // inside `restartSync` already log themselves.
+    unawaited(ref.read(syncProvider.notifier).restartSync());
   }
 }
 
