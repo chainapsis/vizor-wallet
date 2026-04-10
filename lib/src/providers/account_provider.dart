@@ -21,6 +21,13 @@ class AccountInfo {
 
   const AccountInfo({required this.uuid, required this.name, required this.order, this.isHardware = false});
 
+  AccountInfo copyWith({String? name, int? order}) => AccountInfo(
+    uuid: uuid,
+    name: name ?? this.name,
+    order: order ?? this.order,
+    isHardware: isHardware,
+  );
+
   Map<String, dynamic> toJson() => {'uuid': uuid, 'name': name, 'order': order, 'isHardware': isHardware};
 
   factory AccountInfo.fromJson(Map<String, dynamic> json) => AccountInfo(
@@ -254,9 +261,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// Rename an account.
   Future<void> renameAccount(String uuid, String newName) async {
     final prev = state.value ?? const AccountState();
-    final updated = prev.accounts.map((a) =>
-      a.uuid == uuid ? AccountInfo(uuid: a.uuid, name: newName, order: a.order) : a
-    ).toList();
+    final updated = prev.accounts
+        .map((a) => a.uuid == uuid ? a.copyWith(name: newName) : a)
+        .toList();
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('renameAccount: $uuid → $newName');
