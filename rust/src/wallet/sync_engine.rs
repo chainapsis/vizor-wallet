@@ -532,7 +532,15 @@ async fn run_sync_impl(
                 )
             }
             ChainError::Wallet(wallet_err) => {
-                SyncError::db(format!("scan wallet: {wallet_err}"))
+                // Transient SQLite lock contention (e.g. another wallet
+                // connection holds a write lock) must retry, not bail out.
+                // Everything else is treated as genuine DB failure and
+                // goes Fatal via the per-category retry policy.
+                if is_sqlite_lock_contention(&wallet_err) {
+                    SyncError::other(format!("scan: SQLite lock contention: {wallet_err}"))
+                } else {
+                    SyncError::db(format!("scan wallet: {wallet_err}"))
+                }
             }
             other => SyncError::other(format!("scan: {other}")),
         });
@@ -593,9 +601,15 @@ async fn run_sync_impl(
                                 elapsed(),
                             );
                             db.truncate_to_height(safe).map_err(|e| {
-                                SyncError::db(format!(
-                                    "truncate_to_height({safe}) retry after RequestedRewindInvalid: {e}"
-                                ))
+                                if is_sqlite_lock_contention(&e) {
+                                    SyncError::other(format!(
+                                        "truncate_to_height({safe}) retry: SQLite lock contention: {e}"
+                                    ))
+                                } else {
+                                    SyncError::db(format!(
+                                        "truncate_to_height({safe}) retry after RequestedRewindInvalid: {e}"
+                                    ))
+                                }
                             })?
                         }
                         Err(SqliteClientError::RequestedRewindInvalid {
@@ -610,6 +624,16 @@ async fn run_sync_impl(
                             );
                             return Err(SyncError::db(format!(
                                 "truncate_to_height({requested_height}): no safe rewind height"
+                            )));
+                        }
+                        Err(e) if is_sqlite_lock_contention(&e) => {
+                            // Transient lock contention on the rewind. The
+                            // outer retry wrapper will re-invoke run_sync_impl
+                            // after a backoff, which re-detects the continuity
+                            // error and triggers the rewind again. If the
+                            // lock has cleared by then, the retry succeeds.
+                            return Err(SyncError::other(format!(
+                                "truncate_to_height({to_height}): SQLite lock contention: {e}"
                             )));
                         }
                         Err(e) => {
@@ -695,6 +719,30 @@ async fn run_sync_impl(
 fn open_db(path: &str, network: Network) -> Result<WalletDatabase, SyncError> {
     WalletDb::for_path(path, network, SystemClock, OsRng)
         .map_err(|e| SyncError::db(format!("DB open: {e}")))
+}
+
+/// Returns `true` when `err` wraps a transient SQLite lock-contention
+/// primary code (`SQLITE_BUSY` or `SQLITE_LOCKED`). These are not
+/// corruption — they fire when another connection currently holds a
+/// write lock on the wallet DB. The wallet opens separate connections
+/// for balance queries, the send flow, and the sync loop itself, so
+/// this condition is reachable in normal operation and must be
+/// classified as transient (retry-with-backoff) rather than fatal.
+///
+/// Extended codes (`SQLITE_BUSY_RECOVERY`, `SQLITE_BUSY_SNAPSHOT`,
+/// `SQLITE_BUSY_TIMEOUT`, `SQLITE_LOCKED_SHAREDCACHE`,
+/// `SQLITE_LOCKED_VTAB`) are all rolled up into the two primary codes
+/// by `rusqlite`, so matching on `ErrorCode::DatabaseBusy` /
+/// `DatabaseLocked` catches all of them.
+fn is_sqlite_lock_contention(err: &SqliteClientError) -> bool {
+    if let SqliteClientError::DbError(rusqlite::Error::SqliteFailure(inner, _)) = err {
+        matches!(
+            inner.code,
+            rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked,
+        )
+    } else {
+        false
+    }
 }
 
 
@@ -1041,6 +1089,47 @@ mod sync_error_tests {
         // across a handful of quick reorgs).
         assert!(MAX_REWINDS_PER_RUN >= 1);
         assert!(MAX_REWINDS_PER_RUN <= 10);
+    }
+
+    #[test]
+    fn sqlite_lock_contention_is_recognised() {
+        use rusqlite::ffi;
+
+        // DatabaseBusy → transient
+        let busy = SqliteClientError::DbError(rusqlite::Error::SqliteFailure(
+            ffi::Error::new(ffi::SQLITE_BUSY),
+            Some("database is locked".into()),
+        ));
+        assert!(is_sqlite_lock_contention(&busy));
+
+        // DatabaseLocked → transient
+        let locked = SqliteClientError::DbError(rusqlite::Error::SqliteFailure(
+            ffi::Error::new(ffi::SQLITE_LOCKED),
+            Some("database table is locked".into()),
+        ));
+        assert!(is_sqlite_lock_contention(&locked));
+
+        // SQLITE_CORRUPT → NOT transient (genuine DB failure)
+        let corrupt = SqliteClientError::DbError(rusqlite::Error::SqliteFailure(
+            ffi::Error::new(ffi::SQLITE_CORRUPT),
+            None,
+        ));
+        assert!(!is_sqlite_lock_contention(&corrupt));
+
+        // SQLITE_IOERR → NOT transient under our policy (could be
+        // transient in principle but not covered by this helper). Kept
+        // as-is so a future expansion to include IOERR_* codes is a
+        // deliberate change.
+        let ioerr = SqliteClientError::DbError(rusqlite::Error::SqliteFailure(
+            ffi::Error::new(ffi::SQLITE_IOERR),
+            None,
+        ));
+        assert!(!is_sqlite_lock_contention(&ioerr));
+
+        // A non-DbError wallet variant is trivially not lock contention.
+        let block_conflict =
+            SqliteClientError::BlockConflict(zcash_protocol::consensus::BlockHeight::from_u32(2_500_000));
+        assert!(!is_sqlite_lock_contention(&block_conflict));
     }
 
     #[test]
