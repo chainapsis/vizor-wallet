@@ -730,10 +730,21 @@ async fn download_subtree_roots(
         .await
         .map_err(|e| SyncError::net(format!("sapling subtree roots stream: {e}")))?
     {
+        // `SubtreeRoot::root_hash` is `bytes = "vec"` in the proto, not a
+        // fixed-length field. A slice expression like `root_hash[..32]`
+        // would panic before `try_into()` runs if the server sent fewer
+        // than 32 bytes, so convert from the full buffer via `as_slice`
+        // and let `try_into` reject both short and long payloads.
         let bytes: [u8; 32] = root
-            .root_hash[..32]
+            .root_hash
+            .as_slice()
             .try_into()
-            .map_err(|_| SyncError::parse("sapling subtree root: bad hash length".to_string()))?;
+            .map_err(|_| {
+                SyncError::parse(format!(
+                    "sapling subtree root: expected 32 bytes, got {}",
+                    root.root_hash.len()
+                ))
+            })?;
         let node = Option::from(sapling_crypto::Node::from_bytes(bytes))
             .ok_or_else(|| SyncError::parse("sapling subtree root: bad node bytes".to_string()))?;
         roots.push(CommitmentTreeRoot::from_parts(BlockHeight::from_u32(root.completing_block_height as u32), node));
@@ -762,9 +773,15 @@ async fn download_subtree_roots(
         .map_err(|e| SyncError::net(format!("orchard subtree roots stream: {e}")))?
     {
         let bytes: [u8; 32] = root
-            .root_hash[..32]
+            .root_hash
+            .as_slice()
             .try_into()
-            .map_err(|_| SyncError::parse("orchard subtree root: bad hash length".to_string()))?;
+            .map_err(|_| {
+                SyncError::parse(format!(
+                    "orchard subtree root: expected 32 bytes, got {}",
+                    root.root_hash.len()
+                ))
+            })?;
         let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&bytes))
             .ok_or_else(|| SyncError::parse("orchard subtree root: bad node bytes".to_string()))?;
         roots.push(CommitmentTreeRoot::from_parts(BlockHeight::from_u32(root.completing_block_height as u32), node));
