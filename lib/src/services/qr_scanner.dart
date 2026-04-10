@@ -5,6 +5,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../main.dart' show log;
 import '../rust/api/keystone.dart' as rust_keystone;
+import '../rust/wallet/keystone.dart' show UrDecodeResult;
 
 /// Default camera facing per platform.
 /// Mobile: back camera for QR scanning.
@@ -157,32 +158,50 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
     final normalized = value.toLowerCase();
     if (_seenParts.contains(normalized)) return;
 
+    // Scope the try to just the await. Any post-await state mutation must
+    // happen outside, gated by the mounted/_complete check below, so the
+    // control flow is obvious and a thrown exception can't accidentally
+    // land in the middle of a state update.
+    final UrDecodeResult result;
     try {
-      final result = await rust_keystone.decodeUrPart(
+      result = await rust_keystone.decodeUrPart(
         part_: value,
         expectedUrType: widget.expectedUrType,
       );
-      // Only mark as seen after the decoder actually accepted this fragment.
-      // Animated URs cycle through fragments repeatedly; if we marked on
-      // entry, any transient failure (wrong-type frame, corrupted capture,
-      // stale session right after init) would permanently dedupe the
-      // fragment and stall the scan below 100%.
-      _seenParts.add(normalized);
-      setState(() { _progress = result.progress; });
-      widget.onProgress?.call(result.progress);
-
-      if (result.complete && result.data != null) {
-        _complete = true;
-        if (!mounted) return;
-        Navigator.pop(context, ScanResult(
-          urType: result.urType ?? '',
-          data: result.data!,
-        ));
-      }
     } catch (e) {
       // Deliberately do NOT add to _seenParts here — the same fragment will
       // come back on the next animation cycle and get another chance.
       log('QrScanner: UR part decode error: $e');
+      return;
+    }
+
+    // Post-await lifecycle guard. Discard any late arrival if:
+    //   - the widget was disposed while we were awaiting (user hit back,
+    //     or another concurrent _onDetect already popped after reaching
+    //     complete), or
+    //   - another detection has already marked the scan complete (fountain
+    //     codes plus concurrent frames mean two awaits can complete
+    //     out-of-order, and we don't want a late-resolving earlier
+    //     fragment to overwrite `_progress` or re-pop).
+    // Without this guard the old code would `setState()` on a disposed
+    // widget (Flutter warns / asserts) or briefly regress the progress bar.
+    if (!mounted || _complete) return;
+
+    // Only mark as seen after the decoder actually accepted this fragment.
+    // Animated URs cycle through fragments repeatedly; if we marked on
+    // entry, any transient failure (wrong-type frame, corrupted capture,
+    // stale session right after init) would permanently dedupe the
+    // fragment and stall the scan below 100%.
+    _seenParts.add(normalized);
+    setState(() { _progress = result.progress; });
+    widget.onProgress?.call(result.progress);
+
+    if (result.complete && result.data != null) {
+      _complete = true;
+      Navigator.pop(context, ScanResult(
+        urType: result.urType ?? '',
+        data: result.data!,
+      ));
     }
   }
 
