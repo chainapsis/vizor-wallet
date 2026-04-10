@@ -543,37 +543,62 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     Ok(redacted.serialize())
 }
 
-/// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the
-/// final transaction, store it, and broadcast it via lightwalletd.
+/// Combine a PCZT-with-proofs and a PCZT-with-signatures, broadcast the
+/// resulting transaction, and persist it to the wallet DB **only after** the
+/// broadcast is accepted.
+///
+/// Ordering is critical here. The naive "store then broadcast" path leaves
+/// the wallet in an inconsistent state when lightwalletd rejects the tx:
+/// the DB thinks the notes are spent, the network never saw the tx, and
+/// the user has to manually recover. Instead we:
+///   1. Parse + combine + extract the final `Transaction` (validates proofs)
+///      using only in-memory state.
+///   2. Broadcast the raw bytes. If this fails, return Err — DB untouched.
+///   3. After broadcast is accepted, call
+///      `extract_and_store_transaction_from_pczt` to persist the tx with
+///      its rich PCZT recipient/memo metadata. If this last step fails, the
+///      tx is already on the network; log a warning and report success so
+///      the caller doesn't see a spurious failure. The next sync will pick
+///      the tx up from the chain.
 pub async fn extract_and_broadcast_pczt(
     db_path: &str, lightwalletd_url: &str, network: Network,
     pczt_with_proofs_bytes: &[u8],
     pczt_with_signatures_bytes: &[u8],
 ) -> Result<String, String> {
     use pczt::roles::combiner::Combiner;
+    use pczt::roles::tx_extractor::TransactionExtractor;
     use zcash_client_backend::data_api::wallet::extract_and_store_transaction_from_pczt;
 
-    let pczt_with_proofs = pczt::Pczt::parse(pczt_with_proofs_bytes)
-        .map_err(|e| format!("Parse PCZT with proofs: {e:?}"))?;
-    let pczt_with_signatures = pczt::Pczt::parse(pczt_with_signatures_bytes)
-        .map_err(|e| format!("Parse PCZT with signatures: {e:?}"))?;
-
-    let pczt = Combiner::new(vec![pczt_with_proofs, pczt_with_signatures])
-        .combine()
-        .map_err(|e| format!("Combine PCZTs: {e:?}"))?;
-
-    let mut db = open_wallet_db(db_path, network)?;
+    // Re-parsing and re-combining is cheap compared to ZK proof validation;
+    // we do it twice so we can hand one owned Pczt to the in-memory extractor
+    // and a second owned Pczt to the storage function after broadcast.
+    fn combine_pczts(proofs: &[u8], sigs: &[u8]) -> Result<pczt::Pczt, String> {
+        let p = pczt::Pczt::parse(proofs)
+            .map_err(|e| format!("Parse PCZT with proofs: {e:?}"))?;
+        let s = pczt::Pczt::parse(sigs)
+            .map_err(|e| format!("Parse PCZT with signatures: {e:?}"))?;
+        Combiner::new(vec![p, s])
+            .combine()
+            .map_err(|e| format!("Combine PCZTs: {e:?}"))
+    }
 
     let orchard_vk = orchard::circuit::VerifyingKey::build();
 
-    let txid = extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
-        &mut db,
-        pczt,
-        None, // sapling_vk — None for Orchard-only
-        Some(&orchard_vk),
-    ).map_err(|e| format!("Extract TX from PCZT: {e}"))?;
+    // Step 1: extract the Transaction without touching the DB.
+    let tx = TransactionExtractor::new(combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?)
+        .with_orchard(&orchard_vk)
+        .extract()
+        .map_err(|e| format!("Extract TX from PCZT: {e:?}"))?;
+    let txid = tx.txid();
 
-    // Broadcast
+    let tx_bytes = {
+        let mut buf = Vec::new();
+        tx.write(&mut buf).map_err(|e| format!("Serialize TX: {e}"))?;
+        buf
+    };
+
+    // Step 2: broadcast. On any failure here, the DB is untouched, so the
+    // wallet's view of spendable notes is unchanged.
     let channel = tonic::transport::Endpoint::from_shared(lightwalletd_url.to_string())
         .map_err(|e| format!("Invalid URL: {e}"))?
         .tls_config(tonic::transport::ClientTlsConfig::new().with_webpki_roots())
@@ -583,16 +608,6 @@ pub async fn extract_and_broadcast_pczt(
         .map_err(|e| format!("gRPC connect: {e}"))?;
 
     let mut client = zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient::new(channel);
-
-    let raw_tx = db.get_transaction(txid)
-        .map_err(|e| format!("Get TX: {e}"))?
-        .ok_or("Transaction not found after extraction")?;
-
-    let tx_bytes = {
-        let mut buf = Vec::new();
-        raw_tx.write(&mut buf).map_err(|e| format!("Serialize TX: {e}"))?;
-        buf
-    };
 
     let resp = client.send_transaction(
         zcash_client_backend::proto::service::RawTransaction {
@@ -608,6 +623,26 @@ pub async fn extract_and_broadcast_pczt(
             "Broadcast rejected: {} (code {})",
             resp.error_message, resp.error_code
         ));
+    }
+
+    // Step 3: broadcast was accepted — now persist to the wallet DB so the
+    // sent tx shows up in history with its PCZT recipient/memo metadata.
+    let mut db = open_wallet_db(db_path, network)?;
+    let storage_result = extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
+        &mut db,
+        combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?,
+        None, // sapling_vk — None for Orchard-only
+        Some(&orchard_vk),
+    );
+
+    if let Err(e) = storage_result {
+        // The tx is already on the network; next sync will pick it up from
+        // the chain (minus the pre-send recipient/memo metadata). Log and
+        // return success rather than surfacing a spurious error to the user.
+        log::error!(
+            "keystone: broadcast succeeded (txid={txid}) but local PCZT storage failed: {e}. \
+             Next sync will reconcile from the chain."
+        );
     }
 
     Ok(txid.to_string())
