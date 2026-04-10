@@ -24,8 +24,8 @@ use zcash_client_backend::{
         WalletCommitmentTrees, WalletRead,
     },
     proto::service::{
-        self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange,
-        GetSubtreeRootsArg,
+        self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, Empty,
+        GetSubtreeRootsArg, RawTransaction,
     },
 };
 use zcash_protocol::consensus::BlockHeight;
@@ -200,6 +200,34 @@ pub(super) async fn download_subtree_roots(
 
     log::info!("[{}] sync: subtree roots done", elapsed());
     Ok(())
+}
+
+/// Open a server-streaming `GetMempoolStream` RPC against
+/// lightwalletd and return the tonic stream of raw transactions
+/// sitting in the server's mempool.
+///
+/// The caller owns the reconnect loop. lightwalletd closes this
+/// stream every time a new block is mined (the server-side
+/// comment on `get_mempool_stream` explicitly says: "*close the
+/// returned stream when a new block is mined*"), and the
+/// [`crate::wallet::sync_engine::mempool`] observer relies on
+/// that EOF to kick off its reconnect / re-decrypt cycle. Normal
+/// termination therefore surfaces as `stream.message().await`
+/// returning `Ok(None)`, not as an `Err` — the caller should not
+/// treat that case as a failure.
+///
+/// This helper stays a thin wrapper on `client.get_mempool_stream`
+/// so that error-to-`SyncError::Network` mapping lives in the
+/// same place as every other lwd gRPC call.
+#[allow(dead_code)] // consumed by sync_engine::mempool in commit 3.5
+pub(crate) async fn start_mempool_stream(
+    client: &mut CompactTxStreamerClient<Channel>,
+) -> Result<tonic::Streaming<RawTransaction>, SyncError> {
+    let response = client
+        .get_mempool_stream(Empty {})
+        .await
+        .map_err(|e| SyncError::net(format!("get_mempool_stream: {e}")))?;
+    Ok(response.into_inner())
 }
 
 /// Streams compact blocks in `[start, end]` (inclusive) from
