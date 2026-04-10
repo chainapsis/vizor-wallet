@@ -18,6 +18,7 @@ mod block_source;
 mod enhance;
 mod error;
 mod lwd;
+pub(crate) mod mempool;
 
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
