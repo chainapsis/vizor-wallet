@@ -286,7 +286,7 @@ abstract class RustLibApi extends BaseApi {
     required List<int> pcztBytes,
   });
 
-  Future<void> crateApiKeystoneResetUrSession();
+  void crateApiKeystoneResetUrSession();
 
   Future<BigInt> crateApiSyncRewindToHeight({
     required String dbPath,
@@ -1838,17 +1838,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<void> crateApiKeystoneResetUrSession() {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
+  void crateApiKeystoneResetUrSession() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 42,
-            port: port_,
-          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 42)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,

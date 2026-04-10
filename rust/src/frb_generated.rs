@@ -1559,16 +1559,15 @@ fn wire__crate__api__sync__redact_pczt_for_signer_impl(
     )
 }
 fn wire__crate__api__keystone__reset_ur_session_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "reset_ur_session",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
         },
         move || {
             let message = unsafe {
@@ -1581,14 +1580,12 @@ fn wire__crate__api__keystone__reset_ur_session_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, ()>((move || {
-                    let output_ok = Result::<_, ()>::Ok({
-                        crate::api::keystone::reset_ur_session();
-                    })?;
-                    Ok(output_ok)
-                })())
-            }
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok({
+                    crate::api::keystone::reset_ur_session();
+                })?;
+                Ok(output_ok)
+            })())
         },
     )
 }
@@ -2636,7 +2633,6 @@ fn pde_ffi_dispatcher_primary_impl(
         41 => {
             wire__crate__api__sync__redact_pczt_for_signer_impl(port, ptr, rust_vec_len, data_len)
         }
-        42 => wire__crate__api__keystone__reset_ur_session_impl(port, ptr, rust_vec_len, data_len),
         43 => wire__crate__api__sync__rewind_to_height_impl(port, ptr, rust_vec_len, data_len),
         44 => wire__crate__api__sync__scan_blocks_impl(port, ptr, rust_vec_len, data_len),
         46 => {
@@ -2665,6 +2661,7 @@ fn pde_ffi_dispatcher_sync_impl(
         25 => wire__crate__api__sync__get_sync_mode_impl(ptr, rust_vec_len, data_len),
         31 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
         36 => wire__crate__api__sync__is_sync_running_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__keystone__reset_ur_session_impl(ptr, rust_vec_len, data_len),
         45 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
         51 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
         52 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),

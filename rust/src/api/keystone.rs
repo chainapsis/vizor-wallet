@@ -41,6 +41,13 @@ pub fn encode_pczt_ur_parts(pczt_bytes: Vec<u8>, max_fragment_len: usize) -> Res
 /// Discard any in-flight multi-part UR decode state. The scan screen calls
 /// this on entry to guarantee a fresh session regardless of how the previous
 /// scan ended (cancel, back button, mid-stream error).
+///
+/// Marked `#[frb(sync)]` so the Dart caller does not race with the camera:
+/// `_AnimatedUrScanScreenState.initState` needs the Rust `UR_SESSION` to be
+/// clean **before** the first `onDetect` callback fires, and a fire-and-forget
+/// `Future` provides no such ordering guarantee. The Rust body is a single
+/// mutex lock + `None` assignment, so it's trivially non-blocking.
+#[flutter_rust_bridge::frb(sync)]
 pub fn reset_ur_session() {
     keystone::reset_ur_session();
 }

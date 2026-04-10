@@ -156,13 +156,18 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
 
     final normalized = value.toLowerCase();
     if (_seenParts.contains(normalized)) return;
-    _seenParts.add(normalized);
 
     try {
       final result = await rust_keystone.decodeUrPart(
         part_: value,
         expectedUrType: widget.expectedUrType,
       );
+      // Only mark as seen after the decoder actually accepted this fragment.
+      // Animated URs cycle through fragments repeatedly; if we marked on
+      // entry, any transient failure (wrong-type frame, corrupted capture,
+      // stale session right after init) would permanently dedupe the
+      // fragment and stall the scan below 100%.
+      _seenParts.add(normalized);
       setState(() { _progress = result.progress; });
       widget.onProgress?.call(result.progress);
 
@@ -175,6 +180,8 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
         ));
       }
     } catch (e) {
+      // Deliberately do NOT add to _seenParts here — the same fragment will
+      // come back on the next animation cycle and get another chance.
       log('QrScanner: UR part decode error: $e');
     }
   }
