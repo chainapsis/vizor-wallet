@@ -279,6 +279,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   /// Import a hardware wallet account using UFVK from Keystone.
+  ///
+  /// Hardware accounts cannot be the first account in a wallet. librustzcash
+  /// refuses to apply seed-requiring database migrations to a DB that contains
+  /// only Imported accounts (see `CLAUDE.md` → "Hardware-first wallet
+  /// constraint"), so the first account in any wallet must be a software
+  /// (Derived) account. If the user wants to use Keystone on a fresh install,
+  /// they must first create or import a software wallet, then add Keystone on
+  /// top of it. The Rust side of `import_hardware_account` enforces this as a
+  /// backstop; the pre-check here just gives a cleaner error message.
   Future<void> importKeystoneAccount({
     required String name,
     required String ufvk,
@@ -286,6 +295,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     required int zip32Index,
   }) async {
     try {
+      final prev = state.value ?? const AccountState();
+      if (prev.accounts.isEmpty) {
+        throw Exception(
+          'Keystone accounts cannot be the first account in a wallet. '
+          'Please create or import a software wallet first, then add your '
+          'Keystone account.',
+        );
+      }
+
       final dbPath = await _getDbPath();
       final network = await _getNetwork();
 
@@ -298,7 +316,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final address = result.unifiedAddress;
 
       // Save account info (no mnemonic — hardware wallet)
-      final prev = state.value ?? const AccountState();
       final newAccount = AccountInfo(
         uuid: accountUuid, name: name, order: prev.accounts.length, isHardware: true,
       );
