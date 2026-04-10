@@ -91,6 +91,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   StreamSubscription? _syncSub;
   AppLifecycleListener? _lifecycleListener;
   Timer? _pollTimer;
+  // Mempool observer subscription. Started in `startSync` and
+  // cancelled in `stopSync`, so its lifetime matches the
+  // foreground-sync lifetime even though the Rust side manages
+  // the two cancel flags independently. A dedicated generation
+  // counter isn't needed because the observer keeps running until
+  // we explicitly cancel it — the Rust `MEMPOOL_CANCEL` flag is
+  // what actually stops it, and `_mempoolSub` is just the Dart
+  // side of the corresponding stream.
+  StreamSubscription? _mempoolSub;
 
   @override
   Future<SyncState> build() async {
@@ -130,6 +139,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     ref.onDispose(() {
       _syncSub?.cancel();
+      _mempoolSub?.cancel();
+      // Cancel the Rust-side observer too; cancelling the Dart
+      // subscription alone leaves the tonic stream task alive
+      // until the Rust isolate pool tears it down.
+      rust_sync.stopMempoolObserver();
       _bgDelegate.disposeListeners();
       _lifecycleListener?.dispose();
       _pollTimer?.cancel();
@@ -184,6 +198,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       if (gen != _syncGen) return; // stopSync was called, abort
       final network = ZcashNetwork.mainnet;
       log('Sync: starting foreground sync');
+      // Fire up the mempool observer alongside the scan loop.
+      // It has its own Rust cancel flag (MEMPOOL_CANCEL) and runs
+      // on a separate tokio runtime, so it can accept events while
+      // the scan loop is still catching up on old blocks.
+      _startMempoolObserver(dbPath, network);
       final stream = rust_sync.startFullSync(
         dbPath: dbPath,
         lightwalletdUrl: network.lightwalletdUrl,
@@ -247,6 +266,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     rust_sync.cancelFullSync();
     _syncSub?.cancel();
     _syncSub = null;
+    // Tear the mempool observer down at the same time. The sync
+    // loop and the observer have independent Rust cancel flags
+    // (SYNC_CANCEL / MEMPOOL_CANCEL), but Dart pairs them so the
+    // UX invariant "no sync running → no mempool stream running"
+    // holds, which is what the iOS background-sync / battery
+    // budget story expects.
+    _stopMempoolObserver();
     _isSyncing = false;
     _stopPolling();
     if (_bgDelegate.isActive) {
@@ -361,6 +387,80 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       log('AutoSync: tip check failed: $e');
     }
     _startPolling();
+  }
+
+  // ======================== Mempool Observer ========================
+
+  /// Fire up the Rust mempool observer for this sync session.
+  ///
+  /// Runs in parallel with the scan loop — matches
+  /// zcash-android-wallet-sdk's `startObservingMempool` coroutine.
+  /// The Rust side has its own reconnect loop with 1s / 30s
+  /// backoff, so the Dart side only needs to:
+  ///
+  ///   1. Subscribe to the emitted stream.
+  ///   2. On each `matched=true` event, trigger the same balance
+  ///      refresh path sync uses for `hasNewTx` events. (When an
+  ///      outbound send first lands in lightwalletd's mempool the
+  ///      wallet hasn't seen the tx mined yet, but the relayed
+  ///      bytes are enough for us to flip the UI from "broadcast
+  ///      pending" to "propagating" sooner than the next block
+  ///      scan would.)
+  ///   3. Silently ignore `matched=false` events — they're other
+  ///      people's transactions, used only for future mempool-side
+  ///      inbound discovery (not in scope for v1).
+  ///
+  /// Reuses [_mempoolSub] as the single subscription handle. The
+  /// `startMempoolObserver` FRB call is guarded on the Rust side
+  /// by the MEMPOOL_RUNNING atomic, so a double-call just logs
+  /// and returns an error; we catch and ignore it.
+  void _startMempoolObserver(String dbPath, ZcashNetwork network) {
+    if (rust_sync.isMempoolObserverRunning()) {
+      // Already up — happens if startSync fires while a previous
+      // observer is still winding down. The Rust side will
+      // reject the second start, so skip rather than racing it.
+      log('Mempool: observer already running, skipping start');
+      return;
+    }
+    _mempoolSub?.cancel();
+    final stream = rust_sync.startMempoolObserver(
+      dbPath: dbPath,
+      network: network.name,
+      lightwalletdUrl: network.lightwalletdUrl,
+    );
+    _mempoolSub = stream.listen(
+      (event) {
+        if (!event.matched) return;
+        log('Mempool: matched ${event.txidHex}, refreshing balance');
+        // Fire-and-forget: _refreshBalance rebuilds state and
+        // logs its own errors. We don't await because the
+        // mempool stream callback should stay non-blocking so
+        // the next incoming tx isn't delayed.
+        _refreshBalance();
+      },
+      onDone: () {
+        log('Mempool: stream ended');
+        _mempoolSub = null;
+      },
+      onError: (e) {
+        // Observer-side errors are logged from the Rust side in
+        // detail; here we just track that the Dart subscription
+        // closed so a restart at the next startSync is safe.
+        log('Mempool: stream error: $e');
+        _mempoolSub = null;
+      },
+    );
+  }
+
+  /// Cancel the running mempool observer (if any) and tear down
+  /// the Dart subscription. Symmetric with [_startMempoolObserver]
+  /// and called from [stopSync] as well as on dispose.
+  void _stopMempoolObserver() {
+    if (rust_sync.isMempoolObserverRunning()) {
+      rust_sync.stopMempoolObserver();
+    }
+    _mempoolSub?.cancel();
+    _mempoolSub = null;
   }
 
   // ======================== Progress Handling ========================
