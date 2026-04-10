@@ -283,47 +283,86 @@ pub struct ApiMempoolTxEvent {
     pub matched: bool,
 }
 
-/// Guard against double-start. Mirrors the SYNC_RUNNING pattern.
-pub(crate) static MEMPOOL_RUNNING: AtomicBool = AtomicBool::new(false);
+/// Shared lifecycle state for the background mempool observer.
+///
+/// The previous revision of this file used a plain
+/// `MEMPOOL_RUNNING: AtomicBool` + `MEMPOOL_CANCEL:
+/// LazyLock<Arc<AtomicBool>>` pair, which was racy: `start` would
+/// reset the shared cancel flag *after* the running-bit CAS, and a
+/// `stop` call that landed in between would set `cancel=true` only
+/// to have `start` immediately clear it back to `false`. That lost
+/// the stop signal entirely and let the observer keep talking to
+/// lightwalletd after the UI had asked for shutdown.
+///
+/// This replacement pairs each run with its own `Arc<AtomicBool>`
+/// cancel token held inside a mutex-protected state struct. `start`
+/// installs a fresh token while holding the mutex; `stop` takes
+/// the same mutex and writes `true` to whichever token is
+/// currently installed. A `stop` that lands in the middle of a
+/// `start` is serialized by the mutex and sees the new token, and
+/// a `stop` that lands after the observer exits becomes a no-op
+/// because `cancel` is `None`. There is no longer a window in
+/// which a stop can be lost.
+pub(crate) struct MempoolObserverState {
+    /// `true` while an observer coroutine is in flight. Mirrors
+    /// the old `MEMPOOL_RUNNING` atomic.
+    running: bool,
+    /// Cancel token for the current run. `Some` while `running`
+    /// is `true`; `None` otherwise. Holding a strong reference
+    /// here lets `stop` write to the same flag the observer's
+    /// sleep loop is already polling.
+    cancel: Option<Arc<AtomicBool>>,
+}
 
-/// Cancel flag consumed by `sync_engine::mempool::run_mempool_observer`.
-/// Separate from `SYNC_CANCEL` because the mempool observer and the
-/// scan loop have independent lifecycles — stopping one does not
-/// automatically stop the other.
-pub(crate) static MEMPOOL_CANCEL: std::sync::LazyLock<Arc<AtomicBool>> =
-    std::sync::LazyLock::new(|| Arc::new(AtomicBool::new(false)));
+pub(crate) static MEMPOOL_OBSERVER_STATE: std::sync::LazyLock<std::sync::Mutex<MempoolObserverState>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::Mutex::new(MempoolObserverState {
+            running: false,
+            cancel: None,
+        })
+    });
 
 /// Start the background mempool observer.
 ///
-/// Blocks until `stop_mempool_observer` is called or the observer
-/// returns on an unrecoverable setup error. Every incoming mempool
-/// tx that can be parsed is pushed to `sink` as an
-/// [`ApiMempoolTxEvent`].
+/// Blocks until [`stop_mempool_observer`] is called or the
+/// observer returns on an unrecoverable setup error. Every
+/// incoming mempool tx that can be parsed is pushed to `sink` as
+/// an [`ApiMempoolTxEvent`].
 ///
 /// The FRB layer runs this on the Rust isolate thread pool, so
 /// Dart can `await` the call while the observer keeps polling
 /// lightwalletd in the background. Dart is expected to fire this
 /// alongside `start_full_sync` and call `stop_mempool_observer`
 /// alongside `cancel_full_sync` — the two lifecycles are parallel
-/// but separately controlled.
+/// but separately controlled (intentional: the same bug in one
+/// path must not silently take down the other).
 pub fn start_mempool_observer(
     db_path: String,
     network: String,
     lightwalletd_url: String,
     sink: StreamSink<ApiMempoolTxEvent>,
 ) -> Result<(), String> {
-    if MEMPOOL_RUNNING
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return Err("Mempool observer already running".into());
-    }
+    // Install a fresh cancel token under the state mutex. The
+    // mutex serializes with `stop_mempool_observer`, so a stop
+    // that raced us cannot leak into the *next* run: it either
+    // runs first (and sees `running == false`, which is a no-op)
+    // or runs after us (and finds this new token, which the
+    // observer will then honour).
+    let cancel = {
+        let mut state = MEMPOOL_OBSERVER_STATE
+            .lock()
+            .map_err(|e| format!("mempool state mutex poisoned: {e}"))?;
+        if state.running {
+            return Err("Mempool observer already running".into());
+        }
+        let token = Arc::new(AtomicBool::new(false));
+        state.running = true;
+        state.cancel = Some(token.clone());
+        token
+    };
 
     let result = catch(|| {
         let network = keys::parse_network(&network)?;
-        let cancel = MEMPOOL_CANCEL.clone();
-        cancel.store(false, Ordering::Relaxed);
-
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
             crate::wallet::sync_engine::mempool::run_mempool_observer(
@@ -347,22 +386,50 @@ pub fn start_mempool_observer(
         })
     });
 
-    MEMPOOL_RUNNING.store(false, Ordering::SeqCst);
+    // Clear running + drop the cancel token so a subsequent
+    // `stop_mempool_observer` call is a no-op rather than
+    // incorrectly flipping a token the observer never consumes.
+    // A poisoned mutex here is best-effort logged; `result`
+    // still carries the actual observer outcome.
+    match MEMPOOL_OBSERVER_STATE.lock() {
+        Ok(mut state) => {
+            state.running = false;
+            state.cancel = None;
+        }
+        Err(e) => {
+            log::error!("mempool: state mutex poisoned during teardown: {e}");
+        }
+    }
+
     result
 }
 
 /// Ask the running mempool observer to exit at the next cancel
 /// check (inside the 100ms sleep slices or between stream
-/// messages). Safe to call when no observer is running.
+/// messages). Safe to call when no observer is running — the
+/// stored cancel token is `None` in that case and this becomes a
+/// no-op.
 #[frb(sync)]
 pub fn stop_mempool_observer() {
-    MEMPOOL_CANCEL.store(true, Ordering::Relaxed);
+    match MEMPOOL_OBSERVER_STATE.lock() {
+        Ok(state) => {
+            if let Some(token) = state.cancel.as_ref() {
+                token.store(true, Ordering::Relaxed);
+            }
+        }
+        Err(e) => {
+            log::error!("mempool: state mutex poisoned in stop: {e}");
+        }
+    }
 }
 
 /// Check whether the mempool observer task is currently running.
 #[frb(sync)]
 pub fn is_mempool_observer_running() -> bool {
-    MEMPOOL_RUNNING.load(Ordering::SeqCst)
+    MEMPOOL_OBSERVER_STATE
+        .lock()
+        .map(|s| s.running)
+        .unwrap_or(false)
 }
 
 // ======================== Data Structures ========================
