@@ -484,10 +484,21 @@ pub fn create_pczt_from_proposal(
     Ok(pczt.serialize())
 }
 
-/// Add Orchard (and if needed Sapling) proofs to a PCZT locally.
+/// Add Orchard (and, if needed, Sapling) proofs to a PCZT locally.
 /// Returns a PCZT-with-proofs, which must later be combined with the
 /// signed PCZT returned by the hardware signer.
-pub fn add_proofs_to_pczt(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
+///
+/// Sapling params paths are only required when the PCZT contains a non-empty
+/// Sapling bundle (e.g. the recipient is a Sapling-only address or a Unified
+/// Address without an Orchard receiver). Orchard-only sends can pass `None`
+/// for both paths. This matches the Zashi / zcash-android-wallet-sdk
+/// hardware-wallet flow: the hardware device only signs Orchard spends, the
+/// phone generates all ZK proofs.
+pub fn add_proofs_to_pczt(
+    pczt_bytes: &[u8],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<Vec<u8>, String> {
     use pczt::roles::prover::Prover;
 
     let pczt = pczt::Pczt::parse(pczt_bytes)
@@ -502,9 +513,24 @@ pub fn add_proofs_to_pczt(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     }
 
     if prover.requires_sapling_proofs() {
-        // Keystone wallets are Orchard-only, so this path shouldn't be hit.
-        // If it ever is, the caller would need to supply Sapling params.
-        return Err("PCZT unexpectedly requires Sapling proofs".into());
+        match (spend_params_path, output_params_path) {
+            (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
+                let local_prover = LocalTxProver::new(
+                    std::path::Path::new(sp),
+                    std::path::Path::new(op),
+                );
+                prover = prover
+                    .create_sapling_proofs(&local_prover, &local_prover)
+                    .map_err(|e| format!("Sapling proofs: {e:?}"))?;
+            }
+            _ => {
+                return Err(
+                    "PCZT requires Sapling proofs but no Sapling params were supplied. \
+                     Download sapling-spend.params and sapling-output.params first."
+                        .into(),
+                );
+            }
+        }
     }
 
     Ok(prover.finish().serialize())

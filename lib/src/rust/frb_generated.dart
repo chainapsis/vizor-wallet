@@ -89,7 +89,11 @@ abstract class RustLibApi extends BaseApi {
     BigInt? birthdayHeight,
   });
 
-  Future<Uint8List> crateApiSyncAddProofsToPczt({required List<int> pcztBytes});
+  Future<Uint8List> crateApiSyncAddProofsToPczt({
+    required List<int> pcztBytes,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  });
 
   void crateApiSyncCancelFullSync();
 
@@ -394,12 +398,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<Uint8List> crateApiSyncAddProofsToPczt({
     required List<int> pcztBytes,
+    String? spendParamsPath,
+    String? outputParamsPath,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
+          sse_encode_opt_String(spendParamsPath, serializer);
+          sse_encode_opt_String(outputParamsPath, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -412,7 +420,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncAddProofsToPcztConstMeta,
-        argValues: [pcztBytes],
+        argValues: [pcztBytes, spendParamsPath, outputParamsPath],
         apiImpl: this,
       ),
     );
@@ -421,7 +429,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncAddProofsToPcztConstMeta =>
       const TaskConstMeta(
         debugName: "add_proofs_to_pczt",
-        argNames: ["pcztBytes"],
+        argNames: ["pcztBytes", "spendParamsPath", "outputParamsPath"],
       );
 
   @override

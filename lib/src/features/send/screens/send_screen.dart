@@ -299,8 +299,15 @@ class _SendScreenState extends ConsumerState<SendScreen> {
           proposalId: proposal.proposalId,
         );
 
-        log('Send: adding proofs to PCZT locally');
-        final pcztWithProofs = await rust_sync.addProofsToPczt(pcztBytes: pcztBytes);
+        log('Send: adding proofs to PCZT locally (sapling=${proposal.needsSaplingParams})');
+        // Hand Sapling params paths to Rust only when the proposal actually
+        // needs them. They were downloaded above in the `needsSaplingParams`
+        // block, so the files are already on disk by the time we get here.
+        final pcztWithProofs = await rust_sync.addProofsToPczt(
+          pcztBytes: pcztBytes,
+          spendParamsPath: proposal.needsSaplingParams ? spendPath : null,
+          outputParamsPath: proposal.needsSaplingParams ? outputPath : null,
+        );
 
         log('Send: redacting PCZT for hardware signer');
         final redactedPczt = await rust_sync.redactPcztForSigner(pcztBytes: pcztBytes);
