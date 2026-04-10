@@ -604,12 +604,18 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
 ///   1. Parse + combine + extract the final `Transaction` (validates proofs)
 ///      using only in-memory state.
 ///   2. Broadcast the raw bytes. If this fails, return Err — DB untouched.
-///   3. After broadcast is accepted, call
-///      `extract_and_store_transaction_from_pczt` to persist the tx with
-///      its rich PCZT recipient/memo metadata. If this last step fails, the
-///      tx is already on the network; log a warning and report success so
-///      the caller doesn't see a spurious failure. The next sync will pick
-///      the tx up from the chain.
+///   3. After broadcast is accepted, persist to the wallet DB. The primary
+///      path is `extract_and_store_transaction_from_pczt`, which preserves
+///      rich PCZT recipient/memo metadata (the "sent to …" display info).
+///      If it fails — e.g. because the PCZT proprietary metadata got
+///      rewritten by the hardware signer, or the DB layer is temporarily
+///      unhappy — fall back to `decrypt_and_store_transaction`, which is
+///      the same path sync uses when it discovers one of our sent txs on
+///      the chain. That preserves correctness (spent notes are marked
+///      spent) at the cost of losing the rich metadata. Only if *both*
+///      storage paths fail do we surface an error to the user, because at
+///      that point the wallet genuinely cannot tell the user the truth
+///      about their balance.
 pub async fn extract_and_broadcast_pczt(
     db_path: &str, lightwalletd_url: &str, network: Network,
     pczt_with_proofs_bytes: &[u8],
@@ -617,7 +623,9 @@ pub async fn extract_and_broadcast_pczt(
 ) -> Result<String, String> {
     use pczt::roles::combiner::Combiner;
     use pczt::roles::tx_extractor::TransactionExtractor;
-    use zcash_client_backend::data_api::wallet::extract_and_store_transaction_from_pczt;
+    use zcash_client_backend::data_api::wallet::{
+        decrypt_and_store_transaction, extract_and_store_transaction_from_pczt,
+    };
 
     // Re-parsing and re-combining is cheap compared to ZK proof validation;
     // we do it twice so we can hand one owned Pczt to the in-memory extractor
@@ -634,7 +642,8 @@ pub async fn extract_and_broadcast_pczt(
 
     let orchard_vk = orchard::circuit::VerifyingKey::build();
 
-    // Step 1: extract the Transaction without touching the DB.
+    // Step 1: extract the Transaction without touching the DB. We keep `tx`
+    // around after broadcast so the fallback storage path can use it.
     let tx = TransactionExtractor::new(combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?)
         .with_orchard(&orchard_vk)
         .extract()
@@ -675,24 +684,45 @@ pub async fn extract_and_broadcast_pczt(
         ));
     }
 
-    // Step 3: broadcast was accepted — now persist to the wallet DB so the
-    // sent tx shows up in history with its PCZT recipient/memo metadata.
+    // Step 3: broadcast was accepted. Persist locally so the UI sees the
+    // tx immediately and the spent notes stop showing up as spendable.
     let mut db = open_wallet_db(db_path, network)?;
-    let storage_result = extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
+
+    // Primary path: rich PCZT-aware storage (preserves recipient/memo).
+    match extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
         &mut db,
         combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?,
         None, // sapling_vk — None for Orchard-only
         Some(&orchard_vk),
-    );
+    ) {
+        Ok(_) => return Ok(txid.to_string()),
+        Err(primary_err) => {
+            log::warn!(
+                "keystone: PCZT-aware storage failed after broadcast \
+                 (txid={txid}): {primary_err}. Falling back to chain-style \
+                 decrypt_and_store_transaction; rich recipient metadata \
+                 will not be available in history until the next sync."
+            );
 
-    if let Err(e) = storage_result {
-        // The tx is already on the network; next sync will pick it up from
-        // the chain (minus the pre-send recipient/memo metadata). Log and
-        // return success rather than surfacing a spurious error to the user.
-        log::error!(
-            "keystone: broadcast succeeded (txid={txid}) but local PCZT storage failed: {e}. \
-             Next sync will reconcile from the chain."
-        );
+            // Fallback path: same code sync uses when it discovers a
+            // wallet tx on the chain. Marks spent notes correctly via
+            // nullifier matching and picks up any change note back to
+            // us from enc_ciphertext decryption. The recipient/memo
+            // metadata that was only in the PCZT proprietary fields is
+            // lost, but correctness is preserved — the spent notes no
+            // longer appear spendable.
+            decrypt_and_store_transaction(&network, &mut db, &tx, None)
+                .map_err(|fallback_err| {
+                    format!(
+                        "Broadcast succeeded (txid={txid}) but both local \
+                         storage paths failed. Primary: {primary_err}. \
+                         Fallback: {fallback_err}. The transaction is on \
+                         the network; check an explorer to confirm, and \
+                         do not attempt to send again until the next \
+                         sync reconciles your balance."
+                    )
+                })?;
+        }
     }
 
     Ok(txid.to_string())
