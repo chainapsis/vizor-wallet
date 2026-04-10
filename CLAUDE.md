@@ -71,8 +71,12 @@ AccountProvider (account_provider.dart)
   ├── Manages account list, active account, per-account mnemonics
   ├── createAccount() — first: create_wallet, additional: generateMnemonic + addAccount
   ├── importAccount() — first: import_wallet, additional: addAccount
+  ├── importKeystoneAccount() — hardware UFVK import, requires non-empty
+  │                              account list (see Hardware-first constraint)
   ├── switchAccount() — updates active, refreshes address
-  └── getActiveMnemonic() — reads from secure storage
+  ├── renameAccount() — AccountInfo.copyWith (preserves isHardware)
+  ├── getActiveMnemonic() — reads from secure storage (null for hardware accounts)
+  └── isActiveAccountHardware — routes send flow to PCZT pipeline when true
 
 WalletProvider (wallet_provider.dart)
   ├── Watches AccountProvider
@@ -118,17 +122,28 @@ All sync log messages include `[Xs]` elapsed time from sync start (set once in `
 rust/src/
 ├── lib.rs              # pub mod api, ffi, wallet, frb_generated
 ├── api/
-│   ├── mod.rs          # pub mod simple, sync, wallet
+│   ├── mod.rs          # pub mod simple, sync, wallet, keystone
 │   ├── simple.rs       # init_app() with setup_default_user_utils() + log level filter
 │   ├── wallet.rs       # FRB: create_wallet, import_wallet, add_account, list_accounts,
 │   │                    # generate_mnemonic, get_unified_address(account_uuid),
-│   │                    # get_transparent_address(account_uuid), get_latest_block_height
-│   └── sync.rs         # FRB: start_full_sync(StreamSink, mode), cancel_full_sync(),
-│                        # set_sync_mode(), get_sync_mode(), is_sync_running(),
-│                        # get_balance(account_uuid), get_transaction_history(account_uuid),
-│                        # propose_send(account_uuid), estimate_fee(account_uuid),
-│                        # execute_proposal, get_next_available_address(account_uuid)
-│                        # DESIRED_SYNC_MODE, SYNC_RUNNING, SYNC_CANCEL globals
+│   │                    # get_transparent_address(account_uuid), get_latest_block_height,
+│   │                    # import_hardware_account (Keystone UFVK-only)
+│   ├── sync.rs         # FRB: start_full_sync(StreamSink, mode), cancel_full_sync(),
+│   │                    # set_sync_mode(), get_sync_mode(), is_sync_running(),
+│   │                    # get_balance(account_uuid), get_transaction_history(account_uuid),
+│   │                    # propose_send(account_uuid), estimate_fee(account_uuid),
+│   │                    # execute_proposal, get_next_available_address(account_uuid),
+│   │                    # create_pczt_from_proposal, add_proofs_to_pczt,
+│   │                    # redact_pczt_for_signer, extract_and_broadcast_pczt,
+│   │                    # discard_proposal (hardware-wallet PCZT pipeline),
+│   │                    # DESIRED_SYNC_MODE, SYNC_RUNNING, SYNC_CANCEL globals
+│   └── keystone.rs     # FRB: is_keystone_connected, keystone_usb_sign_pczt (USB),
+│                        # encode_pczt_to_ur, decode_ur_to_pczt, encode_pczt_ur_parts,
+│                        # decode_ur_part, reset_ur_session (#[frb(sync)]),
+│                        # decode_accounts_from_cbor, decode_pczt_from_cbor,
+│                        # decode_accounts_ur.
+│                        # Re-exports KeystoneAccountInfo, UrDecodeResult from
+│                        # crate::wallet::keystone via `pub use`.
 ├── ffi.rs              # C FFI for Swift: zcash_run_full_sync(), zcash_cancel_sync(),
 │                        # zcash_get/set_sync_mode(), zcash_is_sync_running()
 │                        # TX tracking: zcash_get_pending_txs(), zcash_check_tx_status()
@@ -136,20 +151,44 @@ rust/src/
 │                        # Uses current_thread tokio runtime (inherits iOS .utility QoS)
 │                        # Located outside api/ to avoid FRB codegen picking it up
 ├── wallet/
-│   ├── mod.rs          # pub mod keys, sync, sync_engine
+│   ├── mod.rs          # pub mod keys, sync, sync_engine, keystone
 │   ├── keys.rs         # Key derivation, mnemonic, account creation (Derived + Imported),
-│   │                    # list_accounts, ensure_db_initialized, parse_account_uuid
+│   │                    # list_accounts, ensure_db_initialized, parse_account_uuid,
+│   │                    # init_db_and_create_account (software first-account bootstrap),
+│   │                    # import_hardware_account (Keystone UFVK import with
+│   │                    # Derived-account backstop check)
 │   ├── sync.rs         # Per-account wallet operations (balance, send, history, etc.)
 │   │                    # All per-account functions take account_uuid parameter
-│   │                    # NoOp Sapling provers for Orchard-only transactions
+│   │                    # NoOp Sapling provers for Orchard-only software TXs
 │   │                    # TX broadcast via gRPC SendTransaction
-│   └── sync_engine.rs  # run_sync_inner() — retry wrapper (3 retries, 2/4/8s backoff)
-│                        # run_sync_impl() — single sync attempt
-│                        # MemoryBlockSource (BlockSource trait impl)
-│                        # Single DB connection reused across entire sync
-│                        # Checks cancel + mode mismatch after each download/scan/batch
-│                        # Progress: initial_total based (remaining / initial_total)
-│                        # has_new_tx from ScanSummary note counts
+│   │                    # PROPOSAL_STORE: in-memory HashMap<u64, StoredProposal>
+│   │                    #   populated by propose_send, consume-on-entry from
+│   │                    #   execute_proposal / create_pczt_from_proposal,
+│   │                    #   explicit discard_proposal for cancel paths.
+│   │                    # Hardware PCZT pipeline:
+│   │                    #   create_pczt_from_proposal → add_proofs_to_pczt +
+│   │                    #   redact_pczt_for_signer → extract_and_broadcast_pczt
+│   │                    #   (see "Hardware Wallet (Keystone) Send Flow" above for
+│   │                    #   the broadcast-before-store and Sapling-params invariants)
+│   ├── sync_engine.rs  # run_sync_inner() — retry wrapper (3 retries, 2/4/8s backoff)
+│   │                    # run_sync_impl() — single sync attempt
+│   │                    # MemoryBlockSource (BlockSource trait impl)
+│   │                    # Single DB connection reused across entire sync
+│   │                    # Checks cancel + mode mismatch after each download/scan/batch
+│   │                    # Progress: initial_total based (remaining / initial_total)
+│   │                    # has_new_tx from ScanSummary note counts
+│   └── keystone.rs     # Keystone hardware wallet integration:
+│                        # - UR (Uniform Resources) encode/decode for animated QR:
+│                        #   encode_pczt_ur_parts, decode_ur_part, reset_ur_session
+│                        #   (ur::Decoder directly, not KeystoneURDecoder, to avoid
+│                        #   URType registry issues with `zcash-accounts`)
+│                        # - Single-part UR helpers (used by USB path)
+│                        # - USB EAPDU protocol (KEYSTONE_VID/PID, CMD_RESOLVE_UR,
+│                        #   encode_eapdu_packets, usb_sign_pczt) — preserved for
+│                        #   future Keystone firmware support
+│                        # - Global UR_SESSION: Mutex<Option<UrSession>>, auto-reset
+│                        #   on type change / completion, caller resets via
+│                        #   reset_ur_session() on scan-screen entry
 └── frb_generated.rs    # Auto-generated by flutter_rust_bridge
 ```
 
@@ -360,11 +399,20 @@ All per-account API functions take `account_uuid: String`. Sync-level operations
 
 ### Key Security Model
 
-`zcash_client_sqlite` intentionally does NOT store spending keys in the DB — only viewing keys (UFVK). The mnemonic/seed lives in Flutter's `flutter_secure_storage` (iOS Keychain / Android Keystore) per-account (`zcash_account_mnemonic_{uuid}`) and is passed to Rust only when needed for transaction signing. Seed is scoped in a block and dropped before network I/O (broadcast).
+`zcash_client_sqlite` intentionally does NOT store spending keys in the DB — only viewing keys (UFVK).
+
+**Software accounts**: the mnemonic/seed lives in Flutter's `flutter_secure_storage` (iOS Keychain / Android Keystore) per-account (`zcash_account_mnemonic_{uuid}`) and is passed to Rust only when needed for transaction signing. Seed is scoped in a block and dropped before network I/O (broadcast).
+
+**Hardware (Keystone) accounts**: no seed ever reaches the phone. On import the phone receives only the UFVK via QR/UR; the USK stays on the device. There is no corresponding `zcash_account_mnemonic_{uuid}` entry, and `getActiveMnemonic()` returns null for hardware accounts. Transaction signing happens inside the device via the PCZT handoff (see "Hardware Wallet (Keystone) Send Flow"), so the phone never holds spending key material for these accounts at any point.
 
 ### WalletDb Initialization
 
-`WalletDb::for_path()` requires 4 params: `(path, Network, SystemClock, OsRng)`. `init_wallet_db()` must be called before `create_account()` — it runs schema migrations. First account uses `init_wallet_db(Some(seed))` for migration support; subsequent DB opens use `init_wallet_db(None)`.
+`WalletDb::for_path()` requires 4 params: `(path, Network, SystemClock, OsRng)`. `init_wallet_db()` must be called before `create_account()` — it runs schema migrations.
+
+Seed-relevance rule:
+- **First account (software)**: `init_db_and_create_account` calls `init_wallet_db(Some(seed))` then `create_account` → `AccountSource::Derived`. This pins the seed fingerprint so future seed-requiring migrations can verify relevance.
+- **Subsequent opens**: `ensure_db_initialized` calls `init_wallet_db(None)`. Calling `init_wallet_db(Some(other_seed))` after the first account would fail the relevance check when any `Imported` account exists.
+- **Hardware-first bootstrap is refused**: `import_hardware_account` returns an error if no `Derived` account exists yet. See "Multi-Account Model → Hardware-first wallet constraint" for the full rationale and the production tradeoff.
 
 ### Dart Sync Provider
 
@@ -404,7 +452,7 @@ All per-account API functions take `account_uuid: String`. Sync-level operations
 
 ## Testing
 
-- Rust unit tests: `cd rust && cargo test` (8 tests: key derivation, address encoding, determinism)
+- Rust unit tests: `cd rust && cargo test` — 11 tests covering key derivation, address encoding / Orchard-only UA derivation, determinism, and PROPOSAL_STORE lifecycle (idempotent discard, consume-on-entry, replay rejection). Tests that need a DB use `tempfile::tempdir()`.
 - Dart unit tests: `fvm flutter test`
 - Integration tests: `fvm flutter test integration_test/` (requires device/simulator)
 - Debug vs Release: Rust crypto is ~5-10x slower in debug (`opt-level=0`). Use `--release` for realistic sync performance.
