@@ -175,12 +175,29 @@ async fn run_sync_impl(
     // isolated-Tor transport) instead of opening a fresh channel,
     // so auto-resubmit inherits the current session's privacy
     // posture.
-    let _ = crate::wallet::sync::resubmit_pending_transactions(
-        db_data_path,
-        &mut client,
-        tip.height as u32,
-    )
-    .await;
+    //
+    // Pre-flight cancel/mode check: `update_chain_tip` and
+    // `open_lwd_channel` can take a couple of seconds under a
+    // slow connection, which is long enough for the user to hit
+    // stop. Skip the whole pass in that case instead of sending
+    // one more round of broadcasts after the UI asked us to quit.
+    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        log::info!(
+            "[{}] sync: cancel/mode observed before startup resubmit, skipping",
+            elapsed(),
+        );
+    } else {
+        let _ = crate::wallet::sync::resubmit_pending_transactions(
+            db_data_path,
+            &mut client,
+            tip.height as u32,
+            || {
+                cancel.load(Ordering::Relaxed)
+                    || desired_mode.load(Ordering::SeqCst) != running_mode
+            },
+        )
+        .await;
+    }
 
     // 3. Download subtree roots (incremental)
     download_subtree_roots(&mut client, &mut db).await?;
@@ -472,14 +489,34 @@ async fn run_sync_impl(
         // filtering out a tx that is about to get mined by the scan
         // loop we're already inside.
         //
+        // Pre-flight guard matches the one at the startup resubmit
+        // call site — if cancel or mode-change landed during
+        // `run_enhancement` (which can spend a second or two on a
+        // transparent-address scan), bail before opening a single
+        // new `send_transaction` RPC. The helper also consults the
+        // same closure between candidates and before each retry so
+        // a cancel arriving mid-pass stops initiating further
+        // broadcasts (see finding 3 in the Codex review).
+        //
         // Best-effort: helper swallows per-tx failures, so we ignore
         // the return value. Re-check cancel/mode afterwards because
-        // resubmit can take a couple of seconds per tx and the user
-        // may have asked us to stop mid-pass.
+        // even with the internal check the final round-trip may
+        // have completed before the cancel was observed.
+        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+            log::info!(
+                "[{}] sync: cancel/mode observed before post-batch resubmit, exiting",
+                elapsed(),
+            );
+            return Ok(());
+        }
         let _ = crate::wallet::sync::resubmit_pending_transactions(
             db_data_path,
             &mut client,
             tip.height as u32,
+            || {
+                cancel.load(Ordering::Relaxed)
+                    || desired_mode.load(Ordering::SeqCst) != running_mode
+            },
         )
         .await;
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {

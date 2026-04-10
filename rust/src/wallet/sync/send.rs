@@ -387,6 +387,25 @@ pub(crate) struct ResubmitStats {
 ///     `ResubmitStats`; resubmit is a best-effort background job,
 ///     never a fatal-to-sync operation.
 ///
+/// # Cancellation
+///
+/// The helper takes a `should_exit` closure that reflects the
+/// sync loop's cancel / mode-change condition. It is consulted:
+///
+///   * Before iterating the candidate list at all (so a cancel
+///     arriving during `run_enhancement` aborts the resubmit pass
+///     entirely without opening a single rebroadcast RPC).
+///   * Before every individual candidate's first broadcast.
+///   * Before the retry call for any candidate that failed on
+///     its first attempt.
+///
+/// Codex adversarial-review finding 3: rebroadcast is an
+/// irreversible network side effect, so the window between
+/// "user pressed cancel" and "observer stops calling
+/// `send_transaction`" needs to be as tight as we can make it
+/// without introducing an extra await point between the RPC
+/// response and the stats bump.
+///
 /// The caller owns the gRPC client. In the sync loop the same
 /// client that downloaded the compact blocks is threaded straight
 /// through, so auto-resubmit inherits the same transport (plain
@@ -398,11 +417,20 @@ pub(crate) struct ResubmitStats {
 /// and `log::warn!` for per-tx failures / retries so an operator
 /// can grep the live-stream log for `resubmit:` and see what the
 /// wallet is doing without enabling DEBUG everywhere.
-pub(crate) async fn resubmit_pending_transactions(
+pub(crate) async fn resubmit_pending_transactions<ShouldExit>(
     db_path: &str,
     client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
     current_height: u32,
-) -> ResubmitStats {
+    should_exit: ShouldExit,
+) -> ResubmitStats
+where
+    ShouldExit: Fn() -> bool,
+{
+    if should_exit() {
+        log::info!("resubmit: cancel observed before candidate query, skipping pass");
+        return ResubmitStats::default();
+    }
+
     let candidates = match super::transactions::get_resubmittable_txs(db_path, current_height) {
         Ok(c) => c,
         Err(e) => {
@@ -429,6 +457,20 @@ pub(crate) async fn resubmit_pending_transactions(
     };
 
     for tx in &candidates {
+        // Cancel-check at the top of every iteration: this is
+        // the tightest window we can afford between "user pressed
+        // cancel" and "we stop sending more transactions". The
+        // pass so far is already committed to the wire, but we
+        // at least stop initiating new ones.
+        if should_exit() {
+            log::info!(
+                "resubmit: cancel observed mid-pass, stopping at {}/{} attempted",
+                stats.succeeded + stats.failed,
+                stats.attempted,
+            );
+            break;
+        }
+
         let txid_hex = hex::encode(&tx.txid_bytes);
         match broadcast_raw_transaction(client, &tx.raw_tx).await {
             Ok(()) => {
@@ -441,10 +483,20 @@ pub(crate) async fn resubmit_pending_transactions(
             }
             Err(first_err) => {
                 // One retry, matching zcash-android-wallet-sdk's
-                // `TRANSACTION_RESUBMIT_RETRIES = 1`. Any remaining
-                // failure is logged and counted; the next sync
-                // batch will try again from scratch.
+                // `TRANSACTION_RESUBMIT_RETRIES = 1`. Check
+                // cancel *before* the retry too — a user who hit
+                // stop during the first-attempt gRPC round-trip
+                // shouldn't see us immediately fire a second
+                // round-trip for the same tx.
                 log::warn!("resubmit: {txid_hex} first attempt failed: {first_err}");
+                if should_exit() {
+                    log::info!(
+                        "resubmit: cancel observed before {txid_hex} retry; \
+                         counting as failure and stopping pass",
+                    );
+                    stats.failed += 1;
+                    break;
+                }
                 match broadcast_raw_transaction(client, &tx.raw_tx).await {
                     Ok(()) => {
                         log::info!("resubmit: {txid_hex} ok on retry");
