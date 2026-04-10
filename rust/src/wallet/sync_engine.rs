@@ -72,7 +72,6 @@ pub(crate) enum SyncError {
 
 /// Strategy the sync loop should apply when it encounters a `SyncError`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] // Rewind variant is constructed by commit 1.4
 pub(crate) enum RecoveryStrategy {
     /// Retry the failing operation after exponential backoff. The outer
     /// `run_sync_inner` wrapper already implements this with a 3-retry,
@@ -94,8 +93,15 @@ pub(crate) enum RecoveryStrategy {
 /// The actual rewind height may land earlier than `at_height - REWIND_DISTANCE`
 /// because `truncate_to_height` only accepts checkpoint boundaries; that's
 /// librustzcash's responsibility to enforce.
-#[allow(dead_code)] // consumed by the reorg-recovery commit (1.4)
 pub(crate) const REWIND_DISTANCE: u64 = 10;
+
+/// Maximum number of reorg-triggered rewinds allowed inside a single
+/// `run_sync_impl` invocation. Caps runaway rewind loops: if the chain is
+/// flapping fast enough to blow through this budget, `run_sync_impl` bails
+/// out so the outer `run_sync_inner` retry wrapper (and eventually the Dart
+/// polling loop) can try again with a fresh budget. Without this the same
+/// sync run could keep rewinding backward indefinitely.
+pub(crate) const MAX_REWINDS_PER_RUN: u32 = 3;
 
 impl SyncError {
     /// Log and construct a `Continuity` error in one step.
@@ -163,7 +169,6 @@ impl SyncError {
     }
 
     /// Map this error to the recovery action the sync loop should take.
-    #[allow(dead_code)] // consumed by commit 1.4 + 1.6
     pub(crate) fn recovery_strategy(&self) -> RecoveryStrategy {
         match self {
             SyncError::Continuity { at_height, .. } => RecoveryStrategy::Rewind {
@@ -371,6 +376,11 @@ async fn run_sync_impl(
     let mut prev_remaining = initial_total;
     log::info!("[{}] sync: {} blocks to scan", elapsed(), initial_total);
 
+    // Bounded counter for reorg-triggered rewinds inside this one sync run.
+    // A value >= MAX_REWINDS_PER_RUN causes the next continuity error to
+    // bail out with the error instead of rewinding again.
+    let mut rewinds_this_run: u32 = 0;
+
     // 5. Sync loop
     loop {
         if cancel.load(Ordering::Relaxed) {
@@ -419,12 +429,11 @@ async fn run_sync_impl(
         };
 
         // Scan from memory. Split librustzcash's `ChainError::Scan` variants
-        // into `SyncError::Continuity` vs `SyncError::Other` so the reorg
-        // recovery loop (commit 1.4) has something to match on. Continuity
+        // into `SyncError::Continuity` vs `SyncError::Other`. Continuity
         // errors (`PrevHashMismatch`, `BlockHeightDiscontinuity`) carry the
         // height at which the mismatch was detected — that's the input to
         // `truncate_to_height(at - REWIND_DISTANCE)`.
-        let scan_summary = scan_cached_blocks(
+        let scan_result = scan_cached_blocks(
             &network,
             &block_source,
             &mut db,
@@ -438,7 +447,53 @@ async fn run_sync_impl(
                 SyncError::continuity(at_height, scan_err.to_string())
             }
             other => SyncError::other(format!("scan: {other}")),
-        })?;
+        });
+
+        // Handle the scan result. On a reorg we rewind the wallet to
+        // `at_height - REWIND_DISTANCE` (bounded by `truncate_to_height`'s
+        // nearest checkpoint) and restart the scan loop. librustzcash's
+        // `suggest_scan_ranges` will produce a fresh range list after the
+        // truncate, so a `continue` is enough — no manual bookkeeping.
+        //
+        // `rewinds_this_run` caps runaway rewinds: if the chain is flapping
+        // between forks faster than a single sync run can keep up, we let
+        // the continuity error propagate and the outer retry wrapper (or
+        // the Dart polling loop on the next sync) gets a fresh budget.
+        let scan_summary = match scan_result {
+            Ok(s) => s,
+            Err(sync_err) => match sync_err.recovery_strategy() {
+                RecoveryStrategy::Rewind { to_height } => {
+                    if rewinds_this_run >= MAX_REWINDS_PER_RUN {
+                        log::error!(
+                            "[{}] sync: reorg rewind budget exhausted ({}/{}); \
+                             propagating error",
+                            elapsed(),
+                            rewinds_this_run,
+                            MAX_REWINDS_PER_RUN,
+                        );
+                        return Err(sync_err);
+                    }
+                    rewinds_this_run += 1;
+                    db.truncate_to_height(BlockHeight::from_u32(to_height as u32))
+                        .map_err(|e| {
+                            SyncError::db(format!(
+                                "truncate_to_height({to_height}): {e}"
+                            ))
+                        })?;
+                    log::info!(
+                        "[{}] sync: rewound to {to_height} after reorg \
+                         (attempt {}/{}); restarting scan loop",
+                        elapsed(),
+                        rewinds_this_run,
+                        MAX_REWINDS_PER_RUN,
+                    );
+                    continue;
+                }
+                RecoveryStrategy::RetryWithBackoff | RecoveryStrategy::Fatal => {
+                    return Err(sync_err);
+                }
+            },
+        };
 
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: exiting after scan", elapsed());
@@ -820,6 +875,17 @@ mod sync_error_tests {
         assert!(format!("{}", SyncError::Db("x".into())).starts_with("db: "));
         assert!(format!("{}", SyncError::Parse("x".into())).starts_with("parse: "));
         assert!(format!("{}", SyncError::Other("x".into())).starts_with("other: "));
+    }
+
+    #[test]
+    fn rewind_budget_is_nonzero_and_small() {
+        // If MAX_REWINDS_PER_RUN gets set to 0 the loop would bail on the
+        // first reorg, defeating the fix. If it gets cranked absurdly high
+        // the loop could spin forever against a flapping chain. 3 matches
+        // Zashi's REWIND_DISTANCE usage pattern (bounded, room to recover
+        // across a handful of quick reorgs).
+        assert!(MAX_REWINDS_PER_RUN >= 1);
+        assert!(MAX_REWINDS_PER_RUN <= 10);
     }
 
     #[test]
