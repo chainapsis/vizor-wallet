@@ -171,6 +171,8 @@ abstract class RustLibApi extends BaseApi {
     required String network,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
+    String? spendParamsPath,
+    String? outputParamsPath,
   });
 
   String crateApiWalletGenerateMnemonic();
@@ -982,6 +984,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String network,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
+    String? spendParamsPath,
+    String? outputParamsPath,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -992,6 +996,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(network, serializer);
           sse_encode_list_prim_u_8_loose(pcztWithProofsBytes, serializer);
           sse_encode_list_prim_u_8_loose(pcztWithSignaturesBytes, serializer);
+          sse_encode_opt_String(spendParamsPath, serializer);
+          sse_encode_opt_String(outputParamsPath, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1010,6 +1016,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           network,
           pcztWithProofsBytes,
           pcztWithSignaturesBytes,
+          spendParamsPath,
+          outputParamsPath,
         ],
         apiImpl: this,
       ),
@@ -1025,6 +1033,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "network",
           "pcztWithProofsBytes",
           "pcztWithSignaturesBytes",
+          "spendParamsPath",
+          "outputParamsPath",
         ],
       );
 

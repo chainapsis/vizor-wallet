@@ -616,10 +616,22 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
 ///      storage paths fail do we surface an error to the user, because at
 ///      that point the wallet genuinely cannot tell the user the truth
 ///      about their balance.
+///
+/// Sapling params paths are required whenever the combined PCZT contains a
+/// non-empty Sapling bundle — e.g. a send to a Sapling-only recipient, or a
+/// Unified Address without an Orchard receiver. In that case both the
+/// in-memory `TransactionExtractor` and the on-disk
+/// `extract_and_store_transaction_from_pczt` need Sapling verifying keys;
+/// we load them once from `LocalTxProver` and reuse the references. Orchard-
+/// only sends can pass `None` for both paths and the Sapling code path is
+/// skipped entirely. This matches the `add_proofs_to_pczt` contract: if the
+/// caller supplied params there, they must supply them here too.
 pub async fn extract_and_broadcast_pczt(
     db_path: &str, lightwalletd_url: &str, network: Network,
     pczt_with_proofs_bytes: &[u8],
     pczt_with_signatures_bytes: &[u8],
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
 ) -> Result<String, String> {
     use pczt::roles::combiner::Combiner;
     use pczt::roles::tx_extractor::TransactionExtractor;
@@ -642,12 +654,39 @@ pub async fn extract_and_broadcast_pczt(
 
     let orchard_vk = orchard::circuit::VerifyingKey::build();
 
+    // Load Sapling verifying keys once if the caller supplied params. The
+    // prover keeps the underlying params alive, and `verifying_keys()`
+    // returns owned `(SpendVerifyingKey, OutputVerifyingKey)`. We'll hand
+    // references into this tuple to both `TransactionExtractor::with_sapling`
+    // and `extract_and_store_transaction_from_pczt`.
+    let sapling_vks: Option<(
+        sapling_crypto::circuit::SpendVerifyingKey,
+        sapling_crypto::circuit::OutputVerifyingKey,
+    )> = match (spend_params_path, output_params_path) {
+        (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
+            let prover = LocalTxProver::new(
+                std::path::Path::new(sp),
+                std::path::Path::new(op),
+            );
+            Some(prover.verifying_keys())
+        }
+        _ => None,
+    };
+
     // Step 1: extract the Transaction without touching the DB. We keep `tx`
     // around after broadcast so the fallback storage path can use it.
-    let tx = TransactionExtractor::new(combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?)
-        .with_orchard(&orchard_vk)
-        .extract()
-        .map_err(|e| format!("Extract TX from PCZT: {e:?}"))?;
+    let tx = {
+        let mut extractor = TransactionExtractor::new(
+            combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?,
+        )
+        .with_orchard(&orchard_vk);
+        if let Some((spend_vk, output_vk)) = sapling_vks.as_ref() {
+            extractor = extractor.with_sapling(spend_vk, output_vk);
+        }
+        extractor
+            .extract()
+            .map_err(|e| format!("Extract TX from PCZT: {e:?}"))?
+    };
     let txid = tx.txid();
 
     let tx_bytes = {
@@ -689,10 +728,14 @@ pub async fn extract_and_broadcast_pczt(
     let mut db = open_wallet_db(db_path, network)?;
 
     // Primary path: rich PCZT-aware storage (preserves recipient/memo).
+    // Hand Sapling verifying keys in whenever the combined PCZT has a
+    // Sapling bundle, otherwise librustzcash rejects the extraction with
+    // `SaplingRequired` before we can store anything.
+    let sapling_vk_pair = sapling_vks.as_ref().map(|(s, o)| (s, o));
     match extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
         &mut db,
         combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?,
-        None, // sapling_vk — None for Orchard-only
+        sapling_vk_pair,
         Some(&orchard_vk),
     ) {
         Ok(_) => return Ok(txid.to_string()),

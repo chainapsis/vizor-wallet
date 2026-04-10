@@ -458,10 +458,20 @@ pub fn redact_pczt_for_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
 /// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
 /// Returns the txid.
+///
+/// `spend_params_path` / `output_params_path` are required whenever the
+/// combined PCZT has a non-empty Sapling bundle (e.g. the original proposal
+/// had `needsSaplingParams == true`). They are used both to verify the
+/// extracted transaction in-memory before broadcast and by
+/// `extract_and_store_transaction_from_pczt` after broadcast. Orchard-only
+/// sends can pass `None` for both. Mirrors the `add_proofs_to_pczt`
+/// contract: if you needed to supply params there, you need them here too.
 pub async fn extract_and_broadcast_pczt(
     db_path: String, lightwalletd_url: String, network: String,
     pczt_with_proofs_bytes: Vec<u8>,
     pczt_with_signatures_bytes: Vec<u8>,
+    spend_params_path: Option<String>,
+    output_params_path: Option<String>,
 ) -> Result<String, String> {
     let network = keys::parse_network(&network)?;
     wallet_sync::extract_and_broadcast_pczt(
@@ -470,5 +480,7 @@ pub async fn extract_and_broadcast_pczt(
         network,
         &pczt_with_proofs_bytes,
         &pczt_with_signatures_bytes,
+        spend_params_path.as_deref(),
+        output_params_path.as_deref(),
     ).await
 }

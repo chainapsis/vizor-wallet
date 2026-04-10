@@ -335,7 +335,11 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         log('Send: signing PCZT via ${transport.name}');
         final pcztWithSignatures = await transport.signPczt(context, redactedPczt);
 
-        // Combine, extract, and broadcast
+        // Combine, extract, and broadcast. Pass Sapling params paths in the
+        // same conditions as addProofsToPczt above: the extractor and the
+        // storage function both need Sapling verifying keys whenever the
+        // PCZT has a Sapling bundle, otherwise librustzcash rejects the
+        // extraction with `SaplingRequired`.
         log('Send: combining PCZTs and broadcasting');
         txidResult = await rust_sync.extractAndBroadcastPczt(
           dbPath: dbPath,
@@ -343,6 +347,8 @@ class _SendScreenState extends ConsumerState<SendScreen> {
           network: ZcashNetwork.mainnet.name,
           pcztWithProofsBytes: pcztWithProofs,
           pcztWithSignaturesBytes: pcztWithSignatures,
+          spendParamsPath: proposal.needsSaplingParams ? spendPath : null,
+          outputParamsPath: proposal.needsSaplingParams ? outputPath : null,
         );
       } else {
         // Software wallet: mnemonic-based signing

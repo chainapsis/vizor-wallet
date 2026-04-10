@@ -701,6 +701,8 @@ fn wire__crate__api__sync__extract_and_broadcast_pczt_impl(
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_pczt_with_proofs_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_pczt_with_signatures_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_spend_params_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_output_params_path = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, String>(
@@ -711,6 +713,8 @@ fn wire__crate__api__sync__extract_and_broadcast_pczt_impl(
                             api_network,
                             api_pczt_with_proofs_bytes,
                             api_pczt_with_signatures_bytes,
+                            api_spend_params_path,
+                            api_output_params_path,
                         )
                         .await?;
                         Ok(output_ok)
