@@ -251,6 +251,103 @@ Separate `BGContinuedProcessingTask` (`com.zcash.zcashWallet.txtrack`) polls lig
 - Post-send: `refreshAfterSend()` for immediate pending TX display
 - Friendly error messages via `_friendlyError()` pattern matching
 
+### Hardware Wallet (Keystone) Send Flow
+
+Hardware send uses a **three-PCZT pipeline** that matches the
+`zcash-android-wallet-sdk` / Zashi pattern. The hardware device cannot generate
+ZK proofs (proving keys are too big for the device), and the phone cannot
+sign (spending key lives on the device), so the two sides work on separate
+clones of the same base PCZT and the phone combines them at the end.
+
+```
+1. createPcztFromProposal                      → base PCZT (phone)
+   (IO-finalized, no proofs, no signatures)
+      │
+      ├── 2a. addProofsToPczt(base, params?)   → pcztWithProofs   (phone, CPU)
+      │       (Orchard proof always; Sapling output proofs if the
+      │        proposal has needsSaplingParams=true)
+      │
+      └── 2b. redactPcztForSigner(base)        → redactedPczt     (phone)
+              → Keystone device (animated QR or USB EAPDU)
+              → device signs Orchard spend_auth_sig
+              → signed PCZT back to phone       → pcztWithSignatures
+                                                       ↓
+3. extractAndBroadcastPczt(
+     pcztWithProofs, pcztWithSignatures,
+     spend_params?, output_params?,
+   )                                             → txid
+```
+
+Roles in the split:
+
+| Step | PCZT role              | Runs on | Needs what                          |
+|------|------------------------|---------|--------------------------------------|
+| 1    | Creator + IoFinalizer  | phone   | wallet DB                            |
+| 2a   | Prover                 | phone   | proving params (Orchard always; Sapling ~50MB if target recipient is Sapling) |
+| 2b   | Redactor               | phone   | —                                    |
+| sign | Signer                 | device  | spend_auth_sig derivation (device holds USK) |
+| 3    | Combiner + TransactionExtractor | phone | verifying keys (Orchard always; Sapling if bundle non-empty) + wallet DB |
+
+**Critical invariants** (each of these was a real bug at some point in
+development; breaking them is a correctness or data-loss regression):
+
+1. **`extract_and_broadcast_pczt` must broadcast before it persists.**
+   The function order is: `TransactionExtractor::extract()` (in-memory, no
+   DB) → `send_transaction` gRPC → *only then* `extract_and_store_transaction_from_pczt`.
+   Store-then-broadcast leaves the wallet in an unrecoverable state if
+   lightwalletd rejects the tx: DB thinks the notes are spent, network
+   has no record of the tx, user has to manually rescue the wallet.
+
+2. **Local storage failure after a successful broadcast must not surface
+   as a send failure.** The primary store path is
+   `extract_and_store_transaction_from_pczt` (preserves rich PCZT
+   recipient/memo metadata). On failure, fall back to
+   `decrypt_and_store_transaction` — the same path sync uses when it
+   discovers one of our sent txs on-chain. Correctness is preserved
+   (spent notes get marked spent via nullifier matching) at the cost of
+   some PCZT-only display metadata. Only if both paths fail do we
+   return an error, and the error message must tell the user the tx is
+   on the network and not to retry.
+
+3. **Sapling params must be passed to BOTH `add_proofs_to_pczt` AND
+   `extract_and_broadcast_pczt` whenever the PCZT contains a Sapling
+   bundle.** `add_proofs_to_pczt` needs `LocalTxProver` to build Sapling
+   output proofs; `extract_and_broadcast_pczt` needs `LocalTxProver
+   ::verifying_keys()` (a) to validate the extracted transaction and
+   (b) to let `extract_and_store_transaction_from_pczt` store it. Both
+   functions share the `Option<&str>` / `Option<&str>` signature. If
+   the caller supplied paths to `add_proofs_to_pczt` but passed `None`
+   here, extraction bails with `SaplingRequired` and the user sees a
+   cryptic error after already downloading 50MB of params and
+   approving on the device. `send_screen.dart` threads the same
+   `proposal.needsSaplingParams ? spendPath : null` into both FFI
+   calls — keep it that way.
+
+4. **`PROPOSAL_STORE` is consume-on-entry for both execute paths, plus
+   explicit discard on cancel.**
+   - `create_pczt_from_proposal` and `execute_proposal` both call
+     `.remove()` at the top (dropping the store lock before any DB
+     work). A second call with the same `proposal_id` returns
+     `"Proposal not found (expired or already consumed)"`.
+   - Dart `_send()` runs the whole flow inside a `try/finally`
+     with a `proposalConsumed` flag that flips to true immediately
+     after the consume call. The `finally` block calls
+     `discardProposal(proposalId)` when the flag is still false —
+     this covers confirmation-dialog cancel, Sapling-params-dialog
+     cancel, exceptions during Sapling download, and any error
+     before the consume call. `discardProposal` is idempotent.
+   - If you add a new entry point that reads a stored proposal,
+     follow the same "consume on entry, idempotent discard on any
+     non-consuming exit" pattern. Silently reading without
+     consuming (`.get()`) reintroduces the memory-leak /
+     replayable-ID bugs that a prior revision of this branch had.
+
+The Dart flow in `lib/src/features/send/screens/send_screen.dart`
+implements this pipeline end-to-end; the Rust side lives in
+`rust/src/wallet/sync.rs::{create_pczt_from_proposal,
+add_proofs_to_pczt, redact_pczt_for_signer, extract_and_broadcast_pczt,
+discard_proposal}` with FRB wrappers in `rust/src/api/sync.rs`.
+
 ### Wallet Creation
 
 `create_wallet()` fetches chain tip from lightwalletd as birthday height before creating the account. This prevents new wallets from doing a full chain scan. Birthday fetch failure blocks wallet creation (network required).
