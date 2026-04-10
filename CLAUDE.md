@@ -41,6 +41,13 @@ Single DB (`zcash_wallet.db`) holds multiple accounts from different seeds. Sing
 - **Additional accounts (different seeds)**: `import_account_ufvk(AccountPurpose::Spending { derivation })` → `AccountSource::Imported`. Bypasses the single-seed fingerprint constraint in `create_account`.
 - **DB init for additional accounts**: `init_wallet_db(None)` (no seed) to avoid `SeedNotRelevant` error when only Imported accounts exist.
 
+**Hardware-first wallet constraint** (Keystone). The first account in any wallet **must** be a software (`Derived`) account. `importKeystoneAccount` rejects the call when `accounts.isEmpty`; `import_hardware_account` on the Rust side backstops the same invariant. Rationale:
+- Hardware wallets have no local seed, so `import_hardware_account` calls `init_wallet_db(None)` and creates an `Imported` account.
+- Per `zcash_client_sqlite::wallet::init::init_wallet_db` docs, *"seed-requiring migrations cannot be applied to imported accounts"*. An `Imported`-only DB returns `SeedNotRelevant` from any later `init_wallet_db(Some(seed))` (the library checks `SeedRelevance::NoDerivedAccounts`).
+- A DB that enters Imported-only state is therefore stuck at its current schema version for any future seed-requiring migration. `create_account()` cannot later rescue it because that call itself needs seed-aware init.
+- The invariant "first account is Derived" guarantees that every wallet has at least one account that future seed-requiring migrations can verify against. Hardware accounts are always added on top of an existing software wallet.
+- If this constraint becomes a problem in production (e.g. users want to avoid managing a software mnemonic when they only want Keystone), revisit the tradeoff: either relax it and accept the migration risk + document a re-import recovery path, or block it as we do now. The current choice is the conservative one.
+
 **Account identification**: `AccountUuid` (UUID string like `"550e8400-e29b-41d4-a716-446655440000"`). Passed as `String` between Dart and Rust via `Uuid::parse_str()` / `Uuid::to_string()`.
 
 **Mnemonic storage**: Per-account in Flutter secure storage (`zcash_account_mnemonic_{uuid}`). Account list stored as JSON in `zcash_accounts` key. Active account in `zcash_active_account` key.
