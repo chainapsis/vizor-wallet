@@ -164,6 +164,23 @@ async fn run_sync_impl(
     db.update_chain_tip(tip_height)
         .map_err(|e| SyncError::db(format!("update_chain_tip: {e}")))?;
 
+    // 2.5. Resubmit any unmined, unexpired wallet txs now that we
+    // know the current tip. Matches the first of the three
+    // resubmit call sites in zcash-android-wallet-sdk's
+    // `processNewBlocks` (line 551). Best-effort: failures are
+    // logged inside the helper and must not abort the sync.
+    //
+    // We reuse the same `client` (and thus the same plain-TLS or
+    // isolated-Tor transport) instead of opening a fresh channel,
+    // so auto-resubmit inherits the current session's privacy
+    // posture.
+    let _ = crate::wallet::sync::resubmit_pending_transactions(
+        db_data_path,
+        &mut client,
+        tip.height as u32,
+    )
+    .await;
+
     // 3. Download subtree roots (incremental)
     download_subtree_roots(&mut client, &mut db).await?;
 
@@ -443,6 +460,31 @@ async fn run_sync_impl(
 
         // Enhancement
         run_enhancement(&mut client, &mut db, network).await?;
+
+        // Post-batch auto-resubmit. Matches zcash-android-wallet-sdk's
+        // lines 593/701 call sites (end of verify batch / end of
+        // regular batch). `tip.height` is the height we observed
+        // before the scan loop started; that's the correct height to
+        // pass so `expiry_height > current_height` filters out
+        // anything that expired during this sync. Using the fresh
+        // post-scan tip would be slightly more accurate but risks
+        // filtering out a tx that is about to get mined by the scan
+        // loop we're already inside.
+        //
+        // Best-effort: helper swallows per-tx failures, so we ignore
+        // the return value. Re-check cancel/mode afterwards because
+        // resubmit can take a couple of seconds per tx and the user
+        // may have asked us to stop mid-pass.
+        let _ = crate::wallet::sync::resubmit_pending_transactions(
+            db_data_path,
+            &mut client,
+            tip.height as u32,
+        )
+        .await;
+        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+            log::info!("[{}] sync: exiting after resubmit pass", elapsed());
+            return Ok(());
+        }
 
         // Report progress
         let has_new_tx = scan_summary.received_sapling_note_count() > 0

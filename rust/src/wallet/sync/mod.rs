@@ -36,6 +36,9 @@ pub use pczt::{
     redact_pczt_for_signer,
 };
 pub use send::{estimate_fee, execute_proposal, propose_send};
+// Internal-only re-export for `sync_engine::run_sync_impl`'s
+// auto-resubmit pass. Not part of the `wallet::sync` public surface.
+pub(crate) use send::resubmit_pending_transactions;
 pub use transactions::{
     check_tx_mined, decrypt_and_store_transaction, get_next_available_address,
     get_pending_transactions, get_transaction_data_requests, get_transaction_history,
