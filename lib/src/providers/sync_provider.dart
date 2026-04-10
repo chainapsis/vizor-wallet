@@ -107,6 +107,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
         _isInForeground = true;
+        // Wake arti's background circuit-maintenance tasks before any
+        // sync call that might need a Tor connection. No-op when Tor
+        // has never been bootstrapped (the Rust side guards on that).
+        rust_sync.setTorDormant(dormant: false).catchError((e, _) {
+          log('SyncNotifier: tor resume (dormant=false) failed: $e');
+        });
         _refreshBalance();
         _bgDelegate.onResume();
         _checkAndSync();
@@ -114,6 +120,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       onHide: () {
         _isInForeground = false;
         _stopPolling();
+        // Put arti's background tasks to sleep so the app doesn't
+        // burn CPU on Tor directory updates while the user is away.
+        rust_sync.setTorDormant(dormant: true).catchError((e, _) {
+          log('SyncNotifier: tor hide (dormant=true) failed: $e');
+        });
       },
     );
 

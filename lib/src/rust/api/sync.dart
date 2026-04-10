@@ -32,6 +32,19 @@ bool isTorEnabled() => RustLib.instance.api.crateApiSyncIsTorEnabled();
 void setTorDir({required String torDir}) =>
     RustLib.instance.api.crateApiSyncSetTorDir(torDir: torDir);
 
+/// Put arti's background circuit-maintenance tasks to sleep (when
+/// `dormant = true`) or wake them back up (`dormant = false`). Called
+/// by the Dart `sync_provider` on `AppLifecycleListener.onHide` and
+/// `onResume` so the app stops burning CPU on Tor directory updates
+/// while the user is away.
+///
+/// No-op when Tor has never been set up in this run (TOR_DIR unset or
+/// the underlying `wallet::tor::TOR_CLIENT` never bootstrapped), so
+/// the Dart side can call this unconditionally from its lifecycle
+/// hooks without guarding on `is_tor_enabled()` first.
+Future<void> setTorDormant({required bool dormant}) =>
+    RustLib.instance.api.crateApiSyncSetTorDormant(dormant: dormant);
+
 /// Start a full sync. Streams progress events to Dart via StreamSink.
 /// mode: 1=foreground, 2=background. Sync exits if desired mode changes.
 Stream<ApiSyncProgressEvent> startFullSync({
