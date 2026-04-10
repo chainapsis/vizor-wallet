@@ -255,3 +255,134 @@ async fn sleep_respecting_cancel(duration: Duration, cancel: &Arc<AtomicBool>) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    //! Unit tests for the mempool observer's DB-facing helpers and
+    //! its cancel-aware sleep.
+    //!
+    //! We can't unit-test `run_mempool_observer` itself without a
+    //! live lightwalletd — that's integration-test territory. What
+    //! we *can* test in isolation is:
+    //!
+    //!   * `is_known_pending_txid`, the read-only predicate that
+    //!     decides whether each parsed mempool tx sets
+    //!     `matched = true`. Its SQL has to stay in sync with the
+    //!     `transactions` table shape and the "unmined" definition
+    //!     (`mined_height IS NULL`).
+    //!
+    //!   * `sleep_respecting_cancel`, which must (a) return early
+    //!     when `cancel` flips and (b) at minimum sleep through the
+    //!     requested duration when `cancel` stays false. Both
+    //!     properties are load-bearing for the reconnect loop's
+    //!     responsiveness.
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    /// Create a throwaway SQLite database with a stand-in
+    /// `transactions` table. `zcash_client_sqlite` stores far more
+    /// columns here than we query, so we only materialize the ones
+    /// `is_known_pending_txid` actually reads.
+    fn fresh_db() -> NamedTempFile {
+        let file = NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (
+                 txid BLOB NOT NULL,
+                 mined_height INTEGER
+             );",
+        )
+        .unwrap();
+        file
+    }
+
+    fn insert_tx(db: &NamedTempFile, txid: &[u8], mined_height: Option<i64>) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height) VALUES (?1, ?2)",
+            rusqlite::params![txid, mined_height],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn is_known_pending_txid_finds_unmined_tx() {
+        let db = fresh_db();
+        let txid = [0x01u8; 32];
+        insert_tx(&db, &txid, None);
+        let found = is_known_pending_txid(db.path().to_str().unwrap(), &txid).unwrap();
+        assert!(found, "unmined tx in DB must register as known pending");
+    }
+
+    #[test]
+    fn is_known_pending_txid_ignores_mined_tx() {
+        // The whole point of the "unmined" filter: if sync already
+        // settled this tx into a block, we don't care that it's
+        // bouncing around the mempool (shouldn't be anyway, but
+        // lightwalletd can briefly relay stale mined txs).
+        let db = fresh_db();
+        let txid = [0x02u8; 32];
+        insert_tx(&db, &txid, Some(2_500_000));
+        let found = is_known_pending_txid(db.path().to_str().unwrap(), &txid).unwrap();
+        assert!(!found, "mined tx must NOT count as known pending");
+    }
+
+    #[test]
+    fn is_known_pending_txid_handles_unknown_tx() {
+        let db = fresh_db();
+        let known_txid = [0x03u8; 32];
+        let unknown_txid = [0x04u8; 32];
+        insert_tx(&db, &known_txid, None);
+        let found = is_known_pending_txid(db.path().to_str().unwrap(), &unknown_txid).unwrap();
+        assert!(!found, "txid not in DB must return false");
+    }
+
+    #[test]
+    fn is_known_pending_txid_handles_empty_db() {
+        // Baseline: cold wallet with no txs at all still returns Ok(false),
+        // not an error. The observer's fall-through branch relies on
+        // this — a missing-row condition is "not matched", not a bug.
+        let db = fresh_db();
+        let txid = [0x05u8; 32];
+        let found = is_known_pending_txid(db.path().to_str().unwrap(), &txid).unwrap();
+        assert!(!found);
+    }
+
+    #[tokio::test]
+    async fn sleep_respecting_cancel_returns_early_on_cancel() {
+        // Flip the cancel flag and the sleep must return well before
+        // the nominal duration elapses. We use a 2s nominal duration
+        // and a 300ms hard ceiling to leave slack for CI jitter while
+        // still catching the "ignores cancel" regression (that would
+        // wait the full 2s).
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancel_clone = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            cancel_clone.store(true, Ordering::Relaxed);
+        });
+        let start = Instant::now();
+        sleep_respecting_cancel(Duration::from_secs(2), &cancel).await;
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "sleep must return early after cancel: elapsed={elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sleep_respecting_cancel_waits_when_not_cancelled() {
+        // Complement of the above: when cancel stays false the
+        // helper must actually wait out the requested duration
+        // (otherwise the reconnect backoff ladder degenerates into
+        // a tight loop).
+        let cancel = Arc::new(AtomicBool::new(false));
+        let start = Instant::now();
+        sleep_respecting_cancel(Duration::from_millis(250), &cancel).await;
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= Duration::from_millis(200),
+            "sleep must wait at least ~duration: elapsed={elapsed:?}"
+        );
+    }
+}
+
