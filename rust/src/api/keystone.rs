@@ -38,6 +38,13 @@ pub fn encode_pczt_ur_parts(pczt_bytes: Vec<u8>, max_fragment_len: usize) -> Res
     keystone::encode_pczt_ur_parts(&pczt_bytes, max_fragment_len)
 }
 
+/// Discard any in-flight multi-part UR decode state. The scan screen calls
+/// this on entry to guarantee a fresh session regardless of how the previous
+/// scan ended (cancel, back button, mid-stream error).
+pub fn reset_ur_session() {
+    keystone::reset_ur_session();
+}
+
 /// Decode ZcashAccounts from raw CBOR bytes (from animated QR scan result).
 pub fn decode_accounts_from_cbor(cbor: Vec<u8>) -> Result<Vec<KeystoneAccountInfo>, String> {
     let accounts: ur_registry::zcash::zcash_accounts::ZcashAccounts =
