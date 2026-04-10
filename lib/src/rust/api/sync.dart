@@ -263,6 +263,12 @@ Future<Uint8List> createPcztFromProposal({
   proposalId: proposalId,
 );
 
+/// Release a stored proposal without executing it. Called by the Dart send
+/// flow when the user cancels before `create_pczt_from_proposal` so the
+/// proposal ID cannot be replayed. Idempotent.
+Future<void> discardProposal({required BigInt proposalId}) =>
+    RustLib.instance.api.crateApiSyncDiscardProposal(proposalId: proposalId);
+
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output
 /// is the "PCZT with proofs" half that is later combined with the signed PCZT
 /// returned by the hardware wallet.

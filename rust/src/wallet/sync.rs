@@ -466,15 +466,28 @@ struct ProposalStore {
 // ======================== PCZT (Hardware Wallet) ========================
 
 /// Create a PCZT from a stored proposal (for hardware wallet signing).
+///
+/// This is the hardware-wallet analogue of `execute_proposal`, and mirrors
+/// its lifecycle: the proposal is **removed** from the store on entry, so
+/// any subsequent failure (PCZT creation error, hardware signing cancel,
+/// broadcast rejection) can't leave a replayable proposal ID behind. If the
+/// caller aborts the send flow before reaching this function (e.g. the
+/// confirmation dialog is cancelled), Dart is expected to call
+/// `discard_proposal` explicitly to release the stored proposal.
 pub fn create_pczt_from_proposal(
     db_path: &str, network: Network, proposal_id: u64,
 ) -> Result<Vec<u8>, String> {
     use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
     use zcash_client_backend::wallet::OvkPolicy;
 
-    let store = PROPOSAL_STORE.lock().map_err(|e| format!("Lock: {e}"))?;
-    let stored = store.proposals.get(&proposal_id)
-        .ok_or("Proposal not found")?;
+    // Consume the proposal up-front (matches execute_proposal), so that any
+    // later failure path leaves the PROPOSAL_STORE clean.
+    let stored = {
+        let mut store = PROPOSAL_STORE.lock().map_err(|e| format!("Lock: {e}"))?;
+        store.proposals.remove(&proposal_id)
+            .ok_or("Proposal not found (expired or already consumed)")?
+        // lock dropped here, before heavy work
+    };
 
     let mut db = open_wallet_db(db_path, network)?;
     let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
@@ -482,6 +495,17 @@ pub fn create_pczt_from_proposal(
     ).map_err(|e| format!("Create PCZT failed: {e}"))?;
 
     Ok(pczt.serialize())
+}
+
+/// Release a stored proposal without executing it. Called from the Dart
+/// send flow when the user cancels before `create_pczt_from_proposal`
+/// (e.g. dismisses the confirmation dialog, cancels the Sapling params
+/// download prompt). Idempotent: safe to call for a proposal that has
+/// already been consumed or never existed.
+pub fn discard_proposal(proposal_id: u64) {
+    if let Ok(mut store) = PROPOSAL_STORE.lock() {
+        store.proposals.remove(&proposal_id);
+    }
 }
 
 /// Add Orchard (and, if needed, Sapling) proofs to a PCZT locally.
@@ -1002,4 +1026,87 @@ fn zip317_helper<DbT: InputSource>(
         ),
         GreedyInputSelector::new(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    //! Regression tests for PROPOSAL_STORE lifecycle.
+    //!
+    //! These tests cover the parts of the proposal store that don't require a
+    //! real wallet DB (note selection, fee computation, etc. are upstream of
+    //! anything testable in isolation). Specifically:
+    //!
+    //! * `discard_proposal` is idempotent and tolerates nonexistent IDs
+    //!   (called from the Dart cancel path and possibly more than once).
+    //! * `create_pczt_from_proposal` returns a clean "not found" error for
+    //!   an unknown ID instead of panicking or corrupting state — this is
+    //!   the path that fires on a replay attempt after the proposal has
+    //!   already been consumed.
+    //!
+    //! A full insert→consume→replay test would require constructing a real
+    //! `Proposal<StandardFeeRule, ReceivedNoteId>`, which in turn needs a
+    //! live wallet DB with spendable notes and a lightwalletd chain tip.
+    //! That belongs in an integration test, not a unit test here.
+
+    use super::*;
+
+    /// Pull a proposal ID that is guaranteed not to collide with anything a
+    /// concurrent test might have inserted. We use a fresh counter so each
+    /// call yields a distinct u64.
+    fn unique_proposal_id() -> u64 {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        // Start well above next_id's initial value (1) to avoid any overlap
+        // with proposals that a parallel test might genuinely insert.
+        static COUNTER: AtomicU64 = AtomicU64::new(1_000_000_000);
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    }
+
+    #[test]
+    fn discard_proposal_is_idempotent_for_missing_id() {
+        // Should not panic, should not poison the mutex.
+        let id = unique_proposal_id();
+        discard_proposal(id);
+        discard_proposal(id); // second call must also be a no-op
+    }
+
+    #[test]
+    fn create_pczt_from_proposal_errors_for_missing_id() {
+        // A replay attempt (or a bogus ID from stale UI state) must surface
+        // a clean "not found" error rather than panicking or creating a
+        // bogus PCZT. We pass an invalid db_path because the "not found"
+        // check fires before any DB work; if the behavior regresses to
+        // touching the DB first, this test will reveal it via a different
+        // error message.
+        let id = unique_proposal_id();
+        let result = create_pczt_from_proposal(
+            "/nonexistent/path/that/should/not/exist.db",
+            Network::MainNetwork,
+            id,
+        );
+
+        match result {
+            Err(msg) => {
+                assert!(
+                    msg.contains("Proposal not found"),
+                    "expected 'Proposal not found' error, got: {msg}"
+                );
+            }
+            Ok(_) => panic!("create_pczt_from_proposal succeeded for unknown id {id}"),
+        }
+    }
+
+    #[test]
+    fn discard_proposal_after_create_pczt_failure_is_still_noop() {
+        // Simulates the Dart `finally` cleanup path: after create_pczt
+        // fails with "not found" (so the proposal was never there), the
+        // finally block still calls discard_proposal. That call must be
+        // safe even though the ID has never been in the store.
+        let id = unique_proposal_id();
+        let _ = create_pczt_from_proposal(
+            "/nonexistent/path/that/should/not/exist.db",
+            Network::MainNetwork,
+            id,
+        );
+        discard_proposal(id); // cleanup must not panic
+    }
 }

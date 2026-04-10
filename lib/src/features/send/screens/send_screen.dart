@@ -188,6 +188,14 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   Future<void> _send() async {
     setState(() { _isSending = true; _error = null; });
 
+    // Tracks the active proposal so we can release it on any cancel or
+    // error path that happens before it has been consumed by a create /
+    // execute call. `proposalConsumed` flips to true once we hand the
+    // proposal ID to a function that takes ownership of it; after that
+    // the finally block is a no-op. Rust's discardProposal is idempotent.
+    BigInt? activeProposalId;
+    var proposalConsumed = false;
+
     try {
       final address = _addressController.text.trim();
       final amountZatoshi = _parseZecToZatoshi(_amountController.text.trim());
@@ -226,6 +234,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         amountZatoshi: BigInt.from(amountZatoshi),
         memo: memo.isNotEmpty ? memo : null,
       );
+      activeProposalId = proposal.proposalId;
 
       log('Send: proposal_id=${proposal.proposalId}, needs_sapling=${proposal.needsSaplingParams}, fee=${proposal.feeZatoshi}');
 
@@ -298,6 +307,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
           network: ZcashNetwork.mainnet.name,
           proposalId: proposal.proposalId,
         );
+        // createPcztFromProposal removes the proposal from PROPOSAL_STORE
+        // on entry, so once this returns the proposal is no longer ours.
+        proposalConsumed = true;
 
         log('Send: adding proofs to PCZT locally (sapling=${proposal.needsSaplingParams})');
         // Hand Sapling params paths to Rust only when the proposal actually
@@ -351,6 +363,8 @@ class _SendScreenState extends ConsumerState<SendScreen> {
           spendParamsPath: proposal.needsSaplingParams ? spendPath : null,
           outputParamsPath: proposal.needsSaplingParams ? outputPath : null,
         );
+        // executeProposal removes the proposal from PROPOSAL_STORE on entry.
+        proposalConsumed = true;
       }
 
       log('Send: success, txids=$txidResult');
@@ -388,6 +402,20 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     } catch (e) {
       log('Send: ERROR: $e');
       setState(() { _error = _friendlyError(e.toString()); _isSending = false; });
+    } finally {
+      // Release any proposal that wasn't handed off to a create/execute call.
+      // This covers: confirmation dialog cancel, Sapling params dialog cancel,
+      // exceptions during Sapling download, and errors thrown before the
+      // consume call itself. Rust-side discardProposal is idempotent so a
+      // spurious call after a successful consume is harmless.
+      if (activeProposalId != null && !proposalConsumed) {
+        try {
+          await rust_sync.discardProposal(proposalId: activeProposalId);
+          log('Send: released proposal $activeProposalId (not consumed)');
+        } catch (e) {
+          log('Send: discardProposal cleanup failed (non-critical): $e');
+        }
+      }
     }
   }
 
