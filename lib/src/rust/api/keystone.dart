@@ -49,6 +49,10 @@ Future<List<KeystoneAccountInfo>> decodeAccountsFromCbor({
   required List<int> cbor,
 }) => RustLib.instance.api.crateApiKeystoneDecodeAccountsFromCbor(cbor: cbor);
 
+/// Decode raw PCZT bytes from a ZcashPczt CBOR envelope (from animated QR scan result).
+Future<Uint8List> decodePcztFromCbor({required List<int> cbor}) =>
+    RustLib.instance.api.crateApiKeystoneDecodePcztFromCbor(cbor: cbor);
+
 /// Decode a ZcashAccounts UR string to account info list.
 Future<List<KeystoneAccountInfo>> decodeAccountsUr({
   required String urString,

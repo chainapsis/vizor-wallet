@@ -484,16 +484,83 @@ pub fn create_pczt_from_proposal(
     Ok(pczt.serialize())
 }
 
-/// Extract a transaction from a signed PCZT and broadcast it.
-/// `signed_pczt_bytes` contains the PCZT with signatures from the hardware device.
+/// Add Orchard (and if needed Sapling) proofs to a PCZT locally.
+/// Returns a PCZT-with-proofs, which must later be combined with the
+/// signed PCZT returned by the hardware signer.
+pub fn add_proofs_to_pczt(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    use pczt::roles::prover::Prover;
+
+    let pczt = pczt::Pczt::parse(pczt_bytes)
+        .map_err(|e| format!("Parse PCZT: {e:?}"))?;
+
+    let mut prover = Prover::new(pczt);
+
+    if prover.requires_orchard_proof() {
+        prover = prover
+            .create_orchard_proof(&orchard::circuit::ProvingKey::build())
+            .map_err(|e| format!("Orchard proof: {e:?}"))?;
+    }
+
+    if prover.requires_sapling_proofs() {
+        // Keystone wallets are Orchard-only, so this path shouldn't be hit.
+        // If it ever is, the caller would need to supply Sapling params.
+        return Err("PCZT unexpectedly requires Sapling proofs".into());
+    }
+
+    Ok(prover.finish().serialize())
+}
+
+/// Redact information from a PCZT that the signer role doesn't need
+/// (witnesses, proprietary metadata). Produces the bytes to send to
+/// the hardware wallet for signing.
+pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    use pczt::roles::redactor::Redactor;
+
+    let pczt = pczt::Pczt::parse(pczt_bytes)
+        .map_err(|e| format!("Parse PCZT: {e:?}"))?;
+
+    let redacted = Redactor::new(pczt)
+        .redact_global_with(|mut r| r.redact_proprietary("zcash_client_backend:proposal_info"))
+        .redact_orchard_with(|mut r| {
+            r.redact_actions(|mut ar| {
+                ar.clear_spend_witness();
+                ar.redact_output_proprietary("zcash_client_backend:output_info");
+            });
+        })
+        .redact_sapling_with(|mut r| {
+            r.redact_spends(|mut sr| sr.clear_witness());
+            r.redact_outputs(|mut or| {
+                or.redact_proprietary("zcash_client_backend:output_info");
+            });
+        })
+        .redact_transparent_with(|mut r| {
+            r.redact_outputs(|mut or| {
+                or.redact_proprietary("zcash_client_backend:output_info");
+            });
+        })
+        .finish();
+
+    Ok(redacted.serialize())
+}
+
+/// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the
+/// final transaction, store it, and broadcast it via lightwalletd.
 pub async fn extract_and_broadcast_pczt(
     db_path: &str, lightwalletd_url: &str, network: Network,
-    signed_pczt_bytes: &[u8],
+    pczt_with_proofs_bytes: &[u8],
+    pczt_with_signatures_bytes: &[u8],
 ) -> Result<String, String> {
+    use pczt::roles::combiner::Combiner;
     use zcash_client_backend::data_api::wallet::extract_and_store_transaction_from_pczt;
 
-    let pczt = pczt::Pczt::parse(signed_pczt_bytes)
-        .map_err(|e| format!("Parse signed PCZT: {e:?}"))?;
+    let pczt_with_proofs = pczt::Pczt::parse(pczt_with_proofs_bytes)
+        .map_err(|e| format!("Parse PCZT with proofs: {e:?}"))?;
+    let pczt_with_signatures = pczt::Pczt::parse(pczt_with_signatures_bytes)
+        .map_err(|e| format!("Parse PCZT with signatures: {e:?}"))?;
+
+    let pczt = Combiner::new(vec![pczt_with_proofs, pczt_with_signatures])
+        .combine()
+        .map_err(|e| format!("Combine PCZTs: {e:?}"))?;
 
     let mut db = open_wallet_db(db_path, network)?;
 
@@ -527,16 +594,20 @@ pub async fn extract_and_broadcast_pczt(
         buf
     };
 
-    let response = client.send_transaction(
+    let resp = client.send_transaction(
         zcash_client_backend::proto::service::RawTransaction {
             data: tx_bytes,
             height: 0,
         }
-    ).await.map_err(|e| format!("Broadcast: {e}"))?;
+    ).await.map_err(|e| format!("Broadcast: {e}"))?.into_inner();
 
-    let msg = response.into_inner().error_message;
-    if !msg.is_empty() {
-        return Err(format!("Broadcast rejected: {msg}"));
+    // zebra-lightwalletd returns the txid in `error_message` on success, so the
+    // only reliable signal is `error_code`.
+    if resp.error_code != 0 {
+        return Err(format!(
+            "Broadcast rejected: {} (code {})",
+            resp.error_message, resp.error_code
+        ));
     }
 
     Ok(txid.to_string())

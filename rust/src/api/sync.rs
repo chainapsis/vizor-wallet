@@ -413,13 +413,34 @@ pub fn create_pczt_from_proposal(
     })
 }
 
-/// Extract transaction from signed PCZT and broadcast to network.
+/// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output
+/// is the "PCZT with proofs" half that is later combined with the signed PCZT
+/// returned by the hardware wallet.
+pub fn add_proofs_to_pczt(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    wallet_sync::add_proofs_to_pczt(&pczt_bytes)
+}
+
+/// Redact information from a PCZT that the hardware signer does not need
+/// (witnesses, proprietary metadata). The returned bytes are what is sent
+/// to the Keystone device for signing.
+pub fn redact_pczt_for_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    wallet_sync::redact_pczt_for_signer(&pczt_bytes)
+}
+
+/// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
+/// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
+/// Returns the txid.
 pub async fn extract_and_broadcast_pczt(
     db_path: String, lightwalletd_url: String, network: String,
-    signed_pczt_bytes: Vec<u8>,
+    pczt_with_proofs_bytes: Vec<u8>,
+    pczt_with_signatures_bytes: Vec<u8>,
 ) -> Result<String, String> {
     let network = keys::parse_network(&network)?;
     wallet_sync::extract_and_broadcast_pczt(
-        &db_path, &lightwalletd_url, network, &signed_pczt_bytes,
+        &db_path,
+        &lightwalletd_url,
+        network,
+        &pczt_with_proofs_bytes,
+        &pczt_with_signatures_bytes,
     ).await
 }

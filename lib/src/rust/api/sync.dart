@@ -263,17 +263,33 @@ Future<Uint8List> createPcztFromProposal({
   proposalId: proposalId,
 );
 
-/// Extract transaction from signed PCZT and broadcast to network.
+/// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output
+/// is the "PCZT with proofs" half that is later combined with the signed PCZT
+/// returned by the hardware wallet.
+Future<Uint8List> addProofsToPczt({required List<int> pcztBytes}) =>
+    RustLib.instance.api.crateApiSyncAddProofsToPczt(pcztBytes: pcztBytes);
+
+/// Redact information from a PCZT that the hardware signer does not need
+/// (witnesses, proprietary metadata). The returned bytes are what is sent
+/// to the Keystone device for signing.
+Future<Uint8List> redactPcztForSigner({required List<int> pcztBytes}) =>
+    RustLib.instance.api.crateApiSyncRedactPcztForSigner(pcztBytes: pcztBytes);
+
+/// Combine a PCZT-with-proofs and a PCZT-with-signatures, extract the final
+/// transaction, store it in the wallet DB, and broadcast it to lightwalletd.
+/// Returns the txid.
 Future<String> extractAndBroadcastPczt({
   required String dbPath,
   required String lightwalletdUrl,
   required String network,
-  required List<int> signedPcztBytes,
+  required List<int> pcztWithProofsBytes,
+  required List<int> pcztWithSignaturesBytes,
 }) => RustLib.instance.api.crateApiSyncExtractAndBroadcastPczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
-  signedPcztBytes: signedPcztBytes,
+  pcztWithProofsBytes: pcztWithProofsBytes,
+  pcztWithSignaturesBytes: pcztWithSignaturesBytes,
 );
 
 class AddressValidationResult {

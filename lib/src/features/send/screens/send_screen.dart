@@ -287,13 +287,23 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
       String txidResult;
       if (isHardware) {
-        // Hardware wallet (Keystone): PCZT signing flow
+        // Hardware wallet (Keystone): three-PCZT flow (matches zcash-android-wallet-sdk)
+        //   1. createPcztFromProposal → base PCZT
+        //   2. clone → addProofsToPczt → pcztWithProofs (local Orchard proofs)
+        //   3. clone → redactPcztForSigner → send to Keystone → pcztWithSignatures
+        //   4. extractAndBroadcastPczt(pcztWithProofs, pcztWithSignatures) → combines + broadcasts
         log('Send: creating PCZT from proposal ${proposal.proposalId}');
         final pcztBytes = await rust_sync.createPcztFromProposal(
           dbPath: dbPath,
           network: ZcashNetwork.mainnet.name,
           proposalId: proposal.proposalId,
         );
+
+        log('Send: adding proofs to PCZT locally');
+        final pcztWithProofs = await rust_sync.addProofsToPczt(pcztBytes: pcztBytes);
+
+        log('Send: redacting PCZT for hardware signer');
+        final redactedPczt = await rust_sync.redactPcztForSigner(pcztBytes: pcztBytes);
 
         // Select transport and sign
         if (!mounted) return;
@@ -304,15 +314,16 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         }
 
         log('Send: signing PCZT via ${transport.name}');
-        final signedPczt = await transport.signPczt(context, pcztBytes);
+        final pcztWithSignatures = await transport.signPczt(context, redactedPczt);
 
-        // Extract TX and broadcast
-        log('Send: extracting and broadcasting signed PCZT');
+        // Combine, extract, and broadcast
+        log('Send: combining PCZTs and broadcasting');
         txidResult = await rust_sync.extractAndBroadcastPczt(
           dbPath: dbPath,
           lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
           network: ZcashNetwork.mainnet.name,
-          signedPcztBytes: signedPczt,
+          pcztWithProofsBytes: pcztWithProofs,
+          pcztWithSignaturesBytes: pcztWithSignatures,
         );
       } else {
         // Software wallet: mnemonic-based signing

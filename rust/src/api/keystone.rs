@@ -61,6 +61,13 @@ pub fn decode_accounts_from_cbor(cbor: Vec<u8>) -> Result<Vec<KeystoneAccountInf
     }).collect())
 }
 
+/// Decode raw PCZT bytes from a ZcashPczt CBOR envelope (from animated QR scan result).
+pub fn decode_pczt_from_cbor(cbor: Vec<u8>) -> Result<Vec<u8>, String> {
+    let pczt: ur_registry::zcash::zcash_pczt::ZcashPczt =
+        cbor.try_into().map_err(|e: ur_registry::error::URError| format!("CBOR decode: {e:?}"))?;
+    Ok(pczt.get_data())
+}
+
 /// Decode a ZcashAccounts UR string to account info list.
 pub fn decode_accounts_ur(ur_string: String) -> Result<Vec<KeystoneAccountInfo>, String> {
     let (_seed_fp, infos) = keystone::decode_accounts_ur(&ur_string)?;

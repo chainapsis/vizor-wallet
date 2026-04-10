@@ -155,8 +155,11 @@ class QrKeystoneTransport implements KeystoneTransport {
     final result = await QrScanner.scanAnimatedUr(context);
     if (result == null) throw Exception('Scan cancelled');
 
-    log('KeystoneQR: received signed PCZT (${result.data.length} bytes)');
-    return Uint8List.fromList(result.data);
+    // result.data is the CBOR-encoded ZcashPczt envelope ({1: bytes}).
+    // Unwrap it to get the raw PCZT bytes.
+    final pcztBytes = await rust_keystone.decodePcztFromCbor(cbor: result.data);
+    log('KeystoneQR: received signed PCZT (${pcztBytes.length} bytes)');
+    return Uint8List.fromList(pcztBytes);
   }
 }
 
