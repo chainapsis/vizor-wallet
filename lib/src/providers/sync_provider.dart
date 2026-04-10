@@ -230,6 +230,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           if (gen != _syncGen) return;
           log('Sync: stream error: $e');
           _isSyncing = false;
+          // Sync died mid-stream: tear the mempool observer down
+          // at the same time so a failed sync session can't leak
+          // a lightwalletd stream that keeps firing
+          // `_refreshBalance()` callbacks with no owning sync.
+          _stopMempoolObserver();
           final prev = state.value;
           state = AsyncData(SyncState(
             error: e.toString(),
@@ -247,6 +252,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       if (gen != _syncGen) return;
       log('SyncNotifier: ERROR: $e\n$st');
       _isSyncing = false;
+      // Sync setup threw before the stream was ever attached.
+      // We may have already started the mempool observer
+      // (happens on the main success path just before
+      // `startFullSync`), so always call
+      // `_stopMempoolObserver()` here; it is idempotent when
+      // nothing is running.
+      _stopMempoolObserver();
       final prev = state.value;
       state = AsyncData(SyncState(
         error: e.toString(),
