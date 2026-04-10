@@ -103,19 +103,41 @@ final torSettingsProvider = NotifierProvider<TorSettingsNotifier, bool>(
 /// than silently routing over clearnet.
 Future<void> initTorAtStartup() async {
   // Step 1: Tor cache directory. Best-effort; failure here doesn't
-  // block the preference restore below.
+  // block the preference restore below, but it DOES gate Step 2's
+  // fail-closed behaviour — see the comment in the `catch` of the
+  // preference-read block for why.
+  bool dirOk = false;
   try {
     final base = await getApplicationSupportDirectory();
     final torDir = '${base.path}${Platform.pathSeparator}tor';
     rust_sync.setTorDir(torDir: torDir);
+    dirOk = true;
     log('tor: dir=$torDir');
   } catch (e, st) {
     log('tor: dir setup failed (will still restore toggle): $e\n$st');
   }
 
-  // Step 2: persisted preference. Fail-closed to `enabled = true` so
-  // a transient storage failure can't silently downgrade Tor to
-  // clearnet on an opted-in user's session.
+  // Step 2: persisted preference.
+  //
+  // On a successful read, null means "never opted in" (first launch)
+  // → `false`. Only an actual exception from `storage.read` triggers
+  // the fail-closed branch.
+  //
+  // Fail-closed rule: if the read throws AND the Tor directory was
+  // set up successfully, default to `enabled = true` so a transient
+  // secure-storage hiccup cannot silently downgrade an opted-in
+  // user's privacy to clearnet.
+  //
+  // Fail-open rule: if the read throws AND dir setup ALSO failed,
+  // default to `enabled = false`. Forcing `enabled = true` here
+  // would leave `USE_TOR = true` with `TOR_DIR` unset, which wedges
+  // every subsequent `open_lwd_channel` call with
+  // "Tor enabled but TOR_DIR not set" — the wallet stays offline
+  // until the user manually disables Tor or restarts into a clean
+  // startup. We can't use Tor this session anyway, so letting
+  // clearnet sync run beats denying service. This path accepts a
+  // rare privacy regression in the double-failure case in exchange
+  // for the availability guarantee.
   const storage = FlutterSecureStorage();
   bool enabled;
   try {
@@ -123,9 +145,16 @@ Future<void> initTorAtStartup() async {
     enabled = persisted == '1';
     log('tor: restored enabled=$enabled');
   } catch (e, st) {
-    log('tor: preference read failed, fail-closed to enabled=true for '
-        'privacy (was: ${e.runtimeType}): $e\n$st');
-    enabled = true;
+    if (dirOk) {
+      log('tor: preference read failed, fail-closed to enabled=true for '
+          'privacy (was: ${e.runtimeType}): $e\n$st');
+      enabled = true;
+    } else {
+      log('tor: preference read failed AND dir setup failed; cannot use '
+          'Tor this session, defaulting to enabled=false to avoid '
+          'wedging the wallet offline (was: ${e.runtimeType}): $e\n$st');
+      enabled = false;
+    }
   }
   rust_sync.setTorEnabled(enabled: enabled);
 }
