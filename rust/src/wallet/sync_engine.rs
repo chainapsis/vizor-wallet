@@ -25,6 +25,129 @@ use zcash_primitives::block::BlockHash;
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId, Network};
 
+// ==================== Error taxonomy ====================
+//
+// Historically every failure inside the sync loop was flattened to a `String`
+// via the `err()` helper, which left the outer retry wrapper unable to tell a
+// chain reorg apart from a transient gRPC failure apart from an irrecoverable
+// DB corruption. The result was that reorgs (librustzcash's `PrevHashMismatch`
+// / `BlockHeightDiscontinuity`) would propagate up as plain error strings,
+// `run_sync_inner` would retry them three times against the same failing DB
+// state, and the wallet would land in a permanent error state.
+//
+// `SyncError` is the typed replacement. Nothing in the sync loop consumes it
+// yet — the refactor of `scan_cached_blocks` / `download_blocks` / gRPC call
+// sites to produce typed errors, and the reorg-recovery loop that reacts to
+// `SyncError::Continuity`, both land in follow-up commits. Keeping this
+// commit to "types only" makes each subsequent step independently reviewable.
+
+/// Classified sync-engine failure. Carries enough information for the retry
+/// wrapper to pick the right recovery strategy via `recovery_strategy`.
+#[allow(dead_code)] // constructed by follow-up commits that start using it
+#[derive(Debug, Clone)]
+pub(crate) enum SyncError {
+    /// `scan_cached_blocks` reported a `PrevHashMismatch` or
+    /// `BlockHeightDiscontinuity` at `at_height`, meaning the wallet's
+    /// stored chain state no longer agrees with the one lightwalletd is
+    /// serving. Recovery is to `truncate_to_height(at_height - REWIND_DISTANCE)`
+    /// and restart the scan loop from the rewound state.
+    Continuity { at_height: u64, detail: String },
+
+    /// Transient network or gRPC failure. The existing exponential-backoff
+    /// retry path is the right response.
+    Network(String),
+
+    /// Local SQLite / `WalletDb` failure. Usually non-retryable (permissions,
+    /// disk full, schema corruption) — propagate up and let the caller decide.
+    Db(String),
+
+    /// Serialization / deserialization failure for a compact block, tree
+    /// state, transaction, or similar on-wire structure. Non-retryable
+    /// because re-fetching the same bytes is unlikely to parse differently.
+    Parse(String),
+
+    /// Unclassified error. Treated as transient by default (retry-with-backoff)
+    /// so we fail safe toward "try again" rather than "bail out".
+    Other(String),
+}
+
+/// Strategy the sync loop should apply when it encounters a `SyncError`.
+#[allow(dead_code)] // constructed by follow-up commits that start using it
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RecoveryStrategy {
+    /// Retry the failing operation after exponential backoff. The outer
+    /// `run_sync_inner` wrapper already implements this with a 3-retry,
+    /// 2s/4s/8s schedule.
+    RetryWithBackoff,
+
+    /// Rewind the wallet's chain state to `to_height` (via
+    /// `WalletDb::truncate_to_height`) and restart the scan loop. Used for
+    /// continuity errors.
+    Rewind { to_height: u64 },
+
+    /// No automatic recovery is safe. Propagate the error up to the caller.
+    Fatal,
+}
+
+/// Number of blocks the wallet rewinds past a detected reorg. Matches
+/// `CompactBlockProcessor.REWIND_DISTANCE` in zcash-android-wallet-sdk.
+///
+/// The actual rewind height may land earlier than `at_height - REWIND_DISTANCE`
+/// because `truncate_to_height` only accepts checkpoint boundaries; that's
+/// librustzcash's responsibility to enforce.
+#[allow(dead_code)] // consumed by the reorg-recovery commit
+pub(crate) const REWIND_DISTANCE: u64 = 10;
+
+#[allow(dead_code)] // consumed by follow-up commits
+impl SyncError {
+    /// Whether this error is a chain reorg requiring rewind recovery.
+    pub(crate) fn is_continuity(&self) -> bool {
+        matches!(self, SyncError::Continuity { .. })
+    }
+
+    /// Whether the error looks transient and worth retrying via plain backoff
+    /// (no rewind, no caller intervention).
+    pub(crate) fn is_transient(&self) -> bool {
+        matches!(self, SyncError::Network(_) | SyncError::Other(_))
+    }
+
+    /// The height at which a continuity break was detected, if this is a
+    /// `Continuity` error.
+    pub(crate) fn continuity_height(&self) -> Option<u64> {
+        match self {
+            SyncError::Continuity { at_height, .. } => Some(*at_height),
+            _ => None,
+        }
+    }
+
+    /// Map this error to the recovery action the sync loop should take.
+    pub(crate) fn recovery_strategy(&self) -> RecoveryStrategy {
+        match self {
+            SyncError::Continuity { at_height, .. } => RecoveryStrategy::Rewind {
+                to_height: at_height.saturating_sub(REWIND_DISTANCE),
+            },
+            SyncError::Network(_) | SyncError::Other(_) => RecoveryStrategy::RetryWithBackoff,
+            SyncError::Db(_) | SyncError::Parse(_) => RecoveryStrategy::Fatal,
+        }
+    }
+}
+
+impl fmt::Display for SyncError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SyncError::Continuity { at_height, detail } => {
+                write!(f, "chain continuity broken at height {at_height}: {detail}")
+            }
+            SyncError::Network(msg) => write!(f, "network: {msg}"),
+            SyncError::Db(msg) => write!(f, "db: {msg}"),
+            SyncError::Parse(msg) => write!(f, "parse: {msg}"),
+            SyncError::Other(msg) => write!(f, "other: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for SyncError {}
+
 /// Progress event sent to caller (Dart or Swift).
 #[derive(Clone, Debug)]
 pub struct SyncProgressEvent {
@@ -497,4 +620,110 @@ async fn run_enhancement(
         }
     }
     Ok(())
+}
+
+// ==================== Tests ====================
+
+#[cfg(test)]
+mod sync_error_tests {
+    use super::*;
+
+    #[test]
+    fn continuity_reports_its_height_and_classifies_itself() {
+        let e = SyncError::Continuity {
+            at_height: 2_500_000,
+            detail: "prev_hash mismatch".into(),
+        };
+        assert!(e.is_continuity());
+        assert!(!e.is_transient());
+        assert_eq!(e.continuity_height(), Some(2_500_000));
+    }
+
+    #[test]
+    fn network_is_transient_not_continuity() {
+        let e = SyncError::Network("connection reset by peer".into());
+        assert!(!e.is_continuity());
+        assert!(e.is_transient());
+        assert_eq!(e.continuity_height(), None);
+    }
+
+    #[test]
+    fn other_is_transient_as_conservative_default() {
+        // `Other` means we couldn't classify — err on the side of retry
+        // rather than bailing out.
+        let e = SyncError::Other("unknown".into());
+        assert!(e.is_transient());
+    }
+
+    #[test]
+    fn db_and_parse_are_fatal() {
+        assert_eq!(
+            SyncError::Db("disk full".into()).recovery_strategy(),
+            RecoveryStrategy::Fatal,
+        );
+        assert_eq!(
+            SyncError::Parse("bad tree state".into()).recovery_strategy(),
+            RecoveryStrategy::Fatal,
+        );
+    }
+
+    #[test]
+    fn network_and_other_recover_via_backoff() {
+        assert_eq!(
+            SyncError::Network("timeout".into()).recovery_strategy(),
+            RecoveryStrategy::RetryWithBackoff,
+        );
+        assert_eq!(
+            SyncError::Other("???".into()).recovery_strategy(),
+            RecoveryStrategy::RetryWithBackoff,
+        );
+    }
+
+    #[test]
+    fn continuity_recovery_rewinds_by_the_fixed_distance() {
+        let e = SyncError::Continuity {
+            at_height: 2_500_000,
+            detail: String::new(),
+        };
+        assert_eq!(
+            e.recovery_strategy(),
+            RecoveryStrategy::Rewind {
+                to_height: 2_500_000 - REWIND_DISTANCE,
+            },
+        );
+    }
+
+    #[test]
+    fn continuity_rewind_does_not_underflow_near_genesis() {
+        // Pathological: reorg detected at a height smaller than
+        // REWIND_DISTANCE. The target should clamp at 0 rather than panic
+        // or wrap around.
+        let e = SyncError::Continuity {
+            at_height: 5,
+            detail: String::new(),
+        };
+        assert_eq!(
+            e.recovery_strategy(),
+            RecoveryStrategy::Rewind { to_height: 0 },
+        );
+    }
+
+    #[test]
+    fn display_includes_height_and_detail_for_continuity() {
+        let e = SyncError::Continuity {
+            at_height: 2_500_000,
+            detail: "prev_hash mismatch".into(),
+        };
+        let s = format!("{e}");
+        assert!(s.contains("2500000"), "display should include height: {s}");
+        assert!(s.contains("prev_hash mismatch"), "display should include detail: {s}");
+    }
+
+    #[test]
+    fn display_tags_other_variants_distinctly() {
+        assert!(format!("{}", SyncError::Network("x".into())).starts_with("network: "));
+        assert!(format!("{}", SyncError::Db("x".into())).starts_with("db: "));
+        assert!(format!("{}", SyncError::Parse("x".into())).starts_with("parse: "));
+        assert!(format!("{}", SyncError::Other("x".into())).starts_with("other: "));
+    }
 }
