@@ -568,14 +568,58 @@ async fn run_sync_impl(
                         return Err(sync_err);
                     }
                     *current_rewinds += 1;
-                    db.truncate_to_height(BlockHeight::from_u32(to_height as u32))
-                        .map_err(|e| {
-                            SyncError::db(format!(
+                    // `truncate_to_height` does NOT silently clamp to the
+                    // nearest checkpoint. If the requested height is below
+                    // the earliest available checkpoint it returns
+                    // `SqliteClientError::RequestedRewindInvalid` with
+                    // `safe_rewind_height: Option<BlockHeight>`. When
+                    // `safe_rewind_height` is `Some(h)` the library is
+                    // telling us the deepest checkpoint it can land on;
+                    // retry at that height so a reorg near genesis (or
+                    // right after a birthday-bounded import) still
+                    // recovers. When it's `None` there is genuinely
+                    // nowhere safe to rewind to, and we surface the
+                    // failure as fatal.
+                    let target = BlockHeight::from_u32(to_height as u32);
+                    let actual_rewind_height = match db.truncate_to_height(target) {
+                        Ok(h) => h,
+                        Err(SqliteClientError::RequestedRewindInvalid {
+                            safe_rewind_height: Some(safe),
+                            requested_height,
+                        }) => {
+                            log::warn!(
+                                "[{}] sync: {phase_name} rewind target {requested_height} \
+                                 below earliest checkpoint; retrying at safe_rewind_height={safe}",
+                                elapsed(),
+                            );
+                            db.truncate_to_height(safe).map_err(|e| {
+                                SyncError::db(format!(
+                                    "truncate_to_height({safe}) retry after RequestedRewindInvalid: {e}"
+                                ))
+                            })?
+                        }
+                        Err(SqliteClientError::RequestedRewindInvalid {
+                            safe_rewind_height: None,
+                            requested_height,
+                        }) => {
+                            log::error!(
+                                "[{}] sync: {phase_name} rewind to {requested_height} \
+                                 rejected and no safe_rewind_height is available; \
+                                 cannot recover from this reorg in-place",
+                                elapsed(),
+                            );
+                            return Err(SyncError::db(format!(
+                                "truncate_to_height({requested_height}): no safe rewind height"
+                            )));
+                        }
+                        Err(e) => {
+                            return Err(SyncError::db(format!(
                                 "truncate_to_height({to_height}): {e}"
-                            ))
-                        })?;
+                            )));
+                        }
+                    };
                     log::info!(
-                        "[{}] sync: {phase_name} rewound to {to_height} after reorg \
+                        "[{}] sync: {phase_name} rewound to {actual_rewind_height} after reorg \
                          (attempt {}/{}); restarting scan loop",
                         elapsed(),
                         *current_rewinds,
