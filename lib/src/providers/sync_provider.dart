@@ -200,7 +200,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           if (gen != _syncGen) return;
           log('Sync: stream error: $e');
           _isSyncing = false;
-          state = AsyncData(SyncState(error: e.toString()));
+          final prev = state.value;
+          state = AsyncData(SyncState(
+            error: e.toString(),
+            transparentBalance: prev?.transparentBalance,
+            saplingBalance: prev?.saplingBalance,
+            orchardBalance: prev?.orchardBalance,
+            spendableBalance: prev?.spendableBalance,
+            totalBalance: prev?.totalBalance,
+            recentTransactions: prev?.recentTransactions ?? const [],
+          ));
           _startPolling();
         },
       );
@@ -208,7 +217,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       if (gen != _syncGen) return;
       log('SyncNotifier: ERROR: $e\n$st');
       _isSyncing = false;
-      state = AsyncData(SyncState(error: e.toString()));
+      final prev = state.value;
+      state = AsyncData(SyncState(
+        error: e.toString(),
+        transparentBalance: prev?.transparentBalance,
+        saplingBalance: prev?.saplingBalance,
+        orchardBalance: prev?.orchardBalance,
+        spendableBalance: prev?.spendableBalance,
+        totalBalance: prev?.totalBalance,
+        recentTransactions: prev?.recentTransactions ?? const [],
+      ));
       _startPolling();
     });
   }
@@ -233,6 +251,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       transparentBalance: prev?.transparentBalance,
       saplingBalance: prev?.saplingBalance,
       orchardBalance: prev?.orchardBalance,
+      spendableBalance: prev?.spendableBalance,
       totalBalance: prev?.totalBalance,
       recentTransactions: prev?.recentTransactions ?? const [],
     ));
