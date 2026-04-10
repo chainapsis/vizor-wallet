@@ -111,10 +111,16 @@ fn wire__crate__api__sync__add_proofs_to_pczt_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_pczt_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_spend_params_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_output_params_path = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::sync::add_proofs_to_pczt(api_pczt_bytes)?;
+                    let output_ok = crate::api::sync::add_proofs_to_pczt(
+                        api_pczt_bytes,
+                        api_spend_params_path,
+                        api_output_params_path,
+                    )?;
                     Ok(output_ok)
                 })())
             }

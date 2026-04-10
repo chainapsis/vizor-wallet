@@ -266,8 +266,22 @@ Future<Uint8List> createPcztFromProposal({
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output
 /// is the "PCZT with proofs" half that is later combined with the signed PCZT
 /// returned by the hardware wallet.
-Future<Uint8List> addProofsToPczt({required List<int> pcztBytes}) =>
-    RustLib.instance.api.crateApiSyncAddProofsToPczt(pcztBytes: pcztBytes);
+///
+/// `spend_params_path` and `output_params_path` are only consulted when the
+/// PCZT has a non-empty Sapling bundle (e.g. sending to a Sapling-only
+/// recipient). Orchard-only sends can pass `None` for both. The caller is
+/// responsible for ensuring the referenced files exist — the `proposal
+/// .needsSaplingParams` flag on the propose result already tells the Dart
+/// layer when it needs to download them.
+Future<Uint8List> addProofsToPczt({
+  required List<int> pcztBytes,
+  String? spendParamsPath,
+  String? outputParamsPath,
+}) => RustLib.instance.api.crateApiSyncAddProofsToPczt(
+  pcztBytes: pcztBytes,
+  spendParamsPath: spendParamsPath,
+  outputParamsPath: outputParamsPath,
+);
 
 /// Redact information from a PCZT that the hardware signer does not need
 /// (witnesses, proprietary metadata). The returned bytes are what is sent
