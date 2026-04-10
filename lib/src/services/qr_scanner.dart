@@ -135,6 +135,11 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
   void initState() {
     super.initState();
     _controller = MobileScannerController(facing: _defaultFacing);
+    // Ensure Rust's UR decoder starts clean. The previous scan may have
+    // left behind a partial multi-part session (cancel / back / mid-stream
+    // error), which would otherwise corrupt this fresh scan with stale
+    // fountain-code state.
+    rust_keystone.resetUrSession();
   }
 
   @override

@@ -47,6 +47,12 @@ Future<List<String>> encodePcztUrParts({
   maxFragmentLen: maxFragmentLen,
 );
 
+/// Discard any in-flight multi-part UR decode state. The scan screen calls
+/// this on entry to guarantee a fresh session regardless of how the previous
+/// scan ended (cancel, back button, mid-stream error).
+Future<void> resetUrSession() =>
+    RustLib.instance.api.crateApiKeystoneResetUrSession();
+
 /// Decode ZcashAccounts from raw CBOR bytes (from animated QR scan result).
 Future<List<KeystoneAccountInfo>> decodeAccountsFromCbor({
   required List<int> cbor,

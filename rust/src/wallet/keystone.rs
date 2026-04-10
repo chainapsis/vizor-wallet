@@ -122,6 +122,15 @@ fn parse_ur_type(part_lower: &str) -> Option<&str> {
     part_lower.strip_prefix("ur:").and_then(|s| s.split('/').next())
 }
 
+/// Discard any in-flight multi-part UR decode state. Called by the scan
+/// screen on entry so each new scan starts from a clean slate regardless
+/// of how the previous scan ended (cancel, back button, mid-stream error).
+pub fn reset_ur_session() {
+    if let Ok(mut guard) = UR_SESSION.lock() {
+        *guard = None;
+    }
+}
+
 /// Feed one UR part from a QR frame into the active scan session.
 ///
 /// `expected_ur_type` pins the scan to one UR registry type (e.g.
