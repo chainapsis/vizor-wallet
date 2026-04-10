@@ -14,7 +14,15 @@ zcash_primitives = "0.26.4"
 zcash_address = "0.10.1"
 zcash_keys = { version = "0.12.0", features = ["orchard"] }
 zcash_protocol = "0.7.2"
-zcash_client_backend = { version = "0.21.2", features = ["orchard", "transparent-inputs", "lightwalletd-tonic", "sync", "pczt"] }
+zcash_client_backend = { version = "0.21.2", features = [
+    "orchard",
+    "transparent-inputs",
+    "lightwalletd-tonic",
+    "lightwalletd-tonic-tls-webpki-roots", # enables the grpc-over-tor submodule
+    "sync",
+    "pczt",
+    "tor", # pulls in arti-client + fs-mistrust + tor-rtcompat transitively
+] }
 zcash_client_sqlite = { version = "0.19.5", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
 orchard = "0.11"
@@ -44,6 +52,13 @@ rand = "0.8"
 # Async runtime & gRPC
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
+# rustls is already in the graph transitively via tonic and arti-client; make
+# it a direct dep so we can explicitly install the ring CryptoProvider in
+# `init_app`. Enabling the `tor` feature on zcash_client_backend brings
+# arti-client's rustls integration into the same process, and without an
+# explicit provider install rustls 0.23+ panics the first TLS handshake with
+# "no process-level CryptoProvider installed".
+rustls = "0.23"
 
 # SQLite (re-exported by zcash_client_sqlite but needed for Connection type)
 rusqlite = "0.37"
