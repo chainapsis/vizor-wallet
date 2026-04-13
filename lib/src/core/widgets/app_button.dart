@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
@@ -329,8 +330,39 @@ class _AppButtonState extends State<AppButton> {
         autofocus: widget.autofocus,
         canRequestFocus: _enabled,
         onFocusChange: _handleFocusChange,
+        onKeyEvent: _handleKeyEvent,
         child: pointer,
       ),
     );
+  }
+
+  /// Keyboard activation — mirrors standard button behavior in browsers and
+  /// desktop toolkits: Space and Enter (including numpad Enter) activate the
+  /// focused button. Pressed state tracks key-down so the fill visibly
+  /// reacts while the key is held; the actual tap callback fires on key-up
+  /// to match how `onTapUp` behaves for mouse clicks.
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (!_enabled) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    final isActivate =
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter ||
+        key == LogicalKeyboardKey.space;
+    if (!isActivate) return KeyEventResult.ignored;
+
+    if (event is KeyDownEvent) {
+      _setPressed(true);
+      return KeyEventResult.handled;
+    }
+    if (event is KeyUpEvent) {
+      if (_pressed) {
+        _setPressed(false);
+        widget.onPressed?.call();
+      }
+      return KeyEventResult.handled;
+    }
+    // KeyRepeatEvent — swallow to prevent holding Enter from firing
+    // `onPressed` multiple times.
+    return KeyEventResult.handled;
   }
 }
