@@ -7,6 +7,11 @@ import '../../core/layout/app_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 
+/// Welcome-specific button width. Matches the 224 px buttons-stack Figma
+/// sets on the instance override in node 115:3283. Kept inside this file
+/// because it's a screen-level layout choice, not a design-system token.
+const double _welcomeButtonMinWidth = 224;
+
 /// Onboarding entry point.
 ///
 /// Mirrors the Figma frame 115:3275 — the hero Shield illustration, the
@@ -93,34 +98,28 @@ class _ButtonsStack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Figma locks the button column to 224 px so the primary and secondary
-    // buttons are visually identical in width even though their labels
-    // differ in length.
-    return SizedBox(
-      width: 224,
-      child: Column(
-        children: [
-          SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              onPressed: () => context.go('/create'),
-              variant: AppButtonVariant.primary,
-              leading: const Icon(Icons.add),
-              child: const Text('Create New Wallet'),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              onPressed: () => context.go('/import'),
-              variant: AppButtonVariant.secondary,
-              leading: const Icon(Icons.download),
-              child: const Text('Import a wallet'),
-            ),
-          ),
-        ],
-      ),
+    // Both buttons carry the same minWidth so they render identical widths
+    // even when their labels differ in length; Column picks up the larger
+    // child's intrinsic width and applies it to both, matching Figma's
+    // 224 px buttons-stack.
+    return Column(
+      children: [
+        AppButton(
+          onPressed: () => context.go('/create'),
+          variant: AppButtonVariant.primary,
+          minWidth: _welcomeButtonMinWidth,
+          leading: const Icon(Icons.add),
+          child: const Text('Create New Wallet'),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        AppButton(
+          onPressed: () => context.go('/import'),
+          variant: AppButtonVariant.secondary,
+          minWidth: _welcomeButtonMinWidth,
+          leading: const Icon(Icons.download),
+          child: const Text('Import a wallet'),
+        ),
+      ],
     );
   }
 }

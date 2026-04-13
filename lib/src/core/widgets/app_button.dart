@@ -124,6 +124,7 @@ class AppButton extends StatefulWidget {
     this.size = AppButtonSize.medium,
     this.leading,
     this.trailing,
+    this.minWidth,
     this.focusNode,
     this.autofocus = false,
   });
@@ -145,6 +146,11 @@ class AppButton extends StatefulWidget {
 
   /// Optional widget shown after [child]. Same auto-sizing/tint as [leading].
   final Widget? trailing;
+
+  /// Optional minimum width. Default (`null`) keeps the button fully
+  /// intrinsic — content drives size. Callers opt in to a floor when a
+  /// specific screen or layout demands a consistent button width.
+  final double? minWidth;
 
   final FocusNode? focusNode;
   final bool autofocus;
@@ -231,7 +237,7 @@ class _AppButtonState extends State<AppButton> {
         );
     }
 
-    final pill = AnimatedContainer(
+    Widget pill = AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
       decoration: ShapeDecoration(
@@ -249,6 +255,16 @@ class _AppButtonState extends State<AppButton> {
         ),
       ),
     );
+
+    // Apply the optional minimum width. ConstrainedBox doesn't involve any
+    // decoration/stroke math, so the focus-ring layer added below stays
+    // layout-neutral.
+    if (widget.minWidth != null) {
+      pill = ConstrainedBox(
+        constraints: BoxConstraints(minWidth: widget.minWidth!),
+        child: pill,
+      );
+    }
 
     // Always reserve a small gap on every side so the ring can be painted
     // without shifting the button's layout when focus toggles. The 2-pixel
