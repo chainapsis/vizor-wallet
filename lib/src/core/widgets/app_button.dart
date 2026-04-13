@@ -261,22 +261,38 @@ class _AppButtonState extends State<AppButton> {
       ),
     );
 
-    // Outer shell always reserves a small gap on every side so the ring can
-    // be painted without shifting the button's layout when focus toggles.
-    // The 2-pixel inset is tighter than AppSpacing's smallest step (4), so
-    // it stays as a literal.
-    final focusShell = AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      curve: Curves.easeOut,
-      padding: const EdgeInsets.all(2),
-      decoration: _focused && _enabled
-          ? ShapeDecoration(
-              shape: StadiumBorder(
-                side: BorderSide(color: palette.focusRing, width: 1),
+    // Always reserve a small gap on every side so the ring can be painted
+    // without shifting the button's layout when focus toggles. The 2-pixel
+    // inset is tighter than AppSpacing's smallest step (4), so it stays as
+    // a literal.
+    //
+    // The ring is rendered via a [Stack] overlay rather than via a
+    // containing `decoration` — letting the border live on the same
+    // container as the padding causes Flutter to add the border's stroke
+    // inset to the layout (`ShapeDecoration.padding == shape.dimensions`),
+    // which produces a 1-pixel jitter every time focus toggles. With the
+    // overlay approach, the ring paints independently of layout.
+    final focusShell = Stack(
+      alignment: Alignment.center,
+      children: [
+        Padding(padding: const EdgeInsets.all(2), child: pill),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              opacity: (_focused && _enabled) ? 1.0 : 0.0,
+              child: DecoratedBox(
+                decoration: ShapeDecoration(
+                  shape: StadiumBorder(
+                    side: BorderSide(color: palette.focusRing, width: 1),
+                  ),
+                ),
               ),
-            )
-          : null,
-      child: pill,
+            ),
+          ),
+        ),
+      ],
     );
 
     final pointer = MouseRegion(
