@@ -33,9 +33,22 @@ use super::{elapsed, SyncError, WalletDatabase};
 
 /// Opens a tonic gRPC channel to the given lightwalletd URL over
 /// plain TLS and returns a `CompactTxStreamerClient`.
+///
+/// Ensures the process-wide rustls `CryptoProvider` is installed
+/// before any TLS work. This is normally done by `init_app()` on
+/// the Flutter/FRB path, but the iOS background-sync C FFI
+/// entrypoint (`zcash_run_full_sync`) can reach this function on
+/// a cold background wake *before* `init_app()` ever ran. Without
+/// the `Once` guard here, rustls 0.23+ panics with "no
+/// process-level CryptoProvider installed" on the first handshake.
 pub(crate) async fn open_lwd_channel(
     lightwalletd_url: &str,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
+    RUSTLS_INIT.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+
     let channel = Endpoint::from_shared(lightwalletd_url.to_string())
         .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
         .tls_config(ClientTlsConfig::new().with_webpki_roots())
