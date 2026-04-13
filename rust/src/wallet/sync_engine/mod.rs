@@ -690,6 +690,24 @@ async fn run_sync_impl(
             .map(|resp| resp.into_inner().height as u32)
         {
             Ok(fresh_tip_height) => {
+                // Promote the fresh tip to the authoritative value
+                // so progress events and the final completion event
+                // use the latest chain height, not the one from
+                // sync startup. Also update the DB so
+                // suggest_scan_ranges picks up any new blocks that
+                // appeared since the initial (or last periodic) tip
+                // fetch. Errors from update_chain_tip are logged
+                // but don't block the resubmit pass.
+                if (fresh_tip_height as u64) > current_tip_height {
+                    current_tip_height = fresh_tip_height as u64;
+                    let fresh_bh = BlockHeight::from_u32(fresh_tip_height);
+                    if let Err(e) = db.update_chain_tip(fresh_bh) {
+                        log::warn!(
+                            "[{}] sync: post-batch update_chain_tip({fresh_tip_height}) failed: {e}",
+                            elapsed(),
+                        );
+                    }
+                }
                 let _ = crate::wallet::sync::resubmit_pending_transactions(
                     db_data_path,
                     &mut client,
