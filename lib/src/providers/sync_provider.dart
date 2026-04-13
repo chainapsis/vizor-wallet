@@ -216,10 +216,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         onDone: () {
           log('Sync: stream ended');
           _syncSub = null;
-          // Sync completion is handled in _onSyncProgress when isComplete=true.
-          // onDone fires synchronously after the final event, but _onSyncProgress
-          // is async (awaiting getBalance). If we call _onSyncDone here, it races
-          // with the final _onSyncProgress and reads stale state.
+          // Normal completion (isComplete=true) is handled inside
+          // _onSyncProgress, which clears _isSyncing and starts
+          // polling. But the stream can also end WITHOUT an
+          // isComplete event — specifically when Rust exits because
+          // DESIRED_SYNC_MODE changed (foreground→background
+          // handoff via enableBackgroundSync). In that case
+          // _isSyncing is still true and the mempool observer is
+          // still running, both of which block future startSync()
+          // calls. Clean up unconditionally here; if isComplete
+          // already ran, these are no-ops.
+          if (_isSyncing) {
+            log('Sync: stream ended without isComplete, cleaning up');
+            _isSyncing = false;
+            _stopMempoolObserver();
+          }
         },
         onError: (e) {
           if (gen != _syncGen) return;
