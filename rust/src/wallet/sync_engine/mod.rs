@@ -173,12 +173,18 @@ async fn run_sync_impl(
     // Open DB once — reused for the entire sync
     let mut db = open_db(db_data_path, network)?;
 
-    // 2. Get chain tip
+    // 2. Get chain tip. `current_tip_height` is updated by the
+    // periodic refresh (TIP_REFRESH_INTERVAL) so that progress
+    // events always reflect the latest known chain height, not the
+    // one captured at sync start. The initial `tip` response is
+    // also kept around for its other fields but `current_tip_height`
+    // is the authoritative value for emitted events.
     let tip = client
         .get_latest_block(ChainSpec::default())
         .await
         .map_err(|e| SyncError::net(format!("get_latest_block: {e}")))?
         .into_inner();
+    let mut current_tip_height: u64 = tip.height;
     let tip_height = BlockHeight::from_u32(tip.height as u32);
     log::info!("[{}] sync: chain tip = {}", elapsed(), tip.height);
 
@@ -283,10 +289,22 @@ async fn run_sync_impl(
         crate::wallet::sync_engine::block_source::MemoryBlockSource,
         SyncError,
     >;
+    /// Prefetched block download state. Implements `Drop` to
+    /// abort the spawned tokio task when the loop exits for any
+    /// reason (cancel, mode change, error, break, reorg
+    /// `continue`) so detached downloads can't outlive the sync
+    /// session and leak network/Tor traffic after shutdown.
     struct Prefetch {
-        handle: tokio::task::JoinHandle<PrefetchResult>,
+        handle: Option<tokio::task::JoinHandle<PrefetchResult>>,
         start: BlockHeight,
         end: BlockHeight,
+    }
+    impl Drop for Prefetch {
+        fn drop(&mut self) {
+            if let Some(h) = self.handle.take() {
+                h.abort();
+            }
+        }
     }
     let mut prefetch: Option<Prefetch> = None;
 
@@ -324,9 +342,10 @@ async fn run_sync_impl(
                         log::info!(
                             "[{}] sync: periodic tip refresh {} → {}",
                             elapsed(),
-                            tip.height,
+                            current_tip_height,
                             fresh_tip.height,
                         );
+                        current_tip_height = fresh_tip.height;
                     }
                 }
                 Err(e) => {
@@ -401,10 +420,12 @@ async fn run_sync_impl(
 
         // Download blocks into memory — or use the prefetched data
         // from the previous iteration if it matches this batch.
-        let block_source = if let Some(pf) = prefetch.take() {
+        let block_source = if let Some(mut pf) = prefetch.take() {
             if pf.start == start && pf.end == end {
-                // Prefetch matches. Await the background task.
-                match pf.handle.await {
+                // Prefetch matches. Take the handle out of the
+                // Option so Drop doesn't abort a completed task.
+                let handle = pf.handle.take().expect("prefetch handle present");
+                match handle.await {
                     Ok(Ok(bs)) => {
                         log::debug!(
                             "[{}] sync: using prefetched blocks for {}-{}",
@@ -425,8 +446,8 @@ async fn run_sync_impl(
                 }
             } else {
                 // Range changed (reorg, priority switch, etc.) —
-                // discard the stale prefetch and download fresh.
-                pf.handle.abort();
+                // Drop the Prefetch, which aborts the background task.
+                drop(pf);
                 download_blocks(&mut client, start, end - 1).await?
             }
         } else {
@@ -716,7 +737,7 @@ async fn run_sync_impl(
         let pct = if initial_total > 0 { 1.0 - (remaining as f64 / initial_total as f64) } else { 1.0 };
         let progress = SyncProgressEvent {
             scanned_height: u32::from(end) as u64,
-            chain_tip_height: tip.height as u64,
+            chain_tip_height: current_tip_height,
             percentage: pct.clamp(0.0, 1.0),
             is_syncing: true,
             is_complete: false,
@@ -756,9 +777,9 @@ async fn run_sync_impl(
             prefetch = Some(Prefetch {
                 start: pf_start,
                 end: pf_end,
-                handle: tokio::spawn(async move {
+                handle: Some(tokio::spawn(async move {
                     download_blocks(&mut pf_client, pf_start, pf_end - 1).await
-                }),
+                })),
             });
         }
     }
@@ -766,8 +787,8 @@ async fn run_sync_impl(
     log::info!("[{}] sync: completed", elapsed());
     // Final progress
     let final_progress = SyncProgressEvent {
-        scanned_height: tip.height as u64,
-        chain_tip_height: tip.height as u64,
+        scanned_height: current_tip_height,
+        chain_tip_height: current_tip_height,
         percentage: 1.0,
         is_syncing: false,
         is_complete: true,
