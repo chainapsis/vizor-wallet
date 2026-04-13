@@ -251,6 +251,22 @@ async fn run_sync_impl(
     let mut verify_phase_announced = false;
     let mut main_phase_announced = false;
 
+    /// If the scan loop has been running longer than this without
+    /// refreshing the chain tip from lightwalletd, we re-fetch
+    /// the tip and call `update_chain_tip` so that
+    /// `suggest_scan_ranges` incorporates any new blocks that
+    /// appeared while the wallet was catching up.
+    ///
+    /// Matches zcash-android-wallet-sdk's
+    /// `SYNCHRONIZATION_RESTART_TIMEOUT = 10.minutes`
+    /// (CompactBlockProcessor.kt:1197). We don't restart the
+    /// whole sync like the SDK does — just refreshing the tip is
+    /// enough because our `suggest_scan_ranges` call at the top
+    /// of each loop iteration already reflects the new tip once
+    /// `update_chain_tip` has written it to the DB.
+    const TIP_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
+    let mut last_tip_refresh = std::time::Instant::now();
+
     // Prefetched block source from the previous iteration.
     // When the scan loop processes a range that spans multiple batches,
     // we kick off a background download of the next batch while running
@@ -283,6 +299,44 @@ async fn run_sync_impl(
         if desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: mode changed, exiting", elapsed());
             return Ok(());
+        }
+
+        // Periodic tip refresh: if we've been scanning for longer
+        // than TIP_REFRESH_INTERVAL, re-fetch the chain tip so
+        // new blocks that arrived during a long catch-up are
+        // picked up by the next suggest_scan_ranges() call.
+        // Errors are logged and skipped — we just keep the old
+        // tip and try again next period.
+        if last_tip_refresh.elapsed() >= TIP_REFRESH_INTERVAL {
+            match client
+                .get_latest_block(ChainSpec::default())
+                .await
+                .map(|resp| resp.into_inner())
+            {
+                Ok(fresh_tip) => {
+                    let fresh_height = BlockHeight::from_u32(fresh_tip.height as u32);
+                    if let Err(e) = db.update_chain_tip(fresh_height) {
+                        log::warn!(
+                            "[{}] sync: periodic tip refresh update_chain_tip failed: {e}",
+                            elapsed(),
+                        );
+                    } else {
+                        log::info!(
+                            "[{}] sync: periodic tip refresh {} → {}",
+                            elapsed(),
+                            tip.height,
+                            fresh_tip.height,
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[{}] sync: periodic tip refresh get_latest_block failed: {e}",
+                        elapsed(),
+                    );
+                }
+            }
+            last_tip_refresh = std::time::Instant::now();
         }
 
         let ranges = db
