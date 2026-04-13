@@ -21,7 +21,12 @@ class WidgetbookApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Widgetbook(
+    // `.material` instead of the default `Widgetbook()` because the default
+    // `widgetsAppBuilder` in widgetbook 3.22.0 constructs a `WidgetsApp`
+    // without a `pageRouteBuilder` and throws on first build. The MaterialApp
+    // wrapper is only chrome for Widgetbook's own navigation — use cases
+    // still render inside `AppTheme` via the ThemeAddon below.
+    return Widgetbook.material(
       addons: [
         ThemeAddon<AppThemeData>(
           themes: const [
