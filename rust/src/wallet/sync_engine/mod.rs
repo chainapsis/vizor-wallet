@@ -38,10 +38,24 @@ pub struct SyncProgressEvent {
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-const BATCH_SIZE_FOREGROUND: u32 = 300;
+const BATCH_SIZE_FOREGROUND: u32 = 2000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-const BATCH_SIZE_FOREGROUND: u32 = 100;
+const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 100;
+
+/// Sandblasting attack range (Zcash mainnet). Blocks in this range
+/// contain a very large number of outputs from a sustained spam
+/// attack, making `scan_cached_blocks` significantly more expensive
+/// per block. We reduce the batch size to `BATCH_SIZE_SANDBLASTING`
+/// when any part of the scan range falls inside this window to
+/// avoid excessive memory pressure and potential timeouts.
+///
+/// Matches `zcash-android-wallet-sdk`'s `SANDBLASTING_RANGE` in
+/// `CompactBlockProcessor.kt:1171-1181`.
+const SANDBLASTING_START: u32 = 1_710_000;
+const SANDBLASTING_END: u32 = 2_050_000;
+const BATCH_SIZE_SANDBLASTING: u32 = 100;
+
 const SAPLING_ACTIVATION_HEIGHT: u32 = 419200;
 
 /// Sync-scoped elapsed time reference. Set at sync start.
@@ -141,8 +155,8 @@ async fn run_sync_impl(
     desired_mode: &AtomicU8,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
-    let batch_size = if running_mode == 2 { BATCH_SIZE_BACKGROUND } else { BATCH_SIZE_FOREGROUND };
-    log::info!("[{}] sync: starting (mode={}, batch={})", elapsed(), running_mode, batch_size);
+    let base_batch_size = if running_mode == 2 { BATCH_SIZE_BACKGROUND } else { BATCH_SIZE_FOREGROUND };
+    log::info!("[{}] sync: starting (mode={}, base_batch={})", elapsed(), running_mode, base_batch_size);
 
     // 1. Connect gRPC. `_tor_guard` keeps the isolated Tor circuit
     //    alive for the rest of this function when Tor is enabled, and
@@ -274,14 +288,32 @@ async fn run_sync_impl(
         }
 
         let start = range.block_range().start;
+        // Adaptive batch size: shrink to BATCH_SIZE_SANDBLASTING
+        // when the current range overlaps the known Zcash mainnet
+        // sandblasting attack window. These blocks contain an
+        // order of magnitude more outputs than normal blocks,
+        // making scan_cached_blocks much slower per block and
+        // using more memory. Matches the SDK's
+        // `SANDBLASTING_RANGE` check.
+        let batch_size = {
+            let start_u32 = u32::from(start);
+            let range_end_u32 = u32::from(range.block_range().end);
+            // Overlap check: range [start, range_end) ∩ [SANDBLASTING_START, SANDBLASTING_END)
+            if start_u32 < SANDBLASTING_END && range_end_u32 > SANDBLASTING_START {
+                BATCH_SIZE_SANDBLASTING
+            } else {
+                base_batch_size
+            }
+        };
         let end = std::cmp::min(start + batch_size, range.block_range().end);
         log::info!(
-            "[{}] sync: scanning {}-{} (priority {:?}{})",
+            "[{}] sync: scanning {}-{} (priority {:?}{}, batch={})",
             elapsed(),
             u32::from(start),
             u32::from(end) - 1,
             range.priority(),
             if is_verify_phase { ", verify phase" } else { "" },
+            batch_size,
         );
 
         // Download blocks into memory
