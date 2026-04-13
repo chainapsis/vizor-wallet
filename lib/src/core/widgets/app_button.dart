@@ -237,34 +237,38 @@ class _AppButtonState extends State<AppButton> {
         );
     }
 
-    Widget pill = AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      curve: Curves.easeOut,
-      decoration: ShapeDecoration(
-        color: currentBg,
-        shape: const StadiumBorder(),
-      ),
-      padding: sizing.padding,
-      child: IconTheme.merge(
-        data: IconThemeData(color: labelColor, size: sizing.iconSize),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: rowChildren,
+    // Always wrap in ConstrainedBox — toggling wrappers conditionally would
+    // change the widget tree's shape and force Flutter to unmount/remount
+    // the AnimatedContainer below (losing its animation state) whenever
+    // `minWidth` transitions between null and a value. With a constant
+    // wrapper, only the constraints value updates in place.
+    //
+    // The default `BoxConstraints()` has `minWidth: 0` and is effectively a
+    // no-op pass-through, so callers that leave `minWidth` null keep the
+    // pre-existing fully-intrinsic behavior.
+    final pill = ConstrainedBox(
+      constraints: widget.minWidth != null
+          ? BoxConstraints(minWidth: widget.minWidth!)
+          : const BoxConstraints(),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        decoration: ShapeDecoration(
+          color: currentBg,
+          shape: const StadiumBorder(),
+        ),
+        padding: sizing.padding,
+        child: IconTheme.merge(
+          data: IconThemeData(color: labelColor, size: sizing.iconSize),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: rowChildren,
+          ),
         ),
       ),
     );
-
-    // Apply the optional minimum width. ConstrainedBox doesn't involve any
-    // decoration/stroke math, so the focus-ring layer added below stays
-    // layout-neutral.
-    if (widget.minWidth != null) {
-      pill = ConstrainedBox(
-        constraints: BoxConstraints(minWidth: widget.minWidth!),
-        child: pill,
-      );
-    }
 
     // Always reserve a small gap on every side so the ring can be painted
     // without shifting the button's layout when focus toggles. The 2-pixel
