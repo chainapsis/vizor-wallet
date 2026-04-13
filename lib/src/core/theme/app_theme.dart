@@ -7,6 +7,7 @@ export 'app_icon_size.dart';
 export 'app_radii.dart';
 export 'app_spacing.dart';
 export 'app_theme_data.dart';
+export 'app_typography.dart';
 export 'colors/app_colors.dart';
 
 /// Propagates [AppThemeData] down the widget tree.
