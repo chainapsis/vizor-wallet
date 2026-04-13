@@ -9,6 +9,7 @@ import 'package:widgetbook/widgetbook.dart';
 import '../src/core/theme/app_theme.dart';
 import 'button_use_cases.dart';
 import 'color_use_cases.dart';
+import 'screen_use_cases.dart';
 import 'token_use_cases.dart';
 
 /// Top-level Widgetbook app for the Zcash design system.
@@ -44,6 +45,25 @@ class WidgetbookApp extends StatelessWidget {
         ),
       ],
       directories: [
+        WidgetbookFolder(
+          name: 'Screens',
+          children: [
+            WidgetbookFolder(
+              name: 'Onboarding',
+              children: [
+                WidgetbookComponent(
+                  name: 'Welcome',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Large',
+                      builder: buildWelcomeLargeUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
         WidgetbookFolder(
           name: 'Tokens',
           children: [
