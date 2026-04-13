@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show Icons, Scaffold;
+import 'package:flutter/material.dart' show Colors, Icons, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -48,7 +48,11 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Scaffold(
-      backgroundColor: colors.background.ground,
+      // Transparent so the flutter_acrylic `WindowEffect.transparent` on the
+      // native window is visible through the Flutter render surface. The
+      // normal opaque `background.ground` will return once this test branch
+      // merges (or is dropped).
+      backgroundColor: Colors.transparent,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
