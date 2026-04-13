@@ -49,6 +49,10 @@ Future<void> _configureTransparentWindow() async {
       effect: WindowEffect.acrylic,
       color: Colors.transparent,
     );
+    // Pin the NSVisualEffectView to the active state so the material
+    // doesn't desaturate when the window loses focus. Default is
+    // `followsWindowActiveState`.
+    await Window.setBlurViewState(MacOSBlurViewState.active);
   } else if (Platform.isWindows) {
     await Window.setEffect(
       effect: WindowEffect.acrylic,
