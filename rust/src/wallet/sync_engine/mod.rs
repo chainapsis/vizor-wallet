@@ -696,16 +696,28 @@ async fn run_sync_impl(
                 // sync startup. Also update the DB so
                 // suggest_scan_ranges picks up any new blocks that
                 // appeared since the initial (or last periodic) tip
-                // fetch. Errors from update_chain_tip are logged
-                // but don't block the resubmit pass.
+                // fetch.
+                //
+                // IMPORTANT: update_chain_tip MUST succeed before
+                // we bump current_tip_height. If the DB write fails,
+                // suggest_scan_ranges still operates on the old tip
+                // and the loop may break with isComplete=true —
+                // bumping current_tip_height prematurely would make
+                // the completion event claim a height the wallet
+                // never actually scanned. (Codex 3rd-round finding.)
                 if (fresh_tip_height as u64) > current_tip_height {
-                    current_tip_height = fresh_tip_height as u64;
                     let fresh_bh = BlockHeight::from_u32(fresh_tip_height);
-                    if let Err(e) = db.update_chain_tip(fresh_bh) {
-                        log::warn!(
-                            "[{}] sync: post-batch update_chain_tip({fresh_tip_height}) failed: {e}",
-                            elapsed(),
-                        );
+                    match db.update_chain_tip(fresh_bh) {
+                        Ok(_) => {
+                            current_tip_height = fresh_tip_height as u64;
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[{}] sync: post-batch update_chain_tip({fresh_tip_height}) \
+                                 failed, keeping tip at {current_tip_height}: {e}",
+                                elapsed(),
+                            );
+                        }
                     }
                 }
                 let _ = crate::wallet::sync::resubmit_pending_transactions(
