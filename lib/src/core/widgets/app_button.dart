@@ -10,9 +10,10 @@ enum AppButtonVariant { primary, secondary, ghost, destructive }
 /// label family/weight; they differ in padding and label font size.
 enum AppButtonSize { medium, small }
 
-// TODO(theme): extract padding / gap / icon size / font-size into an
-// `AppSpacing` and `AppTypography` theme when a second widget needs the
-// same values. For now these internal constants are the source of truth.
+// TODO(theme): typography (fontSize/letterSpacing/lineHeight) is the last
+// piece still hardcoded here; extract into an `AppTypography` theme when a
+// second widget needs the same label styles. Padding/gap/icon sizes now
+// come from the AppSpacing / AppIconSize tokens.
 class _Sizing {
   const _Sizing({
     required this.padding,
@@ -28,9 +29,12 @@ class _Sizing {
 }
 
 const _mediumSizing = _Sizing(
-  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-  gap: 4,
-  iconSize: 16,
+  padding: EdgeInsets.symmetric(
+    horizontal: AppSpacing.sm,
+    vertical: AppSpacing.xs,
+  ),
+  gap: AppSpacing.xxs,
+  iconSize: AppIconSize.medium,
   labelStyle: TextStyle(
     fontFamily: 'Geist',
     fontWeight: FontWeight.w500,
@@ -41,9 +45,9 @@ const _mediumSizing = _Sizing(
 );
 
 const _smallSizing = _Sizing(
-  padding: EdgeInsets.all(4),
-  gap: 4,
-  iconSize: 16,
+  padding: EdgeInsets.all(AppSpacing.xxs),
+  gap: AppSpacing.xxs,
+  iconSize: AppIconSize.medium,
   labelStyle: TextStyle(
     fontFamily: 'Geist',
     fontWeight: FontWeight.w500,
@@ -261,8 +265,10 @@ class _AppButtonState extends State<AppButton> {
       ),
     );
 
-    // Outer shell always reserves 2dp on every side so the ring can be
-    // painted without shifting the button's layout when focus toggles.
+    // Outer shell always reserves a small gap on every side so the ring can
+    // be painted without shifting the button's layout when focus toggles.
+    // The 2-pixel inset is tighter than AppSpacing's smallest step (4), so
+    // it stays as a literal.
     final focusShell = AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
