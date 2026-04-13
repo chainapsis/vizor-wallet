@@ -54,7 +54,7 @@ pub fn get_latest_block_height(lightwalletd_url: String) -> Result<u64, String> 
         rt.block_on(async {
             use zcash_client_backend::proto::service::ChainSpec;
 
-            let (mut client, _tor_guard) =
+            let mut client =
                 crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
                     .await
                     .map_err(|e| e.to_string())?;

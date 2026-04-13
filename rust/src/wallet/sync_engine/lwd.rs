@@ -3,7 +3,7 @@
 //!
 //! Everything in this module is an `async` call that talks to the
 //! lightwalletd backend via tonic: opening the gRPC channel (over
-//! plain TLS or through an isolated Tor circuit), pulling down the
+//! plain TLS), pulling down the
 //! sapling + orchard subtree roots, and streaming compact blocks for
 //! one scan batch. The orchestration loop in `sync_engine::mod`
 //! treats this module as its network edge — it calls the helpers
@@ -13,8 +13,6 @@
 //! Error mapping is kept local: every call site wraps tonic / parsing
 //! failures into `SyncError::net` or `SyncError::parse`, so the outer
 //! loop only ever deals with the typed `SyncError` taxonomy.
-
-use std::sync::atomic::Ordering;
 
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use zcash_client_backend::{
@@ -33,52 +31,19 @@ use zcash_protocol::consensus::BlockHeight;
 use super::block_source::MemoryBlockSource;
 use super::{elapsed, SyncError, WalletDatabase};
 
-/// Drop guard keeping the Tor circuit alive for a lightwalletd
-/// connection opened via [`open_lwd_channel`]. `None` for the
-/// plain-TLS path; `Some(_)` for the Tor path. Callers must bind this
-/// alongside the returned client so the guard lives as long as the
-/// client does.
-pub(crate) type LwdTorGuard = Option<crate::wallet::tor::IsolatedCircuitGuard>;
-
-/// Opens a tonic gRPC channel to the given lightwalletd URL and
-/// returns `(client, tor_guard)`. Branches on the `USE_TOR` atomic in
-/// `api::sync`: if enabled, the connection is routed through an
-/// isolated Tor circuit via `wallet::tor::connect_lightwalletd`, and
-/// `tor_guard` carries the `IsolatedCircuitGuard` that must stay
-/// alive for as long as the returned client. If disabled, the
-/// connection goes through plain tonic TLS and `tor_guard` is `None`.
-///
-/// Callers bind both results into `let` statements at function scope:
-///
-/// ```ignore
-/// let (mut client, _tor_guard) = open_lwd_channel(url).await?;
-/// // use `client` as before; `_tor_guard` just lives alongside it.
-/// ```
+/// Opens a tonic gRPC channel to the given lightwalletd URL over
+/// plain TLS and returns a `CompactTxStreamerClient`.
 pub(crate) async fn open_lwd_channel(
     lightwalletd_url: &str,
-) -> Result<(CompactTxStreamerClient<Channel>, LwdTorGuard), SyncError> {
-    // `SeqCst` pairs with the `SeqCst` store in
-    // `api::sync::set_tor_enabled`. A `Relaxed` load here would let a
-    // concurrent reader on ARM observe the stale pre-toggle value and
-    // legally pick the wrong transport for this connection, which is
-    // exactly the privacy-boundary race the Tor toggle is supposed to
-    // prevent. Use the same ordering on both ends.
-    if crate::api::sync::USE_TOR.load(Ordering::SeqCst) {
-        let tor_dir = crate::api::sync::get_tor_dir().map_err(SyncError::net)?;
-        let (client, guard) =
-            crate::wallet::tor::connect_lightwalletd(tor_dir, lightwalletd_url).await?;
-        log::info!("sync: lightwalletd connected via Tor");
-        Ok((client, Some(guard)))
-    } else {
-        let channel = Endpoint::from_shared(lightwalletd_url.to_string())
-            .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
-            .tls_config(ClientTlsConfig::new().with_webpki_roots())
-            .map_err(|e| SyncError::net(format!("TLS error: {e}")))?
-            .connect()
-            .await
-            .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
-        Ok((CompactTxStreamerClient::new(channel), None))
-    }
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    let channel = Endpoint::from_shared(lightwalletd_url.to_string())
+        .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
+        .tls_config(ClientTlsConfig::new().with_webpki_roots())
+        .map_err(|e| SyncError::net(format!("TLS error: {e}")))?
+        .connect()
+        .await
+        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
+    Ok(CompactTxStreamerClient::new(channel))
 }
 
 /// Pulls the latest sapling + orchard subtree roots from lightwalletd

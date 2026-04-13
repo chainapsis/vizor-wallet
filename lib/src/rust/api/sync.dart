@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `get_tor_dir`
+// These functions are ignored because they are not marked as `pub`: `catch`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -16,68 +16,6 @@ void setSyncMode({required int mode}) =>
 
 /// Get the current desired sync mode.
 int getSyncMode() => RustLib.instance.api.crateApiSyncGetSyncMode();
-
-/// Enable or disable Tor routing for future lightwalletd connections.
-/// An in-flight sync keeps using whatever transport it was started
-/// with; the toggle only affects the next `open_lwd_channel` call.
-void setTorEnabled({required bool enabled}) =>
-    RustLib.instance.api.crateApiSyncSetTorEnabled(enabled: enabled);
-
-/// Check whether Tor routing is currently enabled.
-bool isTorEnabled() => RustLib.instance.api.crateApiSyncIsTorEnabled();
-
-/// Set the on-disk directory arti uses for its consensus cache and
-/// guard-node state. Must be called before the first `set_tor_enabled(true)`
-/// the Dart side issues. Subsequent calls are ignored (the directory
-/// is pinned after the first Tor bootstrap).
-void setTorDir({required String torDir}) =>
-    RustLib.instance.api.crateApiSyncSetTorDir(torDir: torDir);
-
-/// Downloads the file at `url` over Tor, verifies its SHA-1 digest
-/// against `expected_sha1_hex`, and saves it atomically to
-/// `dest_path`. **Only valid when Tor is currently enabled.** If
-/// `USE_TOR` is false this errors out — the Dart caller is expected
-/// to branch on `is_tor_enabled()` and use its own plain-HTTPS path
-/// when Tor is off.
-///
-/// Exists so the Sapling parameter download path in the Dart send
-/// flow (`send_screen.dart`) can respect the Tor toggle instead of
-/// always going out over plain HTTPS. Before this function, a user
-/// who enabled Tor and then kicked off a spend that required
-/// Sapling params would still leak their IP to the params host
-/// mid-flow, which completely undercut the Tor privacy boundary.
-///
-/// The "Tor-only" split means we don't have to pull in a new
-/// hyper-rustls dep tree just to have a Rust-side plain HTTPS
-/// client. The user who flipped Tor off has explicitly opted out
-/// of the Tor privacy boundary, so reusing Dart's existing
-/// `HttpClient` for that path is correct and simpler.
-///
-/// Writes to `{dest_path}.tmp` then atomically renames on success;
-/// on SHA-1 mismatch the temp file is left in place for post-
-/// mortem and the function errors without touching `dest_path`.
-Future<void> downloadFileOverTorWithSha1({
-  required String url,
-  required String destPath,
-  required String expectedSha1Hex,
-}) => RustLib.instance.api.crateApiSyncDownloadFileOverTorWithSha1(
-  url: url,
-  destPath: destPath,
-  expectedSha1Hex: expectedSha1Hex,
-);
-
-/// Put arti's background circuit-maintenance tasks to sleep (when
-/// `dormant = true`) or wake them back up (`dormant = false`). Called
-/// by the Dart `sync_provider` on `AppLifecycleListener.onHide` and
-/// `onResume` so the app stops burning CPU on Tor directory updates
-/// while the user is away.
-///
-/// No-op when Tor has never been set up in this run (TOR_DIR unset or
-/// the underlying `wallet::tor::TOR_CLIENT` never bootstrapped), so
-/// the Dart side can call this unconditionally from its lifecycle
-/// hooks without guarding on `is_tor_enabled()` first.
-Future<void> setTorDormant({required bool dormant}) =>
-    RustLib.instance.api.crateApiSyncSetTorDormant(dormant: dormant);
 
 /// Start a full sync. Streams progress events to Dart via StreamSink.
 /// mode: 1=foreground, 2=background. Sync exits if desired mode changes.

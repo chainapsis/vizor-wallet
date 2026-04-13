@@ -279,7 +279,7 @@ pub async fn execute_proposal(
     };
 
     // Connect to lightwalletd once for all broadcasts.
-    let (mut client, _tor_guard) =
+    let mut client =
         crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
             .await
             .map_err(|e| e.to_string())?;
@@ -408,10 +408,7 @@ pub(crate) struct ResubmitStats {
 ///
 /// The caller owns the gRPC client. In the sync loop the same
 /// client that downloaded the compact blocks is threaded straight
-/// through, so auto-resubmit inherits the same transport (plain
-/// TLS or Tor) and the same connection state. That matters for Tor
-/// — spawning a fresh isolated circuit per resubmit pass would
-/// defeat the point of sharing a client with the active scan.
+/// through, so auto-resubmit reuses the same connection.
 ///
 /// Logging uses `log::info!` for the "broadcasting N txs" entry
 /// and `log::warn!` for per-tx failures / retries so an operator
