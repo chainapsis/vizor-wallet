@@ -30,9 +30,10 @@ class TokenSwatch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // Card width is fixed (matches the Figma grid) but height is intrinsic —
+    // the bottom label area grows to fit whatever the description needs.
     return Container(
       width: 196,
-      height: 124,
       decoration: BoxDecoration(
         color: colors.surface.card,
         border: Border.all(color: colors.border.subtle, width: 0.5),
@@ -41,6 +42,7 @@ class TokenSwatch extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
             height: 72,
@@ -51,37 +53,31 @@ class TokenSwatch extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    name,
-                    style: TextStyle(
-                      color: colors.text.accent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      height: 1.2,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  name,
+                  style: TextStyle(
+                    color: colors.text.accent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    description,
-                    style: TextStyle(
-                      color: colors.text.muted,
-                      fontSize: 10,
-                      height: 1.2,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: TextStyle(
+                    color: colors.text.muted,
+                    fontSize: 10,
+                    height: 1.2,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
