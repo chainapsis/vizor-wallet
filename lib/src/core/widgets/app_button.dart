@@ -4,7 +4,13 @@ import '../theme/app_theme.dart';
 
 /// Visual style variant of an [AppButton]. Mapped onto our semantic color
 /// tokens — not onto Figma's variant naming (which calls primary "Accent").
-enum AppButtonVariant { primary, secondary, ghost, destructive }
+///
+/// `destructive` is intentionally omitted. The design system defines
+/// `button.destructive` color tokens but the Figma Button component
+/// (node 54:81) does not expose a destructive variant, so this enum
+/// mirrors the component's actual surface. Add a value here if/when the
+/// designer introduces a destructive variant in Figma.
+enum AppButtonVariant { primary, secondary, ghost }
 
 /// Vertical density. Both variants use the same icon size (16) and same
 /// label family/weight; they differ in padding and label font size.
@@ -101,16 +107,6 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         bgHover: c.button.secondary.bgHover,
         bgPressed: c.button.secondary.bgPressed,
         label: c.button.ghost.label,
-        focusRing: c.state.focusRing,
-      );
-    case AppButtonVariant.destructive:
-      // Figma does not define hover/pressed fills for destructive; keep the
-      // base fill through all interactive states.
-      return _VariantPalette(
-        bg: c.button.destructive.bg,
-        bgHover: c.button.destructive.bg,
-        bgPressed: c.button.destructive.bg,
-        label: c.button.destructive.label,
         focusRing: c.state.focusRing,
       );
   }
