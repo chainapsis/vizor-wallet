@@ -16,10 +16,6 @@ enum AppButtonVariant { primary, secondary, ghost }
 /// label family/weight; they differ in padding and label font size.
 enum AppButtonSize { medium, small }
 
-// TODO(theme): typography (fontSize/letterSpacing/lineHeight) is the last
-// piece still hardcoded here; extract into an `AppTypography` theme when a
-// second widget needs the same label styles. Padding/gap/icon sizes now
-// come from the AppSpacing / AppIconSize tokens.
 class _Sizing {
   const _Sizing({
     required this.padding,
@@ -34,6 +30,7 @@ class _Sizing {
   final TextStyle labelStyle;
 }
 
+// Medium (default) button — the large CTA. Uses `labelMedium` (12px).
 const _mediumSizing = _Sizing(
   padding: EdgeInsets.symmetric(
     horizontal: AppSpacing.sm,
@@ -41,26 +38,18 @@ const _mediumSizing = _Sizing(
   ),
   gap: AppSpacing.xxs,
   iconSize: AppIconSize.medium,
-  labelStyle: TextStyle(
-    fontFamily: 'Geist',
-    fontWeight: FontWeight.w500,
-    fontSize: 12,
-    height: 1.3,
-    letterSpacing: -0.5,
-  ),
+  labelStyle: AppTypography.labelMedium,
 );
 
+// Small (compact) button — inline/dense actions. Uses `labelLarge` (14px).
+// Counter-intuitive naming: Figma's Small button is *physically shorter*
+// but carries the *larger* label size for readability inside the tight
+// 24dp height.
 const _smallSizing = _Sizing(
   padding: EdgeInsets.all(AppSpacing.xxs),
   gap: AppSpacing.xxs,
   iconSize: AppIconSize.medium,
-  labelStyle: TextStyle(
-    fontFamily: 'Geist',
-    fontWeight: FontWeight.w500,
-    fontSize: 14,
-    height: 1.3,
-    letterSpacing: -1,
-  ),
+  labelStyle: AppTypography.labelLarge,
 );
 
 class _VariantPalette {
