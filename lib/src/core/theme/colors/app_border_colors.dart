@@ -25,9 +25,12 @@ class AppBorderColors {
     strong: Primitives.p400Dark,
   );
 
+  // Light-mode borders sit one step lighter than the symmetric position
+  // their dark counterparts occupy. Per the Figma sRGB token export,
+  // `subtle → P150 / regular → P200 / strong → P300` on the light face.
   static const light = AppBorderColors(
-    subtle: Primitives.p200Light,
-    regular: Primitives.p300Light,
-    strong: Primitives.p400Light,
+    subtle: Primitives.p150Light,
+    regular: Primitives.p200Light,
+    strong: Primitives.p300Light,
   );
 }

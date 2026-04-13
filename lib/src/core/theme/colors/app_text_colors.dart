@@ -54,6 +54,6 @@ class AppTextColors {
     disabled: Primitives.p400Light,
     inverse: Primitives.p0Light,
     brandPurple: PurplePrimitives.p200Light,
-    brandCyan: CyanPrimitives.p400Light,
+    brandCyan: CyanPrimitives.p300Light,
   );
 }
