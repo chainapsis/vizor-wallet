@@ -8,7 +8,7 @@ import 'src/core/theme/legacy_material_theme.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/onboarding/screens/create_wallet_screen.dart';
 import 'src/features/onboarding/screens/import_wallet_screen.dart';
-import 'src/features/onboarding/screens/welcome_screen.dart';
+import 'src/features/onboarding/welcome.dart';
 import 'src/features/history/screens/history_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
