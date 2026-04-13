@@ -49,7 +49,6 @@ Future<void> _configureTransparentWindow() async {
       color: Colors.transparent,
     );
   } else if (Platform.isWindows) {
-    await Window.hideWindowControls();
     await Window.setEffect(
       effect: WindowEffect.transparent,
       // The example file uses a semi-opaque dark fill for Windows; pure
