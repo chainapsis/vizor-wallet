@@ -25,39 +25,41 @@ Future<void> main() async {
   runApp(const ProviderScope(child: ZcashWalletApp()));
 }
 
-/// Wire the native window for the full transparent effect using
+/// Wire the native window for the acrylic blur effect using
 /// flutter_acrylic's own APIs. Mixing window_manager's `TitleBarStyle`
 /// with these has produced incorrect colors in practice — the package
 /// expects to own the titlebar / background state itself.
 ///
+/// Acrylic is a frosted-glass blur that lets the desktop behind show
+/// through with a tinted blur. Windows / macOS support it natively;
+/// Linux has no matching material so it falls back to plain transparent.
 /// Per-platform recipe lifted from the flutter_acrylic example and
 /// README.
 Future<void> _configureTransparentWindow() async {
   await Window.initialize();
 
   if (Platform.isMacOS) {
-    // Clear the NSWindow background and fold the Flutter content up into
-    // the title strip so it's one continuous transparent surface.
-    // `makeTitlebarTransparent` + `enableFullSizeContentView` is the
-    // flutter_acrylic-recommended pair for a titlebar-less look on macOS;
-    // traffic-light controls stay visible and draggable.
+    // Clear the NSWindow background and fold the Flutter content into the
+    // title strip so the acrylic material applies to one continuous
+    // surface. Traffic-light controls stay visible and draggable.
     await Window.setWindowBackgroundColorToClear();
     await Window.makeTitlebarTransparent();
     await Window.enableFullSizeContentView();
     await Window.setEffect(
-      effect: WindowEffect.transparent,
+      effect: WindowEffect.acrylic,
       color: Colors.transparent,
     );
   } else if (Platform.isWindows) {
     await Window.setEffect(
-      effect: WindowEffect.transparent,
-      // The example file uses a semi-opaque dark fill for Windows; pure
-      // transparent can look washed out with some compositor settings.
+      effect: WindowEffect.acrylic,
+      // Acrylic needs a tint color to blend with the blur result. Matches
+      // the flutter_acrylic example's dark preset.
       color: const Color(0xCC222222),
       dark: true,
     );
   } else {
-    // Linux
+    // Linux — acrylic is not available; transparent is the closest thing
+    // the plugin exposes there.
     await Window.setEffect(effect: WindowEffect.transparent);
   }
 }
