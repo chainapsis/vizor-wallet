@@ -450,6 +450,41 @@ Seed-relevance rule:
 - All balance/history queries pass `activeAccountUuid` from `AccountProvider`
 - `background_sync_service.dart`: platform abstraction (Android foreground service + iOS MethodChannel)
 
+### Window Transparency (desktop acrylic)
+
+`flutter_acrylic: ^1.1.4` drives the acrylic / transparent window effect on macOS / Windows / Linux.
+
+**Do not mix with `window_manager`'s `TitleBarStyle`.** flutter_acrylic expects to own the titlebar / background state; combining them corrupts colors. Let window_manager handle size / aspect ratio / minimum size, and flutter_acrylic handle titlebar transparency and material.
+
+Initialization lives in `_configureTransparentWindow()` in `lib/main.dart`, guarded by `isDesktopLayoutPlatform`. Ordering:
+
+```
+WidgetsFlutterBinding.ensureInitialized()
+→ RustLib.init()
+→ [desktop] Window.initialize() + effect setup
+→ initializeDesktopWindow()            [window_manager]
+→ runApp()
+```
+
+Per-platform recipe:
+
+| Platform | Calls |
+|---|---|
+| **macOS** | `setWindowBackgroundColorToClear()` → `makeTitlebarTransparent()` → `enableFullSizeContentView()` → `setEffect(acrylic, color: Colors.transparent)` → `setBlurViewState(MacOSBlurViewState.active)` |
+| **Windows** | `setEffect(acrylic, color: Color(0xCC222222), dark: true)` |
+| **Linux** | `setEffect(transparent)` — acrylic not supported |
+
+**macOS specifics:**
+
+- **Blur view state** defaults to `followsWindowActiveState`, so the acrylic material desaturates whenever the window loses focus. Pin to `MacOSBlurViewState.active` for a stable look. The three options are `active` / `inactive` / `followsWindowActiveState`.
+- **`TitlebarSafeArea` is required whenever `enableFullSizeContentView()` is called.** Wrap the app root inside `MaterialApp.builder`, under `AppTheme`; without it the macOS traffic-light controls overlap top-of-screen content.
+- **Do not call `Window.hideWindowControls()`.** It appears in the flutter_acrylic example but strips min / max / close buttons, breaking the real app.
+
+**Flutter-side transparency + design rule:**
+
+- `Scaffold.backgroundColor: Colors.transparent` is required for the native effect to show through the Flutter render surface; the Scaffold-level setting overrides `MaterialApp.theme.scaffoldBackgroundColor`.
+- Any opaque background (a widget `color`, a `ColoredBox`, a `Container.decoration` color) covers the native transparency in that region. **When designing a screen, keep any area that should reveal the window effect with no background color (or `Colors.transparent`), and only fill opaque backgrounds on regions that are meant to stay solid.** This means transparency is opt-in per-region on the Flutter side.
+
 ## Testing
 
 - Rust unit tests: `cd rust && cargo test` — 11 tests covering key derivation, address encoding / Orchard-only UA derivation, determinism, and PROPOSAL_STORE lifecycle (idempotent discard, consume-on-entry, replay rejection). Tests that need a DB use `tempfile::tempdir()`.
