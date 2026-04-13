@@ -80,12 +80,6 @@ Future<void> initializeDesktopWindow({
     minimumSize: initialMode.minimumSize,
     center: true,
     title: 'Zcash Wallet',
-    // `hidden` hides the OS title strip but keeps the traffic-light
-    // controls on macOS, extends Flutter content into the title area, and
-    // leaves the surface transparent so `WindowEffect.transparent` shows
-    // through. On Windows/Linux the same enum hides the native frame the
-    // same way. Traffic lights are still draggable / minimizable / closable.
-    titleBarStyle: TitleBarStyle.hidden,
   );
 
   await windowManager.waitUntilReadyToShow(options, () async {
