@@ -4,23 +4,37 @@
 //! UR encoding/decoding for QR-based communication. Uses PCZT (ZIP-332)
 //! for transaction signing.
 
+#[cfg(not(target_os = "ios"))]
 use nusb::transfer::{Bulk, In, Out};
+#[cfg(not(target_os = "ios"))]
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use ur_registry::traits::{RegistryItem, To, UR};
 use ur_registry::zcash::zcash_accounts::ZcashAccounts;
 use ur_registry::zcash::zcash_pczt::ZcashPczt;
 
 // ==================== USB Constants ====================
+// USB over nusb is unavailable on iOS (no IOKit / no raw USB syscalls).
+// The constants and the EAPDU helper below are only compiled for
+// non-iOS targets; iOS gets stub implementations further down.
 
+#[cfg(not(target_os = "ios"))]
 const KEYSTONE_VID: u16 = 0x1209;
+#[cfg(not(target_os = "ios"))]
 const KEYSTONE_PID: u16 = 0x3001;
+#[cfg(not(target_os = "ios"))]
 const USB_INTERFACE: u8 = 0;
+#[cfg(not(target_os = "ios"))]
 const USB_ENDPOINT_OUT: u8 = 0x03;
+#[cfg(not(target_os = "ios"))]
 const USB_ENDPOINT_IN: u8 = 0x83;
+#[cfg(not(target_os = "ios"))]
 const EAPDU_HEADER_SIZE: usize = 9;
+#[cfg(not(target_os = "ios"))]
 const USB_PACKET_SIZE: usize = 64;
+#[cfg(not(target_os = "ios"))]
 const MAX_DATA_PER_PACKET: usize = USB_PACKET_SIZE - EAPDU_HEADER_SIZE;
 
+#[cfg(not(target_os = "ios"))]
 const CMD_RESOLVE_UR: u16 = 0x0002;
 
 // ==================== Data Types ====================
@@ -263,6 +277,7 @@ pub fn encode_pczt_ur_parts(pczt_bytes: &[u8], max_fragment_len: usize) -> Resul
 // ==================== USB EAPDU Protocol ====================
 
 /// Encode data into EAPDU packets for USB transmission.
+#[cfg(not(target_os = "ios"))]
 fn encode_eapdu_packets(command: u16, request_id: u16, data: &[u8]) -> Vec<Vec<u8>> {
     let total_packets = if data.is_empty() {
         1
@@ -296,6 +311,7 @@ fn encode_eapdu_packets(command: u16, request_id: u16, data: &[u8]) -> Vec<Vec<u
 // ==================== USB Device Communication ====================
 
 /// Check if a Keystone device is connected via USB.
+#[cfg(not(target_os = "ios"))]
 pub async fn is_keystone_connected() -> bool {
     match nusb::list_devices().await {
         Ok(devices) => devices
@@ -305,7 +321,17 @@ pub async fn is_keystone_connected() -> bool {
     }
 }
 
+/// iOS stub: USB transport is unavailable on iOS, so always report "not
+/// connected". Dart-side `KeystoneTransport.available()` also excludes
+/// USB on iOS so this is belt-and-suspenders; FFI surface stays uniform
+/// across platforms.
+#[cfg(target_os = "ios")]
+pub async fn is_keystone_connected() -> bool {
+    false
+}
+
 /// Sign PCZT bytes via Keystone USB. Returns signed PCZT bytes.
+#[cfg(not(target_os = "ios"))]
 pub async fn usb_sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     let ur_string = encode_pczt_to_ur(pczt_bytes)?;
 
@@ -410,4 +436,14 @@ pub async fn usb_sign_pczt(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
     );
 
     decode_ur_to_pczt(signed_ur)
+}
+
+/// iOS stub: USB transport is unavailable on iOS (no IOKit / no raw
+/// USB syscalls). Dart-side `KeystoneTransport.available()` already
+/// excludes USB on iOS, so this should never actually be invoked from
+/// iOS; it exists purely to keep the FFI surface uniform across
+/// platforms so FRB bindings don't need to be regenerated per target.
+#[cfg(target_os = "ios")]
+pub async fn usb_sign_pczt(_pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    Err("USB signing is not supported on iOS; use the QR transport.".to_string())
 }
