@@ -122,7 +122,21 @@ class ZcashWalletApp extends ConsumerWidget {
         final appThemeData = brightness == Brightness.dark
             ? AppThemeData.dark
             : AppThemeData.light;
-        return AppTheme(data: appThemeData, child: child!);
+        return AppTheme(
+          data: appThemeData,
+          // Global "tap outside clears focus" — standard desktop/web
+          // behavior. `HitTestBehavior.translucent` lets this GestureDetector
+          // receive pointer events over empty regions; taps consumed by a
+          // descendant's own GestureDetector (buttons, TextFields) win the
+          // gesture arena before this `onTap` fires, so focused buttons
+          // stay focused when re-clicked.
+          child: GestureDetector(
+            onTap: () =>
+                FocusManager.instance.primaryFocus?.unfocus(),
+            behavior: HitTestBehavior.translucent,
+            child: child!,
+          ),
+        );
       },
     );
   }
