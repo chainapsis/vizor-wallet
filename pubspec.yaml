@@ -61,6 +61,10 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # Widgetbook for showcasing the design system in isolation.
+  # Entry point: `fvm flutter run -t lib/widgetbook.dart`.
+  widgetbook: ^3.14.3
+
 dependency_overrides:
   mobile_scanner:
     path: packages/mobile_scanner
