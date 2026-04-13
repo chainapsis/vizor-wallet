@@ -164,11 +164,8 @@ async fn run_sync_impl(
     let base_batch_size = if running_mode == 2 { BATCH_SIZE_BACKGROUND } else { BATCH_SIZE_FOREGROUND };
     log::info!("[{}] sync: starting (mode={}, base_batch={})", elapsed(), running_mode, base_batch_size);
 
-    // 1. Connect gRPC. `_tor_guard` keeps the isolated Tor circuit
-    //    alive for the rest of this function when Tor is enabled, and
-    //    is `None` in the plain-TLS case. Do not move it into a
-    //    sub-scope — its lifetime must match `client`'s.
-    let (mut client, _tor_guard) = open_lwd_channel(lightwalletd_url).await?;
+    // 1. Connect gRPC (plain TLS via tonic + webpki roots).
+    let mut client = open_lwd_channel(lightwalletd_url).await?;
 
     // Open DB once — reused for the entire sync
     let mut db = open_db(db_data_path, network)?;
@@ -197,10 +194,7 @@ async fn run_sync_impl(
     // `processNewBlocks` (line 551). Best-effort: failures are
     // logged inside the helper and must not abort the sync.
     //
-    // We reuse the same `client` (and thus the same plain-TLS or
-    // isolated-Tor transport) instead of opening a fresh channel,
-    // so auto-resubmit inherits the current session's privacy
-    // posture.
+    // We reuse the same `client` instead of opening a fresh channel.
     //
     // Pre-flight cancel/mode check: `update_chain_tip` and
     // `open_lwd_channel` can take a couple of seconds under a
@@ -293,7 +287,7 @@ async fn run_sync_impl(
     /// abort the spawned tokio task when the loop exits for any
     /// reason (cancel, mode change, error, break, reorg
     /// `continue`) so detached downloads can't outlive the sync
-    /// session and leak network/Tor traffic after shutdown.
+    /// session and leak network traffic after shutdown.
     struct Prefetch {
         handle: Option<tokio::task::JoinHandle<PrefetchResult>>,
         start: BlockHeight,

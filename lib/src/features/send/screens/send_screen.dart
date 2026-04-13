@@ -520,27 +520,6 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   }
 
   Future<void> _downloadAndVerify(String url, String destPath, String expectedSha1) async {
-    // When Tor is enabled, route the Sapling parameter download through
-    // the Rust-side arti HTTP client so we don't leak the user's IP to
-    // download.z.cash mid-spend just because the param download went
-    // out over plain HTTPS. The Rust helper does SHA-1 verification
-    // and atomic rename on its side; we only have to call it and
-    // propagate errors into the existing send-flow UX.
-    if (rust_sync.isTorEnabled()) {
-      log('Send: downloading $url via Tor');
-      await rust_sync.downloadFileOverTorWithSha1(
-        url: url,
-        destPath: destPath,
-        expectedSha1Hex: expectedSha1,
-      );
-      log('Send: downloaded and verified $destPath (via Tor)');
-      return;
-    }
-
-    // Tor disabled: the user has explicitly opted out of the Tor
-    // privacy boundary, so the existing Dart HttpClient path is
-    // correct. Keeping it in Dart also avoids pulling a hyper-rustls
-    // dependency into the Rust crate just for the non-Tor case.
     final client = HttpClient();
     try {
       final request = await client.getUrl(Uri.parse(url));

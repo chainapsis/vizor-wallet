@@ -292,7 +292,7 @@ pub async fn extract_and_broadcast_pczt(
 
     // Step 2: broadcast. On any failure here, the DB is untouched,
     // so the wallet's view of spendable notes is unchanged.
-    let (mut client, _tor_guard) =
+    let mut client =
         crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
             .await
             .map_err(|e| e.to_string())?;

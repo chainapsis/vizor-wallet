@@ -405,7 +405,7 @@ pub fn get_pending_transactions(db_path: &str) -> Result<Vec<PendingTxInfo>, Str
 pub async fn check_tx_mined(lightwalletd_url: &str, txid_bytes: &[u8]) -> i64 {
     use zcash_client_backend::proto::service::TxFilter;
 
-    let (mut client, _tor_guard) =
+    let mut client =
         match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
             Ok(pair) => pair,
             Err(e) => {

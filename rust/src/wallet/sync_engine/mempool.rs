@@ -24,8 +24,7 @@
 //!     a channel that is simultaneously driving unary / server-
 //!     streaming calls for compact blocks. Each reconnect opens a
 //!     fresh channel via [`super::open_lwd_channel`], which also
-//!     means we inherit the same Tor-or-plain-TLS transport choice
-//!     the scan loop uses (see `api::sync::USE_TOR`).
+//!     means we inherit the same TLS transport the scan loop uses.
 //!
 //!   * **Read-only DB access.** V1 of the observer does *not* call
 //!     `decrypt_and_store_transaction`. It parses the raw bytes
@@ -77,8 +76,7 @@ pub struct MempoolTxEvent {
 ///
 /// This is an infinite-retry loop. Every iteration:
 ///
-///   1. Opens a fresh lwd channel (inheriting Tor/plain-TLS from
-///      the current `USE_TOR` atomic).
+///   1. Opens a fresh lwd channel (plain TLS).
 ///   2. Starts a `GetMempoolStream` RPC.
 ///   3. Consumes incoming [`RawTransaction`]s until the stream
 ///      closes or errors out.
@@ -134,7 +132,7 @@ where
         //
         // Wrapped in `tokio::select!` with the cancel poll so a
         // `stop_mempool_observer()` arriving while we're blocked
-        // on a Tor dial / TLS handshake / gRPC connect preempts
+        // on a TLS handshake / gRPC connect preempts
         // the wait within ~100ms instead of stalling until the
         // network operation returns. Without this, `restartSync`'s
         // 5s ceiling can expire before the old observer releases
@@ -147,7 +145,7 @@ where
             }
             r = open_lwd_channel(&lightwalletd_url) => r,
         };
-        let (mut client, _tor_guard) = match channel_result {
+        let mut client = match channel_result {
             Ok(pair) => pair,
             Err(e) => {
                 log::warn!("mempool: open_lwd_channel failed: {e}");
