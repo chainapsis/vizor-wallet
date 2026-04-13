@@ -303,9 +303,19 @@ async fn watch_for_cancel(cancel: &Arc<AtomicBool>) {
 }
 
 /// Parse `raw_tx`, compute the txid, check whether the wallet DB
-/// knows about it as an unmined entry, and emit a
-/// [`MempoolTxEvent`]. All failures are logged and swallowed — one
-/// un-parseable tx must not break the observer loop.
+/// knows about it as an unmined entry, and — only if it matches —
+/// emit a [`MempoolTxEvent`] to the Dart side.
+///
+/// Unmatched transactions (other people's txs) are silently
+/// dropped on the Rust side without crossing the FRB bridge.
+/// This keeps the observer's CPU / battery cost proportional to
+/// the wallet's own pending-tx count rather than to global
+/// mempool volume, and avoids starving the matched-event delivery
+/// path behind a flood of `matched=false` noise (Codex 5th-round
+/// finding 2).
+///
+/// All failures are logged and swallowed — one un-parseable tx
+/// must not break the observer loop.
 fn handle_mempool_tx<F>(db_path: &str, raw_tx: &RawTransaction, emit: &F)
 where
     F: Fn(MempoolTxEvent),
@@ -329,11 +339,20 @@ where
         Ok(b) => b,
         Err(e) => {
             log::debug!("mempool: DB lookup for {txid_hex} failed: {e}");
-            false
+            return;
         }
     };
 
-    log::debug!("mempool: tx {txid_hex} matched={matched}");
+    // Only emit wallet-relevant hits. Unmatched txs stay entirely
+    // on the Rust side — no FRB hop, no Dart callback, no
+    // StreamSink pressure. The Dart listener's
+    // `if (!event.matched) return` guard is kept as a defensive
+    // belt, but should never fire now that filtering happens here.
+    if !matched {
+        return;
+    }
+
+    log::info!("mempool: matched tx {txid_hex}");
     emit(MempoolTxEvent { txid_hex, matched });
 }
 
