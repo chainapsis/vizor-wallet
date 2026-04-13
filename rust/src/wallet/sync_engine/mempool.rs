@@ -109,6 +109,21 @@ where
 
     let mut consecutive_errors: u32 = 0;
 
+    /// Pick the backoff delay based on how many consecutive errors
+    /// we've accumulated. First failure: 1s. Subsequent: 30s.
+    /// Matches the SDK's `LightWalletClientImpl.kt:313–327`
+    /// reconnect ladder and is applied uniformly to *all* error
+    /// paths (channel-open, RPC-start, AND stream-read failures —
+    /// the old code only applied it to the first two, leaving
+    /// stream-read errors on a fixed 1s reconnect forever).
+    fn backoff_for(consecutive_errors: u32) -> Duration {
+        if consecutive_errors <= 1 {
+            INITIAL_BACKOFF
+        } else {
+            LATER_BACKOFF
+        }
+    }
+
     loop {
         if cancel.load(Ordering::Relaxed) {
             log::info!("mempool: observer cancelled");
@@ -116,33 +131,47 @@ where
         }
 
         // Open a fresh lwd channel for this stream attempt.
-        let (mut client, _tor_guard) = match open_lwd_channel(&lightwalletd_url).await {
+        //
+        // Wrapped in `tokio::select!` with the cancel poll so a
+        // `stop_mempool_observer()` arriving while we're blocked
+        // on a Tor dial / TLS handshake / gRPC connect preempts
+        // the wait within ~100ms instead of stalling until the
+        // network operation returns. Without this, `restartSync`'s
+        // 5s ceiling can expire before the old observer releases
+        // (Codex 4th-round finding 1).
+        let channel_result = tokio::select! {
+            biased;
+            _ = watch_for_cancel(&cancel) => {
+                log::info!("mempool: observer cancelled during channel open");
+                return Ok(());
+            }
+            r = open_lwd_channel(&lightwalletd_url) => r,
+        };
+        let (mut client, _tor_guard) = match channel_result {
             Ok(pair) => pair,
             Err(e) => {
                 log::warn!("mempool: open_lwd_channel failed: {e}");
                 consecutive_errors += 1;
-                let delay = if consecutive_errors <= 1 {
-                    INITIAL_BACKOFF
-                } else {
-                    LATER_BACKOFF
-                };
-                sleep_respecting_cancel(delay, &cancel).await;
+                sleep_respecting_cancel(backoff_for(consecutive_errors), &cancel).await;
                 continue;
             }
         };
 
-        // Start the mempool stream.
-        let mut stream = match start_mempool_stream(&mut client).await {
+        // Start the mempool stream — also cancel-aware.
+        let stream_result = tokio::select! {
+            biased;
+            _ = watch_for_cancel(&cancel) => {
+                log::info!("mempool: observer cancelled during stream start");
+                return Ok(());
+            }
+            r = start_mempool_stream(&mut client) => r,
+        };
+        let mut stream = match stream_result {
             Ok(s) => s,
             Err(e) => {
                 log::warn!("mempool: start_mempool_stream failed: {e}");
                 consecutive_errors += 1;
-                let delay = if consecutive_errors <= 1 {
-                    INITIAL_BACKOFF
-                } else {
-                    LATER_BACKOFF
-                };
-                sleep_respecting_cancel(delay, &cancel).await;
+                sleep_respecting_cancel(backoff_for(consecutive_errors), &cancel).await;
                 continue;
             }
         };
@@ -217,10 +246,32 @@ where
         // would keep the server-side subscription alive a bit
         // longer than necessary.)
         drop(stream);
-        let _ = stream_exit;
 
-        // Short sleep before reconnect. Cancel-aware.
-        sleep_respecting_cancel(INITIAL_BACKOFF, &cancel).await;
+        // Choose reconnect delay based on why we broke out:
+        //
+        //   * CleanEof (new block mined, server closed stream):
+        //     normal event, sleep 1s and reconnect. Reset the
+        //     error counter so a subsequent real error still gets
+        //     the "first failure = 1s" ramp.
+        //
+        //   * Error (tonic / HTTP/2 failure on the stream): apply
+        //     the same 1s/30s backoff ladder as the channel-open
+        //     and stream-start error paths. `consecutive_errors`
+        //     was already incremented inside the inner loop; use
+        //     it directly.
+        //
+        // Before this fix, both branches unconditionally slept 1s,
+        // so a server that accepted the stream but immediately
+        // errored it caused a tight 1s reconnect loop forever
+        // (Codex 4th-round finding 2).
+        let reconnect_delay = match stream_exit {
+            StreamExit::CleanEof => {
+                consecutive_errors = 0;
+                INITIAL_BACKOFF
+            }
+            StreamExit::Error => backoff_for(consecutive_errors),
+        };
+        sleep_respecting_cancel(reconnect_delay, &cancel).await;
     }
 }
 
