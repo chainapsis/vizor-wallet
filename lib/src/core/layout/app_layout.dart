@@ -91,6 +91,20 @@ Future<void> initializeDesktopWindow({
   });
 }
 
+/// Re-pin window_manager's per-mode size constraints. Useful after another
+/// layer (e.g. flutter_acrylic's `enableFullSizeContentView`) flips the
+/// NSWindow's `styleMask`, because window_manager's `setAspectRatio` writes
+/// to `contentAspectRatio` vs `aspectRatio` based on whether
+/// `.fullSizeContentView` is set at call time. Re-running it after the
+/// styleMask change makes the constraint land on the right property.
+Future<void> reapplyDesktopWindowConstraints({
+  AppLayoutMode mode = AppLayoutMode.large,
+}) async {
+  if (!isDesktopLayoutPlatform) return;
+  await windowManager.setMinimumSize(mode.minimumSize);
+  await windowManager.setAspectRatio(mode.aspectRatio);
+}
+
 @immutable
 class AppLayoutState {
   final AppLayoutMode mode;
