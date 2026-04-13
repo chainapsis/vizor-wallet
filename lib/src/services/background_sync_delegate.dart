@@ -19,6 +19,9 @@ class SyncProgressEvent {
   final bool isComplete;
   final bool hasNewTx;
   final bool isBackground;
+  /// Current sync phase from Rust: `"download"`, `"scan"`,
+  /// `"enhance"`, or `""` (unspecified / completion).
+  final String phase;
 
   const SyncProgressEvent({
     required this.scannedHeight,
@@ -28,6 +31,7 @@ class SyncProgressEvent {
     required this.isComplete,
     required this.hasNewTx,
     this.isBackground = false,
+    this.phase = '',
   });
 }
 

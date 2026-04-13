@@ -2385,6 +2385,7 @@ impl SseDecode for crate::api::sync::ApiSyncProgressEvent {
         let mut var_isSyncing = <bool>::sse_decode(deserializer);
         let mut var_isComplete = <bool>::sse_decode(deserializer);
         let mut var_hasNewTx = <bool>::sse_decode(deserializer);
+        let mut var_phase = <String>::sse_decode(deserializer);
         return crate::api::sync::ApiSyncProgressEvent {
             scanned_height: var_scannedHeight,
             chain_tip_height: var_chainTipHeight,
@@ -2392,6 +2393,7 @@ impl SseDecode for crate::api::sync::ApiSyncProgressEvent {
             is_syncing: var_isSyncing,
             is_complete: var_isComplete,
             has_new_tx: var_hasNewTx,
+            phase: var_phase,
         };
     }
 }
@@ -3087,6 +3089,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiSyncProgressEvent {
             self.is_syncing.into_into_dart().into_dart(),
             self.is_complete.into_into_dart().into_dart(),
             self.has_new_tx.into_into_dart().into_dart(),
+            self.phase.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3491,6 +3494,7 @@ impl SseEncode for crate::api::sync::ApiSyncProgressEvent {
         <bool>::sse_encode(self.is_syncing, serializer);
         <bool>::sse_encode(self.is_complete, serializer);
         <bool>::sse_encode(self.has_new_tx, serializer);
+        <String>::sse_encode(self.phase, serializer);
     }
 }
 

@@ -2596,8 +2596,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return ApiSyncProgressEvent(
       scannedHeight: dco_decode_u_64(arr[0]),
       chainTipHeight: dco_decode_u_64(arr[1]),
@@ -2605,6 +2605,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       isSyncing: dco_decode_bool(arr[3]),
       isComplete: dco_decode_bool(arr[4]),
       hasNewTx: dco_decode_bool(arr[5]),
+      phase: dco_decode_String(arr[6]),
     );
   }
 
@@ -3033,6 +3034,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_isSyncing = sse_decode_bool(deserializer);
     var var_isComplete = sse_decode_bool(deserializer);
     var var_hasNewTx = sse_decode_bool(deserializer);
+    var var_phase = sse_decode_String(deserializer);
     return ApiSyncProgressEvent(
       scannedHeight: var_scannedHeight,
       chainTipHeight: var_chainTipHeight,
@@ -3040,6 +3042,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       isSyncing: var_isSyncing,
       isComplete: var_isComplete,
       hasNewTx: var_hasNewTx,
+      phase: var_phase,
     );
   }
 
@@ -3575,6 +3578,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.isSyncing, serializer);
     sse_encode_bool(self.isComplete, serializer);
     sse_encode_bool(self.hasNewTx, serializer);
+    sse_encode_String(self.phase, serializer);
   }
 
   @protected

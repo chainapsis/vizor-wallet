@@ -199,6 +199,9 @@ pub struct ApiSyncProgressEvent {
     pub is_syncing: bool,
     pub is_complete: bool,
     pub has_new_tx: bool,
+    /// Current sync phase: `"download"`, `"scan"`, `"enhance"`, or
+    /// `""` (completion / unspecified).
+    pub phase: String,
 }
 
 /// Start a full sync. Streams progress events to Dart via StreamSink.
@@ -238,6 +241,7 @@ pub fn start_full_sync(
                         is_syncing: progress.is_syncing,
                         is_complete: progress.is_complete,
                         has_new_tx: progress.has_new_tx,
+                        phase: progress.phase.clone(),
                     }).is_err() {
                         log::warn!("sync: StreamSink closed, progress not delivered");
                     }

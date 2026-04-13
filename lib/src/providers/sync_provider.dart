@@ -27,6 +27,10 @@ class SyncState {
   final BigInt totalBalance;
   final String? error;
   final List<rust_sync.TransactionInfo> recentTransactions;
+  /// Current sync phase: `"download"`, `"scan"`, `"enhance"`, or
+  /// empty. Widgets can use this to show e.g. "Downloading..."
+  /// instead of a bare percentage.
+  final String phase;
 
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
   BigInt get pendingBalance => totalBalance - spendableBalance;
@@ -44,6 +48,7 @@ class SyncState {
     BigInt? totalBalance,
     this.error,
     this.recentTransactions = const [],
+    this.phase = '',
   })  : transparentBalance = transparentBalance ?? BigInt.zero,
         saplingBalance = saplingBalance ?? BigInt.zero,
         orchardBalance = orchardBalance ?? BigInt.zero,
@@ -217,6 +222,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           isSyncing: event.isSyncing,
           isComplete: event.isComplete,
           hasNewTx: event.hasNewTx,
+          phase: event.phase,
         )),
         onDone: () {
           log('Sync: stream ended');
@@ -548,6 +554,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       spendableBalance: spendable ?? prev?.spendableBalance,
       totalBalance: total ?? prev?.totalBalance,
       recentTransactions: recentTxs,
+      phase: event.phase,
     ));
 
     // Handle sync completion here (not in onDone) to avoid race with async state update.

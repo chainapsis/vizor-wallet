@@ -7,6 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `catch`, `get_tor_dir`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
@@ -100,17 +101,18 @@ bool isSyncRunning() => RustLib.instance.api.crateApiSyncIsSyncRunning();
 
 /// Start the background mempool observer.
 ///
-/// Blocks until `stop_mempool_observer` is called or the observer
-/// returns on an unrecoverable setup error. Every incoming mempool
-/// tx that can be parsed is pushed to `sink` as an
-/// [`ApiMempoolTxEvent`].
+/// Blocks until [`stop_mempool_observer`] is called or the
+/// observer returns on an unrecoverable setup error. Every
+/// incoming mempool tx that can be parsed is pushed to `sink` as
+/// an [`ApiMempoolTxEvent`].
 ///
 /// The FRB layer runs this on the Rust isolate thread pool, so
 /// Dart can `await` the call while the observer keeps polling
 /// lightwalletd in the background. Dart is expected to fire this
 /// alongside `start_full_sync` and call `stop_mempool_observer`
 /// alongside `cancel_full_sync` — the two lifecycles are parallel
-/// but separately controlled.
+/// but separately controlled (intentional: the same bug in one
+/// path must not silently take down the other).
 Stream<ApiMempoolTxEvent> startMempoolObserver({
   required String dbPath,
   required String network,
@@ -123,7 +125,9 @@ Stream<ApiMempoolTxEvent> startMempoolObserver({
 
 /// Ask the running mempool observer to exit at the next cancel
 /// check (inside the 100ms sleep slices or between stream
-/// messages). Safe to call when no observer is running.
+/// messages). Safe to call when no observer is running — the
+/// stored cancel token is `None` in that case and this becomes a
+/// no-op.
 void stopMempoolObserver() =>
     RustLib.instance.api.crateApiSyncStopMempoolObserver();
 
@@ -476,6 +480,10 @@ class ApiSyncProgressEvent {
   final bool isComplete;
   final bool hasNewTx;
 
+  /// Current sync phase: `"download"`, `"scan"`, `"enhance"`, or
+  /// `""` (completion / unspecified).
+  final String phase;
+
   const ApiSyncProgressEvent({
     required this.scannedHeight,
     required this.chainTipHeight,
@@ -483,6 +491,7 @@ class ApiSyncProgressEvent {
     required this.isSyncing,
     required this.isComplete,
     required this.hasNewTx,
+    required this.phase,
   });
 
   @override
@@ -492,7 +501,8 @@ class ApiSyncProgressEvent {
       percentage.hashCode ^
       isSyncing.hashCode ^
       isComplete.hashCode ^
-      hasNewTx.hashCode;
+      hasNewTx.hashCode ^
+      phase.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -504,7 +514,8 @@ class ApiSyncProgressEvent {
           percentage == other.percentage &&
           isSyncing == other.isSyncing &&
           isComplete == other.isComplete &&
-          hasNewTx == other.hasNewTx;
+          hasNewTx == other.hasNewTx &&
+          phase == other.phase;
 }
 
 class BlockMetaInfo {

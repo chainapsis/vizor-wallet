@@ -35,6 +35,12 @@ pub struct SyncProgressEvent {
     pub is_syncing: bool,
     pub is_complete: bool,
     pub has_new_tx: bool,
+    /// Current sync phase for UI display. One of:
+    /// - `"download"` — downloading compact blocks from lightwalletd
+    /// - `"scan"` — running `scan_cached_blocks` (CPU-intensive)
+    /// - `"enhance"` — fetching full transaction data
+    /// - `""` — completion event or unspecified
+    pub phase: String,
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
@@ -661,6 +667,7 @@ async fn run_sync_impl(
             is_syncing: true,
             is_complete: false,
             has_new_tx,
+            phase: "scan".into(),
         };
         log::info!("[{}] sync: {:.1}% (remaining={}/{}, scanned={})", elapsed(), pct * 100.0, remaining, initial_total, initial_total - remaining);
         progress_fn(progress);
@@ -711,6 +718,7 @@ async fn run_sync_impl(
         is_syncing: false,
         is_complete: true,
         has_new_tx: false,
+        phase: String::new(),
     };
     progress_fn(final_progress);
 
