@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'main.dart' show log;
-import 'src/core/theme/app_theme.dart';
+import 'src/core/theme/legacy_material_theme.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/onboarding/screens/create_wallet_screen.dart';
 import 'src/features/onboarding/screens/import_wallet_screen.dart';
@@ -102,8 +102,8 @@ class ZcashWalletApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Zcash Wallet',
       debugShowCheckedModeBanner: false,
-      theme: buildLightTheme(),
-      darkTheme: buildDarkTheme(),
+      theme: buildLegacyLightTheme(),
+      darkTheme: buildLegacyDarkTheme(),
       routerConfig: router,
     );
   }
