@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/theme/app_theme.dart';
+import 'button_use_cases.dart';
 import 'color_use_cases.dart';
 
 /// Top-level Widgetbook app for the Zcash design system.
@@ -42,6 +43,56 @@ class WidgetbookApp extends StatelessWidget {
         ),
       ],
       directories: [
+        WidgetbookFolder(
+          name: 'Components',
+          children: [
+            WidgetbookComponent(
+              name: 'Button',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Matrix',
+                  builder: buildButtonMatrixUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Interactive',
+                  builder: buildButtonInteractiveUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Primary / Medium',
+                  builder: buildButtonPrimaryMediumUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Primary / Small',
+                  builder: buildButtonPrimarySmallUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Secondary / Medium',
+                  builder: buildButtonSecondaryMediumUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Secondary / Small',
+                  builder: buildButtonSecondarySmallUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Ghost / Medium',
+                  builder: buildButtonGhostMediumUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Ghost / Small',
+                  builder: buildButtonGhostSmallUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Destructive / Medium',
+                  builder: buildButtonDestructiveMediumUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Destructive / Small',
+                  builder: buildButtonDestructiveSmallUseCase,
+                ),
+              ],
+            ),
+          ],
+        ),
         WidgetbookFolder(
           name: 'Colors',
           children: [
