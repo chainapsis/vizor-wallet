@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_acrylic/widgets/titlebar_safe_area.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -124,26 +125,33 @@ class ZcashWalletApp extends ConsumerWidget {
             : AppThemeData.light;
         return AppTheme(
           data: appThemeData,
-          // Global "tap outside clears focus" — standard desktop/web
-          // behavior. `HitTestBehavior.translucent` lets this GestureDetector
-          // receive pointer events over empty regions; taps consumed by a
-          // descendant's own GestureDetector (buttons, TextFields) win the
-          // gesture arena before this `onTap` fires, so focused buttons
-          // stay focused when re-clicked.
-          child: GestureDetector(
-            onTap: () {
-              // Leaf-only: skip when the primary focus is a
-              // `FocusScopeNode` rather than a concrete `FocusNode`.
-              // Unfocusing the scope itself strips the scope's
-              // "most-recently-focused child" memory, which leaves the
-              // next Tab with no deterministic starting point.
-              final primary = FocusManager.instance.primaryFocus;
-              if (primary != null && primary is! FocusScopeNode) {
-                primary.unfocus();
-              }
-            },
-            behavior: HitTestBehavior.translucent,
-            child: child!,
+          // `TitlebarSafeArea` pads the app content down past the macOS
+          // titlebar area when flutter_acrylic's full-size content view is
+          // enabled, so traffic-light controls don't overlap UI. It is a
+          // no-op on Windows and Linux where the native title strip does
+          // not overlap Flutter content.
+          //
+          // The inner `GestureDetector` handles global "tap outside clears
+          // focus" — `HitTestBehavior.translucent` lets it receive pointer
+          // events over empty regions while descendant GestureDetectors
+          // (buttons, TextFields) win the gesture arena first, keeping
+          // focused buttons focused when re-clicked.
+          child: TitlebarSafeArea(
+            child: GestureDetector(
+              onTap: () {
+                // Leaf-only: skip when the primary focus is a
+                // `FocusScopeNode` rather than a concrete `FocusNode`.
+                // Unfocusing the scope itself strips the scope's
+                // "most-recently-focused child" memory, which leaves the
+                // next Tab with no deterministic starting point.
+                final primary = FocusManager.instance.primaryFocus;
+                if (primary != null && primary is! FocusScopeNode) {
+                  primary.unfocus();
+                }
+              },
+              behavior: HitTestBehavior.translucent,
+              child: child!,
+            ),
           ),
         );
       },
