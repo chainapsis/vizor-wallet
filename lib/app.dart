@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'main.dart' show log;
+import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/onboarding/screens/create_wallet_screen.dart';
@@ -14,6 +15,7 @@ import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/keystone/screens/import_keystone_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/settings/screens/settings_screen.dart';
+import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/wallet_provider.dart';
 
 final _routerProvider = Provider<GoRouter>((ref) {
@@ -98,13 +100,30 @@ class ZcashWalletApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(_routerProvider);
+    final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp.router(
       title: 'Zcash Wallet',
       debugShowCheckedModeBanner: false,
       theme: buildLegacyLightTheme(),
       darkTheme: buildLegacyDarkTheme(),
+      themeMode: themeMode,
       routerConfig: router,
+      builder: (context, child) {
+        // Resolve themeMode intent → concrete brightness using the OS's
+        // current platformBrightness when mode is `system`. Rebuilds when
+        // either themeMode or platform brightness changes.
+        final platformBrightness = MediaQuery.platformBrightnessOf(context);
+        final brightness = switch (themeMode) {
+          ThemeMode.system => platformBrightness,
+          ThemeMode.dark => Brightness.dark,
+          ThemeMode.light => Brightness.light,
+        };
+        final appThemeData = brightness == Brightness.dark
+            ? AppThemeData.dark
+            : AppThemeData.light;
+        return AppTheme(data: appThemeData, child: child!);
+      },
     );
   }
 }
