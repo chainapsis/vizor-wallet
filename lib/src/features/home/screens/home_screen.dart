@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/layout/app_layout.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -131,22 +132,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          GestureDetector(
-            onTap: () => context.push('/accounts'),
-            child: Row(
-              children: [
-                Icon(Icons.shield, color: colors.onSurface.withValues(alpha: 0.8), size: 22),
-                const SizedBox(width: 8),
-                Text(
-                  accountName,
-                  style: text.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
+          Flexible(
+            child: GestureDetector(
+              onTap: () => context.push('/accounts'),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.shield, color: colors.onSurface.withValues(alpha: 0.8), size: 22),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      accountName,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                Icon(Icons.keyboard_arrow_down, color: colors.onSurfaceVariant, size: 20),
-              ],
+                  const SizedBox(width: 4),
+                  Icon(Icons.keyboard_arrow_down, color: colors.onSurfaceVariant, size: 20),
+                ],
+              ),
             ),
           ),
           Row(
@@ -156,6 +163,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   icon: Icon(Icons.delete_forever, color: colors.error),
                   onPressed: () => _resetWallet(context),
                 ),
+              if (isDesktopLayoutPlatform) _buildLayoutToggle(context),
               IconButton(
                 icon: Icon(Icons.qr_code_scanner, color: colors.onSurface),
                 onPressed: () {},
@@ -164,6 +172,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLayoutToggle(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final mode = ref.watch(appLayoutProvider).mode;
+    final isLarge = mode == AppLayoutMode.large;
+    return IconButton(
+      tooltip: isLarge ? 'Switch to compact layout' : 'Switch to tall layout',
+      icon: Icon(
+        isLarge ? Icons.unfold_less : Icons.unfold_more,
+        color: colors.onSurface,
+      ),
+      onPressed: () => ref.read(appLayoutProvider.notifier).toggle(),
     );
   }
 
@@ -197,21 +219,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           const SizedBox(height: 24),
           // Balance
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                _formatZec(sync.totalBalance),
-                style: text.displayLarge,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'ZEC',
-                style: text.displayMedium?.copyWith(color: colors.secondary),
-              ),
-            ],
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  _formatZec(sync.totalBalance),
+                  style: text.displayLarge,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'ZEC',
+                  style: text.displayMedium?.copyWith(color: colors.secondary),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 48),
         ],
@@ -646,10 +671,17 @@ class _ActionButton extends StatelessWidget {
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 20, color: fg),
             const SizedBox(width: 12),
-            Text(label, style: text.labelMedium?.copyWith(color: fg)),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: text.labelMedium?.copyWith(color: fg),
+              ),
+            ),
           ],
         ),
       ),
