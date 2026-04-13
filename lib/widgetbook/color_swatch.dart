@@ -48,8 +48,12 @@ class TokenSwatch extends StatelessWidget {
             height: 72,
             child: Row(
               children: [
-                Expanded(child: _ColorHalf(color: dark, label: 'D')),
-                Expanded(child: _ColorHalf(color: light, label: 'L')),
+                Expanded(
+                  child: _ColorHalf(color: dark, label: 'D'),
+                ),
+                Expanded(
+                  child: _ColorHalf(color: light, label: 'L'),
+                ),
               ],
             ),
           ),
@@ -177,16 +181,9 @@ class ColorCategoryPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Container(
-              height: 0.5,
-              color: colors.border.subtle,
-            ),
+            Container(height: 0.5, color: colors.border.subtle),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: swatches,
-            ),
+            Wrap(spacing: 12, runSpacing: 12, children: swatches),
           ],
         ),
       ),

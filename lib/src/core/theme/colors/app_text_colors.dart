@@ -11,6 +11,7 @@ import '../primitives.dart';
 /// * [disabled] — Inactive, unavailable labels.
 /// * [inverse] — Text placed on inverted surfaces (e.g. dark text on a light
 ///   chip inside dark mode).
+/// * [brandPurple] / [brandCyan] — Brand-colored inline text accents.
 class AppTextColors {
   const AppTextColors({
     required this.accent,
@@ -19,6 +20,8 @@ class AppTextColors {
     required this.muted,
     required this.disabled,
     required this.inverse,
+    required this.brandPurple,
+    required this.brandCyan,
   });
 
   final Color accent;
@@ -27,6 +30,8 @@ class AppTextColors {
   final Color muted;
   final Color disabled;
   final Color inverse;
+  final Color brandPurple;
+  final Color brandCyan;
 
   static const dark = AppTextColors(
     accent: Primitives.p800Dark,
@@ -35,6 +40,8 @@ class AppTextColors {
     muted: Primitives.p500Dark,
     disabled: Primitives.p400Dark,
     inverse: Primitives.p0Dark,
+    brandPurple: PurplePrimitives.p500Dark,
+    brandCyan: CyanPrimitives.p600Dark,
   );
 
   static const light = AppTextColors(
@@ -46,5 +53,7 @@ class AppTextColors {
     muted: Primitives.p500Light,
     disabled: Primitives.p400Light,
     inverse: Primitives.p0Light,
+    brandPurple: PurplePrimitives.p200Light,
+    brandCyan: CyanPrimitives.p400Light,
   );
 }

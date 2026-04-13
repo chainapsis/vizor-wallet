@@ -26,8 +26,8 @@ class AppBorderColors {
   );
 
   static const light = AppBorderColors(
-    subtle: Primitives.p150Light,
-    regular: Primitives.p200Light,
-    strong: Primitives.p300Light,
+    subtle: Primitives.p200Light,
+    regular: Primitives.p300Light,
+    strong: Primitives.p400Light,
   );
 }

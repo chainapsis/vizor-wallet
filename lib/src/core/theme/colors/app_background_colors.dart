@@ -29,12 +29,10 @@ class AppBackgroundColors {
     overlay: Primitives.p150Dark,
   );
 
-  // Light mode collapses ground and base onto the same anchor; layering only
-  // starts at `raised`. Matches the Figma spec.
   static const light = AppBackgroundColors(
     ground: Primitives.p0Light,
-    base: Primitives.p0Light,
-    raised: Primitives.p50Light,
-    overlay: Primitives.p100Light,
+    base: Primitives.p50Light,
+    raised: Primitives.p100Light,
+    overlay: Primitives.p150Light,
   );
 }

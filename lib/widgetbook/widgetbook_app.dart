@@ -49,54 +49,47 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Primitives',
               useCases: [
                 WidgetbookUseCase(
-                  name: 'All',
-                  builder: buildPrimitivesUseCase,
+                  name: 'Neutral',
+                  builder: buildPrimitivesNeutralUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Purple',
+                  builder: buildPrimitivesPurpleUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Cyan',
+                  builder: buildPrimitivesCyanUseCase,
                 ),
               ],
             ),
             WidgetbookComponent(
               name: 'Background',
               useCases: [
-                WidgetbookUseCase(
-                  name: 'All',
-                  builder: buildBackgroundUseCase,
-                ),
+                WidgetbookUseCase(name: 'All', builder: buildBackgroundUseCase),
               ],
             ),
             WidgetbookComponent(
               name: 'Surface',
               useCases: [
-                WidgetbookUseCase(
-                  name: 'All',
-                  builder: buildSurfaceUseCase,
-                ),
+                WidgetbookUseCase(name: 'All', builder: buildSurfaceUseCase),
               ],
             ),
             WidgetbookComponent(
               name: 'Border',
               useCases: [
-                WidgetbookUseCase(
-                  name: 'All',
-                  builder: buildBorderUseCase,
-                ),
+                WidgetbookUseCase(name: 'All', builder: buildBorderUseCase),
               ],
             ),
             WidgetbookComponent(
               name: 'Text',
               useCases: [
-                WidgetbookUseCase(
-                  name: 'All',
-                  builder: buildTextUseCase,
-                ),
+                WidgetbookUseCase(name: 'All', builder: buildTextUseCase),
               ],
             ),
             WidgetbookComponent(
               name: 'Icon',
               useCases: [
-                WidgetbookUseCase(
-                  name: 'All',
-                  builder: buildIconUseCase,
-                ),
+                WidgetbookUseCase(name: 'All', builder: buildIconUseCase),
               ],
             ),
             WidgetbookComponent(
@@ -119,10 +112,7 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookComponent(
               name: 'State',
               useCases: [
-                WidgetbookUseCase(
-                  name: 'All',
-                  builder: buildStateUseCase,
-                ),
+                WidgetbookUseCase(name: 'All', builder: buildStateUseCase),
               ],
             ),
           ],

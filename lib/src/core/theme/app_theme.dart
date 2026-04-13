@@ -14,11 +14,7 @@ export 'colors/app_colors.dart';
 /// between [AppThemeData.dark] and [AppThemeData.light] triggers rebuilds
 /// on all widgets that consumed the theme.
 class AppTheme extends InheritedWidget {
-  const AppTheme({
-    super.key,
-    required this.data,
-    required super.child,
-  });
+  const AppTheme({super.key, required this.data, required super.child});
 
   final AppThemeData data;
 

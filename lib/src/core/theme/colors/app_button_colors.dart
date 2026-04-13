@@ -2,6 +2,9 @@ import 'package:flutter/painting.dart';
 
 import '../primitives.dart';
 
+// Primary button uses the brand purple ladder (not the neutral ladder). Keep
+// this import grouped with the neutral primitives above for clarity.
+
 /// Button colors grouped by variant.
 ///
 /// Each variant owns its own sub-palette so widgets reference them as
@@ -49,18 +52,21 @@ class AppPrimaryButtonColors {
   final Color bgPressed;
   final Color label;
 
+  // Primary button is the brand accent — uses the purple ladder in both
+  // modes. Different step numbers per mode because the designer picked visual
+  // anchors manually (they don't fall on a strict mirror pair).
   static const dark = AppPrimaryButtonColors(
-    bg: Primitives.p800Dark,
-    bgHover: Primitives.p700Dark,
-    bgPressed: Primitives.p600Dark,
-    label: Primitives.p0Dark,
+    bg: PurplePrimitives.p500Dark,
+    bgHover: PurplePrimitives.p400Dark,
+    bgPressed: PurplePrimitives.p300Dark,
+    label: PurplePrimitives.p0Dark,
   );
 
   static const light = AppPrimaryButtonColors(
-    bg: Primitives.p900Light,
-    bgHover: Primitives.p800Light,
-    bgPressed: Primitives.p700Light,
-    label: Primitives.p0Light,
+    bg: PurplePrimitives.p150Light,
+    bgHover: PurplePrimitives.p300Light,
+    bgPressed: PurplePrimitives.p400Light,
+    label: PurplePrimitives.p900Light,
   );
 }
 
@@ -123,10 +129,7 @@ class AppGhostButtonColors {
 }
 
 class AppDestructiveButtonColors {
-  const AppDestructiveButtonColors({
-    required this.bg,
-    required this.label,
-  });
+  const AppDestructiveButtonColors({required this.bg, required this.label});
 
   final Color bg;
   final Color label;
