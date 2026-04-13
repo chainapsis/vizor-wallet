@@ -245,6 +245,29 @@ async fn run_sync_impl(
     let mut verify_phase_announced = false;
     let mut main_phase_announced = false;
 
+    // Prefetched block source from the previous iteration.
+    // When the scan loop processes a range that spans multiple batches,
+    // we kick off a background download of the next batch while running
+    // enhancement / resubmit / progress reporting for the current
+    // batch. This overlaps network I/O (download) with CPU-bound
+    // work (enhancement) and unrelated gRPC calls (resubmit), matching
+    // the SDK's `.buffer(1)` pipelining pattern in
+    // `CompactBlockProcessor.kt:1666`.
+    //
+    // `None` on the first iteration and whenever the previous batch
+    // was the last in its range (so there's nothing to prefetch until
+    // `suggest_scan_ranges` runs again).
+    type PrefetchResult = Result<
+        crate::wallet::sync_engine::block_source::MemoryBlockSource,
+        SyncError,
+    >;
+    struct Prefetch {
+        handle: tokio::task::JoinHandle<PrefetchResult>,
+        start: BlockHeight,
+        end: BlockHeight,
+    }
+    let mut prefetch: Option<Prefetch> = None;
+
     // 5. Sync loop
     loop {
         if cancel.load(Ordering::Relaxed) {
@@ -316,8 +339,39 @@ async fn run_sync_impl(
             batch_size,
         );
 
-        // Download blocks into memory
-        let block_source = download_blocks(&mut client, start, end - 1).await?;
+        // Download blocks into memory — or use the prefetched data
+        // from the previous iteration if it matches this batch.
+        let block_source = if let Some(pf) = prefetch.take() {
+            if pf.start == start && pf.end == end {
+                // Prefetch matches. Await the background task.
+                match pf.handle.await {
+                    Ok(Ok(bs)) => {
+                        log::debug!(
+                            "[{}] sync: using prefetched blocks for {}-{}",
+                            elapsed(),
+                            u32::from(start),
+                            u32::from(end) - 1,
+                        );
+                        bs
+                    }
+                    _ => {
+                        // Prefetch failed — download synchronously.
+                        log::warn!(
+                            "[{}] sync: prefetch failed, downloading fresh",
+                            elapsed(),
+                        );
+                        download_blocks(&mut client, start, end - 1).await?
+                    }
+                }
+            } else {
+                // Range changed (reorg, priority switch, etc.) —
+                // discard the stale prefetch and download fresh.
+                pf.handle.abort();
+                download_blocks(&mut client, start, end - 1).await?
+            }
+        } else {
+            download_blocks(&mut client, start, end - 1).await?
+        };
 
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: exiting after download", elapsed());
@@ -610,6 +664,42 @@ async fn run_sync_impl(
         };
         log::info!("[{}] sync: {:.1}% (remaining={}/{}, scanned={})", elapsed(), pct * 100.0, remaining, initial_total, initial_total - remaining);
         progress_fn(progress);
+
+        // Prefetch: if the current range still has blocks beyond
+        // `end`, kick off a background download of the next batch
+        // now, while the next loop iteration does suggest_scan_ranges
+        // + phase bookkeeping + (potentially) enhancement for the
+        // batch we just finished. The download runs on a cloned
+        // gRPC client so it doesn't conflict with the main client's
+        // unary RPCs (tree_state, get_latest_block, etc.).
+        //
+        // When the range is exhausted (end == range.end), we skip
+        // the prefetch — the next range comes from
+        // suggest_scan_ranges() which needs the DB state the current
+        // scan just committed, and we can't predict it in advance.
+        if end < range.block_range().end && !cancel.load(Ordering::Relaxed) {
+            let pf_start = end;
+            // Recompute batch_size for the prefetch range in case
+            // it crosses a sandblasting boundary differently.
+            let pf_batch = {
+                let s = u32::from(pf_start);
+                let re = u32::from(range.block_range().end);
+                if s < SANDBLASTING_END && re > SANDBLASTING_START {
+                    BATCH_SIZE_SANDBLASTING
+                } else {
+                    base_batch_size
+                }
+            };
+            let pf_end = std::cmp::min(pf_start + pf_batch, range.block_range().end);
+            let mut pf_client = client.clone();
+            prefetch = Some(Prefetch {
+                start: pf_start,
+                end: pf_end,
+                handle: tokio::spawn(async move {
+                    download_blocks(&mut pf_client, pf_start, pf_end - 1).await
+                }),
+            });
+        }
     }
 
     log::info!("[{}] sync: completed", elapsed());
