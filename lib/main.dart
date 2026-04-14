@@ -57,14 +57,20 @@ Future<void> _configureTransparentWindow() async {
     await Window.initialize();
   }
   await _applyDesktopAcrylic();
-  // macOS-only: subscribe to `willEnter` / `willExit` fullscreen events
-  // pushed from native Swift via an event channel. We avoid
-  // `WindowManipulator.addNSWindowDelegate` here because it would clobber
-  // `window_manager`'s own NSWindow.delegate, breaking
-  // `AppLayoutNotifier`'s resize / fullscreen reconciliation. On Windows
-  // and Linux the desktop wallpaper stays behind a fullscreen window, so
-  // the acrylic blur keeps working and no toggle is needed.
   if (Platform.isMacOS) {
+    // Grey out the green (zoom) traffic-light so clicking it is a no-op
+    // visually. macOS fullscreen still has a few other entry points
+    // (View menu, Cmd+Ctrl+F, title-bar double-click in some
+    // preferences), so the fullscreen event-channel toggle below stays
+    // as a defensive safety net against those paths.
+    await WindowManipulator.disableZoomButton();
+    // macOS-only: subscribe to `willEnter` / `willExit` fullscreen events
+    // pushed from native Swift via an event channel. We avoid
+    // `WindowManipulator.addNSWindowDelegate` here because it would
+    // clobber `window_manager`'s own NSWindow.delegate, breaking
+    // `AppLayoutNotifier`'s resize / fullscreen reconciliation. On
+    // Windows and Linux the desktop wallpaper stays behind a fullscreen
+    // window, so the acrylic blur keeps working and no toggle is needed.
     _installMacOSFullscreenEffectToggle();
   }
 }
