@@ -84,8 +84,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 }
 
 /// The opaque card that wraps the onboarding content. Fills the entire
-/// padded area; the shadow extends into the outer transparent gap, so
-/// the acrylic behind is visible as a soft halo.
+/// padded area. The pane edge reads against the acrylic on its own —
+/// no shadow needed (the Figma spec carries one, but in a transparent-
+/// window + acrylic context it would only blur into an already-blurred
+/// material, adding no depth).
 class _Pane extends StatelessWidget {
   const _Pane({required this.child});
 
@@ -100,13 +102,6 @@ class _Pane extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.small),
-        // Figma: shadow 0 0 15 rgba(0,0,0,0.25). No spread, no offset.
-        boxShadow: const [
-          BoxShadow(
-            color: Color.fromRGBO(0, 0, 0, 0.25),
-            blurRadius: 15,
-          ),
-        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
