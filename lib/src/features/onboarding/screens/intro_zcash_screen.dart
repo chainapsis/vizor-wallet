@@ -49,29 +49,36 @@ class IntroZcashScreen extends StatelessWidget {
   }
 }
 
-/// Left column. The nav list sits at the top; the knight illustration
-/// anchors to the bottom and fades into the acrylic backdrop via a
-/// top-to-bottom gradient mask — the Figma composes a greyscale version
-/// of the image into a gradient mask, so the Dart side drops the color
-/// via a saturation matrix and mirrors that fade with `ShaderMask`.
+/// Left column. Transparent background so the acrylic shows through, with
+/// the nav list at the top and the knight illustration anchored to the
+/// bottom (the illustration's own alpha carries the fade into the
+/// acrylic — see `_SidebarIllustration`).
+///
+/// Figma node 258:5214 "Sidebar" carries `rounded-[radii/s] (8 dp)` +
+/// `overflow-clip`, so wrap the whole column in a `ClipRRect` to match.
+/// Without the clip, the bottom of the knight PNG bleeds past the pane
+/// corners because `Image.asset` paints to the raw rectangle.
 class _Sidebar extends StatelessWidget {
   const _Sidebar();
 
   @override
   Widget build(BuildContext context) {
-    return const Stack(
-      children: [
-        Positioned.fill(child: _SidebarIllustration()),
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: Padding(
-            padding: EdgeInsets.all(AppSpacing.xs),
-            child: _SidebarNav(),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadii.small),
+      child: const Stack(
+        children: [
+          Positioned.fill(child: _SidebarIllustration()),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Padding(
+              padding: EdgeInsets.all(AppSpacing.xs),
+              child: _SidebarNav(),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
