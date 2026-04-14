@@ -50,6 +50,12 @@ dependencies:
   flutter_foreground_task: ^9.2.1
   window_manager: ^0.5.1
   flutter_acrylic: ^1.1.4
+  # Direct dep so we can call WindowManipulator.* directly on macOS —
+  # flutter_acrylic's Window.* wrappers fire-and-forget the underlying
+  # WindowManipulator calls on macOS, breaking our await-based setup
+  # ordering. Using WindowManipulator directly lets us await the real
+  # platform futures. Already pulled in transitively via flutter_acrylic.
+  macos_window_utils: ^1.9.1
 
 dev_dependencies:
   flutter_test:
