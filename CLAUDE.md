@@ -452,33 +452,48 @@ Seed-relevance rule:
 
 ### Window Transparency (desktop acrylic)
 
-`flutter_acrylic: ^1.1.4` drives the acrylic / transparent window effect on macOS / Windows / Linux.
+Deps: `flutter_acrylic: ^1.1.4` plus a direct `macos_window_utils: ^1.9.1`. macos_window_utils is transitively in scope via flutter_acrylic but gets imported directly because the macOS path talks to `WindowManipulator.*` rather than flutter_acrylic's `Window.*` helpers (see below).
 
-**Do not mix with `window_manager`'s `TitleBarStyle`.** flutter_acrylic expects to own the titlebar / background state; combining them corrupts colors. Let window_manager handle size / aspect ratio / minimum size, and flutter_acrylic handle titlebar transparency and material.
+**Do not mix with `window_manager`'s `TitleBarStyle`.** flutter_acrylic expects to own the titlebar / background state; combining them corrupts colors. Let window_manager handle size / aspect ratio / minimum size, and flutter_acrylic + macos_window_utils handle titlebar transparency and material.
 
-Initialization lives in `_configureTransparentWindow()` in `lib/main.dart`, guarded by `isDesktopLayoutPlatform`. Ordering:
+Initialization lives in `_configureTransparentWindow()` in `lib/main.dart`, guarded by `isDesktopLayoutPlatform`. Ordering matters:
 
 ```
 WidgetsFlutterBinding.ensureInitialized()
 → RustLib.init()
-→ [desktop] Window.initialize() + effect setup
-→ initializeDesktopWindow()            [window_manager]
+→ initializeDesktopWindow()            [window_manager — creates + shows NSWindow]
+→ [desktop] _configureTransparentWindow()        [acrylic setup]
+→ [desktop] reapplyDesktopWindowConstraints()    [re-pin after styleMask flip]
 → runApp()
 ```
+
+Rationale for the order:
+
+- `_configureTransparentWindow` can only affect an existing NSWindow. Running it before `initializeDesktopWindow` silently no-ops on cold start (and "magically works" only after a hot restart where the prior window survived).
+- `enableFullSizeContentView()` flips the NSWindow `styleMask`. `window_manager`'s `setAspectRatio` writes to `contentAspectRatio` vs `aspectRatio` based on that bit at call time, so after the flip the constraint needs to be re-applied. `reapplyDesktopWindowConstraints()` (see `lib/src/core/layout/app_layout.dart`) handles that.
 
 Per-platform recipe:
 
 | Platform | Calls |
 |---|---|
-| **macOS** | `setWindowBackgroundColorToClear()` → `makeTitlebarTransparent()` → `enableFullSizeContentView()` → `setEffect(acrylic, color: Colors.transparent)` → `setBlurViewState(MacOSBlurViewState.active)` |
-| **Windows** | `setEffect(acrylic, color: Color(0xCC222222), dark: true)` |
-| **Linux** | `setEffect(transparent)` — acrylic not supported |
+| **macOS** | `WindowManipulator.initialize()` → `setWindowBackgroundColorToClear()` → `makeTitlebarTransparent()` → `enableFullSizeContentView()` → `setMaterial(NSVisualEffectViewMaterial.fullScreenUI)` → `setNSVisualEffectViewState(NSVisualEffectViewState.active)` |
+| **Windows** | `Window.initialize()` → `Window.setEffect(acrylic, color: Color(0xCC222222), dark: true)` |
+| **Linux** | `Window.initialize()` → `Window.setEffect(transparent)` — acrylic not supported |
+
+Why `WindowManipulator.*` on macOS but `Window.*` elsewhere: flutter_acrylic 1.1.4's macOS `Window.*` wrappers declare `Future<void>` but fire-and-forget the underlying `WindowManipulator` futures, so `await` on them is a lie — the method-channel call hasn't reached native by the time our next step runs. That race previously left `reapplyDesktopWindowConstraints` writing to the pre-flip `contentAspectRatio`, among other intermittent bugs. `WindowManipulator.*` actually awaits. On Windows / Linux flutter_acrylic's `Window.setEffect` goes through a different method-channel path that does await correctly, so those stay on the `Window.*` API.
 
 **macOS specifics:**
 
-- **Blur view state** defaults to `followsWindowActiveState`, so the acrylic material desaturates whenever the window loses focus. Pin to `MacOSBlurViewState.active` for a stable look. The three options are `active` / `inactive` / `followsWindowActiveState`.
+- **NSWindow.delegate belongs to window_manager.** `AppLayoutNotifier` relies on window_manager's resize / fullscreen / maximize callbacks to auto-reconcile the large ↔ small layout. `macos_window_utils`'s `addNSWindowDelegate` (including flutter_acrylic's `NSWindowDelegate` hook) would clobber that by reassigning `NSWindow.delegate`, so **we must not register a macos_window_utils window delegate**. Use `NotificationCenter` observers in Swift instead (see fullscreen toggle below).
+- **Blur view state** defaults to `followsWindowActiveState`, so the acrylic material desaturates whenever the window loses focus. Pin to `NSVisualEffectViewState.active` for a stable look (three options: `active` / `inactive` / `followsWindowActiveState`).
 - **`TitlebarSafeArea` is required whenever `enableFullSizeContentView()` is called.** Wrap the app root inside `MaterialApp.builder`, under `AppTheme`; without it the macOS traffic-light controls overlap top-of-screen content.
 - **Do not call `Window.hideWindowControls()`.** It appears in the flutter_acrylic example but strips min / max / close buttons, breaking the real app.
+
+**macOS fullscreen blue-tint toggle.** The green-button fullscreen moves the window into its own Space, which has no wallpaper — just a neutral blue-gray backdrop. An acrylic material blurring that backdrop, combined with macOS wallpaper tinting, paints the whole window light blue. We drop the effect for the duration of fullscreen via:
+
+- `macos/Runner/MainFlutterWindow.swift` registers a `NotificationCenter` observer (not the NSWindow.delegate) for `NSWindow.willEnterFullScreenNotification` / `willExitFullScreenNotification` and pushes `"willEnter"` / `"willExit"` strings into `FlutterEventChannel("app.zcash/fullscreen_events")`.
+- `_installMacOSFullscreenEffectToggle()` in `lib/main.dart` subscribes to that channel: on `willEnter` it resets the NSWindow background to the opaque system default and swaps the material to `windowBackground`; on `willExit` it re-runs `_applyDesktopAcrylic()`. `willEnter` fires before the transition animation starts, so no blue-tint frame is visible.
+- macOS-only. Windows / Linux fullscreen keeps the desktop wallpaper behind the window, so the acrylic blur stays visually valid — no toggle needed.
 
 **Flutter-side transparency + design rule:**
 
