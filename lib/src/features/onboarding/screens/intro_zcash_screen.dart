@@ -160,23 +160,32 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-/// Two-layer illustration anchored to the bottom of the sidebar, matching
-/// Figma node 258:5229. The backdrop layer (`book1.png`) carries the full
-/// greyscale scene — sky, mountains, valley, castles, trees — and fades
-/// into the acrylic via a top-transparent → bottom-opaque gradient. The
-/// focus layer (`knight_light.png`) sits on top, positioned so only the
-/// knight figure lines up over the corresponding shape in the backdrop,
-/// providing a sharper silhouette right where the eye lands.
+/// Sidebar illustration anchored to the bottom of the column, matching
+/// Figma node 258:5229 "Illustration". The asset
+/// (`onboarding_intro_sidebar.png`) is the Figma node exported as a
+/// composited image — the backdrop scene and the focus knight layer are
+/// already baked in together, so no Dart-side layering, positioning, or
+/// greyscale filter is needed.
 ///
-/// `IgnorePointer` keeps the whole composition out of the hit-test path
-/// so the sidebar nav (and future nav interactions) never lose clicks to
-/// the illustration.
+/// A `ShaderMask` still fades the top of the image into the acrylic so
+/// the picture melts into the window effect rather than presenting a
+/// hard top edge. Keeping the fade in code — instead of baking alpha
+/// into the PNG — means the sidebar can later swap backgrounds or the
+/// gradient stops can be retuned without re-exporting.
+///
+/// The PNG is a Figma export, not a source asset (see CLAUDE.md →
+/// `scripts/figma-export.js`). Re-run that script to refresh the image
+/// if the designer changes the illustration node.
+///
+/// `IgnorePointer` keeps the composition out of the hit-test path so the
+/// sidebar nav never loses clicks to the illustration.
 class _SidebarIllustration extends StatelessWidget {
   const _SidebarIllustration();
 
-  // Frame size Figma gives for both layers (node 258:5232 book / 258:5233
-  // knight-light). Matches the sidebar width exactly, so no responsive
-  // scaling is needed at this level.
+  // Matches the Figma illustration frame size (240 × 411). The asset was
+  // exported at 2x from this same frame, so `BoxFit.cover` inside this
+  // box renders a crisp downscale on 1x/2x/3x displays without needing
+  // per-DPR asset variants.
   static const _frameWidth = 240.0;
   static const _frameHeight = 411.0;
 
@@ -188,94 +197,22 @@ class _SidebarIllustration extends StatelessWidget {
         child: SizedBox(
           width: _frameWidth,
           height: _frameHeight,
-          // Default `Clip.hardEdge` on Stack clips positioned children
-          // that overflow the frame — mirrors the Figma frame behavior,
-          // where both layers are larger than their containers and only
-          // the windowed region is visible.
-          child: Stack(
-            children: const [
-              _BackdropLayer(),
-              _KnightLayer(),
-            ],
+          child: ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (bounds) => const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0x00000000), Color(0xFF000000)],
+              // Figma mask SVG: linearGradient from y=39 to y=445 on a
+              // 445-unit viewBox — the top ~8.8% stays fully clear
+              // before the ramp begins.
+              stops: [0.088, 1.0],
+            ).createShader(bounds),
+            child: Image.asset(
+              'assets/illustrations/onboarding_intro_sidebar.png',
+              fit: BoxFit.cover,
+            ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Full-scene backdrop — book1.png — with a top-clear → bottom-opaque
-/// gradient mask applied via `ShaderMask` (`BlendMode.dstIn` against a
-/// linear gradient in the alpha channel). Keeping the gradient in code
-/// rather than baking it into the asset lets light/dark mode or a future
-/// background tweak change how the fade lands without re-exporting.
-class _BackdropLayer extends StatelessWidget {
-  const _BackdropLayer();
-
-  @override
-  Widget build(BuildContext context) {
-    // Figma inner image: w:105.18% h:106.6% at left:-2.57% / top:-0.99%
-    // (node 258:5232). Literals preserved to avoid drift from rounding.
-    return Positioned(
-      left: _SidebarIllustration._frameWidth * -0.0257,
-      top: _SidebarIllustration._frameHeight * -0.0099,
-      width: _SidebarIllustration._frameWidth * 1.0518,
-      height: _SidebarIllustration._frameHeight * 1.066,
-      child: ShaderMask(
-        blendMode: BlendMode.dstIn,
-        shaderCallback: (bounds) => const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0x00000000), Color(0xFF000000)],
-          // Figma mask SVG: linearGradient from y=39 to y=445 on a 445-
-          // unit viewBox — the top ~8.8% stays fully clear before the
-          // ramp begins.
-          stops: [0.088, 1.0],
-        ).createShader(bounds),
-        child: Image.asset(
-          'assets/illustrations/book1.png',
-          fit: BoxFit.cover,
-        ),
-      ),
-    );
-  }
-}
-
-/// Focused foreground layer — knight_light.png — scaled up and offset so
-/// only the knight figure of the source image sits on top of the
-/// corresponding region in the backdrop. The source PNG is colored, but
-/// Figma renders the whole illustration greyscale, so a luminance matrix
-/// strips the color at paint time. Keep this in sync with the backdrop —
-/// if the design ever re-introduces color to the knight, drop the filter
-/// here (`book1.png` is already greyscale and does not need one).
-class _KnightLayer extends StatelessWidget {
-  const _KnightLayer();
-
-  // ITU-R BT.709 luminance coefficients applied to each RGB channel. Keeps
-  // the ink detail of the illustration but flattens hue so the knight
-  // blends with the already-greyscale backdrop.
-  static const _greyscale = ColorFilter.matrix(<double>[
-    0.2126, 0.7152, 0.0722, 0, 0,
-    0.2126, 0.7152, 0.0722, 0, 0,
-    0.2126, 0.7152, 0.0722, 0, 0,
-    0, 0, 0, 1, 0,
-  ]);
-
-  @override
-  Widget build(BuildContext context) {
-    // Figma inner image: w:136.13% h:79.92% at left:-26.87% / top:32.65%
-    // (node 258:5233). Matches the crop the designer used to isolate the
-    // knight silhouette from the rest of the source asset.
-    return Positioned(
-      left: _SidebarIllustration._frameWidth * -0.2687,
-      top: _SidebarIllustration._frameHeight * 0.3265,
-      width: _SidebarIllustration._frameWidth * 1.3613,
-      height: _SidebarIllustration._frameHeight * 0.7992,
-      child: ColorFiltered(
-        colorFilter: _greyscale,
-        child: Image.asset(
-          'assets/illustrations/knight_light.png',
-          fit: BoxFit.cover,
         ),
       ),
     );
