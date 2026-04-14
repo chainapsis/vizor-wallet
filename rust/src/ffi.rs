@@ -21,6 +21,18 @@ pub struct CSyncProgress {
 /// C callback type for progress updates.
 pub type SyncProgressCallback = extern "C" fn(CSyncProgress);
 
+/// Safely convert a C string pointer to a `&str`. Returns `None` if
+/// the pointer is null, not valid UTF-8, or empty.
+unsafe fn c_str_to_str<'a>(ptr: *const c_char) -> Option<&'a str> {
+    if ptr.is_null() {
+        return None;
+    }
+    match CStr::from_ptr(ptr).to_str() {
+        Ok(s) if !s.is_empty() => Some(s),
+        _ => None,
+    }
+}
+
 /// Run full sync from C (Swift). Blocks until complete or cancelled.
 /// Returns 0 on success, 1 on error, 2 on panic, 3 on already running, 4 on mode conflict.
 #[no_mangle]
@@ -44,17 +56,17 @@ pub extern "C" fn zcash_run_full_sync(
     }
 
     let result = std::panic::catch_unwind(|| {
-        let db_path = match unsafe { CStr::from_ptr(db_path) }.to_str() {
-            Ok(s) if !s.is_empty() => s,
-            _ => { log::error!("ffi: invalid db_path"); return 1; }
+        let db_path = match unsafe { c_str_to_str(db_path) } {
+            Some(s) => s,
+            None => { log::error!("ffi: invalid or null db_path"); return 1; }
         };
-        let lightwalletd_url = match unsafe { CStr::from_ptr(lightwalletd_url) }.to_str() {
-            Ok(s) if !s.is_empty() => s,
-            _ => { log::error!("ffi: invalid lightwalletd_url"); return 1; }
+        let lightwalletd_url = match unsafe { c_str_to_str(lightwalletd_url) } {
+            Some(s) => s,
+            None => { log::error!("ffi: invalid or null lightwalletd_url"); return 1; }
         };
-        let network_str = match unsafe { CStr::from_ptr(network) }.to_str() {
-            Ok(s) if !s.is_empty() => s,
-            _ => { log::error!("ffi: invalid network string"); return 1; }
+        let network_str = match unsafe { c_str_to_str(network) } {
+            Some(s) => s,
+            None => { log::error!("ffi: invalid or null network string"); return 1; }
         };
 
         let network = match keys::parse_network(network_str) {
@@ -152,9 +164,9 @@ pub struct CPendingTx {
 /// Returns count on success, -1 on error.
 #[no_mangle]
 pub extern "C" fn zcash_get_pending_tx_count(db_path: *const c_char) -> i32 {
-    let db_path = match unsafe { CStr::from_ptr(db_path) }.to_str() {
-        Ok(s) if !s.is_empty() => s,
-        _ => { log::error!("ffi: invalid db_path"); return -1; }
+    let db_path = match unsafe { c_str_to_str(db_path) } {
+        Some(s) => s,
+        None => { log::error!("ffi: invalid or null db_path"); return -1; }
     };
     match crate::wallet::sync::get_pending_transactions(db_path) {
         Ok(txs) => txs.len() as i32,
@@ -169,10 +181,18 @@ pub extern "C" fn zcash_get_pending_txs(
     out_buf: *mut CPendingTx,
     buf_len: i32,
 ) -> i32 {
-    let db_path = match unsafe { CStr::from_ptr(db_path) }.to_str() {
-        Ok(s) if !s.is_empty() => s,
-        _ => { log::error!("ffi: invalid db_path"); return -1; }
+    let db_path = match unsafe { c_str_to_str(db_path) } {
+        Some(s) => s,
+        None => { log::error!("ffi: invalid or null db_path"); return -1; }
     };
+    if buf_len <= 0 {
+        return 0;
+    }
+    if out_buf.is_null() {
+        log::error!("ffi: null out_buf with buf_len={buf_len}");
+        return -1;
+    }
+
     let txs = match crate::wallet::sync::get_pending_transactions(db_path) {
         Ok(t) => t,
         Err(e) => { log::error!("ffi: get_pending_txs: {e}"); return -1; }
@@ -200,13 +220,13 @@ pub extern "C" fn zcash_check_tx_status(
     lightwalletd_url: *const c_char,
     txid_hex: *const c_char,
 ) -> i64 {
-    let url = match unsafe { CStr::from_ptr(lightwalletd_url) }.to_str() {
-        Ok(s) if !s.is_empty() => s,
-        _ => { log::error!("ffi: invalid lightwalletd_url"); return -1; }
+    let url = match unsafe { c_str_to_str(lightwalletd_url) } {
+        Some(s) => s,
+        None => { log::error!("ffi: invalid or null lightwalletd_url"); return -1; }
     };
-    let hex_str = match unsafe { CStr::from_ptr(txid_hex) }.to_str() {
-        Ok(s) if !s.is_empty() => s,
-        _ => { log::error!("ffi: invalid txid_hex"); return -1; }
+    let hex_str = match unsafe { c_str_to_str(txid_hex) } {
+        Some(s) => s,
+        None => { log::error!("ffi: invalid or null txid_hex"); return -1; }
     };
     let txid_bytes = match hex::decode(hex_str) {
         Ok(b) if b.len() == 32 => b,
