@@ -28,6 +28,24 @@ log stream --predicate 'subsystem == "frb_user"' --level info
 
 Removes the app from the booted iOS simulator including Keychain data. This is necessary when testing wallet creation/import because the mnemonic is stored in iOS Keychain via `flutter_secure_storage`, which persists even after a normal app uninstall.
 
+### scripts/figma-export.js
+
+Exports a single Figma node as a rendered, composited image (PNG / JPG / SVG / PDF) via the Figma REST API. Reach for this instead of the Figma MCP `use_figma` + `exportAsync` path whenever you need the bytes on disk as an asset. The MCP export route returns base64 through a 20 KB-truncated tool output, forcing a multi-call chunk reassembly; the REST endpoint renders server-side and returns a single signed URL, so one HTTP call produces the file.
+
+```bash
+node scripts/figma-export.js \
+  --file <fileKey> --node <nodeId> \
+  --output assets/illustrations/foo.png \
+  [--scale 1|2|3]  # default 1
+  [--format png|jpg|svg|pdf]  # default png
+```
+
+`fileKey` and `nodeId` come from the Figma URL — `figma.com/design/<fileKey>/<name>?node-id=<nodeId>`. The node-id in the URL uses a dash (`258-5229`); the script expects the canonical colon form (`258:5229`).
+
+`FIGMA_TOKEN` (read scope is enough, Settings → Security → "Generate new token") must be set. Keep it in `~/.zshenv` rather than `~/.zshrc` — Claude Code's Bash tool spawns a non-interactive zsh which only sources `.zshenv` by default.
+
+Output is minimal: start line, "downloading rendered image", and either `ok: <path> (<KB>)` or `fail: <msg>` with a non-zero exit.
+
 ## Architecture
 
 Flutter + Rust FFI via `flutter_rust_bridge` v2. All Zcash cryptography and sync run in Rust (`librustzcash` crates). Dart handles UI, state management (Riverpod), and secure storage only. Supports iOS, Android, and macOS.
