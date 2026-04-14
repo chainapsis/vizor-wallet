@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show Colors, Icons, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/motion/onboarding_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 
@@ -30,6 +31,26 @@ class IntroZcashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The enclosing `CustomTransitionPage` uses an identity page
+    // transition on purpose so each pane can drive its own entrance
+    // from the same route animation: the sidebar slides in from the
+    // left, the trailing pane fades in. Sharing the curved animation
+    // locks the two halves to one clock, so they settle together.
+    // Falls back to a completed animation for static test harnesses /
+    // previews where there is no route.
+    final routeAnimation =
+        ModalRoute.of(context)?.animation ??
+        const AlwaysStoppedAnimation<double>(1.0);
+    final entrance = CurvedAnimation(
+      parent: routeAnimation,
+      curve: kOnboardingForwardCurve,
+      reverseCurve: kOnboardingReverseCurve,
+    );
+    final sidebarOffset = Tween<Offset>(
+      begin: const Offset(-1, 0),
+      end: Offset.zero,
+    ).animate(entrance);
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
@@ -37,10 +58,18 @@ class IntroZcashScreen extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.xs),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: const [
-              SizedBox(width: 240, child: _Sidebar()),
-              SizedBox(width: AppSpacing.xs),
-              Expanded(child: _TrailingPane()),
+            children: [
+              SlideTransition(
+                position: sidebarOffset,
+                child: const SizedBox(width: 240, child: _Sidebar()),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: FadeTransition(
+                  opacity: entrance,
+                  child: const _TrailingPane(),
+                ),
+              ),
             ],
           ),
         ),

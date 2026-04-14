@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'main.dart' show log;
+import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/features/home/screens/home_screen.dart';
@@ -53,13 +54,33 @@ final _routerProvider = Provider<GoRouter>((ref) {
           return hasWallet ? '/home' : '/welcome';
         },
       ),
+      // Onboarding-route transitions. Desktop acrylic visibly stutters
+      // through a snapped page swap, so each route gets a custom
+      // page builder that lets contents enter while the acrylic stays
+      // composited continuously. Welcome cross-fades; IntroZcash
+      // delegates the page-level transition to its own widget tree
+      // (sidebar slides, trailing pane fades) so the two halves can
+      // drive separate motion against the shared route animation.
+      // Other routes stay on the GoRouter default.
       GoRoute(
         path: '/welcome',
-        builder: (_, _) => const WelcomeScreen(),
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const WelcomeScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
       ),
       GoRoute(
         path: '/onboarding/intro',
-        builder: (_, _) => const IntroZcashScreen(),
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const IntroZcashScreen(),
+          transitionsBuilder: (_, _, _, child) => child,
+        ),
       ),
       GoRoute(
         path: '/create',
@@ -100,6 +121,36 @@ final _routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// Cross-fade for onboarding page-level transitions. Both legs keep the
+/// two screens visible during the dissolve so the acrylic backdrop stays
+/// unbroken while the opaque inner panes swap. Shares the curve pair
+/// with `IntroZcashScreen`'s internal motion via the motion-token
+/// constants in `onboarding_motion.dart`.
+Widget _onboardingFadeTransition(
+  BuildContext context,
+  Animation<double> animation,
+  Animation<double> secondaryAnimation,
+  Widget child,
+) {
+  final incoming = CurvedAnimation(
+    parent: animation,
+    curve: kOnboardingForwardCurve,
+    reverseCurve: kOnboardingReverseCurve,
+  );
+  final outgoing = CurvedAnimation(
+    parent: secondaryAnimation,
+    curve: kOnboardingForwardCurve,
+    reverseCurve: kOnboardingReverseCurve,
+  );
+  return FadeTransition(
+    opacity: incoming,
+    child: FadeTransition(
+      opacity: Tween<double>(begin: 1.0, end: 0.0).animate(outgoing),
+      child: child,
+    ),
+  );
+}
 
 class ZcashWalletApp extends ConsumerWidget {
   const ZcashWalletApp({super.key});
