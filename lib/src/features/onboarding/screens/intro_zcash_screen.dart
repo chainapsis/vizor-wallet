@@ -164,18 +164,16 @@ class _NavItem extends StatelessWidget {
 /// Figma node 258:5229 "Illustration". The asset
 /// (`onboarding_intro_sidebar.png`) is the Figma node exported as a
 /// composited image — the backdrop scene and the focus knight layer are
-/// already baked in together, so no Dart-side layering, positioning, or
-/// greyscale filter is needed.
-///
-/// A `ShaderMask` still fades the top of the image into the acrylic so
-/// the picture melts into the window effect rather than presenting a
-/// hard top edge. Keeping the fade in code — instead of baking alpha
-/// into the PNG — means the sidebar can later swap backgrounds or the
-/// gradient stops can be retuned without re-exporting.
+/// already merged together, AND the top-transparent → bottom-opaque
+/// gradient fade is baked into the PNG's alpha channel by the Figma
+/// export. No Dart-side layering, positioning, greyscale filter, or
+/// `ShaderMask` is needed; stacking another mask on top of the baked-in
+/// alpha would double-apply the fade.
 ///
 /// The PNG is a Figma export, not a source asset (see CLAUDE.md →
 /// `scripts/figma-export.js`). Re-run that script to refresh the image
-/// if the designer changes the illustration node.
+/// if the designer changes the illustration node — the refreshed PNG
+/// will keep carrying the alpha fade, so this widget stays unchanged.
 ///
 /// `IgnorePointer` keeps the composition out of the hit-test path so the
 /// sidebar nav never loses clicks to the illustration.
@@ -197,21 +195,9 @@ class _SidebarIllustration extends StatelessWidget {
         child: SizedBox(
           width: _frameWidth,
           height: _frameHeight,
-          child: ShaderMask(
-            blendMode: BlendMode.dstIn,
-            shaderCallback: (bounds) => const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0x00000000), Color(0xFF000000)],
-              // Figma mask SVG: linearGradient from y=39 to y=445 on a
-              // 445-unit viewBox — the top ~8.8% stays fully clear
-              // before the ramp begins.
-              stops: [0.088, 1.0],
-            ).createShader(bounds),
-            child: Image.asset(
-              'assets/illustrations/onboarding_intro_sidebar.png',
-              fit: BoxFit.cover,
-            ),
+          child: Image.asset(
+            'assets/illustrations/onboarding_intro_sidebar.png',
+            fit: BoxFit.cover,
           ),
         ),
       ),
