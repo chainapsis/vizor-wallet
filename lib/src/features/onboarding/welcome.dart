@@ -59,7 +59,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 // "Center when content fits, scroll when it doesn't"
-                // pattern — the configured minimum window height (≈ 451
+                // pattern — the configured minimum window height (≈ 400
                 // dp) is smaller than the natural content height, so the
                 // content needs to scroll when the user shrinks the
                 // window to the floor.

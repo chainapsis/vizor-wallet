@@ -7,7 +7,7 @@ import 'package:window_manager/window_manager.dart';
 
 /// Two fixed-aspect-ratio layouts the desktop app supports.
 ///
-/// - [large]: landscape, width:height = 133:100  (≈ 1.33, wider than tall)
+/// - [large]: landscape, width:height = 900:600  (3:2 = 1.5, wider than tall)
 /// - [small]: portrait,  width:height =  65:133  (≈ 0.489, taller than wide)
 ///
 /// Mobile and web are permanently [small]. On desktop the OS window is
@@ -21,7 +21,7 @@ enum AppLayoutMode {
   double get aspectRatio {
     switch (this) {
       case AppLayoutMode.large:
-        return 133.0 / 100.0;
+        return 900.0 / 600.0;
       case AppLayoutMode.small:
         return (50.0 * 1.3) / 133.0;
     }
@@ -31,18 +31,20 @@ enum AppLayoutMode {
   Size get defaultSize {
     switch (this) {
       case AppLayoutMode.large:
-        return const Size(1064, 800);
+        return const Size(900, 600);
       case AppLayoutMode.small:
         return const Size(416, 851);
     }
   }
 
   /// Minimum allowed drag-resize size — prevents the window from
-  /// collapsing narrower than the top bar's chrome.
+  /// collapsing narrower than the top bar's chrome. Width floor (600)
+  /// is the chrome limit picked when the layouts were first defined;
+  /// the height floor falls out of the configured aspect ratio.
   Size get minimumSize {
     switch (this) {
       case AppLayoutMode.large:
-        return const Size(600, 451);
+        return const Size(600, 400);
       case AppLayoutMode.small:
         return const Size(364, 745);
     }
@@ -62,7 +64,7 @@ bool get isDesktopLayoutPlatform {
 /// to imply [AppLayoutMode.large]; below it it's "portrait enough" to
 /// imply [AppLayoutMode.small].
 const double _largeRatioThreshold =
-    (133.0 / 100.0 + (50.0 * 1.3) / 133.0) / 2;
+    (900.0 / 600.0 + (50.0 * 1.3) / 133.0) / 2;
 
 /// Initialize the OS window for desktop at startup.
 ///
