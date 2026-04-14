@@ -165,7 +165,7 @@ class _ButtonsStack extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         AppButton(
-          onPressed: () => context.go('/create'),
+          onPressed: () => context.go('/onboarding/intro'),
           variant: AppButtonVariant.primary,
           minWidth: _welcomeButtonMinWidth,
           leading: const Icon(Icons.add),

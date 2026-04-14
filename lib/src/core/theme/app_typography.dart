@@ -33,6 +33,18 @@ abstract final class AppTypography {
     letterSpacing: -1.35,
   );
 
+  /// Display Small — step-level headlines inside onboarding flows
+  /// (e.g. "Welcome to the Shielded World").
+  ///
+  /// Libre Caslon Text Regular, 36 / 44 px, letter-spacing −0.72.
+  static const displaySmall = TextStyle(
+    fontFamily: 'Libre Caslon Text',
+    fontWeight: FontWeight.w400,
+    fontSize: 36,
+    height: 44 / 36,
+    letterSpacing: -0.72,
+  );
+
   /// Body M — default paragraph and subtitle copy.
   ///
   /// Geist Regular, 14 / 21 px, letter-spacing −0.21.

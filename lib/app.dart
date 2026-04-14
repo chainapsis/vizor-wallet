@@ -9,6 +9,7 @@ import 'src/core/theme/legacy_material_theme.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/onboarding/screens/create_wallet_screen.dart';
 import 'src/features/onboarding/screens/import_wallet_screen.dart';
+import 'src/features/onboarding/screens/intro_zcash_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/history/screens/history_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -32,6 +33,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
       final wallet = walletAsync.value;
       final hasWallet = wallet?.hasWallet ?? false;
       final isOnboarding = state.matchedLocation == '/welcome' ||
+          state.matchedLocation == '/onboarding/intro' ||
           state.matchedLocation == '/create' ||
           state.matchedLocation == '/import';
 
@@ -54,6 +56,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/welcome',
         builder: (_, _) => const WelcomeScreen(),
+      ),
+      GoRoute(
+        path: '/onboarding/intro',
+        builder: (_, _) => const IntroZcashScreen(),
       ),
       GoRoute(
         path: '/create',
