@@ -25,12 +25,15 @@ extension OnboardingStepX on OnboardingStep {
   String get routePath => switch (this) {
     OnboardingStep.intro => '/onboarding/intro',
     OnboardingStep.addressTypes => '/onboarding/address-types',
-    OnboardingStep.thingsToKnow => '/create',
+    OnboardingStep.thingsToKnow => '/onboarding/things-to-know',
     OnboardingStep.secretPassphrase => '/create',
   };
 }
 
 OnboardingStep onboardingStepFromLocation(String location) {
+  if (location.startsWith(OnboardingStep.thingsToKnow.routePath)) {
+    return OnboardingStep.thingsToKnow;
+  }
   if (location.startsWith(OnboardingStep.addressTypes.routePath)) {
     return OnboardingStep.addressTypes;
   }
@@ -241,6 +244,10 @@ class _SidebarIllustration extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = switch (step) {
+      OnboardingStep.thingsToKnow =>
+        isDark
+            ? 'assets/illustrations/onboarding_things_to_know_sidebar_dark.png'
+            : 'assets/illustrations/onboarding_things_to_know_sidebar_light.png',
       OnboardingStep.addressTypes =>
         isDark
             ? 'assets/illustrations/onboarding_address_types_sidebar_dark.png'
