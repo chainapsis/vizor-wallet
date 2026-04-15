@@ -19,12 +19,19 @@ enum AppButtonSize { medium, small }
 
 class _Sizing {
   const _Sizing({
+    required this.height,
     required this.padding,
     required this.gap,
     required this.iconSize,
     required this.labelStyle,
   });
 
+  /// Fixed pill height pinned by the Figma component. Intrinsic sizing
+  /// from padding + content alone undershoots Medium and overshoots
+  /// Small, so an explicit height matches the design — see
+  /// `AppButton.build` for why the Small variant also needs
+  /// `clipBehavior` + centered alignment to land visually.
+  final double height;
   final EdgeInsets padding;
   final double gap;
   final double iconSize;
@@ -33,6 +40,7 @@ class _Sizing {
 
 // Medium (default) button — the large CTA. Uses `labelMedium` (12px).
 const _mediumSizing = _Sizing(
+  height: 40,
   padding: EdgeInsets.symmetric(
     horizontal: AppSpacing.sm,
     vertical: AppSpacing.xs,
@@ -45,8 +53,11 @@ const _mediumSizing = _Sizing(
 // Small (compact) button — inline/dense actions. Uses `labelLarge` (14px).
 // Counter-intuitive naming: Figma's Small button is *physically shorter*
 // but carries the *larger* label size for readability inside the tight
-// 24dp height.
+// 24dp height. Figma tolerates ~2dp of label overflow inside the 24dp
+// pill via `overflow-clip`; mirrored here with `clipBehavior: antiAlias`
+// on the pill container.
 const _smallSizing = _Sizing(
+  height: 24,
   padding: EdgeInsets.all(AppSpacing.xxs),
   gap: AppSpacing.xxs,
   iconSize: AppIconSize.medium,
@@ -254,6 +265,15 @@ class _AppButtonState extends State<AppButton> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
+        height: sizing.height,
+        alignment: Alignment.center,
+        // Figma keeps the Small pill at a 24 dp height even though its
+        // `labelLarge` metrics want ~26 dp, relying on `overflow-clip`
+        // to swallow the extra 1 dp of leading at the top and bottom.
+        // Clipping to the stadium shape mirrors that — harmless on
+        // Medium (content fits) and visually tightens Small so it
+        // matches the spec pixel-for-pixel.
+        clipBehavior: Clip.antiAlias,
         decoration: ShapeDecoration(
           color: currentBg,
           shape: const StadiumBorder(),
