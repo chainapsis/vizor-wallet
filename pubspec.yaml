@@ -144,9 +144,7 @@ flutter:
           weight: 500
     - family: Libre Caslon Text
       fonts:
-        # Variable font — weight axis covers the whole range, Flutter picks
-        # the nearest instance at paint time. We reference weight 400
-        # (Regular) since the design only uses the Display Medium style,
-        # which is Regular weight.
+        # Static Regular TTF aligned with the Google Fonts web distribution.
+        # The onboarding designs only use the Regular weight.
         - asset: assets/fonts/LibreCaslonText-Regular.ttf
           weight: 400
