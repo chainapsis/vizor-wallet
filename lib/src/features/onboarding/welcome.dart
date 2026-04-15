@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/layout/app_layout.dart';
@@ -8,18 +9,23 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
 
-/// Welcome-specific button width. Matches the 256 px buttons column on
-/// the Figma split-view layout (node 215:2828). Kept inside this file —
-/// it's a screen-level layout choice, not a design-system token.
-const double _welcomeButtonMinWidth = 256;
+/// Welcome-specific button minimum width. Matches the 196 dp the Figma
+/// component uses for the two CTAs (node 215:2829 / 215:2830). Modeled
+/// as a minimum, not a fixed width, because "fixed width" is a
+/// designer-side convenience: the real requirement is that both
+/// buttons share a visually consistent size, and `minWidth` lets
+/// Column pick whichever of the two wants more room without
+/// short-circuiting hit-test behavior on smaller locales.
+const double _welcomeButtonMinWidth = 196;
 
-/// Onboarding entry point — the Figma "Split View" at node 215:2688.
+/// Onboarding entry point — the Figma "Split View" at node 215:2688
+/// (light) / 215:2888 (dark).
 ///
 /// The outer 8 dp gap around the content pane is deliberately transparent
 /// so the native macOS acrylic / Windows blur shows through; only the
 /// inner "Trailing Pane" is opaque (`background.ground` with an 8 dp
-/// corner radius and a soft ambient shadow). The transparent-first rule
-/// is documented in CLAUDE.md under "Window Transparency".
+/// corner radius). The transparent-first rule is documented in CLAUDE.md
+/// under "Window Transparency".
 ///
 /// The screen targets the large (landscape) desktop layout by design.
 /// On entry it asks [AppLayoutNotifier] to switch to
@@ -59,17 +65,20 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
           child: _Pane(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // "Center when content fits, scroll when it doesn't"
-                // pattern — the configured minimum window height (≈ 400
-                // dp) is smaller than the natural content height, so the
-                // content needs to scroll when the user shrinks the
-                // window to the floor.
+                // "Bottom-anchor content, scroll when it doesn't fit"
+                // pattern — the Figma layout justifies the content
+                // column to the bottom of the pane so the backdrop
+                // illustration has room to breathe in the upper area.
+                // The configured minimum window height (≈ 400 dp) is
+                // smaller than the natural content height, so content
+                // still scrolls at the layout floor.
                 return SingleChildScrollView(
                   child: ConstrainedBox(
-                    constraints:
-                        BoxConstraints(minHeight: constraints.maxHeight),
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
                     child: const Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.end,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [_Content()],
                     ),
@@ -84,11 +93,16 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   }
 }
 
-/// The opaque card that wraps the onboarding content. Fills the entire
-/// padded area. The pane edge reads against the acrylic on its own —
-/// no shadow needed (the Figma spec carries one, but in a transparent-
-/// window + acrylic context it would only blur into an already-blurred
-/// material, adding no depth).
+/// Opaque card that wraps the onboarding content. Fills the padded
+/// area. Renders the Figma-composited backdrop illustration behind the
+/// content — two variants (light / dark) pre-composed from the Figma
+/// "Welcome Bg" nodes (261:6662 / 303:1477). Picking at render time via
+/// [AppTheme] keeps the Dart side trivial: each PNG already bakes in
+/// the three-layer mask / opacity composition the Figma spec describes.
+///
+/// No ambient pane shadow — the Figma dark variant ships one, but the
+/// team decided it adds no depth in the transparent-window + acrylic
+/// context the app actually runs in.
 class _Pane extends StatelessWidget {
   const _Pane({required this.child});
 
@@ -97,6 +111,10 @@ class _Pane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final bgAsset = isDark
+        ? 'assets/illustrations/welcome_bg_dark.png'
+        : 'assets/illustrations/welcome_bg_light.png';
     return Container(
       width: double.infinity,
       height: double.infinity,
@@ -105,15 +123,30 @@ class _Pane extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.small),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: child,
+      child: Stack(
+        children: [
+          // Backdrop illustration. `BoxFit.cover` + top-center anchor
+          // keeps the knight figure in the upper portion of the pane;
+          // the Figma asset's bottom third fades to transparent so the
+          // opaque pane color shows through behind the content column.
+          Positioned.fill(
+            child: Image.asset(
+              bgAsset,
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: child,
+          ),
+        ],
       ),
     );
   }
 }
 
-/// Shield illustration + title block + buttons + legal footer, centered.
+/// Vizor logo + title block + buttons + legal footer, bottom-anchored.
 class _Content extends StatelessWidget {
   const _Content();
 
@@ -123,24 +156,8 @@ class _Content extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Image.asset(
-          'assets/illustrations/shield_light.png',
-          width: 160,
-          height: 137,
-          fit: BoxFit.contain,
-        ),
-        const SizedBox(height: AppSpacing.base),
-        Text(
-          'Zeplr Wallet',
-          // Kicker / brand identifier above the hero — same 14 px as
-          // bodyMedium, but labelLarge's Medium weight + tighter line
-          // height reads as a UI label rather than prose.
-          style: AppTypography.labelLarge.copyWith(
-            color: colors.text.primary,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: AppSpacing.xs),
+        const _VizorLogo(),
+        const SizedBox(height: AppSpacing.md),
         Text(
           'Private Money.\nFor the New Internet',
           style: AppTypography.displayMedium.copyWith(
@@ -150,9 +167,41 @@ class _Content extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         const _ButtonsStack(),
-        const SizedBox(height: AppSpacing.base),
+        const SizedBox(height: AppSpacing.md),
         const _LegalFooter(),
       ],
+    );
+  }
+}
+
+/// Brand wordmark rendered above the title.
+///
+/// The SVG ships with a static `#E1E1E1` fill — a snapshot of the
+/// dark-mode accent tone at export time. `BlendMode.srcIn` swaps that
+/// for whatever `text.accent` resolves to at paint, so the logo flips
+/// to near-black in light mode and near-white in dark mode without
+/// maintaining two asset variants.
+///
+/// The Figma Logo component (node 238:3869) is a 74×37 frame with the
+/// wordmark inset to roughly 62 × 20.7 dp; the SizedBox + centered
+/// SvgPicture mirrors that padding so the logo sits with the same
+/// breathing room the spec calls for.
+class _VizorLogo extends StatelessWidget {
+  const _VizorLogo();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 74,
+      height: 37,
+      child: Center(
+        child: SvgPicture.asset(
+          'assets/icons/vizor_logo.svg',
+          width: 62,
+          colorFilter: ColorFilter.mode(colors.text.accent, BlendMode.srcIn),
+        ),
+      ),
     );
   }
 }
@@ -201,8 +250,9 @@ class _LegalFooter extends StatelessWidget {
     // legibility in dark mode where the literal would disappear into
     // the background. Navigation handlers are intentionally stubbed
     // until the Terms / Privacy destinations exist.
-    final bodyStyle =
-        AppTypography.bodySmall.copyWith(color: colors.text.muted);
+    final bodyStyle = AppTypography.bodySmall.copyWith(
+      color: colors.text.muted,
+    );
     final linkStyle = AppTypography.bodySmall.copyWith(
       color: colors.text.secondary,
       decoration: TextDecoration.underline,
