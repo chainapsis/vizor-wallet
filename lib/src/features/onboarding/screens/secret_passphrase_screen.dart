@@ -226,47 +226,57 @@ class _SeedPhraseCard extends StatelessWidget {
     final hiddenWashColor = isDark
         ? colors.background.base.withValues(alpha: 0.18)
         : colors.background.base.withValues(alpha: 0.56);
-    return Container(
+    final borderRadius = BorderRadius.circular(AppRadii.medium);
+    return SizedBox(
       width: 588,
       height: 315,
-      decoration: BoxDecoration(
-        color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
-      child: switch ((isLoading, error != null, mnemonic)) {
-        (true, _, _) => const Center(child: CircularProgressIndicator()),
-        (_, true, _) => _ErrorState(message: error!),
-        (_, _, String value) => Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: ClipRect(
-                  child: IgnorePointer(
-                    ignoring: !revealed,
-                    child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(
-                        sigmaX: hiddenBlurSigma,
-                        sigmaY: hiddenBlurSigma,
-                      ),
-                      child: _SeedPhraseContents(
-                        mnemonic: value,
-                        onCopyPressed: onCopyPressed,
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.background.base,
+            borderRadius: borderRadius,
+          ),
+          child: switch ((isLoading, error != null, mnemonic)) {
+            (true, _, _) => const Center(child: CircularProgressIndicator()),
+            (_, true, _) => _ErrorState(message: error!),
+            (_, _, String value) => Stack(
+              clipBehavior: Clip.hardEdge,
+              alignment: Alignment.center,
+              children: [
+                Positioned.fill(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: IgnorePointer(
+                      ignoring: !revealed,
+                      child: ImageFiltered(
+                        imageFilter: ImageFilter.blur(
+                          sigmaX: hiddenBlurSigma,
+                          sigmaY: hiddenBlurSigma,
+                        ),
+                        child: _SeedPhraseContents(
+                          mnemonic: value,
+                          onCopyPressed: onCopyPressed,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+                if (!revealed)
+                  Positioned.fill(child: ColoredBox(color: hiddenWashColor)),
+                if (!revealed)
+                  const Positioned.fill(
+                    child: Padding(
+                      padding: EdgeInsets.all(AppSpacing.md),
+                      child: Center(child: _HiddenWarning()),
+                    ),
+                  ),
+              ],
             ),
-            if (!revealed)
-              Positioned.fill(child: ColoredBox(color: hiddenWashColor)),
-            if (!revealed) const _HiddenWarning(),
-          ],
+            _ => const SizedBox.shrink(),
+          },
         ),
-        _ => const SizedBox.shrink(),
-      },
+      ),
     );
   }
 }
