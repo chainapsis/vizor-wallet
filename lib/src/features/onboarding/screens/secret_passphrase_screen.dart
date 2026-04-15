@@ -277,6 +277,7 @@ class _SeedPhraseContents extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final words = mnemonic.split(' ');
+    const verticalGap = AppSpacing.s;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -286,7 +287,7 @@ class _SeedPhraseContents extends StatelessWidget {
             color: colors.text.accent,
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: verticalGap),
         SizedBox(
           width: 424,
           child: Wrap(
@@ -302,26 +303,27 @@ class _SeedPhraseContents extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: verticalGap),
         Container(
           width: double.infinity,
           height: 1,
           color: colors.border.strong,
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: verticalGap),
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            SizedBox(
-              width: 222,
+            Expanded(
               child: Text(
                 'Make sure you keep it in safe place',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: AppTypography.bodyMedium.copyWith(
                   color: colors.text.accent,
                 ),
               ),
             ),
+            const SizedBox(width: AppSpacing.md),
             AppButton(
               onPressed: () {
                 onCopyPressed();
