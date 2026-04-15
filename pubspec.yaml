@@ -56,6 +56,11 @@ dependencies:
   # ordering. Using WindowManipulator directly lets us await the real
   # platform futures. Already pulled in transitively via flutter_acrylic.
   macos_window_utils: ^1.9.1
+  # Renders the Figma-exported icon SVGs under `assets/icons/`.
+  # Paired with `ColorFilter.mode(color, BlendMode.srcIn)` in
+  # `AppIcon` so a single single-fill SVG tints to any theme color
+  # without re-exporting.
+  flutter_svg: ^2.0.10+1
 
 dev_dependencies:
   flutter_test:
@@ -96,6 +101,7 @@ flutter:
 
   assets:
     - assets/illustrations/
+    - assets/icons/
 
   fonts:
     - family: Manrope

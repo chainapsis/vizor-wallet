@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show Colors, Icons, Scaffold;
+import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/layout/app_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_icon.dart';
 
 /// Welcome-specific button width. Matches the 256 px buttons column on
 /// the Figma split-view layout (node 215:2828). Kept inside this file —
@@ -171,7 +172,7 @@ class _ButtonsStack extends StatelessWidget {
           onPressed: () => context.go('/onboarding/intro'),
           variant: AppButtonVariant.primary,
           minWidth: _welcomeButtonMinWidth,
-          leading: const Icon(Icons.add),
+          leading: const AppIcon(AppIcons.addNew),
           child: const Text('Create new wallet'),
         ),
         const SizedBox(height: AppSpacing.xs),
@@ -179,7 +180,7 @@ class _ButtonsStack extends StatelessWidget {
           onPressed: () => context.go('/import'),
           variant: AppButtonVariant.secondary,
           minWidth: _welcomeButtonMinWidth,
-          leading: const Icon(Icons.download),
+          leading: const AppIcon(AppIcons.importWallet),
           child: const Text('Import existing wallet'),
         ),
       ],

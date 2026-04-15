@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart' show Colors, Icons, Scaffold;
+import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/motion/onboarding_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 
 /// Onboarding step 1 — Figma "Split View" at node 258:5213.
 ///
@@ -129,23 +130,23 @@ class _SidebarNav extends StatelessWidget {
         children: const [
           _NavItem(
             label: 'Intro to Zcash',
-            icon: Icons.currency_exchange,
+            iconName: AppIcons.zcash,
             active: true,
           ),
           SizedBox(height: AppSpacing.xxs),
           _NavItem(
             label: 'Address types',
-            icon: Icons.shield_outlined,
+            iconName: AppIcons.shieldKeyhole,
           ),
           SizedBox(height: AppSpacing.xxs),
           _NavItem(
             label: 'Things to know',
-            icon: Icons.menu_book_outlined,
+            iconName: AppIcons.book,
           ),
           SizedBox(height: AppSpacing.xxs),
           _NavItem(
             label: 'Secret Passphrase',
-            icon: Icons.key_outlined,
+            iconName: AppIcons.key,
           ),
         ],
       ),
@@ -160,12 +161,12 @@ class _SidebarNav extends StatelessWidget {
 class _NavItem extends StatelessWidget {
   const _NavItem({
     required this.label,
-    required this.icon,
+    required this.iconName,
     this.active = false,
   });
 
   final String label;
-  final IconData icon;
+  final String iconName;
   final bool active;
 
   @override
@@ -188,7 +189,7 @@ class _NavItem extends StatelessWidget {
                 ),
               ),
             ),
-            Icon(icon, size: 20, color: colors.icon.accent),
+            AppIcon(iconName, size: 20, color: colors.icon.accent),
           ],
         ),
       ),
@@ -350,16 +351,14 @@ class _ActionRow extends StatelessWidget {
           // the flow remains usable.
           onPressed: () => context.go('/create'),
           variant: AppButtonVariant.primary,
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const AppIcon(AppIcons.chevronForward),
           child: const Text('Start Onboarding'),
         ),
         const SizedBox(width: AppSpacing.xs),
         AppButton(
           onPressed: () => context.go('/create'),
           variant: AppButtonVariant.ghost,
-          // Material's `skip_next` is the closest stock match for the
-          // Figma `skip` glyph (double-chevron → vertical bar).
-          trailing: const Icon(Icons.skip_next),
+          trailing: const AppIcon(AppIcons.skip),
           child: const Text('Skip'),
         ),
       ],

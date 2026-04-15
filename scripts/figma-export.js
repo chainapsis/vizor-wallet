@@ -25,7 +25,7 @@ const path = require('path');
 const https = require('https');
 
 function parseArgs(argv) {
-  const out = { scale: 1, format: 'png' };
+  const out = { scale: 1, format: 'png', absoluteBounds: false };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     const next = () => {
@@ -39,6 +39,7 @@ function parseArgs(argv) {
       case '--scale': out.scale = Number(next()); break;
       case '--format': out.format = next(); break;
       case '--output': out.output = next(); break;
+      case '--absolute-bounds': out.absoluteBounds = true; break;
       case '-h':
       case '--help': out.help = true; break;
       default: throw new Error(`unknown flag ${a}`);
@@ -51,7 +52,8 @@ function printHelp() {
   console.log(
     'Usage: FIGMA_TOKEN=xxx figma-export.js ' +
     '--file <fileKey> --node <nodeId> --output <path> ' +
-    '[--scale 1|2|3] [--format png|jpg|svg|pdf]'
+    '[--scale 1|2|3] [--format png|jpg|svg|pdf] ' +
+    '[--absolute-bounds]'
   );
 }
 
@@ -92,11 +94,19 @@ async function main() {
 
   console.log(`[figma-export] exporting ${args.nodeId} @ ${args.scale}x ${args.format}`);
 
+  // `use_absolute_bounds=true` tells Figma to render the node at its full
+  // frame dimensions rather than tight-cropping to the artwork's
+  // bounding box. Needed when a frame intentionally has empty space
+  // around its content (the prototypical case is icon frames sized to
+  // 24x24 with inner art smaller than that) — without it the exported
+  // SVG viewBox matches the content, not the frame, and the icon's
+  // position inside the 24x24 grid is lost.
   const apiUrl =
     `https://api.figma.com/v1/images/${encodeURIComponent(args.fileKey)}` +
     `?ids=${encodeURIComponent(args.nodeId)}` +
     `&format=${encodeURIComponent(args.format)}` +
-    `&scale=${encodeURIComponent(args.scale)}`;
+    `&scale=${encodeURIComponent(args.scale)}` +
+    (args.absoluteBounds ? '&use_absolute_bounds=true' : '');
 
   const apiResBuf = await httpGet(apiUrl, { 'X-Figma-Token': token });
   let apiRes;
