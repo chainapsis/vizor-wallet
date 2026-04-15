@@ -166,7 +166,8 @@ class _ActionRow extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         AppButton(
-          onPressed: () => context.go('/create'),
+          onPressed: () =>
+              context.go(OnboardingStep.secretPassphrase.routePath),
           variant: AppButtonVariant.primary,
           minWidth: 196,
           trailing: const AppIcon(AppIcons.chevronForward),
