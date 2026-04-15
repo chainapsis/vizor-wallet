@@ -48,9 +48,14 @@ abstract final class AppIcons {
 /// the design system currently ships; multi-fill / gradient icons
 /// would need a different render path.
 ///
-/// Defaults to [AppColors.icon.regular] when [color] is omitted so the
-/// icon blends with the ambient theme without the caller having to
-/// plumb the color through every time.
+/// Color resolution order, first non-null wins:
+/// 1. Explicit [color] argument at the call site.
+/// 2. `IconTheme.of(context).color` — ambient theme. This is what lets
+///    a widget like [AppButton] merge its label color into an
+///    `IconTheme` wrapper and have every `AppIcon` child pick it up
+///    without the caller having to thread the color through.
+/// 3. [AppColors.icon.regular] from the ambient [AppTheme] — default
+///    "neutral icon" when no other context has spoken.
 class AppIcon extends StatelessWidget {
   const AppIcon(
     this.name, {
@@ -68,8 +73,9 @@ class AppIcon extends StatelessWidget {
   /// asset's native pixel-perfect size.
   final double size;
 
-  /// Tint applied via `BlendMode.srcIn`. When null, falls back to
-  /// [AppColors.icon.regular] from the ambient theme.
+  /// Tint applied via `BlendMode.srcIn`. When null, falls back through
+  /// ambient `IconTheme` and then [AppColors.icon.regular] — see the
+  /// class doc for the full resolution order.
   final Color? color;
 
   /// Optional accessibility label forwarded to [SvgPicture.asset].
@@ -77,7 +83,10 @@ class AppIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolved = color ?? context.colors.icon.regular;
+    final resolved =
+        color ??
+        IconTheme.of(context).color ??
+        context.colors.icon.regular;
     return SvgPicture.asset(
       'assets/icons/$name.svg',
       width: size,
