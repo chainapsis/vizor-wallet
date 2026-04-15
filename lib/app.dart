@@ -8,9 +8,11 @@ import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/features/home/screens/home_screen.dart';
+import 'src/features/onboarding/screens/address_types_screen.dart';
 import 'src/features/onboarding/screens/create_wallet_screen.dart';
 import 'src/features/onboarding/screens/import_wallet_screen.dart';
 import 'src/features/onboarding/screens/intro_zcash_screen.dart';
+import 'src/features/onboarding/screens/onboarding_split_view.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/history/screens/history_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -33,12 +35,15 @@ final _routerProvider = Provider<GoRouter>((ref) {
 
       final wallet = walletAsync.value;
       final hasWallet = wallet?.hasWallet ?? false;
-      final isOnboarding = state.matchedLocation == '/welcome' ||
-          state.matchedLocation == '/onboarding/intro' ||
+      final isOnboarding =
+          state.matchedLocation == '/welcome' ||
+          state.matchedLocation.startsWith('/onboarding/') ||
           state.matchedLocation == '/create' ||
           state.matchedLocation == '/import';
 
-      log('router redirect: location=${state.matchedLocation}, hasWallet=$hasWallet, isOnboarding=$isOnboarding');
+      log(
+        'router redirect: location=${state.matchedLocation}, hasWallet=$hasWallet, isOnboarding=$isOnboarding',
+      );
 
       if (!hasWallet && !isOnboarding) return '/welcome';
       if (hasWallet && state.matchedLocation == '/welcome') return '/home';
@@ -72,44 +77,47 @@ final _routerProvider = Provider<GoRouter>((ref) {
           transitionsBuilder: _onboardingFadeTransition,
         ),
       ),
-      GoRoute(
-        path: '/onboarding/intro',
-        pageBuilder: (context, state) => CustomTransitionPage<void>(
+      ShellRoute(
+        pageBuilder: (context, state, child) => CustomTransitionPage<void>(
           key: state.pageKey,
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
-          child: const IntroZcashScreen(),
+          child: OnboardingSplitViewShell(
+            activeStep: onboardingStepFromLocation(state.matchedLocation),
+            child: child,
+          ),
           transitionsBuilder: (_, _, _, child) => child,
         ),
+        routes: [
+          GoRoute(
+            path: '/onboarding/intro',
+            pageBuilder: (context, state) => CustomTransitionPage<void>(
+              key: state.pageKey,
+              transitionDuration: kOnboardingForwardDuration,
+              reverseTransitionDuration: kOnboardingReverseDuration,
+              child: const IntroZcashScreen(),
+              transitionsBuilder: _onboardingFadeTransition,
+            ),
+          ),
+          GoRoute(
+            path: '/onboarding/address-types',
+            pageBuilder: (context, state) => CustomTransitionPage<void>(
+              key: state.pageKey,
+              transitionDuration: kOnboardingForwardDuration,
+              reverseTransitionDuration: kOnboardingReverseDuration,
+              child: const AddressTypesScreen(),
+              transitionsBuilder: _onboardingFadeTransition,
+            ),
+          ),
+        ],
       ),
-      GoRoute(
-        path: '/create',
-        builder: (_, _) => const CreateWalletScreen(),
-      ),
-      GoRoute(
-        path: '/import',
-        builder: (_, _) => const ImportWalletScreen(),
-      ),
-      GoRoute(
-        path: '/home',
-        builder: (_, _) => const HomeScreen(),
-      ),
-      GoRoute(
-        path: '/send',
-        builder: (_, _) => const SendScreen(),
-      ),
-      GoRoute(
-        path: '/receive',
-        builder: (_, _) => const ReceiveScreen(),
-      ),
-      GoRoute(
-        path: '/history',
-        builder: (_, _) => const HistoryScreen(),
-      ),
-      GoRoute(
-        path: '/accounts',
-        builder: (_, _) => const AccountsScreen(),
-      ),
+      GoRoute(path: '/create', builder: (_, _) => const CreateWalletScreen()),
+      GoRoute(path: '/import', builder: (_, _) => const ImportWalletScreen()),
+      GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+      GoRoute(path: '/send', builder: (_, _) => const SendScreen()),
+      GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
+      GoRoute(path: '/history', builder: (_, _) => const HistoryScreen()),
+      GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
       GoRoute(
         path: '/import-keystone',
         builder: (_, _) => const ImportKeystoneScreen(),
