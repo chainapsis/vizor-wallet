@@ -221,10 +221,14 @@ class _SeedPhraseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final hiddenBlurSigma = revealed ? 0.0 : 7.5;
+    final hiddenWashColor = isDark
+        ? colors.background.base.withValues(alpha: 0.18)
+        : colors.background.base.withValues(alpha: 0.56);
     return Container(
       width: 588,
       height: 315,
-      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.medium),
@@ -237,24 +241,27 @@ class _SeedPhraseCard extends StatelessWidget {
           alignment: Alignment.center,
           children: [
             Positioned.fill(
-              child: IgnorePointer(
-                ignoring: !revealed,
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(
-                    sigmaX: revealed ? 0 : 15,
-                    sigmaY: revealed ? 0 : 15,
-                  ),
-                  child: _SeedPhraseContents(
-                    mnemonic: value,
-                    onCopyPressed: onCopyPressed,
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: ClipRect(
+                  child: IgnorePointer(
+                    ignoring: !revealed,
+                    child: ImageFiltered(
+                      imageFilter: ImageFilter.blur(
+                        sigmaX: hiddenBlurSigma,
+                        sigmaY: hiddenBlurSigma,
+                      ),
+                      child: _SeedPhraseContents(
+                        mnemonic: value,
+                        onCopyPressed: onCopyPressed,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
             if (!revealed)
-              const Positioned.fill(
-                child: ColoredBox(color: Color(0x1A000000)),
-              ),
+              Positioned.fill(child: ColoredBox(color: hiddenWashColor)),
             if (!revealed) const _HiddenWarning(),
           ],
         ),
