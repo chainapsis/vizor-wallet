@@ -11,6 +11,7 @@ import 'button_use_cases.dart';
 import 'color_use_cases.dart';
 import 'screen_use_cases.dart';
 import 'token_use_cases.dart';
+import 'typography_use_cases.dart';
 
 /// Top-level Widgetbook app for the Zcash design system.
 ///
@@ -67,6 +68,15 @@ class WidgetbookApp extends StatelessWidget {
         WidgetbookFolder(
           name: 'Tokens',
           children: [
+            WidgetbookComponent(
+              name: 'Typography',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'All',
+                  builder: buildTypographyAllUseCase,
+                ),
+              ],
+            ),
             WidgetbookComponent(
               name: 'Spacing',
               useCases: [
