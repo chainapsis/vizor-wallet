@@ -12,6 +12,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_chip.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
+import '../../../rust/api/wallet.dart' as rust_wallet;
 import 'onboarding_split_view.dart';
 
 class SecretPassphraseScreen extends ConsumerStatefulWidget {
@@ -25,40 +26,59 @@ class SecretPassphraseScreen extends ConsumerStatefulWidget {
 class _SecretPassphraseScreenState
     extends ConsumerState<SecretPassphraseScreen> {
   String? _mnemonic;
-  bool _isLoading = true;
+  bool _isPreparing = true;
+  bool _isCreating = false;
   bool _revealed = false;
-  String? _error;
+  String? _prepareError;
+  String? _submitError;
 
   @override
   void initState() {
     super.initState();
-    _createWallet();
+    _prepareMnemonic();
   }
 
-  Future<void> _createWallet() async {
+  void _prepareMnemonic() {
     try {
-      final mnemonic = await ref.read(accountProvider.notifier).createAccount();
-      if (!mounted) return;
-      setState(() {
-        _mnemonic = mnemonic;
-        _isLoading = false;
-      });
+      _mnemonic = rust_wallet.generateMnemonic();
+      _isPreparing = false;
     } catch (e, st) {
-      log('SecretPassphraseScreen._createWallet: ERROR: $e\n$st');
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
+      log('SecretPassphraseScreen._prepareMnemonic: ERROR: $e\n$st');
+      _prepareError = e.toString();
+      _isPreparing = false;
     }
   }
 
-  void _handlePrimaryAction() {
-    if (_isLoading || _error != null) return;
+  Future<void> _handlePrimaryAction() async {
+    if (_isPreparing || _isCreating || _prepareError != null) return;
     if (!_revealed) {
-      setState(() => _revealed = true);
+      setState(() {
+        _revealed = true;
+        _submitError = null;
+      });
       return;
     }
+    final mnemonic = _mnemonic;
+    if (mnemonic == null) return;
+
+    setState(() {
+      _isCreating = true;
+      _submitError = null;
+    });
+    try {
+      await ref
+          .read(accountProvider.notifier)
+          .createAccountFromMnemonic(mnemonic: mnemonic);
+    } catch (e, st) {
+      log('SecretPassphraseScreen._handlePrimaryAction: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _isCreating = false;
+        _submitError = e.toString();
+      });
+      return;
+    }
+    if (!mounted) return;
     context.go('/home');
   }
 
@@ -78,10 +98,14 @@ class _SecretPassphraseScreenState
           const _Title(),
           _BottomContent(
             mnemonic: _mnemonic,
-            isLoading: _isLoading,
+            isLoading: _isPreparing,
+            isCreating: _isCreating,
             revealed: _revealed,
-            error: _error,
-            onPrimaryPressed: _handlePrimaryAction,
+            error: _prepareError,
+            submitError: _submitError,
+            onPrimaryPressed: () {
+              _handlePrimaryAction();
+            },
             onCopyPressed: _copyMnemonic,
           ),
         ],
@@ -117,16 +141,20 @@ class _BottomContent extends StatelessWidget {
   const _BottomContent({
     required this.mnemonic,
     required this.isLoading,
+    required this.isCreating,
     required this.revealed,
     required this.error,
+    required this.submitError,
     required this.onPrimaryPressed,
     required this.onCopyPressed,
   });
 
   final String? mnemonic;
   final bool isLoading;
+  final bool isCreating;
   final bool revealed;
   final String? error;
+  final String? submitError;
   final VoidCallback onPrimaryPressed;
   final Future<void> Function() onCopyPressed;
 
@@ -144,12 +172,32 @@ class _BottomContent extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.base),
         AppButton(
-          onPressed: error == null && !isLoading ? onPrimaryPressed : null,
+          onPressed: error == null && !isLoading && !isCreating
+              ? onPrimaryPressed
+              : null,
           variant: AppButtonVariant.primary,
           minWidth: 196,
           trailing: const AppIcon(AppIcons.chevronForward),
-          child: Text(revealed ? 'Start using Zeplr' : 'Show my Passphrase'),
+          child: Text(
+            isCreating
+                ? 'Creating wallet...'
+                : revealed
+                ? 'Start using Zeplr'
+                : 'Show my Passphrase',
+          ),
         ),
+        if (submitError != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          SizedBox(
+            width: 320,
+            child: Text(
+              submitError!,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.warning,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -185,6 +233,7 @@ class _SeedPhraseCard extends StatelessWidget {
         (true, _, _) => const Center(child: CircularProgressIndicator()),
         (_, true, _) => _ErrorState(message: error!),
         (_, _, String value) => Stack(
+          clipBehavior: Clip.none,
           alignment: Alignment.center,
           children: [
             Positioned.fill(
@@ -202,6 +251,10 @@ class _SeedPhraseCard extends StatelessWidget {
                 ),
               ),
             ),
+            if (!revealed)
+              const Positioned.fill(
+                child: ColoredBox(color: Color(0x1A000000)),
+              ),
             if (!revealed) const _HiddenWarning(),
           ],
         ),

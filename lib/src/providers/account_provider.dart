@@ -19,7 +19,12 @@ class AccountInfo {
   final int order;
   final bool isHardware;
 
-  const AccountInfo({required this.uuid, required this.name, required this.order, this.isHardware = false});
+  const AccountInfo({
+    required this.uuid,
+    required this.name,
+    required this.order,
+    this.isHardware = false,
+  });
 
   AccountInfo copyWith({String? name, int? order}) => AccountInfo(
     uuid: uuid,
@@ -28,7 +33,12 @@ class AccountInfo {
     isHardware: isHardware,
   );
 
-  Map<String, dynamic> toJson() => {'uuid': uuid, 'name': name, 'order': order, 'isHardware': isHardware};
+  Map<String, dynamic> toJson() => {
+    'uuid': uuid,
+    'name': name,
+    'order': order,
+    'isHardware': isHardware,
+  };
 
   factory AccountInfo.fromJson(Map<String, dynamic> json) => AccountInfo(
     uuid: json['uuid'] as String,
@@ -85,20 +95,27 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
 
     final List<dynamic> decoded = jsonDecode(accountsJson);
-    final accounts = decoded.map((e) => AccountInfo.fromJson(e as Map<String, dynamic>)).toList();
+    final accounts = decoded
+        .map((e) => AccountInfo.fromJson(e as Map<String, dynamic>))
+        .toList();
     final activeUuid = await _storage.read(key: _activeAccountKey);
 
     // Resolve active account address
     String? address;
-    final effectiveUuid = activeUuid ?? (accounts.isNotEmpty ? accounts.first.uuid : null);
+    final effectiveUuid =
+        activeUuid ?? (accounts.isNotEmpty ? accounts.first.uuid : null);
     if (effectiveUuid != null) {
       try {
         final dbPath = await _getDbPath();
         final network = await _getNetwork();
         address = await rust_wallet.getUnifiedAddress(
-          dbPath: dbPath, network: network, accountUuid: effectiveUuid,
+          dbPath: dbPath,
+          network: network,
+          accountUuid: effectiveUuid,
         );
-        log('AccountNotifier.build: active=$effectiveUuid, address=${address.substring(0, 20)}...');
+        log(
+          'AccountNotifier.build: active=$effectiveUuid, address=${address.substring(0, 20)}...',
+        );
       } catch (e) {
         log('AccountNotifier.build: failed to get address: $e');
       }
@@ -114,64 +131,160 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// Create a new wallet with a fresh mnemonic. Returns the mnemonic.
   Future<String> createAccount({String? name}) async {
     try {
-    final dbPath = await _getDbPath();
-    final network = await _getNetwork();
-    final networkConfig = network == 'main' ? ZcashNetwork.mainnet : ZcashNetwork.testnet;
+      final dbPath = await _getDbPath();
+      final network = await _getNetwork();
+      final networkConfig = network == 'main'
+          ? ZcashNetwork.mainnet
+          : ZcashNetwork.testnet;
 
-    // Fetch chain tip as birthday
-    final birthday = await rust_wallet.getLatestBlockHeight(
-      lightwalletdUrl: networkConfig.lightwalletdUrl,
-    );
-    log('createAccount: birthday=$birthday');
-
-    final accounts = state.value?.accounts ?? [];
-    final accountName = name ?? 'Account ${accounts.length + 1}';
-
-    String mnemonic;
-    String accountUuid;
-    String unifiedAddress;
-
-    if (accounts.isEmpty) {
-      // First account — create wallet (init DB + create account)
-      await _deleteExistingDb(dbPath);
-      final result = await rust_wallet.createWallet(
-        network: network, dbPath: dbPath, birthdayHeight: birthday,
-        accountName: accountName,
+      // Fetch chain tip as birthday
+      final birthday = await rust_wallet.getLatestBlockHeight(
+        lightwalletdUrl: networkConfig.lightwalletdUrl,
       );
-      mnemonic = result.mnemonic;
-      accountUuid = result.accountUuid;
-      unifiedAddress = result.unifiedAddress;
-      await _storage.write(key: _networkKey, value: network);
-    } else {
-      // Additional account — generate mnemonic + add to existing DB
-      mnemonic = rust_wallet.generateMnemonic();
-      final result = await rust_wallet.addAccount(
-        dbPath: dbPath, network: network, name: accountName,
-        mnemonic: mnemonic, birthdayHeight: birthday,
+      log('createAccount: birthday=$birthday');
+
+      final accounts = state.value?.accounts ?? [];
+      final accountName = name ?? 'Account ${accounts.length + 1}';
+
+      String mnemonic;
+      String accountUuid;
+      String unifiedAddress;
+
+      if (accounts.isEmpty) {
+        // First account — create wallet (init DB + create account)
+        await _deleteExistingDb(dbPath);
+        final result = await rust_wallet.createWallet(
+          network: network,
+          dbPath: dbPath,
+          birthdayHeight: birthday,
+          accountName: accountName,
+        );
+        mnemonic = result.mnemonic;
+        accountUuid = result.accountUuid;
+        unifiedAddress = result.unifiedAddress;
+        await _storage.write(key: _networkKey, value: network);
+      } else {
+        // Additional account — generate mnemonic + add to existing DB
+        mnemonic = rust_wallet.generateMnemonic();
+        final result = await rust_wallet.addAccount(
+          dbPath: dbPath,
+          network: network,
+          name: accountName,
+          mnemonic: mnemonic,
+          birthdayHeight: birthday,
+        );
+        accountUuid = result.accountUuid;
+        unifiedAddress = result.unifiedAddress;
+      }
+
+      // Store mnemonic per-account
+      await _storage.write(
+        key: 'zcash_account_mnemonic_$accountUuid',
+        value: mnemonic,
       );
-      accountUuid = result.accountUuid;
-      unifiedAddress = result.unifiedAddress;
-    }
 
-    // Store mnemonic per-account
-    await _storage.write(key: 'zcash_account_mnemonic_$accountUuid', value: mnemonic);
+      // Update account list
+      final newAccount = AccountInfo(
+        uuid: accountUuid,
+        name: accountName,
+        order: accounts.length,
+      );
+      final updatedAccounts = [...accounts, newAccount];
+      await _saveAccounts(updatedAccounts);
+      await _storage.write(key: _activeAccountKey, value: accountUuid);
 
-    // Update account list
-    final newAccount = AccountInfo(uuid: accountUuid, name: accountName, order: accounts.length);
-    final updatedAccounts = [...accounts, newAccount];
-    await _saveAccounts(updatedAccounts);
-    await _storage.write(key: _activeAccountKey, value: accountUuid);
+      state = AsyncData(
+        AccountState(
+          accounts: updatedAccounts,
+          activeAccountUuid: accountUuid,
+          activeAddress: unifiedAddress,
+        ),
+      );
 
-    state = AsyncData(AccountState(
-      accounts: updatedAccounts,
-      activeAccountUuid: accountUuid,
-      activeAddress: unifiedAddress,
-    ));
-
-    log('createAccount: success, uuid=$accountUuid');
-    return mnemonic;
+      log('createAccount: success, uuid=$accountUuid');
+      return mnemonic;
     } catch (e, st) {
       log('createAccount: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  /// Create a new wallet/account from a caller-provided mnemonic.
+  ///
+  /// Used by onboarding flows that reveal the phrase before persisting the
+  /// account. The mnemonic is only stored after the user confirms the final
+  /// CTA, so the wallet is not created just by visiting the reveal screen.
+  Future<void> createAccountFromMnemonic({
+    required String mnemonic,
+    String? name,
+  }) async {
+    try {
+      final dbPath = await _getDbPath();
+      final network = await _getNetwork();
+      final networkConfig = network == 'main'
+          ? ZcashNetwork.mainnet
+          : ZcashNetwork.testnet;
+
+      final birthday = await rust_wallet.getLatestBlockHeight(
+        lightwalletdUrl: networkConfig.lightwalletdUrl,
+      );
+      log('createAccountFromMnemonic: birthday=$birthday');
+
+      final accounts = state.value?.accounts ?? [];
+      final accountName = name ?? 'Account ${accounts.length + 1}';
+
+      late final String accountUuid;
+      late final String unifiedAddress;
+
+      if (accounts.isEmpty) {
+        await _deleteExistingDb(dbPath);
+        final result = await rust_wallet.importWallet(
+          mnemonic: mnemonic,
+          birthdayHeight: birthday,
+          network: network,
+          dbPath: dbPath,
+          accountName: accountName,
+        );
+        accountUuid = result.accountUuid;
+        unifiedAddress = result.unifiedAddress;
+        await _storage.write(key: _networkKey, value: network);
+      } else {
+        final result = await rust_wallet.addAccount(
+          dbPath: dbPath,
+          network: network,
+          name: accountName,
+          mnemonic: mnemonic,
+          birthdayHeight: birthday,
+        );
+        accountUuid = result.accountUuid;
+        unifiedAddress = result.unifiedAddress;
+      }
+
+      await _storage.write(
+        key: 'zcash_account_mnemonic_$accountUuid',
+        value: mnemonic,
+      );
+
+      final newAccount = AccountInfo(
+        uuid: accountUuid,
+        name: accountName,
+        order: accounts.length,
+      );
+      final updatedAccounts = [...accounts, newAccount];
+      await _saveAccounts(updatedAccounts);
+      await _storage.write(key: _activeAccountKey, value: accountUuid);
+
+      state = AsyncData(
+        AccountState(
+          accounts: updatedAccounts,
+          activeAccountUuid: accountUuid,
+          activeAddress: unifiedAddress,
+        ),
+      );
+
+      log('createAccountFromMnemonic: success, uuid=$accountUuid');
+    } catch (e, st) {
+      log('createAccountFromMnemonic: ERROR: $e\n$st');
       rethrow;
     }
   }
@@ -183,51 +296,67 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String? name,
   }) async {
     try {
-    final dbPath = await _getDbPath();
-    final network = await _getNetwork();
-    final accounts = state.value?.accounts ?? [];
-    final accountName = name ?? 'Account ${accounts.length + 1}';
+      final dbPath = await _getDbPath();
+      final network = await _getNetwork();
+      final accounts = state.value?.accounts ?? [];
+      final accountName = name ?? 'Account ${accounts.length + 1}';
 
-    String accountUuid;
-    String unifiedAddress;
+      String accountUuid;
+      String unifiedAddress;
 
-    if (accounts.isEmpty) {
-      // First account — import wallet (init DB + import)
-      await _deleteExistingDb(dbPath);
-      final result = await rust_wallet.importWallet(
-        mnemonic: mnemonic,
-        birthdayHeight: birthdayHeight != null ? BigInt.from(birthdayHeight) : null,
-        network: network, dbPath: dbPath,
-        accountName: accountName,
+      if (accounts.isEmpty) {
+        // First account — import wallet (init DB + import)
+        await _deleteExistingDb(dbPath);
+        final result = await rust_wallet.importWallet(
+          mnemonic: mnemonic,
+          birthdayHeight: birthdayHeight != null
+              ? BigInt.from(birthdayHeight)
+              : null,
+          network: network,
+          dbPath: dbPath,
+          accountName: accountName,
+        );
+        accountUuid = result.accountUuid;
+        unifiedAddress = result.unifiedAddress;
+        await _storage.write(key: _networkKey, value: network);
+      } else {
+        // Additional account
+        final result = await rust_wallet.addAccount(
+          dbPath: dbPath,
+          network: network,
+          name: accountName,
+          mnemonic: mnemonic,
+          birthdayHeight: birthdayHeight != null
+              ? BigInt.from(birthdayHeight)
+              : null,
+        );
+        accountUuid = result.accountUuid;
+        unifiedAddress = result.unifiedAddress;
+      }
+
+      await _storage.write(
+        key: 'zcash_account_mnemonic_$accountUuid',
+        value: mnemonic,
       );
-      accountUuid = result.accountUuid;
-      unifiedAddress = result.unifiedAddress;
-      await _storage.write(key: _networkKey, value: network);
-    } else {
-      // Additional account
-      final result = await rust_wallet.addAccount(
-        dbPath: dbPath, network: network, name: accountName,
-        mnemonic: mnemonic,
-        birthdayHeight: birthdayHeight != null ? BigInt.from(birthdayHeight) : null,
+
+      final newAccount = AccountInfo(
+        uuid: accountUuid,
+        name: accountName,
+        order: accounts.length,
       );
-      accountUuid = result.accountUuid;
-      unifiedAddress = result.unifiedAddress;
-    }
+      final updatedAccounts = [...accounts, newAccount];
+      await _saveAccounts(updatedAccounts);
+      await _storage.write(key: _activeAccountKey, value: accountUuid);
 
-    await _storage.write(key: 'zcash_account_mnemonic_$accountUuid', value: mnemonic);
+      state = AsyncData(
+        AccountState(
+          accounts: updatedAccounts,
+          activeAccountUuid: accountUuid,
+          activeAddress: unifiedAddress,
+        ),
+      );
 
-    final newAccount = AccountInfo(uuid: accountUuid, name: accountName, order: accounts.length);
-    final updatedAccounts = [...accounts, newAccount];
-    await _saveAccounts(updatedAccounts);
-    await _storage.write(key: _activeAccountKey, value: accountUuid);
-
-    state = AsyncData(AccountState(
-      accounts: updatedAccounts,
-      activeAccountUuid: accountUuid,
-      activeAddress: unifiedAddress,
-    ));
-
-    log('importAccount: success, uuid=$accountUuid');
+      log('importAccount: success, uuid=$accountUuid');
     } catch (e, st) {
       log('importAccount: ERROR: $e\n$st');
       rethrow;
@@ -243,17 +372,18 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final dbPath = await _getDbPath();
       final network = await _getNetwork();
       address = await rust_wallet.getUnifiedAddress(
-        dbPath: dbPath, network: network, accountUuid: uuid,
+        dbPath: dbPath,
+        network: network,
+        accountUuid: uuid,
       );
     } catch (e) {
       log('switchAccount: failed to get address: $e');
     }
 
     final prev = state.value ?? const AccountState();
-    state = AsyncData(prev.copyWith(
-      activeAccountUuid: uuid,
-      activeAddress: address,
-    ));
+    state = AsyncData(
+      prev.copyWith(activeAccountUuid: uuid, activeAddress: address),
+    );
 
     log('switchAccount: switched to $uuid');
   }
@@ -308,26 +438,35 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final network = await _getNetwork();
 
       final result = await rust_wallet.importHardwareAccount(
-        dbPath: dbPath, network: network, name: name,
-        ufvkString: ufvk, seedFingerprint: seedFingerprint,
-        zip32Index: zip32Index, birthdayHeight: null,
+        dbPath: dbPath,
+        network: network,
+        name: name,
+        ufvkString: ufvk,
+        seedFingerprint: seedFingerprint,
+        zip32Index: zip32Index,
+        birthdayHeight: null,
       );
       final accountUuid = result.accountUuid;
       final address = result.unifiedAddress;
 
       // Save account info (no mnemonic — hardware wallet)
       final newAccount = AccountInfo(
-        uuid: accountUuid, name: name, order: prev.accounts.length, isHardware: true,
+        uuid: accountUuid,
+        name: name,
+        order: prev.accounts.length,
+        isHardware: true,
       );
       final updated = [...prev.accounts, newAccount];
       await _saveAccounts(updated);
       await _storage.write(key: _activeAccountKey, value: accountUuid);
 
-      state = AsyncData(AccountState(
-        accounts: updated,
-        activeAccountUuid: accountUuid,
-        activeAddress: address,
-      ));
+      state = AsyncData(
+        AccountState(
+          accounts: updated,
+          activeAccountUuid: accountUuid,
+          activeAddress: address,
+        ),
+      );
       log('importKeystoneAccount: uuid=$accountUuid, address=$address');
     } catch (e, st) {
       log('importKeystoneAccount: ERROR: $e\n$st');
@@ -374,5 +513,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 }
 
-final accountProvider =
-    AsyncNotifierProvider<AccountNotifier, AccountState>(AccountNotifier.new);
+final accountProvider = AsyncNotifierProvider<AccountNotifier, AccountState>(
+  AccountNotifier.new,
+);

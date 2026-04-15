@@ -26,12 +26,19 @@ import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/wallet_provider.dart';
 
 final _routerProvider = Provider<GoRouter>((ref) {
-  final walletAsync = ref.watch(walletProvider);
-  log('router: walletAsync=$walletAsync');
+  final refresh = ValueNotifier<int>(0);
+  ref.onDispose(refresh.dispose);
+  ref.listen(walletProvider, (_, _) {
+    refresh.value++;
+  });
+  log('router: initialized');
 
   return GoRouter(
     initialLocation: '/',
+    refreshListenable: refresh,
     redirect: (context, state) {
+      final walletAsync = ref.read(walletProvider);
+
       // Don't redirect on error — let the error screen show instead of onboarding
       if (walletAsync.hasError) return null;
 
@@ -55,6 +62,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         redirect: (_, _) {
+          final walletAsync = ref.read(walletProvider);
           if (walletAsync.hasError) return '/home'; // home shows error state
           final wallet = walletAsync.value;
           final hasWallet = wallet?.hasWallet ?? false;
