@@ -119,12 +119,8 @@ class _SidebarNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      // `px-[xxs] py-[xs]` on the Figma "Navigtaion" container — snug
-      // inset that lets the row fills still breathe against the pane edge.
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xxs,
-        vertical: AppSpacing.xs,
-      ),
+      // `p-[xs]` on the Figma "Navigtaion" container — 8 dp on all sides.
+      padding: const EdgeInsets.all(AppSpacing.xs),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: const [
@@ -175,9 +171,14 @@ class _NavItem extends StatelessWidget {
     return Opacity(
       opacity: active ? 1.0 : 0.5,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xs,
-          vertical: AppSpacing.xxs,
+        // `pl-[xs] py-[xxs]` on Figma NavigtaionItem — 8 dp leading and
+        // 4 dp vertical, NO trailing padding. The trailing icon sits
+        // flush against the row's right edge, which lands 24 dp from
+        // the sidebar's right edge (outer Side p-xs + Navigtaion p-xs).
+        padding: const EdgeInsets.only(
+          left: AppSpacing.xs,
+          top: AppSpacing.xxs,
+          bottom: AppSpacing.xxs,
         ),
         child: Row(
           children: [
@@ -198,44 +199,50 @@ class _NavItem extends StatelessWidget {
 }
 
 /// Sidebar illustration anchored to the bottom of the column, matching
-/// Figma node 258:5229 "Illustration". The asset
-/// (`onboarding_intro_sidebar.png`) is the Figma node exported as a
-/// composited image — the backdrop scene and the focus knight layer are
-/// already merged together, AND the top-transparent → bottom-opaque
-/// gradient fade is baked into the PNG's alpha channel by the Figma
-/// export. No Dart-side layering, positioning, greyscale filter, or
-/// `ShaderMask` is needed; stacking another mask on top of the baked-in
-/// alpha would double-apply the fade.
+/// the Figma "Illustration" frame inside the Split View Sidebar (nodes
+/// 303:1678 light / 303:1680 dark). The Figma design ships two variants
+/// of the composited knight scene — the light variant renders with
+/// higher contrast / richer tonal range, the dark variant with a
+/// softer, more muted palette so the illustration recedes behind the
+/// text content. The PNGs are cropped out of the theme-specific Split
+/// View exports at 2x; see `onboarding_intro_sidebar_{light,dark}.png`
+/// under `assets/illustrations/`.
 ///
-/// The PNG is a Figma export, not a source asset (see CLAUDE.md →
-/// `scripts/figma-export.js`). Re-run that script to refresh the image
-/// if the designer changes the illustration node — the refreshed PNG
-/// will keep carrying the alpha fade, so this widget stays unchanged.
+/// Each asset is a Figma composited image — backdrop scene, knight
+/// focus layer, and the top-transparent → bottom-opaque gradient fade
+/// are already merged. No Dart-side layering, positioning, greyscale
+/// filter, or `ShaderMask` is needed; stacking another mask on top of
+/// the baked-in fade would double-apply it.
 ///
-/// `IgnorePointer` keeps the composition out of the hit-test path so the
-/// sidebar nav never loses clicks to the illustration.
+/// The PNGs are Figma exports, not source assets (see CLAUDE.md →
+/// `scripts/figma-export.js`). To refresh, re-export the Split View
+/// frame at 2x for each theme and crop the sidebar column.
+///
+/// `IgnorePointer` keeps the composition out of the hit-test path so
+/// the sidebar nav never loses clicks to the illustration.
 class _SidebarIllustration extends StatelessWidget {
   const _SidebarIllustration();
 
-  // Matches the Figma illustration frame size (240 × 411). The asset was
-  // exported at 2x from this same frame, so `BoxFit.cover` inside this
-  // box renders a crisp downscale on 1x/2x/3x displays without needing
-  // per-DPR asset variants.
+  // Matches the Figma illustration frame size (240 × 411). The asset
+  // was exported/cropped at 2x from this same frame, so `BoxFit.cover`
+  // inside this box renders a crisp downscale on 1x/2x/3x displays
+  // without needing per-DPR asset variants.
   static const _frameWidth = 240.0;
   static const _frameHeight = 411.0;
 
   @override
   Widget build(BuildContext context) {
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final asset = isDark
+        ? 'assets/illustrations/onboarding_intro_sidebar_dark.png'
+        : 'assets/illustrations/onboarding_intro_sidebar_light.png';
     return IgnorePointer(
       child: Align(
         alignment: Alignment.bottomCenter,
         child: SizedBox(
           width: _frameWidth,
           height: _frameHeight,
-          child: Image.asset(
-            'assets/illustrations/onboarding_intro_sidebar.png',
-            fit: BoxFit.cover,
-          ),
+          child: Image.asset(asset, fit: BoxFit.cover),
         ),
       ),
     );
@@ -351,6 +358,11 @@ class _ActionRow extends StatelessWidget {
           // the flow remains usable.
           onPressed: () => context.go('/create'),
           variant: AppButtonVariant.primary,
+          // Figma pins "Start Onboarding" at `w-[196px]` — same treatment
+          // as the Welcome screen CTAs (see `_welcomeButtonMinWidth`).
+          // Expressed as a minimum rather than a fixed width to let the
+          // button breathe in longer locales instead of clipping.
+          minWidth: 196,
           trailing: const AppIcon(AppIcons.chevronForward),
           child: const Text('Start Onboarding'),
         ),
