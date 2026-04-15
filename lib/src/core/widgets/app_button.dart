@@ -197,6 +197,7 @@ class _AppButtonState extends State<AppButton> {
     final sizing = widget.size == AppButtonSize.medium
         ? _mediumSizing
         : _smallSizing;
+    final isGhost = widget.variant == AppButtonVariant.ghost;
 
     // Fill priority: pressed > hover > default. Disabled skips all of this
     // (we dim the whole widget via Opacity instead).
@@ -263,7 +264,7 @@ class _AppButtonState extends State<AppButton> {
           ? BoxConstraints(minWidth: widget.minWidth!)
           : const BoxConstraints(),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
+        duration: isGhost ? Duration.zero : const Duration(milliseconds: 120),
         curve: Curves.easeOut,
         height: sizing.height,
         decoration: ShapeDecoration(
