@@ -11,6 +11,7 @@ import '../primitives.dart';
 /// * [disabled] — Icons on disabled controls.
 /// * [inverse] — Icons on inverted surfaces.
 /// * [onPrimary] — Icons placed inside a primary button.
+/// * [warning] — Warning-state icons. Theme-invariant brand yellow.
 /// * [brandPurple] / [brandCyan] — Brand-colored icons.
 class AppIconColors {
   const AppIconColors({
@@ -20,6 +21,7 @@ class AppIconColors {
     required this.disabled,
     required this.inverse,
     required this.onPrimary,
+    required this.warning,
     required this.brandPurple,
     required this.brandCyan,
   });
@@ -30,6 +32,7 @@ class AppIconColors {
   final Color disabled;
   final Color inverse;
   final Color onPrimary;
+  final Color warning;
   final Color brandPurple;
   final Color brandCyan;
 
@@ -40,6 +43,8 @@ class AppIconColors {
     disabled: Primitives.p300Dark,
     inverse: Primitives.p0Dark,
     onPrimary: Primitives.p0Dark,
+    // Matches `text.warning` — same orange across modes.
+    warning: YellowPrimitives.p400Dark,
     brandPurple: PurplePrimitives.p500Dark,
     brandCyan: CyanPrimitives.p500Dark,
   );
@@ -51,6 +56,7 @@ class AppIconColors {
     disabled: Primitives.p300Light,
     inverse: Primitives.p0Light,
     onPrimary: Primitives.p0Light,
+    warning: YellowPrimitives.p300Light,
     brandPurple: PurplePrimitives.p200Light,
     brandCyan: CyanPrimitives.p150Light,
   );

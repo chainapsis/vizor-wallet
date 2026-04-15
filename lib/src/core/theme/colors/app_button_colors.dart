@@ -124,7 +124,10 @@ class AppGhostButtonColors {
     bg: Primitives.p0Light,
     bgHover: Primitives.p100Light,
     border: Primitives.p300Light,
-    label: Primitives.p900Light,
+    // Softer than the max-contrast `p900Light` accent — matches the
+    // Figma ghost variant, which sits one step lighter than the primary
+    // text tone so the button reads as secondary at rest.
+    label: Primitives.p800Light,
   );
 }
 

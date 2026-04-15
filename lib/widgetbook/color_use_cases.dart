@@ -249,6 +249,86 @@ Widget buildPrimitivesCyanUseCase(BuildContext context) {
   );
 }
 
+Widget buildPrimitivesYellowUseCase(BuildContext context) {
+  return ColorCategoryPage(
+    title: 'Primitives / Yellow',
+    swatches: [
+      TokenSwatch(
+        name: '_ Primitive/Yellow/0',
+        description: 'Brand yellow — darkest',
+        dark: YellowPrimitives.p0Dark,
+        light: YellowPrimitives.p0Light,
+      ),
+      TokenSwatch(
+        name: '_ Primitive/Yellow/50',
+        description: 'Brand yellow step 50',
+        dark: YellowPrimitives.p50Dark,
+        light: YellowPrimitives.p50Light,
+      ),
+      TokenSwatch(
+        name: '_ Primitive/Yellow/100',
+        description: 'Brand yellow step 100',
+        dark: YellowPrimitives.p100Dark,
+        light: YellowPrimitives.p100Light,
+      ),
+      TokenSwatch(
+        name: '_ Primitive/Yellow/150',
+        description: 'Brand yellow step 150',
+        dark: YellowPrimitives.p150Dark,
+        light: YellowPrimitives.p150Light,
+      ),
+      TokenSwatch(
+        name: '_ Primitive/Yellow/200',
+        description: 'Brand yellow step 200',
+        dark: YellowPrimitives.p200Dark,
+        light: YellowPrimitives.p200Light,
+      ),
+      TokenSwatch(
+        name: '_ Primitive/Yellow/300',
+        description: 'text/icon warning (Light)',
+        dark: YellowPrimitives.p300Dark,
+        light: YellowPrimitives.p300Light,
+      ),
+      TokenSwatch(
+        name: '_ Primitive/Yellow/400',
+        description: 'text/icon warning (Dark)',
+        dark: YellowPrimitives.p400Dark,
+        light: YellowPrimitives.p400Light,
+      ),
+      TokenSwatch(
+        name: '_ Primitive/Yellow/500',
+        description: 'Brand yellow step 500',
+        dark: YellowPrimitives.p500Dark,
+        light: YellowPrimitives.p500Light,
+      ),
+      TokenSwatch(
+        name: '_ Primitive/Yellow/600',
+        description: 'Brand yellow step 600',
+        dark: YellowPrimitives.p600Dark,
+        light: YellowPrimitives.p600Light,
+      ),
+      TokenSwatch(
+        name: '_ Primitive/Yellow/700',
+        description: 'Brand yellow step 700',
+        dark: YellowPrimitives.p700Dark,
+        light: YellowPrimitives.p700Light,
+      ),
+      TokenSwatch(
+        name: '_ Primitive/Yellow/800',
+        description: 'Brand yellow step 800',
+        dark: YellowPrimitives.p800Dark,
+        light: YellowPrimitives.p800Light,
+      ),
+      TokenSwatch(
+        name: '_ Primitive/Yellow/900',
+        description: 'Brand yellow — lightest',
+        dark: YellowPrimitives.p900Dark,
+        light: YellowPrimitives.p900Light,
+      ),
+    ],
+  );
+}
+
 Widget buildBackgroundUseCase(BuildContext context) {
   const d = AppColors.dark;
   const l = AppColors.light;
@@ -278,6 +358,18 @@ Widget buildBackgroundUseCase(BuildContext context) {
         description: 'Dropdowns, popovers, floating elements',
         dark: d.background.overlay,
         light: l.background.overlay,
+      ),
+      TokenSwatch(
+        name: 'bg/brand-cyan-subtle',
+        description: 'Brand-cyan tinted surface — info panels',
+        dark: d.background.brandCyanSubtle,
+        light: l.background.brandCyanSubtle,
+      ),
+      TokenSwatch(
+        name: 'bg/brand-cyan-strong',
+        description: 'Brand-cyan emphasis surface',
+        dark: d.background.brandCyanStrong,
+        light: l.background.brandCyanStrong,
       ),
     ],
   );
@@ -353,6 +445,18 @@ Widget buildBorderUseCase(BuildContext context) {
         dark: d.border.strong,
         light: l.border.strong,
       ),
+      TokenSwatch(
+        name: 'border/brand-cyan-subtle',
+        description: 'Brand-cyan border for subtle info surfaces',
+        dark: d.border.brandCyanSubtle,
+        light: l.border.brandCyanSubtle,
+      ),
+      TokenSwatch(
+        name: 'border/brand-cyan-strong',
+        description: 'Brand-cyan border for emphasis',
+        dark: d.border.brandCyanStrong,
+        light: l.border.brandCyanStrong,
+      ),
     ],
   );
 }
@@ -398,6 +502,12 @@ Widget buildTextUseCase(BuildContext context) {
         description: 'Text on inverted surfaces',
         dark: d.text.inverse,
         light: l.text.inverse,
+      ),
+      TokenSwatch(
+        name: 'text/warning',
+        description: 'Inline warning copy — brand yellow',
+        dark: d.text.warning,
+        light: l.text.warning,
       ),
       TokenSwatch(
         name: 'text/brand-purple',
@@ -456,6 +566,12 @@ Widget buildIconUseCase(BuildContext context) {
         description: 'Icons inside primary button',
         dark: d.icon.onPrimary,
         light: l.icon.onPrimary,
+      ),
+      TokenSwatch(
+        name: 'icon/warning',
+        description: 'Warning-state icon — brand yellow',
+        dark: d.icon.warning,
+        light: l.icon.warning,
       ),
       TokenSwatch(
         name: 'icon/brand-purple',
@@ -634,6 +750,22 @@ Widget buildStateUseCase(BuildContext context) {
         description: 'Brand-purple ring for primary button focus',
         dark: d.state.focusRingBrand,
         light: l.state.focusRingBrand,
+      ),
+    ],
+  );
+}
+
+Widget buildFadeUseCase(BuildContext context) {
+  const d = AppColors.dark;
+  const l = AppColors.light;
+  return ColorCategoryPage(
+    title: 'Fade',
+    swatches: [
+      TokenSwatch(
+        name: 'fade/illustration',
+        description: 'Scrim for bottom-anchored art — dark=50% over p0, light=transparent',
+        dark: d.fade.illustration,
+        light: l.fade.illustration,
       ),
     ],
   );

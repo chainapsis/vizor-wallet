@@ -63,6 +63,13 @@ abstract final class Primitives {
   // Primitive/900 — lightest / inverse of ground.
   static const p900Dark = Color(0xFFFFFFFF);
   static const p900Light = Color(0xFF141818);
+
+  // Primitive/0 at 50% alpha — used as a scrim/fade primitive over
+  // illustrations and content that needs to dim into the background.
+  // Mode-invariant by design (the alpha carries the fade, the base
+  // color doesn't flip).
+  static const p0Alpha50Dark = Color(0x80141818);
+  static const p0Alpha50Light = Color(0x80141818);
 }
 
 /// Brand purple primitive ladder (12 steps).
@@ -115,7 +122,7 @@ abstract final class PurplePrimitives {
 /// tokens; not used by buttons or focus rings in the current design.
 abstract final class CyanPrimitives {
   static const p0Dark = Color(0xFF00151A);
-  static const p0Light = Color(0xFFC7F3F8);
+  static const p0Light = Color(0xFFEBFDFF);
 
   static const p50Dark = Color(0xFF001E23);
   static const p50Light = Color(0xFF7DE0EA);
@@ -147,6 +154,49 @@ abstract final class CyanPrimitives {
   static const p800Dark = Color(0xFF7DE0EA);
   static const p800Light = Color(0xFF001E23);
 
-  static const p900Dark = Color(0xFFC7F3F8);
+  static const p900Dark = Color(0xFFEBFDFF);
   static const p900Light = Color(0xFF00151A);
+}
+
+/// Brand yellow primitive ladder (12 steps).
+///
+/// Same mirrored structure as [PurplePrimitives] / [CyanPrimitives].
+/// Used by warning text/icon tokens; reserved for future warning
+/// surfaces/borders.
+abstract final class YellowPrimitives {
+  static const p0Dark = Color(0xFF1A0E00);
+  static const p0Light = Color(0xFFFFF8EC);
+
+  static const p50Dark = Color(0xFF231400);
+  static const p50Light = Color(0xFFFEEFD4);
+
+  static const p100Dark = Color(0xFF331D00);
+  static const p100Light = Color(0xFFFDD9A0);
+
+  static const p150Dark = Color(0xFF4A2900);
+  static const p150Light = Color(0xFFFCBF5C);
+
+  static const p200Dark = Color(0xFF663800);
+  static const p200Light = Color(0xFFFFA832);
+
+  static const p300Dark = Color(0xFF994F00);
+  static const p300Light = Color(0xFFFF9617);
+
+  static const p400Dark = Color(0xFFFF9617);
+  static const p400Light = Color(0xFFE07800);
+
+  static const p500Dark = Color(0xFFFFAD47);
+  static const p500Light = Color(0xFF994F00);
+
+  static const p600Dark = Color(0xFFFFC470);
+  static const p600Light = Color(0xFF663800);
+
+  static const p700Dark = Color(0xFFFFD99F);
+  static const p700Light = Color(0xFF4A2900);
+
+  static const p800Dark = Color(0xFFFEEFD4);
+  static const p800Light = Color(0xFF331D00);
+
+  static const p900Dark = Color(0xFFFFF8EC);
+  static const p900Light = Color(0xFF1A0E00);
 }

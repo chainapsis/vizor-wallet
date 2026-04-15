@@ -157,6 +157,10 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Cyan',
                   builder: buildPrimitivesCyanUseCase,
                 ),
+                WidgetbookUseCase(
+                  name: 'Yellow',
+                  builder: buildPrimitivesYellowUseCase,
+                ),
               ],
             ),
             WidgetbookComponent(
@@ -210,6 +214,12 @@ class WidgetbookApp extends StatelessWidget {
               name: 'State',
               useCases: [
                 WidgetbookUseCase(name: 'All', builder: buildStateUseCase),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'Fade',
+              useCases: [
+                WidgetbookUseCase(name: 'All', builder: buildFadeUseCase),
               ],
             ),
           ],
