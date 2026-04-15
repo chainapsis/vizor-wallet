@@ -266,7 +266,6 @@ class _AppButtonState extends State<AppButton> {
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
         height: sizing.height,
-        alignment: Alignment.center,
         decoration: ShapeDecoration(
           color: currentBg,
           shape: const StadiumBorder(),
