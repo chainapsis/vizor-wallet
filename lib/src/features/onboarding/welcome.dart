@@ -131,7 +131,10 @@ class _Content extends StatelessWidget {
         const SizedBox(height: AppSpacing.base),
         Text(
           'Zeplr Wallet',
-          style: AppTypography.bodyMedium.copyWith(
+          // Kicker / brand identifier above the hero — same 14 px as
+          // bodyMedium, but labelLarge's Medium weight + tighter line
+          // height reads as a UI label rather than prose.
+          style: AppTypography.labelLarge.copyWith(
             color: colors.text.primary,
           ),
           textAlign: TextAlign.center,
