@@ -6,6 +6,8 @@ import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:macos_window_utils/macos_window_utils.dart';
 
+import 'package:window_manager/window_manager.dart';
+
 import 'app.dart';
 import 'src/core/layout/app_layout.dart';
 import 'src/rust/frb_generated.dart';
@@ -31,6 +33,21 @@ Future<void> main() async {
     // land on the post-flip property and the resize / AppLayoutNotifier
     // reconciliation behaves correctly.
     await reapplyDesktopWindowConstraints();
+    // Re-issue the size after the styleMask flip too. `setSize` inside
+    // `initializeDesktopWindow` ran before fullSizeContentView, so the
+    // visible titlebar carved ~32 pt of macOS titlebar height out of the
+    // requested frame, leaving the Flutter content shorter than the
+    // configured aspect ratio. With the titlebar now overlaying the
+    // content, the same call lands the requested size on the pixels the
+    // user actually sees. Kept at the call site instead of folded into
+    // `reapplyDesktopWindowConstraints` so that helper stays a pure
+    // constraint-refresh and is safe to reuse from any future
+    // styleMask-changing path without snapping a user-resized window
+    // back to default.
+    await windowManager.setSize(
+      AppLayoutMode.large.defaultSize,
+      animate: false,
+    );
   }
   log('main: launching app');
   runApp(const ProviderScope(child: ZcashWalletApp()));

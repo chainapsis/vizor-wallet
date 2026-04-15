@@ -481,14 +481,16 @@ WidgetsFlutterBinding.ensureInitialized()
 → RustLib.init()
 → initializeDesktopWindow()            [window_manager — creates + shows NSWindow]
 → [desktop] _configureTransparentWindow()        [acrylic setup]
-→ [desktop] reapplyDesktopWindowConstraints()    [re-pin after styleMask flip]
+→ [desktop] reapplyDesktopWindowConstraints()    [re-pin constraints after styleMask flip]
+→ [desktop] windowManager.setSize(defaultSize)   [re-issue size after styleMask flip]
 → runApp()
 ```
 
 Rationale for the order:
 
 - `_configureTransparentWindow` can only affect an existing NSWindow. Running it before `initializeDesktopWindow` silently no-ops on cold start (and "magically works" only after a hot restart where the prior window survived).
-- `enableFullSizeContentView()` flips the NSWindow `styleMask`. `window_manager`'s `setAspectRatio` writes to `contentAspectRatio` vs `aspectRatio` based on that bit at call time, so after the flip the constraint needs to be re-applied. `reapplyDesktopWindowConstraints()` (see `lib/src/core/layout/app_layout.dart`) handles that.
+- `enableFullSizeContentView()` flips the NSWindow `styleMask`. `window_manager`'s `setAspectRatio` writes to `contentAspectRatio` vs `aspectRatio` based on that bit at call time, so after the flip the aspect-ratio constraint needs to be re-applied. `reapplyDesktopWindowConstraints()` (see `lib/src/core/layout/app_layout.dart`) handles that — pure constraint refresh, never resizes the window.
+- The same styleMask flip changes how `setSize` lands on macOS. Pre-flip, the visible titlebar carves ~32 pt of macOS titlebar height out of the requested frame, so a `setSize(900, 600)` inside `initializeDesktopWindow` leaves the Flutter content at 900×568. Post-flip the titlebar overlays the content, so re-issuing `setSize` at the call site (kept out of `reapplyDesktopWindowConstraints` so that helper stays safe to reuse from any future styleMask-changing path without snapping a user-resized window back to default) lands the requested dimensions on the pixels the user actually sees.
 
 Per-platform recipe:
 

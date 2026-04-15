@@ -87,18 +87,37 @@ Future<void> initializeDesktopWindow({
   await windowManager.waitUntilReadyToShow(options, () async {
     await windowManager.setMinimumSize(initialMode.minimumSize);
     await windowManager.setAspectRatio(initialMode.aspectRatio);
+    // On macOS this call lands before `enableFullSizeContentView` flips
+    // the styleMask, so the requested height gets carved up by the
+    // (still-visible) titlebar and the Flutter content ends up short.
+    // `reapplyDesktopWindowConstraints` runs after the flip and
+    // re-issues `setSize` to correct this — see its doc comment.
     await windowManager.setSize(initialMode.defaultSize, animate: false);
     await windowManager.show();
     await windowManager.focus();
   });
 }
 
-/// Re-pin window_manager's per-mode size constraints. Useful after another
-/// layer (e.g. flutter_acrylic's `enableFullSizeContentView`) flips the
-/// NSWindow's `styleMask`, because window_manager's `setAspectRatio` writes
-/// to `contentAspectRatio` vs `aspectRatio` based on whether
-/// `.fullSizeContentView` is set at call time. Re-running it after the
-/// styleMask change makes the constraint land on the right property.
+/// Re-pin window_manager's per-mode constraints after another layer
+/// flips the NSWindow styleMask (at startup that's flutter_acrylic's
+/// `enableFullSizeContentView`).
+///
+/// Why this is necessary: window_manager's `setAspectRatio` on macOS
+/// branches on whether `.fullSizeContentView` is set at call time and
+/// writes the value into `contentAspectRatio` vs `aspectRatio`
+/// accordingly. If the constraint was first applied before the flip,
+/// it now lives on the wrong NSWindow property, so user-driven resize
+/// won't honor it. Re-issuing after the flip lands it on the
+/// post-flip property.
+///
+/// `setMinimumSize` doesn't strictly need the re-issue (window_manager
+/// writes `mainWindow.minSize` directly with no styleMask branch), but
+/// it's grouped here as a cheap belt-and-suspenders that keeps the
+/// "constraints" set conceptually atomic.
+///
+/// Pure constraint refresh — does NOT touch the window's current size,
+/// so it is safe to call from any future styleMask-changing path
+/// without snapping a user-resized window back to a default.
 Future<void> reapplyDesktopWindowConstraints({
   AppLayoutMode mode = AppLayoutMode.large,
 }) async {
