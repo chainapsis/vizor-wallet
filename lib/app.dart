@@ -13,6 +13,7 @@ import 'src/features/onboarding/screens/create_wallet_screen.dart';
 import 'src/features/onboarding/screens/import_wallet_screen.dart';
 import 'src/features/onboarding/screens/intro_zcash_screen.dart';
 import 'src/features/onboarding/screens/onboarding_split_view.dart';
+import 'src/features/onboarding/screens/things_to_know_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/history/screens/history_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -106,6 +107,16 @@ final _routerProvider = Provider<GoRouter>((ref) {
               transitionDuration: kOnboardingForwardDuration,
               reverseTransitionDuration: kOnboardingReverseDuration,
               child: const AddressTypesScreen(),
+              transitionsBuilder: _onboardingFadeTransition,
+            ),
+          ),
+          GoRoute(
+            path: '/onboarding/things-to-know',
+            pageBuilder: (context, state) => CustomTransitionPage<void>(
+              key: state.pageKey,
+              transitionDuration: kOnboardingForwardDuration,
+              reverseTransitionDuration: kOnboardingReverseDuration,
+              child: const ThingsToKnowScreen(),
               transitionsBuilder: _onboardingFadeTransition,
             ),
           ),

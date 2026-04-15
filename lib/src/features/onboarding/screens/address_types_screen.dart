@@ -307,10 +307,7 @@ class _ActionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppButton(
-      // TODO(onboarding): route to step 3 ("Things to know") once the
-      // next onboarding pane exists. For now, continue into wallet
-      // creation so the flow stays usable end-to-end.
-      onPressed: () => context.go('/create'),
+      onPressed: () => context.go(OnboardingStep.thingsToKnow.routePath),
       variant: AppButtonVariant.primary,
       minWidth: 196,
       trailing: const AppIcon(AppIcons.chevronForward),
