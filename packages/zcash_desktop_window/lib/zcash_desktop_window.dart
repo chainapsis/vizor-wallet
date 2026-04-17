@@ -10,6 +10,8 @@ const MethodChannel _channel = MethodChannel('zcash_desktop_window/methods');
 class ZcashDesktopWindow {
   ZcashDesktopWindow._();
 
+  static double _cachedTitlebarInset = 0;
+
   /// Applies the platform's default visual treatment.
   ///
   /// macOS startup appearance is configured natively before the window is
@@ -18,18 +20,31 @@ class ZcashDesktopWindow {
     if (kIsWeb) return;
     if (!_isSupportedDesktopPlatform) return;
     await _channel.invokeMethod<void>('initialize');
+    if (Platform.isMacOS) {
+      _cachedTitlebarInset = await _readTitlebarInset();
+    }
   }
 
   /// Height of the overlapping macOS titlebar area when full-size content view
   /// is enabled. Returns 0 on non-macOS platforms.
   static Future<double> getTitlebarInset() async {
     if (kIsWeb || !Platform.isMacOS) return 0;
-    final inset = await _channel.invokeMethod<double>('getTitlebarInset');
-    return inset ?? 0;
+    final inset = await _readTitlebarInset();
+    _cachedTitlebarInset = inset;
+    return inset;
   }
 
   static bool get _isSupportedDesktopPlatform {
     return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+  }
+
+  static double get cachedTitlebarInset {
+    return _cachedTitlebarInset;
+  }
+
+  static Future<double> _readTitlebarInset() async {
+    final inset = await _channel.invokeMethod<double>('getTitlebarInset');
+    return inset ?? 0;
   }
 }
 
@@ -50,11 +65,12 @@ class ZcashTitlebarSafeArea extends StatefulWidget {
 
 class _ZcashTitlebarSafeAreaState extends State<ZcashTitlebarSafeArea>
     with WidgetsBindingObserver {
-  double _titlebarInset = 0;
+  late double _titlebarInset;
 
   @override
   void initState() {
     super.initState();
+    _titlebarInset = ZcashDesktopWindow.cachedTitlebarInset;
     WidgetsBinding.instance.addObserver(this);
     _refreshInset();
   }
