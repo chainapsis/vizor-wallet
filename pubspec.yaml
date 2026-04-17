@@ -49,16 +49,11 @@ dependencies:
     git:
       url: https://github.com/chainapsis/mobile_scanner.git
       ref: 8b4395ce9a9e862ecfd87fba33ff3e022c9e17df
+  zcash_desktop_window:
+    path: packages/zcash_desktop_window
   crypto: ^3.0.7
   flutter_foreground_task: ^9.2.1
   window_manager: ^0.5.1
-  flutter_acrylic: ^1.1.4
-  # Direct dep so we can call WindowManipulator.* directly on macOS —
-  # flutter_acrylic's Window.* wrappers fire-and-forget the underlying
-  # WindowManipulator calls on macOS, breaking our await-based setup
-  # ordering. Using WindowManipulator directly lets us await the real
-  # platform futures. Already pulled in transitively via flutter_acrylic.
-  macos_window_utils: ^1.9.1
   # Renders the Figma-exported icon SVGs under `assets/icons/`.
   # Paired with `ColorFilter.mode(color, BlendMode.srcIn)` in
   # `AppIcon` so a single single-fill SVG tints to any theme color

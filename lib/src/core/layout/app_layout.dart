@@ -93,9 +93,14 @@ Future<void> initializeDesktopWindow({
     // `reapplyDesktopWindowConstraints` runs after the flip and
     // re-issues `setSize` to correct this — see its doc comment.
     await windowManager.setSize(initialMode.defaultSize, animate: false);
-    await windowManager.show();
-    await windowManager.focus();
   });
+}
+
+/// Show and focus the desktop window after all native bootstrap steps finish.
+Future<void> showDesktopWindow() async {
+  if (!isDesktopLayoutPlatform) return;
+  await windowManager.show();
+  await windowManager.focus();
 }
 
 /// Re-pin window_manager's per-mode constraints after another layer
