@@ -2,7 +2,7 @@ mod common;
 
 use common::{
     create_wallet, ensure_regtest_up, fund_wallet, get_balance, get_transaction_history,
-    mine_blocks, sync_wallet, LIGHTWALLETD_URL, REGTEST_NETWORK,
+    mine_blocks, sapling_params, sync_wallet, LIGHTWALLETD_URL, REGTEST_NETWORK,
 };
 use rust_lib_zcash_wallet::api::{sync as sync_api, wallet as wallet_api};
 
@@ -69,10 +69,16 @@ fn funded_wallet_can_send_to_second_wallet() {
         None,
     )
     .expect("propose_send");
-    assert!(
-        !proposal.needs_sapling_params,
-        "regtest UA send should stay Orchard-only in this flow"
-    );
+
+    let sapling_params = if proposal.needs_sapling_params {
+        Some(
+            sapling_params().expect(
+                "proposal needs Sapling params, but REGTEST_SAPLING_PARAMS_DIR is missing or incomplete",
+            ),
+        )
+    } else {
+        None
+    };
 
     let seed = wallet_api::derive_seed(sender_wallet.mnemonic.clone()).expect("derive_seed");
     let txid = sync_api::execute_proposal(
@@ -80,8 +86,8 @@ fn funded_wallet_can_send_to_second_wallet() {
         LIGHTWALLETD_URL.into(),
         proposal.proposal_id,
         seed,
-        None,
-        None,
+        sapling_params.as_ref().map(|p| p.spend_path.clone()),
+        sapling_params.as_ref().map(|p| p.output_path.clone()),
     )
     .expect("execute_proposal");
     assert!(!txid.is_empty(), "execute_proposal should return a txid");

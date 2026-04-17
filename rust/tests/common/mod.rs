@@ -12,6 +12,11 @@ use tempfile::TempDir;
 pub const REGTEST_NETWORK: &str = "regtest";
 pub const LIGHTWALLETD_URL: &str = "http://127.0.0.1:9067";
 
+pub struct SaplingParams {
+    pub spend_path: String,
+    pub output_path: String,
+}
+
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -115,4 +120,19 @@ pub fn get_transaction_history(
 
 pub fn path_str(path: &Path) -> String {
     path.to_str().expect("utf-8 path").to_string()
+}
+
+pub fn sapling_params() -> Option<SaplingParams> {
+    let dir = std::env::var("REGTEST_SAPLING_PARAMS_DIR").ok()?;
+    let dir = PathBuf::from(dir);
+    let spend_path = dir.join("sapling-spend.params");
+    let output_path = dir.join("sapling-output.params");
+    if spend_path.is_file() && output_path.is_file() {
+        Some(SaplingParams {
+            spend_path: path_str(&spend_path),
+            output_path: path_str(&output_path),
+        })
+    } else {
+        None
+    }
 }
