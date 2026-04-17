@@ -455,6 +455,24 @@ Seed-relevance rule:
 - Rust unit tests: `cd rust && cargo test` — 11 tests covering key derivation, address encoding / Orchard-only UA derivation, determinism, and PROPOSAL_STORE lifecycle (idempotent discard, consume-on-entry, replay rejection). Tests that need a DB use `tempfile::tempdir()`.
 - Dart unit tests: `fvm flutter test`
 - Integration tests: `fvm flutter test integration_test/` (requires device/simulator)
+- Zcash regtest Rust integration tests:
+  - One-shot runner from repo root: `./run-regtest-rust-tests.sh`
+  - Same runner, but tear down Docker services after the run: `./run-regtest-rust-tests.sh --down`
+  - Manual flow:
+    - Start services: `./scripts/regtest/up.sh`
+    - Run tests: `cd rust && cargo test --test regtest_wallet_flow -- --ignored --nocapture`
+    - Stop services: `./scripts/regtest/down.sh`
+  - The one-shot runner streams the full test output to the terminal and also saves a copy to `.regtest/regtest-rust-tests.log`.
+- `scripts/regtest/` utilities:
+  - `up.sh` — starts the Dockerized `zcashd + lightwalletd` regtest stack, waits for both services to become ready, and ensures the faucet state exists.
+  - `down.sh` — stops the regtest Docker compose stack.
+  - `reset.sh` — destroys the regtest containers/volumes and clears `.regtest/` state, then recreates a clean local chain on the next `up.sh`.
+  - `mine.sh <count>` — mines `<count>` new regtest blocks through `zcash-cli`.
+  - `fund-wallet.sh <unified_address> <amount_zec> [confirmations]` — sends shielded funds from the local faucet to the given UA, then mines enough blocks for confirmation. Example: `./scripts/regtest/fund-wallet.sh <ua> 1.25 10`
+  - `lib.sh` — shared helper functions used by the other regtest scripts; source it from scripts, do not run it directly.
+- Regtest prerequisites:
+  - Docker Desktop / `docker compose` must be available.
+  - `grpcurl` is optional but recommended. If installed, the scripts use it to wait for `lightwalletd` gRPC readiness and chain-tip propagation; otherwise they fall back to a simpler TCP port check.
 - Debug vs Release: Rust crypto is ~5-10x slower in debug (`opt-level=0`). Use `--release` for realistic sync performance.
 
 ## Crate Versions
