@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="$ROOT_DIR/.regtest"
 LOG_FILE="$LOG_DIR/regtest-rust-tests.log"
-SAPLING_PARAMS_DIR="$LOG_DIR/sapling_params"
+SAPLING_PARAMS_DIR="${SAPLING_PARAMS_DIR:-$HOME/.zcash-params}"
 SAPLING_SPEND_PATH="$SAPLING_PARAMS_DIR/sapling-spend.params"
 SAPLING_OUTPUT_PATH="$SAPLING_PARAMS_DIR/sapling-output.params"
 SAPLING_SPEND_HASH="a15ab54c2888880e53c823a3063820c728444126"
@@ -20,6 +20,14 @@ runs the Rust regtest integration tests, streams the full output to the terminal
 and saves a copy to:
 
   .regtest/regtest-rust-tests.log
+
+Sapling proving params are cached outside .regtest by default:
+
+  ~/.zcash-params
+
+Override with:
+
+  SAPLING_PARAMS_DIR=/custom/path ./run-regtest-rust-tests.sh
 EOF
 }
 

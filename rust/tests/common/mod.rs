@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use rust_lib_zcash_wallet::{
     api::{sync as sync_api, wallet as wallet_api},
@@ -11,6 +12,7 @@ use tempfile::TempDir;
 
 pub const REGTEST_NETWORK: &str = "regtest";
 pub const LIGHTWALLETD_URL: &str = "http://127.0.0.1:9067";
+static REGTEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 pub struct SaplingParams {
     pub spend_path: String,
@@ -22,6 +24,10 @@ pub fn repo_root() -> PathBuf {
         .parent()
         .expect("rust crate should live under repo root")
         .to_path_buf()
+}
+
+pub fn exclusive_regtest() -> MutexGuard<'static, ()> {
+    REGTEST_LOCK.lock().expect("regtest mutex poisoned")
 }
 
 pub fn regtest_script(name: &str) -> PathBuf {
@@ -63,17 +69,67 @@ pub fn fund_wallet(unified_address: &str, amount_zec: &str) -> String {
     run_script("fund-wallet.sh", &[unified_address, amount_zec, "10"])
 }
 
+pub fn current_tip_height() -> u64 {
+    wallet_api::get_latest_block_height(LIGHTWALLETD_URL.into())
+        .expect("failed to fetch regtest chain tip")
+}
+
 pub fn create_wallet(account_name: &str) -> (TempDir, wallet_api::WalletCreationResult) {
+    create_wallet_with_birthday(account_name, Some(1))
+}
+
+pub fn create_wallet_with_birthday(
+    account_name: &str,
+    birthday_height: Option<u64>,
+) -> (TempDir, wallet_api::WalletCreationResult) {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let db_path = tempdir.path().join("zcash_wallet.db");
     let result = wallet_api::create_wallet(
         REGTEST_NETWORK.into(),
         path_str(&db_path),
-        Some(1),
+        birthday_height,
         Some(account_name.into()),
     )
     .expect("create_wallet");
     (tempdir, result)
+}
+
+pub fn import_wallet_with_birthday(
+    mnemonic: &str,
+    account_name: &str,
+    birthday_height: Option<u64>,
+) -> (TempDir, wallet_api::WalletImportResult) {
+    let tempdir = tempfile::tempdir().expect("tempdir");
+    let db_path = tempdir.path().join("zcash_wallet.db");
+    let result = wallet_api::import_wallet(
+        mnemonic.into(),
+        birthday_height,
+        REGTEST_NETWORK.into(),
+        path_str(&db_path),
+        Some(account_name.into()),
+    )
+    .expect("import_wallet");
+    (tempdir, result)
+}
+
+pub fn add_account_with_birthday(
+    db_path: &Path,
+    account_name: &str,
+    mnemonic: &str,
+    birthday_height: Option<u64>,
+) -> wallet_api::AccountCreationResult {
+    wallet_api::add_account(
+        path_str(db_path),
+        REGTEST_NETWORK.into(),
+        account_name.into(),
+        mnemonic.into(),
+        birthday_height,
+    )
+    .expect("add_account")
+}
+
+pub fn list_accounts(db_path: &Path) -> Vec<wallet_api::AccountInfo> {
+    wallet_api::list_accounts(path_str(db_path), REGTEST_NETWORK.into()).expect("list_accounts")
 }
 
 pub fn sync_wallet(db_path: &Path) {
