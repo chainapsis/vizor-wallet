@@ -141,10 +141,17 @@ class _AppTextFieldState extends State<AppTextField> {
     final iconColor = _hasText || _isFocused
         ? colors.icon.accent
         : colors.icon.regular;
-    final gap = _multiline ? AppSpacing.xs : AppSpacing.xxs;
+    final gap = AppSpacing.xs;
     final shellHeight = _multiline ? 148.0 : 46.0;
+    const shellRadius = 12.0;
+    const focusRingWidth = 3.0;
+    const focusRingStrokeWidth = 2.0;
     final titleHeight = 16.0;
     final messageTop = titleHeight + gap + shellHeight + gap;
+    final textStrutStyle = StrutStyle.fromTextStyle(
+      valueStyle,
+      forceStrutHeight: true,
+    );
 
     final isNeutralTone = widget.tone == AppTextFieldTone.neutral;
     final borderColor = switch (widget.tone) {
@@ -176,6 +183,18 @@ class _AppTextFieldState extends State<AppTextField> {
         color: messageColor,
       ),
     };
+    final trailingWidget =
+        widget.showClearButton &&
+            _isFocused &&
+            _hasText &&
+            widget.enabled &&
+            !widget.readOnly
+        ? GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _clear,
+            child: AppIcon(AppIcons.cross, size: 20, color: iconColor),
+          )
+        : widget.trailing;
 
     final textField = TextField(
       controller: _controller,
@@ -196,6 +215,7 @@ class _AppTextFieldState extends State<AppTextField> {
           ? TextAlignVertical.top
           : TextAlignVertical.center,
       style: valueStyle,
+      strutStyle: textStrutStyle,
       cursorColor: colors.text.accent,
       decoration: InputDecoration.collapsed(
         hintText: widget.hintText,
@@ -215,12 +235,44 @@ class _AppTextFieldState extends State<AppTextField> {
           clipBehavior: Clip.none,
           children: [
             Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: colors.surface.input,
-                  borderRadius: BorderRadius.circular(AppRadii.small),
-                  border: Border.all(color: borderColor, width: 1.5),
-                ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  if (_isFocused)
+                    Positioned(
+                      left: -focusRingWidth,
+                      top: -focusRingWidth,
+                      right: -focusRingWidth,
+                      bottom: -focusRingWidth,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(
+                              shellRadius + focusRingWidth,
+                            ),
+                            border: Border.all(
+                              color: focusRingColor,
+                              width: focusRingStrokeWidth,
+                              strokeAlign: BorderSide.strokeAlignInside,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors.surface.input,
+                        borderRadius: BorderRadius.circular(shellRadius),
+                        border: Border.all(
+                          color: borderColor,
+                          width: 1.5,
+                          strokeAlign: BorderSide.strokeAlignInside,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             if (_hovered && !_isFocused && isNeutralTone)
@@ -228,101 +280,56 @@ class _AppTextFieldState extends State<AppTextField> {
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: colors.state.hover,
-                    borderRadius: BorderRadius.circular(AppRadii.small),
-                  ),
-                ),
-              ),
-            if (_isFocused)
-              Positioned(
-                left: -2.5,
-                top: -2.5,
-                right: -2.5,
-                bottom: -2.5,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(AppRadii.small),
-                      border: Border.all(color: focusRingColor, width: 2),
-                    ),
+                    borderRadius: BorderRadius.circular(shellRadius),
                   ),
                 ),
               ),
             Positioned.fill(
               child: IconTheme.merge(
                 data: IconThemeData(color: iconColor, size: AppIconSize.large),
-                child: Row(
-                  crossAxisAlignment: _multiline
-                      ? CrossAxisAlignment.start
-                      : CrossAxisAlignment.center,
-                  children: [
-                    if (widget.leading != null && !_multiline)
-                      SizedBox(
-                        width: 32,
-                        height: shellHeight,
-                        child: Align(
-                          alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: _multiline
+                      ? const EdgeInsets.fromLTRB(
+                          AppSpacing.sm,
+                          AppSpacing.sm,
+                          AppSpacing.sm,
+                          AppSpacing.sm,
+                        )
+                      : const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                  child: Row(
+                    crossAxisAlignment: _multiline
+                        ? CrossAxisAlignment.start
+                        : CrossAxisAlignment.center,
+                    children: [
+                      if (widget.leading != null)
+                        Padding(
+                          padding: _multiline
+                              ? const EdgeInsets.only(top: 2)
+                              : EdgeInsets.zero,
                           child: SizedBox(
                             width: AppIconSize.large,
                             height: AppIconSize.large,
                             child: widget.leading,
                           ),
                         ),
-                      ),
-                    if (widget.leading != null && _multiline)
-                      Padding(
-                        padding: const EdgeInsets.only(left: AppSpacing.xs),
-                        child: SizedBox(
-                          width: 20,
-                          height: 48,
-                          child: Align(
-                            alignment: Alignment.center,
-                            child: SizedBox(
-                              width: AppIconSize.large,
-                              height: AppIconSize.large,
-                              child: widget.leading,
-                            ),
+                      if (widget.leading != null)
+                        const SizedBox(width: AppSpacing.xs),
+                      Expanded(child: textField),
+                      if (trailingWidget != null) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        Padding(
+                          padding: _multiline
+                              ? const EdgeInsets.only(top: 2)
+                              : EdgeInsets.zero,
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: trailingWidget,
                           ),
                         ),
-                      ),
-                    Expanded(
-                      child: Padding(
-                        padding: _multiline
-                            ? const EdgeInsets.fromLTRB(
-                                AppSpacing.sm,
-                                AppSpacing.sm,
-                                AppSpacing.sm,
-                                AppSpacing.sm,
-                              )
-                            : const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.sm,
-                              ),
-                        child: textField,
-                      ),
-                    ),
-                    if (!_multiline)
-                      SizedBox(
-                        width: 40,
-                        height: shellHeight,
-                        child: Center(
-                          child:
-                              widget.showClearButton &&
-                                  _isFocused &&
-                                  _hasText &&
-                                  widget.enabled &&
-                                  !widget.readOnly
-                              ? GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: _clear,
-                                  child: AppIcon(
-                                    AppIcons.cross,
-                                    size: 20,
-                                    color: iconColor,
-                                  ),
-                                )
-                              : widget.trailing,
-                        ),
-                      ),
-                  ],
+                      ],
+                    ],
+                  ),
                 ),
               ),
             ),
