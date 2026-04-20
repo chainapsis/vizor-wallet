@@ -2,6 +2,8 @@ import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
 
+enum AppChipType { defaultText, icons }
+
 /// Compact inline token used for mnemonic rows and similar label clusters.
 ///
 /// Figma's Chip page defines a text-first default treatment and an
@@ -15,6 +17,7 @@ class AppChip extends StatelessWidget {
     required this.label,
     this.leading,
     this.trailing,
+    this.type = AppChipType.defaultText,
     this.width,
   });
 
@@ -22,23 +25,34 @@ class AppChip extends StatelessWidget {
   final String label;
   final Widget? leading;
   final Widget? trailing;
+  final AppChipType type;
   final double? width;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final resolvedWidth =
+        width ??
+        switch (type) {
+          AppChipType.defaultText => 80.0,
+          AppChipType.icons => null,
+        };
+    final hasLeadingIcon = leading != null;
+    final hasTrailingIcon = trailing != null;
     return ConstrainedBox(
       constraints: BoxConstraints(
-        minHeight: 29,
-        minWidth: width ?? 0,
-        maxWidth: width ?? double.infinity,
+        minHeight: 26,
+        minWidth: resolvedWidth ?? 0,
+        maxWidth: resolvedWidth ?? double.infinity,
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xxs),
         child: Row(
-          mainAxisSize: width == null ? MainAxisSize.min : MainAxisSize.max,
+          mainAxisSize: resolvedWidth == null
+              ? MainAxisSize.min
+              : MainAxisSize.max,
           children: [
-            if (leading != null) ...[
+            if (hasLeadingIcon) ...[
               SizedBox(
                 width: AppIconSize.medium,
                 height: AppIconSize.medium,
@@ -49,13 +63,13 @@ class AppChip extends StatelessWidget {
             if (leadingText != null) ...[
               Text(
                 leadingText!,
-                style: AppTypography.codeMedium.copyWith(
+                style: AppTypography.codeSmall.copyWith(
                   color: colors.text.secondary,
                 ),
               ),
               const SizedBox(width: AppSpacing.xxs),
             ],
-            Expanded(
+            Flexible(
               child: Text(
                 label,
                 maxLines: 1,
@@ -65,7 +79,7 @@ class AppChip extends StatelessWidget {
                 ),
               ),
             ),
-            if (trailing != null) ...[
+            if (hasTrailingIcon) ...[
               const SizedBox(width: AppSpacing.xxs),
               SizedBox(
                 width: AppIconSize.medium,

@@ -8,6 +8,7 @@ import 'package:widgetbook/widgetbook.dart';
 
 import '../src/core/theme/app_theme.dart';
 import 'button_use_cases.dart';
+import 'chip_use_cases.dart';
 import 'color_use_cases.dart';
 import 'icon_use_cases.dart';
 import 'screen_use_cases.dart';
@@ -143,6 +144,12 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Ghost / Small',
                   builder: buildButtonGhostSmallUseCase,
                 ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'Chip',
+              useCases: [
+                WidgetbookUseCase(name: 'All', builder: buildChipUseCase),
               ],
             ),
             WidgetbookComponent(
