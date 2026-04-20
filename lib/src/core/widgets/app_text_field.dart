@@ -329,14 +329,11 @@ class _AppTextFieldState extends State<AppTextField> {
                             child: Padding(
                               padding: const EdgeInsets.fromLTRB(
                                 AppSpacing.s,
-                                AppSpacing.s,
+                                AppSpacing.s + 6,
                                 0,
                                 AppSpacing.s,
                               ),
-                              child: Transform.translate(
-                                offset: const Offset(0, 3),
-                                child: textField,
-                              ),
+                              child: textField,
                             ),
                           ),
                           if (trailingWidget != null)
@@ -371,8 +368,8 @@ class _AppTextFieldState extends State<AppTextField> {
                             if (widget.leading != null)
                               const SizedBox(width: AppSpacing.xs),
                             Expanded(
-                              child: Transform.translate(
-                                offset: const Offset(0, -3),
+                              child: Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
                                 child: textField,
                               ),
                             ),
