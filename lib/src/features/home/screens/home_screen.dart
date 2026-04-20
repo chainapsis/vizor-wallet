@@ -676,21 +676,24 @@ class _IconPillButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onPressed,
-      child: Container(
-        width: 24,
-        height: 24,
-        padding: const EdgeInsets.all(AppSpacing.xxs),
-        decoration: BoxDecoration(
-          color: colors.button.secondary.bg,
-          borderRadius: BorderRadius.circular(AppRadii.full),
-        ),
-        child: AppIcon(
-          iconName,
-          size: 16,
-          color: colors.button.secondary.label,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onPressed,
+        child: Container(
+          width: 24,
+          height: 24,
+          padding: const EdgeInsets.all(AppSpacing.xxs),
+          decoration: BoxDecoration(
+            color: colors.button.secondary.bg,
+            borderRadius: BorderRadius.circular(AppRadii.full),
+          ),
+          child: AppIcon(
+            iconName,
+            size: 16,
+            color: colors.button.secondary.label,
+          ),
         ),
       ),
     );
@@ -761,27 +764,30 @@ class _HomeActivitySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => context.push('/history'),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Recent Activity',
-                  style: AppTypography.headlineSmall.copyWith(
-                    color: colors.text.accent,
+        MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => context.push('/history'),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Recent Activity',
+                    style: AppTypography.headlineSmall.copyWith(
+                      color: colors.text.accent,
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                AppIcon(
-                  AppIcons.chevronForward,
-                  size: 16,
-                  color: colors.icon.accent,
-                ),
-              ],
+                  const SizedBox(width: AppSpacing.xxs),
+                  AppIcon(
+                    AppIcons.chevronForward,
+                    size: 16,
+                    color: colors.icon.accent,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -926,10 +932,13 @@ class _HomeActivityRow extends StatelessWidget {
     );
 
     if (row.onTap == null) return content;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: row.onTap,
-      child: content,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: row.onTap,
+        child: content,
+      ),
     );
   }
 }

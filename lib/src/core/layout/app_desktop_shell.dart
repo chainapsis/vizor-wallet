@@ -126,10 +126,13 @@ class AppSidebarItem extends StatelessWidget {
       opacity: active ? 1.0 : 0.5,
       child: onTap == null
           ? row
-          : GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onTap,
-              child: row,
+          : MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onTap,
+                child: row,
+              ),
             ),
     );
   }
@@ -192,10 +195,13 @@ class AppSidebarUserButton extends StatelessWidget {
 
     return onTap == null
         ? child
-        : GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onTap,
-            child: child,
+        : MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: child,
+            ),
           );
   }
 }
