@@ -103,30 +103,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         matchedLocation: matchedLocation,
       ),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        child: walletAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (err, _) => Center(
-            child: Text(
-              'Error: $err',
-              style: AppTypography.bodyMedium.copyWith(
-                color: context.colors.text.warning,
+        padding: const EdgeInsets.fromLTRB(AppSpacing.sm, 0, 0, 0),
+        child: SizedBox.expand(
+          child: walletAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (err, _) => Center(
+              child: Text(
+                'Error: $err',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: context.colors.text.warning,
+                ),
               ),
             ),
-          ),
-          data: (_) => _HomePane(
-            sync: sync,
-            canBackgroundSync: _canBackgroundSync,
-            isBalanceVisible: _isBalanceVisible,
-            balanceText: _formatZec(sync.totalBalance),
-            formatSignedZec: _formatSignedZec,
-            groupLabelForTx: _groupLabelForTx,
-            onToggleBalanceVisibility: _toggleBalanceVisibility,
-            onSyncInBackground: () =>
-                ref.read(syncProvider.notifier).enableBackgroundSync(),
-            onStopBackgroundSync: () =>
-                ref.read(syncProvider.notifier).disableBackgroundSync(),
-            onRetrySync: () => ref.read(syncProvider.notifier).startSync(),
+            data: (_) => _HomePane(
+              sync: sync,
+              canBackgroundSync: _canBackgroundSync,
+              isBalanceVisible: _isBalanceVisible,
+              balanceText: _formatZec(sync.totalBalance),
+              formatSignedZec: _formatSignedZec,
+              groupLabelForTx: _groupLabelForTx,
+              onToggleBalanceVisibility: _toggleBalanceVisibility,
+              onSyncInBackground: () =>
+                  ref.read(syncProvider.notifier).enableBackgroundSync(),
+              onStopBackgroundSync: () =>
+                  ref.read(syncProvider.notifier).disableBackgroundSync(),
+              onRetrySync: () => ref.read(syncProvider.notifier).startSync(),
+            ),
           ),
         ),
       ),
@@ -278,23 +280,36 @@ class _HomePane extends StatelessWidget {
     final notice = _noticeData();
     final groups = _activityGroups(context);
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _HomeBalanceCard(
-            balanceText: balanceText,
-            isBalanceVisible: isBalanceVisible,
-            onToggleBalanceVisibility: onToggleBalanceVisibility,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          primary: true,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.sm),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: AppSpacing.sm),
+                  _HomeBalanceCard(
+                    balanceText: balanceText,
+                    isBalanceVisible: isBalanceVisible,
+                    onToggleBalanceVisibility: onToggleBalanceVisibility,
+                  ),
+                  if (notice != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    _HomeNoticeCard(data: notice),
+                  ],
+                  const SizedBox(height: AppSpacing.sm),
+                  _HomeActivitySection(groups: groups),
+                  const SizedBox(height: AppSpacing.sm),
+                ],
+              ),
+            ),
           ),
-          if (notice != null) ...[
-            const SizedBox(height: AppSpacing.xs),
-            _HomeNoticeCard(data: notice),
-          ],
-          const SizedBox(height: AppSpacing.sm),
-          _HomeActivitySection(groups: groups),
-        ],
-      ),
+        );
+      },
     );
   }
 
