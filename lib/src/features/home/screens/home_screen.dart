@@ -1,4 +1,14 @@
-import 'package:flutter/material.dart' show CircularProgressIndicator, Theme;
+import 'dart:io' show Platform, exit;
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart'
+    show
+        AlertDialog,
+        CircularProgressIndicator,
+        TextButton,
+        TextStyle,
+        Theme,
+        showDialog;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -73,6 +83,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  Future<void> _resetWallet(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Wallet'),
+        content: const Text(
+          'Delete all wallet data (DB + keychain)? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Reset',
+              style: TextStyle(color: Color(0xFFFF3B30)),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    ref.read(syncProvider.notifier).stopSync();
+    var waited = 0;
+    while (rust_sync.isSyncRunning() && waited < 5000) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      waited += 100;
+    }
+
+    await ref.read(accountProvider.notifier).resetWallet();
+    exit(0);
+  }
+
   String _groupLabelForTx(rust_sync.TransactionInfo tx) {
     if (tx.minedHeight == BigInt.zero && !tx.expiredUnmined) {
       return 'Today';
@@ -101,6 +147,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       sidebar: _HomeSidebar(
         accountName: accountName,
         matchedLocation: matchedLocation,
+        onResetWallet: () => _resetWallet(context),
       ),
       pane: AppDesktopPane(
         padding: const EdgeInsets.fromLTRB(AppSpacing.sm, 0, 0, 0),
@@ -159,10 +206,12 @@ class _HomeSidebar extends StatelessWidget {
   const _HomeSidebar({
     required this.accountName,
     required this.matchedLocation,
+    required this.onResetWallet,
   });
 
   final String accountName;
   final String matchedLocation;
+  final VoidCallback onResetWallet;
 
   bool _matches(String routePath) =>
       matchedLocation == routePath || matchedLocation.startsWith('$routePath/');
@@ -175,9 +224,19 @@ class _HomeSidebar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AppSidebarUserButton(
-              label: accountName,
-              onTap: () => context.push('/accounts'),
+            Row(
+              children: [
+                Expanded(
+                  child: AppSidebarUserButton(
+                    label: accountName,
+                    onTap: () => context.push('/accounts'),
+                  ),
+                ),
+                if (kDebugMode && Platform.isMacOS) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  _DebugResetButton(onPressed: onResetWallet),
+                ],
+              ],
             ),
             const SizedBox(height: AppSpacing.xs),
             Padding(
@@ -244,6 +303,34 @@ class _HomeSidebar extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DebugResetButton extends StatelessWidget {
+  const _DebugResetButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onPressed,
+        child: Container(
+          width: 40,
+          height: 40,
+          padding: const EdgeInsets.all(AppSpacing.xs),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadii.small),
+            color: colors.background.overlay.withValues(alpha: 0.12),
+          ),
+          child: AppIcon(AppIcons.block, size: 20, color: colors.text.warning),
         ),
       ),
     );
