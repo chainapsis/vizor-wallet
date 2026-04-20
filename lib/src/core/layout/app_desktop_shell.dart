@@ -51,7 +51,7 @@ class AppDesktopSidebarSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: backgroundColor ?? context.colors.background.base,
+        color: backgroundColor ?? Colors.transparent,
         borderRadius: BorderRadius.circular(AppRadii.small),
       ),
       clipBehavior: Clip.antiAlias,
