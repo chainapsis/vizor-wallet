@@ -115,6 +115,28 @@ SyncProvider (sync_provider.dart)
   └── refreshAfterSend() called after account switch for immediate update
 ```
 
+### App Bootstrap
+
+`main()` does a one-shot bootstrap before `runApp()` and injects it via
+`appBootstrapProvider`. This snapshot is the startup source of truth for the
+first frame and avoids the old `/welcome -> /home` jump plus the "empty home
+until sync callback arrives" flash.
+
+- `loadAppBootstrap()` reads:
+  - secure storage (`zcash_accounts`, `zcash_active_account`, `zcash_wallet_network`)
+  - Rust wallet DB via `list_accounts`
+  - active-account DB data via `get_sync_status`, `get_balance`,
+    `get_transaction_history(limit: 10)`
+- Router uses `bootstrap.initialLocation` instead of always starting at `/`.
+- `AccountProvider` starts from `bootstrap.initialAccountState`.
+- `WalletProvider` falls back to bootstrap values while `accountProvider` is
+  still loading.
+- `SyncProvider` starts from `bootstrap.initialSyncSnapshot` (balances, recent
+  txs, scanned/tip heights) and then kicks off the normal live sync flow.
+- Bootstrap is best-effort: route/account bootstrap can still succeed even if
+  initial balance/history hydration fails, in which case sync state falls back
+  to empty and the live sync repopulates it.
+
 ### Sync Engine (Rust-only)
 
 The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single call from Dart (`startFullSync()`) triggers the full pipeline:
