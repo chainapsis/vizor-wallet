@@ -297,50 +297,96 @@ class _AppTextFieldState extends State<AppTextField> {
             Positioned.fill(
               child: IconTheme.merge(
                 data: IconThemeData(color: iconColor, size: AppIconSize.large),
-                child: Padding(
-                  padding: _multiline
-                      ? const EdgeInsets.fromLTRB(
-                          AppSpacing.sm,
-                          AppSpacing.sm,
-                          AppSpacing.sm,
-                          AppSpacing.sm,
-                        )
-                      : const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                  child: Row(
-                    crossAxisAlignment: _multiline
-                        ? CrossAxisAlignment.start
-                        : CrossAxisAlignment.center,
-                    children: [
-                      if (widget.leading != null)
-                        Padding(
-                          padding: _multiline
-                              ? const EdgeInsets.only(top: 2)
-                              : EdgeInsets.zero,
-                          child: SizedBox(
-                            width: AppIconSize.large,
-                            height: AppIconSize.large,
-                            child: widget.leading,
+                child: _multiline
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (widget.leading != null)
+                            SizedBox(
+                              width: 28,
+                              height: 48,
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                  left: AppSpacing.xs,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: IconTheme.merge(
+                                    data: IconThemeData(
+                                      color: iconColor,
+                                      size: 20,
+                                    ),
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: widget.leading,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                AppSpacing.s,
+                                AppSpacing.s,
+                                0,
+                                AppSpacing.s,
+                              ),
+                              child: Transform.translate(
+                                offset: const Offset(0, 3),
+                                child: textField,
+                              ),
+                            ),
                           ),
+                          if (trailingWidget != null)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                AppSpacing.xs,
+                                AppSpacing.s,
+                                AppSpacing.sm,
+                                0,
+                              ),
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: trailingWidget,
+                              ),
+                            ),
+                        ],
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
                         ),
-                      if (widget.leading != null)
-                        const SizedBox(width: AppSpacing.xs),
-                      Expanded(child: textField),
-                      if (trailingWidget != null) ...[
-                        const SizedBox(width: AppSpacing.xs),
-                        Padding(
-                          padding: _multiline
-                              ? const EdgeInsets.only(top: 2)
-                              : EdgeInsets.zero,
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: trailingWidget,
-                          ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            if (widget.leading != null)
+                              SizedBox(
+                                width: AppIconSize.large,
+                                height: AppIconSize.large,
+                                child: widget.leading,
+                              ),
+                            if (widget.leading != null)
+                              const SizedBox(width: AppSpacing.xs),
+                            Expanded(
+                              child: Transform.translate(
+                                offset: const Offset(0, -3),
+                                child: textField,
+                              ),
+                            ),
+                            if (trailingWidget != null) ...[
+                              const SizedBox(width: AppSpacing.xs),
+                              SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: trailingWidget,
+                              ),
+                            ],
+                          ],
                         ),
-                      ],
-                    ],
-                  ),
-                ),
+                      ),
               ),
             ),
           ],
