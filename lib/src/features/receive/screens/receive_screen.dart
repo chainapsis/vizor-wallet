@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../../../../main.dart' show log;
 import '../../../providers/account_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../../rust/api/wallet.dart' as rust_wallet;
 
 class ReceiveScreen extends ConsumerStatefulWidget {
   const ReceiveScreen({super.key});
@@ -20,6 +22,7 @@ class ReceiveScreen extends ConsumerStatefulWidget {
 
 class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   String? _currentAddress;
+  String? _transparentAddress;
   bool _isGenerating = false;
 
   @override
@@ -27,6 +30,27 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     super.initState();
     final wallet = ref.read(walletProvider).value;
     _currentAddress = wallet?.unifiedAddress;
+    unawaited(_loadTransparentAddress());
+  }
+
+  Future<void> _loadTransparentAddress() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
+      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+      if (accountUuid == null) return;
+      final transparentAddress = await rust_wallet.getTransparentAddress(
+        dbPath: dbPath,
+        network: 'main',
+        accountUuid: accountUuid,
+      );
+      if (!mounted) return;
+      setState(() {
+        _transparentAddress = transparentAddress;
+      });
+    } catch (e) {
+      log('Receive: ERROR loading transparent address: $e');
+    }
   }
 
   Future<void> _generateNewAddress() async {
@@ -54,9 +78,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       log('Receive: ERROR generating address: $e');
       setState(() => _isGenerating = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
@@ -64,6 +88,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   @override
   Widget build(BuildContext context) {
     final address = _currentAddress ?? '';
+    final transparentAddress = _transparentAddress ?? '';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Receive ZEC')),
@@ -93,14 +118,16 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Shielded Address',
-                          style: Theme.of(context).textTheme.titleSmall),
+                      Text(
+                        'Shielded Address',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         address,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontFamily: 'monospace',
-                            ),
+                          fontFamily: 'monospace',
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -110,7 +137,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                               onPressed: () {
                                 Clipboard.setData(ClipboardData(text: address));
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Address copied')),
+                                  const SnackBar(
+                                    content: Text('Address copied'),
+                                  ),
                                 );
                               },
                               icon: const Icon(Icons.copy, size: 16),
@@ -120,10 +149,17 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: _isGenerating ? null : _generateNewAddress,
+                              onPressed: _isGenerating
+                                  ? null
+                                  : _generateNewAddress,
                               icon: _isGenerating
-                                  ? const SizedBox(height: 16, width: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2))
+                                  ? const SizedBox(
+                                      height: 16,
+                                      width: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
                                   : const Icon(Icons.refresh, size: 16),
                               label: const Text('New Address'),
                             ),
@@ -134,13 +170,52 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                   ),
                 ),
               ),
+              if (transparentAddress.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Transparent Address',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          transparentAddress,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(fontFamily: 'monospace'),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Clipboard.setData(
+                                ClipboardData(text: transparentAddress),
+                              );
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Address copied')),
+                              );
+                            },
+                            icon: const Icon(Icons.copy, size: 16),
+                            label: const Text('Copy'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Text(
                 'Each new address is a diversified address derived from the same key. '
                 'They all receive to the same wallet.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
