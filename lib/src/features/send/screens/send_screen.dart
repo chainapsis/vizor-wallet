@@ -1,7 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:crypto/crypto.dart';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/network_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -21,12 +18,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../../rust/api/wallet.dart' as rust_wallet;
-import '../../../services/keystone_transport.dart';
-
-const _saplingSpendHash = 'a15ab54c2888880e53c823a3063820c728444126';
-const _saplingOutputHash = '0ebc5a1ef3653948e1c46cf7a16071eac4b7e352';
-const _saplingParamBaseUrl = 'https://download.z.cash/downloads/';
+import 'send_review_screen.dart';
 
 class SendScreen extends ConsumerStatefulWidget {
   const SendScreen({super.key});
@@ -164,42 +156,6 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     return short.isEmpty ? whole.toString() : '$whole.$short';
   }
 
-  Future<void> _resetWallet(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reset Wallet'),
-        content: const Text(
-          'Delete all wallet data (DB + keychain)? This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Reset',
-              style: TextStyle(color: Color(0xFFFF3B30)),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    ref.read(syncProvider.notifier).stopSync();
-    var waited = 0;
-    while (rust_sync.isSyncRunning() && waited < 5000) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      waited += 100;
-    }
-
-    await ref.read(accountProvider.notifier).resetWallet();
-    exit(0);
-  }
-
   Future<void> _validateAmount() async {
     final seq = ++_validateSeq;
     final text = _amountController.text.trim();
@@ -334,19 +290,14 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     return whole * 100000000 + fracInt;
   }
 
-  Future<void> _send() async {
+  Future<void> _openReview() async {
     setState(() {
       _isSending = true;
       _error = null;
     });
 
-    // Tracks the active proposal so we can release it on any cancel or
-    // error path that happens before it has been consumed by a create /
-    // execute call. `proposalConsumed` flips to true once we hand the
-    // proposal ID to a function that takes ownership of it; after that
-    // the finally block is a no-op. Rust's discardProposal is idempotent.
     BigInt? activeProposalId;
-    var proposalConsumed = false;
+    var pushedReview = false;
 
     try {
       final address = _addressController.text.trim();
@@ -380,8 +331,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       final spendable = _getSpendableBalance();
       if (BigInt.from(amountZatoshi) > spendable) {
         setState(() {
-          _error =
-              'Insufficient balance. Available: ${_formatZec(spendable)} ZEC';
+          _error = 'Insufficient balance.';
           _isSending = false;
         });
         return;
@@ -411,374 +361,38 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       );
       activeProposalId = proposal.proposalId;
 
-      log(
-        'Send: proposal_id=${proposal.proposalId}, needs_sapling=${proposal.needsSaplingParams}, fee=${proposal.feeZatoshi}',
-      );
-
-      // Step 2: Show confirmation with fee
-      if (!mounted) return;
-      final confirmed = await _showConfirmationDialog(
-        address: address,
-        amountZatoshi: BigInt.from(amountZatoshi),
-        feeZatoshi: proposal.feeZatoshi,
-        memo: memo.isNotEmpty ? memo : null,
-      );
-      if (!confirmed) {
-        setState(() => _isSending = false);
+      if (!mounted) {
         return;
       }
-
-      // Step 3: Check Sapling params if needed
-      final paramsDir = '${dir.path}${Platform.pathSeparator}sapling_params';
-      final spendPath =
-          '$paramsDir${Platform.pathSeparator}sapling-spend.params';
-      final outputPath =
-          '$paramsDir${Platform.pathSeparator}sapling-output.params';
-
-      if (proposal.needsSaplingParams) {
-        final spendExists = File(spendPath).existsSync();
-        final outputExists = File(outputPath).existsSync();
-
-        if (!spendExists || !outputExists) {
-          if (!mounted) return;
-          final downloadConfirmed = await _showSaplingParamsDialog();
-          if (!downloadConfirmed) {
-            setState(() => _isSending = false);
-            return;
-          }
-
-          await Directory(paramsDir).create(recursive: true);
-          if (!spendExists) {
-            log('Send: downloading sapling-spend.params (~47MB)');
-            setState(() => _error = 'Downloading sapling-spend.params...');
-            await _downloadAndVerify(
-              '${_saplingParamBaseUrl}sapling-spend.params',
-              spendPath,
-              _saplingSpendHash,
-            );
-          }
-          if (!outputExists) {
-            log('Send: downloading sapling-output.params (~3.5MB)');
-            setState(() => _error = 'Downloading sapling-output.params...');
-            await _downloadAndVerify(
-              '${_saplingParamBaseUrl}sapling-output.params',
-              outputPath,
-              _saplingOutputHash,
-            );
-          }
-          setState(() => _error = null);
-        }
-      }
-
-      // Step 4: Sign and execute
-      final isHardware = ref
-          .read(accountProvider.notifier)
-          .isActiveAccountHardware;
-
-      String txidResult;
-      if (isHardware) {
-        // Hardware wallet (Keystone): three-PCZT flow (matches zcash-android-wallet-sdk)
-        //   1. createPcztFromProposal → base PCZT
-        //   2. clone → addProofsToPczt → pcztWithProofs (local Orchard proofs)
-        //   3. clone → redactPcztForSigner → send to Keystone → pcztWithSignatures
-        //   4. extractAndBroadcastPczt(pcztWithProofs, pcztWithSignatures) → combines + broadcasts
-        log('Send: creating PCZT from proposal ${proposal.proposalId}');
-        final pcztBytes = await rust_sync.createPcztFromProposal(
-          dbPath: dbPath,
-          network: ZcashNetwork.mainnet.name,
+      setState(() => _isSending = false);
+      pushedReview = true;
+      await context.push(
+        '/send/review',
+        extra: SendReviewArgs(
           proposalId: proposal.proposalId,
-        );
-        // createPcztFromProposal removes the proposal from PROPOSAL_STORE
-        // on entry, so once this returns the proposal is no longer ours.
-        proposalConsumed = true;
-
-        log(
-          'Send: adding proofs to PCZT locally (sapling=${proposal.needsSaplingParams})',
-        );
-        // Hand Sapling params paths to Rust only when the proposal actually
-        // needs them. They were downloaded above in the `needsSaplingParams`
-        // block, so the files are already on disk by the time we get here.
-        final pcztWithProofs = await rust_sync.addProofsToPczt(
-          pcztBytes: pcztBytes,
-          spendParamsPath: proposal.needsSaplingParams ? spendPath : null,
-          outputParamsPath: proposal.needsSaplingParams ? outputPath : null,
-        );
-
-        log('Send: redacting PCZT for hardware signer');
-        final redactedPczt = await rust_sync.redactPcztForSigner(
-          pcztBytes: pcztBytes,
-        );
-
-        // Select transport and sign
-        if (!mounted) return;
-        final transport = await KeystoneTransport.select(context);
-        if (transport == null || !mounted) {
-          setState(() {
-            _isSending = false;
-          });
-          return;
-        }
-
-        log('Send: signing PCZT via ${transport.name}');
-        final pcztWithSignatures = await transport.signPczt(
-          context,
-          redactedPczt,
-        );
-
-        // Combine, extract, and broadcast. Pass Sapling params paths in the
-        // same conditions as addProofsToPczt above: the extractor and the
-        // storage function both need Sapling verifying keys whenever the
-        // PCZT has a Sapling bundle, otherwise librustzcash rejects the
-        // extraction with `SaplingRequired`.
-        log('Send: combining PCZTs and broadcasting');
-        txidResult = await rust_sync.extractAndBroadcastPczt(
-          dbPath: dbPath,
-          lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
-          network: ZcashNetwork.mainnet.name,
-          pcztWithProofsBytes: pcztWithProofs,
-          pcztWithSignaturesBytes: pcztWithSignatures,
-          spendParamsPath: proposal.needsSaplingParams ? spendPath : null,
-          outputParamsPath: proposal.needsSaplingParams ? outputPath : null,
-        );
-      } else {
-        // Software wallet: mnemonic-based signing
-        final mnemonic = await ref
-            .read(accountProvider.notifier)
-            .getActiveMnemonic();
-        if (mnemonic == null) {
-          setState(() {
-            _error = 'Mnemonic not found for active account';
-            _isSending = false;
-          });
-          return;
-        }
-
-        final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
-
-        log('Send: executing proposal ${proposal.proposalId}');
-        txidResult = await rust_sync.executeProposal(
-          dbPath: dbPath,
-          lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
-          proposalId: proposal.proposalId,
-          seed: seedBytes,
-          spendParamsPath: proposal.needsSaplingParams ? spendPath : null,
-          outputParamsPath: proposal.needsSaplingParams ? outputPath : null,
-        );
-        // executeProposal removes the proposal from PROPOSAL_STORE on entry.
-        proposalConsumed = true;
-      }
-
-      log('Send: success, txids=$txidResult');
-
-      // === Send confirmed at this point — all below is non-critical ===
-
-      try {
-        await ref.read(syncProvider.notifier).refreshAfterSend();
-      } catch (e) {
-        log('Send: refreshAfterSend failed (non-critical): $e');
-      }
-
-      if (Platform.isIOS) {
-        try {
-          const channel = MethodChannel('com.zcash.wallet/background_sync');
-          final available =
-              await channel.invokeMethod<bool>('isAvailable') ?? false;
-          if (available) {
-            await channel.invokeMethod('startTxTracking');
-            log('Send: iOS TX tracking started');
-          }
-        } catch (e) {
-          log('Send: iOS TX tracking failed (non-critical): $e');
-        }
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Transaction sent successfully'),
-          backgroundColor: Theme.of(context).colorScheme.tertiary,
-          behavior: SnackBarBehavior.floating,
+          address: address,
+          addressType: _addressType,
+          amountZatoshi: BigInt.from(amountZatoshi),
+          feeZatoshi: proposal.feeZatoshi,
+          memo: memo.isNotEmpty ? memo : null,
+          needsSaplingParams: proposal.needsSaplingParams,
         ),
       );
-      Navigator.of(context).pop();
     } catch (e) {
-      log('Send: ERROR: $e');
+      log('Send: review preparation error: $e');
       setState(() {
         _error = _friendlyError(e.toString());
         _isSending = false;
       });
     } finally {
-      // Release any proposal that wasn't handed off to a create/execute call.
-      // This covers: confirmation dialog cancel, Sapling params dialog cancel,
-      // exceptions during Sapling download, and errors thrown before the
-      // consume call itself. Rust-side discardProposal is idempotent so a
-      // spurious call after a successful consume is harmless.
-      if (activeProposalId != null && !proposalConsumed) {
+      if (activeProposalId != null && !pushedReview) {
         try {
           await rust_sync.discardProposal(proposalId: activeProposalId);
-          log('Send: released proposal $activeProposalId (not consumed)');
+          log('Send: released proposal $activeProposalId (review not opened)');
         } catch (e) {
           log('Send: discardProposal cleanup failed (non-critical): $e');
         }
       }
-    }
-  }
-
-  Future<bool> _showConfirmationDialog({
-    required String address,
-    required BigInt amountZatoshi,
-    required BigInt feeZatoshi,
-    String? memo,
-  }) async {
-    final theme = Theme.of(context);
-    final totalZatoshi = amountZatoshi + feeZatoshi;
-
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Confirm Transaction'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'To',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${address.substring(0, 16)}...${address.substring(address.length - 8)}',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: 'monospace',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _buildConfirmRow(
-                  theme,
-                  'Amount',
-                  '${_formatZec(amountZatoshi)} ZEC',
-                ),
-                const SizedBox(height: 8),
-                _buildConfirmRow(theme, 'Fee', '${_formatZec(feeZatoshi)} ZEC'),
-                Divider(height: 24, color: theme.colorScheme.outlineVariant),
-                _buildConfirmRow(
-                  theme,
-                  'Total',
-                  '${_formatZec(totalZatoshi)} ZEC',
-                  bold: true,
-                ),
-                if (memo != null && memo.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    'Memo',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(memo, style: theme.textTheme.bodySmall),
-                ],
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Confirm & Send'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-  }
-
-  Widget _buildConfirmRow(
-    ThemeData theme,
-    String label,
-    String value, {
-    bool bold = false,
-  }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        Text(
-          value,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<bool> _showSaplingParamsDialog() async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Download Required'),
-            content: const Text(
-              'This transaction uses Sapling shielded notes, which require '
-              'proving parameters (~50MB) to generate zero-knowledge proofs.\n\n'
-              'This is a one-time download. Network data charges may apply.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Download'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-  }
-
-  Future<void> _downloadAndVerify(
-    String url,
-    String destPath,
-    String expectedSha1,
-  ) async {
-    final client = HttpClient();
-    try {
-      final request = await client.getUrl(Uri.parse(url));
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        throw Exception(
-          'Download failed: HTTP ${response.statusCode} for $url',
-        );
-      }
-      final tempPath = '${destPath}_tmp';
-      final file = File(tempPath);
-      final sink = file.openWrite();
-      await response.pipe(sink);
-
-      // Verify SHA-1
-      final bytes = await File(tempPath).readAsBytes();
-      final digest = sha1.convert(bytes);
-      if (digest.toString() != expectedSha1) {
-        await File(tempPath).delete();
-        throw Exception('SHA-1 mismatch: expected $expectedSha1, got $digest');
-      }
-
-      // Atomic rename
-      await File(tempPath).rename(destPath);
-      log('Send: downloaded and verified $destPath');
-    } finally {
-      client.close();
     }
   }
 
@@ -820,7 +434,6 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       sidebar: AppMainSidebar(
         accountName: accountName,
         matchedLocation: matchedLocation,
-        onResetWallet: () => _resetWallet(context),
       ),
       pane: AppDesktopPane(
         padding: const EdgeInsets.all(AppSpacing.md),
@@ -1103,7 +716,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                               child: SizedBox(
                                 width: 256,
                                 child: AppButton(
-                                  onPressed: _canReview ? _send : null,
+                                  onPressed: _canReview ? _openReview : null,
                                   variant: AppButtonVariant.primary,
                                   minWidth: 256,
                                   trailing: _isSending

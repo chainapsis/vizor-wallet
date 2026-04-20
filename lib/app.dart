@@ -20,6 +20,7 @@ import 'src/features/history/screens/history_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/keystone/screens/import_keystone_screen.dart';
+import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/settings/screens/settings_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
@@ -145,6 +146,14 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/import', builder: (_, _) => const ImportWalletScreen()),
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
       GoRoute(path: '/send', builder: (_, _) => const SendScreen()),
+      GoRoute(
+        path: '/send/review',
+        builder: (_, state) {
+          final args = state.extra;
+          if (args is! SendReviewArgs) return const SendScreen();
+          return SendReviewScreen(args: args);
+        },
+      ),
       GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
       GoRoute(path: '/history', builder: (_, _) => const HistoryScreen()),
       GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
@@ -152,10 +161,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
         path: '/import-keystone',
         builder: (_, _) => const ImportKeystoneScreen(),
       ),
-      GoRoute(
-        path: '/settings',
-        builder: (_, _) => const SettingsScreen(),
-      ),
+      GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
     ],
   );
 });
