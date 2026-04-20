@@ -472,48 +472,52 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           matchedLocation: matchedLocation,
         ),
         pane: AppDesktopPane(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
+          padding: EdgeInsets.zero,
+          child: Stack(
             children: [
-              _SendStatusBackRow(onTap: _goHome),
-              Expanded(
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 231),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: _SendStatusContent(
-                            phase: _phase,
-                            amountText: _formatReceiptAmount(
-                              widget.args.amountZatoshi,
+              const Positioned.fill(
+                child: IgnorePointer(child: _SendStatusIllustration()),
+              ),
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.md,
+                    0,
+                    AppSpacing.md,
+                  ),
+                  child: Column(
+                    children: [
+                      _SendStatusBackRow(onTap: _goHome),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 255),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: _SendStatusContent(
+                              phase: _phase,
+                              amountText: _formatReceiptAmount(
+                                widget.args.amountZatoshi,
+                              ),
+                              addressLines: addressLines,
+                              addressSpanBuilder: (line) =>
+                                  _addressSpans(context, line),
+                              feeText:
+                                  '${_formatFee(widget.args.feeZatoshi)} ZEC',
+                              dateText: _formatDate(_completedAt ?? _startedAt),
+                              error: _error,
+                              onCopyTxid: _phase == _SendStatusPhase.succeeded
+                                  ? _copyTransactionHash
+                                  : null,
+                              onBackToWallet: _phase == _SendStatusPhase.failed
+                                  ? _goHome
+                                  : null,
                             ),
-                            addressLines: addressLines,
-                            addressSpanBuilder: (line) =>
-                                _addressSpans(context, line),
-                            feeText:
-                                '${_formatFee(widget.args.feeZatoshi)} ZEC',
-                            dateText: _formatDate(_completedAt ?? _startedAt),
-                            error: _error,
-                            onCopyTxid: _phase == _SendStatusPhase.succeeded
-                                ? _copyTransactionHash
-                                : null,
-                            onBackToWallet: _phase == _SendStatusPhase.failed
-                                ? _goHome
-                                : null,
                           ),
                         ),
                       ),
-                    ),
-                    const Positioned(
-                      right: 0,
-                      bottom: 0,
-                      width: 255,
-                      height: 552,
-                      child: IgnorePointer(child: _SendStatusIllustration()),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -829,16 +833,27 @@ class _SendStatusIllustration extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final assetPath = isDark
+        ? 'assets/illustrations/send_status_illustration_dark.png'
+        : 'assets/illustrations/send_status_illustration_light.png';
     return Stack(
-      fit: StackFit.expand,
       children: [
-        Image.asset(
-          'assets/illustrations/send_status_illustration.png',
-          fit: BoxFit.cover,
-          alignment: Alignment.bottomCenter,
+        Positioned.fill(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Image.asset(
+              assetPath,
+              fit: BoxFit.fitHeight,
+              alignment: Alignment.centerRight,
+              height: double.infinity,
+            ),
+          ),
         ),
-        DecoratedBox(
-          decoration: BoxDecoration(color: colors.fade.illustration),
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(color: colors.fade.illustration),
+          ),
         ),
       ],
     );
