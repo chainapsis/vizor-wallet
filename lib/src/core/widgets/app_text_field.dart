@@ -70,6 +70,8 @@ class AppTextField extends StatefulWidget {
 class _AppTextFieldState extends State<AppTextField> {
   late final TextEditingController _internalController;
   late final FocusNode _internalFocusNode;
+  TextEditingController? _attachedController;
+  FocusNode? _attachedFocusNode;
   bool _hovered = false;
 
   TextEditingController get _controller =>
@@ -86,30 +88,38 @@ class _AppTextFieldState extends State<AppTextField> {
     super.initState();
     _internalController = TextEditingController(text: widget.initialValue);
     _internalFocusNode = FocusNode();
-    _controller.addListener(_handleTextChanged);
-    _focusNode.addListener(_handleFocusChanged);
+    _attachListeners();
   }
 
   @override
   void didUpdateWidget(covariant AppTextField oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller != widget.controller) {
-      oldWidget.controller?.removeListener(_handleTextChanged);
-      widget.controller?.addListener(_handleTextChanged);
-    }
-    if (oldWidget.focusNode != widget.focusNode) {
-      oldWidget.focusNode?.removeListener(_handleFocusChanged);
-      widget.focusNode?.addListener(_handleFocusChanged);
-    }
+    _attachListeners();
   }
 
   @override
   void dispose() {
-    _controller.removeListener(_handleTextChanged);
-    _focusNode.removeListener(_handleFocusChanged);
-    if (widget.controller == null) _internalController.dispose();
-    if (widget.focusNode == null) _internalFocusNode.dispose();
+    _attachedController?.removeListener(_handleTextChanged);
+    _attachedFocusNode?.removeListener(_handleFocusChanged);
+    _internalController.dispose();
+    _internalFocusNode.dispose();
     super.dispose();
+  }
+
+  void _attachListeners() {
+    final nextController = _controller;
+    if (!identical(_attachedController, nextController)) {
+      _attachedController?.removeListener(_handleTextChanged);
+      nextController.addListener(_handleTextChanged);
+      _attachedController = nextController;
+    }
+
+    final nextFocusNode = _focusNode;
+    if (!identical(_attachedFocusNode, nextFocusNode)) {
+      _attachedFocusNode?.removeListener(_handleFocusChanged);
+      nextFocusNode.addListener(_handleFocusChanged);
+      _attachedFocusNode = nextFocusNode;
+    }
   }
 
   void _handleTextChanged() => setState(() {});
