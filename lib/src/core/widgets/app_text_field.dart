@@ -20,6 +20,7 @@ class AppTextField extends StatefulWidget {
     this.trailing,
     this.messageText,
     this.messageIcon,
+    this.messageStyle,
     this.tone = AppTextFieldTone.neutral,
     this.showClearButton = false,
     this.onClear,
@@ -57,6 +58,7 @@ class AppTextField extends StatefulWidget {
   final Widget? trailing;
   final String? messageText;
   final Widget? messageIcon;
+  final TextStyle? messageStyle;
   final AppTextFieldTone tone;
   final bool showClearButton;
   final VoidCallback? onClear;
@@ -235,7 +237,7 @@ class _AppTextFieldState extends State<AppTextField> {
     final iconColor = _hasText || _isFocused
         ? colors.icon.accent
         : colors.icon.regular;
-    final gap = AppSpacing.xs;
+    final gap = _multiline ? AppSpacing.xs : AppSpacing.xxs;
     final shellHeight = _multiline ? 148.0 : 46.0;
     const shellRadius = 12.0;
     const focusRingWidth = 3.0;
@@ -544,9 +546,9 @@ class _AppTextFieldState extends State<AppTextField> {
                     const SizedBox(width: AppSpacing.xxs),
                   Text(
                     widget.messageText!,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: messageColor,
-                    ),
+                    style:
+                        widget.messageStyle ??
+                        AppTypography.labelMedium.copyWith(color: messageColor),
                   ),
                 ],
               ),

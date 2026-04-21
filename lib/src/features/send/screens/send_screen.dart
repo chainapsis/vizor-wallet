@@ -29,6 +29,9 @@ class SendScreen extends ConsumerStatefulWidget {
 }
 
 class _SendScreenState extends ConsumerState<SendScreen> {
+  static const _singleLineFieldOverlayReserve = 20.0;
+  static const _singleLineFieldGap = AppSpacing.xs;
+  static const _multilineFieldOverlayReserve = 24.0;
   final _addressController = TextEditingController();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
@@ -50,7 +53,6 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     _memoController.addListener(_handleMemoChanged);
     _addressFocusNode.addListener(_handleFieldVisualStateChanged);
     _amountFocusNode.addListener(_handleFieldVisualStateChanged);
-    _memoFocusNode.addListener(_handleMemoFocusChanged);
     _memoFocusNode.addListener(_handleFieldVisualStateChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -63,7 +65,6 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     _memoController.removeListener(_handleMemoChanged);
     _addressFocusNode.removeListener(_handleFieldVisualStateChanged);
     _amountFocusNode.removeListener(_handleFieldVisualStateChanged);
-    _memoFocusNode.removeListener(_handleMemoFocusChanged);
     _memoFocusNode.removeListener(_handleFieldVisualStateChanged);
     _addressController.dispose();
     _amountController.dispose();
@@ -79,17 +80,11 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     if (_memoController.text.isNotEmpty && !_messageExpanded) {
       _messageExpanded = true;
     }
+    _validateAmount();
     if (mounted) setState(() {});
   }
 
   void _handleFieldVisualStateChanged() {
-    if (mounted) setState(() {});
-  }
-
-  void _handleMemoFocusChanged() {
-    if (!_memoFocusNode.hasFocus && _memoController.text.isEmpty) {
-      _messageExpanded = false;
-    }
     if (mounted) setState(() {});
   }
 
@@ -413,6 +408,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     };
     final addressMessage = switch (_addressType) {
       'unified' || 'sapling' => 'Shielded Address',
+      'transparent' => 'Transparent Address',
       'invalid' => 'Invalid address',
       'error' => 'Address validation failed',
       _ => null,
@@ -427,6 +423,17 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         AppIcons.warning,
         size: 16,
         color: colors.text.warning,
+      ),
+      'transparent' => AppIcon(
+        AppIcons.eye,
+        size: 16,
+        color: colors.text.muted,
+      ),
+      _ => null,
+    };
+    final addressMessageStyle = switch (_addressType) {
+      'transparent' => AppTypography.labelMedium.copyWith(
+        color: colors.text.muted,
       ),
       _ => null,
     };
@@ -461,7 +468,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                     }
                   },
                 ),
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.s),
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
@@ -477,7 +484,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                                   child: Center(
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
-                                        vertical: AppSpacing.sm,
+                                        vertical: AppSpacing.s,
                                       ),
                                       child: SizedBox(
                                         width: 352,
@@ -510,6 +517,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                                               ),
                                               messageText: addressMessage,
                                               messageIcon: addressMessageIcon,
+                                              messageStyle: addressMessageStyle,
                                               onChanged: (_) {
                                                 _validateAddress();
                                                 _validateAmount();
@@ -525,7 +533,11 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                                               },
                                             ),
                                             const SizedBox(
-                                              height: AppSpacing.xs,
+                                              height:
+                                                  _singleLineFieldOverlayReserve,
+                                            ),
+                                            const SizedBox(
+                                              height: _singleLineFieldGap,
                                             ),
                                             AppTextField(
                                               label: 'Amount',
@@ -585,32 +597,45 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                                               },
                                             ),
                                             const SizedBox(
-                                              height: AppSpacing.sm,
+                                              height:
+                                                  _singleLineFieldOverlayReserve,
+                                            ),
+                                            const SizedBox(
+                                              height: _singleLineFieldGap,
                                             ),
                                             if (!_messageExpanded &&
                                                 _memoController
                                                     .text
                                                     .isEmpty) ...[
-                                              AppDecorativeDivider(
-                                                width: 256,
-                                                middleWidth: 53.553,
-                                                middleHeight: 14,
-                                              ),
-                                              const SizedBox(
-                                                height: AppSpacing.sm,
-                                              ),
-                                              _SendAddMessageCard(
-                                                enabled: _isShieldedAddress,
-                                                onTap: _isShieldedAddress
-                                                    ? () {
+                                              Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: AppSpacing.xs,
+                                                    ),
+                                                child: Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    const AppDecorativeDivider(
+                                                      width: 256,
+                                                      middleWidth: 53.553,
+                                                      middleHeight: 14,
+                                                    ),
+                                                    const SizedBox(
+                                                      height: AppSpacing.sm,
+                                                    ),
+                                                    _SendAddMessageCard(
+                                                      onTap: () {
                                                         setState(() {
                                                           _messageExpanded =
                                                               true;
                                                         });
                                                         _memoFocusNode
                                                             .requestFocus();
-                                                      }
-                                                    : null,
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ] else ...[
                                               AppTextField(
@@ -664,7 +689,12 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                                                     _messageExpanded = false;
                                                     _error = null;
                                                   });
+                                                  _validateAmount();
                                                 },
+                                              ),
+                                              const SizedBox(
+                                                height:
+                                                    _multilineFieldOverlayReserve,
                                               ),
                                             ],
                                             if (_error != null) ...[
@@ -792,9 +822,8 @@ class _SendTrailingLabel extends StatelessWidget {
 }
 
 class _SendAddMessageCard extends StatelessWidget {
-  const _SendAddMessageCard({required this.enabled, this.onTap});
+  const _SendAddMessageCard({this.onTap});
 
-  final bool enabled;
   final VoidCallback? onTap;
 
   @override
@@ -814,16 +843,12 @@ class _SendAddMessageCard extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              AppIcon(
-                AppIcons.scroll,
-                size: 16,
-                color: enabled ? colors.icon.accent : colors.icon.regular,
-              ),
+              AppIcon(AppIcons.scroll, size: 16, color: colors.icon.accent),
               const SizedBox(width: AppSpacing.xxs),
               Text(
                 'Add a Message',
                 style: AppTypography.labelMedium.copyWith(
-                  color: enabled ? colors.text.accent : colors.text.secondary,
+                  color: colors.text.accent,
                 ),
               ),
             ],
