@@ -4,11 +4,11 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/network_config.dart';
+import '../core/storage/wallet_paths.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 
@@ -397,8 +397,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   Future<String> _getDbPath() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
+    return getWalletDbPath();
   }
 
   Future<String> _getNetwork() async {

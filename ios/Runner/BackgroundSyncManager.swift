@@ -83,8 +83,14 @@ class BackgroundSyncManager {
         }
         print("[BGSync] wait complete after \(waitCount) iterations")
 
-        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let dbPath = documentsDir.appendingPathComponent("zcash_wallet.db").path
+        let dbPath: String
+        do {
+            dbPath = try walletDbPath()
+        } catch {
+            print("[BGSync] ERROR: failed to resolve db path: \(error)")
+            taskProgress = nil
+            return 1
+        }
 
         // Heartbeat: nudge completedUnitCount every 5s to signal "alive" to OS.
         // Uses percentage * 10000 as base, heartbeat adds small increments between batches.
@@ -143,6 +149,25 @@ class BackgroundSyncManager {
         }
 
         return result
+    }
+
+    private func walletDbPath() throws -> String {
+        let supportDir = try walletSupportDirectory()
+        return supportDir.appendingPathComponent("zcash_wallet.db").path
+    }
+
+    private func walletSupportDirectory() throws -> URL {
+        let supportDir = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        try FileManager.default.createDirectory(
+            at: supportDir,
+            withIntermediateDirectories: true
+        )
+        return supportDir
     }
 
     func startBackgroundSync() -> Bool {

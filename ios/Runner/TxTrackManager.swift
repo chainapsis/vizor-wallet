@@ -74,8 +74,13 @@ class TxTrackManager {
     }
 
     private func runTracking() -> Bool {
-        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let dbPath = documentsDir.appendingPathComponent("zcash_wallet.db").path
+        let dbPath: String
+        do {
+            dbPath = try walletDbPath()
+        } catch {
+            print("[TxTrack] ERROR: failed to resolve db path: \(error)")
+            return false
+        }
 
         // Get initial pending TXs
         var pendingBuf = [CPendingTx](repeating: CPendingTx(), count: 16)
@@ -165,5 +170,24 @@ class TxTrackManager {
         DynamicIslandManager.shared.restoreSyncDisplay()
 
         return true
+    }
+
+    private func walletDbPath() throws -> String {
+        let supportDir = try walletSupportDirectory()
+        return supportDir.appendingPathComponent("zcash_wallet.db").path
+    }
+
+    private func walletSupportDirectory() throws -> URL {
+        let supportDir = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        try FileManager.default.createDirectory(
+            at: supportDir,
+            withIntermediateDirectories: true
+        )
+        return supportDir
     }
 }

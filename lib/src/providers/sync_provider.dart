@@ -2,12 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
-import 'dart:io' show Platform;
 
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/network_config.dart';
+import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/wallet.dart' as rust_wallet;
 import '../services/background_sync_delegate.dart';
@@ -705,8 +704,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<String> _getDbPath() async {
     if (_cachedDbPath != null) return _cachedDbPath!;
-    final dir = await getApplicationDocumentsDirectory();
-    _cachedDbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
+    _cachedDbPath = await getWalletDbPath();
     return _cachedDbPath!;
   }
 }

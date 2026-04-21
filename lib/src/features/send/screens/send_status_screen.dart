@@ -6,13 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -287,9 +287,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
 
   Future<void> _startBroadcast() async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
-      final paramsDir = '${dir.path}${Platform.pathSeparator}sapling_params';
+      final supportDir = await getWalletSupportDirectory();
+      final dbPath = await getWalletDbPath();
+      final paramsDir =
+          '${supportDir.path}${Platform.pathSeparator}sapling_params';
       final spendPath =
           '$paramsDir${Platform.pathSeparator}sapling-spend.params';
       final outputPath =

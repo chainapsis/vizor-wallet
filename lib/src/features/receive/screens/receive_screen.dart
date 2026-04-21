@@ -1,13 +1,12 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -35,8 +34,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
 
   Future<void> _loadTransparentAddress() async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
+      final dbPath = await getWalletDbPath();
       final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
       if (accountUuid == null) return;
       final transparentAddress = await rust_wallet.getTransparentAddress(
@@ -56,8 +54,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   Future<void> _generateNewAddress() async {
     setState(() => _isGenerating = true);
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final dbPath = '${dir.path}${Platform.pathSeparator}zcash_wallet.db';
+      final dbPath = await getWalletDbPath();
       final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
       if (accountUuid == null) {
         log('Receive: no active account');
