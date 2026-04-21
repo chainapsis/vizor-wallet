@@ -121,6 +121,10 @@ class WidgetbookApp extends StatelessWidget {
                   builder: buildButtonInteractiveUseCase,
                 ),
                 WidgetbookUseCase(
+                  name: 'Primary / Large',
+                  builder: buildButtonPrimaryLargeUseCase,
+                ),
+                WidgetbookUseCase(
                   name: 'Primary / Medium',
                   builder: buildButtonPrimaryMediumUseCase,
                 ),
@@ -129,12 +133,20 @@ class WidgetbookApp extends StatelessWidget {
                   builder: buildButtonPrimarySmallUseCase,
                 ),
                 WidgetbookUseCase(
+                  name: 'Secondary / Large',
+                  builder: buildButtonSecondaryLargeUseCase,
+                ),
+                WidgetbookUseCase(
                   name: 'Secondary / Medium',
                   builder: buildButtonSecondaryMediumUseCase,
                 ),
                 WidgetbookUseCase(
                   name: 'Secondary / Small',
                   builder: buildButtonSecondarySmallUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Ghost / Large',
+                  builder: buildButtonGhostLargeUseCase,
                 ),
                 WidgetbookUseCase(
                   name: 'Ghost / Medium',

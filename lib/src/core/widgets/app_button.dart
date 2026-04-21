@@ -13,9 +13,10 @@ import '../theme/app_theme.dart';
 /// designer introduces a destructive variant in Figma.
 enum AppButtonVariant { primary, secondary, ghost }
 
-/// Vertical density. Both variants use the same icon size (16) and same
-/// label family/weight; they differ in padding and label font size.
-enum AppButtonSize { medium, small }
+/// Vertical density. All sizes use the same icon size (16) and the same
+/// label family/weight; they differ in fixed height, padding, and in the
+/// small variant's reduced label size.
+enum AppButtonSize { large, medium, small }
 
 class _Sizing {
   const _Sizing({
@@ -38,12 +39,24 @@ class _Sizing {
   final TextStyle labelStyle;
 }
 
-// Medium (default) button — the large CTA. Uses `labelLarge` (14px).
-const _mediumSizing = _Sizing(
+// Large button — the primary CTA. Uses `labelLarge` (14px).
+const _largeSizing = _Sizing(
   height: 40,
   padding: EdgeInsets.symmetric(
     horizontal: AppSpacing.sm,
     vertical: AppSpacing.xs,
+  ),
+  gap: AppSpacing.xxs,
+  iconSize: AppIconSize.medium,
+  labelStyle: AppTypography.labelLarge,
+);
+
+// Medium button — standard inline action. Uses `labelLarge` (14px).
+const _mediumSizing = _Sizing(
+  height: 32,
+  padding: EdgeInsets.symmetric(
+    horizontal: AppSpacing.xs,
+    vertical: AppSpacing.xxs,
   ),
   gap: AppSpacing.xxs,
   iconSize: AppIconSize.medium,
@@ -108,7 +121,7 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
   }
 }
 
-/// A pill-shaped button with three style variants and two size variants.
+/// A pill-shaped button with three style variants and three size variants.
 ///
 /// Width and height are intrinsic — the button wraps the leading icon +
 /// label + trailing icon and centers them both axes. Only the pill radius
@@ -117,7 +130,7 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
 /// States handled:
 /// * default / hover / pressed — ambient fill swaps via [_Sizing] + palette
 /// * focused — ring painted outside the pill using the per-variant
-///   focus-ring color (2dp on medium, 1.5dp on small)
+///   focus-ring color (2dp on large/medium, 1.5dp on small)
 /// * disabled — `onPressed == null` switches to the explicit disabled
 ///   palette from Figma and removes pointer/focus interaction
 class AppButton extends StatefulWidget {
@@ -126,7 +139,7 @@ class AppButton extends StatefulWidget {
     required this.onPressed,
     required this.child,
     this.variant = AppButtonVariant.primary,
-    this.size = AppButtonSize.medium,
+    this.size = AppButtonSize.large,
     this.leading,
     this.trailing,
     this.minWidth,
@@ -187,9 +200,11 @@ class _AppButtonState extends State<AppButton> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final palette = _paletteFor(widget.variant, colors);
-    final sizing = widget.size == AppButtonSize.medium
-        ? _mediumSizing
-        : _smallSizing;
+    final sizing = switch (widget.size) {
+      AppButtonSize.large => _largeSizing,
+      AppButtonSize.medium => _mediumSizing,
+      AppButtonSize.small => _smallSizing,
+    };
     final isGhost = widget.variant == AppButtonVariant.ghost;
 
     final disabled = colors.button.disabled;
@@ -295,7 +310,7 @@ class _AppButtonState extends State<AppButton> {
                   shape: StadiumBorder(
                     side: BorderSide(
                       color: palette.focusRing,
-                      width: widget.size == AppButtonSize.medium ? 2 : 1.5,
+                      width: widget.size == AppButtonSize.small ? 1.5 : 2,
                     ),
                   ),
                 ),

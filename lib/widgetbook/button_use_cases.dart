@@ -31,9 +31,7 @@ Widget buildButtonMatrixUseCase(BuildContext context) {
         size: size,
         leading: leading,
         trailing: trailing,
-        child: Text(
-          size == AppButtonSize.medium ? 'Create New Wallet' : 'Copy',
-        ),
+        child: Text(_labelForSize(size)),
       ),
     );
   }
@@ -111,7 +109,7 @@ Widget buildButtonInteractiveUseCase(BuildContext context) {
   final size = context.knobs.object.segmented<AppButtonSize>(
     label: 'Size',
     options: AppButtonSize.values,
-    initialOption: AppButtonSize.medium,
+    initialOption: AppButtonSize.large,
     labelBuilder: (s) => s.name,
   );
   final enabled = context.knobs.boolean(label: 'Enabled', initialValue: true);
@@ -157,16 +155,28 @@ Widget _buildSingle(
         size: size,
         leading: const Icon(Icons.add),
         trailing: const Icon(Icons.arrow_forward),
-        child: Text(
-          size == AppButtonSize.medium ? 'Create New Wallet' : 'Copy',
-        ),
+        child: Text(_labelForSize(size)),
       ),
     ),
   );
 }
 
+String _labelForSize(AppButtonSize size) {
+  return switch (size) {
+    AppButtonSize.large => 'Create New Wallet',
+    AppButtonSize.medium => 'Review',
+    AppButtonSize.small => 'Copy',
+  };
+}
+
 // Individual use cases — one per (variant × size) so each can be deep-linked
 // and captured as a snapshot.
+Widget buildButtonPrimaryLargeUseCase(BuildContext context) => _buildSingle(
+  context,
+  variant: AppButtonVariant.primary,
+  size: AppButtonSize.large,
+);
+
 Widget buildButtonPrimaryMediumUseCase(BuildContext context) => _buildSingle(
   context,
   variant: AppButtonVariant.primary,
@@ -179,6 +189,12 @@ Widget buildButtonPrimarySmallUseCase(BuildContext context) => _buildSingle(
   size: AppButtonSize.small,
 );
 
+Widget buildButtonSecondaryLargeUseCase(BuildContext context) => _buildSingle(
+  context,
+  variant: AppButtonVariant.secondary,
+  size: AppButtonSize.large,
+);
+
 Widget buildButtonSecondaryMediumUseCase(BuildContext context) => _buildSingle(
   context,
   variant: AppButtonVariant.secondary,
@@ -189,6 +205,12 @@ Widget buildButtonSecondarySmallUseCase(BuildContext context) => _buildSingle(
   context,
   variant: AppButtonVariant.secondary,
   size: AppButtonSize.small,
+);
+
+Widget buildButtonGhostLargeUseCase(BuildContext context) => _buildSingle(
+  context,
+  variant: AppButtonVariant.ghost,
+  size: AppButtonSize.large,
 );
 
 Widget buildButtonGhostMediumUseCase(BuildContext context) => _buildSingle(
