@@ -279,7 +279,24 @@ async fn run_sync_impl(
     db.update_chain_tip(tip_height)
         .map_err(|e| SyncError::db(format!("update_chain_tip: {e}")))?;
 
+    // Match the cancellation granularity we already use for
+    // `run_enhancement`: let this stage run to completion once it has
+    // started, but don't enter it (or continue past it) after a
+    // cancel/mode change has already been observed.
+    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        log::info!(
+            "[{}] sync: cancel/mode observed before transparent UTXO refresh, skipping",
+            elapsed(),
+        );
+        return Ok(());
+    }
+
     refresh_utxos(&mut client, &mut db, network).await?;
+
+    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+        log::info!("[{}] sync: exiting after transparent UTXO refresh", elapsed());
+        return Ok(());
+    }
 
     // 2.5. Resubmit any unmined, unexpired wallet txs now that we
     // know the current tip. Matches the first of the three
