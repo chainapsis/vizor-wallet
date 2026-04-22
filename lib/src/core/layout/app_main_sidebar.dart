@@ -6,6 +6,7 @@ import '../../providers/account_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
+import '../widgets/app_button.dart';
 import 'app_desktop_shell.dart';
 
 class AppMainSidebar extends ConsumerStatefulWidget {
@@ -30,7 +31,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   String get _matchedLocation => GoRouterState.of(context).matchedLocation;
 
   bool _matches(String routePath) =>
-      _matchedLocation == routePath || _matchedLocation.startsWith('$routePath/');
+      _matchedLocation == routePath ||
+      _matchedLocation.startsWith('$routePath/');
 
   @override
   void dispose() {
@@ -39,7 +41,10 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   }
 
   Future<void> _handleAccountSelected(String uuid) async {
-    final activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final activeAccountUuid = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid;
     if (uuid == activeAccountUuid) return;
     await ref.read(accountProvider.notifier).switchAccount(uuid);
     await ref.read(syncProvider.notifier).refreshAfterSend();
@@ -58,7 +63,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   @override
   Widget build(BuildContext context) {
     final accountAsync = ref.watch(accountProvider);
-    final accounts = [...(accountAsync.value?.accounts ?? const <AccountInfo>[])];
+    final accounts = [
+      ...(accountAsync.value?.accounts ?? const <AccountInfo>[]),
+    ];
     accounts.sort((a, b) => a.order.compareTo(b.order));
     final activeAccountUuid = accountAsync.value?.activeAccountUuid;
     AccountInfo? activeAccount;
@@ -214,7 +221,7 @@ class _SidebarAccountSelectorButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final backgroundColor = isOpen ? colors.surface.input : null;
+    final backgroundColor = colors.surface.card;
     final textColor = colors.text.accent;
     final iconColor = colors.icon.accent;
 
@@ -228,7 +235,7 @@ class _SidebarAccountSelectorButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
           decoration: BoxDecoration(
             color: backgroundColor,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
+            borderRadius: BorderRadius.circular(AppRadii.small),
           ),
           child: Row(
             children: [
@@ -305,7 +312,15 @@ class _SidebarAccountDropdown extends StatelessWidget {
       height: headerHeight + listViewportHeight + footerHeight,
       decoration: BoxDecoration(
         color: colors.surface.input,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
+        borderRadius: BorderRadius.circular(AppRadii.small),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x40000000),
+            blurRadius: 25,
+            spreadRadius: -10,
+            offset: Offset(0, 10),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -318,7 +333,7 @@ class _SidebarAccountDropdown extends StatelessWidget {
                 child: Text(
                   '${accounts.length} ${accounts.length == 1 ? 'Account' : 'Accounts'}',
                   style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.primary,
+                    color: colors.text.accent,
                   ),
                 ),
               ),
@@ -343,7 +358,7 @@ class _SidebarAccountDropdown extends StatelessWidget {
           SizedBox(
             height: footerHeight,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
               child: _SidebarCreateWalletRow(
                 onTap: () => context.go('/add-account'),
               ),
@@ -369,36 +384,31 @@ class _SidebarAccountRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final labelColor = isActive ? colors.text.secondary : colors.text.accent;
+    final labelColor = colors.text.accent;
     final trailing = isActive
-        ? AppIcon(
-            AppIcons.checkCircle,
-            size: 20,
-            color: colors.icon.regular,
-          )
-        : AppIcon(
-            AppIcons.chevronForward,
-            size: 20,
-            color: colors.icon.accent,
-          );
+        ? AppIcon(AppIcons.checkCircle, size: 20, color: colors.icon.regular)
+        : AppIcon(AppIcons.chevronForward, size: 20, color: colors.icon.accent);
 
     final row = SizedBox(
       height: 40,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-        child: Row(
-          children: [
-            const _SidebarAccountAvatar(),
-            const SizedBox(width: AppSpacing.xs),
-            Expanded(
-              child: Text(
-                account.name,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(color: labelColor),
+      child: Opacity(
+        opacity: isActive ? 0.5 : 1,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+          child: Row(
+            children: [
+              const _SidebarAccountAvatar(),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  account.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelLarge.copyWith(color: labelColor),
+                ),
               ),
-            ),
-            trailing,
-          ],
+              trailing,
+            ],
+          ),
         ),
       ),
     );
@@ -423,30 +433,13 @@ class _SidebarCreateWalletRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          height: 40,
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(AppIcons.addNew, size: 16, color: colors.icon.regular),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Create New Wallet',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    return LayoutBuilder(
+      builder: (context, constraints) => AppButton(
+        onPressed: onTap,
+        variant: AppButtonVariant.ghost,
+        minWidth: constraints.maxWidth,
+        leading: const AppIcon(AppIcons.addNew),
+        child: const Text('Create New Wallet'),
       ),
     );
   }
