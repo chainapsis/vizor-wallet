@@ -29,6 +29,44 @@ class SendScreen extends ConsumerStatefulWidget {
 }
 
 class _SendScreenState extends ConsumerState<SendScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final walletAsync = ref.watch(walletProvider);
+    final activeAccountUuid = ref.watch(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+    );
+    final spendableBalance = ref.watch(
+      syncProvider.select(
+        (value) => value.value?.spendableBalance ?? BigInt.zero,
+      ),
+    );
+
+    return _SendComposeBody(
+      key: ValueKey(activeAccountUuid),
+      walletAsync: walletAsync,
+      activeAccountUuid: activeAccountUuid,
+      spendableBalance: spendableBalance,
+    );
+  }
+}
+
+class _SendComposeBody extends ConsumerStatefulWidget {
+  const _SendComposeBody({
+    super.key,
+    required this.walletAsync,
+    required this.activeAccountUuid,
+    required this.spendableBalance,
+  });
+
+  final AsyncValue<WalletState> walletAsync;
+  final String? activeAccountUuid;
+  final BigInt spendableBalance;
+
+  @override
+  ConsumerState<_SendComposeBody> createState() => _SendComposeBodyState();
+}
+
+class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldOverlayReserve = 20.0;
   static const _singleLineFieldGap = AppSpacing.xs;
   static const _multilineFieldOverlayReserve = 24.0;
@@ -88,6 +126,15 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     if (mounted) setState(() {});
   }
 
+  @override
+  void didUpdateWidget(covariant _SendComposeBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.spendableBalance != widget.spendableBalance &&
+        _amountController.text.trim().isNotEmpty) {
+      _validateAmount();
+    }
+  }
+
   Future<void> _validateAddress() async {
     final addr = _addressController.text.trim();
     if (addr.isEmpty) {
@@ -96,18 +143,15 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     }
     try {
       final result = await rust_sync.validateAddress(address: addr);
+      if (!mounted) return;
       setState(
         () => _addressType = result.isValid ? result.addressType : 'invalid',
       );
     } catch (e) {
       log('Send: address validation error: $e');
+      if (!mounted) return;
       setState(() => _addressType = 'error');
     }
-  }
-
-  BigInt _getSpendableBalance() {
-    final syncState = ref.read(syncProvider).value;
-    return syncState?.spendableBalance ?? BigInt.zero;
   }
 
   bool get _hasValidAddress =>
@@ -169,7 +213,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     }
 
     // Quick balance pre-check
-    final spendable = _getSpendableBalance();
+    final spendable = widget.spendableBalance;
     if (BigInt.from(zatoshi) > spendable) {
       setState(() => _amountError = 'Insufficient balance');
       return;
@@ -187,8 +231,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
     try {
       final dbPath = await getWalletDbPath();
+      if (!mounted || seq != _validateSeq) return;
       final memo = _memoController.text.trim();
-      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+      final accountUuid = widget.activeAccountUuid;
       if (accountUuid == null) {
         setState(() => _amountError = null);
         return;
@@ -203,7 +248,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       );
 
       // Stale check — new input arrived while awaiting
-      if (seq != _validateSeq) return;
+      if (!mounted || seq != _validateSeq) return;
 
       final totalNeeded = BigInt.from(zatoshi) + fee;
       if (totalNeeded > spendable) {
@@ -215,7 +260,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         setState(() => _amountError = null);
       }
     } catch (e) {
-      if (seq != _validateSeq) return;
+      if (!mounted || seq != _validateSeq) return;
       final msg = e.toString();
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
         setState(() => _amountError = 'Insufficient balance including fee');
@@ -323,7 +368,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       }
 
       // Check balance before proposing
-      final spendable = _getSpendableBalance();
+      final spendable = widget.spendableBalance;
       if (BigInt.from(amountZatoshi) > spendable) {
         setState(() {
           _error = 'Insufficient balance.';
@@ -334,10 +379,11 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
       final memo = _memoController.text.trim();
       final dbPath = await getWalletDbPath();
+      if (!mounted) return;
 
       // Step 1: Propose transfer
       log('Send: proposing transfer');
-      final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+      final accountUuid = widget.activeAccountUuid;
       if (accountUuid == null) {
         setState(() {
           _error = 'No active account';
@@ -374,6 +420,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       );
     } catch (e) {
       log('Send: review preparation error: $e');
+      if (!mounted) return;
       setState(() {
         _error = _friendlyError(e.toString());
         _isSending = false;
@@ -392,8 +439,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final walletAsync = ref.watch(walletProvider);
-    final spendable = _getSpendableBalance();
+    final spendable = widget.spendableBalance;
     final colors = context.colors;
 
     final addressTone = switch (_addressType) {
@@ -438,7 +484,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       pane: AppDesktopPane(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: SizedBox.expand(
-          child: walletAsync.when(
+          child: widget.walletAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (err, _) => Center(
               child: Text(
