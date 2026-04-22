@@ -222,7 +222,7 @@ class _ImportSecretPassphraseScreenState
                 ),
               ),
             ),
-            const SizedBox(height: AppSpacing.s),
+            const SizedBox(height: AppSpacing.xxs),
             Expanded(
               child: Column(
                 children: [
@@ -246,15 +246,12 @@ class _ImportSecretPassphraseScreenState
                                   textAlign: TextAlign.center,
                                 ),
                                 const SizedBox(height: AppSpacing.s),
-                                SizedBox(
-                                  width: 332,
-                                  child: Text(
-                                    'Import your wallet by entering your Secret Passphrase.',
-                                    style: AppTypography.bodyMedium.copyWith(
-                                      color: colors.text.accent,
-                                    ),
-                                    textAlign: TextAlign.center,
+                                Text(
+                                  'Import your wallet by entering your Secret Passphrase.',
+                                  style: AppTypography.bodyMedium.copyWith(
+                                    color: colors.text.accent,
                                   ),
+                                  textAlign: TextAlign.center,
                                 ),
                                 const SizedBox(height: AppSpacing.s),
                                 const AppDecorativeDivider(width: 256),
@@ -297,15 +294,12 @@ class _ImportSecretPassphraseScreenState
                                 ),
                                 if (_errorText != null) ...[
                                   const SizedBox(height: AppSpacing.s),
-                                  SizedBox(
-                                    width: 320,
-                                    child: Text(
-                                      _errorText!,
-                                      style: AppTypography.bodyMedium.copyWith(
-                                        color: colors.text.warning,
-                                      ),
-                                      textAlign: TextAlign.center,
+                                  Text(
+                                    _errorText!,
+                                    style: AppTypography.bodyMedium.copyWith(
+                                      color: colors.text.warning,
                                     ),
+                                    textAlign: TextAlign.center,
                                   ),
                                 ],
                               ],
@@ -315,16 +309,12 @@ class _ImportSecretPassphraseScreenState
                       ),
                     ),
                   ),
-                  SizedBox(
-                    width: 256,
-                    child: AppButton(
-                      onPressed: _canSubmit ? _submit : null,
-                      minWidth: 256,
-                      trailing: const AppIcon(AppIcons.chevronForward),
-                      child: Text(_isSubmitting ? 'Importing...' : 'Import'),
-                    ),
+                  AppButton(
+                    onPressed: _canSubmit ? _submit : null,
+                    minWidth: 256,
+                    trailing: const AppIcon(AppIcons.chevronForward),
+                    child: Text(_isSubmitting ? 'Importing...' : 'Import'),
                   ),
-                  const SizedBox(height: AppSpacing.s),
                 ],
               ),
             ),
