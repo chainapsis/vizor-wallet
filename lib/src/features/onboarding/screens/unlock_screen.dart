@@ -15,6 +15,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
@@ -38,6 +39,12 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
   bool _isSubmitting = false;
   String? _errorText;
 
+  String? get _passwordPolicyMessage =>
+      validateWalletPassword(_passwordController.text);
+
+  bool get _canSubmit =>
+      !_isSubmitting && isWalletPasswordValid(_passwordController.text);
+
   @override
   void dispose() {
     _passwordController.dispose();
@@ -45,7 +52,15 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
   }
 
   Future<void> _submit() async {
-    if (_isSubmitting || _passwordController.text.isEmpty) return;
+    final policyError = _passwordPolicyMessage;
+    if (_isSubmitting) return;
+    if (!isWalletPasswordValid(_passwordController.text)) {
+      if (policyError == null) return;
+      setState(() {
+        _errorText = policyError;
+      });
+      return;
+    }
 
     setState(() {
       _isSubmitting = true;
@@ -153,8 +168,8 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
                       label: 'Password',
                       controller: _passwordController,
                       autofocus: true,
-                      messageText: _errorText,
-                      tone: _errorText == null
+                      messageText: _errorText ?? _passwordPolicyMessage,
+                      tone: (_errorText ?? _passwordPolicyMessage) == null
                           ? AppTextFieldTone.neutral
                           : AppTextFieldTone.destructive,
                       onChanged: (_) {
@@ -166,10 +181,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
                     ),
                     const SizedBox(height: AppSpacing.s),
                     AppButton(
-                      onPressed:
-                          _isSubmitting || _passwordController.text.isEmpty
-                          ? null
-                          : _submit,
+                      onPressed: _canSubmit ? _submit : null,
                       variant: AppButtonVariant.primary,
                       minWidth: 256,
                       trailing: const AppIcon(AppIcons.chevronForward),

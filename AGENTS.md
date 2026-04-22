@@ -82,6 +82,18 @@ What this means for our DB shape:
 
 **Mnemonic storage**: Per-account in Flutter secure storage (`zcash_account_mnemonic_{uuid}`). Account list stored as JSON in `zcash_accounts` key. Active account in `zcash_active_account` key.
 
+### Wallet Password Policy
+
+- The local wallet setup/unlock password is **ASCII-only**. Accept only printable
+  English letters, numbers, and symbols (`0x21`-`0x7E`).
+- Do **not** implement keyboard-layout or IME normalization for passwords
+  (for example, treating Korean 2-beolsik input as QWERTY). Passwords are
+  compared as exact strings under this ASCII-only policy.
+- Reuse the shared Dart helper in
+  `lib/src/core/security/password_policy.dart` for all password validation.
+- The charset validation message must stay exactly:
+  `Use only English letters, numbers, and symbols.`
+
 ### Dart Provider Structure
 
 ```

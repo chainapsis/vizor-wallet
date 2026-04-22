@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app_bootstrap.dart';
+import '../core/security/password_policy.dart';
 import '../core/storage/app_secure_store.dart';
 
 class AppSecurityState {
@@ -35,6 +36,10 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
   }
 
   Future<void> configurePassword(String password) async {
+    final error = validateWalletPassword(password);
+    if (error != null) {
+      throw ArgumentError(error);
+    }
     await _store.configurePassword(password);
     state = const AppSecurityState(
       isPasswordConfigured: true,
@@ -43,6 +48,9 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
   }
 
   Future<bool> unlock(String password) async {
+    if (!isWalletPasswordValid(password)) {
+      return false;
+    }
     final isValid = await _store.verifyPassword(password);
     if (isValid) {
       state = state.copyWith(isUnlocked: true);

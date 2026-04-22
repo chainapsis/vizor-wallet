@@ -4,6 +4,8 @@ import 'dart:math';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../security/password_policy.dart';
+
 const kWalletDbNameKey = 'zcash_wallet_db_name';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';
 const _passwordVerifierKey = 'zcash_password_verifier';
@@ -119,6 +121,10 @@ class AppSecureStore {
   }
 
   Future<void> configurePassword(String password) async {
+    final error = validateWalletPassword(password);
+    if (error != null) {
+      throw ArgumentError(error);
+    }
     final salt = _randomBytes(16);
     final verifier = await _derivePasswordVerifier(password, salt);
     await writePlain(_passwordVerifierSaltKey, base64Encode(salt));
@@ -127,6 +133,9 @@ class AppSecureStore {
   }
 
   Future<bool> verifyPassword(String password) async {
+    if (!isWalletPasswordValid(password)) {
+      return false;
+    }
     final encodedSalt = await readPlain(_passwordVerifierSaltKey);
     final storedVerifier = await readPlain(_passwordVerifierKey);
     if (encodedSalt == null ||

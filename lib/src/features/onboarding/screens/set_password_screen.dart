@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
@@ -57,29 +58,35 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     super.dispose();
   }
 
-  bool get _hasMinLength => _passwordController.text.length >= 8;
+  String? get _passwordPolicyError =>
+      validateWalletPassword(_passwordController.text);
   bool get _matches =>
       _confirmController.text.isNotEmpty &&
       _confirmController.text == _passwordController.text;
 
   bool get _canSubmit =>
-      !_isSubmitting && widget.args != null && _hasMinLength && _matches;
+      !_isSubmitting &&
+      widget.args != null &&
+      _passwordPolicyError == null &&
+      _matches;
 
-  String? get _passwordMessage {
-    final value = _passwordController.text;
-    if (value.isEmpty || _hasMinLength) return null;
-    return 'Password must be at least 8 characters.';
-  }
+  String? get _passwordMessage => _passwordPolicyError;
 
   String? get _confirmMessage {
     final value = _confirmController.text;
-    if (value.isEmpty || _matches) return null;
+    if (value.isEmpty || _passwordPolicyError != null || _matches) return null;
     return 'Passwords do not match.';
   }
 
   Future<void> _submit() async {
     final args = widget.args;
-    if (!_canSubmit || args == null) return;
+    final passwordPolicyError = _passwordPolicyError;
+    if (_isSubmitting ||
+        args == null ||
+        passwordPolicyError != null ||
+        !_matches) {
+      return;
+    }
 
     setState(() {
       _isSubmitting = true;
