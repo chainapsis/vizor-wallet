@@ -24,13 +24,23 @@ class ImportBirthdayMetadata {
 class ImportBirthdayEstimator {
   ImportBirthdayEstimator._();
 
+  static final CallOptions _rpcOptions = CallOptions(
+    timeout: const Duration(seconds: 10),
+  );
+
   static Future<ImportBirthdayMetadata> loadMetadata({
     required ZcashNetwork network,
   }) async {
     return _withClient(network, (client) async {
-      final info = await client.getLightdInfo(service.Empty());
+      final info = await client.getLightdInfo(
+        service.Empty(),
+        options: _rpcOptions,
+      );
       final saplingHeight = info.saplingActivationHeight.toInt();
-      final tipBlockId = await client.getLatestBlock(service.ChainSpec());
+      final tipBlockId = await client.getLatestBlock(
+        service.ChainSpec(),
+        options: _rpcOptions,
+      );
       final tipHeight = tipBlockId.height.toInt();
       final saplingBlock = await _getBlockAtHeight(client, saplingHeight);
       final tipBlock = await _getBlockAtHeight(client, tipHeight);
@@ -49,9 +59,15 @@ class ImportBirthdayEstimator {
     required DateTime selectedDate,
   }) async {
     return _withClient(network, (client) async {
-      final info = await client.getLightdInfo(service.Empty());
+      final info = await client.getLightdInfo(
+        service.Empty(),
+        options: _rpcOptions,
+      );
       final saplingHeight = info.saplingActivationHeight.toInt();
-      final tipBlockId = await client.getLatestBlock(service.ChainSpec());
+      final tipBlockId = await client.getLatestBlock(
+        service.ChainSpec(),
+        options: _rpcOptions,
+      );
       final tipHeight = tipBlockId.height.toInt();
 
       final cache = <int, int>{};
@@ -128,7 +144,10 @@ class ImportBirthdayEstimator {
     service.CompactTxStreamerClient client,
     int height,
   ) {
-    return client.getBlock(service.BlockID(height: Int64(height)));
+    return client.getBlock(
+      service.BlockID(height: Int64(height)),
+      options: _rpcOptions,
+    );
   }
 
   static DateTime _blockTimeToLocalDate(compact.CompactBlock block) {

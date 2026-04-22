@@ -145,6 +145,18 @@ class _ImportWalletBirthdayScreenState
     }
   }
 
+  void _handleTabSelected(ImportBirthdayTab tab) {
+    if (tab == ImportBirthdayTab.blockHeight) {
+      _estimateSeq++;
+      if (_isEstimating) {
+        setState(() {
+          _isEstimating = false;
+        });
+      }
+    }
+    ref.read(importDraftProvider.notifier).setTab(tab);
+  }
+
   Future<void> _pickDate() async {
     final metadata = _metadata;
     if (metadata == null) return;
@@ -333,6 +345,17 @@ class _ImportWalletBirthdayScreenState
     return null;
   }
 
+  bool _isSubmitEnabled(ImportDraftState draft) {
+    return switch (draft.selectedTab) {
+      ImportBirthdayTab.date =>
+        draft.estimatedBirthdayHeight != null &&
+            !_isSubmitting &&
+            !_isEstimating,
+      ImportBirthdayTab.blockHeight =>
+        _validatedManualHeight != null && !_isSubmitting,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final draft = ref.watch(importDraftProvider);
@@ -344,7 +367,7 @@ class _ImportWalletBirthdayScreenState
     final activeTab = draft.selectedTab;
     final buttonLabel = _isSubmitting
         ? 'Importing...'
-        : _isEstimating
+        : activeTab == ImportBirthdayTab.date && _isEstimating
         ? 'Estimating...'
         : 'Import';
 
@@ -396,9 +419,7 @@ class _ImportWalletBirthdayScreenState
                               const SizedBox(height: AppSpacing.md),
                               _BirthdayTabRow(
                                 activeTab: activeTab,
-                                onTabSelected: (tab) => ref
-                                    .read(importDraftProvider.notifier)
-                                    .setTab(tab),
+                                onTabSelected: _handleTabSelected,
                               ),
                               const SizedBox(height: AppSpacing.md),
                               if (activeTab == ImportBirthdayTab.date)
@@ -446,12 +467,7 @@ class _ImportWalletBirthdayScreenState
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         AppButton(
-                          onPressed:
-                              _resolvedBirthdayHeight(draft) != null &&
-                                  !_isSubmitting &&
-                                  !_isEstimating
-                              ? _submit
-                              : null,
+                          onPressed: _isSubmitEnabled(draft) ? _submit : null,
                           variant: AppButtonVariant.primary,
                           minWidth: _buttonWidth,
                           trailing: const AppIcon(AppIcons.chevronForward),
@@ -460,9 +476,9 @@ class _ImportWalletBirthdayScreenState
                         const SizedBox(height: AppSpacing.xs),
                         AppButton(
                           onPressed: activeTab == ImportBirthdayTab.date
-                              ? () => ref
-                                    .read(importDraftProvider.notifier)
-                                    .setTab(ImportBirthdayTab.blockHeight)
+                              ? () => _handleTabSelected(
+                                    ImportBirthdayTab.blockHeight,
+                                  )
                               : () {},
                           variant: AppButtonVariant.ghost,
                           minWidth: _buttonWidth,
