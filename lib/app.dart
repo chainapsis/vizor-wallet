@@ -63,6 +63,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
       final requiresUnlock = hasWallet && isPasswordConfigured && !isUnlocked;
       final isOnboarding =
           state.matchedLocation == '/welcome' ||
+          state.matchedLocation == '/add-account' ||
           state.matchedLocation.startsWith('/onboarding/') ||
           state.matchedLocation == '/create' ||
           state.matchedLocation.startsWith('/import');
@@ -75,6 +76,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
 
       if (!hasWallet && isUnlock) return '/welcome';
       if (!hasWallet && !isOnboarding) return '/welcome';
+      if (!hasWallet && state.matchedLocation == '/add-account') return '/welcome';
       if (requiresUnlock && !isUnlock) return '/unlock';
       if (!requiresUnlock && isUnlock) return hasWallet ? '/home' : '/welcome';
       if (hasWallet && state.matchedLocation == '/welcome') {
@@ -109,6 +111,16 @@ final _routerProvider = Provider<GoRouter>((ref) {
       // Other routes stay on the GoRouter default.
       GoRoute(
         path: '/welcome',
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: const WelcomeScreen(),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: '/add-account',
         pageBuilder: (context, state) => CustomTransitionPage<void>(
           key: state.pageKey,
           transitionDuration: kOnboardingForwardDuration,

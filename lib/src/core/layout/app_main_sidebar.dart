@@ -345,7 +345,7 @@ class _SidebarAccountDropdown extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
               child: _SidebarCreateWalletRow(
-                onTap: () {},
+                onTap: () => context.go('/add-account'),
               ),
             ),
           ),
