@@ -27,6 +27,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
   final ScrollController _accountsScrollController = ScrollController();
   bool _isDropdownOpen = false;
+  bool _isSelectorHovered = false;
 
   String get _matchedLocation => GoRouterState.of(context).matchedLocation;
 
@@ -180,6 +181,13 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     _SidebarAccountSelectorButton(
                       label: accountName,
                       isOpen: _isDropdownOpen,
+                      isHovered: _isSelectorHovered,
+                      onHoverChanged: (hovered) {
+                        if (_isSelectorHovered == hovered) return;
+                        setState(() {
+                          _isSelectorHovered = hovered;
+                        });
+                      },
                       onTap: _toggleDropdown,
                     ),
                     if (_isDropdownOpen) ...[
@@ -211,22 +219,28 @@ class _SidebarAccountSelectorButton extends StatelessWidget {
   const _SidebarAccountSelectorButton({
     required this.label,
     required this.isOpen,
+    required this.isHovered,
+    required this.onHoverChanged,
     required this.onTap,
   });
 
   final String label;
   final bool isOpen;
+  final bool isHovered;
+  final ValueChanged<bool> onHoverChanged;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final backgroundColor = colors.surface.input;
+    final backgroundColor = (isOpen || isHovered) ? colors.surface.input : null;
     final textColor = colors.text.accent;
     final iconColor = colors.icon.accent;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
+      onEnter: (_) => onHoverChanged(true),
+      onExit: (_) => onHoverChanged(false),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
