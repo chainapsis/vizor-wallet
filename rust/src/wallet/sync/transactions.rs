@@ -25,7 +25,7 @@ use zcash_protocol::consensus::BlockHeight;
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
 
-use super::open_wallet_db;
+use super::{open_readonly_conn, open_wallet_db, open_wallet_db_for_read};
 
 // ======================== Balance ========================
 
@@ -43,7 +43,7 @@ pub fn get_wallet_balance(
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<WalletBalance, String> {
-    let db = open_wallet_db(db_path, network)?;
+    let db = open_wallet_db_for_read(db_path, network)?;
     let target_id = parse_account_uuid(account_uuid)?;
     match db
         .get_wallet_summary(ConfirmationsPolicy::default())
@@ -120,7 +120,7 @@ pub fn get_transaction_data_requests(
 ) -> Result<Vec<TxDataRequest>, String> {
     use zcash_client_backend::data_api::TransactionDataRequest;
 
-    let db = open_wallet_db(db_path, network)?;
+    let db = open_wallet_db_for_read(db_path, network)?;
     let requests = db.transaction_data_requests().map_err(|e| format!("{e}"))?;
 
     Ok(requests
@@ -222,11 +222,7 @@ pub fn get_transaction_history(
     let uuid_bytes = uuid.as_bytes().to_vec();
 
     // Open a separate read-only connection (WalletDb.conn is private).
-    let conn = rusqlite::Connection::open_with_flags(
-        db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|e| format!("Failed to open DB: {e}"))?;
+    let conn = open_readonly_conn(db_path)?;
     let sql = match limit {
         Some(_) => {
             "SELECT vt.txid, vt.mined_height, vt.expired_unmined, vt.account_balance_delta, \
@@ -342,11 +338,7 @@ pub(crate) fn get_resubmittable_txs(
     db_path: &str,
     current_height: u32,
 ) -> Result<Vec<ResubmittableTx>, String> {
-    let conn = rusqlite::Connection::open_with_flags(
-        db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|e| format!("Failed to open DB: {e}"))?;
+    let conn = open_readonly_conn(db_path)?;
 
     let mut stmt = conn
         .prepare(
@@ -386,11 +378,7 @@ pub(crate) fn get_resubmittable_txs(
 /// Get all pending (unmined, unexpired) transactions that we
 /// created (have raw bytes).
 pub fn get_pending_transactions(db_path: &str) -> Result<Vec<PendingTxInfo>, String> {
-    let conn = rusqlite::Connection::open_with_flags(
-        db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|e| format!("Failed to open DB: {e}"))?;
+    let conn = open_readonly_conn(db_path)?;
 
     let mut stmt = conn
         .prepare(

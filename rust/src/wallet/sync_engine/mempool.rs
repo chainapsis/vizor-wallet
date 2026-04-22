@@ -363,11 +363,8 @@ where
 fn is_known_pending_txid(db_path: &str, txid_bytes: &[u8]) -> Result<bool, String> {
     use rusqlite::OptionalExtension;
 
-    let conn = rusqlite::Connection::open_with_flags(
-        db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|e| format!("open DB: {e}"))?;
+    let conn = crate::wallet::sync::open_readonly_conn_fail_fast(db_path)
+        .map_err(|e| format!("open DB: {e}"))?;
 
     let found: Option<i64> = conn
         .query_row(

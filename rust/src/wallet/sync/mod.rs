@@ -52,10 +52,46 @@ pub(crate) use send::ProposalResult;
 pub(crate) use transactions::{PendingTxInfo, TransactionInfo, TxDataRequest, WalletBalance};
 
 pub(super) type WalletDatabase = WalletDb<rusqlite::Connection, WalletNetwork, SystemClock, OsRng>;
+const READ_DB_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 pub(super) fn open_wallet_db(db_path: &str, network: WalletNetwork) -> Result<WalletDatabase, String> {
     WalletDb::for_path(db_path, network, SystemClock, OsRng)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))
+}
+
+pub(crate) fn open_wallet_db_for_read(
+    db_path: &str, network: WalletNetwork,
+) -> Result<WalletDatabase, String> {
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+    conn.busy_timeout(READ_DB_BUSY_TIMEOUT)
+        .map_err(|e| format!("Failed to configure wallet DB busy timeout: {e}"))?;
+    rusqlite::vtab::array::load_module(&conn)
+        .map_err(|e| format!("Failed to load SQLite array module: {e}"))?;
+    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+}
+
+fn open_readonly_conn_with_timeout(
+    db_path: &str, timeout: Option<std::time::Duration>,
+) -> Result<rusqlite::Connection, String> {
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .map_err(|e| format!("Failed to open DB: {e}"))?;
+    if let Some(timeout) = timeout {
+        conn.busy_timeout(timeout)
+            .map_err(|e| format!("Failed to configure DB busy timeout: {e}"))?;
+    }
+    Ok(conn)
+}
+
+pub(crate) fn open_readonly_conn(db_path: &str) -> Result<rusqlite::Connection, String> {
+    open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))
+}
+
+pub(crate) fn open_readonly_conn_fail_fast(db_path: &str) -> Result<rusqlite::Connection, String> {
+    open_readonly_conn_with_timeout(db_path, None)
 }
 
 fn open_block_cache(cache_path: &str) -> Result<FsBlockDb, String> {
@@ -88,7 +124,7 @@ pub fn update_chain_tip(db_path: &str, network: WalletNetwork, height: u64) -> R
 
 /// Get next subtree indices to know where to start downloading from.
 pub fn get_next_subtree_indices(db_path: &str, network: WalletNetwork) -> Result<(u64, u64), String> {
-    let db = open_wallet_db(db_path, network)?;
+    let db = open_wallet_db_for_read(db_path, network)?;
     let summary = db.get_wallet_summary(ConfirmationsPolicy::default()).map_err(|e| format!("{e}"))?;
     match summary {
         Some(s) => Ok((s.next_sapling_subtree_index(), s.next_orchard_subtree_index())),
@@ -131,7 +167,7 @@ pub fn put_orchard_subtree_roots(
 pub(crate) struct ScanRangeInfo { pub start: u64, pub end: u64, pub priority: u8 }
 
 pub fn suggest_scan_ranges(db_path: &str, network: WalletNetwork) -> Result<Vec<ScanRangeInfo>, String> {
-    let db = open_wallet_db(db_path, network)?;
+    let db = open_wallet_db_for_read(db_path, network)?;
     let ranges = db.suggest_scan_ranges().map_err(|e| format!("{e}"))?;
     Ok(ranges.into_iter()
         .filter(|r| r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned)
@@ -182,7 +218,7 @@ pub fn scan_blocks(
 pub(crate) struct SyncProgress { pub scanned_height: u64, pub chain_tip_height: u64, pub is_syncing: bool }
 
 pub fn get_sync_progress(db_path: &str, network: WalletNetwork) -> Result<SyncProgress, String> {
-    let db = open_wallet_db(db_path, network)?;
+    let db = open_wallet_db_for_read(db_path, network)?;
     match db.get_wallet_summary(ConfirmationsPolicy::default()).map_err(|e| format!("{e}"))? {
         Some(s) => Ok(SyncProgress {
             scanned_height: u32::from(s.fully_scanned_height()) as u64,

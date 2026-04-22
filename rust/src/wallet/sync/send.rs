@@ -62,7 +62,7 @@ use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
 
 use super::{
-    open_wallet_db, StoredProposal, WalletDatabase, PROPOSAL_STORE,
+    open_readonly_conn, open_wallet_db, StoredProposal, WalletDatabase, PROPOSAL_STORE,
 };
 
 /// Result of a successful [`propose_send`]. `proposal_id` is the
@@ -287,11 +287,8 @@ pub async fn execute_proposal(
     // Broadcast each transaction.
     let txid_strings: Vec<String> = txids.iter().map(|id| format!("{id}")).collect();
 
-    let read_conn = rusqlite::Connection::open_with_flags(
-        db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|e| format!("Failed to open DB for broadcast: {e}"))?;
+    let read_conn = open_readonly_conn(db_path)
+        .map_err(|e| format!("Failed to open DB for broadcast: {e}"))?;
 
     let mut broadcast_ok: Vec<String> = Vec::new();
     for txid in &txids {
