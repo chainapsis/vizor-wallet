@@ -94,6 +94,9 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     final isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
     final storedAccounts = await _readStoredAccounts(storage);
+    final storedAccountsByUuid = {
+      for (final account in storedAccounts) account.uuid: account,
+    };
     final storedActiveUuid = await storage.readString(_activeAccountKey);
 
     var rustAccounts = <AccountInfo>[];
@@ -104,21 +107,17 @@ Future<AppBootstrapState> loadAppBootstrap() async {
           dbPath: dbPath,
           network: network,
         );
-        rustAccounts = await Future.wait(
-          listed.indexed.map((entry) async {
-            final (index, account) = entry;
-            rustAddressesByUuid[account.uuid] = account.unifiedAddress;
-            final mnemonic = await storage.readString(
-              'zcash_account_mnemonic_${account.uuid}',
-            );
-            return AccountInfo(
-              uuid: account.uuid,
-              name: account.name,
-              order: index,
-              isHardware: mnemonic == null,
-            );
-          }),
-        );
+        rustAccounts = listed.indexed.map((entry) {
+          final (index, account) = entry;
+          rustAddressesByUuid[account.uuid] = account.unifiedAddress;
+          final stored = storedAccountsByUuid[account.uuid];
+          return AccountInfo(
+            uuid: account.uuid,
+            name: account.name,
+            order: index,
+            isHardware: stored?.isHardware ?? false,
+          );
+        }).toList();
         log('bootstrap: rust accounts=${rustAccounts.length}');
       } catch (e) {
         log('bootstrap: failed to list Rust accounts: $e');
@@ -127,13 +126,14 @@ Future<AppBootstrapState> loadAppBootstrap() async {
 
     final accounts = rustAccounts.isNotEmpty ? rustAccounts : storedAccounts;
     final activeAccountUuid = _resolveActiveUuid(storedActiveUuid, accounts);
-    final activeAddress = activeAccountUuid == null
+    final activeAddress = !isUnlocked || activeAccountUuid == null
         ? null
         : rustAddressesByUuid[activeAccountUuid];
     final hasWallet = accounts.isNotEmpty;
     var initialSyncSnapshot = AppSyncSnapshot.empty;
 
-    if (hasWallet &&
+    if (isUnlocked &&
+        hasWallet &&
         activeAccountUuid != null &&
         rust_wallet.walletExists(dbPath: dbPath)) {
       initialSyncSnapshot = await _loadInitialSyncSnapshot(

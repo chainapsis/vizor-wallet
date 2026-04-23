@@ -11,6 +11,7 @@ import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/wallet.dart' as rust_wallet;
 import '../services/background_sync_delegate.dart';
 import 'account_provider.dart';
+import 'app_security_provider.dart';
 
 class SyncState {
   final bool isSyncing;
@@ -101,6 +102,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   StreamSubscription? _syncSub;
   AppLifecycleListener? _lifecycleListener;
   Timer? _pollTimer;
+  int _sensitiveStateEpoch = 0;
   // Mempool observer subscription. Started in `startSync` and
   // cancelled in `stopSync`, so its lifetime matches the
   // foreground-sync lifetime even though the Rust side manages
@@ -197,6 +199,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // ======================== Sync Control ========================
 
   Future<void> _startInitialSync() async {
+    final epoch = _sensitiveStateEpoch;
     final staleSyncRunning = _syncSub == null && rust_sync.isSyncRunning();
     final staleMempoolRunning =
         _mempoolSub == null && rust_sync.isMempoolObserverRunning();
@@ -232,6 +235,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       }
     }
 
+    if (epoch != _sensitiveStateEpoch || _requiresUnlock) {
+      log('Sync: skipping initial sync after lock transition');
+      return;
+    }
     startSync();
     _startPolling();
   }
@@ -239,6 +246,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// Fire-and-forget: sets up FRB stream and returns immediately.
   /// Stream events update state via _onSyncProgress. Completion handled by _onSyncDone.
   void startSync() {
+    if (_requiresUnlock) {
+      log('Sync: locked, skipping foreground sync start');
+      return;
+    }
     if (_isSyncing || rust_sync.isSyncRunning()) {
       log('Sync: already running, skipping');
       return;
@@ -398,6 +409,43 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
   }
 
+  Future<void> clearSensitiveStateForLock() async {
+    ++_syncGen;
+    ++_sensitiveStateEpoch;
+    _isSyncing = false;
+    _stopPolling();
+    _syncSub?.cancel();
+    _syncSub = null;
+    _stopMempoolObserver();
+    state = AsyncData(SyncState());
+
+    if (_bgDelegate.isActive) {
+      try {
+        await _bgDelegate.disable();
+      } catch (e) {
+        log('SyncNotifier: background disable during sign-out failed: $e');
+      }
+    }
+
+    rust_sync.setSyncMode(mode: 0);
+    rust_sync.cancelFullSync();
+
+    var waited = 0;
+    while ((rust_sync.isSyncRunning() || rust_sync.isMempoolObserverRunning()) &&
+        waited < 5000) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      waited += 100;
+    }
+    if (rust_sync.isSyncRunning()) {
+      log('SyncNotifier: timed out waiting for Rust sync to stop during sign-out');
+    }
+    if (rust_sync.isMempoolObserverRunning()) {
+      log(
+        'SyncNotifier: timed out waiting for mempool observer to stop during sign-out',
+      );
+    }
+  }
+
   Future<void> enableBackgroundSync() async {
     if (_bgDelegate.isActive) return;
     await _bgDelegate.enable();
@@ -498,8 +546,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> _checkAndSync() async {
+    final epoch = _sensitiveStateEpoch;
     final hasAccounts = ref.read(accountProvider).value?.hasAccounts ?? false;
     if (_isSyncing ||
+        _requiresUnlock ||
         _bgDelegate.shouldSuppressPolling ||
         !_isInForeground ||
         !hasAccounts) {
@@ -512,6 +562,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
       final lastSynced = state.value?.chainTipHeight ?? 0;
       final syncComplete = (state.value?.percentage ?? 0) >= 1.0;
+      if (epoch != _sensitiveStateEpoch || _requiresUnlock) {
+        log('AutoSync: skipping restart after lock transition');
+        return;
+      }
       if (!syncComplete || tip.toInt() > lastSynced) {
         log(
           'AutoSync: needs sync (tip=$tip, last=$lastSynced, complete=$syncComplete)',
@@ -601,6 +655,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // ======================== Progress Handling ========================
 
   Future<void> _onSyncProgress(SyncProgressEvent event) async {
+    if (_requiresUnlock) {
+      return;
+    }
+    final epoch = _sensitiveStateEpoch;
     if (event.scannedHeight != _lastLoggedHeight) {
       log(
         'Sync: ${(event.percentage * 100).toStringAsFixed(1)}% (${event.scannedHeight}/${event.chainTipHeight})',
@@ -649,6 +707,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       }
     }
 
+    if (epoch != _sensitiveStateEpoch || _requiresUnlock) {
+      log('SyncNotifier: discarding sync progress update after lock transition');
+      return;
+    }
+
     // Update delegate BEFORE state so isActive reflects completion
     _bgDelegate.onProgress(event);
 
@@ -682,7 +745,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// Public: refresh balance and recent transactions (e.g. after send).
   Future<void> refreshAfterSend() => _refreshBalance();
 
+  Future<void> refreshAfterUnlock() => _refreshBalance();
+
   Future<void> _refreshBalance() async {
+    if (_requiresUnlock) {
+      state = AsyncData(SyncState());
+      return;
+    }
+    final epoch = _sensitiveStateEpoch;
     final prev = state.value;
     final dbPath = await _getDbPath();
     final network = ZcashNetwork.mainnet.name;
@@ -721,6 +791,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       log('SyncNotifier: tx history refresh failed: $e');
     }
 
+    if (epoch != _sensitiveStateEpoch || _requiresUnlock) {
+      log('SyncNotifier: discarding balance refresh after lock transition');
+      return;
+    }
+
     state = AsyncData(
       SyncState(
         isSyncing: prev?.isSyncing ?? false,
@@ -746,6 +821,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (_cachedDbPath != null) return _cachedDbPath!;
     _cachedDbPath = await getWalletDbPath();
     return _cachedDbPath!;
+  }
+
+  bool get _requiresUnlock {
+    return ref.read(appSecurityProvider).requiresUnlock;
   }
 }
 

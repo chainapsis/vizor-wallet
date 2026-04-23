@@ -55,6 +55,17 @@ class AppSecureStore {
   }
 
   Future<String?> readString(String key) async {
+    return readStringWithOptions(key);
+  }
+
+  Future<String?> readStringWithOptions(
+    String key, {
+    bool requireUnlockedSession = false,
+  }) async {
+    if (requireUnlockedSession && !hasSessionPassword) {
+      return null;
+    }
+
     final raw = await _storage.read(key: key);
     if (raw == null || raw.isEmpty) return null;
 
@@ -162,6 +173,7 @@ class AppSecureStore {
 
   void clearSessionPassword() {
     _sessionPassword = null;
+    _cachedSecretKey = null;
   }
 
   Future<SecretKey> _getSecretKey() async {

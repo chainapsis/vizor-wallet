@@ -80,6 +80,10 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
       return;
     }
 
+    await ref.read(accountProvider.notifier).restoreAfterUnlock();
+    await ref.read(syncProvider.notifier).refreshAfterUnlock();
+    ref.read(syncProvider.notifier).startSync();
+    if (!mounted) return;
     context.go('/home');
   }
 

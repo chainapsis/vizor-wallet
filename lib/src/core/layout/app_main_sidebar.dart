@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../providers/account_provider.dart';
+import '../../providers/app_security_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
@@ -27,6 +28,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   final ScrollController _accountsScrollController = ScrollController();
   bool _isDropdownOpen = false;
   bool _isSelectorHovered = false;
+  bool _isSigningOut = false;
 
   String get _matchedLocation => GoRouterState.of(context).matchedLocation;
 
@@ -58,6 +60,29 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     setState(() {
       _isDropdownOpen = !_isDropdownOpen;
     });
+  }
+
+  Future<void> _handleSignOut() async {
+    if (_isSigningOut) return;
+
+    setState(() {
+      _isSigningOut = true;
+      _isDropdownOpen = false;
+    });
+
+    try {
+      await ref.read(syncProvider.notifier).clearSensitiveStateForLock();
+      ref.read(accountProvider.notifier).clearSensitiveStateForLock();
+      ref.read(appSecurityProvider.notifier).lock();
+      if (!mounted) return;
+      context.go('/unlock');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSigningOut = false;
+        });
+      }
+    }
   }
 
   @override
@@ -163,9 +188,10 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                           iconName: AppIcons.crystalBall,
                         ),
                         const SizedBox(height: AppSpacing.xs),
-                        const AppSidebarItem(
+                        AppSidebarItem(
                           label: 'Sign Out',
                           iconName: AppIcons.logOut,
+                          onTap: _isSigningOut ? null : _handleSignOut,
                         ),
                       ],
                     ),

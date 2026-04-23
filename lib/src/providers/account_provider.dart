@@ -312,6 +312,44 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     log('resetWallet: all data cleared');
   }
 
+  void clearSensitiveStateForLock() {
+    final prev = state.value ?? const AccountState();
+    state = AsyncData(
+      AccountState(
+        accounts: prev.accounts,
+        activeAccountUuid: prev.activeAccountUuid,
+      ),
+    );
+    log('AccountNotifier: cleared in-memory address state for lock');
+  }
+
+  Future<void> restoreAfterUnlock() async {
+    final prev = state.value ?? const AccountState();
+    final accountUuid = prev.activeAccountUuid;
+    if (accountUuid == null) return;
+
+    String? address;
+    try {
+      final dbPath = await _getDbPath();
+      final network = await _getNetwork();
+      address = await rust_wallet.getUnifiedAddress(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: accountUuid,
+      );
+    } catch (e) {
+      log('restoreAfterUnlock: failed to get address: $e');
+    }
+
+    state = AsyncData(
+      AccountState(
+        accounts: prev.accounts,
+        activeAccountUuid: prev.activeAccountUuid,
+        activeAddress: address,
+      ),
+    );
+  }
+
   /// Import a hardware wallet account using UFVK from Keystone.
   ///
   /// Hardware accounts cannot be the first account in a wallet. librustzcash
@@ -397,12 +435,18 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<String?> getActiveMnemonic() async {
     final uuid = state.value?.activeAccountUuid;
     if (uuid == null) return null;
-    return _storage.readString('zcash_account_mnemonic_$uuid');
+    return _storage.readStringWithOptions(
+      'zcash_account_mnemonic_$uuid',
+      requireUnlockedSession: true,
+    );
   }
 
   /// Get the mnemonic for a specific account.
   Future<String?> getMnemonicForAccount(String uuid) async {
-    return _storage.readString('zcash_account_mnemonic_$uuid');
+    return _storage.readStringWithOptions(
+      'zcash_account_mnemonic_$uuid',
+      requireUnlockedSession: true,
+    );
   }
 
   // ======================== Helpers ========================
