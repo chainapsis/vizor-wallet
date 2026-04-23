@@ -132,11 +132,11 @@ platform :mac do
     metadata = release_metadata
 
     set_github_release(
-      repository_name: ENV.fetch("GITHUB_REPOSITORY"),
+      repository_name: ENV.fetch("RELEASE_REPOSITORY"),
       api_bearer: ENV.fetch("GITHUB_TOKEN"),
       tag_name: metadata[:tag],
       name: metadata[:release_name],
-      commitish: ENV.fetch("GITHUB_SHA"),
+      commitish: ENV.fetch("RELEASE_COMMITISH"),
       is_draft: release_boolean_env("GITHUB_RELEASE_DRAFT"),
       is_prerelease: release_boolean_env("GITHUB_RELEASE_PRERELEASE"),
       is_generate_release_notes: true,
