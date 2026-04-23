@@ -67,7 +67,8 @@ platform :mac do
     certificate_data = Base64.decode64(ENV.fetch("MACOS_CERTIFICATE_P12_BASE64"))
     certificate_password = ENV.fetch("MACOS_CERTIFICATE_PASSWORD")
     keychain_password = ENV.fetch("MACOS_KEYCHAIN_PASSWORD")
-    keychain_name = ENV["MACOS_KEYCHAIN_NAME"] || "fastlane-signing.keychain-db"
+    keychain_name = ENV.fetch("MACOS_KEYCHAIN_NAME", "").strip
+    keychain_name = "fastlane-signing.keychain-db" if keychain_name.empty?
     keychain_path = File.expand_path(File.join("~/Library/Keychains", keychain_name))
 
     existing_keychains = sh("security list-keychains -d user").lines.map { |line| line.delete('"').strip }.reject(&:empty?)
@@ -79,6 +80,7 @@ platform :mac do
       certificate_file.flush
 
       if File.exist?(keychain_path)
+        UI.user_error!("Refusing to delete keychain directory #{keychain_path}") if File.directory?(keychain_path)
         sh("security delete-keychain #{shell_escape(keychain_path)}")
       end
 
