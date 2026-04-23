@@ -81,6 +81,14 @@ Future<void> updateBackgroundSyncProgress({
 Future<void> stopBackgroundSync() async {
   if (Platform.isAndroid) {
     await FlutterForegroundTask.stopService();
+  } else if (Platform.isIOS) {
+    try {
+      final success =
+          await _iosChannel.invokeMethod<bool>('stopBackgroundSync');
+      log('BackgroundSync: iOS BGTask cancel requested: $success');
+    } catch (e) {
+      log('BackgroundSync: iOS BGTask cancel failed: $e');
+    }
   }
 }
 

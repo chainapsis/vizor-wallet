@@ -66,12 +66,24 @@ class BackgroundSyncManager {
     private func runSync(task: BGContinuedProcessingTask) -> Int32 {
         print("[BGSync] runSync: mode=\(zcash_get_sync_mode()), is_running=\(zcash_is_sync_running())")
 
+        if zcash_get_sync_mode() != 2 {
+            print("[BGSync] runSync: background mode no longer requested, exiting without work")
+            return 0
+        }
+
         taskProgress = task.progress
 
-        // Wait for mode=background AND previous sync to finish
+        // Wait for any previous sync to finish. If background mode is
+        // no longer requested while waiting, exit immediately rather
+        // than burning the BG task budget on a doomed handoff.
         var waitCount = 0
         let maxWait = 60 // 120 seconds
-        while zcash_get_sync_mode() != 2 || zcash_is_sync_running() {
+        while zcash_is_sync_running() {
+            if zcash_get_sync_mode() != 2 {
+                print("[BGSync] runSync: mode changed while waiting, exiting without work")
+                taskProgress = nil
+                return 0
+            }
             waitCount += 1
             if waitCount > maxWait {
                 print("[BGSync] ERROR: timed out waiting for sync conditions")
@@ -171,5 +183,11 @@ class BackgroundSyncManager {
             print("[BGSync] startBackgroundSync: FAILED: \(error)")
             return false
         }
+    }
+
+    func stopBackgroundSync() -> Bool {
+        print("[BGSync] stopBackgroundSync: cancelling pending task requests")
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier)
+        return true
     }
 }

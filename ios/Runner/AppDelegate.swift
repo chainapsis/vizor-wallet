@@ -43,6 +43,13 @@ import UIKit
         } else {
           result(false)
         }
+      case "stopBackgroundSync":
+        if #available(iOS 26.0, *) {
+          let success = BackgroundSyncManager.shared.stopBackgroundSync()
+          result(success)
+        } else {
+          result(false)
+        }
       case "startTxTracking":
         if #available(iOS 26.0, *) {
           let success = TxTrackManager.shared.startTxTracking()
