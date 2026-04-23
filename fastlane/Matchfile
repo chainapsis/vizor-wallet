@@ -1,6 +1,12 @@
+def env_or_default(key, default_value = nil)
+  value = ENV[key].to_s.strip
+  return default_value if value.empty?
+  value
+end
+
 git_url(ENV.fetch("MATCH_GIT_URL"))
 storage_mode("git")
-git_branch(ENV.fetch("MATCH_GIT_BRANCH", "main"))
+git_branch(env_or_default("MATCH_GIT_BRANCH", "main"))
 shallow_clone(true)
 clone_branch_directly(true)
 
@@ -10,8 +16,8 @@ app_identifier(["com.keplr.vizor"])
 team_id("SZTB68DXM4")
 readonly(ENV["MATCH_READONLY"].to_s.downcase == "true")
 
-git_basic_auth_value = ENV["MATCH_GIT_BASIC_AUTHORIZATION"].to_s.strip
+git_basic_auth_value = env_or_default("MATCH_GIT_BASIC_AUTHORIZATION")
 git_basic_authorization(git_basic_auth_value) unless git_basic_auth_value.empty?
 
-git_private_key_value = ENV["MATCH_GIT_PRIVATE_KEY"].to_s.strip
-git_private_key(git_private_key_value) unless git_private_key_value.empty?
+git_private_key_value = env_or_default("MATCH_GIT_PRIVATE_KEY")
+git_private_key(git_private_key_value) unless git_private_key_value.nil?
