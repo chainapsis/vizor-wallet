@@ -54,6 +54,9 @@ abstract class BackgroundSyncDelegate {
   Future<void> enable();
   /// Returns true if foreground sync needs to be restarted after disabling.
   Future<bool> disable();
+  /// Tear background-sync bookkeeping down for a lock/sign-out transition.
+  /// Unlike [disable], this must not request a foreground handoff.
+  Future<void> shutdownForLock();
   Future<bool> isAvailable();
 
   void onSyncDone();
@@ -115,6 +118,13 @@ class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
     await bg_sync.stopBackgroundSync();
     log('BackgroundSyncDelegate(Android): disabled');
     return false; // sync never stopped, no restart needed
+  }
+
+  @override
+  Future<void> shutdownForLock() async {
+    _active = false;
+    await bg_sync.stopBackgroundSync();
+    log('BackgroundSyncDelegate(Android): shut down for lock');
   }
 
   @override
@@ -212,6 +222,13 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
   }
 
   @override
+  Future<void> shutdownForLock() async {
+    _active = false;
+    await bg_sync.stopBackgroundSync();
+    log('BackgroundSyncDelegate(iOS): shut down for lock');
+  }
+
+  @override
   Future<bool> isAvailable() => bg_sync.isBackgroundSyncAvailable();
 
   @override
@@ -262,6 +279,9 @@ class NoOpBackgroundSyncDelegate implements BackgroundSyncDelegate {
 
   @override
   Future<bool> disable() async => false;
+
+  @override
+  Future<void> shutdownForLock() async {}
 
   @override
   Future<bool> isAvailable() async => false;

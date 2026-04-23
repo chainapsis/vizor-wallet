@@ -468,16 +468,20 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopMempoolObserver();
     state = AsyncData(SyncState());
 
-    if (_bgDelegate.isActive) {
-      try {
-        await _bgDelegate.disable();
-      } catch (e) {
-        log('SyncNotifier: background disable during sign-out failed: $e');
-      }
-    }
-
+    // Sign-out should cancel the current Rust run immediately.
+    // Waiting for the iOS background delegate's normal
+    // foreground-handoff path (`setSyncMode(1)`) leaves a window
+    // where unlock can race with a still-running old sync.
     rust_sync.setSyncMode(mode: 0);
     rust_sync.cancelFullSync();
+
+    if (_bgDelegate.isActive) {
+      try {
+        await _bgDelegate.shutdownForLock();
+      } catch (e) {
+        log('SyncNotifier: background shutdown during sign-out failed: $e');
+      }
+    }
 
     await _waitForRustTasksToStop(
       timeoutMs: 5000,
