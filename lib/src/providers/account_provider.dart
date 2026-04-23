@@ -81,7 +81,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
 
       // Store mnemonic per-account
-      await _storage.writeString(
+      await _storage.writeSecretString(
         'zcash_account_mnemonic_$accountUuid',
         mnemonic,
       );
@@ -163,7 +163,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         unifiedAddress = result.unifiedAddress;
       }
 
-      await _storage.writeString(
+      await _storage.writeSecretString(
         'zcash_account_mnemonic_$accountUuid',
         mnemonic,
       );
@@ -237,7 +237,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         unifiedAddress = result.unifiedAddress;
       }
 
-      await _storage.writeString(
+      await _storage.writeSecretString(
         'zcash_account_mnemonic_$accountUuid',
         mnemonic,
       );
@@ -435,7 +435,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<String?> getActiveMnemonic() async {
     final uuid = state.value?.activeAccountUuid;
     if (uuid == null) return null;
-    return _storage.readStringWithOptions(
+    return _storage.readSecretStringWithOptions(
       'zcash_account_mnemonic_$uuid',
       requireUnlockedSession: true,
     );
@@ -443,7 +443,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   /// Get the mnemonic for a specific account.
   Future<String?> getMnemonicForAccount(String uuid) async {
-    return _storage.readStringWithOptions(
+    return _storage.readSecretStringWithOptions(
       'zcash_account_mnemonic_$uuid',
       requireUnlockedSession: true,
     );

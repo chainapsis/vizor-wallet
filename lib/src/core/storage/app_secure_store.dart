@@ -10,7 +10,6 @@ const kWalletDbNameKey = 'zcash_wallet_db_name';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';
 const _passwordVerifierKey = 'zcash_password_verifier';
 const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
-const _secureStorePassword = 'zcash-wallet-dev-password';
 const _secureStoreService = 'com.keplr.vizor.secure_store';
 
 class AppSecureStore {
@@ -55,15 +54,18 @@ class AppSecureStore {
   }
 
   Future<String?> readString(String key) async {
-    return readStringWithOptions(key);
+    return _storage.read(key: key);
   }
 
-  Future<String?> readStringWithOptions(
+  Future<String?> readSecretStringWithOptions(
     String key, {
     bool requireUnlockedSession = false,
   }) async {
     if (requireUnlockedSession && !hasSessionPassword) {
       return null;
+    }
+    if (!hasSessionPassword) {
+      throw StateError('Secret storage requires an unlocked session.');
     }
 
     final raw = await _storage.read(key: key);
@@ -87,6 +89,10 @@ class AppSecureStore {
   }
 
   Future<void> writeString(String key, String value) async {
+    await _storage.write(key: key, value: value);
+  }
+
+  Future<void> writeSecretString(String key, String value) async {
     final secretKey = await _getSecretKey();
     final nonce = _randomBytes(12);
     final secretBox = await _cipher.encrypt(
@@ -140,7 +146,7 @@ class AppSecureStore {
     final verifier = await _derivePasswordVerifier(password, salt);
     await writePlain(_passwordVerifierSaltKey, base64Encode(salt));
     await writePlain(_passwordVerifierKey, verifier);
-    _sessionPassword = password;
+    setSessionPassword(password);
   }
 
   Future<bool> verifyPassword(String password) async {
@@ -162,13 +168,14 @@ class AppSecureStore {
     );
     final isMatch = derived == storedVerifier;
     if (isMatch) {
-      _sessionPassword = password;
+      setSessionPassword(password);
     }
     return isMatch;
   }
 
   void setSessionPassword(String password) {
     _sessionPassword = password;
+    _cachedSecretKey = null;
   }
 
   void clearSessionPassword() {
@@ -177,12 +184,17 @@ class AppSecureStore {
   }
 
   Future<SecretKey> _getSecretKey() async {
+    final sessionPassword = _sessionPassword;
+    if (sessionPassword == null) {
+      throw StateError('Secret storage requires an unlocked session.');
+    }
+
     final cached = _cachedSecretKey;
     if (cached != null) return cached;
 
     final salt = await _getOrCreateSalt();
     final key = await _kdf.deriveKeyFromPassword(
-      password: _secureStorePassword,
+      password: sessionPassword,
       nonce: salt,
     );
     _cachedSecretKey = key;
