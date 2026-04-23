@@ -8,7 +8,6 @@ git_url(ENV.fetch("MATCH_GIT_URL"))
 storage_mode("git")
 git_branch(env_or_default("MATCH_GIT_BRANCH", "main"))
 shallow_clone(true)
-clone_branch_directly(true)
 
 type("developer_id")
 platform("macos")
