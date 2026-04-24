@@ -40,9 +40,6 @@ final _routerProvider = Provider<GoRouter>((ref) {
   ref.listen(walletProvider, (_, _) {
     refresh.value++;
   });
-  ref.listen(appSecurityProvider, (_, _) {
-    refresh.value++;
-  });
   log('router: initialized');
 
   return GoRouter(
@@ -133,9 +130,11 @@ final _routerProvider = Provider<GoRouter>((ref) {
           reverseTransitionDuration: kOnboardingReverseDuration,
           child: OnboardingSplitViewShell(
             activeStep: onboardingStepFromLocation(state.matchedLocation),
-            showPasswordStep: !ref
-                .read(appSecurityProvider)
-                .isPasswordConfigured,
+            showPasswordStep:
+                state.matchedLocation.startsWith(
+                  OnboardingStep.setPassword.routePath,
+                ) ||
+                !ref.read(appSecurityProvider).isPasswordConfigured,
             child: child,
           ),
           transitionsBuilder: (_, _, _, child) => child,
@@ -216,9 +215,9 @@ final _routerProvider = Provider<GoRouter>((ref) {
           reverseTransitionDuration: kOnboardingReverseDuration,
           child: ImportOnboardingShell(
             activeStep: importOnboardingStepFromLocation(state.matchedLocation),
-            showPasswordStep: !ref
-                .read(appSecurityProvider)
-                .isPasswordConfigured,
+            showPasswordStep:
+                state.matchedLocation.startsWith('/import/set-password') ||
+                !ref.read(appSecurityProvider).isPasswordConfigured,
             child: child,
           ),
           transitionsBuilder: (_, _, _, child) => child,
