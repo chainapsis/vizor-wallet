@@ -17,7 +17,8 @@ bundle exec fastlane mac release
 3. `.app` notarize + staple
 4. `.zip` / `.dmg` 생성
 5. `.dmg` notarize + staple
-6. GitHub Release asset 업로드
+6. Sparkle `appcast.xml` + delta 생성
+7. GitHub Release asset 업로드
 
 ## Required environment variables
 
@@ -28,6 +29,8 @@ bundle exec fastlane mac release
 - `MATCH_GIT_BASIC_AUTHORIZATION`
 - `MATCH_PASSWORD`
 - `APP_STORE_CONNECT_API_KEY_JSON`
+- `SPARKLE_PUBLIC_ED_KEY`
+- `SPARKLE_PRIVATE_ED_KEY`
 - `GITHUB_TOKEN`
 - `RELEASE_REPOSITORY`
 - `RELEASE_COMMITISH`
@@ -51,4 +54,6 @@ bundle exec fastlane mac release
 - `MATCH_GIT_BASIC_AUTHORIZATION`은 GitHub private repo 접근용 Basic auth Base64 문자열입니다. 예: `echo -n "github_user:pat" | base64`
 - CI는 `MATCH_READONLY=true`로 두고, `match` 저장소는 로컬에서 한 번 시드해 둔 상태를 전제로 합니다.
 - `MATCH_READONLY=false`로 돌리면 fastlane은 `match` write 모드로 동작합니다. 이때는 `APP_STORE_CONNECT_API_KEY_JSON`이 준비돼 있어야 하며, git commit identity는 deployment workflow가 설정합니다.
+- `SPARKLE_PUBLIC_ED_KEY`는 앱 `Info.plist`에 주입되는 공개 Ed25519 키입니다.
+- `SPARKLE_PRIVATE_ED_KEY`는 `generate_appcast`가 update archive / delta 서명에 쓰는 비밀 Ed25519 키입니다.
 - 산출물은 `/Users/junghwanyun/zcash-wallet/dist/macos` 아래에 생성됩니다.

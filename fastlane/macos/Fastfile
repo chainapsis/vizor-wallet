@@ -4,9 +4,11 @@ default_platform(:mac)
 
 require "fileutils"
 require "json"
+require "net/http"
 require "shellwords"
 require "tempfile"
 require "tmpdir"
+require "uri"
 require "yaml"
 require "open3"
 require_relative "../patches/developer_id_application_certificate_type_patch"
@@ -38,6 +40,8 @@ def release_metadata
   end
 
   asset_version = release_version_from_tag(tag)
+  UI.user_error!("pubspec version #{version} does not match release tag #{asset_version}") unless version == asset_version
+  UI.user_error!("pubspec build number is required") if build_number.to_s.strip.empty?
   app_name = "Vizor"
   dist_dir = File.join(workspace_root, "dist", "macos")
   app_path = File.join(workspace_root, "build", "macos", "Build", "Products", "Release", "#{app_name}.app")
@@ -50,9 +54,12 @@ def release_metadata
     tag: tag,
     release_name: ENV["RELEASE_NAME"] || tag,
     dist_dir: dist_dir,
+    sparkle_dir: File.join(dist_dir, "sparkle"),
     app_path: app_path,
     zip_path: File.join(dist_dir, "#{app_name}-#{asset_version}-macos.zip"),
-    dmg_path: File.join(dist_dir, "#{app_name}-#{asset_version}-macos.dmg")
+    dmg_path: File.join(dist_dir, "#{app_name}-#{asset_version}-macos.dmg"),
+    appcast_path: File.join(dist_dir, "sparkle", "appcast.xml"),
+    sparkle_release_notes_path: File.join(dist_dir, "sparkle", "#{app_name}-#{asset_version}-macos.md")
   }
 end
 
@@ -81,6 +88,153 @@ end
 
 def match_certificate_password
   ENV.fetch("MATCH_CERTIFICATE_PASSWORD")
+end
+
+def sparkle_enabled_for_release?
+  !release_boolean_env("GITHUB_RELEASE_DRAFT") && !release_boolean_env("GITHUB_RELEASE_PRERELEASE")
+end
+
+def sparkle_private_ed_key
+  ENV.fetch("SPARKLE_PRIVATE_ED_KEY")
+end
+
+def github_release_page_url(metadata)
+  "https://github.com/#{ENV.fetch("RELEASE_REPOSITORY")}/releases/tag/#{metadata[:tag]}"
+end
+
+def github_release_download_base_url(metadata)
+  "https://github.com/#{ENV.fetch("RELEASE_REPOSITORY")}/releases/download/#{metadata[:tag]}/"
+end
+
+def with_restored_file(path)
+  original_contents = File.binread(path)
+  yield(path)
+ensure
+  File.binwrite(path, original_contents) if defined?(original_contents) && original_contents
+end
+
+def configure_sparkle_info_plist!(plist_path)
+  sh("/usr/bin/plutil -replace SUPublicEDKey -string #{shell_escape(ENV.fetch("SPARKLE_PUBLIC_ED_KEY", "").strip)} #{shell_escape(plist_path)}")
+end
+
+def sparkle_tool_path(tool_name)
+  candidates = Dir.glob(File.expand_path("~/Library/Developer/Xcode/DerivedData/*/SourcePackages/artifacts/sparkle/Sparkle/bin/#{tool_name}"))
+  tool_path = candidates.max_by { |path| File.mtime(path) }
+  UI.user_error!("Could not locate Sparkle tool #{tool_name}. Resolve Swift package dependencies first.") unless tool_path
+  tool_path
+end
+
+def http_get(uri, headers: {}, limit: 5)
+  UI.user_error!("Too many redirects fetching #{uri}") if limit <= 0
+
+  request = Net::HTTP::Get.new(uri)
+  headers.each { |key, value| request[key] = value }
+
+  response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https") do |http|
+    http.request(request)
+  end
+
+  case response
+  when Net::HTTPSuccess
+    response.body
+  when Net::HTTPRedirection
+    http_get(URI(response["location"]), headers: headers, limit: limit - 1)
+  else
+    UI.user_error!("HTTP GET failed for #{uri}: #{response.code} #{response.message}")
+  end
+end
+
+def github_api_json(url)
+  JSON.parse(
+    http_get(
+      URI(url),
+      headers: {
+        "Authorization" => "Bearer #{ENV.fetch("GITHUB_TOKEN")}",
+        "Accept" => "application/vnd.github+json",
+        "User-Agent" => "vizor-fastlane",
+        "X-GitHub-Api-Version" => "2022-11-28"
+      }
+    )
+  )
+end
+
+def previous_release_zip_assets(metadata, limit: 5)
+  releases = github_api_json("https://api.github.com/repos/#{ENV.fetch("RELEASE_REPOSITORY")}/releases?per_page=100")
+
+  releases.filter_map do |release|
+    tag_name = release["tag_name"].to_s
+    next if release["draft"] || release["prerelease"] || tag_name == metadata[:tag]
+    next unless tag_name.match?(/\Arelease\/v\d+\.\d+\.\d+\z/)
+
+    asset = Array(release["assets"]).find { |candidate| candidate["name"].to_s.end_with?("-macos.zip") }
+    next unless asset
+
+    {
+      tag: tag_name,
+      name: asset.fetch("name"),
+      download_url: asset.fetch("browser_download_url")
+    }
+  end.first(limit)
+end
+
+def download_previous_release_archives!(archives_dir, metadata)
+  previous_release_zip_assets(metadata).each do |asset|
+    destination_path = File.join(archives_dir, asset.fetch(:name))
+    next if File.exist?(destination_path)
+
+    UI.message("Downloading prior Sparkle archive #{asset.fetch(:name)} from #{asset.fetch(:tag)}")
+    File.binwrite(
+      destination_path,
+      http_get(
+        URI(asset.fetch(:download_url)),
+        headers: {
+          "User-Agent" => "vizor-fastlane"
+        }
+      )
+    )
+  end
+end
+
+def write_sparkle_release_notes!(notes_path, metadata)
+  File.write(
+    notes_path,
+    <<~MARKDOWN
+      # #{metadata[:release_name]}
+
+      See the full release notes on GitHub:
+
+      [#{metadata[:tag]}](#{github_release_page_url(metadata)})
+    MARKDOWN
+  )
+end
+
+def validate_sparkle_environment!
+  UI.user_error!("SPARKLE_PUBLIC_ED_KEY is required for Sparkle releases") if ENV["SPARKLE_PUBLIC_ED_KEY"].to_s.strip.empty?
+  UI.user_error!("SPARKLE_PRIVATE_ED_KEY is required for Sparkle releases") if ENV["SPARKLE_PRIVATE_ED_KEY"].to_s.strip.empty?
+end
+
+def generate_sparkle_appcast!(archives_dir, metadata)
+  tool_path = sparkle_tool_path("generate_appcast")
+
+  Tempfile.create(["sparkle-private-ed-key", ".txt"]) do |private_key_file|
+    private_key_file.write(sparkle_private_ed_key)
+    private_key_file.flush
+
+    sh(
+      [
+        shell_escape(tool_path),
+        "--ed-key-file", shell_escape(private_key_file.path),
+        "--download-url-prefix", shell_escape(github_release_download_base_url(metadata)),
+        "--release-notes-url-prefix", shell_escape(github_release_download_base_url(metadata)),
+        "--full-release-notes-url", shell_escape(github_release_page_url(metadata)),
+        "--link", shell_escape(github_release_page_url(metadata)),
+        "--versions", shell_escape(metadata[:build_number]),
+        "--maximum-versions", "1",
+        "-o", shell_escape("appcast.xml"),
+        shell_escape(archives_dir)
+      ].join(" ")
+    )
+  end
 end
 
 def setup_signing_keychain
@@ -162,6 +316,32 @@ def import_match_signing_assets!(output_dir, keychain)
   )
 
   ensure_developer_id_identity!(keychain[:path])
+end
+
+def collect_sparkle_assets!(metadata)
+  UI.user_error!("Missing ZIP archive at #{metadata[:zip_path]}") unless File.exist?(metadata[:zip_path])
+
+  FileUtils.rm_rf(metadata[:sparkle_dir])
+  FileUtils.mkdir_p(metadata[:sparkle_dir])
+
+  Dir.mktmpdir("sparkle-archives") do |archives_dir|
+    current_zip_path = File.join(archives_dir, File.basename(metadata[:zip_path]))
+    release_notes_path = File.join(archives_dir, "#{File.basename(metadata[:zip_path], ".zip")}.md")
+
+    FileUtils.cp(metadata[:zip_path], current_zip_path)
+    download_previous_release_archives!(archives_dir, metadata)
+    write_sparkle_release_notes!(release_notes_path, metadata)
+    generate_sparkle_appcast!(archives_dir, metadata)
+
+    FileUtils.cp(File.join(archives_dir, "appcast.xml"), metadata[:appcast_path])
+    FileUtils.cp(release_notes_path, metadata[:sparkle_release_notes_path])
+
+    Dir[File.join(archives_dir, "*.delta")].sort.each do |delta_path|
+      FileUtils.cp(delta_path, File.join(metadata[:sparkle_dir], File.basename(delta_path)))
+    end
+  end
+
+  [metadata[:appcast_path], metadata[:sparkle_release_notes_path], *Dir[File.join(metadata[:sparkle_dir], "*.delta")].sort]
 end
 
 platform :mac do
@@ -255,6 +435,7 @@ platform :mac do
 
   private_lane :upload_github_release do
     metadata = release_metadata
+    extra_assets = Array((lane_context[:SPARKLE_RELEASE_ASSETS] || [])).compact
 
     set_github_release(
       repository_name: ENV.fetch("RELEASE_REPOSITORY"),
@@ -265,19 +446,24 @@ platform :mac do
       is_draft: release_boolean_env("GITHUB_RELEASE_DRAFT"),
       is_prerelease: release_boolean_env("GITHUB_RELEASE_PRERELEASE"),
       is_generate_release_notes: true,
-      upload_assets: [metadata[:zip_path], metadata[:dmg_path]]
+      upload_assets: [metadata[:zip_path], metadata[:dmg_path], *extra_assets]
     )
   end
 
   desc "Build the macOS release app bundle"
   lane :build do
     metadata = release_metadata
+    plist_path = File.join(workspace_root, "macos", "Runner", "Info.plist")
 
     FileUtils.mkdir_p(metadata[:dist_dir])
 
     sh("cd #{shell_escape(workspace_root)} && fvm flutter pub get")
-    Bundler.with_unbundled_env do
-      sh("cd #{shell_escape(workspace_root)} && fvm flutter build macos --release --no-pub")
+    with_restored_file(plist_path) do |restored_plist_path|
+      configure_sparkle_info_plist!(restored_plist_path)
+
+      Bundler.with_unbundled_env do
+        sh("cd #{shell_escape(workspace_root)} && fvm flutter build macos --release --no-pub")
+      end
     end
 
     UI.user_error!("Expected app bundle at #{metadata[:app_path]}") unless File.directory?(metadata[:app_path])
@@ -314,11 +500,13 @@ platform :mac do
 
   desc "Build, notarize, package, and upload the macOS release"
   lane :release do
+    validate_sparkle_environment! if sparkle_enabled_for_release?
     prepare_signing(readonly: match_readonly?)
     build
     notarize_app_bundle
     package(skip_build: true)
     notarize_dmg
+    lane_context[:SPARKLE_RELEASE_ASSETS] = sparkle_enabled_for_release? ? collect_sparkle_assets!(release_metadata) : []
     upload_github_release
   end
 end
