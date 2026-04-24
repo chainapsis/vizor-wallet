@@ -105,6 +105,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   Future<void> _submit() async {
     final args = widget.args;
     final passwordPolicyError = _passwordPolicyError;
+    final password = _passwordController.text;
     if (_isSubmitting ||
         args == null ||
         passwordPolicyError != null ||
@@ -117,22 +118,23 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       _submitError = null;
     });
 
+    final router = GoRouter.of(context);
+    final securityNotifier = ref.read(appSecurityProvider.notifier);
+    final accountNotifier = ref.read(accountProvider.notifier);
+    final importDraftNotifier = ref.read(importDraftProvider.notifier);
+
     try {
-      await ref
-          .read(appSecurityProvider.notifier)
-          .configurePassword(_passwordController.text);
+      await securityNotifier.configurePassword(password);
       if (args.isImport) {
-        await ref
-            .read(accountProvider.notifier)
-            .importAccount(
-              mnemonic: args.mnemonic,
-              birthdayHeight: args.birthdayHeight,
-            );
-        ref.read(importDraftProvider.notifier).clear();
+        await accountNotifier.importAccount(
+          mnemonic: args.mnemonic,
+          birthdayHeight: args.birthdayHeight,
+        );
+        importDraftNotifier.clear();
       } else {
-        await ref
-            .read(accountProvider.notifier)
-            .createAccountFromMnemonic(mnemonic: args.mnemonic);
+        await accountNotifier.createAccountFromMnemonic(
+          mnemonic: args.mnemonic,
+        );
       }
     } catch (e, st) {
       log('SetPasswordScreen._submit: ERROR: $e\n$st');
@@ -144,8 +146,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       return;
     }
 
-    if (!mounted) return;
-    context.go('/home');
+    router.go('/home');
   }
 
   @override

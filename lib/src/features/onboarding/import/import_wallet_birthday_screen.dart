@@ -291,10 +291,15 @@ class _ImportWalletBirthdayScreenState
         return;
       }
 
-      await ref
-          .read(accountProvider.notifier)
-          .importAccount(mnemonic: mnemonic, birthdayHeight: birthdayHeight);
-      ref.read(importDraftProvider.notifier).clear();
+      final accountNotifier = ref.read(accountProvider.notifier);
+      final importDraftNotifier = ref.read(importDraftProvider.notifier);
+      final router = GoRouter.of(context);
+      await accountNotifier.importAccount(
+        mnemonic: mnemonic,
+        birthdayHeight: birthdayHeight,
+      );
+      importDraftNotifier.clear();
+      router.go('/home');
     } catch (e, st) {
       log('ImportWalletBirthdayScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;
@@ -304,9 +309,6 @@ class _ImportWalletBirthdayScreenState
       });
       return;
     }
-
-    if (!mounted) return;
-    context.go('/home');
   }
 
   int? _resolvedBirthdayHeight(ImportDraftState draft) {
