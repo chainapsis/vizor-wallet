@@ -12,6 +12,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/password_text_field.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/router_refresh_provider.dart';
 import '../create/onboarding_split_view.dart';
 import '../import/import_split_view.dart';
 import 'onboarding_flow_args.dart';
@@ -71,20 +72,41 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     final router = GoRouter.of(context);
     final securityNotifier = ref.read(appSecurityProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
+    final routerRefresh = ref.read(routerRefreshProvider);
+    var passwordPrepared = false;
+    var passwordCommitted = false;
 
     try {
-      await securityNotifier.configurePassword(password);
-      if (args.isImport) {
-        await accountNotifier.importAccount(
-          mnemonic: args.mnemonic,
-          birthdayHeight: args.importBirthdayHeight,
-        );
-      } else {
-        await accountNotifier.createAccountFromMnemonic(
-          mnemonic: args.mnemonic,
-        );
-      }
+      await routerRefresh.pauseWhile(() async {
+        await securityNotifier.preparePasswordSetup(password);
+        passwordPrepared = true;
+
+        if (args.isImport) {
+          await accountNotifier.importAccount(
+            mnemonic: args.mnemonic,
+            birthdayHeight: args.importBirthdayHeight,
+          );
+        } else {
+          await accountNotifier.createAccountFromMnemonic(
+            mnemonic: args.mnemonic,
+          );
+        }
+
+        await securityNotifier.commitPasswordSetup(password);
+        passwordCommitted = true;
+        router.go('/home');
+      });
     } catch (e, st) {
+      if (passwordPrepared && !passwordCommitted) {
+        try {
+          await securityNotifier.rollbackPasswordSetup();
+        } catch (rollbackError, rollbackStack) {
+          log(
+            'SetPasswordScreen._submit: password rollback failed: '
+            '$rollbackError\n$rollbackStack',
+          );
+        }
+      }
       log('SetPasswordScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
@@ -93,8 +115,6 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       });
       return;
     }
-
-    router.go('/home');
   }
 
   @override

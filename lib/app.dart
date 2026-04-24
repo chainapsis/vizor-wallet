@@ -31,14 +31,17 @@ import 'src/features/send/screens/send_status_screen.dart';
 import 'src/features/settings/screens/settings_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
+import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
 
 final _routerProvider = Provider<GoRouter>((ref) {
   final bootstrap = ref.watch(appBootstrapProvider);
-  final refresh = ValueNotifier<int>(0);
-  ref.onDispose(refresh.dispose);
+  final refresh = ref.watch(routerRefreshProvider);
   ref.listen(walletProvider, (_, _) {
-    refresh.value++;
+    refresh.requestRefresh();
+  });
+  ref.listen(appSecurityProvider, (_, _) {
+    refresh.requestRefresh();
   });
   log('router: initialized');
 
@@ -130,11 +133,9 @@ final _routerProvider = Provider<GoRouter>((ref) {
           reverseTransitionDuration: kOnboardingReverseDuration,
           child: OnboardingSplitViewShell(
             activeStep: onboardingStepFromLocation(state.matchedLocation),
-            showPasswordStep:
-                state.matchedLocation.startsWith(
-                  OnboardingStep.setPassword.routePath,
-                ) ||
-                !ref.read(appSecurityProvider).isPasswordConfigured,
+            showPasswordStep: !ref
+                .read(appSecurityProvider)
+                .isPasswordConfigured,
             child: child,
           ),
           transitionsBuilder: (_, _, _, child) => child,
@@ -215,9 +216,9 @@ final _routerProvider = Provider<GoRouter>((ref) {
           reverseTransitionDuration: kOnboardingReverseDuration,
           child: ImportOnboardingShell(
             activeStep: importOnboardingStepFromLocation(state.matchedLocation),
-            showPasswordStep:
-                state.matchedLocation.startsWith('/import/set-password') ||
-                !ref.read(appSecurityProvider).isPasswordConfigured,
+            showPasswordStep: !ref
+                .read(appSecurityProvider)
+                .isPasswordConfigured,
             child: child,
           ),
           transitionsBuilder: (_, _, _, child) => child,

@@ -25,6 +25,7 @@ class AppSecurityState {
 
 class AppSecurityNotifier extends Notifier<AppSecurityState> {
   static final _store = AppSecureStore.instance;
+  bool _isPasswordSetupPrepared = false;
 
   @override
   AppSecurityState build() {
@@ -36,15 +37,50 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
   }
 
   Future<void> configurePassword(String password) async {
+    await preparePasswordSetup(password);
+    await commitPasswordSetup(password);
+  }
+
+  Future<void> preparePasswordSetup(String password) async {
+    if (state.isPasswordConfigured) {
+      throw StateError('Password is already configured.');
+    }
+    if (_isPasswordSetupPrepared) {
+      throw StateError('Password setup is already pending.');
+    }
     final error = validateWalletPassword(password);
     if (error != null) {
       throw ArgumentError(error);
     }
-    await _store.configurePassword(password);
+    // Account creation/import needs an unlocked secure-storage session to
+    // persist the mnemonic, but publishing the app security state here would
+    // expose a half-completed onboarding state to the router.
+    _store.setSessionPassword(password);
+    _isPasswordSetupPrepared = true;
+  }
+
+  Future<void> commitPasswordSetup(String password) async {
+    if (!_isPasswordSetupPrepared) {
+      throw StateError('Password setup was not prepared.');
+    }
+    try {
+      await _store.configurePassword(password);
+    } catch (_) {
+      _isPasswordSetupPrepared = false;
+      await _store.clearPasswordConfiguration();
+      rethrow;
+    }
+    _isPasswordSetupPrepared = false;
     state = const AppSecurityState(
       isPasswordConfigured: true,
       isUnlocked: true,
     );
+  }
+
+  Future<void> rollbackPasswordSetup() async {
+    if (!_isPasswordSetupPrepared) return;
+    _isPasswordSetupPrepared = false;
+    _store.clearSessionPassword();
   }
 
   Future<bool> unlock(String password) async {

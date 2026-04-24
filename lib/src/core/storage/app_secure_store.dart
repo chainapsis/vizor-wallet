@@ -149,6 +149,12 @@ class AppSecureStore {
     setSessionPassword(password);
   }
 
+  Future<void> clearPasswordConfiguration() async {
+    await delete(_passwordVerifierSaltKey);
+    await delete(_passwordVerifierKey);
+    clearSessionPassword();
+  }
+
   Future<bool> verifyPassword(String password) async {
     if (!isWalletPasswordValid(password)) {
       return false;
