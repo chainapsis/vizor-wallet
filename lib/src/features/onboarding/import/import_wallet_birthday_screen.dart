@@ -363,8 +363,6 @@ class _ImportWalletBirthdayScreenState
 
   @override
   Widget build(BuildContext context) {
-    final security = ref.watch(appSecurityProvider);
-
     final activeTab = _activeTab;
     final buttonLabel = _isSubmitting
         ? 'Importing...'
@@ -372,136 +370,130 @@ class _ImportWalletBirthdayScreenState
         ? 'Estimating...'
         : 'Import';
 
-    return ImportOnboardingShell(
-      activeStep: ImportOnboardingStep.walletBirthdayHeight,
-      showPasswordStep: !security.isPasswordConfigured,
-      child: ImportOnboardingTrailingPane(
-        child: Column(
-          children: [
-            _BackRow(
-              onTap: () => context.go(
-                '/import',
-                extra: ImportSecretPassphraseArgs(
-                  mnemonic: widget.args.mnemonic,
-                ),
-              ),
+    return ImportOnboardingTrailingPane(
+      child: Column(
+        children: [
+          _BackRow(
+            onTap: () => context.go(
+              '/import',
+              extra: ImportSecretPassphraseArgs(mnemonic: widget.args.mnemonic),
             ),
-            const SizedBox(height: AppSpacing.xxs),
-            Expanded(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.s,
-                        ),
-                        child: SizedBox(
-                          width: 636,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                width: _titleWidth,
-                                child: Text(
-                                  'Around when did you create your wallet?',
-                                  style: AppTypography.displaySmall.copyWith(
-                                    color: context.colors.text.accent,
-                                  ),
-                                  textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.s,
+                      ),
+                      child: SizedBox(
+                        width: 636,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: _titleWidth,
+                              child: Text(
+                                'Around when did you create your wallet?',
+                                style: AppTypography.displaySmall.copyWith(
+                                  color: context.colors.text.accent,
                                 ),
+                                textAlign: TextAlign.center,
                               ),
-                              const SizedBox(height: AppSpacing.s),
-                              SizedBox(
-                                width: _subtitleWidth,
-                                child: Text(
-                                  'This will help to import your wallet faster.',
-                                  style: AppTypography.bodyMedium.copyWith(
-                                    color: context.colors.text.accent,
-                                  ),
-                                  textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: AppSpacing.s),
+                            SizedBox(
+                              width: _subtitleWidth,
+                              child: Text(
+                                'This will help to import your wallet faster.',
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: context.colors.text.accent,
                                 ),
+                                textAlign: TextAlign.center,
                               ),
-                              const SizedBox(height: AppSpacing.s),
-                              const AppDecorativeDivider(width: _contentWidth),
-                              const SizedBox(height: AppSpacing.md),
-                              _BirthdayTabRow(
-                                activeTab: activeTab,
-                                onTabSelected: _handleTabSelected,
-                              ),
-                              const SizedBox(height: AppSpacing.md),
-                              if (activeTab == ImportBirthdayTab.date)
-                                _DatePickerField(
-                                  width: _contentWidth,
-                                  valueText: _selectedDate == null
-                                      ? null
-                                      : _formatDate(_selectedDate!),
-                                  enabled:
-                                      !_isLoadingMetadata && _metadata != null,
-                                  onTap: _pickDate,
-                                )
-                              else
-                                _BlockHeightField(
-                                  controller: _manualHeightController,
-                                  focusNode: _manualHeightFocusNode,
-                                  width: _contentWidth,
-                                  errorText: _manualHeightError,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _submitError = null;
-                                    });
-                                  },
-                                ),
-                              const SizedBox(height: AppSpacing.xxs),
-                              SizedBox(
+                            ),
+                            const SizedBox(height: AppSpacing.s),
+                            const AppDecorativeDivider(width: _contentWidth),
+                            const SizedBox(height: AppSpacing.md),
+                            _BirthdayTabRow(
+                              activeTab: activeTab,
+                              onTabSelected: _handleTabSelected,
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            if (activeTab == ImportBirthdayTab.date)
+                              _DatePickerField(
                                 width: _contentWidth,
-                                height: _messageHeight,
-                                child: activeTab == ImportBirthdayTab.date
-                                    ? _InlineMessage(text: _dateMessage)
-                                    : _InlineMessage(text: _manualHeightError),
+                                valueText: _selectedDate == null
+                                    ? null
+                                    : _formatDate(_selectedDate!),
+                                enabled:
+                                    !_isLoadingMetadata && _metadata != null,
+                                onTap: _pickDate,
+                              )
+                            else
+                              _BlockHeightField(
+                                controller: _manualHeightController,
+                                focusNode: _manualHeightFocusNode,
+                                width: _contentWidth,
+                                errorText: _manualHeightError,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _submitError = null;
+                                  });
+                                },
                               ),
-                            ],
-                          ),
+                            const SizedBox(height: AppSpacing.xxs),
+                            SizedBox(
+                              width: _contentWidth,
+                              height: _messageHeight,
+                              child: activeTab == ImportBirthdayTab.date
+                                  ? _InlineMessage(text: _dateMessage)
+                                  : _InlineMessage(text: _manualHeightError),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
-                  SizedBox(
-                    width: _buttonWidth,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AppButton(
-                          onPressed: _isSubmitEnabled ? _submit : null,
-                          variant: AppButtonVariant.primary,
-                          minWidth: _buttonWidth,
-                          trailing: const AppIcon(AppIcons.chevronForward),
-                          child: Text(buttonLabel),
+                ),
+                SizedBox(
+                  width: _buttonWidth,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppButton(
+                        onPressed: _isSubmitEnabled ? _submit : null,
+                        variant: AppButtonVariant.primary,
+                        minWidth: _buttonWidth,
+                        trailing: const AppIcon(AppIcons.chevronForward),
+                        child: Text(buttonLabel),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      AppButton(
+                        onPressed: activeTab == ImportBirthdayTab.date
+                            ? () => _handleTabSelected(
+                                ImportBirthdayTab.blockHeight,
+                              )
+                            : () {},
+                        variant: AppButtonVariant.ghost,
+                        minWidth: _buttonWidth,
+                        trailing: const AppIcon(AppIcons.skip),
+                        child: Text(
+                          activeTab == ImportBirthdayTab.date
+                              ? 'I can’t Remember the Date'
+                              : 'I can’t remember the Block height',
                         ),
-                        const SizedBox(height: AppSpacing.xs),
-                        AppButton(
-                          onPressed: activeTab == ImportBirthdayTab.date
-                              ? () => _handleTabSelected(
-                                  ImportBirthdayTab.blockHeight,
-                                )
-                              : () {},
-                          variant: AppButtonVariant.ghost,
-                          minWidth: _buttonWidth,
-                          trailing: const AppIcon(AppIcons.skip),
-                          child: Text(
-                            activeTab == ImportBirthdayTab.date
-                                ? 'I can’t Remember the Date'
-                                : 'I can’t remember the Block height',
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

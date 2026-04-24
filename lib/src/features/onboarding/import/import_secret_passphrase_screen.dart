@@ -8,7 +8,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/app_security_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_flow_args.dart';
 import 'import_split_view.dart';
@@ -192,144 +191,137 @@ class _ImportSecretPassphraseScreenState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final security = ref.watch(appSecurityProvider);
 
-    return ImportOnboardingShell(
-      activeStep: ImportOnboardingStep.secretPassphrase,
-      showPasswordStep: !security.isPasswordConfigured,
-      child: ImportOnboardingTrailingPane(
-        child: Column(
-          children: [
-            SizedBox(
-              height: 32,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _handleBack,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppSpacing.xxs,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AppIcon(
-                          AppIcons.chevronBackward,
-                          size: AppIconSize.medium,
+    return ImportOnboardingTrailingPane(
+      child: Column(
+        children: [
+          SizedBox(
+            height: 32,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _handleBack,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppIcon(
+                        AppIcons.chevronBackward,
+                        size: AppIconSize.medium,
+                        color: colors.text.accent,
+                      ),
+                      const SizedBox(width: AppSpacing.xxs),
+                      Text(
+                        'Back',
+                        style: AppTypography.labelLarge.copyWith(
                           color: colors.text.accent,
                         ),
-                        const SizedBox(width: AppSpacing.xxs),
-                        Text(
-                          'Back',
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.accent,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: AppSpacing.xxs),
-            Expanded(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.s,
-                        ),
-                        child: SingleChildScrollView(
-                          child: SizedBox(
-                            width: 640,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Welcome, Adventurer',
-                                  style: AppTypography.displaySmall.copyWith(
-                                    color: colors.text.accent,
-                                  ),
-                                  textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.s,
+                      ),
+                      child: SingleChildScrollView(
+                        child: SizedBox(
+                          width: 640,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Welcome, Adventurer',
+                                style: AppTypography.displaySmall.copyWith(
+                                  color: colors.text.accent,
                                 ),
-                                const SizedBox(height: AppSpacing.s),
-                                Text(
-                                  'Import your wallet by entering your Secret Passphrase.',
-                                  style: AppTypography.bodyMedium.copyWith(
-                                    color: colors.text.accent,
-                                  ),
-                                  textAlign: TextAlign.center,
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: AppSpacing.s),
+                              Text(
+                                'Import your wallet by entering your Secret Passphrase.',
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: colors.text.accent,
                                 ),
-                                const SizedBox(height: AppSpacing.s),
-                                const AppDecorativeDivider(width: 256),
-                                const SizedBox(height: 16),
-                                SizedBox(
-                                  width: _gridWidth,
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: AppSpacing.s,
-                                    ),
-                                    child: Wrap(
-                                      alignment: WrapAlignment.center,
-                                      spacing: AppSpacing.xs,
-                                      runSpacing: AppSpacing.xs,
-                                      children: List.generate(
-                                        _wordCount,
-                                        (index) => _MnemonicWordCell(
-                                          index: index,
-                                          controller: _controllers[index],
-                                          focusNode: _focusNodes[index],
-                                          destructive:
-                                              _showValidationError &&
-                                              _controllers[index].text
-                                                  .trim()
-                                                  .isNotEmpty,
-                                          autofocus: index == 0,
-                                          onChanged: (value) =>
-                                              _handleWordChanged(index, value),
-                                          onSubmitted: (_) {
-                                            if (index == _wordCount - 1) {
-                                              _submit();
-                                            } else {
-                                              _focusIndex(index + 1);
-                                            }
-                                          },
-                                        ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: AppSpacing.s),
+                              const AppDecorativeDivider(width: 256),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: _gridWidth,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: AppSpacing.s,
+                                  ),
+                                  child: Wrap(
+                                    alignment: WrapAlignment.center,
+                                    spacing: AppSpacing.xs,
+                                    runSpacing: AppSpacing.xs,
+                                    children: List.generate(
+                                      _wordCount,
+                                      (index) => _MnemonicWordCell(
+                                        index: index,
+                                        controller: _controllers[index],
+                                        focusNode: _focusNodes[index],
+                                        destructive:
+                                            _showValidationError &&
+                                            _controllers[index].text
+                                                .trim()
+                                                .isNotEmpty,
+                                        autofocus: index == 0,
+                                        onChanged: (value) =>
+                                            _handleWordChanged(index, value),
+                                        onSubmitted: (_) {
+                                          if (index == _wordCount - 1) {
+                                            _submit();
+                                          } else {
+                                            _focusIndex(index + 1);
+                                          }
+                                        },
                                       ),
                                     ),
                                   ),
                                 ),
-                                if (_errorText != null) ...[
-                                  const SizedBox(height: AppSpacing.s),
-                                  Text(
-                                    _errorText!,
-                                    style: AppTypography.bodyMedium.copyWith(
-                                      color: colors.text.warning,
-                                    ),
-                                    textAlign: TextAlign.center,
+                              ),
+                              if (_errorText != null) ...[
+                                const SizedBox(height: AppSpacing.s),
+                                Text(
+                                  _errorText!,
+                                  style: AppTypography.bodyMedium.copyWith(
+                                    color: colors.text.warning,
                                   ),
-                                ],
+                                  textAlign: TextAlign.center,
+                                ),
                               ],
-                            ),
+                            ],
                           ),
                         ),
                       ),
                     ),
                   ),
-                  AppButton(
-                    onPressed: _canSubmit ? _submit : null,
-                    minWidth: 256,
-                    trailing: const AppIcon(AppIcons.chevronForward),
-                    child: Text(_isSubmitting ? 'Importing...' : 'Import'),
-                  ),
-                ],
-              ),
+                ),
+                AppButton(
+                  onPressed: _canSubmit ? _submit : null,
+                  minWidth: 256,
+                  trailing: const AppIcon(AppIcons.chevronForward),
+                  child: Text(_isSubmitting ? 'Importing...' : 'Import'),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -25,6 +25,16 @@ extension ImportOnboardingStepX on ImportOnboardingStep {
   };
 }
 
+ImportOnboardingStep importOnboardingStepFromLocation(String location) {
+  if (location.startsWith('/import/set-password')) {
+    return ImportOnboardingStep.setPassword;
+  }
+  if (location.startsWith('/import/birthday')) {
+    return ImportOnboardingStep.walletBirthdayHeight;
+  }
+  return ImportOnboardingStep.secretPassphrase;
+}
+
 class ImportOnboardingShell extends StatelessWidget {
   const ImportOnboardingShell({
     required this.activeStep,

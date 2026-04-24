@@ -116,15 +116,9 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       onSubmit: _submit,
     );
 
-    if (args.isImport) {
-      return ImportOnboardingShell(
-        activeStep: ImportOnboardingStep.setPassword,
-        showPasswordStep: true,
-        child: ImportOnboardingTrailingPane(child: content),
-      );
-    }
-
-    return OnboardingTrailingPane(child: content);
+    return args.isImport
+        ? ImportOnboardingTrailingPane(child: content)
+        : OnboardingTrailingPane(child: content);
   }
 }
 
