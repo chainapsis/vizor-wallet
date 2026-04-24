@@ -204,7 +204,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
               child: SetPasswordScreen(
                 args: state.extra as SetPasswordScreenArgs,
               ),
-              transitionsBuilder: _onboardingFadeTransition,
+              transitionsBuilder: _onboardingEnterOnlyTransition,
             ),
           ),
         ],
@@ -272,7 +272,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
                 transitionDuration: kOnboardingForwardDuration,
                 reverseTransitionDuration: kOnboardingReverseDuration,
                 child: SetPasswordScreen(args: args),
-                transitionsBuilder: _onboardingFadeTransition,
+                transitionsBuilder: _onboardingEnterOnlyTransition,
               );
             },
           ),
@@ -337,6 +337,22 @@ Widget _onboardingFadeTransition(
       child: child,
     ),
   );
+}
+
+/// Fade only while this page enters. Terminal onboarding pages use this so
+/// leaving onboarding for `/home` does not fade the completed form away.
+Widget _onboardingEnterOnlyTransition(
+  BuildContext context,
+  Animation<double> animation,
+  Animation<double> secondaryAnimation,
+  Widget child,
+) {
+  final incoming = CurvedAnimation(
+    parent: animation,
+    curve: kOnboardingForwardCurve,
+    reverseCurve: kOnboardingReverseCurve,
+  );
+  return FadeTransition(opacity: incoming, child: child);
 }
 
 class ZcashWalletApp extends ConsumerWidget {
