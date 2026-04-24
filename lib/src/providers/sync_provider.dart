@@ -942,7 +942,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       spendable = balance.spendable;
       total = balance.total;
     } catch (e) {
-      log('SyncNotifier: balance refresh failed: $e');
+      _logRefreshReadError(
+        label: 'balance',
+        fallback: 'keeping previous value',
+        error: e,
+      );
     }
 
     var recentTxs =
@@ -955,7 +959,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         accountUuid: accountUuid,
       );
     } catch (e) {
-      log('SyncNotifier: tx history refresh failed: $e');
+      _logRefreshReadError(
+        label: 'tx history',
+        fallback: 'keeping previous list',
+        error: e,
+      );
     }
 
     if (epoch != _sensitiveStateEpoch || _requiresUnlock) {
@@ -982,6 +990,25 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   String? _getActiveAccountUuid() {
     return ref.read(accountProvider).value?.activeAccountUuid;
+  }
+
+  void _logRefreshReadError({
+    required String label,
+    required String fallback,
+    required Object error,
+  }) {
+    if (_isDatabaseLockedError(error)) {
+      log(
+        'SyncNotifier: $label refresh skipped due to temporary DB lock; '
+        '$fallback',
+      );
+      return;
+    }
+    log('SyncNotifier: $label refresh failed: $error');
+  }
+
+  bool _isDatabaseLockedError(Object error) {
+    return error.toString().contains('database is locked');
   }
 
   Future<String> _getDbPath() async {
