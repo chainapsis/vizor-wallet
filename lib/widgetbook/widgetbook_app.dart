@@ -64,6 +64,15 @@ class WidgetbookApp extends StatelessWidget {
                     ),
                   ],
                 ),
+                WidgetbookComponent(
+                  name: 'Unlock',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Login',
+                      builder: buildUnlockLoginUseCase,
+                    ),
+                  ],
+                ),
               ],
             ),
           ],

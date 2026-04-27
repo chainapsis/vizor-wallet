@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/layout/app_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
+import 'shared/onboarding_welcome_art.dart';
 
 /// Welcome-specific button minimum width. Matches the 196 dp the Figma
 /// component uses for the two CTAs (node 215:2829 / 215:2830). Modeled
@@ -218,13 +218,7 @@ class _Backdrop extends StatelessWidget {
   const _Backdrop();
 
   @override
-  Widget build(BuildContext context) {
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final asset = isDark
-        ? 'assets/illustrations/welcome_bg_dark.png'
-        : 'assets/illustrations/welcome_bg_light.png';
-    return Image.asset(asset, fit: BoxFit.fill);
-  }
+  Widget build(BuildContext context) => const OnboardingWelcomeBackdrop();
 }
 
 /// Vizor logo + title block + buttons + legal footer, bottom-anchored.
@@ -282,20 +276,7 @@ class _VizorLogo extends StatelessWidget {
   const _VizorLogo();
 
   @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      width: 74,
-      height: 37,
-      child: Center(
-        child: SvgPicture.asset(
-          'assets/icons/vizor_logo.svg',
-          width: 62,
-          colorFilter: ColorFilter.mode(colors.text.accent, BlendMode.srcIn),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const VizorWordmark();
 }
 
 class _ButtonsStack extends StatelessWidget {

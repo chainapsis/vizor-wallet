@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../src/core/layout/app_layout.dart';
+import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
 
 /// Welcome screen in its large-layout form. Wrapped in a `ProviderScope`
@@ -18,6 +19,13 @@ Widget buildWelcomeLargeUseCase(BuildContext context) {
   return ProviderScope(
     overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
     child: _WelcomeHarness(),
+  );
+}
+
+Widget buildUnlockLoginUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
+    child: _UnlockHarness(),
   );
 }
 
@@ -59,6 +67,46 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
         GoRoute(
           path: '/import',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/import'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Router.withConfig(config: _router);
+  }
+}
+
+class _UnlockHarness extends StatefulWidget {
+  @override
+  State<_UnlockHarness> createState() => _UnlockHarnessState();
+}
+
+class _UnlockHarnessState extends State<_UnlockHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: '/unlock',
+      routes: [
+        GoRoute(
+          path: '/unlock',
+          // Preview-only: the real screen can reset the wallet from
+          // "Forgot Password?", so keep this Widgetbook surface visual.
+          builder: (_, _) => const IgnorePointer(child: UnlockScreen()),
+        ),
+        GoRoute(
+          path: '/home',
+          builder: (_, _) => const _PreviewRoutePlaceholder(label: '/home'),
         ),
       ],
     );
