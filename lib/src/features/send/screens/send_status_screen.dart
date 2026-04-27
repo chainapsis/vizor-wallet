@@ -165,7 +165,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       TextSpan(
         text: prefix,
         style: AppTypography.labelLarge.copyWith(
-          color: colors.text.brandPurple,
+          color: colors.text.brandCrimson,
         ),
       ),
       TextSpan(
@@ -176,7 +176,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         TextSpan(
           text: suffix,
           style: AppTypography.labelLarge.copyWith(
-            color: colors.text.brandPurple,
+            color: colors.text.brandCrimson,
           ),
         ),
     ];
@@ -703,8 +703,8 @@ class _SendStatusHeadline extends StatelessWidget {
     };
     final labelColor = switch (phase) {
       _SendStatusPhase.sending => colors.text.accent,
-      _SendStatusPhase.succeeded => const Color(0xFF47BE47),
-      _SendStatusPhase.failed => colors.text.warning,
+      _SendStatusPhase.succeeded => colors.text.success,
+      _SendStatusPhase.failed => colors.text.destructive,
     };
 
     return Column(
@@ -808,13 +808,17 @@ class _SendStatusFailureMessage extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AppIcon(AppIcons.warning, size: 16, color: context.colors.text.warning),
+        AppIcon(
+          AppIcons.warning,
+          size: 16,
+          color: context.colors.text.destructive,
+        ),
         const SizedBox(width: AppSpacing.xxs),
         Expanded(
           child: Text(
             message,
             style: AppTypography.labelMedium.copyWith(
-              color: context.colors.text.warning,
+              color: context.colors.text.destructive,
             ),
           ),
         ),

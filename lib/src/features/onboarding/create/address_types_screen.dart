@@ -109,7 +109,7 @@ class _HeroBlock extends StatelessWidget {
               TextSpan(
                 text: 'Privacy',
                 style: bodyStyle.copyWith(
-                  color: colors.text.brandPurple,
+                  color: colors.text.brandCrimson,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -171,14 +171,14 @@ class _ShieldedAddressCard extends StatelessWidget {
             TextSpan(
               text: 'u1',
               style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.brandPurple,
+                color: colors.text.brandCrimson,
               ),
             ),
             const TextSpan(text: ' (or '),
             TextSpan(
               text: 'zs',
               style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.brandPurple,
+                color: colors.text.brandCrimson,
               ),
             ),
             const TextSpan(text: ' for legacy).\n'),
@@ -274,7 +274,7 @@ class _PreviewImage extends StatelessWidget {
     return Container(
       height: 96,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadii.small),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       clipBehavior: Clip.antiAlias,
       child: Image.asset(

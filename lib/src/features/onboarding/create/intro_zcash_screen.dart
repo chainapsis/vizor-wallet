@@ -174,7 +174,10 @@ class _VizorLogo extends StatelessWidget {
       height: 28,
       child: SvgPicture.asset(
         'assets/icons/vizor_logo.svg',
-        colorFilter: ColorFilter.mode(colors.text.brandPurple, BlendMode.srcIn),
+        colorFilter: ColorFilter.mode(
+          colors.text.brandCrimson,
+          BlendMode.srcIn,
+        ),
       ),
     );
   }

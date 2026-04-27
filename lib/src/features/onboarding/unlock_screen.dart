@@ -139,7 +139,7 @@ class _UnlockPane extends StatelessWidget {
       height: double.infinity,
       decoration: BoxDecoration(
         color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.small),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       clipBehavior: Clip.antiAlias,
       child: LayoutBuilder(
@@ -204,8 +204,6 @@ class _UnlockContent extends StatelessWidget {
   static const double _contentWidth = 256;
   static const double _titleWidth = 347;
   static const double _fieldGroupHeight = 66;
-  static const Color _fieldErrorIconColor = Color(0xFFB760C4);
-  static const Color _fieldErrorTextColor = Color(0xFF93489E);
 
   @override
   Widget build(BuildContext context) {
@@ -261,17 +259,9 @@ class _UnlockContent extends StatelessWidget {
                       controller: passwordController,
                       autofocus: false,
                       messageText: messageText,
-                      messageIcon: const AppIcon(
-                        AppIcons.warning,
-                        size: AppIconSize.medium,
-                        color: _fieldErrorIconColor,
-                      ),
-                      messageStyle: AppTypography.labelMedium.copyWith(
-                        color: _fieldErrorTextColor,
-                      ),
                       tone: messageText == null
                           ? AppTextFieldTone.neutral
-                          : AppTextFieldTone.brandPurple,
+                          : AppTextFieldTone.destructive,
                       onChanged: (_) => onChanged(),
                       onSubmitted: (_) => onSubmit(),
                     ),
