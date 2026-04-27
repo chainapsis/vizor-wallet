@@ -7,8 +7,8 @@ import '../theme/app_theme.dart';
 /// Animated loading icon that mirrors `assets/icons/loader.svg`.
 ///
 /// The static frame is drawn as eight rounded spokes in the same 24x24
-/// coordinate space as the exported SVG. Animation rotates that same drawing
-/// instead of relying on SVG animation support.
+/// coordinate space as the exported SVG. Animation keeps every spoke fixed in
+/// place and moves an opacity pulse from one spoke to the next.
 class AppLoadingIcon extends StatefulWidget {
   const AppLoadingIcon({
     this.size = AppIconSize.medium,
@@ -33,10 +33,6 @@ class _AppLoadingIconState extends State<AppLoadingIcon>
     vsync: this,
     duration: const Duration(milliseconds: 900),
   );
-  late final Animation<double> _turns = Tween<double>(
-    begin: 0,
-    end: 1 / 8,
-  ).animate(_controller);
 
   @override
   void initState() {
@@ -74,15 +70,13 @@ class _AppLoadingIconState extends State<AppLoadingIcon>
         IconTheme.of(context).color ??
         context.colors.icon.regular;
     final icon = CustomPaint(
-      painter: _LoaderIconPainter(color: resolved),
+      painter: _LoaderIconPainter(
+        color: resolved,
+        animation: widget.animated ? _controller : null,
+      ),
       size: Size.square(widget.size),
     );
-    final child = SizedBox.square(
-      dimension: widget.size,
-      child: widget.animated
-          ? RotationTransition(turns: _turns, child: icon)
-          : icon,
-    );
+    final child = SizedBox.square(dimension: widget.size, child: icon);
     if (widget.semanticLabel == null) {
       return child;
     }
@@ -91,23 +85,24 @@ class _AppLoadingIconState extends State<AppLoadingIcon>
 }
 
 class _LoaderIconPainter extends CustomPainter {
-  const _LoaderIconPainter({required this.color});
+  _LoaderIconPainter({required this.color, required this.animation})
+    : super(repaint: animation);
 
+  static const _spokeCount = 8;
   static const _viewBoxSize = 24.0;
   static const _center = Offset(12, 12);
   static const _spokeRect = Rect.fromLTWH(10.5724, 1, 2.8552, 6.0464);
   static const _spokeRadius = Radius.circular(1.4276);
 
   final Color color;
+  final Animation<double>? animation;
 
   @override
   void paint(Canvas canvas, Size size) {
     final scale = math.min(size.width, size.height) / _viewBoxSize;
     final dx = (size.width - _viewBoxSize * scale) / 2;
     final dy = (size.height - _viewBoxSize * scale) / 2;
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
+    final paint = Paint()..style = PaintingStyle.fill;
     final spoke = RRect.fromRectAndRadius(_spokeRect, _spokeRadius);
 
     canvas
@@ -115,7 +110,8 @@ class _LoaderIconPainter extends CustomPainter {
       ..translate(dx, dy)
       ..scale(scale);
 
-    for (var i = 0; i < 8; i++) {
+    for (var i = 0; i < _spokeCount; i++) {
+      paint.color = color.withValues(alpha: _opacityForSpoke(i));
       canvas
         ..save()
         ..translate(_center.dx, _center.dy)
@@ -128,8 +124,26 @@ class _LoaderIconPainter extends CustomPainter {
     canvas.restore();
   }
 
+  double _opacityForSpoke(int index) {
+    final progress = animation?.value;
+    if (progress == null) {
+      return 1;
+    }
+    final active = progress * _spokeCount;
+    final trailDistance = (active - index + _spokeCount) % _spokeCount;
+    const trailLength = 3.2;
+    const minOpacity = 0.28;
+    if (trailDistance > trailLength) {
+      return minOpacity;
+    }
+    final falloff = Curves.easeOutCubic.transform(
+      1 - trailDistance / trailLength,
+    );
+    return minOpacity + falloff * (1 - minOpacity);
+  }
+
   @override
   bool shouldRepaint(covariant _LoaderIconPainter oldDelegate) {
-    return oldDelegate.color != color;
+    return oldDelegate.color != color || oldDelegate.animation != animation;
   }
 }
