@@ -252,6 +252,17 @@ Future<String> executeProposal({
   outputParamsPath: outputParamsPath,
 );
 
+/// Dry-run transparent shielding without creating or broadcasting a transaction.
+Future<ShieldTransparentStatus> getShieldTransparentStatus({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiSyncGetShieldTransparentStatus(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
 /// Shield spendable transparent funds into the account's shielded balance.
 /// Software-account only; hardware shielding will be added separately through
 /// the PCZT flow.
@@ -616,6 +627,37 @@ class ShieldTransparentResult {
           txids == other.txids &&
           feeZatoshi == other.feeZatoshi &&
           shieldedZatoshi == other.shieldedZatoshi;
+}
+
+class ShieldTransparentStatus {
+  final bool canShield;
+  final BigInt feeZatoshi;
+  final BigInt shieldedZatoshi;
+  final String reason;
+
+  const ShieldTransparentStatus({
+    required this.canShield,
+    required this.feeZatoshi,
+    required this.shieldedZatoshi,
+    required this.reason,
+  });
+
+  @override
+  int get hashCode =>
+      canShield.hashCode ^
+      feeZatoshi.hashCode ^
+      shieldedZatoshi.hashCode ^
+      reason.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShieldTransparentStatus &&
+          runtimeType == other.runtimeType &&
+          canShield == other.canShield &&
+          feeZatoshi == other.feeZatoshi &&
+          shieldedZatoshi == other.shieldedZatoshi &&
+          reason == other.reason;
 }
 
 class SubtreeIndices {

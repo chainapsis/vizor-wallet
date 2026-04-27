@@ -29,8 +29,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  static final BigInt _shieldingThresholdZatoshi = BigInt.from(100000);
-
   bool _canBackgroundSync = false;
   bool _isBalanceVisible = true;
   bool _isShieldingBalance = false;
@@ -112,9 +110,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         );
       }
 
-      final transparentBalance =
-          ref.read(syncProvider).value?.transparentBalance ?? BigInt.zero;
-      if (transparentBalance <= _shieldingThresholdZatoshi) {
+      final sync = ref.read(syncProvider).value ?? SyncState();
+      if (!sync.canShieldTransparentBalance) {
         throw Exception(
           'Transparent balance is too small to shield after fees.',
         );
@@ -210,8 +207,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sync.orchardPendingBalance;
     final transparentBalance =
         sync.transparentBalance + sync.transparentPendingBalance;
-    final canShieldTransparentBalance =
-        sync.transparentBalance > _shieldingThresholdZatoshi;
+    final canShieldTransparentBalance = sync.canShieldTransparentBalance;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -867,12 +863,14 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: AppSpacing.xs),
-            _HomeShieldBalanceButton(
-              enabled: canShieldBalance,
-              isLoading: isShieldingBalance,
-              onPressed: onShieldBalancePressed,
-            ),
+            if (canShieldBalance || isShieldingBalance) ...[
+              const SizedBox(width: AppSpacing.xs),
+              _HomeShieldBalanceButton(
+                enabled: canShieldBalance,
+                isLoading: isShieldingBalance,
+                onPressed: onShieldBalancePressed,
+              ),
+            ],
           ],
         ),
       ),
