@@ -4,7 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
 
-/// Animated loading icon that mirrors `assets/icons/loader.svg`.
+/// Animated loading icon used by `AppIcon(AppIcons.loader)`.
 ///
 /// The static frame is drawn as eight rounded spokes in the same 24x24
 /// coordinate space as the exported SVG. Animation keeps every spoke fixed in

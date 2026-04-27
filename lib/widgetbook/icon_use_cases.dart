@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
-import '../src/core/widgets/app_loading_icon.dart';
 
 /// Every name exposed by [AppIcons], listed in alphabetical order so
 /// the widgetbook page matches what an IDE autocompletion shows.
@@ -82,8 +81,8 @@ Widget _iconCard(BuildContext context, String name) {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Row of the same icon at two sizes, both tinted with the ambient
-        // icon color — an at-a-glance check that the SVG scales cleanly
-        // and that srcIn is actually landing.
+        // icon color — an at-a-glance check that the icon scales cleanly
+        // and that color application is actually landing.
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -110,9 +109,9 @@ Widget _iconCard(BuildContext context, String name) {
   );
 }
 
-/// Grid of every icon under `assets/icons/`. Two sizes (M / L) side by
+/// Grid of every [AppIcon] handle. Two sizes (M / L) side by
 /// side plus a warning-tinted instance so a regression in `AppIcon`'s
-/// color filter, asset registration, or SVG geometry is immediately
+/// color handling, asset registration, or geometry is immediately
 /// visible.
 Widget buildIconsAllUseCase(BuildContext context) {
   final colors = context.colors;
@@ -179,19 +178,22 @@ Widget _buildLoadingIconUseCase(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            AppLoadingIcon(
+            AppIcon(
+              AppIcons.loader,
               size: AppIconSize.medium,
               color: colors.icon.regular,
               animated: animated,
             ),
             const SizedBox(width: AppSpacing.md),
-            AppLoadingIcon(
+            AppIcon(
+              AppIcons.loader,
               size: AppIconSize.large,
               color: colors.icon.regular,
               animated: animated,
             ),
             const SizedBox(width: AppSpacing.md),
-            AppLoadingIcon(
+            AppIcon(
+              AppIcons.loader,
               size: AppIconSize.large,
               color: colors.icon.warning,
               animated: animated,

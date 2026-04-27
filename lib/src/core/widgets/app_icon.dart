@@ -2,17 +2,19 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../theme/app_theme.dart';
+import 'app_loading_icon.dart';
 
-/// Name-based handles for every icon bundled under `assets/icons/`.
+/// Name-based handles for every design-system icon.
 ///
 /// Keeping the asset paths behind typed constants means a rename /
 /// re-export only touches this file; call sites reference
 /// `AppIcons.book` instead of a string literal.
 ///
-/// Names follow the curated export set under `assets/icons/`: mostly the
-/// Figma Icons page node names normalized to snake_case, with a few
+/// Names mostly follow the curated export set under `assets/icons/`: Figma
+/// Icons page node names normalized to snake_case, with a few
 /// compatibility-preserving aliases where older app code already shipped
 /// stable names (`import_wallet`, `shield_keyhole`, `arrow_upward`, etc.).
+/// [loader] is code-drawn rather than loaded from SVG.
 abstract final class AppIcons {
   static const addNew = 'add_new';
   static const arrowBack = 'arrow_back';
@@ -81,7 +83,8 @@ abstract final class AppIcons {
 /// the SVG keeps its own alpha shape, every non-transparent pixel gets
 /// re-colored to [color]. Works for the single-fill monochrome icons
 /// the design system currently ships; multi-fill / gradient icons
-/// would need a different render path.
+/// would need a different render path. [AppIcons.loader] is code-drawn so it
+/// can animate while keeping the same public [AppIcon] call pattern.
 ///
 /// Color resolution order, first non-null wins:
 /// 1. Explicit [color] argument at the call site.
@@ -96,6 +99,7 @@ class AppIcon extends StatelessWidget {
     this.name, {
     this.size = AppIconSize.medium,
     this.color,
+    this.animated = true,
     this.semanticLabel,
     super.key,
   });
@@ -113,6 +117,9 @@ class AppIcon extends StatelessWidget {
   /// class doc for the full resolution order.
   final Color? color;
 
+  /// Controls the pulse animation for [AppIcons.loader]. Ignored by SVG icons.
+  final bool animated;
+
   /// Optional accessibility label forwarded to [SvgPicture.asset].
   final String? semanticLabel;
 
@@ -120,6 +127,14 @@ class AppIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final resolved =
         color ?? IconTheme.of(context).color ?? context.colors.icon.regular;
+    if (name == AppIcons.loader) {
+      return AppLoadingIcon(
+        size: size,
+        color: resolved,
+        animated: animated,
+        semanticLabel: semanticLabel,
+      );
+    }
     return SvgPicture.asset(
       'assets/icons/$name.svg',
       width: size,

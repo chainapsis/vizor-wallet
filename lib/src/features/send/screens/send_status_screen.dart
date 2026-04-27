@@ -16,7 +16,6 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_loading_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -715,9 +714,7 @@ class _SendStatusHeadline extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              phase == _SendStatusPhase.sending
-                  ? AppLoadingIcon(size: 16, color: labelColor)
-                  : AppIcon(icon, size: 16, color: labelColor),
+              AppIcon(icon, size: 16, color: labelColor),
               const SizedBox(width: AppSpacing.xxs),
               Text(
                 label,
