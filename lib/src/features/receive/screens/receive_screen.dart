@@ -3,7 +3,13 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart'
-    show CircularProgressIndicator, ScaffoldMessenger, SnackBar, Theme;
+    show
+        CircularProgressIndicator,
+        Material,
+        MaterialType,
+        ScaffoldMessenger,
+        SnackBar,
+        Theme;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1417,66 +1423,69 @@ class _ReceiveInfoDialog extends StatelessWidget {
             ),
           ];
 
-    return BackdropFilter(
-      filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-      child: Center(
-        child: Container(
-          width: 312,
-          padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(
-              AppRadii.medium + AppSpacing.xs,
+    return Material(
+      type: MaterialType.transparency,
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Center(
+          child: Container(
+            width: 312,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: colors.background.ground,
+              borderRadius: BorderRadius.circular(
+                AppRadii.medium + AppSpacing.xs,
+              ),
             ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  _InfoHeaderIcon(
-                    iconName: _isShielded
-                        ? AppIcons.shieldKeyhole
-                        : AppIcons.transparentBalance,
-                    filled: _isShielded,
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _isShielded
-                            ? 'Shielded Address'
-                            : 'Transparent Address',
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                      Text(
-                        _isShielded
-                            ? 'Strong privacy by default.'
-                            : 'Publicly visible',
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Column(
-                children: [
-                  for (final item in items)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                      child: item,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    _InfoHeaderIcon(
+                      iconName: _isShielded
+                          ? AppIcons.shieldKeyhole
+                          : AppIcons.transparentBalance,
+                      filled: _isShielded,
                     ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              _DialogCloseButton(onTap: () => Navigator.of(context).pop()),
-            ],
+                    const SizedBox(width: AppSpacing.xs),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _isShielded
+                              ? 'Shielded Address'
+                              : 'Transparent Address',
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                        Text(
+                          _isShielded
+                              ? 'Strong privacy by default.'
+                              : 'Publicly visible',
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: colors.text.secondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Column(
+                  children: [
+                    for (final item in items)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: item,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _DialogCloseButton(onTap: () => Navigator.of(context).pop()),
+              ],
+            ),
           ),
         ),
       ),
