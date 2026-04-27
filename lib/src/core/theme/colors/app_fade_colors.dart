@@ -19,5 +19,5 @@ class AppFadeColors {
   // Fully transparent on light mode — keeps the same rgb anchor as the
   // dark face so fade animations between modes don't flicker through a
   // neutral color.
-  static const light = AppFadeColors(illustration: Color(0x00141818));
+  static const light = AppFadeColors(illustration: Primitives.p0Alpha0Dark);
 }

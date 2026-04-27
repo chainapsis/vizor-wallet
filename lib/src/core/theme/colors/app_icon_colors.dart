@@ -11,8 +11,11 @@ import '../primitives.dart';
 /// * [disabled] — Icons on disabled controls.
 /// * [inverse] — Icons on inverted surfaces.
 /// * [onPrimary] — Icons placed inside a primary button.
-/// * [warning] — Warning-state icons. Theme-invariant brand yellow.
-/// * [brandPurple] / [brandCyan] — Brand-colored icons.
+/// * [warning] — Caution icons. Backed by the current gold utility token for
+///   compatibility with existing warning call sites.
+/// * [destructive] — Destructive-state icons.
+/// * [success] — Positive / success utility icons.
+/// * [brandCrimson] — Brand-colored icons.
 class AppIconColors {
   const AppIconColors({
     required this.accent,
@@ -22,8 +25,9 @@ class AppIconColors {
     required this.inverse,
     required this.onPrimary,
     required this.warning,
-    required this.brandPurple,
-    required this.brandCyan,
+    required this.destructive,
+    required this.success,
+    required this.brandCrimson,
   });
 
   final Color accent;
@@ -33,8 +37,9 @@ class AppIconColors {
   final Color inverse;
   final Color onPrimary;
   final Color warning;
-  final Color brandPurple;
-  final Color brandCyan;
+  final Color destructive;
+  final Color success;
+  final Color brandCrimson;
 
   static const dark = AppIconColors(
     accent: Primitives.p800Dark,
@@ -43,10 +48,10 @@ class AppIconColors {
     disabled: Primitives.p300Dark,
     inverse: Primitives.p0Dark,
     onPrimary: Primitives.p0Dark,
-    // Matches `text.warning` — same orange across modes.
-    warning: YellowPrimitives.p400Dark,
-    brandPurple: PurplePrimitives.p400Dark,
-    brandCyan: CyanPrimitives.p500Dark,
+    warning: GoldPrimitives.p600Dark,
+    destructive: PlumPrimitives.p400Dark,
+    success: GoldPrimitives.p600Dark,
+    brandCrimson: CrimsonPrimitives.p300Dark,
   );
 
   static const light = AppIconColors(
@@ -56,8 +61,9 @@ class AppIconColors {
     disabled: Primitives.p300Light,
     inverse: Primitives.p0Light,
     onPrimary: Primitives.p0Light,
-    warning: YellowPrimitives.p300Light,
-    brandPurple: PurplePrimitives.p300Light,
-    brandCyan: CyanPrimitives.p150Light,
+    warning: GoldPrimitives.p300Light,
+    destructive: PlumPrimitives.p300Light,
+    success: GoldPrimitives.p300Light,
+    brandCrimson: CrimsonPrimitives.p400Light,
   );
 }

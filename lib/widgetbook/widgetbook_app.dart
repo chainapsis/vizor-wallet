@@ -224,16 +224,20 @@ class WidgetbookApp extends StatelessWidget {
                   builder: buildPrimitivesNeutralUseCase,
                 ),
                 WidgetbookUseCase(
-                  name: 'Purple',
-                  builder: buildPrimitivesPurpleUseCase,
+                  name: 'Crimson',
+                  builder: buildPrimitivesCrimsonUseCase,
                 ),
                 WidgetbookUseCase(
-                  name: 'Cyan',
-                  builder: buildPrimitivesCyanUseCase,
+                  name: 'Plum',
+                  builder: buildPrimitivesPlumUseCase,
                 ),
                 WidgetbookUseCase(
-                  name: 'Yellow',
-                  builder: buildPrimitivesYellowUseCase,
+                  name: 'Gold',
+                  builder: buildPrimitivesGoldUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Green',
+                  builder: buildPrimitivesGreenUseCase,
                 ),
               ],
             ),

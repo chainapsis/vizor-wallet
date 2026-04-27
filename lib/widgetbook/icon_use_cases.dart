@@ -62,7 +62,7 @@ Widget _iconCard(BuildContext context, String name) {
     decoration: BoxDecoration(
       color: colors.surface.card,
       border: Border.all(color: colors.border.subtle, width: 0.5),
-      borderRadius: BorderRadius.circular(AppRadii.small),
+      borderRadius: BorderRadius.circular(AppRadii.xSmall),
     ),
     padding: const EdgeInsets.all(AppSpacing.sm),
     child: Column(

@@ -80,7 +80,7 @@ Widget buildTextFieldGalleryUseCase(BuildContext context) {
                 initialValue: 'Value',
                 leading: const AppIcon(AppIcons.users, size: 20),
                 messageText: 'Shielded Address',
-                tone: AppTextFieldTone.brandPurple,
+                tone: AppTextFieldTone.brandCrimson,
               ),
             ),
             SizedBox(
@@ -189,7 +189,11 @@ Widget buildTextFieldInteractiveUseCase(BuildContext context) {
   );
   final tone = context.knobs.object.dropdown<AppTextFieldTone>(
     label: 'Tone',
-    options: AppTextFieldTone.values,
+    options: const [
+      AppTextFieldTone.neutral,
+      AppTextFieldTone.brandCrimson,
+      AppTextFieldTone.destructive,
+    ],
     initialOption: AppTextFieldTone.neutral,
     labelBuilder: (value) => value.name,
   );

@@ -199,14 +199,14 @@ abstract final class AppTypography {
   // alignment matters: addresses, transaction IDs, mnemonics, hex
   // dumps.
 
-  /// Code M — primary monospace copy (e.g. unified address rows).
+  /// Code M — primary monospace copy (e.g. mnemonic word indices).
   ///
-  /// Geist Mono Medium, 13 / 21 px, letter-spacing 0.
+  /// Geist Mono Medium, 14 / 21 px, letter-spacing 0.
   static const codeMedium = TextStyle(
     fontFamily: 'Geist Mono',
     fontWeight: FontWeight.w500,
-    fontSize: 13,
-    height: 21 / 13,
+    fontSize: 14,
+    height: 21 / 14,
     letterSpacing: 0,
   );
 
