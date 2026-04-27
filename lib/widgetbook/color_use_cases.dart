@@ -626,6 +626,12 @@ Widget buildButtonPrimaryUseCase(BuildContext context) {
         light: l.button.primary.bgPressed,
       ),
       TokenSwatch(
+        name: 'button/primary/border',
+        description: 'Subtle alpha border',
+        dark: d.button.primary.border,
+        light: l.button.primary.border,
+      ),
+      TokenSwatch(
         name: 'button/primary/label',
         description: 'Label inside primary button',
         dark: d.button.primary.label,
@@ -706,6 +712,24 @@ Widget buildButtonGhostDestructiveUseCase(BuildContext context) {
         light: l.button.destructive.bg,
       ),
       TokenSwatch(
+        name: 'button/destructive/bg-hover',
+        description: 'Destructive fill on hover',
+        dark: d.button.destructive.bgHover,
+        light: l.button.destructive.bgHover,
+      ),
+      TokenSwatch(
+        name: 'button/destructive/bg-pressed',
+        description: 'Destructive fill on press',
+        dark: d.button.destructive.bgPressed,
+        light: l.button.destructive.bgPressed,
+      ),
+      TokenSwatch(
+        name: 'button/destructive/border',
+        description: 'Destructive alpha border',
+        dark: d.button.destructive.border,
+        light: l.button.destructive.border,
+      ),
+      TokenSwatch(
         name: 'button/destructive/label',
         description: 'Destructive label',
         dark: d.button.destructive.label,
@@ -759,9 +783,15 @@ Widget buildStateUseCase(BuildContext context) {
       ),
       TokenSwatch(
         name: 'state/focus-ring-brand',
-        description: 'Brand-purple ring for primary button focus',
+        description: 'Brand-cyan ring for primary button focus',
         dark: d.state.focusRingBrand,
         light: l.state.focusRingBrand,
+      ),
+      TokenSwatch(
+        name: 'state/focus-ring-destructive',
+        description: 'Destructive ring for destructive button focus',
+        dark: d.state.focusRingDestructive,
+        light: l.state.focusRingDestructive,
       ),
     ],
   );

@@ -224,3 +224,22 @@ Widget buildButtonGhostSmallUseCase(BuildContext context) => _buildSingle(
   variant: AppButtonVariant.ghost,
   size: AppButtonSize.small,
 );
+
+Widget buildButtonDestructiveLargeUseCase(BuildContext context) => _buildSingle(
+  context,
+  variant: AppButtonVariant.destructive,
+  size: AppButtonSize.large,
+);
+
+Widget buildButtonDestructiveMediumUseCase(BuildContext context) =>
+    _buildSingle(
+      context,
+      variant: AppButtonVariant.destructive,
+      size: AppButtonSize.medium,
+    );
+
+Widget buildButtonDestructiveSmallUseCase(BuildContext context) => _buildSingle(
+  context,
+  variant: AppButtonVariant.destructive,
+  size: AppButtonSize.small,
+);

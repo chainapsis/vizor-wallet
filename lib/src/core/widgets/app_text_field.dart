@@ -16,6 +16,11 @@ class AppTextField extends StatefulWidget {
     this.focusNode,
     this.initialValue,
     this.hintText,
+    this.showLabel = true,
+    this.leadingSlotWidth,
+    this.trailingSlotWidth,
+    this.inputHorizontalPadding,
+    this.inputBottomPadding,
     this.leading,
     this.trailing,
     this.messageText,
@@ -57,6 +62,11 @@ class AppTextField extends StatefulWidget {
   final FocusNode? focusNode;
   final String? initialValue;
   final String? hintText;
+  final bool showLabel;
+  final double? leadingSlotWidth;
+  final double? trailingSlotWidth;
+  final double? inputHorizontalPadding;
+  final double? inputBottomPadding;
   final Widget? leading;
   final Widget? trailing;
   final String? messageText;
@@ -248,8 +258,15 @@ class _AppTextFieldState extends State<AppTextField> {
     const shellRadius = 12.0;
     const focusRingWidth = 3.0;
     const focusRingStrokeWidth = 2.0;
-    final titleHeight = 16.0;
-    final messageTop = titleHeight + gap + shellHeight + gap;
+    final useFixedSlotLayout =
+        !_multiline &&
+        (widget.leadingSlotWidth != null ||
+            widget.trailingSlotWidth != null ||
+            widget.inputHorizontalPadding != null ||
+            widget.inputBottomPadding != null);
+    final titleHeight = widget.showLabel ? 16.0 : 0.0;
+    final titleGap = widget.showLabel ? gap : 0.0;
+    final messageTop = titleHeight + titleGap + shellHeight + gap;
     final textStrutStyle = StrutStyle.fromTextStyle(
       valueStyle,
       forceStrutHeight: true,
@@ -482,6 +499,55 @@ class _AppTextFieldState extends State<AppTextField> {
                               ),
                           ],
                         )
+                      : useFixedSlotLayout
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            if (widget.leading != null)
+                              SizedBox(
+                                width: widget.leadingSlotWidth ?? 32,
+                                height: shellHeight,
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: widget.leading,
+                                  ),
+                                ),
+                              ),
+                            Expanded(
+                              child: Padding(
+                                key: _textFieldRegionKey,
+                                padding: EdgeInsets.only(
+                                  left:
+                                      widget.inputHorizontalPadding ??
+                                      AppSpacing.s,
+                                  right:
+                                      widget.inputHorizontalPadding ??
+                                      AppSpacing.s,
+                                  bottom: widget.inputBottomPadding ?? 6,
+                                ),
+                                child: fieldInput,
+                              ),
+                            ),
+                            if (widget.trailingSlotWidth != null ||
+                                trailingWidget != null)
+                              SizedBox(
+                                width: widget.trailingSlotWidth ?? 40,
+                                height: shellHeight,
+                                child: Center(
+                                  child: trailingWidget == null
+                                      ? null
+                                      : SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: trailingWidget,
+                                        ),
+                                ),
+                              ),
+                          ],
+                        )
                       : Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: AppSpacing.sm,
@@ -529,16 +595,18 @@ class _AppTextFieldState extends State<AppTextField> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(child: Text(widget.label, style: titleStyle)),
-                if (widget.rightSlot != null) widget.rightSlot!,
-                if (widget.rightSlot == null && widget.rightLabel != null)
-                  Text(widget.rightLabel!, style: titleStyle),
-              ],
-            ),
-            SizedBox(height: gap),
+            if (widget.showLabel) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(child: Text(widget.label, style: titleStyle)),
+                  if (widget.rightSlot != null) widget.rightSlot!,
+                  if (widget.rightSlot == null && widget.rightLabel != null)
+                    Text(widget.rightLabel!, style: titleStyle),
+                ],
+              ),
+              SizedBox(height: gap),
+            ],
             shell,
           ],
         ),

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../theme/app_theme.dart';
 import 'app_icon.dart';
 import 'app_text_field.dart';
 
@@ -10,6 +11,14 @@ class PasswordTextField extends StatefulWidget {
     this.controller,
     this.focusNode,
     this.messageText,
+    this.messageIcon,
+    this.messageStyle,
+    this.hintText,
+    this.showLabel = true,
+    this.leadingSlotWidth,
+    this.trailingSlotWidth,
+    this.inputHorizontalPadding,
+    this.inputBottomPadding,
     this.tone = AppTextFieldTone.neutral,
     this.onChanged,
     this.onSubmitted,
@@ -22,6 +31,14 @@ class PasswordTextField extends StatefulWidget {
   final TextEditingController? controller;
   final FocusNode? focusNode;
   final String? messageText;
+  final Widget? messageIcon;
+  final TextStyle? messageStyle;
+  final String? hintText;
+  final bool showLabel;
+  final double? leadingSlotWidth;
+  final double? trailingSlotWidth;
+  final double? inputHorizontalPadding;
+  final double? inputBottomPadding;
   final AppTextFieldTone tone;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
@@ -49,8 +66,20 @@ class _PasswordTextFieldState extends State<PasswordTextField> {
       controller: widget.controller,
       focusNode: widget.focusNode,
       messageText: widget.messageText,
+      messageIcon: widget.messageIcon,
+      messageStyle: widget.messageStyle,
+      hintText: widget.hintText,
+      showLabel: widget.showLabel,
+      leadingSlotWidth: widget.leadingSlotWidth,
+      trailingSlotWidth: widget.trailingSlotWidth,
+      inputHorizontalPadding: widget.inputHorizontalPadding,
+      inputBottomPadding: widget.inputBottomPadding,
       tone: widget.tone,
-      leading: const AppIcon(AppIcons.lock),
+      leading: AppIcon(
+        AppIcons.lock,
+        size: 20,
+        color: context.colors.icon.accent,
+      ),
       trailing: widget.showVisibilityToggle
           ? GestureDetector(
               behavior: HitTestBehavior.opaque,

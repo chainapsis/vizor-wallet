@@ -156,6 +156,18 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Ghost / Small',
                   builder: buildButtonGhostSmallUseCase,
                 ),
+                WidgetbookUseCase(
+                  name: 'Destructive / Large',
+                  builder: buildButtonDestructiveLargeUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Destructive / Medium',
+                  builder: buildButtonDestructiveMediumUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Destructive / Small',
+                  builder: buildButtonDestructiveSmallUseCase,
+                ),
               ],
             ),
             WidgetbookComponent(

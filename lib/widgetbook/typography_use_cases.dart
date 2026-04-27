@@ -22,6 +22,11 @@ class _TypographyRow {
 
 const _displayRows = <_TypographyRow>[
   _TypographyRow(
+    name: 'displayLarge',
+    style: AppTypography.displayLarge,
+    sample: 'Welcome Back',
+  ),
+  _TypographyRow(
     name: 'displayMedium',
     style: AppTypography.displayMedium,
     sample: 'Welcome to Zeplr',
@@ -225,9 +230,7 @@ Widget _buildTypographyPage(BuildContext context, String headline) {
             'Body',
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final r in _bodyRows) _typographyRow(context, r),
-              ],
+              children: [for (final r in _bodyRows) _typographyRow(context, r)],
             ),
           ),
           _section(
@@ -245,9 +248,7 @@ Widget _buildTypographyPage(BuildContext context, String headline) {
             'Code',
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final r in _codeRows) _typographyRow(context, r),
-              ],
+              children: [for (final r in _codeRows) _typographyRow(context, r)],
             ),
           ),
         ],

@@ -11,7 +11,7 @@ import '../primitives.dart';
 /// contrast against the page, separated from the element by a 2dp gap so it
 /// reads cleanly on any surface.
 ///
-/// [focusRingBrand] is the brand-purple variant used when focusing the
+/// [focusRingBrand] is the brand-cyan variant used when focusing the
 /// primary/accent button so the ring blends with the brand color instead of
 /// contrasting with it.
 class AppStateColors {
@@ -23,6 +23,7 @@ class AppStateColors {
     required this.focusRing,
     required this.focusGap,
     required this.focusRingBrand,
+    required this.focusRingDestructive,
   });
 
   final Color hover;
@@ -32,6 +33,7 @@ class AppStateColors {
   final Color focusRing;
   final Color focusGap;
   final Color focusRingBrand;
+  final Color focusRingDestructive;
 
   static const dark = AppStateColors(
     hover: Color(0x594D5252),
@@ -40,7 +42,8 @@ class AppStateColors {
     selected: Primitives.p150Dark,
     focusRing: Primitives.p800Dark,
     focusGap: Primitives.p0Dark,
-    focusRingBrand: PurplePrimitives.p500Dark,
+    focusRingBrand: Color(0xFF3EC4CE),
+    focusRingDestructive: Color(0xFFCC88D6),
   );
 
   static const light = AppStateColors(
@@ -50,6 +53,7 @@ class AppStateColors {
     selected: Primitives.p150Light,
     focusRing: Primitives.p900Light,
     focusGap: Primitives.p0Light,
-    focusRingBrand: PurplePrimitives.p200Light,
+    focusRingBrand: Color(0xFF56BAC4),
+    focusRingDestructive: Color(0xFF93489E),
   );
 }

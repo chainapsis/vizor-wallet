@@ -2,15 +2,10 @@ import 'package:flutter/painting.dart';
 
 import '../primitives.dart';
 
-// Primary button uses the brand purple ladder (not the neutral ladder). Keep
-// this import grouped with the neutral primitives above for clarity.
-
 /// Button colors grouped by variant.
 ///
 /// Each variant owns its own sub-palette so widgets reference them as
-/// `button.primary.bg`, `button.ghost.border`, etc. The destructive variant
-/// currently shares fill/label values with primary in this monochrome spec;
-/// that is intentional in the Figma source.
+/// `button.primary.bg`, `button.ghost.bgHover`, etc.
 class AppButtonColors {
   const AppButtonColors({
     required this.primary,
@@ -48,27 +43,30 @@ class AppPrimaryButtonColors {
     required this.bg,
     required this.bgHover,
     required this.bgPressed,
+    required this.border,
     required this.label,
   });
 
   final Color bg;
   final Color bgHover;
   final Color bgPressed;
+  final Color border;
   final Color label;
 
-  // The Figma button tokens intentionally use different purple steps per mode.
   static const dark = AppPrimaryButtonColors(
-    bg: PurplePrimitives.p500Dark,
-    bgHover: PurplePrimitives.p400Dark,
-    bgPressed: PurplePrimitives.p300Dark,
-    label: PurplePrimitives.p0Dark,
+    bg: Color(0xFF0996A0),
+    bgHover: Color(0xFF3EC4CE),
+    bgPressed: Color(0xFF3EC4CE),
+    border: Color(0x33FFFFFF),
+    label: Color(0xFF041316),
   );
 
   static const light = AppPrimaryButtonColors(
-    bg: PurplePrimitives.p300Light,
-    bgHover: PurplePrimitives.p400Light,
-    bgPressed: PurplePrimitives.p500Light,
-    label: PurplePrimitives.p0Light,
+    bg: Color(0xFF0996A0),
+    bgHover: Color(0xFF0A7680),
+    bgPressed: Color(0xFF0A7680),
+    border: Color(0x26FFFFFF),
+    label: Color(0xFFE0F3F5),
   );
 }
 
@@ -86,8 +84,8 @@ class AppSecondaryButtonColors {
   final Color label;
 
   static const dark = AppSecondaryButtonColors(
-    bg: Primitives.p100Dark,
-    bgHover: Primitives.p150Dark,
+    bg: Primitives.p150Dark,
+    bgHover: Primitives.p200Dark,
     bgPressed: Primitives.p200Dark,
     label: Primitives.p800Dark,
   );
@@ -95,7 +93,7 @@ class AppSecondaryButtonColors {
   static const light = AppSecondaryButtonColors(
     bg: Primitives.p100Light,
     bgHover: Primitives.p150Light,
-    bgPressed: Primitives.p200Light,
+    bgPressed: Primitives.p150Light,
     label: Primitives.p900Light,
   );
 }
@@ -126,10 +124,7 @@ class AppGhostButtonColors {
     bg: Primitives.p0Light,
     bgHover: Primitives.p100Light,
     border: Primitives.p300Light,
-    // Softer than the max-contrast `p900Light` accent — matches the
-    // Figma ghost variant, which sits one step lighter than the primary
-    // text tone so the button reads as secondary at rest.
-    label: Primitives.p800Light,
+    label: Color(0xFF2E3232),
   );
 }
 
@@ -151,18 +146,33 @@ class AppDisabledButtonColors {
 }
 
 class AppDestructiveButtonColors {
-  const AppDestructiveButtonColors({required this.bg, required this.label});
+  const AppDestructiveButtonColors({
+    required this.bg,
+    required this.bgHover,
+    required this.bgPressed,
+    required this.border,
+    required this.label,
+  });
 
   final Color bg;
+  final Color bgHover;
+  final Color bgPressed;
+  final Color border;
   final Color label;
 
   static const dark = AppDestructiveButtonColors(
-    bg: Primitives.p800Dark,
-    label: Primitives.p0Dark,
+    bg: Color(0xFFB760C4),
+    bgHover: Color(0xFFCC88D6),
+    bgPressed: Color(0xFFCC88D6),
+    border: Color(0x33FFFFFF),
+    label: Color(0xFF150A17),
   );
 
   static const light = AppDestructiveButtonColors(
-    bg: Primitives.p900Light,
-    label: Primitives.p0Light,
+    bg: Color(0xFFB760C4),
+    bgHover: Color(0xFF93489E),
+    bgPressed: Color(0xFF93489E),
+    border: Color(0x26FFFFFF),
+    label: Color(0xFF211223),
   );
 }

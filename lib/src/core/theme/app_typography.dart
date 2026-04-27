@@ -31,6 +31,17 @@ import 'package:flutter/widgets.dart';
 abstract final class AppTypography {
   // ─── Display ──────────────────────────────────────────────────────
 
+  /// Display Large — largest onboarding/welcome headline.
+  ///
+  /// Libre Caslon Text Regular, 52 / 62.4 px, letter-spacing −2.
+  static const displayLarge = TextStyle(
+    fontFamily: 'Libre Caslon Text',
+    fontWeight: FontWeight.w400,
+    fontSize: 52,
+    height: 62.4 / 52,
+    letterSpacing: -2,
+  );
+
   /// Display Medium — hero headlines (e.g. "Welcome to Zeplr").
   ///
   /// Libre Caslon Text Regular, 45 / 52 px, letter-spacing −1.35.
