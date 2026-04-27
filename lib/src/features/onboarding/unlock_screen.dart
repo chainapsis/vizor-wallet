@@ -128,8 +128,6 @@ class _UnlockPane extends StatelessWidget {
 
   static const double _canvasWidth = 1064;
   static const double _canvasHeight = 672;
-  static const double _backdropWidth = 1064;
-  static const double _backdropHeight = 672;
 
   @override
   Widget build(BuildContext context) {
@@ -142,30 +140,29 @@ class _UnlockPane extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.small),
       ),
       clipBehavior: Clip.antiAlias,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final alignment = constraints.maxHeight < _canvasHeight
-              ? Alignment.bottomCenter
-              : Alignment.center;
-          return OverflowBox(
-            alignment: alignment,
-            minWidth: _canvasWidth,
-            maxWidth: _canvasWidth,
-            minHeight: _canvasHeight,
-            maxHeight: _canvasHeight,
-            child: SizedBox(
-              width: _canvasWidth,
-              height: _canvasHeight,
-              child: Stack(
-                children: [
-                  const Positioned(
-                    top: 0,
-                    left: 0,
-                    width: _backdropWidth,
-                    height: _backdropHeight,
-                    child: OnboardingWelcomeBackdrop(),
-                  ),
-                  Positioned.fill(
+      child: Stack(
+        children: [
+          const Positioned.fill(
+            child: OnboardingWelcomeBackdrop(
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+            ),
+          ),
+          Positioned.fill(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final alignment = constraints.maxHeight < _canvasHeight
+                    ? Alignment.bottomCenter
+                    : Alignment.center;
+                return OverflowBox(
+                  alignment: alignment,
+                  minWidth: _canvasWidth,
+                  maxWidth: _canvasWidth,
+                  minHeight: _canvasHeight,
+                  maxHeight: _canvasHeight,
+                  child: SizedBox(
+                    width: _canvasWidth,
+                    height: _canvasHeight,
                     child: Padding(
                       padding: const EdgeInsets.all(AppSpacing.md),
                       child: Column(
@@ -174,11 +171,11 @@ class _UnlockPane extends StatelessWidget {
                       ),
                     ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }

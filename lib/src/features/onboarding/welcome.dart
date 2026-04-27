@@ -66,13 +66,13 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 
 /// Opaque card that wraps the onboarding content.
 ///
-/// The Figma "Split View" composition (backdrop illustration plus the
-/// bottom-anchored UI column) is treated as ONE fixed-size design block —
-/// 1064 × 672 dp, the dimensions of Figma's welcome pane inside the
-/// 1080 × 720 window (node 215:2665). The block does not reflow or rescale
-/// when the user resizes the window: it stays at its native size and the pane
-/// re-anchors it per-frame based on the pane height so the UI column keeps the
-/// exact pixel rows the spec calls for.
+/// The backdrop illustration fills the whole pane, while the bottom-anchored
+/// UI column is treated as a fixed-size 1064 × 672 dp design block — the
+/// dimensions of Figma's welcome pane inside the 1080 × 720 window
+/// (node 215:2665). At the default window size, the backdrop and foreground
+/// design block both land on the Figma pixels. When the user grows the window,
+/// the backdrop scales to avoid empty pane bands and the foreground block stays
+/// centered so CTA positions remain stable.
 ///
 /// Alignment is height-adaptive:
 ///   * pane height >= 672 dp → `Alignment.center`. The canvas fits
@@ -84,15 +84,11 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 ///     visible and lets the backdrop's soft top fade clip off,
 ///     which is far less load-bearing than the interactive footer.
 ///
-/// Horizontal overflow always clips symmetrically (center
-/// component of both alignments), and the rounded-rect clip on the
-/// surrounding Container swallows the overflow evenly. Rationale:
-/// the backdrop PNG is a three-layer Figma composition whose soft
-/// fade edges were authored at this exact size, so stretching or
-/// re-scaling the illustration breaks its alignment with the UI
-/// column; keeping both in a single rigid canvas preserves the
-/// Figma relationship as one unit and protects the CTA positions
-/// that users interact with.
+/// Horizontal overflow always clips symmetrically (center component of both
+/// alignments), and the rounded-rect clip on the surrounding Container swallows
+/// the overflow evenly. Rationale: CTA positions are more load-bearing than
+/// the backdrop's exact pixel scale, so the content remains rigid while the
+/// background scales independently to cover larger panes.
 ///
 /// Two theme variants of the backdrop (261:6662 light / 303:1477 dark)
 /// pre-compose the masked layering on the Figma side; the Dart side
@@ -107,13 +103,11 @@ class _Pane extends StatelessWidget {
 
   final Widget child;
 
-  /// Fixed design-canvas dimensions pulled from Figma's Welcome BG frame
-  /// (node 1300:34883). The 1080 × 720 desktop window leaves a 1064 × 672
-  /// pane after the outer 8 dp gap and native titlebar safe area.
+  /// Fixed foreground design-canvas dimensions pulled from Figma's Welcome BG
+  /// frame (node 1300:34883). The 1080 × 720 desktop window leaves a
+  /// 1064 × 672 pane after the outer 8 dp gap and native titlebar safe area.
   static const double _canvasWidth = 1064;
   static const double _canvasHeight = 672;
-  static const double _backdropWidth = 1064;
-  static const double _backdropHeight = 672;
 
   @override
   Widget build(BuildContext context) {
@@ -126,59 +120,40 @@ class _Pane extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.small),
       ),
       clipBehavior: Clip.antiAlias,
-      // OverflowBox with tight canvas-sized constraints parks the
-      // design block at its native 1064 × 672 regardless of the pane's
-      // actual dimensions. The more obvious
-      // `Container.alignment: Alignment.center` can't carry this:
-      // internally it wraps in an `Align`, which loosens the child's
-      // min constraints but keeps `max` capped to the parent's
-      // incoming bounds — when the user drags the window narrower
-      // than 1064, the `SizedBox` silently shrinks to the pane width
-      // and the `Positioned` backdrop stays pinned at `left: 0` of
-      // the shrunken canvas, making the illustration drift right.
-      //
-      // Alignment is chosen per-frame by pane height:
-      //   * pane height >= _canvasHeight (672) → `Alignment.center`.
-      //     The canvas fits with symmetric `bg.ground` strips top
-      //     and bottom, reading as intentional letterboxing.
-      //   * pane height <  _canvasHeight       → `Alignment.bottomCenter`.
-      //     The canvas overflows; bottom-anchoring protects the UI
-      //     column (Footer → Buttons → Title → Logo) at the cost of
-      //     clipping the backdrop's top edge, which is just soft
-      //     atmospheric fade — much less load-bearing than the CTAs.
-      // At the boundary (pane height == canvas height) both
-      // alignments resolve to the same layout, so the flip is
-      // invisible during a live resize. Horizontal extras stay
-      // symmetric left / right in both modes; the rounded-rect clip
-      // above swallows any overflow evenly.
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final alignment = constraints.maxHeight < _canvasHeight
-              ? Alignment.bottomCenter
-              : Alignment.center;
-          return OverflowBox(
-            alignment: alignment,
-            minWidth: _canvasWidth,
-            maxWidth: _canvasWidth,
-            minHeight: _canvasHeight,
-            maxHeight: _canvasHeight,
-            child: SizedBox(
-              width: _canvasWidth,
-              height: _canvasHeight,
-              child: Stack(
-                children: [
-                  // Backdrop at the canvas origin, at its native Figma size.
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    width: _backdropWidth,
-                    height: _backdropHeight,
-                    child: const _Backdrop(),
-                  ),
-                  // UI column bottom-anchored inside the canvas with Figma's
-                  // Content Area `p-md` padding. `_Content` adds the Container
-                  // and WelcomeContent vertical padding from the design.
-                  Positioned.fill(
+      child: Stack(
+        children: [
+          const Positioned.fill(
+            child: OnboardingWelcomeBackdrop(
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+            ),
+          ),
+          // OverflowBox with tight canvas-sized constraints parks the
+          // foreground design block at its native 1064 × 672 regardless of the
+          // pane's actual dimensions. The more obvious
+          // `Container.alignment: Alignment.center` can't carry this:
+          // internally it wraps in an `Align`, which loosens the child's min
+          // constraints but keeps `max` capped to the parent's incoming bounds.
+          //
+          // Alignment is chosen per-frame by pane height:
+          //   * pane height >= _canvasHeight (672) → `Alignment.center`.
+          //   * pane height <  _canvasHeight       → `Alignment.bottomCenter`,
+          //     protecting the interactive CTA column when space is tight.
+          Positioned.fill(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final alignment = constraints.maxHeight < _canvasHeight
+                    ? Alignment.bottomCenter
+                    : Alignment.center;
+                return OverflowBox(
+                  alignment: alignment,
+                  minWidth: _canvasWidth,
+                  maxWidth: _canvasWidth,
+                  minHeight: _canvasHeight,
+                  maxHeight: _canvasHeight,
+                  child: SizedBox(
+                    width: _canvasWidth,
+                    height: _canvasHeight,
                     child: Padding(
                       padding: const EdgeInsets.all(AppSpacing.md),
                       child: Column(
@@ -187,23 +162,14 @@ class _Pane extends StatelessWidget {
                       ),
                     ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
-}
-
-/// Theme-swapped Figma-composited backdrop. Separated from [_Pane] so
-/// the asset-selection branch doesn't complicate the layout.
-class _Backdrop extends StatelessWidget {
-  const _Backdrop();
-
-  @override
-  Widget build(BuildContext context) => const OnboardingWelcomeBackdrop();
 }
 
 /// Vizor logo + title block + buttons + legal footer, bottom-anchored.

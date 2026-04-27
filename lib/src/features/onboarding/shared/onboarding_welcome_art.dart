@@ -4,7 +4,14 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../../core/theme/app_theme.dart';
 
 class OnboardingWelcomeBackdrop extends StatelessWidget {
-  const OnboardingWelcomeBackdrop({super.key});
+  const OnboardingWelcomeBackdrop({
+    super.key,
+    this.fit = BoxFit.fill,
+    this.alignment = Alignment.center,
+  });
+
+  final BoxFit fit;
+  final AlignmentGeometry alignment;
 
   @override
   Widget build(BuildContext context) {
@@ -12,7 +19,7 @@ class OnboardingWelcomeBackdrop extends StatelessWidget {
     final asset = isDark
         ? 'assets/illustrations/welcome_bg_dark.png'
         : 'assets/illustrations/welcome_bg_light.png';
-    return Image.asset(asset, fit: BoxFit.fill);
+    return Image.asset(asset, fit: fit, alignment: alignment);
   }
 }
 
