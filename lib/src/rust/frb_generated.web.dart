@@ -129,6 +129,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ShieldTransparentResult dco_decode_shield_transparent_result(dynamic raw);
 
   @protected
+  ShieldTransparentStatus dco_decode_shield_transparent_status(dynamic raw);
+
+  @protected
   SubtreeIndices dco_decode_subtree_indices(dynamic raw);
 
   @protected
@@ -295,6 +298,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ShieldTransparentResult sse_decode_shield_transparent_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ShieldTransparentStatus sse_decode_shield_transparent_status(
     SseDeserializer deserializer,
   );
 
@@ -503,6 +511,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_shield_transparent_result(
     ShieldTransparentResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_shield_transparent_status(
+    ShieldTransparentStatus self,
     SseSerializer serializer,
   );
 

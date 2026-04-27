@@ -58,6 +58,9 @@ class AppSyncSnapshot {
     required this.transparentPendingBalance,
     required this.saplingPendingBalance,
     required this.orchardPendingBalance,
+    required this.canShieldTransparentBalance,
+    required this.shieldTransparentFee,
+    required this.shieldTransparentAmount,
     required this.spendableBalance,
     required this.totalBalance,
     required this.recentTransactions,
@@ -72,6 +75,9 @@ class AppSyncSnapshot {
   final BigInt transparentPendingBalance;
   final BigInt saplingPendingBalance;
   final BigInt orchardPendingBalance;
+  final bool canShieldTransparentBalance;
+  final BigInt shieldTransparentFee;
+  final BigInt shieldTransparentAmount;
   final BigInt spendableBalance;
   final BigInt totalBalance;
   final List<rust_sync.TransactionInfo> recentTransactions;
@@ -86,6 +92,9 @@ class AppSyncSnapshot {
     transparentPendingBalance: BigInt.zero,
     saplingPendingBalance: BigInt.zero,
     orchardPendingBalance: BigInt.zero,
+    canShieldTransparentBalance: false,
+    shieldTransparentFee: BigInt.zero,
+    shieldTransparentAmount: BigInt.zero,
     spendableBalance: BigInt.zero,
     totalBalance: BigInt.zero,
     recentTransactions: [],
@@ -149,6 +158,9 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         dbPath: dbPath,
         network: network,
         accountUuid: activeAccountUuid,
+        isHardwareAccount: accounts.any(
+          (account) => account.uuid == activeAccountUuid && account.isHardware,
+        ),
       );
     }
 
@@ -211,6 +223,7 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required bool isHardwareAccount,
 }) async {
   try {
     final syncStatus = await rust_sync.getSyncStatus(
@@ -228,6 +241,23 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
       limit: 10,
       accountUuid: accountUuid,
     );
+    var canShieldTransparentBalance = false;
+    var shieldTransparentFee = BigInt.zero;
+    var shieldTransparentAmount = BigInt.zero;
+    if (!isHardwareAccount && balance.transparent > BigInt.zero) {
+      try {
+        final shieldStatus = await rust_sync.getShieldTransparentStatus(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+        );
+        canShieldTransparentBalance = shieldStatus.canShield;
+        shieldTransparentFee = shieldStatus.feeZatoshi;
+        shieldTransparentAmount = shieldStatus.shieldedZatoshi;
+      } catch (e) {
+        log('bootstrap: failed to load shield transparent status: $e');
+      }
+    }
     final scannedHeight = syncStatus.scannedHeight.toInt();
     final chainTipHeight = syncStatus.chainTipHeight.toInt();
     final percentage = chainTipHeight == 0
@@ -249,6 +279,9 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
       transparentPendingBalance: balance.transparentPending,
       saplingPendingBalance: balance.saplingPending,
       orchardPendingBalance: balance.orchardPending,
+      canShieldTransparentBalance: canShieldTransparentBalance,
+      shieldTransparentFee: shieldTransparentFee,
+      shieldTransparentAmount: shieldTransparentAmount,
       spendableBalance: balance.spendable,
       totalBalance: balance.total,
       recentTransactions: recentTransactions,
