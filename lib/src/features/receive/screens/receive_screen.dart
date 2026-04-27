@@ -417,43 +417,77 @@ class _ReceiveMainContent extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final metrics = _ReceiveQrMetrics.fromConstraints(constraints);
+        final contentWidth = math.max(256.0, metrics.blockWidth);
+        final contentHeight =
+            _ReceiveQrMetrics.fixedBeforeQrForLayout + metrics.blockHeight;
 
         return Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Receive ZEC',
-                style: AppTypography.displaySmall.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _ReceiveTabs(
-                selectedType: selectedType,
-                onChanged: onTypeChanged,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 160),
-                child: isLoading
-                    ? SizedBox(
-                        key: const ValueKey('loading'),
-                        width: metrics.blockWidth,
-                        height: metrics.blockHeight,
-                        child: const Center(child: CircularProgressIndicator()),
-                      )
-                    : _ReceiveQrBlock(
-                        key: ValueKey(selectedType),
-                        type: selectedType,
-                        address: address,
-                        renewing: isRenewingShielded,
-                        metrics: metrics,
-                        onRenew: onRenewShielded,
-                        onShowHelp: onShowHelp,
+          child: SizedBox(
+            width: contentWidth,
+            height: contentHeight,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.topCenter,
+              children: [
+                if (selectedType == _ReceiveAddressType.shielded)
+                  Positioned(
+                    left:
+                        (contentWidth - metrics.blockWidth) / 2 +
+                        (metrics.blockWidth - metrics.qrFrameWidth) / 2 +
+                        metrics.shieldBgLeft,
+                    top:
+                        _ReceiveQrMetrics.fixedBeforeQrForLayout +
+                        metrics.shieldBgTop,
+                    width: metrics.shieldBgWidth,
+                    height: metrics.shieldBgHeight,
+                    child: IgnorePointer(
+                      child: _ShieldQrBackground(
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF2D3232)
+                            : const Color(0xFFEBEBEB),
                       ),
-              ),
-            ],
+                    ),
+                  ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Receive ZEC',
+                      style: AppTypography.displaySmall.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _ReceiveTabs(
+                      selectedType: selectedType,
+                      onChanged: onTypeChanged,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 160),
+                      child: isLoading
+                          ? SizedBox(
+                              key: const ValueKey('loading'),
+                              width: metrics.blockWidth,
+                              height: metrics.blockHeight,
+                              child: const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                            )
+                          : _ReceiveQrBlock(
+                              key: ValueKey(selectedType),
+                              type: selectedType,
+                              address: address,
+                              renewing: isRenewingShielded,
+                              metrics: metrics,
+                              onRenew: onRenewShielded,
+                              onShowHelp: onShowHelp,
+                            ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -501,6 +535,8 @@ class _ReceiveQrMetrics {
   static const _baseShieldBgCenterYOffset = 40.5;
   static const _minBalancedInset = AppSpacing.md;
   static const _minQrSurfaceSize = 112.0;
+
+  static double get fixedBeforeQrForLayout => _fixedBeforeQr;
 
   final double blockWidth;
   final double blockHeight;
@@ -786,20 +822,6 @@ class _ReceiveQrBlock extends StatelessWidget {
               clipBehavior: Clip.none,
               alignment: Alignment.topCenter,
               children: [
-                if (_isShielded)
-                  Positioned(
-                    left: metrics.shieldBgLeft,
-                    top: metrics.shieldBgTop,
-                    width: metrics.shieldBgWidth,
-                    height: metrics.shieldBgHeight,
-                    child: IgnorePointer(
-                      child: _ShieldQrBackground(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xFF2D3232)
-                            : const Color(0xFFEBEBEB),
-                      ),
-                    ),
-                  ),
                 Positioned(
                   top: metrics.qrTop,
                   child: _QrSurface(
