@@ -85,6 +85,10 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
       final onReset = widget.onReset;
       if (onReset != null) {
         await onReset();
+        if (!mounted) return;
+        setState(() {
+          _isResetting = false;
+        });
       } else {
         await _resetWallet();
         if (!mounted) return;
