@@ -12,7 +12,6 @@ import '../../core/widgets/app_decorative_divider.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/sync_provider.dart';
-import '../../rust/api/sync.dart' as rust_sync;
 import 'shared/onboarding_welcome_art.dart';
 
 class LostPasswordScreen extends ConsumerStatefulWidget {
@@ -104,13 +103,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
     final syncNotifier = ref.read(syncProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
 
-    syncNotifier.stopSync();
-    var waited = 0;
-    while (rust_sync.isSyncRunning() && waited < 5000) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      waited += 100;
-    }
-
+    await syncNotifier.clearSensitiveStateForLock();
     await accountNotifier.resetWallet();
   }
 
