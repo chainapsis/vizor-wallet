@@ -80,7 +80,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
       if (!mounted) return;
       setState(() {
         _isSubmitting = false;
-        _errorText = e.toString();
+        _errorText = "Couldn't open your wallet. Please try again.";
       });
       return;
     }

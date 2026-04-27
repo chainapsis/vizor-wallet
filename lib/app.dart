@@ -79,6 +79,8 @@ final _routerProvider = Provider<GoRouter>((ref) {
       if (!hasWallet && state.matchedLocation == '/add-account') {
         return '/welcome';
       }
+      // `/lost-password` is intentionally part of the unlock flow: a locked
+      // wallet must be able to reach its local reset path from `/unlock`.
       if (requiresUnlock && !isUnlockFlow) return '/unlock';
       if (!requiresUnlock && isUnlockFlow) {
         return hasWallet ? '/home' : '/welcome';

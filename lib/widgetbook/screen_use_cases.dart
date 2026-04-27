@@ -136,6 +136,11 @@ class _UnlockHarnessState extends State<_UnlockHarness> {
           path: '/home',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/home'),
         ),
+        GoRoute(
+          path: '/lost-password',
+          builder: (_, _) =>
+              const _PreviewRoutePlaceholder(label: '/lost-password'),
+        ),
       ],
     );
   }

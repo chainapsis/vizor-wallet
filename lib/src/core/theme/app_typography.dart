@@ -42,7 +42,7 @@ abstract final class AppTypography {
     letterSpacing: -2,
   );
 
-  /// Display Medium — hero headlines (e.g. "Welcome to Zeplr").
+  /// Display Medium — hero headlines (e.g. "Welcome to Vizor").
   ///
   /// Libre Caslon Text Regular, 45 / 52 px, letter-spacing −1.35.
   static const displayMedium = TextStyle(
