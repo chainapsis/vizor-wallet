@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show exit;
 
 import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
@@ -89,6 +88,8 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
         await onReset();
       } else {
         await _resetWallet();
+        if (!mounted) return;
+        context.go('/welcome');
       }
     } catch (e, st) {
       log('LostPasswordScreen._handleReset: ERROR: $e\n$st');
@@ -111,7 +112,6 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
     }
 
     await accountNotifier.resetWallet();
-    exit(0);
   }
 
   @override
