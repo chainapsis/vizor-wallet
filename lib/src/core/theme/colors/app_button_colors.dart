@@ -54,19 +54,19 @@ class AppPrimaryButtonColors {
   final Color label;
 
   static const dark = AppPrimaryButtonColors(
-    bg: Color(0xFF0996A0),
-    bgHover: Color(0xFF3EC4CE),
-    bgPressed: Color(0xFF3EC4CE),
-    border: Color(0x33FFFFFF),
-    label: Color(0xFF041316),
+    bg: CrimsonPrimitives.p300Dark,
+    bgHover: CrimsonPrimitives.p200Dark,
+    bgPressed: CrimsonPrimitives.p200Dark,
+    border: Primitives.p900Alpha20Dark,
+    label: GoldPrimitives.p800Dark,
   );
 
   static const light = AppPrimaryButtonColors(
-    bg: Color(0xFF0996A0),
-    bgHover: Color(0xFF0A7680),
-    bgPressed: Color(0xFF0A7680),
-    border: Color(0x26FFFFFF),
-    label: Color(0xFFE0F3F5),
+    bg: CrimsonPrimitives.p400Light,
+    bgHover: CrimsonPrimitives.p500Light,
+    bgPressed: CrimsonPrimitives.p500Light,
+    border: Primitives.p0Alpha15Light,
+    label: GoldPrimitives.p100Light,
   );
 }
 
@@ -124,7 +124,7 @@ class AppGhostButtonColors {
     bg: Primitives.p0Light,
     bgHover: Primitives.p100Light,
     border: Primitives.p300Light,
-    label: Color(0xFF2E3232),
+    label: Primitives.p800Light,
   );
 }
 
@@ -161,18 +161,18 @@ class AppDestructiveButtonColors {
   final Color label;
 
   static const dark = AppDestructiveButtonColors(
-    bg: Color(0xFFB760C4),
-    bgHover: Color(0xFFCC88D6),
-    bgPressed: Color(0xFFCC88D6),
-    border: Color(0x33FFFFFF),
-    label: Color(0xFF150A17),
+    bg: PlumPrimitives.p400Dark,
+    bgHover: PlumPrimitives.p300Dark,
+    bgPressed: PlumPrimitives.p300Dark,
+    border: Primitives.p900Alpha20Dark,
+    label: PlumPrimitives.p50Dark,
   );
 
   static const light = AppDestructiveButtonColors(
-    bg: Color(0xFFB760C4),
-    bgHover: Color(0xFF93489E),
-    bgPressed: Color(0xFF93489E),
-    border: Color(0x26FFFFFF),
-    label: Color(0xFF211223),
+    bg: PlumPrimitives.p300Light,
+    bgHover: PlumPrimitives.p400Light,
+    bgPressed: PlumPrimitives.p400Light,
+    border: Primitives.p0Alpha15Light,
+    label: PlumPrimitives.p800Light,
   );
 }
