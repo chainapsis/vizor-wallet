@@ -55,6 +55,9 @@ class AppSyncSnapshot {
     required this.transparentBalance,
     required this.saplingBalance,
     required this.orchardBalance,
+    required this.transparentPendingBalance,
+    required this.saplingPendingBalance,
+    required this.orchardPendingBalance,
     required this.spendableBalance,
     required this.totalBalance,
     required this.recentTransactions,
@@ -66,6 +69,9 @@ class AppSyncSnapshot {
   final BigInt transparentBalance;
   final BigInt saplingBalance;
   final BigInt orchardBalance;
+  final BigInt transparentPendingBalance;
+  final BigInt saplingPendingBalance;
+  final BigInt orchardPendingBalance;
   final BigInt spendableBalance;
   final BigInt totalBalance;
   final List<rust_sync.TransactionInfo> recentTransactions;
@@ -77,6 +83,9 @@ class AppSyncSnapshot {
     transparentBalance: BigInt.zero,
     saplingBalance: BigInt.zero,
     orchardBalance: BigInt.zero,
+    transparentPendingBalance: BigInt.zero,
+    saplingPendingBalance: BigInt.zero,
+    orchardPendingBalance: BigInt.zero,
     spendableBalance: BigInt.zero,
     totalBalance: BigInt.zero,
     recentTransactions: [],
@@ -237,6 +246,9 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
       transparentBalance: balance.transparent,
       saplingBalance: balance.sapling,
       orchardBalance: balance.orchard,
+      transparentPendingBalance: balance.transparentPending,
+      saplingPendingBalance: balance.saplingPending,
+      orchardPendingBalance: balance.orchardPending,
       spendableBalance: balance.spendable,
       totalBalance: balance.total,
       recentTransactions: recentTransactions,
