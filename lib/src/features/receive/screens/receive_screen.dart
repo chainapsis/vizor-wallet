@@ -14,13 +14,11 @@ import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/receive_address_provider.dart';
 import '../../../providers/wallet_provider.dart';
-import '../../../rust/api/sync.dart' as rust_sync;
-import '../../../rust/api/wallet.dart' as rust_wallet;
 
 enum _ReceiveAddressType { shielded, transparent }
 
@@ -72,19 +70,19 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     });
 
     try {
-      final dbPath = await getWalletDbPath();
-      final transparentAddress = await rust_wallet.getTransparentAddress(
-        dbPath: dbPath,
-        network: 'main',
-        accountUuid: accountUuid,
-      );
+      final addresses = await ref
+          .read(receiveAddressServiceProvider)
+          .loadAddresses(
+            accountUuid: accountUuid,
+            currentShieldedAddress: walletAddress,
+          );
       if (!mounted) return;
       if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
         return;
       }
       setState(() {
-        _shieldedAddress = walletAddress ?? _shieldedAddress ?? '';
-        _transparentAddress = transparentAddress;
+        _shieldedAddress = addresses.shieldedAddress;
+        _transparentAddress = addresses.transparentAddress;
         _isLoading = false;
       });
     } catch (e) {
@@ -110,12 +108,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     });
 
     try {
-      final dbPath = await getWalletDbPath();
-      final newAddress = await rust_sync.getNextAvailableAddress(
-        dbPath: dbPath,
-        network: 'main',
-        accountUuid: accountUuid,
-      );
+      final newAddress = await ref
+          .read(receiveAddressServiceProvider)
+          .renewShieldedAddress(accountUuid: accountUuid);
       if (!mounted) return;
       if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
         setState(() => _isRenewingShielded = false);

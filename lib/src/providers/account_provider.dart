@@ -350,6 +350,14 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     );
   }
 
+  void updateActiveAddressForAccount(String accountUuid, String address) {
+    final prev = state.value ?? const AccountState();
+    if (prev.activeAccountUuid != accountUuid) return;
+
+    state = AsyncData(prev.copyWith(activeAddress: address));
+    log('AccountNotifier: active address updated for $accountUuid');
+  }
+
   /// Import a hardware wallet account using UFVK from Keystone.
   ///
   /// Hardware accounts cannot be the first account in a wallet. librustzcash
