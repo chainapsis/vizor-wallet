@@ -6,17 +6,13 @@ import 'package:go_router/go_router.dart';
 import '../../core/layout/app_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_decorative_divider.dart';
 import '../../core/widgets/app_icon.dart';
 import 'shared/onboarding_welcome_art.dart';
 
-/// Welcome-specific button minimum width. Matches the 196 dp the Figma
-/// component uses for the two CTAs (node 215:2829 / 215:2830). Modeled
-/// as a minimum, not a fixed width, because "fixed width" is a
-/// designer-side convenience: the real requirement is that both
-/// buttons share a visually consistent size, and `minWidth` lets
-/// Column pick whichever of the two wants more room without
-/// short-circuiting hit-test behavior on smaller locales.
-const double _welcomeButtonMinWidth = 196;
+/// Welcome-specific button width. The redesigned Figma CTA stack is 256 dp
+/// wide (node 1136:17519), with the decorative divider using the same width.
+const double _welcomeActionWidth = 256;
 
 /// Onboarding entry point — the Figma "Split View" at node 215:2688
 /// (light) / 215:2888 (dark).
@@ -221,7 +217,8 @@ class _Backdrop extends StatelessWidget {
   Widget build(BuildContext context) => const OnboardingWelcomeBackdrop();
 }
 
-/// Vizor logo + title block + buttons + legal footer, bottom-anchored.
+/// Vizor logo + title block + divider + buttons + legal footer,
+/// bottom-anchored.
 ///
 /// Figma's `_Welcome Content` wraps these children in 24 dp vertical
 /// padding (`py-md`) on top of the outer pane's `p-md`, so the footer
@@ -237,6 +234,27 @@ class _Content extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const _TitleBlock(),
+        const SizedBox(height: AppSpacing.lg),
+        const AppDecorativeDivider(width: _welcomeActionWidth),
+        const SizedBox(height: AppSpacing.lg),
+        const _ButtonsStack(),
+        const SizedBox(height: AppSpacing.lg),
+        const _LegalFooter(),
+        const SizedBox(height: AppSpacing.md),
+      ],
+    );
+  }
+}
+
+class _TitleBlock extends StatelessWidget {
+  const _TitleBlock();
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.colors;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -245,16 +263,9 @@ class _Content extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         Text(
           'Private Money.\nFor the New Internet',
-          style: AppTypography.displayMedium.copyWith(
-            color: colors.text.accent,
-          ),
+          style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: AppSpacing.md),
-        const _ButtonsStack(),
-        const SizedBox(height: AppSpacing.md),
-        const _LegalFooter(),
-        const SizedBox(height: AppSpacing.md),
       ],
     );
   }
@@ -293,17 +304,17 @@ class _ButtonsStack extends StatelessWidget {
         AppButton(
           onPressed: () => context.go('/onboarding/intro'),
           variant: AppButtonVariant.primary,
-          minWidth: _welcomeButtonMinWidth,
+          minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.addNew),
-          child: const Text('Create new wallet'),
+          child: const Text('Create a new wallet'),
         ),
-        const SizedBox(height: AppSpacing.xs),
+        const SizedBox(height: AppSpacing.s),
         AppButton(
           onPressed: () => context.go('/import'),
           variant: AppButtonVariant.secondary,
-          minWidth: _welcomeButtonMinWidth,
+          minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.importWallet),
-          child: const Text('Import existing wallet'),
+          child: const Text('Import a wallet'),
         ),
       ],
     );
@@ -335,7 +346,7 @@ class _LegalFooter extends StatelessWidget {
     return Text.rich(
       TextSpan(
         children: [
-          const TextSpan(text: 'By using Zeplr you agree to our '),
+          const TextSpan(text: 'By using Vizor you agree to our '),
           TextSpan(text: 'Terms', style: linkStyle),
           const TextSpan(text: ' and '),
           TextSpan(text: 'Privacy', style: linkStyle),
