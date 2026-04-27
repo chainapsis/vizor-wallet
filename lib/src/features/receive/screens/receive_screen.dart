@@ -7,6 +7,7 @@ import 'package:flutter/material.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -469,6 +470,10 @@ class _ReceiveQrMetrics {
     required this.qrSurfaceSize,
     required this.qrTop,
     required this.addressGap,
+    required this.shieldBgLeft,
+    required this.shieldBgTop,
+    required this.shieldBgWidth,
+    required this.shieldBgHeight,
     required this.renewTop,
     required this.renewSize,
     required this.overlaySize,
@@ -487,8 +492,15 @@ class _ReceiveQrMetrics {
   static const _addressLineHeight = 24.0;
   static const _baseRenewTop = 194.533203125;
   static const _baseRenewSize = 40.0;
+  static const _baseRenewGap = _baseRenewTop - _baseQrTop - _baseQrSurfaceSize;
+  static const _baseRenewBottomGap =
+      _baseQrFrameHeight - _baseRenewTop - _baseRenewSize;
   static const _baseOverlaySize = 36.0;
   static const _baseQrPadding = AppSpacing.xxs;
+  static const _baseShieldBgLeft = -220.732421875;
+  static const _baseShieldBgTop = -196.7333984375;
+  static const _baseShieldBgWidth = 636.0;
+  static const _baseShieldBgHeight = 555.0;
   static const _minBalancedInset = AppSpacing.md;
   static const _minQrSurfaceSize = 112.0;
 
@@ -499,6 +511,10 @@ class _ReceiveQrMetrics {
   final double qrSurfaceSize;
   final double qrTop;
   final double addressGap;
+  final double shieldBgLeft;
+  final double shieldBgTop;
+  final double shieldBgWidth;
+  final double shieldBgHeight;
   final double renewTop;
   final double renewSize;
   final double overlaySize;
@@ -512,38 +528,49 @@ class _ReceiveQrMetrics {
         ? constraints.maxWidth
         : 752.0;
 
-    final preferredBlockHeight =
-        _baseBlockHeight + math.max(0, maxContentHeight - _baseContentHeight);
     final maxBlockHeightByHeight = math.max(
       _minQrSurfaceSize,
       maxContentHeight - _fixedBeforeQr - _minBalancedInset * 2,
     );
 
-    final frameToSurface = _baseQrFrameHeight / _baseQrSurfaceSize;
+    const frameToSurface =
+        (_baseQrTop +
+            _baseQrSurfaceSize +
+            _baseRenewGap +
+            _baseRenewBottomGap) /
+        _baseQrSurfaceSize;
+    final preferredBlockHeight =
+        _baseBlockHeight + math.max(0, maxContentHeight - _baseContentHeight);
+    final preferredSurface =
+        (preferredBlockHeight -
+            _baseRenewSize -
+            _baseAddressGap -
+            _addressLineHeight) /
+        frameToSurface;
+    final maxSurfaceByHeight =
+        (maxBlockHeightByHeight -
+            _baseRenewSize -
+            _baseAddressGap -
+            _addressLineHeight) /
+        frameToSurface;
     final blockWidthToSurface = _baseBlockWidth / _baseQrSurfaceSize;
     final maxSurfaceByWidth = maxContentWidth / blockWidthToSurface;
-    final maxBlockHeightByWidth =
-        maxSurfaceByWidth * frameToSurface +
-        _baseAddressGap +
-        _addressLineHeight;
 
-    final blockHeight = math.max(
-      _minQrSurfaceSize,
-      math.min(
-        preferredBlockHeight,
-        math.min(maxBlockHeightByHeight, maxBlockHeightByWidth),
-      ),
-    );
-    final qrFrameHeight = math.max(
-      _minQrSurfaceSize,
-      blockHeight - _baseAddressGap - _addressLineHeight,
-    );
     final qrSurfaceSize = math.max(
       _minQrSurfaceSize,
-      qrFrameHeight / frameToSurface,
+      math.min(
+        preferredSurface,
+        math.min(maxSurfaceByHeight, maxSurfaceByWidth),
+      ),
     );
     final scale = qrSurfaceSize / _baseQrSurfaceSize;
     final qrFrameWidth = _baseQrFrameWidth * scale;
+    final qrFrameHeight =
+        _baseQrTop * scale +
+        qrSurfaceSize +
+        _baseRenewGap * scale +
+        _baseRenewSize +
+        _baseRenewBottomGap * scale;
     final computedBlockWidth = _baseBlockWidth * scale;
 
     return _ReceiveQrMetrics(
@@ -554,8 +581,12 @@ class _ReceiveQrMetrics {
       qrSurfaceSize: qrSurfaceSize,
       qrTop: _baseQrTop * scale,
       addressGap: _baseAddressGap,
+      shieldBgLeft: _baseShieldBgLeft * scale,
+      shieldBgTop: _baseShieldBgTop * scale,
+      shieldBgWidth: _baseShieldBgWidth * scale,
+      shieldBgHeight: _baseShieldBgHeight * scale,
       renewTop: _baseRenewTop * scale,
-      renewSize: _baseRenewSize * scale,
+      renewSize: _baseRenewSize,
       overlaySize: _baseOverlaySize * scale,
       qrPadding: math.max(_baseQrPadding, _baseQrPadding * scale),
     );
@@ -761,13 +792,16 @@ class _ReceiveQrBlock extends StatelessWidget {
               alignment: Alignment.topCenter,
               children: [
                 if (_isShielded)
-                  Positioned.fill(
-                    top: -6 * (metrics.qrSurfaceSize / 162.53372192382812),
+                  Positioned(
+                    left: metrics.shieldBgLeft,
+                    top: metrics.shieldBgTop,
+                    width: metrics.shieldBgWidth,
+                    height: metrics.shieldBgHeight,
                     child: IgnorePointer(
-                      child: CustomPaint(
-                        painter: _ShieldQrBackgroundPainter(
-                          color: _brandTeal(context).withValues(alpha: 0.16),
-                        ),
+                      child: _ShieldQrBackground(
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF2D3232)
+                            : const Color(0xFFEBEBEB),
                       ),
                     ),
                   ),
@@ -1481,32 +1515,19 @@ class _DialogCloseButtonState extends State<_DialogCloseButton> {
   }
 }
 
-class _ShieldQrBackgroundPainter extends CustomPainter {
-  const _ShieldQrBackgroundPainter({required this.color});
+class _ShieldQrBackground extends StatelessWidget {
+  const _ShieldQrBackground({required this.color});
 
   final Color color;
 
   @override
-  void paint(ui.Canvas canvas, ui.Size size) {
-    final center = ui.Offset(size.width / 2, size.height * 0.58);
-    final paint = ui.Paint()
-      ..color = color
-      ..style = ui.PaintingStyle.stroke
-      ..strokeWidth = 1.1;
-
-    for (var i = 0; i < 18; i++) {
-      final width = 80.0 + i * 22;
-      final height = 42.0 + i * 14;
-      canvas.drawOval(
-        ui.Rect.fromCenter(center: center, width: width, height: height),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _ShieldQrBackgroundPainter oldDelegate) {
-    return oldDelegate.color != color;
+  Widget build(BuildContext context) {
+    return SvgPicture.asset(
+      'assets/illustrations/receive_shield_qr_bg.svg',
+      fit: BoxFit.fill,
+      excludeFromSemantics: true,
+      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
+    );
   }
 }
 
