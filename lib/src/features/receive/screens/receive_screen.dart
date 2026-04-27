@@ -35,7 +35,10 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   String? _transparentAddress;
   String? _activeAccountUuid;
   String? _errorText;
+  String? _transparentErrorText;
+  String? _transparentLoadingAccountUuid;
   bool _isLoading = true;
+  bool _isLoadingTransparent = false;
   bool _isRenewingShielded = false;
 
   @override
@@ -60,29 +63,39 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       return;
     }
 
+    final service = ref.read(receiveAddressServiceProvider);
+    final cachedTransparentAddress = service.getCachedTransparentAddress(
+      accountUuid,
+    );
+
     setState(() {
       _isLoading = true;
       _errorText = null;
+      _transparentErrorText = null;
       _activeAccountUuid = accountUuid;
       _isRenewingShielded = false;
+      _isLoadingTransparent = false;
+      _transparentLoadingAccountUuid = null;
       _shieldedAddress = walletAddress;
-      _transparentAddress = null;
+      _transparentAddress = cachedTransparentAddress;
     });
 
+    if (_selectedType == _ReceiveAddressType.transparent &&
+        cachedTransparentAddress == null) {
+      unawaited(_loadTransparentAddress(accountUuid: accountUuid));
+    }
+
     try {
-      final addresses = await ref
-          .read(receiveAddressServiceProvider)
-          .loadAddresses(
-            accountUuid: accountUuid,
-            currentShieldedAddress: walletAddress,
-          );
+      final shieldedAddress = await service.loadShieldedAddress(
+        accountUuid: accountUuid,
+        currentShieldedAddress: walletAddress,
+      );
       if (!mounted) return;
       if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
         return;
       }
       setState(() {
-        _shieldedAddress = addresses.shieldedAddress;
-        _transparentAddress = addresses.transparentAddress;
+        _shieldedAddress = shieldedAddress;
         _isLoading = false;
       });
     } catch (e) {
@@ -92,6 +105,70 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         _shieldedAddress ??= walletAddress;
         _isLoading = false;
         _errorText = e.toString();
+      });
+    }
+  }
+
+  Future<void> _loadTransparentAddress({String? accountUuid}) async {
+    final targetAccountUuid =
+        accountUuid ?? ref.read(accountProvider).value?.activeAccountUuid;
+    if (targetAccountUuid == null) return;
+
+    final service = ref.read(receiveAddressServiceProvider);
+    final cachedAddress = service.getCachedTransparentAddress(
+      targetAccountUuid,
+    );
+    if (cachedAddress != null) {
+      if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid !=
+          targetAccountUuid) {
+        return;
+      }
+      setState(() {
+        _transparentAddress = cachedAddress;
+        _transparentErrorText = null;
+        _isLoadingTransparent = false;
+        _transparentLoadingAccountUuid = null;
+      });
+      return;
+    }
+
+    if (_isLoadingTransparent &&
+        _transparentLoadingAccountUuid == targetAccountUuid) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingTransparent = true;
+      _transparentLoadingAccountUuid = targetAccountUuid;
+      _transparentErrorText = null;
+    });
+
+    try {
+      final address = await service.loadTransparentAddress(
+        accountUuid: targetAccountUuid,
+      );
+      if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid !=
+          targetAccountUuid) {
+        return;
+      }
+      setState(() {
+        _transparentAddress = address;
+        _isLoadingTransparent = false;
+        _transparentLoadingAccountUuid = null;
+      });
+    } catch (e) {
+      log('Receive: ERROR loading transparent address: $e');
+      if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid !=
+          targetAccountUuid) {
+        return;
+      }
+      setState(() {
+        _isLoadingTransparent = false;
+        _transparentLoadingAccountUuid = null;
+        _transparentErrorText = e.toString();
       });
     }
   }
@@ -143,6 +220,15 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     ).showSnackBar(const SnackBar(content: Text('Address copied')));
   }
 
+  void _selectAddressType(_ReceiveAddressType type) {
+    if (_selectedType == type) return;
+
+    setState(() => _selectedType = type);
+    if (type == _ReceiveAddressType.transparent) {
+      unawaited(_loadTransparentAddress());
+    }
+  }
+
   String get _selectedAddress {
     return switch (_selectedType) {
       _ReceiveAddressType.shielded => _shieldedAddress ?? '',
@@ -161,6 +247,10 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
 
     final address = _selectedAddress;
     final isShielded = _selectedType == _ReceiveAddressType.shielded;
+    final isLoadingSelectedAddress = isShielded
+        ? _isLoading
+        : _isLoadingTransparent;
+    final selectedErrorText = isShielded ? _errorText : _transparentErrorText;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -169,8 +259,8 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         child: _ReceivePane(
           selectedType: _selectedType,
           address: address,
-          errorText: _errorText,
-          isLoading: _isLoading,
+          errorText: selectedErrorText,
+          isLoading: isLoadingSelectedAddress,
           isRenewingShielded: _isRenewingShielded,
           onBack: () {
             if (context.canPop()) {
@@ -179,7 +269,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
               context.go('/home');
             }
           },
-          onTypeChanged: (type) => setState(() => _selectedType = type),
+          onTypeChanged: _selectAddressType,
           onRenewShielded: isShielded ? _renewShieldedAddress : null,
           onCopy: _copySelectedAddress,
           onShowHelp: () => _showAddressInfo(context, _selectedType),

@@ -13,16 +13,6 @@ final receiveAddressServiceProvider = Provider<ReceiveAddressService>((ref) {
   return ReceiveAddressService(ref);
 });
 
-class ReceiveAddresses {
-  const ReceiveAddresses({
-    required this.shieldedAddress,
-    required this.transparentAddress,
-  });
-
-  final String shieldedAddress;
-  final String transparentAddress;
-}
-
 class ReceiveAddressBusyException implements Exception {
   const ReceiveAddressBusyException(this.cause);
 
@@ -44,27 +34,40 @@ class ReceiveAddressService {
   ];
 
   final Ref _ref;
+  final Map<String, String> _transparentAddressCache = {};
 
-  Future<ReceiveAddresses> loadAddresses({
+  Future<String> loadShieldedAddress({
     required String accountUuid,
     String? currentShieldedAddress,
   }) async {
+    if (currentShieldedAddress != null && currentShieldedAddress.isNotEmpty) {
+      return currentShieldedAddress;
+    }
+
     final dbPath = await getWalletDbPath();
     final network = _network;
 
-    final String shieldedAddress;
-    if (currentShieldedAddress != null) {
-      shieldedAddress = currentShieldedAddress;
-    } else {
-      shieldedAddress = await _withDatabaseLockRetry(
-        operationName: 'load shielded receive address',
-        operation: () => rust_wallet.getUnifiedAddress(
-          dbPath: dbPath,
-          network: network,
-          accountUuid: accountUuid,
-        ),
-      );
-    }
+    return _withDatabaseLockRetry(
+      operationName: 'load shielded receive address',
+      operation: () => rust_wallet.getUnifiedAddress(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: accountUuid,
+      ),
+    );
+  }
+
+  String? getCachedTransparentAddress(String accountUuid) {
+    return _transparentAddressCache[accountUuid];
+  }
+
+  Future<String> loadTransparentAddress({required String accountUuid}) async {
+    final cached = _transparentAddressCache[accountUuid];
+    if (cached != null) return cached;
+
+    final dbPath = await getWalletDbPath();
+    final network = _network;
+
     final transparentAddress = await _withDatabaseLockRetry(
       operationName: 'load transparent receive address',
       operation: () => rust_wallet.getTransparentAddress(
@@ -74,10 +77,8 @@ class ReceiveAddressService {
       ),
     );
 
-    return ReceiveAddresses(
-      shieldedAddress: shieldedAddress,
-      transparentAddress: transparentAddress,
-    );
+    _transparentAddressCache[accountUuid] = transparentAddress;
+    return transparentAddress;
   }
 
   Future<String> renewShieldedAddress({required String accountUuid}) async {
