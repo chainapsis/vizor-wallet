@@ -22,6 +22,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
@@ -291,7 +292,7 @@ Future<void> _showAddressInfo(BuildContext context, _ReceiveAddressType type) {
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Close',
-    barrierColor: const Color(0x33626767),
+    barrierColor: context.colors.background.neutralScrim,
     transitionDuration: const Duration(milliseconds: 140),
     pageBuilder: (context, _, _) => _ReceiveInfoDialog(type: type),
     transitionBuilder: (context, animation, _, child) {
@@ -447,11 +448,7 @@ class _ReceiveMainContent extends StatelessWidget {
                     width: metrics.shieldBgWidth,
                     height: metrics.shieldBgHeight,
                     child: IgnorePointer(
-                      child: _ShieldQrBackground(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xFF2D3232)
-                            : const Color(0xFFEBEBEB),
-                      ),
+                      child: _ShieldQrBackground(color: colors.border.subtle),
                     ),
                   ),
                 Column(
@@ -692,8 +689,8 @@ class _ReceiveTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final activeBg = _neutralInverse(context);
-    final activeText = _neutralInverseLabel(context);
+    final activeBg = colors.background.inverse;
+    final activeText = colors.text.inverse;
 
     return Container(
       width: 256,
@@ -850,7 +847,7 @@ class _ReceiveQrBlock extends StatelessWidget {
             ),
           ),
           SizedBox(height: metrics.addressGap),
-          _AddressLine(address: address, onShowHelp: onShowHelp),
+          _AddressLine(type: type, address: address, onShowHelp: onShowHelp),
         ],
       ),
     );
@@ -1171,8 +1168,13 @@ class _OutsideCircleBorderPainter extends CustomPainter {
 }
 
 class _AddressLine extends StatelessWidget {
-  const _AddressLine({required this.address, required this.onShowHelp});
+  const _AddressLine({
+    required this.type,
+    required this.address,
+    required this.onShowHelp,
+  });
 
+  final _ReceiveAddressType type;
   final String address;
   final VoidCallback onShowHelp;
 
@@ -1192,7 +1194,7 @@ class _AddressLine extends StatelessWidget {
                 style: AppTypography.codeMedium.copyWith(
                   color: context.colors.text.accent,
                 ),
-                children: _addressSpans(context, address),
+                children: _addressSpans(context, type, address),
               ),
             ),
           ),
@@ -1208,7 +1210,11 @@ class _AddressLine extends StatelessWidget {
   }
 }
 
-List<TextSpan> _addressSpans(BuildContext context, String address) {
+List<TextSpan> _addressSpans(
+  BuildContext context,
+  _ReceiveAddressType type,
+  String address,
+) {
   if (address.isEmpty) {
     return [
       TextSpan(
@@ -1219,7 +1225,11 @@ List<TextSpan> _addressSpans(BuildContext context, String address) {
   }
 
   final compact = _compactAddress(address);
-  final brand = _brandTeal(context);
+  if (type == _ReceiveAddressType.transparent) {
+    return [TextSpan(text: compact)];
+  }
+
+  final success = context.colors.text.success;
   if (compact.length <= 10) return [TextSpan(text: compact)];
 
   final startHighlight = math.min(5, compact.length);
@@ -1227,12 +1237,12 @@ List<TextSpan> _addressSpans(BuildContext context, String address) {
   return [
     TextSpan(
       text: compact.substring(0, startHighlight),
-      style: TextStyle(color: brand),
+      style: TextStyle(color: success),
     ),
     TextSpan(text: compact.substring(startHighlight, endHighlight)),
     TextSpan(
       text: compact.substring(endHighlight),
-      style: TextStyle(color: brand),
+      style: TextStyle(color: success),
     ),
   ];
 }
@@ -1266,7 +1276,7 @@ class _IconOnlyButton extends StatelessWidget {
           child: Center(
             child: AppIcon(
               iconName,
-              color: context.colors.icon.regular,
+              color: context.colors.button.ghost.label,
               semanticLabel: semanticLabel,
             ),
           ),
@@ -1276,7 +1286,7 @@ class _IconOnlyButton extends StatelessWidget {
   }
 }
 
-class _CopyAddressButton extends StatefulWidget {
+class _CopyAddressButton extends StatelessWidget {
   const _CopyAddressButton({
     required this.label,
     required this.primary,
@@ -1290,89 +1300,14 @@ class _CopyAddressButton extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_CopyAddressButton> createState() => _CopyAddressButtonState();
-}
-
-class _CopyAddressButtonState extends State<_CopyAddressButton> {
-  bool _hovered = false;
-  bool _pressed = false;
-
-  @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final background = widget.primary
-        ? _brandTeal(context)
-        : colors.button.secondary.bg;
-    final label = widget.primary
-        ? (Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF041316)
-              : const Color(0xFFE0F3F5))
-        : colors.button.secondary.label;
-    final effectiveBg = !widget.enabled
-        ? colors.button.disabled.bg
-        : _pressed
-        ? background.withValues(alpha: 0.84)
-        : _hovered
-        ? background.withValues(alpha: 0.92)
-        : background;
-
-    return MouseRegion(
-      cursor: widget.enabled
-          ? SystemMouseCursors.click
-          : SystemMouseCursors.basic,
-      onEnter: widget.enabled ? (_) => setState(() => _hovered = true) : null,
-      onExit: widget.enabled
-          ? (_) => setState(() {
-              _hovered = false;
-              _pressed = false;
-            })
-          : null,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: widget.enabled
-            ? (_) => setState(() => _pressed = true)
-            : null,
-        onTapCancel: widget.enabled
-            ? () => setState(() => _pressed = false)
-            : null,
-        onTapUp: widget.enabled
-            ? (_) {
-                setState(() => _pressed = false);
-                widget.onTap();
-              }
-            : null,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
-          width: 256,
-          height: 44,
-          decoration: ShapeDecoration(
-            color: effectiveBg,
-            shape: const StadiumBorder(),
-          ),
-          child: IconTheme.merge(
-            data: IconThemeData(
-              color: widget.enabled ? label : colors.button.disabled.label,
-              size: AppIconSize.medium,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  widget.label,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: widget.enabled
-                        ? label
-                        : colors.button.disabled.label,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                const AppIcon(AppIcons.copy, size: AppIconSize.medium),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return AppButton(
+      onPressed: enabled ? onTap : null,
+      variant: primary ? AppButtonVariant.primary : AppButtonVariant.secondary,
+      size: AppButtonSize.large,
+      minWidth: 256,
+      trailing: const AppIcon(AppIcons.copy),
+      child: Text(label),
     );
   }
 }
@@ -1389,34 +1324,34 @@ class _ReceiveInfoDialog extends StatelessWidget {
     final colors = context.colors;
     final items = _isShielded
         ? const [
-            _InfoItem(
+            _InfoItemData(
               iconName: AppIcons.lock,
               text:
                   'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
             ),
-            _InfoItem(
+            _InfoItemData(
               iconName: AppIcons.renew,
               text:
                   'A new Zcash Shielded address is generated only when you click the Renew button.',
             ),
-            _InfoItem(
+            _InfoItemData(
               iconName: AppIcons.wallet,
               text:
                   'Each new address is a diversified address derived from the same key. They all receive to the same wallet.',
             ),
           ]
         : const [
-            _InfoItem(
+            _InfoItemData(
               iconName: AppIcons.unlock,
               text:
                   'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
             ),
-            _InfoItem(
+            _InfoItemData(
               iconName: AppIcons.transparentBalance,
               text:
                   'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
             ),
-            _InfoItem(
+            _InfoItemData(
               iconName: AppIcons.shieldKeyholeOutline,
               text:
                   'After receiving ZEC to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.',
@@ -1433,9 +1368,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               color: colors.background.ground,
-              borderRadius: BorderRadius.circular(
-                AppRadii.medium + AppSpacing.xs,
-              ),
+              borderRadius: BorderRadius.circular(AppRadii.large),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1478,7 +1411,11 @@ class _ReceiveInfoDialog extends StatelessWidget {
                     for (final item in items)
                       Padding(
                         padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                        child: item,
+                        child: _InfoItem(
+                          iconName: item.iconName,
+                          text: item.text,
+                          successIcon: _isShielded,
+                        ),
                       ),
                   ],
                 ),
@@ -1502,8 +1439,10 @@ class _InfoHeaderIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final bg = filled ? _brandTeal(context) : colors.background.raised;
-    final iconColor = filled ? const Color(0xFFFFFFFF) : colors.icon.accent;
+    final bg = filled
+        ? colors.background.utilitySuccessStrong
+        : colors.background.raised;
+    final iconColor = filled ? colors.icon.inverse : colors.icon.accent;
 
     return Container(
       width: 32,
@@ -1516,11 +1455,23 @@ class _InfoHeaderIcon extends StatelessWidget {
   }
 }
 
-class _InfoItem extends StatelessWidget {
-  const _InfoItem({required this.iconName, required this.text});
+class _InfoItemData {
+  const _InfoItemData({required this.iconName, required this.text});
 
   final String iconName;
   final String text;
+}
+
+class _InfoItem extends StatelessWidget {
+  const _InfoItem({
+    required this.iconName,
+    required this.text,
+    this.successIcon = false,
+  });
+
+  final String iconName;
+  final String text;
+  final bool successIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -1535,7 +1486,7 @@ class _InfoItem extends StatelessWidget {
             child: AppIcon(
               iconName,
               size: AppIconSize.medium,
-              color: colors.icon.accent,
+              color: successIcon ? colors.icon.success : colors.icon.accent,
             ),
           ),
         ),
@@ -1613,22 +1564,4 @@ class _ShieldQrBackground extends StatelessWidget {
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     );
   }
-}
-
-Color _brandTeal(BuildContext context) {
-  return Theme.of(context).brightness == Brightness.dark
-      ? const Color(0xFF3EC4CE)
-      : const Color(0xFF0996A0);
-}
-
-Color _neutralInverse(BuildContext context) {
-  return Theme.of(context).brightness == Brightness.dark
-      ? const Color(0xFFE1E1E1)
-      : const Color(0xFF2E3232);
-}
-
-Color _neutralInverseLabel(BuildContext context) {
-  return Theme.of(context).brightness == Brightness.dark
-      ? const Color(0xFF141818)
-      : const Color(0xFFFFFFFF);
 }
