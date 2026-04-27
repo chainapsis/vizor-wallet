@@ -522,6 +522,12 @@ Widget buildTextUseCase(BuildContext context) {
         light: l.text.warning,
       ),
       TokenSwatch(
+        name: 'text/utility/destructive',
+        description: 'Destructive utility copy',
+        dark: d.text.destructive,
+        light: l.text.destructive,
+      ),
+      TokenSwatch(
         name: 'text/brand-purple',
         description: 'Brand-purple inline text accent',
         dark: d.text.brandPurple,

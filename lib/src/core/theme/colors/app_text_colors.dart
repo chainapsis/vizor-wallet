@@ -12,6 +12,7 @@ import '../primitives.dart';
 /// * [inverse] — Text placed on inverted surfaces (e.g. dark text on a light
 ///   chip inside dark mode).
 /// * [warning] — Inline warning copy. Theme-invariant brand yellow.
+/// * [destructive] — Destructive utility copy.
 /// * [brandPurple] / [brandCyan] — Brand-colored inline text accents.
 class AppTextColors {
   const AppTextColors({
@@ -22,6 +23,7 @@ class AppTextColors {
     required this.disabled,
     required this.inverse,
     required this.warning,
+    required this.destructive,
     required this.brandPurple,
     required this.brandCyan,
   });
@@ -33,6 +35,7 @@ class AppTextColors {
   final Color disabled;
   final Color inverse;
   final Color warning;
+  final Color destructive;
   final Color brandPurple;
   final Color brandCyan;
 
@@ -47,6 +50,7 @@ class AppTextColors {
     // the light face via `p300Light`, so the inline warning reads
     // identically across modes.
     warning: YellowPrimitives.p400Dark,
+    destructive: Color(0xFFB760C4),
     brandPurple: PurplePrimitives.p500Dark,
     brandCyan: CyanPrimitives.p600Dark,
   );
@@ -61,6 +65,7 @@ class AppTextColors {
     disabled: Primitives.p400Light,
     inverse: Primitives.p0Light,
     warning: YellowPrimitives.p300Light,
+    destructive: Color(0xFF93489E),
     brandPurple: PurplePrimitives.p300Light,
     brandCyan: CyanPrimitives.p300Light,
   );

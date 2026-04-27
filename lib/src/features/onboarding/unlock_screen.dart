@@ -1,7 +1,4 @@
-import 'dart:io' show exit;
-
-import 'package:flutter/material.dart'
-    show AlertDialog, Colors, Scaffold, TextButton, TextStyle, showDialog;
+import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,7 +15,6 @@ import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
 import '../../providers/router_refresh_provider.dart';
 import '../../providers/sync_provider.dart';
-import '../../rust/api/sync.dart' as rust_sync;
 import 'shared/onboarding_welcome_art.dart';
 
 class UnlockScreen extends ConsumerStatefulWidget {
@@ -99,45 +95,6 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
     }
   }
 
-  Future<void> _resetWallet(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Lost Password?'),
-        content: const Text(
-          'The only way to recover is to reset Vizor and import your accounts again. Delete all wallet data now?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Reset',
-              style: TextStyle(color: Color(0xFFFF3B30)),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    final syncNotifier = ref.read(syncProvider.notifier);
-    final accountNotifier = ref.read(accountProvider.notifier);
-
-    syncNotifier.stopSync();
-    var waited = 0;
-    while (rust_sync.isSyncRunning() && waited < 5000) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      waited += 100;
-    }
-
-    await accountNotifier.resetWallet();
-    exit(0);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -156,7 +113,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
                 });
               },
               onSubmit: _submit,
-              onForgotPassword: () => _resetWallet(context),
+              onForgotPassword: () => context.go('/lost-password'),
             ),
           ),
         ),

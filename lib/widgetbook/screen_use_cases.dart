@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../src/core/layout/app_layout.dart';
+import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/unlock_screen.dart';
 import '../src/features/onboarding/welcome.dart';
 
@@ -26,6 +27,34 @@ Widget buildUnlockLoginUseCase(BuildContext context) {
   return ProviderScope(
     overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
     child: _UnlockHarness(),
+  );
+}
+
+Widget buildLostPasswordCountdownUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
+    child: IgnorePointer(
+      child: LostPasswordScreen(
+        initialCountdownSeconds: 3,
+        countdownEnabled: false,
+        onBack: () {},
+        onReset: () async {},
+      ),
+    ),
+  );
+}
+
+Widget buildLostPasswordEnabledUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
+    child: IgnorePointer(
+      child: LostPasswordScreen(
+        initialCountdownSeconds: 0,
+        countdownEnabled: false,
+        onBack: () {},
+        onReset: () async {},
+      ),
+    ),
   );
 }
 
@@ -100,8 +129,7 @@ class _UnlockHarnessState extends State<_UnlockHarness> {
       routes: [
         GoRoute(
           path: '/unlock',
-          // Preview-only: the real screen can reset the wallet from
-          // "Forgot Password?", so keep this Widgetbook surface visual.
+          // Preview-only: keep navigation inert inside Widgetbook.
           builder: (_, _) => const IgnorePointer(child: UnlockScreen()),
         ),
         GoRoute(

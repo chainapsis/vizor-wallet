@@ -17,6 +17,7 @@ import 'src/features/onboarding/create/things_to_know_screen.dart';
 import 'src/features/onboarding/import/import_secret_passphrase_screen.dart';
 import 'src/features/onboarding/import/import_split_view.dart';
 import 'src/features/onboarding/import/import_wallet_birthday_screen.dart';
+import 'src/features/onboarding/lost_password_screen.dart';
 import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
@@ -65,19 +66,23 @@ final _routerProvider = Provider<GoRouter>((ref) {
           state.matchedLocation.startsWith('/onboarding/') ||
           state.matchedLocation.startsWith('/import');
       final isUnlock = state.matchedLocation == '/unlock';
+      final isLostPassword = state.matchedLocation == '/lost-password';
+      final isUnlockFlow = isUnlock || isLostPassword;
 
       log(
         'router redirect: location=${state.matchedLocation}, hasWallet=$hasWallet, '
         'requiresUnlock=$requiresUnlock, isOnboarding=$isOnboarding',
       );
 
-      if (!hasWallet && isUnlock) return '/welcome';
+      if (!hasWallet && isUnlockFlow) return '/welcome';
       if (!hasWallet && !isOnboarding) return '/welcome';
       if (!hasWallet && state.matchedLocation == '/add-account') {
         return '/welcome';
       }
-      if (requiresUnlock && !isUnlock) return '/unlock';
-      if (!requiresUnlock && isUnlock) return hasWallet ? '/home' : '/welcome';
+      if (requiresUnlock && !isUnlockFlow) return '/unlock';
+      if (!requiresUnlock && isUnlockFlow) {
+        return hasWallet ? '/home' : '/welcome';
+      }
       if (hasWallet && state.matchedLocation == '/welcome') {
         return requiresUnlock ? '/unlock' : '/home';
       }
@@ -279,6 +284,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
       GoRoute(path: '/unlock', builder: (_, _) => const UnlockScreen()),
+      GoRoute(
+        path: '/lost-password',
+        builder: (_, _) => const LostPasswordScreen(),
+      ),
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
       GoRoute(path: '/send', builder: (_, _) => const SendScreen()),
       GoRoute(

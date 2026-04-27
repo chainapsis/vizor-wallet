@@ -73,6 +73,19 @@ class WidgetbookApp extends StatelessWidget {
                     ),
                   ],
                 ),
+                WidgetbookComponent(
+                  name: 'Lost Password',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Countdown',
+                      builder: buildLostPasswordCountdownUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Enabled',
+                      builder: buildLostPasswordEnabledUseCase,
+                    ),
+                  ],
+                ),
               ],
             ),
           ],
