@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../main.dart' show log;
-import '../../core/layout/app_desktop_shell.dart';
 import '../../core/security/password_policy.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
@@ -17,8 +16,10 @@ import '../../core/widgets/app_text_field.dart';
 import '../../core/widgets/password_text_field.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
+import '../../providers/router_refresh_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
+import 'shared/onboarding_welcome_art.dart';
 
 class UnlockScreen extends ConsumerStatefulWidget {
   const UnlockScreen({super.key});
@@ -63,32 +64,48 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
     final securityNotifier = ref.read(appSecurityProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
     final syncNotifier = ref.read(syncProvider.notifier);
+    final routerRefresh = ref.read(routerRefreshProvider);
+    var unlocked = false;
 
-    final isValid = await securityNotifier.unlock(_passwordController.text);
-    if (!isValid) {
+    try {
+      await routerRefresh.pauseWhile(() async {
+        final isValid = await securityNotifier.unlock(_passwordController.text);
+        if (!isValid) return;
+
+        unlocked = true;
+        await accountNotifier.restoreAfterUnlock();
+        await syncNotifier.refreshAfterUnlock();
+        await syncNotifier.startSyncAnyway();
+        if (!mounted) return;
+        context.go('/home');
+      });
+    } catch (e, st) {
+      log('UnlockScreen._submit: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _isSubmitting = false;
+        _errorText = e.toString();
+      });
+      return;
+    }
+
+    if (!unlocked) {
       if (!mounted) return;
       log('UnlockScreen._submit: invalid password');
       setState(() {
         _isSubmitting = false;
         _errorText = 'Incorrect password. Please try again.';
       });
-      return;
     }
-
-    await accountNotifier.restoreAfterUnlock();
-    await syncNotifier.refreshAfterUnlock();
-    await syncNotifier.startSyncAnyway();
-    if (!mounted) return;
-    context.go('/home');
   }
 
   Future<void> _resetWallet(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reset Wallet'),
+        title: const Text('Lost Password?'),
         content: const Text(
-          'Delete all wallet data (DB + keychain)? This cannot be undone.',
+          'The only way to recover is to reset Vizor and import your accounts again. Delete all wallet data now?',
         ),
         actions: [
           TextButton(
@@ -123,96 +140,200 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xs),
-          child: AppDesktopPane(
-            child: Center(
-              child: SizedBox(
-                width: 432,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: colors.background.overlay.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(AppRadii.full),
-                      ),
-                      child: const Center(
-                        child: AppIcon(AppIcons.unlock, size: 24),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                    Text(
-                      'Unlock Wallet',
-                      style: AppTypography.displaySmall.copyWith(
-                        color: colors.text.accent,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                    Text(
-                      'Enter your password to access your wallet.',
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.accent,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                    const AppDecorativeDivider(),
-                    const SizedBox(height: AppSpacing.s),
-                    PasswordTextField(
-                      label: 'Password',
-                      controller: _passwordController,
-                      autofocus: true,
-                      messageText: _errorText ?? _passwordPolicyMessage,
-                      tone: (_errorText ?? _passwordPolicyMessage) == null
-                          ? AppTextFieldTone.neutral
-                          : AppTextFieldTone.destructive,
-                      onChanged: (_) {
-                        setState(() {
-                          _errorText = null;
-                        });
-                      },
-                      onSubmitted: (_) => _submit(),
-                    ),
-                    const SizedBox(height: AppSpacing.s),
-                    AppButton(
-                      onPressed: _canSubmit ? _submit : null,
-                      variant: AppButtonVariant.primary,
-                      minWidth: 256,
-                      trailing: const AppIcon(AppIcons.chevronForward),
-                      child: Text(_isSubmitting ? 'Unlocking...' : 'Unlock'),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _resetWallet(context),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xs,
-                          vertical: AppSpacing.xxs,
-                        ),
-                        child: Text(
-                          'Reset State',
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.warning,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          child: _UnlockPane(
+            child: _UnlockContent(
+              passwordController: _passwordController,
+              canSubmit: _canSubmit,
+              messageText: _errorText ?? _passwordPolicyMessage,
+              onChanged: () {
+                setState(() {
+                  _errorText = null;
+                });
+              },
+              onSubmit: _submit,
+              onForgotPassword: () => _resetWallet(context),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _UnlockPane extends StatelessWidget {
+  const _UnlockPane({required this.child});
+
+  final Widget child;
+
+  static const double _canvasWidth = 884;
+  static const double _canvasHeight = 552;
+  static const double _backdropWidth = 884;
+  static const double _backdropHeight = 553;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final alignment = constraints.maxHeight < _canvasHeight
+              ? Alignment.bottomCenter
+              : Alignment.center;
+          return OverflowBox(
+            alignment: alignment,
+            minWidth: _canvasWidth,
+            maxWidth: _canvasWidth,
+            minHeight: _canvasHeight,
+            maxHeight: _canvasHeight,
+            child: SizedBox(
+              width: _canvasWidth,
+              height: _canvasHeight,
+              child: Stack(
+                children: [
+                  const Positioned(
+                    top: 0,
+                    left: 0,
+                    width: _backdropWidth,
+                    height: _backdropHeight,
+                    child: OnboardingWelcomeBackdrop(),
+                  ),
+                  Positioned.fill(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: Center(child: child),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _UnlockContent extends StatelessWidget {
+  const _UnlockContent({
+    required this.passwordController,
+    required this.canSubmit,
+    required this.messageText,
+    required this.onChanged,
+    required this.onSubmit,
+    required this.onForgotPassword,
+  });
+
+  final TextEditingController passwordController;
+  final bool canSubmit;
+  final String? messageText;
+  final VoidCallback onChanged;
+  final Future<void> Function() onSubmit;
+  final VoidCallback onForgotPassword;
+
+  static const double _contentWidth = 256;
+  static const double _titleWidth = 347;
+  static const double _fieldGroupHeight = 66;
+  static const Color _fieldErrorIconColor = Color(0xFFB760C4);
+  static const Color _fieldErrorTextColor = Color(0xFF93489E);
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: _titleWidth,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const VizorWordmark(),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                'Welcome Back',
+                style: AppTypography.displayLarge.copyWith(
+                  color: colors.text.accent,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Enter your password to open Vizor.',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.accent,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        const AppDecorativeDivider(width: _contentWidth),
+        const SizedBox(height: AppSpacing.lg),
+        SizedBox(
+          width: _contentWidth,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: _fieldGroupHeight,
+                child: PasswordTextField(
+                  label: 'Password',
+                  hintText: 'Enter Your Password',
+                  showLabel: false,
+                  leadingSlotWidth: 32,
+                  trailingSlotWidth: 40,
+                  inputHorizontalPadding: AppSpacing.s,
+                  showVisibilityToggle: false,
+                  controller: passwordController,
+                  autofocus: false,
+                  messageText: messageText,
+                  messageIcon: const AppIcon(
+                    AppIcons.warning,
+                    size: AppIconSize.medium,
+                    color: _fieldErrorIconColor,
+                  ),
+                  messageStyle: AppTypography.labelMedium.copyWith(
+                    color: _fieldErrorTextColor,
+                  ),
+                  tone: messageText == null
+                      ? AppTextFieldTone.neutral
+                      : AppTextFieldTone.brandPurple,
+                  onChanged: (_) => onChanged(),
+                  onSubmitted: (_) => onSubmit(),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              AppButton(
+                onPressed: canSubmit ? onSubmit : null,
+                variant: AppButtonVariant.primary,
+                minWidth: _contentWidth,
+                trailing: const AppIcon(AppIcons.chevronForward, size: 20),
+                child: const Text('Sign In'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.base),
+        AppButton(
+          onPressed: onForgotPassword,
+          variant: AppButtonVariant.ghost,
+          size: AppButtonSize.small,
+          child: const Text('Forgot Password?'),
+        ),
+      ],
     );
   }
 }
