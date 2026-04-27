@@ -144,8 +144,8 @@ class _UnlockPane extends StatelessWidget {
         children: [
           const Positioned.fill(
             child: OnboardingWelcomeBackdrop(
-              fit: BoxFit.cover,
-              alignment: Alignment.topCenter,
+              fit: BoxFit.fitWidth,
+              alignment: Alignment.bottomCenter,
             ),
           ),
           Positioned.fill(

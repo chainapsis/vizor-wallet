@@ -124,8 +124,8 @@ class _Pane extends StatelessWidget {
         children: [
           const Positioned.fill(
             child: OnboardingWelcomeBackdrop(
-              fit: BoxFit.cover,
-              alignment: Alignment.topCenter,
+              fit: BoxFit.fitWidth,
+              alignment: Alignment.bottomCenter,
             ),
           ),
           // OverflowBox with tight canvas-sized constraints parks the
