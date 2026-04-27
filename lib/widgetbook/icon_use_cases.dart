@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../src/core/theme/app_theme.dart';
 import '../src/core/widgets/app_icon.dart';
+import '../src/core/widgets/app_loading_icon.dart';
 
 /// Every name exposed by [AppIcons], listed in alphabetical order so
 /// the widgetbook page matches what an IDE autocompletion shows.
@@ -157,4 +158,55 @@ Widget buildIconsAllUseCase(BuildContext context) {
       ),
     ),
   );
+}
+
+Widget _buildLoadingIconUseCase(
+  BuildContext context, {
+  required bool animated,
+}) {
+  final colors = context.colors;
+  return ColoredBox(
+    color: colors.background.ground,
+    child: Center(
+      child: Container(
+        decoration: BoxDecoration(
+          color: colors.surface.card,
+          border: Border.all(color: colors.border.subtle, width: 0.5),
+          borderRadius: BorderRadius.circular(AppRadii.small),
+        ),
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            AppLoadingIcon(
+              size: AppIconSize.medium,
+              color: colors.icon.regular,
+              animated: animated,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            AppLoadingIcon(
+              size: AppIconSize.large,
+              color: colors.icon.regular,
+              animated: animated,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            AppLoadingIcon(
+              size: AppIconSize.large,
+              color: colors.icon.warning,
+              animated: animated,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Widget buildLoadingIconAnimatedUseCase(BuildContext context) {
+  return _buildLoadingIconUseCase(context, animated: true);
+}
+
+Widget buildLoadingIconStaticUseCase(BuildContext context) {
+  return _buildLoadingIconUseCase(context, animated: false);
 }

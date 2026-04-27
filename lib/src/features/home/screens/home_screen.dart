@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart'
-    show
-        CircularProgressIndicator,
-        Scrollbar,
-        Theme;
+    show CircularProgressIndicator, Scrollbar, Theme;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +11,7 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_loading_icon.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -714,7 +712,7 @@ class _HomeNoticeCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          AppIcon(data.iconName, size: 16, color: colors.icon.warning),
+          _HomeIcon(data.iconName, size: 16, color: colors.icon.warning),
           const SizedBox(width: AppSpacing.xs),
           Expanded(
             child: Text(
@@ -967,7 +965,7 @@ class _ActivityAvatar extends StatelessWidget {
                   borderRadius: BorderRadius.circular(AppRadii.small),
                 ),
                 child: Center(
-                  child: AppIcon(
+                  child: _HomeIcon(
                     row.subIconName!,
                     size: 12,
                     color: context.colors.icon.accent,
@@ -978,5 +976,21 @@ class _ActivityAvatar extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _HomeIcon extends StatelessWidget {
+  const _HomeIcon(this.iconName, {required this.size, required this.color});
+
+  final String iconName;
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    if (iconName == AppIcons.loader) {
+      return AppLoadingIcon(size: size, color: color);
+    }
+    return AppIcon(iconName, size: size, color: color);
   }
 }
