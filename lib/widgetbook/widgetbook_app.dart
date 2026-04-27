@@ -199,6 +199,19 @@ class WidgetbookApp extends StatelessWidget {
               ],
             ),
             WidgetbookComponent(
+              name: 'Loading Icon',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Animated',
+                  builder: buildLoadingIconAnimatedUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Static',
+                  builder: buildLoadingIconStaticUseCase,
+                ),
+              ],
+            ),
+            WidgetbookComponent(
               name: 'Text Field',
               useCases: [
                 WidgetbookUseCase(

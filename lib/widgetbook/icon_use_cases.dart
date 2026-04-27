@@ -81,8 +81,8 @@ Widget _iconCard(BuildContext context, String name) {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Row of the same icon at two sizes, both tinted with the ambient
-        // icon color — an at-a-glance check that the SVG scales cleanly
-        // and that srcIn is actually landing.
+        // icon color — an at-a-glance check that the icon scales cleanly
+        // and that color application is actually landing.
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -109,9 +109,9 @@ Widget _iconCard(BuildContext context, String name) {
   );
 }
 
-/// Grid of every icon under `assets/icons/`. Two sizes (M / L) side by
+/// Grid of every [AppIcon] handle. Two sizes (M / L) side by
 /// side plus a warning-tinted instance so a regression in `AppIcon`'s
-/// color filter, asset registration, or SVG geometry is immediately
+/// color handling, asset registration, or geometry is immediately
 /// visible.
 Widget buildIconsAllUseCase(BuildContext context) {
   final colors = context.colors;
@@ -157,4 +157,58 @@ Widget buildIconsAllUseCase(BuildContext context) {
       ),
     ),
   );
+}
+
+Widget _buildLoadingIconUseCase(
+  BuildContext context, {
+  required bool animated,
+}) {
+  final colors = context.colors;
+  return ColoredBox(
+    color: colors.background.ground,
+    child: Center(
+      child: Container(
+        decoration: BoxDecoration(
+          color: colors.surface.card,
+          border: Border.all(color: colors.border.subtle, width: 0.5),
+          borderRadius: BorderRadius.circular(AppRadii.small),
+        ),
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            AppIcon(
+              AppIcons.loader,
+              size: AppIconSize.medium,
+              color: colors.icon.regular,
+              animated: animated,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            AppIcon(
+              AppIcons.loader,
+              size: AppIconSize.large,
+              color: colors.icon.regular,
+              animated: animated,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            AppIcon(
+              AppIcons.loader,
+              size: AppIconSize.large,
+              color: colors.icon.warning,
+              animated: animated,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Widget buildLoadingIconAnimatedUseCase(BuildContext context) {
+  return _buildLoadingIconUseCase(context, animated: true);
+}
+
+Widget buildLoadingIconStaticUseCase(BuildContext context) {
+  return _buildLoadingIconUseCase(context, animated: false);
 }
