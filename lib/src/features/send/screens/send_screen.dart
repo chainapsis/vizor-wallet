@@ -537,7 +537,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                               controller: _addressController,
                                               hintText: 'zCash Address',
                                               leading: AppIcon(
-                                                AppIcons.users,
+                                                AppIcons.link,
                                                 size: 20,
                                                 color:
                                                     _addressController.text
@@ -545,14 +545,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                                         .isNotEmpty
                                                     ? colors.icon.accent
                                                     : colors.icon.regular,
-                                              ),
-                                              rightSlot: _SendTrailingLabel(
-                                                label: 'Contacts',
-                                                icon: AppIcon(
-                                                  AppIcons.chevronForward,
-                                                  size: 16,
-                                                  color: colors.text.secondary,
-                                                ),
                                               ),
                                               messageText: addressMessage,
                                               messageIcon: addressMessageIcon,
@@ -834,30 +826,6 @@ class _SendBackRow extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _SendTrailingLabel extends StatelessWidget {
-  const _SendTrailingLabel({required this.label, this.icon});
-
-  final String label;
-  final Widget? icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: AppTypography.labelMedium.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
-        if (icon != null) ...[const SizedBox(width: AppSpacing.xxs), icon!],
-      ],
     );
   }
 }

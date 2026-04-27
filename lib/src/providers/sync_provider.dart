@@ -22,6 +22,12 @@ class SyncState {
   final BigInt transparentBalance;
   final BigInt saplingBalance;
   final BigInt orchardBalance;
+  final BigInt transparentPendingBalance;
+  final BigInt saplingPendingBalance;
+  final BigInt orchardPendingBalance;
+  final bool canShieldTransparentBalance;
+  final BigInt shieldTransparentFee;
+  final BigInt shieldTransparentAmount;
 
   /// Sum of spendable balances across all pools. Use for "available to send".
   final BigInt spendableBalance;
@@ -48,6 +54,12 @@ class SyncState {
     BigInt? transparentBalance,
     BigInt? saplingBalance,
     BigInt? orchardBalance,
+    BigInt? transparentPendingBalance,
+    BigInt? saplingPendingBalance,
+    BigInt? orchardPendingBalance,
+    this.canShieldTransparentBalance = false,
+    BigInt? shieldTransparentFee,
+    BigInt? shieldTransparentAmount,
     BigInt? spendableBalance,
     BigInt? totalBalance,
     this.error,
@@ -56,6 +68,11 @@ class SyncState {
   }) : transparentBalance = transparentBalance ?? BigInt.zero,
        saplingBalance = saplingBalance ?? BigInt.zero,
        orchardBalance = orchardBalance ?? BigInt.zero,
+       transparentPendingBalance = transparentPendingBalance ?? BigInt.zero,
+       saplingPendingBalance = saplingPendingBalance ?? BigInt.zero,
+       orchardPendingBalance = orchardPendingBalance ?? BigInt.zero,
+       shieldTransparentFee = shieldTransparentFee ?? BigInt.zero,
+       shieldTransparentAmount = shieldTransparentAmount ?? BigInt.zero,
        spendableBalance = spendableBalance ?? BigInt.zero,
        totalBalance = totalBalance ?? BigInt.zero;
 
@@ -68,6 +85,12 @@ class SyncState {
     BigInt? transparentBalance,
     BigInt? saplingBalance,
     BigInt? orchardBalance,
+    BigInt? transparentPendingBalance,
+    BigInt? saplingPendingBalance,
+    BigInt? orchardPendingBalance,
+    bool? canShieldTransparentBalance,
+    BigInt? shieldTransparentFee,
+    BigInt? shieldTransparentAmount,
     BigInt? spendableBalance,
     BigInt? totalBalance,
     String? error,
@@ -83,6 +106,17 @@ class SyncState {
       transparentBalance: transparentBalance ?? this.transparentBalance,
       saplingBalance: saplingBalance ?? this.saplingBalance,
       orchardBalance: orchardBalance ?? this.orchardBalance,
+      transparentPendingBalance:
+          transparentPendingBalance ?? this.transparentPendingBalance,
+      saplingPendingBalance:
+          saplingPendingBalance ?? this.saplingPendingBalance,
+      orchardPendingBalance:
+          orchardPendingBalance ?? this.orchardPendingBalance,
+      canShieldTransparentBalance:
+          canShieldTransparentBalance ?? this.canShieldTransparentBalance,
+      shieldTransparentFee: shieldTransparentFee ?? this.shieldTransparentFee,
+      shieldTransparentAmount:
+          shieldTransparentAmount ?? this.shieldTransparentAmount,
       spendableBalance: spendableBalance ?? this.spendableBalance,
       totalBalance: totalBalance ?? this.totalBalance,
       error: error ?? this.error,
@@ -207,6 +241,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       transparentBalance: initial.transparentBalance,
       saplingBalance: initial.saplingBalance,
       orchardBalance: initial.orchardBalance,
+      transparentPendingBalance: initial.transparentPendingBalance,
+      saplingPendingBalance: initial.saplingPendingBalance,
+      orchardPendingBalance: initial.orchardPendingBalance,
+      canShieldTransparentBalance: initial.canShieldTransparentBalance,
+      shieldTransparentFee: initial.shieldTransparentFee,
+      shieldTransparentAmount: initial.shieldTransparentAmount,
       spendableBalance: initial.spendableBalance,
       totalBalance: initial.totalBalance,
       recentTransactions: initial.recentTransactions,
@@ -286,6 +326,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: prev?.transparentBalance,
         saplingBalance: prev?.saplingBalance,
         orchardBalance: prev?.orchardBalance,
+        transparentPendingBalance: prev?.transparentPendingBalance,
+        saplingPendingBalance: prev?.saplingPendingBalance,
+        orchardPendingBalance: prev?.orchardPendingBalance,
+        canShieldTransparentBalance: prev?.canShieldTransparentBalance ?? false,
+        shieldTransparentFee: prev?.shieldTransparentFee,
+        shieldTransparentAmount: prev?.shieldTransparentAmount,
         spendableBalance: prev?.spendableBalance,
         totalBalance: prev?.totalBalance,
         recentTransactions: prev?.recentTransactions ?? const [],
@@ -356,6 +402,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   transparentBalance: prev?.transparentBalance,
                   saplingBalance: prev?.saplingBalance,
                   orchardBalance: prev?.orchardBalance,
+                  transparentPendingBalance: prev?.transparentPendingBalance,
+                  saplingPendingBalance: prev?.saplingPendingBalance,
+                  orchardPendingBalance: prev?.orchardPendingBalance,
+                  canShieldTransparentBalance:
+                      prev?.canShieldTransparentBalance ?? false,
+                  shieldTransparentFee: prev?.shieldTransparentFee,
+                  shieldTransparentAmount: prev?.shieldTransparentAmount,
                   spendableBalance: prev?.spendableBalance,
                   totalBalance: prev?.totalBalance,
                   recentTransactions: prev?.recentTransactions ?? const [],
@@ -383,6 +436,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               transparentBalance: prev?.transparentBalance,
               saplingBalance: prev?.saplingBalance,
               orchardBalance: prev?.orchardBalance,
+              transparentPendingBalance: prev?.transparentPendingBalance,
+              saplingPendingBalance: prev?.saplingPendingBalance,
+              orchardPendingBalance: prev?.orchardPendingBalance,
+              canShieldTransparentBalance:
+                  prev?.canShieldTransparentBalance ?? false,
+              shieldTransparentFee: prev?.shieldTransparentFee,
+              shieldTransparentAmount: prev?.shieldTransparentAmount,
               spendableBalance: prev?.spendableBalance,
               totalBalance: prev?.totalBalance,
               recentTransactions: prev?.recentTransactions ?? const [],
@@ -469,6 +529,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: prev?.transparentBalance,
         saplingBalance: prev?.saplingBalance,
         orchardBalance: prev?.orchardBalance,
+        transparentPendingBalance: prev?.transparentPendingBalance,
+        saplingPendingBalance: prev?.saplingPendingBalance,
+        orchardPendingBalance: prev?.orchardPendingBalance,
+        canShieldTransparentBalance: prev?.canShieldTransparentBalance ?? false,
+        shieldTransparentFee: prev?.shieldTransparentFee,
+        shieldTransparentAmount: prev?.shieldTransparentAmount,
         spendableBalance: prev?.spendableBalance,
         totalBalance: prev?.totalBalance,
         recentTransactions: prev?.recentTransactions ?? const [],
@@ -842,7 +908,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     // Only fetch balance/history when there are new transactions or sync is complete.
     // Skipping intermediate batches avoids opening a new DB connection per batch.
-    BigInt? transparent, sapling, orchard, spendable, total;
+    BigInt? transparent;
+    BigInt? sapling;
+    BigInt? orchard;
+    BigInt? transparentPending;
+    BigInt? saplingPending;
+    BigInt? orchardPending;
+    BigInt? spendable;
+    BigInt? total;
+    bool? canShieldTransparentBalance;
+    BigInt? shieldTransparentFee;
+    BigInt? shieldTransparentAmount;
     var recentTxs =
         prev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
     if (event.hasNewTx || event.isComplete) {
@@ -855,6 +931,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparent = balance.transparent;
         sapling = balance.sapling;
         orchard = balance.orchard;
+        transparentPending = balance.transparentPending;
+        saplingPending = balance.saplingPending;
+        orchardPending = balance.orchardPending;
         spendable = balance.spendable;
         total = balance.total;
       } catch (e) {
@@ -869,6 +948,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         );
       } catch (e) {
         log('SyncNotifier: tx history fetch failed: $e');
+      }
+      final shieldStatus = await _getShieldTransparentStatus(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: accountUuid,
+        transparentBalance:
+            transparent ?? prev?.transparentBalance ?? BigInt.zero,
+      );
+      if (shieldStatus != null) {
+        canShieldTransparentBalance = shieldStatus.canShield;
+        shieldTransparentFee = shieldStatus.fee;
+        shieldTransparentAmount = shieldStatus.amount;
       }
     }
 
@@ -892,6 +983,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: transparent ?? prev?.transparentBalance,
         saplingBalance: sapling ?? prev?.saplingBalance,
         orchardBalance: orchard ?? prev?.orchardBalance,
+        transparentPendingBalance:
+            transparentPending ?? prev?.transparentPendingBalance,
+        saplingPendingBalance: saplingPending ?? prev?.saplingPendingBalance,
+        orchardPendingBalance: orchardPending ?? prev?.orchardPendingBalance,
+        canShieldTransparentBalance:
+            canShieldTransparentBalance ??
+            prev?.canShieldTransparentBalance ??
+            false,
+        shieldTransparentFee:
+            shieldTransparentFee ?? prev?.shieldTransparentFee,
+        shieldTransparentAmount:
+            shieldTransparentAmount ?? prev?.shieldTransparentAmount,
         spendableBalance: spendable ?? prev?.spendableBalance,
         totalBalance: total ?? prev?.totalBalance,
         recentTransactions: recentTxs,
@@ -929,7 +1032,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
 
-    BigInt? transparent, sapling, orchard, spendable, total;
+    BigInt? transparent;
+    BigInt? sapling;
+    BigInt? orchard;
+    BigInt? transparentPending;
+    BigInt? saplingPending;
+    BigInt? orchardPending;
+    BigInt? spendable;
+    BigInt? total;
+    bool? canShieldTransparentBalance;
+    BigInt? shieldTransparentFee;
+    BigInt? shieldTransparentAmount;
     try {
       final balance = await rust_sync.getBalance(
         dbPath: dbPath,
@@ -939,6 +1052,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       transparent = balance.transparent;
       sapling = balance.sapling;
       orchard = balance.orchard;
+      transparentPending = balance.transparentPending;
+      saplingPending = balance.saplingPending;
+      orchardPending = balance.orchardPending;
       spendable = balance.spendable;
       total = balance.total;
     } catch (e) {
@@ -966,6 +1082,19 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
     }
 
+    final shieldStatus = await _getShieldTransparentStatus(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+      transparentBalance:
+          transparent ?? prev?.transparentBalance ?? BigInt.zero,
+    );
+    if (shieldStatus != null) {
+      canShieldTransparentBalance = shieldStatus.canShield;
+      shieldTransparentFee = shieldStatus.fee;
+      shieldTransparentAmount = shieldStatus.amount;
+    }
+
     if (epoch != _sensitiveStateEpoch || _requiresUnlock) {
       log('SyncNotifier: discarding balance refresh after lock transition');
       return;
@@ -981,6 +1110,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: transparent ?? prev?.transparentBalance,
         saplingBalance: sapling ?? prev?.saplingBalance,
         orchardBalance: orchard ?? prev?.orchardBalance,
+        transparentPendingBalance:
+            transparentPending ?? prev?.transparentPendingBalance,
+        saplingPendingBalance: saplingPending ?? prev?.saplingPendingBalance,
+        orchardPendingBalance: orchardPending ?? prev?.orchardPendingBalance,
+        canShieldTransparentBalance:
+            canShieldTransparentBalance ??
+            prev?.canShieldTransparentBalance ??
+            false,
+        shieldTransparentFee:
+            shieldTransparentFee ?? prev?.shieldTransparentFee,
+        shieldTransparentAmount:
+            shieldTransparentAmount ?? prev?.shieldTransparentAmount,
         spendableBalance: spendable ?? prev?.spendableBalance,
         totalBalance: total ?? prev?.totalBalance,
         recentTransactions: recentTxs,
@@ -990,6 +1131,40 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   String? _getActiveAccountUuid() {
     return ref.read(accountProvider).value?.activeAccountUuid;
+  }
+
+  Future<({bool canShield, BigInt fee, BigInt amount})?>
+  _getShieldTransparentStatus({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required BigInt transparentBalance,
+  }) async {
+    final isHardware =
+        ref.read(accountProvider).value?.activeAccount?.isHardware ?? false;
+    if (isHardware || transparentBalance <= BigInt.zero) {
+      return (canShield: false, fee: BigInt.zero, amount: BigInt.zero);
+    }
+
+    try {
+      final status = await rust_sync.getShieldTransparentStatus(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: accountUuid,
+      );
+      return (
+        canShield: status.canShield,
+        fee: status.feeZatoshi,
+        amount: status.shieldedZatoshi,
+      );
+    } catch (e) {
+      _logRefreshReadError(
+        label: 'shield transparent status',
+        fallback: 'keeping previous value',
+        error: e,
+      );
+      return null;
+    }
   }
 
   void _logRefreshReadError({

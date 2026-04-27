@@ -316,17 +316,7 @@ class _SendReviewReceiptCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  _SendReviewFieldTitle(
-                    label: 'To',
-                    rightLabel: _SendReviewFieldTrailing(
-                      label: 'Andrew',
-                      icon: AppIcon(
-                        AppIcons.chevronForward,
-                        size: 16,
-                        color: colors.icon.regular,
-                      ),
-                    ),
-                  ),
+                  const _SendReviewFieldTitle(label: 'To'),
                   const SizedBox(height: AppSpacing.xs),
                   for (final line in addressLines)
                     RichText(
@@ -433,31 +423,6 @@ class _SendReviewFieldTitle extends StatelessWidget {
           ),
         ),
         if (rightLabel != null) ...[rightLabel!],
-      ],
-    );
-  }
-}
-
-class _SendReviewFieldTrailing extends StatelessWidget {
-  const _SendReviewFieldTrailing({required this.label, required this.icon});
-
-  final String label;
-  final Widget icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: AppTypography.labelMedium.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
-        const SizedBox(width: AppSpacing.xxs),
-        icon,
       ],
     );
   }

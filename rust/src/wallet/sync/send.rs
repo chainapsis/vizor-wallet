@@ -33,21 +33,29 @@
 //! components) and the provers log+fail loudly rather than produce a
 //! silently-invalid proof.
 
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::num::NonZeroUsize;
 
 use secrecy::{ExposeSecret, SecretVec};
+use transparent::{address::TransparentAddress, keys::TransparentKeyScope};
 use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
 use zcash_client_backend::{
     data_api::{
-        wallet::{self, create_proposed_transactions, propose_transfer, ConfirmationsPolicy},
-        Account as _, InputSource, WalletRead,
+        wallet::{
+            self, create_proposed_transactions, propose_shielding, propose_transfer,
+            ConfirmationsPolicy,
+        },
+        Account as _, Balance, InputSource, WalletRead,
     },
     fees::{zip317::MultiOutputChangeStrategy, DustOutputPolicy, SplitPolicy, StandardFeeRule},
+    proposal::Proposal,
     wallet::OvkPolicy,
     zip321::{Payment, TransactionRequest},
 };
+use zcash_client_sqlite::AccountUuid;
 use zcash_keys::keys::UnifiedSpendingKey;
+use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
     memo::{Memo, MemoBytes},
@@ -75,6 +83,21 @@ pub(crate) struct ProposalResult {
     pub needs_sapling_params: bool,
     pub fee_zatoshi: u64,
 }
+
+pub(crate) struct ShieldTransparentResult {
+    pub txids: String,
+    pub fee_zatoshi: u64,
+    pub shielded_zatoshi: u64,
+}
+
+pub(crate) struct ShieldTransparentStatus {
+    pub can_shield: bool,
+    pub fee_zatoshi: u64,
+    pub shielded_zatoshi: u64,
+    pub reason: String,
+}
+
+const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
 
 pub fn propose_send(
     db_path: &str,
@@ -205,6 +228,97 @@ pub fn estimate_fee(
     Ok(fee)
 }
 
+/// Dry-run the transparent shielding proposal path without creating or
+/// broadcasting a transaction. This is used to decide whether the home screen
+/// should offer the Shield Balance action.
+pub(crate) fn get_shield_transparent_status(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<ShieldTransparentStatus, String> {
+    let shielding_threshold = shielding_threshold()?;
+    let mut db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+
+    match build_shielding_proposal(&mut db, network, account_id, shielding_threshold) {
+        Ok((proposal, _)) => Ok(ShieldTransparentStatus {
+            can_shield: true,
+            fee_zatoshi: proposal_fee_zatoshi(&proposal),
+            shielded_zatoshi: proposal_shielded_zatoshi(&proposal),
+            reason: String::new(),
+        }),
+        Err(reason) => Ok(ShieldTransparentStatus {
+            can_shield: false,
+            fee_zatoshi: 0,
+            shielded_zatoshi: 0,
+            reason,
+        }),
+    }
+}
+
+/// Shield spendable transparent funds for a software account to its
+/// internal shielded address. This is intentionally a one-shot API:
+/// unlike normal sends there is no confirmation screen, proposal ID,
+/// or hardware-wallet branch.
+pub(crate) async fn shield_transparent_balance(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    seed_bytes: &[u8],
+) -> Result<ShieldTransparentResult, String> {
+    let shielding_threshold = shielding_threshold()?;
+
+    let (txids, fee_zatoshi, shielded_zatoshi) = with_wallet_db_write_lock(
+        "send.shield_transparent_balance.create_transactions",
+        || {
+            let mut db = open_wallet_db(db_path, network)?;
+            let account_id = parse_account_uuid(account_uuid)?;
+            let account = db
+                .get_account(account_id)
+                .map_err(|e| format!("{e}"))?
+                .ok_or("Account not found")?;
+
+            let (proposal, _) =
+                build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
+            let fee_zatoshi = proposal_fee_zatoshi(&proposal);
+            let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
+
+            let seed = SecretVec::new(seed_bytes.to_vec());
+            let zip32_index = account
+                .source()
+                .key_derivation()
+                .ok_or("No key derivation")?
+                .account_index();
+            let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
+                .map_err(|e| format!("USK derivation failed: {e:?}"))?;
+
+            let spend_prover = NoOpSpendProver;
+            let output_prover = NoOpOutputProver;
+            let txids = create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+                &mut db,
+                &network,
+                &spend_prover,
+                &output_prover,
+                &wallet::SpendingKeys::from_unified_spending_key(usk),
+                OvkPolicy::Sender,
+                &proposal,
+            )
+            .map_err(|e| format!("Create shielding TX failed: {e}"))?;
+
+            Ok::<_, String>((txids, fee_zatoshi, shielded_zatoshi))
+        },
+    )?;
+
+    let txids: Vec<TxId> = txids.iter().cloned().collect();
+    let txids = broadcast_created_transactions(db_path, lightwalletd_url, &txids, "shield").await?;
+    Ok(ShieldTransparentResult {
+        txids,
+        fee_zatoshi,
+        shielded_zatoshi,
+    })
+}
+
 /// Execute a previously proposed transfer, then broadcast to the
 /// network. Returns comma-separated txids on success.
 ///
@@ -280,19 +394,130 @@ pub async fn execute_proposal(
         Ok::<_, String>(txids)
     })?;
 
+    let txids: Vec<TxId> = txids.iter().cloned().collect();
+    broadcast_created_transactions(db_path, lightwalletd_url, &txids, "send").await
+}
+
+fn shielding_threshold() -> Result<Zatoshis, String> {
+    Zatoshis::from_u64(SHIELDING_THRESHOLD_ZATOSHI)
+        .map_err(|_| "Bad shielding threshold".to_string())
+}
+
+fn build_shielding_proposal(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+    shielding_threshold: Zatoshis,
+) -> Result<(Proposal<StandardFeeRule, Infallible>, Zatoshis), String> {
+    let chain_height = db
+        .chain_height()
+        .map_err(|e| format!("Failed to read chain height: {e}"))?
+        .ok_or("Wallet must sync before shielding transparent funds")?;
+    let balances = db
+        .get_transparent_balances(
+            account_id,
+            (chain_height + 1).into(),
+            ConfirmationsPolicy::MIN,
+        )
+        .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
+    let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
+
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
+    let proposal = propose_shielding::<_, _, _, _, Infallible>(
+        db,
+        &network,
+        &input_selector,
+        &change_strategy,
+        shielding_threshold,
+        &from_addrs,
+        account_id,
+        ConfirmationsPolicy::MIN,
+    )
+    .map_err(|e| format!("Shield proposal failed: {e}"))?;
+
+    Ok((proposal, selected_value))
+}
+
+fn select_shielding_sources(
+    account_receivers: HashMap<TransparentAddress, (TransparentKeyScope, Balance)>,
+    shielding_threshold: Zatoshis,
+) -> Result<(Vec<TransparentAddress>, Zatoshis), String> {
+    let mut ephemeral = Vec::new();
+    let mut non_ephemeral = Vec::new();
+
+    for (address, (scope, balance)) in account_receivers {
+        let spendable = balance.spendable_value();
+        if spendable > Zatoshis::ZERO {
+            if scope == TransparentKeyScope::EPHEMERAL {
+                ephemeral.push((address, spendable));
+            } else {
+                non_ephemeral.push((address, spendable));
+            }
+        }
+    }
+
+    // Match the SDK policy: spend all non-ephemeral transparent receivers
+    // together, but never link more than one ephemeral receiver in a single
+    // shielding transaction.
+    let selected = if non_ephemeral.is_empty() {
+        ephemeral
+            .into_iter()
+            .max_by_key(|(_, value)| u64::from(*value))
+            .into_iter()
+            .collect()
+    } else {
+        non_ephemeral
+    };
+
+    let mut total = Zatoshis::ZERO;
+    let mut addresses = Vec::with_capacity(selected.len());
+    for (address, value) in selected {
+        total = (total + value).ok_or("Selected transparent balance overflow")?;
+        addresses.push(address);
+    }
+
+    if addresses.is_empty() || total < shielding_threshold {
+        return Err("No transparent funds available to shield above the fee threshold".to_string());
+    }
+
+    Ok((addresses, total))
+}
+
+fn proposal_fee_zatoshi(proposal: &Proposal<StandardFeeRule, Infallible>) -> u64 {
+    proposal
+        .steps()
+        .iter()
+        .map(|step| u64::from(step.balance().fee_required()))
+        .sum()
+}
+
+fn proposal_shielded_zatoshi(proposal: &Proposal<StandardFeeRule, Infallible>) -> u64 {
+    proposal
+        .steps()
+        .iter()
+        .flat_map(|step| step.balance().proposed_change().iter())
+        .map(|change| u64::from(change.value()))
+        .sum()
+}
+
+async fn broadcast_created_transactions(
+    db_path: &str,
+    lightwalletd_url: &str,
+    txids: &[TxId],
+    log_label: &str,
+) -> Result<String, String> {
     // Connect to lightwalletd once for all broadcasts.
     let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
 
-    // Broadcast each transaction.
     let txid_strings: Vec<String> = txids.iter().map(|id| format!("{id}")).collect();
 
     let read_conn =
         open_readonly_conn(db_path).map_err(|e| format!("Failed to open DB for broadcast: {e}"))?;
 
     let mut broadcast_ok: Vec<String> = Vec::new();
-    for txid in &txids {
+    for txid in txids.iter() {
         let raw_tx = read_conn
             .query_row(
                 "SELECT raw FROM transactions WHERE txid = ?1",
@@ -304,7 +529,7 @@ pub async fn execute_proposal(
         match broadcast_raw_transaction(&mut client, &raw_tx).await {
             Ok(()) => {
                 broadcast_ok.push(format!("{txid}"));
-                log::info!("send: broadcast {txid} ({} bytes)", raw_tx.len());
+                log::info!("{log_label}: broadcast {txid} ({} bytes)", raw_tx.len());
             }
             Err(e) => {
                 return Err(format!(
@@ -632,5 +857,77 @@ impl OutputProver for NoOpOutputProver {
 
     fn encode_proof(_proof: Self::Proof) -> GrothProofBytes {
         [0u8; GROTH_PROOF_SIZE]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn taddr(seed: u8) -> TransparentAddress {
+        TransparentAddress::PublicKeyHash([seed; 20])
+    }
+
+    fn balance(value: u64) -> Balance {
+        let mut balance = Balance::ZERO;
+        balance
+            .add_spendable_value(Zatoshis::from_u64(value).unwrap())
+            .unwrap();
+        balance
+    }
+
+    fn receiver(value: u64, scope: TransparentKeyScope) -> (TransparentKeyScope, Balance) {
+        (scope, balance(value))
+    }
+
+    #[test]
+    fn selects_fragmented_non_ephemeral_sources_by_aggregate_threshold() {
+        let mut receivers = HashMap::new();
+        receivers.insert(taddr(1), receiver(60_000, TransparentKeyScope::EXTERNAL));
+        receivers.insert(taddr(2), receiver(50_000, TransparentKeyScope::INTERNAL));
+
+        let threshold = Zatoshis::from_u64(100_000).unwrap();
+        let (addresses, total) = select_shielding_sources(receivers, threshold).unwrap();
+
+        assert_eq!(addresses.len(), 2);
+        assert_eq!(u64::from(total), 110_000);
+    }
+
+    #[test]
+    fn rejects_non_ephemeral_sources_below_aggregate_threshold() {
+        let mut receivers = HashMap::new();
+        receivers.insert(taddr(1), receiver(40_000, TransparentKeyScope::EXTERNAL));
+        receivers.insert(taddr(2), receiver(50_000, TransparentKeyScope::INTERNAL));
+
+        let threshold = Zatoshis::from_u64(100_000).unwrap();
+        let err = select_shielding_sources(receivers, threshold).unwrap_err();
+
+        assert!(err.contains("No transparent funds available"));
+    }
+
+    #[test]
+    fn selects_largest_ephemeral_source_only() {
+        let mut receivers = HashMap::new();
+        receivers.insert(taddr(1), receiver(110_000, TransparentKeyScope::EPHEMERAL));
+        receivers.insert(taddr(2), receiver(150_000, TransparentKeyScope::EPHEMERAL));
+
+        let threshold = Zatoshis::from_u64(100_000).unwrap();
+        let (addresses, total) = select_shielding_sources(receivers, threshold).unwrap();
+
+        assert_eq!(addresses, vec![taddr(2)]);
+        assert_eq!(u64::from(total), 150_000);
+    }
+
+    #[test]
+    fn prefers_non_ephemeral_sources_over_ephemeral_sources() {
+        let mut receivers = HashMap::new();
+        receivers.insert(taddr(1), receiver(140_000, TransparentKeyScope::EPHEMERAL));
+        receivers.insert(taddr(2), receiver(120_000, TransparentKeyScope::EXTERNAL));
+
+        let threshold = Zatoshis::from_u64(100_000).unwrap();
+        let (addresses, total) = select_shielding_sources(receivers, threshold).unwrap();
+
+        assert_eq!(addresses, vec![taddr(2)]);
+        assert_eq!(u64::from(total), 120_000);
     }
 }

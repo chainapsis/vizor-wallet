@@ -565,6 +565,19 @@ pub struct ProposalResult {
     pub fee_zatoshi: u64,
 }
 
+pub struct ShieldTransparentResult {
+    pub txids: String,
+    pub fee_zatoshi: u64,
+    pub shielded_zatoshi: u64,
+}
+
+pub struct ShieldTransparentStatus {
+    pub can_shield: bool,
+    pub fee_zatoshi: u64,
+    pub shielded_zatoshi: u64,
+    pub reason: String,
+}
+
 /// Step 1: Propose a transfer. Returns proposal info including whether Sapling params are needed.
 pub fn propose_send(
     db_path: String,
@@ -634,6 +647,52 @@ pub fn execute_proposal(
             spend_params_path.as_deref(),
             output_params_path.as_deref(),
         ))
+    })
+}
+
+/// Dry-run transparent shielding without creating or broadcasting a transaction.
+pub fn get_shield_transparent_status(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<ShieldTransparentStatus, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let r = wallet_sync::get_shield_transparent_status(&db_path, network, &account_uuid)?;
+        Ok(ShieldTransparentStatus {
+            can_shield: r.can_shield,
+            fee_zatoshi: r.fee_zatoshi,
+            shielded_zatoshi: r.shielded_zatoshi,
+            reason: r.reason,
+        })
+    })
+}
+
+/// Shield spendable transparent funds into the account's shielded balance.
+/// Software-account only; hardware shielding will be added separately through
+/// the PCZT flow.
+pub fn shield_transparent_balance(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    seed: Vec<u8>,
+) -> Result<ShieldTransparentResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::shield_transparent_balance(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            &seed,
+        ))?;
+        Ok(ShieldTransparentResult {
+            txids: r.txids,
+            fee_zatoshi: r.fee_zatoshi,
+            shielded_zatoshi: r.shielded_zatoshi,
+        })
     })
 }
 

@@ -604,7 +604,6 @@ class _SendStatusContent extends StatelessWidget {
               const SizedBox(height: AppSpacing.md),
               _SendStatusBlock(
                 title: 'To',
-                rightLabel: const _SendStatusFieldTrailing(label: 'Andrew'),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -737,20 +736,14 @@ class _SendStatusHeadline extends StatelessWidget {
 }
 
 class _SendStatusBlock extends StatelessWidget {
-  const _SendStatusBlock({
-    required this.title,
-    required this.child,
-    this.rightLabel,
-  });
+  const _SendStatusBlock({required this.title, required this.child});
 
   final String title;
   final Widget child;
-  final Widget? rightLabel;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final trailingChildren = rightLabel == null ? null : <Widget>[rightLabel!];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -764,35 +757,10 @@ class _SendStatusBlock extends StatelessWidget {
                 ),
               ),
             ),
-            ...?trailingChildren,
           ],
         ),
         const SizedBox(height: AppSpacing.xs),
         child,
-      ],
-    );
-  }
-}
-
-class _SendStatusFieldTrailing extends StatelessWidget {
-  const _SendStatusFieldTrailing({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: AppTypography.labelMedium.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
-        const SizedBox(width: AppSpacing.xxs),
-        AppIcon(AppIcons.chevronForward, size: 16, color: colors.icon.regular),
       ],
     );
   }

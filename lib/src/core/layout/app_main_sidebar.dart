@@ -157,11 +157,6 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                               : () => context.go('/receive'),
                         ),
                         const SizedBox(height: AppSpacing.xs),
-                        const AppSidebarItem(
-                          label: 'Address Book',
-                          iconName: AppIcons.users,
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
                         AppSidebarItem(
                           label: 'Activity',
                           iconName: AppIcons.history,
