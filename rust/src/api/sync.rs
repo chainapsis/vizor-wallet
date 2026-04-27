@@ -565,6 +565,12 @@ pub struct ProposalResult {
     pub fee_zatoshi: u64,
 }
 
+pub struct ShieldTransparentResult {
+    pub txids: String,
+    pub fee_zatoshi: u64,
+    pub shielded_zatoshi: u64,
+}
+
 /// Step 1: Propose a transfer. Returns proposal info including whether Sapling params are needed.
 pub fn propose_send(
     db_path: String,
@@ -634,6 +640,34 @@ pub fn execute_proposal(
             spend_params_path.as_deref(),
             output_params_path.as_deref(),
         ))
+    })
+}
+
+/// Shield spendable transparent funds into the account's shielded balance.
+/// Software-account only; hardware shielding will be added separately through
+/// the PCZT flow.
+pub fn shield_transparent_balance(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    seed: Vec<u8>,
+) -> Result<ShieldTransparentResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::shield_transparent_balance(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            &seed,
+        ))?;
+        Ok(ShieldTransparentResult {
+            txids: r.txids,
+            fee_zatoshi: r.fee_zatoshi,
+            shielded_zatoshi: r.shielded_zatoshi,
+        })
     })
 }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart'
     show CircularProgressIndicator, Scrollbar, Theme;
 import 'package:flutter/widgets.dart';
@@ -5,15 +7,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/network_config.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
+import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../../rust/api/wallet.dart' as rust_wallet;
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -23,8 +29,12 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  static final BigInt _shieldingThresholdZatoshi = BigInt.from(100000);
+
   bool _canBackgroundSync = false;
   bool _isBalanceVisible = true;
+  bool _isShieldingBalance = false;
+  String? _shieldBalanceError;
 
   @override
   void initState() {
@@ -74,6 +84,105 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  void _dismissShieldBalanceError() {
+    setState(() {
+      _shieldBalanceError = null;
+    });
+  }
+
+  Future<void> _shieldTransparentBalance() async {
+    if (_isShieldingBalance) return;
+
+    setState(() {
+      _isShieldingBalance = true;
+      _shieldBalanceError = null;
+    });
+
+    try {
+      final wallet = ref.read(walletProvider).value;
+      final accountUuid = wallet?.activeAccountUuid;
+      if (accountUuid == null) {
+        throw Exception('No active account.');
+      }
+
+      final accountNotifier = ref.read(accountProvider.notifier);
+      if (accountNotifier.isHardwareAccount(accountUuid)) {
+        throw Exception(
+          'Shielding transparent balance is only available for software accounts.',
+        );
+      }
+
+      final transparentBalance =
+          ref.read(syncProvider).value?.transparentBalance ?? BigInt.zero;
+      if (transparentBalance <= _shieldingThresholdZatoshi) {
+        throw Exception(
+          'Transparent balance is too small to shield after fees.',
+        );
+      }
+
+      final mnemonic = await accountNotifier.getMnemonicForAccount(accountUuid);
+      if (mnemonic == null) {
+        throw Exception('Mnemonic not found for the active account.');
+      }
+
+      final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
+      final dbPath = await getWalletDbPath();
+      final result = await rust_sync.shieldTransparentBalance(
+        dbPath: dbPath,
+        lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
+        network: ZcashNetwork.mainnet.name,
+        accountUuid: accountUuid,
+        seed: seedBytes,
+      );
+      log(
+        'HomeScreen: shielded transparent balance txids=${result.txids} '
+        'fee=${result.feeZatoshi} shielded=${result.shieldedZatoshi}',
+      );
+
+      try {
+        await ref.read(syncProvider.notifier).refreshAfterSend();
+      } catch (e) {
+        log('HomeScreen: refreshAfterSend after shielding failed: $e');
+      }
+    } catch (e, st) {
+      log('HomeScreen: shield transparent balance failed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _shieldBalanceError = _friendlyShieldBalanceError(e);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isShieldingBalance = false;
+        });
+      }
+    }
+  }
+
+  String _friendlyShieldBalanceError(Object error) {
+    final message = error.toString();
+    final lower = message.toLowerCase();
+    if (lower.contains('hardware')) {
+      return 'Shield balance is only available for software accounts.';
+    }
+    if (lower.contains('mnemonic')) {
+      return 'Mnemonic not found for the active account.';
+    }
+    if (lower.contains('sync')) {
+      return 'Sync the wallet before shielding transparent balance.';
+    }
+    if (lower.contains('insufficient') ||
+        lower.contains('threshold') ||
+        lower.contains('too small') ||
+        lower.contains('no transparent funds')) {
+      return 'Transparent balance is too small to shield after fees.';
+    }
+    if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
+      return 'Shield transaction could not be broadcast.';
+    }
+    return 'Shield balance failed. Please try again.';
+  }
+
   String _groupLabelForTx(rust_sync.TransactionInfo tx) {
     if (tx.minedHeight == BigInt.zero && !tx.expiredUnmined) {
       return 'Today';
@@ -101,6 +210,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sync.orchardPendingBalance;
     final transparentBalance =
         sync.transparentBalance + sync.transparentPendingBalance;
+    final canShieldTransparentBalance =
+        sync.transparentBalance > _shieldingThresholdZatoshi;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -124,10 +235,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               shieldedBalanceText: _formatZec(shieldedBalance),
               transparentBalanceText: _formatZec(transparentBalance),
               hasTransparentBalance: transparentBalance > BigInt.zero,
+              canShieldBalance: canShieldTransparentBalance,
+              isShieldingBalance: _isShieldingBalance,
+              shieldBalanceError: _shieldBalanceError,
               formatSignedZec: _formatSignedZec,
               groupLabelForTx: _groupLabelForTx,
               onToggleBalanceVisibility: _toggleBalanceVisibility,
-              onShieldBalancePressed: () {},
+              onShieldBalancePressed: () =>
+                  unawaited(_shieldTransparentBalance()),
+              onDismissShieldBalanceError: _dismissShieldBalanceError,
               onSyncInBackground: () =>
                   ref.read(syncProvider.notifier).enableBackgroundSync(),
               onStopBackgroundSync: () =>
@@ -168,10 +284,14 @@ class _HomePane extends StatefulWidget {
     required this.shieldedBalanceText,
     required this.transparentBalanceText,
     required this.hasTransparentBalance,
+    required this.canShieldBalance,
+    required this.isShieldingBalance,
+    required this.shieldBalanceError,
     required this.formatSignedZec,
     required this.groupLabelForTx,
     required this.onToggleBalanceVisibility,
     required this.onShieldBalancePressed,
+    required this.onDismissShieldBalanceError,
     required this.onSyncInBackground,
     required this.onStopBackgroundSync,
     required this.onRetrySync,
@@ -183,10 +303,14 @@ class _HomePane extends StatefulWidget {
   final String shieldedBalanceText;
   final String transparentBalanceText;
   final bool hasTransparentBalance;
+  final bool canShieldBalance;
+  final bool isShieldingBalance;
+  final String? shieldBalanceError;
   final String Function(BigInt zatoshi) formatSignedZec;
   final String Function(rust_sync.TransactionInfo tx) groupLabelForTx;
   final VoidCallback onToggleBalanceVisibility;
   final VoidCallback onShieldBalancePressed;
+  final VoidCallback onDismissShieldBalanceError;
   final VoidCallback onSyncInBackground;
   final VoidCallback onStopBackgroundSync;
   final VoidCallback onRetrySync;
@@ -281,6 +405,8 @@ class _HomePaneState extends State<_HomePane> {
                           shieldedBalanceText: widget.shieldedBalanceText,
                           transparentBalanceText: widget.transparentBalanceText,
                           hasTransparentBalance: widget.hasTransparentBalance,
+                          canShieldBalance: widget.canShieldBalance,
+                          isShieldingBalance: widget.isShieldingBalance,
                           isBalanceVisible: widget.isBalanceVisible,
                           onToggleBalanceVisibility:
                               widget.onToggleBalanceVisibility,
@@ -306,6 +432,14 @@ class _HomePaneState extends State<_HomePane> {
   }
 
   _HomeNoticeData? _noticeData() {
+    if (widget.shieldBalanceError != null) {
+      return _HomeNoticeData(
+        iconName: AppIcons.warning,
+        message: widget.shieldBalanceError!,
+        actionLabel: 'Dismiss',
+        onTap: widget.onDismissShieldBalanceError,
+      );
+    }
     if (widget.sync.error != null) {
       return _HomeNoticeData(
         iconName: AppIcons.warning,
@@ -443,6 +577,8 @@ class _HomeBalanceCard extends StatelessWidget {
     required this.shieldedBalanceText,
     required this.transparentBalanceText,
     required this.hasTransparentBalance,
+    required this.canShieldBalance,
+    required this.isShieldingBalance,
     required this.isBalanceVisible,
     required this.onToggleBalanceVisibility,
     required this.onShieldBalancePressed,
@@ -451,6 +587,8 @@ class _HomeBalanceCard extends StatelessWidget {
   final String shieldedBalanceText;
   final String transparentBalanceText;
   final bool hasTransparentBalance;
+  final bool canShieldBalance;
+  final bool isShieldingBalance;
   final bool isBalanceVisible;
   final VoidCallback onToggleBalanceVisibility;
   final VoidCallback onShieldBalancePressed;
@@ -660,6 +798,8 @@ class _HomeBalanceCard extends StatelessWidget {
                     ? _HomeTransparentBalanceStrip(
                         key: const ValueKey('transparent-balance-strip'),
                         balanceText: transparentBalanceText,
+                        canShieldBalance: canShieldBalance,
+                        isShieldingBalance: isShieldingBalance,
                         isBalanceVisible: isBalanceVisible,
                         onShieldBalancePressed: onShieldBalancePressed,
                       )
@@ -678,12 +818,16 @@ class _HomeBalanceCard extends StatelessWidget {
 class _HomeTransparentBalanceStrip extends StatelessWidget {
   const _HomeTransparentBalanceStrip({
     required this.balanceText,
+    required this.canShieldBalance,
+    required this.isShieldingBalance,
     required this.isBalanceVisible,
     required this.onShieldBalancePressed,
     super.key,
   });
 
   final String balanceText;
+  final bool canShieldBalance;
+  final bool isShieldingBalance;
   final bool isBalanceVisible;
   final VoidCallback onShieldBalancePressed;
 
@@ -724,7 +868,11 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.xs),
-            _HomeShieldBalanceButton(onPressed: onShieldBalancePressed),
+            _HomeShieldBalanceButton(
+              enabled: canShieldBalance,
+              isLoading: isShieldingBalance,
+              onPressed: onShieldBalancePressed,
+            ),
           ],
         ),
       ),
@@ -733,20 +881,34 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
 }
 
 class _HomeShieldBalanceButton extends StatelessWidget {
-  const _HomeShieldBalanceButton({required this.onPressed});
+  const _HomeShieldBalanceButton({
+    required this.enabled,
+    required this.isLoading,
+    required this.onPressed,
+  });
 
+  final bool enabled;
+  final bool isLoading;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isInteractive = enabled && !isLoading;
+    final contentColor = enabled
+        ? colors.text.accent
+        : colors.text.secondary.withValues(alpha: 0.64);
+
     return Semantics(
       button: true,
+      enabled: isInteractive,
       child: MouseRegion(
-        cursor: SystemMouseCursors.click,
+        cursor: isInteractive
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: onPressed,
+          onTap: isInteractive ? onPressed : null,
           child: ConstrainedBox(
             constraints: const BoxConstraints(minWidth: 96, minHeight: 32),
             child: Padding(
@@ -755,16 +917,26 @@ class _HomeShieldBalanceButton extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  AppIcon(
-                    AppIcons.shieldKeyholeOutline,
-                    size: 16,
-                    color: colors.text.accent,
-                  ),
+                  if (isLoading)
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: contentColor,
+                      ),
+                    )
+                  else
+                    AppIcon(
+                      AppIcons.shieldKeyholeOutline,
+                      size: 16,
+                      color: contentColor,
+                    ),
                   const SizedBox(width: AppSpacing.xxs),
                   Text(
                     'Shield Balance',
                     style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
+                      color: contentColor,
                     ),
                   ),
                 ],

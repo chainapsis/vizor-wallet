@@ -252,6 +252,23 @@ Future<String> executeProposal({
   outputParamsPath: outputParamsPath,
 );
 
+/// Shield spendable transparent funds into the account's shielded balance.
+/// Software-account only; hardware shielding will be added separately through
+/// the PCZT flow.
+Future<ShieldTransparentResult> shieldTransparentBalance({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required List<int> seed,
+}) => RustLib.instance.api.crateApiSyncShieldTransparentBalance(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  seed: seed,
+);
+
 Future<String> getNextAvailableAddress({
   required String dbPath,
   required String network,
@@ -574,6 +591,31 @@ class ScanResult {
       other is ScanResult &&
           runtimeType == other.runtimeType &&
           blocksScanned == other.blocksScanned;
+}
+
+class ShieldTransparentResult {
+  final String txids;
+  final BigInt feeZatoshi;
+  final BigInt shieldedZatoshi;
+
+  const ShieldTransparentResult({
+    required this.txids,
+    required this.feeZatoshi,
+    required this.shieldedZatoshi,
+  });
+
+  @override
+  int get hashCode =>
+      txids.hashCode ^ feeZatoshi.hashCode ^ shieldedZatoshi.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShieldTransparentResult &&
+          runtimeType == other.runtimeType &&
+          txids == other.txids &&
+          feeZatoshi == other.feeZatoshi &&
+          shieldedZatoshi == other.shieldedZatoshi;
 }
 
 class SubtreeIndices {
