@@ -6,12 +6,11 @@ import 'package:go_router/go_router.dart';
 import '../../core/layout/app_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_decorative_divider.dart';
 import '../../core/widgets/app_icon.dart';
 import 'shared/onboarding_welcome_art.dart';
 
 /// Welcome-specific button width. The redesigned Figma CTA stack is 256 dp
-/// wide (node 1136:17519), with the decorative divider using the same width.
+/// wide (node 1136:17519).
 const double _welcomeActionWidth = 256;
 
 /// Onboarding entry point — the Figma "Split View" at node 215:2688
@@ -68,21 +67,19 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 /// Opaque card that wraps the onboarding content.
 ///
 /// The Figma "Split View" composition (backdrop illustration plus the
-/// bottom-anchored UI column) is treated as ONE fixed-size design
-/// block — 884 × 552 dp, the dimensions of Figma's pane (nodes
-/// 215:2708 / 261:6662). The block does not reflow or rescale when
-/// the user resizes the window: it stays at its native size and
-/// the pane re-anchors it per-frame based on the pane height so
-/// the UI column (Footer, Buttons, Title, Logo — all authored
-/// bottom-up in Figma) keeps the exact pixel rows the spec calls
-/// for.
+/// bottom-anchored UI column) is treated as ONE fixed-size design block —
+/// 1064 × 672 dp, the dimensions of Figma's welcome pane inside the
+/// 1080 × 720 window (node 215:2665). The block does not reflow or rescale
+/// when the user resizes the window: it stays at its native size and the pane
+/// re-anchors it per-frame based on the pane height so the UI column keeps the
+/// exact pixel rows the spec calls for.
 ///
 /// Alignment is height-adaptive:
-///   * pane height >= 552 dp → `Alignment.center`. The canvas fits
+///   * pane height >= 672 dp → `Alignment.center`. The canvas fits
 ///     with symmetric `bg.ground` strips top and bottom, which
 ///     reads as intentional letterboxing when the user drags the
 ///     window taller than Figma's pane.
-///   * pane height <  552 dp → `Alignment.bottomCenter`. The canvas
+///   * pane height <  672 dp → `Alignment.bottomCenter`. The canvas
 ///     overflows the pane; bottom-anchoring keeps the UI CTAs
 ///     visible and lets the backdrop's soft top fade clip off,
 ///     which is far less load-bearing than the interactive footer.
@@ -110,19 +107,13 @@ class _Pane extends StatelessWidget {
 
   final Widget child;
 
-  /// Fixed design-canvas dimensions pulled from Figma's Trailing Pane
-  /// (nodes 215:2708 / 261:6662). Figma's Split View is authored at
-  /// 900 × 568, so the pane sits at 884 × 552 inside its 8 dp outer
-  /// gap. Our app window ships at 900 × 600, meaning the real pane is
-  /// 32 dp taller than Figma's — keeping the canvas at the Figma
-  /// dimensions and top-anchoring it (see OverflowBox below) lands
-  /// the backdrop and the bottom-anchored UI column at the pixel
-  /// positions the design calls for; the extra 32 dp at the pane
-  /// bottom just shows `bg.ground`.
-  static const double _canvasWidth = 884;
-  static const double _canvasHeight = 552;
-  static const double _backdropWidth = 884;
-  static const double _backdropHeight = 553;
+  /// Fixed design-canvas dimensions pulled from Figma's Welcome BG frame
+  /// (node 1300:34883). The 1080 × 720 desktop window leaves a 1064 × 672
+  /// pane after the outer 8 dp gap and native titlebar safe area.
+  static const double _canvasWidth = 1064;
+  static const double _canvasHeight = 672;
+  static const double _backdropWidth = 1064;
+  static const double _backdropHeight = 672;
 
   @override
   Widget build(BuildContext context) {
@@ -136,18 +127,18 @@ class _Pane extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       // OverflowBox with tight canvas-sized constraints parks the
-      // design block at its native 884 × 552 regardless of the pane's
+      // design block at its native 1064 × 672 regardless of the pane's
       // actual dimensions. The more obvious
       // `Container.alignment: Alignment.center` can't carry this:
       // internally it wraps in an `Align`, which loosens the child's
       // min constraints but keeps `max` capped to the parent's
       // incoming bounds — when the user drags the window narrower
-      // than 884, the `SizedBox` silently shrinks to the pane width
+      // than 1064, the `SizedBox` silently shrinks to the pane width
       // and the `Positioned` backdrop stays pinned at `left: 0` of
       // the shrunken canvas, making the illustration drift right.
       //
       // Alignment is chosen per-frame by pane height:
-      //   * pane height >= _canvasHeight (552) → `Alignment.center`.
+      //   * pane height >= _canvasHeight (672) → `Alignment.center`.
       //     The canvas fits with symmetric `bg.ground` strips top
       //     and bottom, reading as intentional letterboxing.
       //   * pane height <  _canvasHeight       → `Alignment.bottomCenter`.
@@ -184,11 +175,9 @@ class _Pane extends StatelessWidget {
                     height: _backdropHeight,
                     child: const _Backdrop(),
                   ),
-                  // UI column bottom-anchored inside the canvas with
-                  // Figma's Content Area `p-md` padding. `Positioned.fill`
-                  // passes tight constraints so the inner Column's
-                  // `crossAxisAlignment.center` actually centers against
-                  // the full canvas width.
+                  // UI column bottom-anchored inside the canvas with Figma's
+                  // Content Area `p-md` padding. `_Content` adds the Container
+                  // and WelcomeContent vertical padding from the design.
                   Positioned.fill(
                     child: Padding(
                       padding: const EdgeInsets.all(AppSpacing.md),
@@ -217,35 +206,31 @@ class _Backdrop extends StatelessWidget {
   Widget build(BuildContext context) => const OnboardingWelcomeBackdrop();
 }
 
-/// Vizor logo + title block + divider + buttons + legal footer,
-/// bottom-anchored.
+/// Vizor logo + title block + buttons + legal footer, bottom-anchored.
 ///
-/// Figma's `_Welcome Content` wraps these children in 24 dp vertical
-/// padding (`py-md`) on top of the outer pane's `p-md`, so the footer
-/// sits 48 dp above the pane edge. Only the bottom half of that
-/// padding is reproduced here, as a trailing `SizedBox` — the top
-/// half is dropped on purpose. Because the Column is bottom-anchored,
-/// a leading SizedBox only inflates the total content block height
-/// and pushes the whole block up into the backdrop illustration's
-/// visible area; when the user shrinks the window that eats real
-/// illustration pixels with no visual payoff.
+/// Figma's Container contributes 32 dp vertical padding and `_Welcome Content`
+/// contributes another 24 dp. Combined with the pane's outer 24 dp content
+/// padding above, the legal footer sits 80 dp above the pane edge.
 class _Content extends StatelessWidget {
   const _Content();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const _TitleBlock(),
-        const SizedBox(height: AppSpacing.lg),
-        const AppDecorativeDivider(width: _welcomeActionWidth),
-        const SizedBox(height: AppSpacing.lg),
-        const _ButtonsStack(),
-        const SizedBox(height: AppSpacing.lg),
-        const _LegalFooter(),
-        const SizedBox(height: AppSpacing.md),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.base),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const _TitleBlock(),
+            const SizedBox(height: AppSpacing.lg),
+            const _ButtonsStack(),
+            const SizedBox(height: AppSpacing.lg),
+            const _LegalFooter(),
+          ],
+        ),
+      ),
     );
   }
 }
