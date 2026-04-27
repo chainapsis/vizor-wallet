@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart'
-    show
-        CircularProgressIndicator,
-        Scrollbar,
-        Theme;
+    show CircularProgressIndicator, Scrollbar, Theme;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -97,6 +94,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final walletAsync = ref.watch(walletProvider);
     final syncAsync = ref.watch(syncProvider);
     final sync = syncAsync.value ?? SyncState();
+    final shieldedBalance =
+        sync.saplingBalance +
+        sync.orchardBalance +
+        sync.saplingPendingBalance +
+        sync.orchardPendingBalance;
+    final transparentBalance =
+        sync.transparentBalance + sync.transparentPendingBalance;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -117,10 +121,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               sync: sync,
               canBackgroundSync: _canBackgroundSync,
               isBalanceVisible: _isBalanceVisible,
-              balanceText: _formatZec(sync.totalBalance),
+              shieldedBalanceText: _formatZec(shieldedBalance),
+              transparentBalanceText: _formatZec(transparentBalance),
+              hasTransparentBalance: transparentBalance > BigInt.zero,
               formatSignedZec: _formatSignedZec,
               groupLabelForTx: _groupLabelForTx,
               onToggleBalanceVisibility: _toggleBalanceVisibility,
+              onShieldBalancePressed: () {},
               onSyncInBackground: () =>
                   ref.read(syncProvider.notifier).enableBackgroundSync(),
               onStopBackgroundSync: () =>
@@ -158,10 +165,13 @@ class _HomePane extends StatefulWidget {
     required this.sync,
     required this.canBackgroundSync,
     required this.isBalanceVisible,
-    required this.balanceText,
+    required this.shieldedBalanceText,
+    required this.transparentBalanceText,
+    required this.hasTransparentBalance,
     required this.formatSignedZec,
     required this.groupLabelForTx,
     required this.onToggleBalanceVisibility,
+    required this.onShieldBalancePressed,
     required this.onSyncInBackground,
     required this.onStopBackgroundSync,
     required this.onRetrySync,
@@ -170,10 +180,13 @@ class _HomePane extends StatefulWidget {
   final SyncState sync;
   final bool canBackgroundSync;
   final bool isBalanceVisible;
-  final String balanceText;
+  final String shieldedBalanceText;
+  final String transparentBalanceText;
+  final bool hasTransparentBalance;
   final String Function(BigInt zatoshi) formatSignedZec;
   final String Function(rust_sync.TransactionInfo tx) groupLabelForTx;
   final VoidCallback onToggleBalanceVisibility;
+  final VoidCallback onShieldBalancePressed;
   final VoidCallback onSyncInBackground;
   final VoidCallback onStopBackgroundSync;
   final VoidCallback onRetrySync;
@@ -265,10 +278,13 @@ class _HomePaneState extends State<_HomePane> {
                       children: [
                         const SizedBox(height: AppSpacing.sm),
                         _HomeBalanceCard(
-                          balanceText: widget.balanceText,
+                          shieldedBalanceText: widget.shieldedBalanceText,
+                          transparentBalanceText: widget.transparentBalanceText,
+                          hasTransparentBalance: widget.hasTransparentBalance,
                           isBalanceVisible: widget.isBalanceVisible,
                           onToggleBalanceVisibility:
                               widget.onToggleBalanceVisibility,
+                          onShieldBalancePressed: widget.onShieldBalancePressed,
                         ),
                         if (notice != null) ...[
                           const SizedBox(height: AppSpacing.xs),
@@ -424,182 +440,337 @@ class _HomePaneState extends State<_HomePane> {
 
 class _HomeBalanceCard extends StatelessWidget {
   const _HomeBalanceCard({
-    required this.balanceText,
+    required this.shieldedBalanceText,
+    required this.transparentBalanceText,
+    required this.hasTransparentBalance,
     required this.isBalanceVisible,
     required this.onToggleBalanceVisibility,
+    required this.onShieldBalancePressed,
+  });
+
+  final String shieldedBalanceText;
+  final String transparentBalanceText;
+  final bool hasTransparentBalance;
+  final bool isBalanceVisible;
+  final VoidCallback onToggleBalanceVisibility;
+  final VoidCallback onShieldBalancePressed;
+
+  static const _shieldedCardHeight = 196.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final displayedShieldedBalance = isBalanceVisible
+        ? '$shieldedBalanceText zec'
+        : '•••••• zec';
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: colors.background.base),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: _shieldedCardHeight,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                    colors: isDark
+                                        ? [
+                                            colors.background.base.withValues(
+                                              alpha: 0.90,
+                                            ),
+                                            colors.background.base.withValues(
+                                              alpha: 0.82,
+                                            ),
+                                            colors.background.base.withValues(
+                                              alpha: 0.48,
+                                            ),
+                                            colors.background.base.withValues(
+                                              alpha: 0.00,
+                                            ),
+                                          ]
+                                        : [
+                                            colors.background.base.withValues(
+                                              alpha: 0.98,
+                                            ),
+                                            colors.background.base.withValues(
+                                              alpha: 0.95,
+                                            ),
+                                            colors.background.base.withValues(
+                                              alpha: 0.70,
+                                            ),
+                                            colors.background.base.withValues(
+                                              alpha: 0.00,
+                                            ),
+                                          ],
+                                    stops: const [0.0, 0.28, 0.56, 0.86],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Positioned.fill(
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: Image.asset(
+                                  isDark
+                                      ? 'assets/illustrations/home_balance_card_bg_dark.png'
+                                      : 'assets/illustrations/home_balance_card_bg_light.png',
+                                  fit: BoxFit.cover,
+                                  width: 604,
+                                  height: _shieldedCardHeight,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.sm,
+                          AppSpacing.md,
+                          AppSpacing.sm,
+                          AppSpacing.md,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(AppSpacing.xxs),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _HomeBalanceShieldIcon(
+                                        isDark: isDark,
+                                        iconColor: colors.icon.brandPurple,
+                                      ),
+                                      const SizedBox(width: AppSpacing.xxs),
+                                      Text(
+                                        'Shielded Balance',
+                                        style: AppTypography.labelLarge
+                                            .copyWith(
+                                              color: colors.text.accent,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Spacer(),
+                                _IconPillButton(
+                                  iconName: isBalanceVisible
+                                      ? AppIcons.eye
+                                      : AppIcons.eyeClosed,
+                                  onPressed: onToggleBalanceVisibility,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            Text(
+                              displayedShieldedBalance,
+                              style: AppTypography.displayMedium.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                            const Spacer(),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      return AppButton(
+                                        onPressed: () => context.push('/send'),
+                                        variant: AppButtonVariant.primary,
+                                        minWidth: constraints.maxWidth,
+                                        leading: const AppIcon(AppIcons.plane),
+                                        child: const Text('Send'),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.xs),
+                                Expanded(
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      return AppButton(
+                                        onPressed: () =>
+                                            context.push('/receive'),
+                                        variant: AppButtonVariant.secondary,
+                                        minWidth: constraints.maxWidth,
+                                        leading: const AppIcon(
+                                          AppIcons.arrowDownCircle,
+                                        ),
+                                        child: const Text('Receive'),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  final curved = CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                    reverseCurve: Curves.easeInCubic,
+                  );
+                  return ClipRect(
+                    child: SizeTransition(
+                      sizeFactor: curved,
+                      axisAlignment: -1,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, -0.85),
+                          end: Offset.zero,
+                        ).animate(curved),
+                        child: child,
+                      ),
+                    ),
+                  );
+                },
+                child: hasTransparentBalance
+                    ? _HomeTransparentBalanceStrip(
+                        key: const ValueKey('transparent-balance-strip'),
+                        balanceText: transparentBalanceText,
+                        isBalanceVisible: isBalanceVisible,
+                        onShieldBalancePressed: onShieldBalancePressed,
+                      )
+                    : const SizedBox.shrink(
+                        key: ValueKey('transparent-balance-empty'),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeTransparentBalanceStrip extends StatelessWidget {
+  const _HomeTransparentBalanceStrip({
+    required this.balanceText,
+    required this.isBalanceVisible,
+    required this.onShieldBalancePressed,
+    super.key,
   });
 
   final String balanceText;
   final bool isBalanceVisible;
-  final VoidCallback onToggleBalanceVisibility;
+  final VoidCallback onShieldBalancePressed;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final displayedBalance = isBalanceVisible
-        ? '$balanceText zec'
-        : '•••••• zec';
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
+        ? '$balanceText ZEC'
+        : '•••••• ZEC';
 
     return SizedBox(
-      height: 196,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-        child: Stack(
+      height: 56,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.s),
+        child: Row(
           children: [
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(color: colors.background.base),
-              ),
-            ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            colors: isDark
-                                ? [
-                                    colors.background.base.withValues(
-                                      alpha: 0.90,
-                                    ),
-                                    colors.background.base.withValues(
-                                      alpha: 0.82,
-                                    ),
-                                    colors.background.base.withValues(
-                                      alpha: 0.48,
-                                    ),
-                                    colors.background.base.withValues(
-                                      alpha: 0.00,
-                                    ),
-                                  ]
-                                : [
-                                    colors.background.base.withValues(
-                                      alpha: 0.98,
-                                    ),
-                                    colors.background.base.withValues(
-                                      alpha: 0.95,
-                                    ),
-                                    colors.background.base.withValues(
-                                      alpha: 0.70,
-                                    ),
-                                    colors.background.base.withValues(
-                                      alpha: 0.00,
-                                    ),
-                                  ],
-                            stops: const [0.0, 0.28, 0.56, 0.86],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Image.asset(
-                          isDark
-                              ? 'assets/illustrations/home_balance_card_bg_dark.png'
-                              : 'assets/illustrations/home_balance_card_bg_light.png',
-                          fit: BoxFit.cover,
-                          width: 604,
-                          height: 196,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.sm,
-                  AppSpacing.md,
-                  AppSpacing.sm,
-                  AppSpacing.md,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(AppSpacing.xxs),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _HomeBalanceShieldIcon(
-                                isDark: isDark,
-                                iconColor: colors.icon.brandPurple,
-                              ),
-                              const SizedBox(width: AppSpacing.xxs),
-                              Text(
-                                'Shielded Balance',
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: colors.text.accent,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Spacer(),
-                        _IconPillButton(
-                          iconName: isBalanceVisible
-                              ? AppIcons.eye
-                              : AppIcons.eyeClosed,
-                          onPressed: onToggleBalanceVisibility,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      displayedBalance,
-                      style: AppTypography.displayMedium.copyWith(
+            Expanded(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(
+                    AppIcons.transparentBalance,
+                    size: 16,
+                    color: colors.text.accent,
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  Flexible(
+                    child: Text(
+                      'Transparent balance: $displayedBalance',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),
                     ),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              return AppButton(
-                                onPressed: () => context.push('/send'),
-                                variant: AppButtonVariant.primary,
-                                minWidth: constraints.maxWidth,
-                                leading: const AppIcon(AppIcons.plane),
-                                child: const Text('Send'),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Expanded(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              return AppButton(
-                                onPressed: () => context.push('/receive'),
-                                variant: AppButtonVariant.secondary,
-                                minWidth: constraints.maxWidth,
-                                leading: const AppIcon(
-                                  AppIcons.arrowDownCircle,
-                                ),
-                                child: const Text('Receive'),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
+            const SizedBox(width: AppSpacing.xs),
+            _HomeShieldBalanceButton(onPressed: onShieldBalancePressed),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeShieldBalanceButton extends StatelessWidget {
+  const _HomeShieldBalanceButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onPressed,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 96, minHeight: 32),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AppIcon(
+                    AppIcons.shieldKeyholeOutline,
+                    size: 16,
+                    color: colors.text.accent,
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  Text(
+                    'Shield Balance',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
