@@ -252,7 +252,6 @@ class _UnlockContent extends StatelessWidget {
                       leadingSlotWidth: 32,
                       trailingSlotWidth: 40,
                       inputHorizontalPadding: AppSpacing.s,
-                      showVisibilityToggle: false,
                       controller: passwordController,
                       autofocus: false,
                       messageText: messageText,
