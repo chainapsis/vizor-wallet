@@ -141,10 +141,10 @@ class _LostPasswordPane extends StatelessWidget {
   final Widget child;
   final VoidCallback onBack;
 
-  static const double _canvasWidth = 884;
-  static const double _canvasHeight = 552;
-  static const double _backdropWidth = 884;
-  static const double _backdropHeight = 553;
+  static const double _canvasWidth = 1064;
+  static const double _canvasHeight = 672;
+  static const double _backdropWidth = 1064;
+  static const double _backdropHeight = 672;
 
   @override
   Widget build(BuildContext context) {
@@ -189,7 +189,21 @@ class _LostPasswordPane extends StatelessWidget {
                             alignment: Alignment.topLeft,
                             child: _LostPasswordBackButton(onPressed: onBack),
                           ),
-                          Expanded(child: Center(child: child)),
+                          Expanded(
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: AppSpacing.base,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: AppSpacing.md,
+                                  ),
+                                  child: child,
+                                ),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
