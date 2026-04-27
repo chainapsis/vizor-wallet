@@ -1,6 +1,5 @@
 import 'package:flutter/widgets.dart';
 
-import '../theme/app_theme.dart';
 import 'app_icon.dart';
 import 'app_text_field.dart';
 
@@ -75,11 +74,7 @@ class _PasswordTextFieldState extends State<PasswordTextField> {
       inputHorizontalPadding: widget.inputHorizontalPadding,
       inputBottomPadding: widget.inputBottomPadding,
       tone: widget.tone,
-      leading: AppIcon(
-        AppIcons.lock,
-        size: 20,
-        color: context.colors.icon.accent,
-      ),
+      leading: const AppIcon(AppIcons.lock, size: 20),
       trailing: widget.showVisibilityToggle
           ? GestureDetector(
               behavior: HitTestBehavior.opaque,

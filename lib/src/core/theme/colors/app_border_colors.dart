@@ -5,52 +5,54 @@ import '../primitives.dart';
 /// Border / divider weights.
 ///
 /// * [subtle] — Hairline dividers, row separators.
-/// * [regular] — Input fields, cards, chips. (Named `regular` instead of
-///   `default` because `default` is a reserved word in Dart.)
-/// * [strong] — Selected states, active tabs.
+/// * [subtleOpacity] — Alpha border used on strong filled controls.
+/// * [regular] — Default field/card/chip border. (Named `regular` instead of
+///   Figma's `default` because `default` is a reserved word in Dart.)
+/// * [medium] — Active/filled field border.
+/// * [strong] — Max-contrast border.
 /// * [utilityDestructive] — Validation / destructive emphasis.
-/// * [brandCyanSubtle] / [brandCyanStrong] — Brand-accent borders for
-///   cyan-tinted surfaces (info panels, selection on cyan brand pages).
-/// * [brandPurpleStrong] — Brand-purple border for affirmative feedback.
+/// * [utilitySuccess] — Success emphasis.
+/// * [brandCrimsonStrong] — Brand feedback / accent border.
 class AppBorderColors {
   const AppBorderColors({
     required this.subtle,
+    required this.subtleOpacity,
     required this.regular,
+    required this.medium,
     required this.strong,
     required this.utilityDestructive,
-    required this.brandCyanSubtle,
-    required this.brandCyanStrong,
-    required this.brandPurpleStrong,
+    required this.utilitySuccess,
+    required this.brandCrimsonStrong,
   });
 
   final Color subtle;
+  final Color subtleOpacity;
   final Color regular;
+  final Color medium;
   final Color strong;
   final Color utilityDestructive;
-  final Color brandCyanSubtle;
-  final Color brandCyanStrong;
-  final Color brandPurpleStrong;
+  final Color utilitySuccess;
+  final Color brandCrimsonStrong;
 
   static const dark = AppBorderColors(
-    subtle: Primitives.p200Dark,
+    subtle: Primitives.p150Dark,
+    subtleOpacity: Primitives.p900Alpha20Dark,
     regular: Primitives.p300Dark,
-    strong: Primitives.p400Dark,
-    utilityDestructive: YellowPrimitives.p400Dark,
-    brandCyanSubtle: CyanPrimitives.p100Dark,
-    brandCyanStrong: CyanPrimitives.p300Dark,
-    brandPurpleStrong: PurplePrimitives.p400Dark,
+    medium: Primitives.p400Dark,
+    strong: Primitives.p800Dark,
+    utilityDestructive: PlumPrimitives.p400Dark,
+    utilitySuccess: GoldPrimitives.p500Dark,
+    brandCrimsonStrong: CrimsonPrimitives.p400Dark,
   );
 
-  // Light-mode borders sit one step lighter than the symmetric position
-  // their dark counterparts occupy. Per the Figma sRGB token export,
-  // `subtle → P150 / regular → P200 / strong → P300` on the light face.
   static const light = AppBorderColors(
-    subtle: Primitives.p150Light,
+    subtle: Primitives.p100Light,
+    subtleOpacity: Primitives.p0Alpha15Light,
     regular: Primitives.p200Light,
-    strong: Primitives.p300Light,
-    utilityDestructive: YellowPrimitives.p300Light,
-    brandCyanSubtle: CyanPrimitives.p50Light,
-    brandCyanStrong: CyanPrimitives.p150Light,
-    brandPurpleStrong: PurplePrimitives.p150Light,
+    medium: Primitives.p300Light,
+    strong: Primitives.p900Light,
+    utilityDestructive: PlumPrimitives.p300Light,
+    utilitySuccess: GoldPrimitives.p400Light,
+    brandCrimsonStrong: CrimsonPrimitives.p300Light,
   );
 }

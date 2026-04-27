@@ -11,9 +11,11 @@ import '../primitives.dart';
 /// * [disabled] — Inactive, unavailable labels.
 /// * [inverse] — Text placed on inverted surfaces (e.g. dark text on a light
 ///   chip inside dark mode).
-/// * [warning] — Inline warning copy. Theme-invariant brand yellow.
+/// * [warning] — Inline caution copy. Backed by the current gold utility
+///   token for compatibility with existing warning call sites.
 /// * [destructive] — Destructive utility copy.
-/// * [brandPurple] / [brandCyan] — Brand-colored inline text accents.
+/// * [success] — Positive / success utility copy.
+/// * [brandCrimson] — Brand-colored inline text accent.
 class AppTextColors {
   const AppTextColors({
     required this.accent,
@@ -24,8 +26,8 @@ class AppTextColors {
     required this.inverse,
     required this.warning,
     required this.destructive,
-    required this.brandPurple,
-    required this.brandCyan,
+    required this.success,
+    required this.brandCrimson,
   });
 
   final Color accent;
@@ -36,23 +38,20 @@ class AppTextColors {
   final Color inverse;
   final Color warning;
   final Color destructive;
-  final Color brandPurple;
-  final Color brandCyan;
+  final Color success;
+  final Color brandCrimson;
 
   static const dark = AppTextColors(
-    accent: Primitives.p800Dark,
+    accent: Primitives.p900Dark,
     primary: Primitives.p700Dark,
     secondary: Primitives.p600Dark,
     muted: Primitives.p500Dark,
     disabled: Primitives.p400Dark,
     inverse: Primitives.p0Dark,
-    // Yellow 400 dark = #FF9617; the same warning hue is mirrored on
-    // the light face via `p300Light`, so the inline warning reads
-    // identically across modes.
-    warning: YellowPrimitives.p400Dark,
-    destructive: Color(0xFFB760C4),
-    brandPurple: PurplePrimitives.p500Dark,
-    brandCyan: CyanPrimitives.p600Dark,
+    warning: GoldPrimitives.p500Dark,
+    destructive: PlumPrimitives.p500Dark,
+    success: GoldPrimitives.p500Dark,
+    brandCrimson: CrimsonPrimitives.p400Dark,
   );
 
   static const light = AppTextColors(
@@ -64,9 +63,9 @@ class AppTextColors {
     muted: Primitives.p500Light,
     disabled: Primitives.p400Light,
     inverse: Primitives.p0Light,
-    warning: YellowPrimitives.p300Light,
-    destructive: Color(0xFF93489E),
-    brandPurple: PurplePrimitives.p300Light,
-    brandCyan: CyanPrimitives.p300Light,
+    warning: GoldPrimitives.p400Light,
+    destructive: PlumPrimitives.p300Light,
+    success: GoldPrimitives.p400Light,
+    brandCrimson: CrimsonPrimitives.p400Light,
   );
 }

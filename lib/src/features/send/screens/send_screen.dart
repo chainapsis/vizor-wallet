@@ -444,7 +444,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     final colors = context.colors;
 
     final addressTone = switch (_addressType) {
-      'unified' || 'sapling' => AppTextFieldTone.brandPurple,
+      'unified' || 'sapling' => AppTextFieldTone.brandCrimson,
       'invalid' || 'error' => AppTextFieldTone.destructive,
       _ => AppTextFieldTone.neutral,
     };
@@ -459,12 +459,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       'unified' || 'sapling' => AppIcon(
         AppIcons.shieldKeyhole,
         size: 16,
-        color: colors.text.brandPurple,
+        color: colors.text.brandCrimson,
       ),
       'invalid' || 'error' => AppIcon(
         AppIcons.warning,
         size: 16,
-        color: colors.text.warning,
+        color: colors.text.destructive,
       ),
       'transparent' => AppIcon(
         AppIcons.eye,
@@ -491,7 +491,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
               child: Text(
                 'Error: $err',
                 style: AppTypography.bodyMedium.copyWith(
-                  color: context.colors.text.warning,
+                  color: context.colors.text.destructive,
                 ),
               ),
             ),
@@ -603,8 +603,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                                   ? AppIcon(
                                                       AppIcons.warning,
                                                       size: 16,
-                                                      color:
-                                                          colors.text.warning,
+                                                      color: colors
+                                                          .text
+                                                          .destructive,
                                                     )
                                                   : null,
                                               keyboardType:
@@ -698,8 +699,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                                     ? AppIcon(
                                                         AppIcons.warning,
                                                         size: 16,
-                                                        color:
-                                                            colors.text.warning,
+                                                        color: colors
+                                                            .text
+                                                            .destructive,
                                                       )
                                                     : null,
                                                 minLines: 6,
@@ -891,13 +893,17 @@ class _SendGlobalError extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        AppIcon(AppIcons.warning, size: 16, color: context.colors.text.warning),
+        AppIcon(
+          AppIcons.warning,
+          size: 16,
+          color: context.colors.text.destructive,
+        ),
         const SizedBox(width: AppSpacing.xxs),
         Expanded(
           child: Text(
             message,
             style: AppTypography.labelMedium.copyWith(
-              color: context.colors.text.warning,
+              color: context.colors.text.destructive,
             ),
           ),
         ),

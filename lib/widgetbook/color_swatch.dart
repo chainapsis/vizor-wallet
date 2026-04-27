@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../src/core/theme/app_theme.dart';
+import '../src/core/theme/primitives.dart';
 
 /// A single design-token swatch card that mirrors the Figma spec layout.
 ///
@@ -137,8 +138,8 @@ class _ColorHalf extends StatelessWidget {
 
   static Color _textColorFor(Color bg) {
     return bg.computeLuminance() > 0.5
-        ? const Color(0xFF151818)
-        : const Color(0xFFE1E1E1);
+        ? Primitives.p900Light
+        : Primitives.p800Dark;
   }
 
   static String _hex(Color c) {

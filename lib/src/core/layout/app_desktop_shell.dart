@@ -54,7 +54,7 @@ class AppDesktopSidebarSurface extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: backgroundColor ?? Colors.transparent,
-        borderRadius: BorderRadius.circular(AppRadii.small),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       clipBehavior: clipBehavior,
       child: child,
@@ -77,7 +77,7 @@ class AppDesktopPane extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: context.colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.small),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       clipBehavior: Clip.antiAlias,
       padding: padding,
@@ -161,7 +161,7 @@ class AppSidebarUserButton extends StatelessWidget {
       height: 40,
       padding: const EdgeInsets.all(AppSpacing.xs),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadii.small),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       child: Row(
         children: [

@@ -300,7 +300,7 @@ class _ImportSecretPassphraseScreenState
                                 Text(
                                   _errorText!,
                                   style: AppTypography.bodyMedium.copyWith(
-                                    color: colors.text.warning,
+                                    color: colors.text.destructive,
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
@@ -452,15 +452,17 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
     );
     final borderColor = widget.destructive
         ? colors.border.utilityDestructive
+        : _hovered && !isFocused && !hasText
+        ? colors.border.regular
         : isFocused
-        ? colors.border.strong
+        ? colors.border.medium
         : colors.border.subtle;
     final focusRingColor = widget.destructive
         ? colors.border.utilityDestructive
         : colors.state.focusRing;
 
     final numberColor = widget.destructive
-        ? colors.text.warning
+        ? colors.text.destructive
         : hasText || isFocused
         ? colors.text.accent
         : colors.text.secondary;
@@ -503,7 +505,7 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: colors.surface.input,
-                      borderRadius: BorderRadius.circular(AppRadii.small),
+                      borderRadius: BorderRadius.circular(AppRadii.xSmall),
                       border: Border.all(
                         color: borderColor,
                         width: hasText || isFocused || widget.destructive
@@ -522,7 +524,7 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: colors.state.hover,
-                        borderRadius: BorderRadius.circular(AppRadii.small),
+                        borderRadius: BorderRadius.circular(AppRadii.xSmall),
                       ),
                     ),
                   ),

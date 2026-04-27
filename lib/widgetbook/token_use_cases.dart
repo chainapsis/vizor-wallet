@@ -30,9 +30,11 @@ const _iconSizeRows = <_TokenRow>[
 ];
 
 const _radiiRows = <_TokenRow>[
+  _TokenRow('xSmall', AppRadii.xSmall),
   _TokenRow('small', AppRadii.small),
   _TokenRow('medium', AppRadii.medium),
   _TokenRow('large', AppRadii.large),
+  _TokenRow('xLarge', AppRadii.xLarge),
   _TokenRow('full', AppRadii.full),
 ];
 

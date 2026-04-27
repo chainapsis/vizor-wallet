@@ -191,7 +191,7 @@ class _ImportWalletBirthdayScreenState
         final baseTheme = material.Theme.of(context);
         final theme = baseTheme.copyWith(
           colorScheme: baseTheme.colorScheme.copyWith(
-            primary: colors.border.brandPurpleStrong,
+            primary: colors.border.brandCrimsonStrong,
             onPrimary: colors.text.inverse,
             surface: colors.background.ground,
             onSurface: colors.text.accent,
@@ -201,11 +201,11 @@ class _ImportWalletBirthdayScreenState
           ),
           datePickerTheme: material.DatePickerThemeData(
             backgroundColor: colors.background.ground,
-            surfaceTintColor: const Color(0x00000000),
-            shadowColor: const Color(0x33000000),
+            surfaceTintColor: colors.background.ground.withValues(alpha: 0),
+            shadowColor: colors.background.neutralScrim,
             dividerColor: colors.border.subtle.withValues(alpha: 0.2),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadii.large),
+              borderRadius: BorderRadius.circular(AppRadii.xLarge),
             ),
             headerForegroundColor: colors.text.accent,
             headerBackgroundColor: colors.background.ground,
@@ -233,7 +233,7 @@ class _ImportWalletBirthdayScreenState
               states,
             ) {
               if (states.contains(material.WidgetState.selected)) {
-                return colors.border.brandPurpleStrong;
+                return colors.border.brandCrimsonStrong;
               }
               return null;
             }),
@@ -249,7 +249,7 @@ class _ImportWalletBirthdayScreenState
               states,
             ) {
               if (states.contains(material.WidgetState.selected)) {
-                return colors.border.brandPurpleStrong;
+                return colors.border.brandCrimsonStrong;
               }
               return null;
             }),
@@ -696,15 +696,15 @@ class _BlockHeightField extends StatelessWidget {
     final borderColor = hasError
         ? colors.border.utilityDestructive
         : focusNode.hasFocus
-        ? colors.border.strong
+        ? colors.border.medium
         : colors.border.subtle;
 
     return Container(
       width: width,
       height: 46,
       decoration: BoxDecoration(
-        color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
+        color: colors.surface.input,
+        borderRadius: BorderRadius.circular(AppRadii.small),
         border: Border.all(color: borderColor, width: 1.5),
       ),
       child: Row(
@@ -715,7 +715,7 @@ class _BlockHeightField extends StatelessWidget {
               child: AppIcon(
                 AppIcons.block,
                 size: 20,
-                color: hasError ? colors.text.warning : colors.icon.accent,
+                color: hasError ? colors.icon.destructive : colors.icon.accent,
               ),
             ),
           ),
@@ -758,13 +758,13 @@ class _InlineMessage extends StatelessWidget {
     final colors = context.colors;
     return Row(
       children: [
-        AppIcon(AppIcons.warning, size: 16, color: colors.text.warning),
+        AppIcon(AppIcons.warning, size: 16, color: colors.text.destructive),
         const SizedBox(width: AppSpacing.xxs),
         Expanded(
           child: Text(
             text!,
             style: AppTypography.labelMedium.copyWith(
-              color: colors.text.warning,
+              color: colors.text.destructive,
             ),
           ),
         ),

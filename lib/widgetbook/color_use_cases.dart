@@ -9,6 +9,36 @@ import 'color_swatch.dart';
 // the Widgetbook always mirrors the token truth — if the token file changes,
 // the swatch updates automatically.
 
+List<TokenSwatch> _primitiveScaleSwatches({
+  required String prefix,
+  required List<Color> dark,
+  required List<Color> light,
+}) {
+  const steps = [
+    '0',
+    '50',
+    '100',
+    '150',
+    '200',
+    '300',
+    '400',
+    '500',
+    '600',
+    '700',
+    '800',
+    '900',
+  ];
+  return [
+    for (var i = 0; i < steps.length; i++)
+      TokenSwatch(
+        name: '$prefix/${steps[i]}',
+        description: '$prefix step ${steps[i]}',
+        dark: dark[i],
+        light: light[i],
+      ),
+  ];
+}
+
 Widget buildPrimitivesNeutralUseCase(BuildContext context) {
   return ColorCategoryPage(
     title: 'Primitives / Neutral',
@@ -89,243 +119,151 @@ Widget buildPrimitivesNeutralUseCase(BuildContext context) {
   );
 }
 
-Widget buildPrimitivesPurpleUseCase(BuildContext context) {
+Widget buildPrimitivesCrimsonUseCase(BuildContext context) {
   return ColorCategoryPage(
-    title: 'Primitives / Purple',
-    swatches: [
-      TokenSwatch(
-        name: '_ Primitive/Purple/0',
-        description: 'Brand purple — darkest',
-        dark: PurplePrimitives.p0Dark,
-        light: PurplePrimitives.p0Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Purple/50',
-        description: 'Brand purple step 50',
-        dark: PurplePrimitives.p50Dark,
-        light: PurplePrimitives.p50Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Purple/100',
-        description: 'Brand purple step 100',
-        dark: PurplePrimitives.p100Dark,
-        light: PurplePrimitives.p100Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Purple/150',
-        description: 'Primary button fill (Light)',
-        dark: PurplePrimitives.p150Dark,
-        light: PurplePrimitives.p150Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Purple/200',
-        description: 'Light-mode brand accent',
-        dark: PurplePrimitives.p200Dark,
-        light: PurplePrimitives.p200Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Purple/300',
-        description: 'Primary hover (Light) / pressed (Dark)',
-        dark: PurplePrimitives.p300Dark,
-        light: PurplePrimitives.p300Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Purple/400',
-        description: 'Primary hover (Dark) / pressed (Light)',
-        dark: PurplePrimitives.p400Dark,
-        light: PurplePrimitives.p400Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Purple/500',
-        description: 'Dark-mode brand accent / primary button fill',
-        dark: PurplePrimitives.p500Dark,
-        light: PurplePrimitives.p500Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Purple/600',
-        description: 'Brand purple step 600',
-        dark: PurplePrimitives.p600Dark,
-        light: PurplePrimitives.p600Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Purple/700',
-        description: 'Brand purple step 700',
-        dark: PurplePrimitives.p700Dark,
-        light: PurplePrimitives.p700Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Purple/800',
-        description: 'Brand purple step 800',
-        dark: PurplePrimitives.p800Dark,
-        light: PurplePrimitives.p800Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Purple/900',
-        description: 'Brand purple — lightest',
-        dark: PurplePrimitives.p900Dark,
-        light: PurplePrimitives.p900Light,
-      ),
-    ],
+    title: 'Primitives / Crimson',
+    swatches: _primitiveScaleSwatches(
+      prefix: '_ Primitive/Crimson',
+      dark: const [
+        CrimsonPrimitives.p0Dark,
+        CrimsonPrimitives.p50Dark,
+        CrimsonPrimitives.p100Dark,
+        CrimsonPrimitives.p150Dark,
+        CrimsonPrimitives.p200Dark,
+        CrimsonPrimitives.p300Dark,
+        CrimsonPrimitives.p400Dark,
+        CrimsonPrimitives.p500Dark,
+        CrimsonPrimitives.p600Dark,
+        CrimsonPrimitives.p700Dark,
+        CrimsonPrimitives.p800Dark,
+        CrimsonPrimitives.p900Dark,
+      ],
+      light: const [
+        CrimsonPrimitives.p0Light,
+        CrimsonPrimitives.p50Light,
+        CrimsonPrimitives.p100Light,
+        CrimsonPrimitives.p150Light,
+        CrimsonPrimitives.p200Light,
+        CrimsonPrimitives.p300Light,
+        CrimsonPrimitives.p400Light,
+        CrimsonPrimitives.p500Light,
+        CrimsonPrimitives.p600Light,
+        CrimsonPrimitives.p700Light,
+        CrimsonPrimitives.p800Light,
+        CrimsonPrimitives.p900Light,
+      ],
+    ),
   );
 }
 
-Widget buildPrimitivesCyanUseCase(BuildContext context) {
+Widget buildPrimitivesPlumUseCase(BuildContext context) {
   return ColorCategoryPage(
-    title: 'Primitives / Cyan',
-    swatches: [
-      TokenSwatch(
-        name: '_ Primitive/Cyan/0',
-        description: 'Brand cyan — darkest',
-        dark: CyanPrimitives.p0Dark,
-        light: CyanPrimitives.p0Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Cyan/50',
-        description: 'Brand cyan step 50',
-        dark: CyanPrimitives.p50Dark,
-        light: CyanPrimitives.p50Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Cyan/100',
-        description: 'Brand cyan step 100',
-        dark: CyanPrimitives.p100Dark,
-        light: CyanPrimitives.p100Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Cyan/150',
-        description: 'icon/brand-cyan (Light)',
-        dark: CyanPrimitives.p150Dark,
-        light: CyanPrimitives.p150Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Cyan/200',
-        description: 'Brand cyan step 200',
-        dark: CyanPrimitives.p200Dark,
-        light: CyanPrimitives.p200Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Cyan/300',
-        description: 'Brand cyan step 300',
-        dark: CyanPrimitives.p300Dark,
-        light: CyanPrimitives.p300Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Cyan/400',
-        description: 'text/brand-cyan (Light)',
-        dark: CyanPrimitives.p400Dark,
-        light: CyanPrimitives.p400Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Cyan/500',
-        description: 'icon/brand-cyan (Dark)',
-        dark: CyanPrimitives.p500Dark,
-        light: CyanPrimitives.p500Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Cyan/600',
-        description: 'text/brand-cyan (Dark)',
-        dark: CyanPrimitives.p600Dark,
-        light: CyanPrimitives.p600Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Cyan/700',
-        description: 'Brand cyan step 700',
-        dark: CyanPrimitives.p700Dark,
-        light: CyanPrimitives.p700Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Cyan/800',
-        description: 'Brand cyan step 800',
-        dark: CyanPrimitives.p800Dark,
-        light: CyanPrimitives.p800Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Cyan/900',
-        description: 'Brand cyan — lightest',
-        dark: CyanPrimitives.p900Dark,
-        light: CyanPrimitives.p900Light,
-      ),
-    ],
+    title: 'Primitives / Plum',
+    swatches: _primitiveScaleSwatches(
+      prefix: '_ Primitive/Plum',
+      dark: const [
+        PlumPrimitives.p0Dark,
+        PlumPrimitives.p50Dark,
+        PlumPrimitives.p100Dark,
+        PlumPrimitives.p150Dark,
+        PlumPrimitives.p200Dark,
+        PlumPrimitives.p300Dark,
+        PlumPrimitives.p400Dark,
+        PlumPrimitives.p500Dark,
+        PlumPrimitives.p600Dark,
+        PlumPrimitives.p700Dark,
+        PlumPrimitives.p800Dark,
+        PlumPrimitives.p900Dark,
+      ],
+      light: const [
+        PlumPrimitives.p0Light,
+        PlumPrimitives.p50Light,
+        PlumPrimitives.p100Light,
+        PlumPrimitives.p150Light,
+        PlumPrimitives.p200Light,
+        PlumPrimitives.p300Light,
+        PlumPrimitives.p400Light,
+        PlumPrimitives.p500Light,
+        PlumPrimitives.p600Light,
+        PlumPrimitives.p700Light,
+        PlumPrimitives.p800Light,
+        PlumPrimitives.p900Light,
+      ],
+    ),
   );
 }
 
-Widget buildPrimitivesYellowUseCase(BuildContext context) {
+Widget buildPrimitivesGoldUseCase(BuildContext context) {
   return ColorCategoryPage(
-    title: 'Primitives / Yellow',
-    swatches: [
-      TokenSwatch(
-        name: '_ Primitive/Yellow/0',
-        description: 'Brand yellow — darkest',
-        dark: YellowPrimitives.p0Dark,
-        light: YellowPrimitives.p0Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Yellow/50',
-        description: 'Brand yellow step 50',
-        dark: YellowPrimitives.p50Dark,
-        light: YellowPrimitives.p50Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Yellow/100',
-        description: 'Brand yellow step 100',
-        dark: YellowPrimitives.p100Dark,
-        light: YellowPrimitives.p100Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Yellow/150',
-        description: 'Brand yellow step 150',
-        dark: YellowPrimitives.p150Dark,
-        light: YellowPrimitives.p150Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Yellow/200',
-        description: 'Brand yellow step 200',
-        dark: YellowPrimitives.p200Dark,
-        light: YellowPrimitives.p200Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Yellow/300',
-        description: 'text/icon warning (Light)',
-        dark: YellowPrimitives.p300Dark,
-        light: YellowPrimitives.p300Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Yellow/400',
-        description: 'text/icon warning (Dark)',
-        dark: YellowPrimitives.p400Dark,
-        light: YellowPrimitives.p400Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Yellow/500',
-        description: 'Brand yellow step 500',
-        dark: YellowPrimitives.p500Dark,
-        light: YellowPrimitives.p500Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Yellow/600',
-        description: 'Brand yellow step 600',
-        dark: YellowPrimitives.p600Dark,
-        light: YellowPrimitives.p600Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Yellow/700',
-        description: 'Brand yellow step 700',
-        dark: YellowPrimitives.p700Dark,
-        light: YellowPrimitives.p700Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Yellow/800',
-        description: 'Brand yellow step 800',
-        dark: YellowPrimitives.p800Dark,
-        light: YellowPrimitives.p800Light,
-      ),
-      TokenSwatch(
-        name: '_ Primitive/Yellow/900',
-        description: 'Brand yellow — lightest',
-        dark: YellowPrimitives.p900Dark,
-        light: YellowPrimitives.p900Light,
-      ),
-    ],
+    title: 'Primitives / Gold',
+    swatches: _primitiveScaleSwatches(
+      prefix: '_ Primitive/Gold',
+      dark: const [
+        GoldPrimitives.p0Dark,
+        GoldPrimitives.p50Dark,
+        GoldPrimitives.p100Dark,
+        GoldPrimitives.p150Dark,
+        GoldPrimitives.p200Dark,
+        GoldPrimitives.p300Dark,
+        GoldPrimitives.p400Dark,
+        GoldPrimitives.p500Dark,
+        GoldPrimitives.p600Dark,
+        GoldPrimitives.p700Dark,
+        GoldPrimitives.p800Dark,
+        GoldPrimitives.p900Dark,
+      ],
+      light: const [
+        GoldPrimitives.p0Light,
+        GoldPrimitives.p50Light,
+        GoldPrimitives.p100Light,
+        GoldPrimitives.p150Light,
+        GoldPrimitives.p200Light,
+        GoldPrimitives.p300Light,
+        GoldPrimitives.p400Light,
+        GoldPrimitives.p500Light,
+        GoldPrimitives.p600Light,
+        GoldPrimitives.p700Light,
+        GoldPrimitives.p800Light,
+        GoldPrimitives.p900Light,
+      ],
+    ),
+  );
+}
+
+Widget buildPrimitivesGreenUseCase(BuildContext context) {
+  return ColorCategoryPage(
+    title: 'Primitives / Green',
+    swatches: _primitiveScaleSwatches(
+      prefix: '_ Primitive/Green',
+      dark: const [
+        GreenPrimitives.p0Dark,
+        GreenPrimitives.p50Dark,
+        GreenPrimitives.p100Dark,
+        GreenPrimitives.p150Dark,
+        GreenPrimitives.p200Dark,
+        GreenPrimitives.p300Dark,
+        GreenPrimitives.p400Dark,
+        GreenPrimitives.p500Dark,
+        GreenPrimitives.p600Dark,
+        GreenPrimitives.p700Dark,
+        GreenPrimitives.p800Dark,
+        GreenPrimitives.p900Dark,
+      ],
+      light: const [
+        GreenPrimitives.p0Light,
+        GreenPrimitives.p50Light,
+        GreenPrimitives.p100Light,
+        GreenPrimitives.p150Light,
+        GreenPrimitives.p200Light,
+        GreenPrimitives.p300Light,
+        GreenPrimitives.p400Light,
+        GreenPrimitives.p500Light,
+        GreenPrimitives.p600Light,
+        GreenPrimitives.p700Light,
+        GreenPrimitives.p800Light,
+        GreenPrimitives.p900Light,
+      ],
+    ),
   );
 }
 
@@ -360,16 +298,76 @@ Widget buildBackgroundUseCase(BuildContext context) {
         light: l.background.overlay,
       ),
       TokenSwatch(
-        name: 'bg/brand-cyan-subtle',
-        description: 'Brand-cyan tinted surface — info panels',
-        dark: d.background.brandCyanSubtle,
-        light: l.background.brandCyanSubtle,
+        name: 'bg/inverse',
+        description: 'Inverted neutral background',
+        dark: d.background.inverse,
+        light: l.background.inverse,
       ),
       TokenSwatch(
-        name: 'bg/brand-cyan-strong',
-        description: 'Brand-cyan emphasis surface',
-        dark: d.background.brandCyanStrong,
-        light: l.background.brandCyanStrong,
+        name: 'bg/neutral/alpha/scrim',
+        description: 'Neutral alpha scrim',
+        dark: d.background.neutralScrim,
+        light: l.background.neutralScrim,
+      ),
+      TokenSwatch(
+        name: 'bg/neutral/alpha/subtle-opacity',
+        description: 'Subtle neutral alpha overlay',
+        dark: d.background.neutralSubtleOpacity,
+        light: l.background.neutralSubtleOpacity,
+      ),
+      TokenSwatch(
+        name: 'bg/neutral/alpha/strong-opacity',
+        description: 'Strong neutral alpha overlay',
+        dark: d.background.neutralStrongOpacity,
+        light: l.background.neutralStrongOpacity,
+      ),
+      TokenSwatch(
+        name: 'bg/brand/crimson-subtle',
+        description: 'Brand-crimson tinted surface',
+        dark: d.background.brandCrimsonSubtle,
+        light: l.background.brandCrimsonSubtle,
+      ),
+      TokenSwatch(
+        name: 'bg/brand/crimson-strong',
+        description: 'Brand-crimson emphasis surface',
+        dark: d.background.brandCrimsonStrong,
+        light: l.background.brandCrimsonStrong,
+      ),
+      TokenSwatch(
+        name: 'bg/brand/alpha/crimson-alpha',
+        description: 'Brand-crimson alpha overlay',
+        dark: d.background.brandCrimsonAlpha,
+        light: l.background.brandCrimsonAlpha,
+      ),
+      TokenSwatch(
+        name: 'bg/utility/destructive-subtle',
+        description: 'Destructive utility surface',
+        dark: d.background.utilityDestructiveSubtle,
+        light: l.background.utilityDestructiveSubtle,
+      ),
+      TokenSwatch(
+        name: 'bg/utility/alpha/destructive-alpha',
+        description: 'Destructive utility alpha overlay',
+        dark: d.background.utilityDestructiveAlpha,
+        light: l.background.utilityDestructiveAlpha,
+      ),
+      TokenSwatch(
+        name: 'bg/utility/success-subtle',
+        description: 'Success utility surface',
+        dark: d.background.utilitySuccessSubtle,
+        light: l.background.utilitySuccessSubtle,
+      ),
+      TokenSwatch(
+        name: 'bg/utility/success-strong',
+        description: 'Strong success utility surface',
+        dark: d.background.utilitySuccessStrong,
+        light: l.background.utilitySuccessStrong,
+      ),
+      TokenSwatch(
+        name: 'bg/utility/alpha/success-alpha',
+        description: 'Success utility alpha overlay',
+        dark: d.background.utilitySuccessAlpha,
+        light: l.background.utilitySuccessAlpha,
       ),
     ],
   );
@@ -434,14 +432,26 @@ Widget buildBorderUseCase(BuildContext context) {
         light: l.border.subtle,
       ),
       TokenSwatch(
-        name: 'border/regular',
-        description: 'Input fields, cards, chips',
+        name: 'border/neutral/alpha/subtle-opacity',
+        description: 'Alpha border used on strong filled controls',
+        dark: d.border.subtleOpacity,
+        light: l.border.subtleOpacity,
+      ),
+      TokenSwatch(
+        name: 'border/default',
+        description: 'Default border for hover / cards / chips',
         dark: d.border.regular,
         light: l.border.regular,
       ),
       TokenSwatch(
+        name: 'border/medium',
+        description: 'Active / filled input fields',
+        dark: d.border.medium,
+        light: l.border.medium,
+      ),
+      TokenSwatch(
         name: 'border/strong',
-        description: 'Selected states, active tabs',
+        description: 'Max-contrast border',
         dark: d.border.strong,
         light: l.border.strong,
       ),
@@ -452,22 +462,16 @@ Widget buildBorderUseCase(BuildContext context) {
         light: l.border.utilityDestructive,
       ),
       TokenSwatch(
-        name: 'border/brand-cyan-subtle',
-        description: 'Brand-cyan border for subtle info surfaces',
-        dark: d.border.brandCyanSubtle,
-        light: l.border.brandCyanSubtle,
+        name: 'border/utility/success',
+        description: 'Success utility border',
+        dark: d.border.utilitySuccess,
+        light: l.border.utilitySuccess,
       ),
       TokenSwatch(
-        name: 'border/brand-cyan-strong',
-        description: 'Brand-cyan border for emphasis',
-        dark: d.border.brandCyanStrong,
-        light: l.border.brandCyanStrong,
-      ),
-      TokenSwatch(
-        name: 'border/brand-purple-strong',
-        description: 'Brand-purple border for affirmative feedback',
-        dark: d.border.brandPurpleStrong,
-        light: l.border.brandPurpleStrong,
+        name: 'border/brand/crimson-strong',
+        description: 'Brand-crimson border for feedback',
+        dark: d.border.brandCrimsonStrong,
+        light: l.border.brandCrimsonStrong,
       ),
     ],
   );
@@ -517,7 +521,7 @@ Widget buildTextUseCase(BuildContext context) {
       ),
       TokenSwatch(
         name: 'text/warning',
-        description: 'Inline warning copy — brand yellow',
+        description: 'Legacy warning copy — gold utility',
         dark: d.text.warning,
         light: l.text.warning,
       ),
@@ -528,16 +532,16 @@ Widget buildTextUseCase(BuildContext context) {
         light: l.text.destructive,
       ),
       TokenSwatch(
-        name: 'text/brand-purple',
-        description: 'Brand-purple inline text accent',
-        dark: d.text.brandPurple,
-        light: l.text.brandPurple,
+        name: 'text/utility/success',
+        description: 'Success utility copy',
+        dark: d.text.success,
+        light: l.text.success,
       ),
       TokenSwatch(
-        name: 'text/brand-cyan',
-        description: 'Brand-cyan inline text accent',
-        dark: d.text.brandCyan,
-        light: l.text.brandCyan,
+        name: 'text/brand/crimson',
+        description: 'Brand-crimson inline text accent',
+        dark: d.text.brandCrimson,
+        light: l.text.brandCrimson,
       ),
     ],
   );
@@ -587,21 +591,27 @@ Widget buildIconUseCase(BuildContext context) {
       ),
       TokenSwatch(
         name: 'icon/warning',
-        description: 'Warning-state icon — brand yellow',
+        description: 'Legacy warning icon — gold utility',
         dark: d.icon.warning,
         light: l.icon.warning,
       ),
       TokenSwatch(
-        name: 'icon/brand-purple',
-        description: 'Brand-purple icon',
-        dark: d.icon.brandPurple,
-        light: l.icon.brandPurple,
+        name: 'icon/utility/destructive',
+        description: 'Destructive utility icon',
+        dark: d.icon.destructive,
+        light: l.icon.destructive,
       ),
       TokenSwatch(
-        name: 'icon/brand-cyan',
-        description: 'Brand-cyan icon',
-        dark: d.icon.brandCyan,
-        light: l.icon.brandCyan,
+        name: 'icon/utility/success',
+        description: 'Success utility icon',
+        dark: d.icon.success,
+        light: l.icon.success,
+      ),
+      TokenSwatch(
+        name: 'icon/brand/crimson',
+        description: 'Brand-crimson icon',
+        dark: d.icon.brandCrimson,
+        light: l.icon.brandCrimson,
       ),
     ],
   );
@@ -776,6 +786,12 @@ Widget buildStateUseCase(BuildContext context) {
         light: l.state.selected,
       ),
       TokenSwatch(
+        name: 'state/neutral/alpha/selected-opacity',
+        description: 'Alpha overlay for selected row / chip',
+        dark: d.state.selectedOpacity,
+        light: l.state.selectedOpacity,
+      ),
+      TokenSwatch(
         name: 'state/focus-ring',
         description: '2dp ring — max contrast vs page bg',
         dark: d.state.focusRing,
@@ -789,7 +805,7 @@ Widget buildStateUseCase(BuildContext context) {
       ),
       TokenSwatch(
         name: 'state/focus-ring-brand',
-        description: 'Brand-cyan ring for primary button focus',
+        description: 'Brand-crimson ring for primary button focus',
         dark: d.state.focusRingBrand,
         light: l.state.focusRingBrand,
       ),

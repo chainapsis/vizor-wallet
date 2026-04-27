@@ -185,7 +185,7 @@ class _InfoColumn extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.xxs),
-            AppIcon(iconName, size: 20, color: colors.text.brandPurple),
+            AppIcon(iconName, size: 20, color: colors.text.brandCrimson),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),

@@ -536,11 +536,11 @@ class _HomePaneState extends State<_HomePane> {
           leadingBackgroundColor: colors.background.base,
           leadingIconColor: isIncoming
               ? colors.icon.accent
-              : colors.icon.brandPurple,
+              : colors.icon.brandCrimson,
           subIconName: isPending ? AppIcons.loader : null,
           subIconBackgroundColor: isPending
               ? colors.background.overlay.withValues(alpha: 0.5)
-              : colors.background.brandCyanStrong,
+              : colors.background.brandCrimsonStrong,
           amountText: widget.formatSignedZec(
             BigInt.from(tx.accountBalanceDelta),
           ),
@@ -548,7 +548,7 @@ class _HomePaneState extends State<_HomePane> {
               ? colors.text.muted
               : isIncoming
               ? colors.text.accent
-              : colors.text.brandPurple,
+              : colors.text.brandCrimson,
         ),
       );
     }
@@ -695,7 +695,7 @@ class _HomeBalanceCard extends StatelessWidget {
                                     children: [
                                       _HomeBalanceShieldIcon(
                                         isDark: isDark,
-                                        iconColor: colors.icon.brandPurple,
+                                        iconColor: colors.icon.brandCrimson,
                                       ),
                                       const SizedBox(width: AppSpacing.xxs),
                                       Text(
@@ -1051,7 +1051,7 @@ class _HomeNoticeCard extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.xs),
       decoration: BoxDecoration(
         color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.small),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       child: Row(
         children: [
@@ -1203,7 +1203,7 @@ class _HomeActivityRow extends StatelessWidget {
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadii.small),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       child: Row(
         children: [
@@ -1229,7 +1229,7 @@ class _HomeActivityRow extends StatelessWidget {
                         style: AppTypography.labelMedium.copyWith(
                           color: row.subtitleIconName == null
                               ? colors.text.secondary
-                              : colors.text.brandPurple,
+                              : colors.text.brandCrimson,
                         ),
                       ),
                       if (row.subtitleIconName != null) ...[
@@ -1237,7 +1237,7 @@ class _HomeActivityRow extends StatelessWidget {
                         AppIcon(
                           row.subtitleIconName!,
                           size: 16,
-                          color: colors.icon.brandPurple,
+                          color: colors.icon.brandCrimson,
                         ),
                       ],
                     ],
@@ -1305,7 +1305,7 @@ class _ActivityAvatar extends StatelessWidget {
                 height: 16,
                 decoration: BoxDecoration(
                   color: row.subIconBackgroundColor,
-                  borderRadius: BorderRadius.circular(AppRadii.small),
+                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
                 ),
                 child: Center(
                   child: AppIcon(

@@ -117,7 +117,7 @@ class _Pane extends StatelessWidget {
       height: double.infinity,
       decoration: BoxDecoration(
         color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.small),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
