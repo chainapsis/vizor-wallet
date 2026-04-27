@@ -17,7 +17,8 @@ use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::{
     db::{
-        open_readonly_conn_with_timeout, open_wallet_db_with_timeout, WalletDatabase,
+        open_readonly_conn_with_timeout, open_wallet_db_for_read_with_timeout,
+        open_wallet_db_with_timeout, with_wallet_db_write_lock, WalletDatabase,
         READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
@@ -65,7 +66,7 @@ pub(crate) fn open_wallet_db_for_read(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<WalletDatabase, String> {
-    open_wallet_db_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)
+    open_wallet_db_for_read_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)
 }
 
 pub(crate) fn open_readonly_conn(db_path: &str) -> Result<rusqlite::Connection, String> {
@@ -97,9 +98,11 @@ fn get_first_account_id(db: &WalletDatabase) -> Result<zcash_client_sqlite::Acco
 // ======================== Sync ========================
 
 pub fn update_chain_tip(db_path: &str, network: WalletNetwork, height: u64) -> Result<(), String> {
-    let mut db = open_wallet_db(db_path, network)?;
-    db.update_chain_tip(BlockHeight::from_u32(height as u32))
-        .map_err(|e| format!("Failed to update chain tip: {e}"))
+    with_wallet_db_write_lock("sync.update_chain_tip", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        db.update_chain_tip(BlockHeight::from_u32(height as u32))
+            .map_err(|e| format!("Failed to update chain tip: {e}"))
+    })
 }
 
 /// Get next subtree indices to know where to start downloading from.
@@ -126,7 +129,6 @@ pub fn put_sapling_subtree_roots(
     start_index: u64,
     roots: &[(u64, Vec<u8>)],
 ) -> Result<(), String> {
-    let mut db = open_wallet_db(db_path, network)?;
     let parsed: Vec<_> = roots
         .iter()
         .map(|(h, bytes)| {
@@ -139,11 +141,15 @@ pub fn put_sapling_subtree_roots(
             ))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    if !parsed.is_empty() {
-        db.put_sapling_subtree_roots(start_index, parsed.as_slice())
-            .map_err(|e| format!("{e}"))?;
+    if parsed.is_empty() {
+        Ok(())
+    } else {
+        with_wallet_db_write_lock("sync.put_sapling_subtree_roots", || {
+            let mut db = open_wallet_db(db_path, network)?;
+            db.put_sapling_subtree_roots(start_index, parsed.as_slice())
+                .map_err(|e| format!("{e}"))
+        })
     }
-    Ok(())
 }
 
 pub fn put_orchard_subtree_roots(
@@ -152,7 +158,6 @@ pub fn put_orchard_subtree_roots(
     start_index: u64,
     roots: &[(u64, Vec<u8>)],
 ) -> Result<(), String> {
-    let mut db = open_wallet_db(db_path, network)?;
     let parsed: Vec<_> = roots
         .iter()
         .map(|(h, bytes)| {
@@ -165,11 +170,15 @@ pub fn put_orchard_subtree_roots(
             ))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    if !parsed.is_empty() {
-        db.put_orchard_subtree_roots(start_index, parsed.as_slice())
-            .map_err(|e| format!("{e}"))?;
+    if parsed.is_empty() {
+        Ok(())
+    } else {
+        with_wallet_db_write_lock("sync.put_orchard_subtree_roots", || {
+            let mut db = open_wallet_db(db_path, network)?;
+            db.put_orchard_subtree_roots(start_index, parsed.as_slice())
+                .map_err(|e| format!("{e}"))
+        })
     }
-    Ok(())
 }
 
 pub(crate) struct ScanRangeInfo {
@@ -241,7 +250,6 @@ pub fn scan_blocks(
     limit: u64,
 ) -> Result<u64, String> {
     let db_cache = open_block_cache(cache_path)?;
-    let mut db_data = open_wallet_db(db_path, network)?;
     let from_state = if ts_hash.is_empty() {
         zcash_client_backend::data_api::chain::ChainState::empty(
             BlockHeight::from_u32((from_height - 1) as u32),
@@ -259,15 +267,18 @@ pub fn scan_blocks(
         .to_chain_state()
         .map_err(|e| format!("{e}"))?
     };
-    let result = scan_cached_blocks(
-        &network,
-        &db_cache,
-        &mut db_data,
-        BlockHeight::from_u32(from_height as u32),
-        &from_state,
-        limit as usize,
-    )
-    .map_err(|e| format!("{e}"))?;
+    let result = with_wallet_db_write_lock("sync.scan_blocks", || {
+        let mut db_data = open_wallet_db(db_path, network)?;
+        scan_cached_blocks(
+            &network,
+            &db_cache,
+            &mut db_data,
+            BlockHeight::from_u32(from_height as u32),
+            &from_state,
+            limit as usize,
+        )
+        .map_err(|e| format!("{e}"))
+    })?;
     Ok((u32::from(result.scanned_range().end) - u32::from(result.scanned_range().start)) as u64)
 }
 
@@ -301,10 +312,11 @@ pub fn get_sync_progress(db_path: &str, network: WalletNetwork) -> Result<SyncPr
 // ======================== Rewind ========================
 
 pub fn rewind_to_height(db_path: &str, network: WalletNetwork, height: u64) -> Result<u64, String> {
-    let mut db = open_wallet_db(db_path, network)?;
-    let result = db
-        .truncate_to_height(BlockHeight::from_u32(height as u32))
-        .map_err(|e| format!("{e}"))?;
+    let result = with_wallet_db_write_lock("sync.rewind_to_height", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        db.truncate_to_height(BlockHeight::from_u32(height as u32))
+            .map_err(|e| format!("{e}"))
+    })?;
     Ok(u32::from(result) as u64)
 }
 

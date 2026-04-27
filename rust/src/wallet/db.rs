@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
+};
 
 use rand::rngs::OsRng;
 use zcash_client_sqlite::{util::SystemClock, WalletDb};
@@ -22,11 +25,82 @@ pub(crate) fn open_wallet_db_with_timeout(
 ) -> Result<WalletDatabase, String> {
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+    configure_wallet_connection(&conn, timeout, true)?;
+    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+}
+
+pub(crate) fn open_wallet_db_for_read_with_timeout(
+    db_path: &str,
+    network: WalletNetwork,
+    timeout: Duration,
+) -> Result<WalletDatabase, String> {
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+    configure_wallet_connection(&conn, timeout, false)?;
+    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+}
+
+fn configure_wallet_connection(
+    conn: &rusqlite::Connection,
+    timeout: Duration,
+    ensure_wal: bool,
+) -> Result<(), String> {
     conn.busy_timeout(timeout)
         .map_err(|e| format!("Failed to configure wallet DB busy timeout: {e}"))?;
-    rusqlite::vtab::array::load_module(&conn)
+    if ensure_wal {
+        let journal_mode: String = conn
+            .pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))
+            .map_err(|e| format!("Failed to enable wallet DB WAL mode: {e}"))?;
+        if !journal_mode.eq_ignore_ascii_case("wal") {
+            return Err(format!(
+                "Failed to enable wallet DB WAL mode: SQLite returned journal_mode={journal_mode}"
+            ));
+        }
+    }
+    rusqlite::vtab::array::load_module(conn)
         .map_err(|e| format!("Failed to load SQLite array module: {e}"))?;
-    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+    Ok(())
+}
+
+pub(crate) fn with_wallet_db_write_lock<T>(
+    operation: &'static str,
+    write: impl FnOnce() -> T,
+) -> T {
+    // Serializes wallet-DB writes across FRB foreground calls, C-FFI
+    // background sync calls, and Rust sync tasks inside this process. This
+    // does not coordinate with a separate OS process that opens the same DB.
+    static WALLET_DB_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    let lock = WALLET_DB_WRITE_LOCK.get_or_init(|| Mutex::new(()));
+    let wait_start = Instant::now();
+    let guard = match lock.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            log::error!("wallet DB write lock poisoned while entering {operation}; continuing");
+            poisoned.into_inner()
+        }
+    };
+
+    let waited = wait_start.elapsed();
+    if waited >= Duration::from_millis(50) {
+        log::info!(
+            "wallet DB write lock waited {:.3}s for {operation}",
+            waited.as_secs_f64()
+        );
+    }
+
+    let hold_start = Instant::now();
+    let result = write();
+    let held = hold_start.elapsed();
+    if held >= Duration::from_secs(1) {
+        log::info!(
+            "wallet DB write lock held {:.3}s by {operation}",
+            held.as_secs_f64()
+        );
+    }
+
+    drop(guard);
+    result
 }
 
 pub(crate) fn open_readonly_conn_with_timeout(
@@ -41,4 +115,46 @@ pub(crate) fn open_readonly_conn_with_timeout(
             .map_err(|e| format!("Failed to configure DB busy timeout: {e}"))?;
     }
     Ok(conn)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configure_wallet_connection_enables_wal_mode() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+
+        configure_wallet_connection(&conn, Duration::from_millis(1), true).unwrap();
+
+        let journal_mode: String = conn
+            .pragma_query_value(None, "journal_mode", |row| row.get(0))
+            .unwrap();
+        assert_eq!(journal_mode.to_ascii_lowercase(), "wal");
+    }
+
+    #[test]
+    fn configure_wallet_connection_can_skip_wal_for_read_paths() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+
+        configure_wallet_connection(&conn, Duration::from_millis(1), false).unwrap();
+
+        let journal_mode: String = conn
+            .pragma_query_value(None, "journal_mode", |row| row.get(0))
+            .unwrap();
+        assert_ne!(journal_mode.to_ascii_lowercase(), "wal");
+    }
+
+    #[test]
+    fn with_wallet_db_write_lock_runs_closure() {
+        let mut called = false;
+
+        with_wallet_db_write_lock("test", || {
+            called = true;
+        });
+
+        assert!(called);
+    }
 }

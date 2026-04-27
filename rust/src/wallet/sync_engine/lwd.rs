@@ -26,6 +26,8 @@ use zcash_client_backend::{
 };
 use zcash_protocol::consensus::BlockHeight;
 
+use crate::wallet::db::with_wallet_db_write_lock;
+
 use super::block_source::MemoryBlockSource;
 use super::{elapsed, SyncError, WalletDatabase};
 
@@ -141,8 +143,10 @@ pub(super) async fn download_subtree_roots(
         roots.len()
     );
     if !roots.is_empty() {
-        db.put_sapling_subtree_roots(sap_start, roots.as_slice())
-            .map_err(|e| SyncError::db(format!("put_sapling_subtree_roots: {e}")))?;
+        with_wallet_db_write_lock("sync_engine.put_sapling_subtree_roots", || {
+            db.put_sapling_subtree_roots(sap_start, roots.as_slice())
+                .map_err(|e| SyncError::db(format!("put_sapling_subtree_roots: {e}")))
+        })?;
     }
 
     // Orchard
@@ -181,8 +185,10 @@ pub(super) async fn download_subtree_roots(
         roots.len()
     );
     if !roots.is_empty() {
-        db.put_orchard_subtree_roots(orch_start, roots.as_slice())
-            .map_err(|e| SyncError::db(format!("put_orchard_subtree_roots: {e}")))?;
+        with_wallet_db_write_lock("sync_engine.put_orchard_subtree_roots", || {
+            db.put_orchard_subtree_roots(orch_start, roots.as_slice())
+                .map_err(|e| SyncError::db(format!("put_orchard_subtree_roots: {e}")))
+        })?;
     }
 
     log::info!("[{}] sync: subtree roots done", elapsed());

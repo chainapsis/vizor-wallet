@@ -55,10 +55,14 @@ use zcash_protocol::{
     ShieldedProtocol,
 };
 
+use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
 
-use super::{open_readonly_conn, open_wallet_db, StoredProposal, WalletDatabase, PROPOSAL_STORE};
+use super::{
+    open_readonly_conn, open_wallet_db, open_wallet_db_for_read, StoredProposal, WalletDatabase,
+    PROPOSAL_STORE,
+};
 
 /// Result of a successful [`propose_send`]. `proposal_id` is the
 /// handle the caller feeds back to [`execute_proposal`] or
@@ -82,7 +86,7 @@ pub fn propose_send(
 ) -> Result<ProposalResult, String> {
     use zcash_protocol::{PoolType, ShieldedProtocol as SP};
 
-    let mut db = open_wallet_db(db_path, network)?;
+    let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
 
     let to: zcash_address::ZcashAddress = to_address
@@ -159,7 +163,7 @@ pub fn estimate_fee(
     amount_zatoshi: u64,
     memo_str: Option<&str>,
 ) -> Result<u64, String> {
-    let mut db = open_wallet_db(db_path, network)?;
+    let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
 
     let to: zcash_address::ZcashAddress = to_address
@@ -226,15 +230,14 @@ pub async fn execute_proposal(
     let network = stored.network;
     drop(store);
 
-    let mut db = open_wallet_db(db_path, network)?;
-    let account_id = stored.account_id;
-    let account = db
-        .get_account(account_id)
-        .map_err(|e| format!("{e}"))?
-        .ok_or("Account not found")?;
-
-    // Scope seed/USK so they are dropped before network I/O (broadcast).
-    let txids = {
+    // Scope DB writes and seed/USK so they are dropped before network I/O (broadcast).
+    let txids = with_wallet_db_write_lock("send.execute_proposal.create_transactions", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        let account_id = stored.account_id;
+        let account = db
+            .get_account(account_id)
+            .map_err(|e| format!("{e}"))?
+            .ok_or("Account not found")?;
         let seed = SecretVec::new(seed_bytes.to_vec());
         let zip32_index = account
             .source()
@@ -244,7 +247,7 @@ pub async fn execute_proposal(
         let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
             .map_err(|e| format!("USK derivation failed: {e:?}"))?;
 
-        match (spend_params_path, output_params_path) {
+        let txids = match (spend_params_path, output_params_path) {
             (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
                 let prover = LocalTxProver::new(std::path::Path::new(sp), std::path::Path::new(op));
                 create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
@@ -272,9 +275,10 @@ pub async fn execute_proposal(
                 )
                 .map_err(|e| format!("Create TX failed: {e}"))?
             }
-        }
+        };
         // seed + usk dropped here, before broadcast
-    };
+        Ok::<_, String>(txids)
+    })?;
 
     // Connect to lightwalletd once for all broadcasts.
     let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)

@@ -9,7 +9,7 @@ use zcash_client_backend::data_api::{
 use zcash_client_sqlite::{wallet::init::init_wallet_db, AccountUuid};
 use zcash_keys::{
     encoding::encode_transparent_address,
-    keys::{ReceiverRequirement, UnifiedAddressRequest, UnifiedSpendingKey},
+    keys::{ReceiverRequirement, UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
 };
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{BlockHeight, NetworkConstants, NetworkUpgrade, Parameters};
@@ -17,7 +17,8 @@ use zip32::fingerprint::SeedFingerprint;
 
 use crate::wallet::{
     db::{
-        open_wallet_db_with_timeout, WalletDatabase, ACCOUNT_MUTATION_DB_BUSY_TIMEOUT,
+        open_wallet_db_for_read_with_timeout, open_wallet_db_with_timeout,
+        with_wallet_db_write_lock, WalletDatabase, ACCOUNT_MUTATION_DB_BUSY_TIMEOUT,
         READ_DB_BUSY_TIMEOUT, WALLET_DB_BUSY_TIMEOUT,
     },
     network::WalletNetwork,
@@ -41,7 +42,7 @@ fn open_wallet_db_for_read(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<WalletDatabase, String> {
-    open_wallet_db_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)
+    open_wallet_db_for_read_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)
 }
 
 /// Generate a new 24-word BIP-39 mnemonic phrase.
@@ -66,9 +67,11 @@ pub fn parse_network(network: &str) -> Result<WalletNetwork, String> {
 /// Initialize the wallet database schema. Idempotent — safe to call multiple times.
 /// Called without seed to avoid SeedNotRelevant errors when only Imported accounts exist.
 pub fn ensure_db_initialized(db_path: &str, network: WalletNetwork) -> Result<(), String> {
-    let mut db = open_wallet_db_for_init(db_path, network)?;
-    init_wallet_db(&mut db, None).map_err(|e| format!("Failed to init wallet DB: {e}"))?;
-    Ok(())
+    with_wallet_db_write_lock("keys.ensure_db_initialized", || {
+        let mut db = open_wallet_db_for_init(db_path, network)?;
+        init_wallet_db(&mut db, None).map_err(|e| format!("Failed to init wallet DB: {e}"))?;
+        Ok(())
+    })
 }
 
 /// Initialize DB with seed for the first account (creates a Derived account).
@@ -78,10 +81,12 @@ fn ensure_db_initialized_with_seed(
     network: WalletNetwork,
     seed: &SecretVec<u8>,
 ) -> Result<(), String> {
-    let mut db = open_wallet_db_for_init(db_path, network)?;
-    init_wallet_db(&mut db, Some(SecretVec::new(seed.expose_secret().to_vec())))
-        .map_err(|e| format!("Failed to init wallet DB: {e}"))?;
-    Ok(())
+    with_wallet_db_write_lock("keys.ensure_db_initialized_with_seed", || {
+        let mut db = open_wallet_db_for_init(db_path, network)?;
+        init_wallet_db(&mut db, Some(SecretVec::new(seed.expose_secret().to_vec())))
+            .map_err(|e| format!("Failed to init wallet DB: {e}"))?;
+        Ok(())
+    })
 }
 
 fn make_birthday(network: WalletNetwork, birthday_height: Option<u64>) -> AccountBirthday {
@@ -112,8 +117,6 @@ pub fn add_account(
     seed: &SecretVec<u8>,
     birthday_height: Option<u64>,
 ) -> Result<(String, String), String> {
-    let mut db = open_wallet_db_for_mutation(db_path, network)?;
-
     let birthday = make_birthday(network, birthday_height);
 
     // Derive USK and UFVK from seed
@@ -130,11 +133,13 @@ pub fn add_account(
         derivation: Some(derivation),
     };
 
-    let account = db
-        .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
-        .map_err(|e| format!("Failed to import account: {e}"))?;
-
-    let account_id = account.id();
+    let account_id = with_wallet_db_write_lock("keys.add_account", || {
+        let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        let account = db
+            .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
+            .map_err(|e| format!("Failed to import account: {e}"))?;
+        Ok::<_, String>(account.id())
+    })?;
     let (ua, _di) = ufvk
         .default_address(shielded_address_request())
         .map_err(|e| format!("Failed to derive address: {e}"))?;
@@ -166,34 +171,6 @@ pub fn import_hardware_account(
     // Ensure DB is initialized (without seed — hardware wallet has no local seed)
     ensure_db_initialized(db_path, network)?;
 
-    let mut db = open_wallet_db_for_mutation(db_path, network)?;
-
-    // Invariant: there must be at least one Derived account already. Otherwise
-    // this import would leave the DB in a state where future seed-requiring
-    // migrations cannot be applied. See CLAUDE.md "Hardware-first wallet
-    // constraint" for the full rationale.
-    let account_ids = db
-        .get_account_ids()
-        .map_err(|e| format!("Failed to list accounts: {e}"))?;
-    let mut has_derived = false;
-    for id in &account_ids {
-        let acc = db
-            .get_account(*id)
-            .map_err(|e| format!("Failed to load account: {e}"))?
-            .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
-        if matches!(acc.source(), AccountSource::Derived { .. }) {
-            has_derived = true;
-            break;
-        }
-    }
-    if !has_derived {
-        return Err("Hardware wallet accounts cannot be the first account. \
-             Create or import a software wallet first, then add your Keystone \
-             account. This is a librustzcash constraint: seed-requiring \
-             database migrations cannot be applied to an Imported-only wallet."
-            .into());
-    }
-
     let birthday = make_birthday(network, birthday_height);
 
     // Parse UFVK from string
@@ -213,11 +190,40 @@ pub fn import_hardware_account(
         derivation: Some(derivation),
     };
 
-    let account = db
-        .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
-        .map_err(|e| format!("Failed to import hardware account: {e}"))?;
+    let account_id = with_wallet_db_write_lock("keys.import_hardware_account", || {
+        let mut db = open_wallet_db_for_mutation(db_path, network)?;
 
-    let account_id = account.id();
+        // Invariant: there must be at least one Derived account already. Otherwise
+        // this import would leave the DB in a state where future seed-requiring
+        // migrations cannot be applied. See CLAUDE.md "Hardware-first wallet
+        // constraint" for the full rationale.
+        let account_ids = db
+            .get_account_ids()
+            .map_err(|e| format!("Failed to list accounts: {e}"))?;
+        let mut has_derived = false;
+        for id in &account_ids {
+            let acc = db
+                .get_account(*id)
+                .map_err(|e| format!("Failed to load account: {e}"))?
+                .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
+            if matches!(acc.source(), AccountSource::Derived { .. }) {
+                has_derived = true;
+                break;
+            }
+        }
+        if !has_derived {
+            return Err("Hardware wallet accounts cannot be the first account. \
+                 Create or import a software wallet first, then add your Keystone \
+                 account. This is a librustzcash constraint: seed-requiring \
+                 database migrations cannot be applied to an Imported-only wallet."
+                .into());
+        }
+
+        let account = db
+            .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
+            .map_err(|e| format!("Failed to import hardware account: {e}"))?;
+        Ok::<_, String>(account.id())
+    })?;
     // Hardware wallets (Keystone) have Orchard + transparent but no Sapling,
     // so use Orchard-only address request instead of the standard shielded request.
     let (ua, _di) = ufvk
@@ -245,15 +251,16 @@ pub fn init_db_and_create_account(
 ) -> Result<(String, String), String> {
     ensure_db_initialized_with_seed(db_path, network, seed)?;
 
-    let mut db = open_wallet_db_for_mutation(db_path, network)?;
-
     let birthday = make_birthday(network, birthday_height);
 
-    // First account uses create_account (Derived) — ensures at least one Derived account
-    // exists for future init_wallet_db seed relevance checks.
-    let (account_id, usk) = db
-        .create_account(name, seed, &birthday, None)
-        .map_err(|e| format!("Failed to create account: {e}"))?;
+    let (account_id, usk) = with_wallet_db_write_lock("keys.create_account", || {
+        let mut db = open_wallet_db_for_mutation(db_path, network)?;
+
+        // First account uses create_account (Derived) — ensures at least one Derived account
+        // exists for future init_wallet_db seed relevance checks.
+        db.create_account(name, seed, &birthday, None)
+            .map_err(|e| format!("Failed to create account: {e}"))
+    })?;
 
     let ufvk = usk.to_unified_full_viewing_key();
     let (ua, _di) = ufvk
@@ -286,12 +293,7 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
             .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
 
         let address = match account.ufvk() {
-            Some(ufvk) => {
-                let (ua, _) = ufvk
-                    .default_address(shielded_address_request())
-                    .map_err(|e| format!("Failed to derive address: {e}"))?;
-                ua.encode(&network)
-            }
+            Some(ufvk) => current_receive_address(&db, network, id, ufvk)?,
             None => String::new(),
         };
 
@@ -346,14 +348,39 @@ pub fn get_address_from_db(
 
     let ufvk = account.ufvk().ok_or("Account does not have a UFVK")?;
 
-    // Try standard shielded request (Orchard + Sapling), fall back to Orchard-only
-    // for hardware wallets that don't have Sapling keys.
-    let (ua, _di) = ufvk
-        .default_address(shielded_address_request())
-        .or_else(|_| ufvk.default_address(orchard_address_request()))
-        .map_err(|e| format!("Failed to derive address: {e}"))?;
+    current_receive_address(&db, network, account_id, ufvk)
+}
 
-    Ok(ua.encode(&network))
+fn current_receive_address(
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+    ufvk: &UnifiedFullViewingKey,
+) -> Result<String, String> {
+    let address = match ufvk.default_address(shielded_address_request()) {
+        Ok((default, _)) => {
+            let last = db
+                .get_last_generated_address_matching(account_id, shielded_address_request())
+                .map_err(|e| format!("Failed to get last generated shielded address: {e}"))?;
+            last.unwrap_or(default)
+        }
+        Err(shielded_err) => {
+            let (default, _) =
+                ufvk.default_address(orchard_address_request())
+                    .map_err(|orchard_err| {
+                        format!(
+                            "Failed to derive shielded address: {shielded_err}; \
+                         orchard fallback failed: {orchard_err}"
+                        )
+                    })?;
+            let last = db
+                .get_last_generated_address_matching(account_id, orchard_address_request())
+                .map_err(|e| format!("Failed to get last generated orchard address: {e}"))?;
+            last.unwrap_or(default)
+        }
+    };
+
+    Ok(address.encode(&network))
 }
 
 /// Returns the standard shielded address request (Orchard + Sapling, no transparent).
@@ -465,6 +492,43 @@ mod tests {
         // Verify we can read the address back
         let address2 = get_address_from_db(db_path_str, WalletNetwork::Main, None).unwrap();
         assert_eq!(address, address2);
+    }
+
+    #[test]
+    fn test_get_address_returns_last_generated_receive_address() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+
+        let (uuid, default_address) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+        let renewed_address = crate::wallet::sync::get_next_available_address(
+            db_path_str,
+            WalletNetwork::Main,
+            &uuid,
+        )
+        .unwrap();
+
+        assert_ne!(default_address, renewed_address);
+        assert_eq!(
+            renewed_address,
+            get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
+        );
+        assert_eq!(
+            renewed_address,
+            list_accounts(db_path_str, WalletNetwork::Main)
+                .unwrap()
+                .into_iter()
+                .find(|account| account.uuid == uuid)
+                .unwrap()
+                .unified_address
+        );
     }
 
     #[test]

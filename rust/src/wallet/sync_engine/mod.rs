@@ -15,7 +15,10 @@ use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::{
-    db::{open_wallet_db_with_timeout, WalletDatabase, SYNC_DB_BUSY_TIMEOUT},
+    db::{
+        open_wallet_db_with_timeout, with_wallet_db_write_lock, WalletDatabase,
+        SYNC_DB_BUSY_TIMEOUT,
+    },
     network::WalletNetwork,
 };
 
@@ -165,8 +168,10 @@ async fn refresh_utxos(
                 SyncError::parse("transparent UTXO script did not decode to a wallet address")
             })?;
 
-            db.put_received_transparent_utxo(&output)
-                .map_err(|e| SyncError::db(format!("put_received_transparent_utxo: {e}")))?;
+            with_wallet_db_write_lock("sync_engine.put_received_transparent_utxo", || {
+                db.put_received_transparent_utxo(&output)
+                    .map_err(|e| SyncError::db(format!("put_received_transparent_utxo: {e}")))
+            })?;
         }
     }
 
@@ -298,7 +303,8 @@ async fn run_sync_impl(
     let mut client = open_lwd_channel(lightwalletd_url).await?;
 
     // Open DB once — reused for the entire sync
-    let mut db = open_db(db_data_path, network)?;
+    let mut db =
+        with_wallet_db_write_lock("sync_engine.open_db", || open_db(db_data_path, network))?;
 
     // 2. Get chain tip. `current_tip_height` is updated by the
     // periodic refresh (TIP_REFRESH_INTERVAL) so that progress
@@ -315,8 +321,10 @@ async fn run_sync_impl(
     let tip_height = BlockHeight::from_u32(tip.height as u32);
     log::info!("[{}] sync: chain tip = {}", elapsed(), tip.height);
 
-    db.update_chain_tip(tip_height)
-        .map_err(|e| SyncError::db(format!("update_chain_tip: {e}")))?;
+    with_wallet_db_write_lock("sync_engine.update_chain_tip.initial", || {
+        db.update_chain_tip(tip_height)
+            .map_err(|e| SyncError::db(format!("update_chain_tip: {e}")))
+    })?;
 
     // Match the cancellation granularity we already use for
     // `run_enhancement`: let this stage run to completion once it has
@@ -483,7 +491,11 @@ async fn run_sync_impl(
             {
                 Ok(fresh_tip) => {
                     let fresh_height = BlockHeight::from_u32(fresh_tip.height as u32);
-                    if let Err(e) = db.update_chain_tip(fresh_height) {
+                    if let Err(e) =
+                        with_wallet_db_write_lock("sync_engine.update_chain_tip.periodic", || {
+                            db.update_chain_tip(fresh_height)
+                        })
+                    {
                         log::warn!(
                             "[{}] sync: periodic tip refresh update_chain_tip failed: {e}",
                             elapsed(),
@@ -652,38 +664,40 @@ async fn run_sync_impl(
         // becomes `SyncError::Db` (Fatal). Everything else (non-scan,
         // non-wallet — e.g. block-source errors, unrecognised scan
         // variants) becomes `SyncError::Other` (retry-with-backoff).
-        let scan_result = scan_cached_blocks(
-            &network,
-            &block_source,
-            &mut db,
-            start,
-            &from_state,
-            batch_size as usize,
-        )
-        .map_err(|e| match e {
-            ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
-                let at_height = u32::from(scan_err.at_height()) as u64;
-                SyncError::continuity(at_height, scan_err.to_string())
-            }
-            ChainError::Wallet(SqliteClientError::BlockConflict(at)) => {
-                let at_height = u32::from(at) as u64;
-                SyncError::continuity(
-                    at_height,
-                    format!("BlockConflict at {at_height}: wallet rewind required"),
-                )
-            }
-            ChainError::Wallet(wallet_err) => {
-                // Transient SQLite lock contention (e.g. another wallet
-                // connection holds a write lock) must retry, not bail out.
-                // Everything else is treated as genuine DB failure and
-                // goes Fatal via the per-category retry policy.
-                if is_sqlite_lock_contention(&wallet_err) {
-                    SyncError::other(format!("scan: SQLite lock contention: {wallet_err}"))
-                } else {
-                    SyncError::db(format!("scan wallet: {wallet_err}"))
+        let scan_result = with_wallet_db_write_lock("sync_engine.scan_cached_blocks", || {
+            scan_cached_blocks(
+                &network,
+                &block_source,
+                &mut db,
+                start,
+                &from_state,
+                batch_size as usize,
+            )
+            .map_err(|e| match e {
+                ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
+                    let at_height = u32::from(scan_err.at_height()) as u64;
+                    SyncError::continuity(at_height, scan_err.to_string())
                 }
-            }
-            other => SyncError::other(format!("scan: {other}")),
+                ChainError::Wallet(SqliteClientError::BlockConflict(at)) => {
+                    let at_height = u32::from(at) as u64;
+                    SyncError::continuity(
+                        at_height,
+                        format!("BlockConflict at {at_height}: wallet rewind required"),
+                    )
+                }
+                ChainError::Wallet(wallet_err) => {
+                    // Transient SQLite lock contention (e.g. another wallet
+                    // connection holds a write lock) must retry, not bail out.
+                    // Everything else is treated as genuine DB failure and
+                    // goes Fatal via the per-category retry policy.
+                    if is_sqlite_lock_contention(&wallet_err) {
+                        SyncError::other(format!("scan: SQLite lock contention: {wallet_err}"))
+                    } else {
+                        SyncError::db(format!("scan wallet: {wallet_err}"))
+                    }
+                }
+                other => SyncError::other(format!("scan: {other}")),
+            })
         });
 
         // Handle the scan result. On a reorg we rewind the wallet to
@@ -730,59 +744,62 @@ async fn run_sync_impl(
                     // nowhere safe to rewind to, and we surface the
                     // failure as fatal.
                     let target = BlockHeight::from_u32(to_height as u32);
-                    let actual_rewind_height = match db.truncate_to_height(target) {
-                        Ok(h) => h,
-                        Err(SqliteClientError::RequestedRewindInvalid {
-                            safe_rewind_height: Some(safe),
-                            requested_height,
-                        }) => {
-                            log::warn!(
-                                "[{}] sync: {phase_name} rewind target {requested_height} \
-                                 below earliest checkpoint; retrying at safe_rewind_height={safe}",
-                                elapsed(),
-                            );
-                            db.truncate_to_height(safe).map_err(|e| {
-                                if is_sqlite_lock_contention(&e) {
-                                    SyncError::other(format!(
-                                        "truncate_to_height({safe}) retry: SQLite lock contention: {e}"
-                                    ))
-                                } else {
-                                    SyncError::db(format!(
-                                        "truncate_to_height({safe}) retry after RequestedRewindInvalid: {e}"
-                                    ))
+                    let actual_rewind_height = with_wallet_db_write_lock(
+                        "sync_engine.truncate_to_height",
+                        || -> Result<BlockHeight, SyncError> {
+                            match db.truncate_to_height(target) {
+                                Ok(h) => Ok(h),
+                                Err(SqliteClientError::RequestedRewindInvalid {
+                                    safe_rewind_height: Some(safe),
+                                    requested_height,
+                                }) => {
+                                    log::warn!(
+                                        "[{}] sync: {phase_name} rewind target {requested_height} \
+                                         below earliest checkpoint; retrying at safe_rewind_height={safe}",
+                                        elapsed(),
+                                    );
+                                    db.truncate_to_height(safe).map_err(|e| {
+                                        if is_sqlite_lock_contention(&e) {
+                                            SyncError::other(format!(
+                                                "truncate_to_height({safe}) retry: SQLite lock contention: {e}"
+                                            ))
+                                        } else {
+                                            SyncError::db(format!(
+                                                "truncate_to_height({safe}) retry after RequestedRewindInvalid: {e}"
+                                            ))
+                                        }
+                                    })
                                 }
-                            })?
-                        }
-                        Err(SqliteClientError::RequestedRewindInvalid {
-                            safe_rewind_height: None,
-                            requested_height,
-                        }) => {
-                            log::error!(
-                                "[{}] sync: {phase_name} rewind to {requested_height} \
-                                 rejected and no safe_rewind_height is available; \
-                                 cannot recover from this reorg in-place",
-                                elapsed(),
-                            );
-                            return Err(SyncError::db(format!(
-                                "truncate_to_height({requested_height}): no safe rewind height"
-                            )));
-                        }
-                        Err(e) if is_sqlite_lock_contention(&e) => {
-                            // Transient lock contention on the rewind. The
-                            // outer retry wrapper will re-invoke run_sync_impl
-                            // after a backoff, which re-detects the continuity
-                            // error and triggers the rewind again. If the
-                            // lock has cleared by then, the retry succeeds.
-                            return Err(SyncError::other(format!(
-                                "truncate_to_height({to_height}): SQLite lock contention: {e}"
-                            )));
-                        }
-                        Err(e) => {
-                            return Err(SyncError::db(format!(
-                                "truncate_to_height({to_height}): {e}"
-                            )));
-                        }
-                    };
+                                Err(SqliteClientError::RequestedRewindInvalid {
+                                    safe_rewind_height: None,
+                                    requested_height,
+                                }) => {
+                                    log::error!(
+                                        "[{}] sync: {phase_name} rewind to {requested_height} \
+                                         rejected and no safe_rewind_height is available; \
+                                         cannot recover from this reorg in-place",
+                                        elapsed(),
+                                    );
+                                    Err(SyncError::db(format!(
+                                        "truncate_to_height({requested_height}): no safe rewind height"
+                                    )))
+                                }
+                                Err(e) if is_sqlite_lock_contention(&e) => {
+                                    // Transient lock contention on the rewind. The
+                                    // outer retry wrapper will re-invoke run_sync_impl
+                                    // after a backoff, which re-detects the continuity
+                                    // error and triggers the rewind again. If the
+                                    // lock has cleared by then, the retry succeeds.
+                                    Err(SyncError::other(format!(
+                                        "truncate_to_height({to_height}): SQLite lock contention: {e}"
+                                    )))
+                                }
+                                Err(e) => Err(SyncError::db(format!(
+                                    "truncate_to_height({to_height}): {e}"
+                                ))),
+                            }
+                        },
+                    )?;
                     log::info!(
                         "[{}] sync: {phase_name} rewound to {actual_rewind_height} after reorg \
                          (attempt {}/{}); restarting scan loop",
@@ -867,7 +884,10 @@ async fn run_sync_impl(
                 // never actually scanned. (Codex 3rd-round finding.)
                 if (fresh_tip_height as u64) > current_tip_height {
                     let fresh_bh = BlockHeight::from_u32(fresh_tip_height);
-                    match db.update_chain_tip(fresh_bh) {
+                    match with_wallet_db_write_lock(
+                        "sync_engine.update_chain_tip.post_batch",
+                        || db.update_chain_tip(fresh_bh),
+                    ) {
                         Ok(_) => {
                             current_tip_height = fresh_tip_height as u64;
                         }

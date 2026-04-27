@@ -22,6 +22,7 @@
 use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletWrite};
 use zcash_protocol::consensus::BlockHeight;
 
+use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
 
@@ -92,7 +93,6 @@ pub fn get_next_available_address(
     account_uuid: &str,
 ) -> Result<String, String> {
     use zcash_keys::keys::{ReceiverRequirement, UnifiedAddressRequest};
-    let mut db = open_wallet_db(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let req = UnifiedAddressRequest::custom(
         ReceiverRequirement::Require,
@@ -100,10 +100,12 @@ pub fn get_next_available_address(
         ReceiverRequirement::Omit,
     )
     .map_err(|_| "bad request")?;
-    let (ua, _) = db
-        .get_next_available_address(account_id, req)
-        .map_err(|e| format!("{e}"))?
-        .ok_or("No address available")?;
+    let (ua, _) = with_wallet_db_write_lock("transactions.get_next_available_address", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        db.get_next_available_address(account_id, req)
+            .map_err(|e| format!("{e}"))?
+            .ok_or_else(|| "No address available".to_string())
+    })?;
     Ok(ua.encode(&network))
 }
 
@@ -168,13 +170,15 @@ pub fn decrypt_and_store_transaction(
     use zcash_primitives::transaction::Transaction;
     use zcash_protocol::consensus::BranchId;
 
-    let mut db = open_wallet_db(db_path, network)?;
     let tx = Transaction::read(tx_bytes, BranchId::Sapling)
         .map_err(|e| format!("Failed to read transaction: {e}"))?;
     let height = mined_height.map(|h| BlockHeight::from_u32(h as u32));
 
-    decrypt_and_store_transaction(&network, &mut db, &tx, height)
-        .map_err(|e| format!("Failed to decrypt/store transaction: {e}"))
+    with_wallet_db_write_lock("transactions.decrypt_and_store_transaction", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        decrypt_and_store_transaction(&network, &mut db, &tx, height)
+            .map_err(|e| format!("Failed to decrypt/store transaction: {e}"))
+    })
 }
 
 pub fn set_transaction_status(
@@ -185,7 +189,6 @@ pub fn set_transaction_status(
 ) -> Result<(), String> {
     use zcash_client_backend::data_api::TransactionStatus;
 
-    let mut db = open_wallet_db(db_path, network)?;
     let txid_bytes = hex::decode(txid_hex).map_err(|e| format!("Bad txid hex: {e}"))?;
     let txid = zcash_primitives::transaction::TxId::from_bytes(
         txid_bytes.try_into().map_err(|_| "TxId must be 32 bytes")?,
@@ -197,8 +200,11 @@ pub fn set_transaction_status(
         h => TransactionStatus::Mined(BlockHeight::from_u32(h as u32)),
     };
 
-    db.set_transaction_status(txid, tx_status)
-        .map_err(|e| format!("Failed to set status: {e}"))
+    with_wallet_db_write_lock("transactions.set_transaction_status", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        db.set_transaction_status(txid, tx_status)
+            .map_err(|e| format!("Failed to set status: {e}"))
+    })
 }
 
 // ======================== Transaction History (SQL) ========================

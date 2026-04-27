@@ -72,6 +72,7 @@ use std::convert::Infallible;
 
 use zcash_proofs::prover::LocalTxProver;
 
+use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::network::WalletNetwork;
 
 use super::{open_wallet_db, PROPOSAL_STORE};
@@ -105,15 +106,17 @@ pub fn create_pczt_from_proposal(
         // lock dropped here, before heavy work
     };
 
-    let mut db = open_wallet_db(db_path, network)?;
-    let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
-        &mut db,
-        &network,
-        stored.account_id,
-        OvkPolicy::Sender,
-        &stored.proposal,
-    )
-    .map_err(|e| format!("Create PCZT failed: {e}"))?;
+    let pczt = with_wallet_db_write_lock("pczt.create_pczt_from_proposal", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+            &mut db,
+            &network,
+            stored.account_id,
+            OvkPolicy::Sender,
+            &stored.proposal,
+        )
+        .map_err(|e| format!("Create PCZT failed: {e}"))
+    })?;
 
     Ok(pczt.serialize())
 }
@@ -317,51 +320,53 @@ pub async fn extract_and_broadcast_pczt(
     // Step 3: broadcast was accepted. Persist locally so the UI
     // sees the tx immediately and the spent notes stop showing up
     // as spendable.
-    let mut db = open_wallet_db(db_path, network)?;
+    with_wallet_db_write_lock("pczt.extract_and_broadcast_pczt.store", || {
+        let mut db = open_wallet_db(db_path, network)?;
 
-    // Primary path: rich PCZT-aware storage (preserves
-    // recipient/memo). Hand Sapling verifying keys in whenever the
-    // combined PCZT has a Sapling bundle, otherwise librustzcash
-    // rejects the extraction with `SaplingRequired` before we can
-    // store anything.
-    let sapling_vk_pair = sapling_vks.as_ref().map(|(s, o)| (s, o));
-    match extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
-        &mut db,
-        combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?,
-        sapling_vk_pair,
-        Some(&orchard_vk),
-    ) {
-        Ok(_) => return Ok(txid.to_string()),
-        Err(primary_err) => {
-            log::warn!(
-                "keystone: PCZT-aware storage failed after broadcast \
-                 (txid={txid}): {primary_err}. Falling back to chain-style \
-                 decrypt_and_store_transaction; rich recipient metadata \
-                 will not be available in history until the next sync."
-            );
+        // Primary path: rich PCZT-aware storage (preserves
+        // recipient/memo). Hand Sapling verifying keys in whenever the
+        // combined PCZT has a Sapling bundle, otherwise librustzcash
+        // rejects the extraction with `SaplingRequired` before we can
+        // store anything.
+        let sapling_vk_pair = sapling_vks.as_ref().map(|(s, o)| (s, o));
+        match extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
+            &mut db,
+            combine_pczts(pczt_with_proofs_bytes, pczt_with_signatures_bytes)?,
+            sapling_vk_pair,
+            Some(&orchard_vk),
+        ) {
+            Ok(_) => return Ok(txid.to_string()),
+            Err(primary_err) => {
+                log::warn!(
+                    "keystone: PCZT-aware storage failed after broadcast \
+                     (txid={txid}): {primary_err}. Falling back to chain-style \
+                     decrypt_and_store_transaction; rich recipient metadata \
+                     will not be available in history until the next sync."
+                );
 
-            // Fallback path: same code sync uses when it discovers a
-            // wallet tx on the chain. Marks spent notes correctly
-            // via nullifier matching and picks up any change note
-            // back to us from enc_ciphertext decryption. The
-            // recipient/memo metadata that was only in the PCZT
-            // proprietary fields is lost, but correctness is
-            // preserved — the spent notes no longer appear
-            // spendable.
-            decrypt_and_store_transaction(&network, &mut db, &tx, None).map_err(
-                |fallback_err| {
-                    format!(
-                        "Broadcast succeeded (txid={txid}) but both local \
-                     storage paths failed. Primary: {primary_err}. \
-                     Fallback: {fallback_err}. The transaction is on \
-                     the network; check an explorer to confirm, and \
-                     do not attempt to send again until the next \
-                     sync reconciles your balance."
-                    )
-                },
-            )?;
+                // Fallback path: same code sync uses when it discovers a
+                // wallet tx on the chain. Marks spent notes correctly
+                // via nullifier matching and picks up any change note
+                // back to us from enc_ciphertext decryption. The
+                // recipient/memo metadata that was only in the PCZT
+                // proprietary fields is lost, but correctness is
+                // preserved — the spent notes no longer appear
+                // spendable.
+                decrypt_and_store_transaction(&network, &mut db, &tx, None).map_err(
+                    |fallback_err| {
+                        format!(
+                            "Broadcast succeeded (txid={txid}) but both local \
+                         storage paths failed. Primary: {primary_err}. \
+                         Fallback: {fallback_err}. The transaction is on \
+                         the network; check an explorer to confirm, and \
+                         do not attempt to send again until the next \
+                         sync reconciles your balance."
+                        )
+                    },
+                )?;
+            }
         }
-    }
 
-    Ok(txid.to_string())
+        Ok(txid.to_string())
+    })
 }

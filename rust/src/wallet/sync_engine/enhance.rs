@@ -38,6 +38,7 @@ use zcash_client_backend::{
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 
+use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::network::WalletNetwork;
 
 use super::{SyncError, WalletDatabase};
@@ -107,9 +108,14 @@ pub(super) async fn run_enhancement(
                                         } else {
                                             None
                                         };
-                                        if let Err(e) =
-                                            decrypt_and_store_transaction(&network, db, &tx, height)
-                                        {
+                                        if let Err(e) = with_wallet_db_write_lock(
+                                            "sync_engine.enhance.decrypt_and_store_transaction",
+                                            || {
+                                                decrypt_and_store_transaction(
+                                                    &network, db, &tx, height,
+                                                )
+                                            },
+                                        ) {
                                             log::error!(
                                                 "sync: decrypt_and_store_transaction failed: {e}"
                                             );
@@ -127,7 +133,10 @@ pub(super) async fn run_enhancement(
                                 } else {
                                     TransactionStatus::NotInMainChain
                                 };
-                                if let Err(e) = db.set_transaction_status(*txid, status) {
+                                if let Err(e) = with_wallet_db_write_lock(
+                                    "sync_engine.enhance.set_transaction_status",
+                                    || db.set_transaction_status(*txid, status),
+                                ) {
                                     log::error!("sync: set_transaction_status failed: {e}");
                                 }
                             }
@@ -135,9 +144,15 @@ pub(super) async fn run_enhancement(
                         Err(e) => {
                             log::warn!("sync: get_transaction failed for {txid_str}: {e}");
                             failed_txids.insert(txid_str);
-                            if let Err(e) = db
-                                .set_transaction_status(*txid, TransactionStatus::TxidNotRecognized)
-                            {
+                            if let Err(e) = with_wallet_db_write_lock(
+                                "sync_engine.enhance.set_transaction_status",
+                                || {
+                                    db.set_transaction_status(
+                                        *txid,
+                                        TransactionStatus::TxidNotRecognized,
+                                    )
+                                },
+                            ) {
                                 log::error!("sync: set_transaction_status failed: {e}");
                             }
                         }
@@ -182,8 +197,13 @@ pub(super) async fn run_enhancement(
                                             } else {
                                                 None
                                             };
-                                            if let Err(e) = decrypt_and_store_transaction(
-                                                &network, db, &tx, height,
+                                            if let Err(e) = with_wallet_db_write_lock(
+                                                "sync_engine.enhance.decrypt_and_store_transaction",
+                                                || {
+                                                    decrypt_and_store_transaction(
+                                                        &network, db, &tx, height,
+                                                    )
+                                                },
                                             ) {
                                                 log::error!(
                                                     "sync: decrypt_and_store_transaction (addr) failed: {e}"
