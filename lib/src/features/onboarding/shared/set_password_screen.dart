@@ -295,7 +295,7 @@ class _SetPasswordContent extends StatelessWidget {
                         child: Text(
                           submitError!,
                           style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.warning,
+                            color: colors.text.destructive,
                           ),
                           textAlign: TextAlign.center,
                         ),

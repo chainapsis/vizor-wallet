@@ -280,7 +280,7 @@ class _SidebarAccountSelectorButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
           decoration: BoxDecoration(
             color: backgroundColor,
-            borderRadius: BorderRadius.circular(AppRadii.small),
+            borderRadius: BorderRadius.circular(AppRadii.xSmall),
           ),
           child: Row(
             children: [
@@ -355,10 +355,10 @@ class _SidebarAccountDropdown extends StatelessWidget {
       height: headerHeight + listViewportHeight + footerHeight,
       decoration: BoxDecoration(
         color: colors.surface.input,
-        borderRadius: BorderRadius.circular(AppRadii.small),
-        boxShadow: const [
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x40000000),
+            color: colors.background.neutralScrim,
             blurRadius: 25,
             spreadRadius: -10,
             offset: Offset(0, 10),

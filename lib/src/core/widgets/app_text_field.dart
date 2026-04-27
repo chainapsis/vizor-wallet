@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 
-enum AppTextFieldTone { neutral, destructive, brandPurple }
+enum AppTextFieldTone { neutral, destructive, brandCrimson }
 
 class AppTextField extends StatefulWidget {
   const AppTextField({
@@ -250,12 +250,17 @@ class _AppTextFieldState extends State<AppTextField> {
     final resolvedHintStyle = hintStyle.copyWith(
       color: hintStyle.color ?? defaultHintStyle.color,
     );
-    final iconColor = _hasText || _isFocused
+    final neutralIconColor = _hasText || _isFocused
         ? colors.icon.accent
         : colors.icon.regular;
+    final leadingIconColor = switch (widget.tone) {
+      AppTextFieldTone.neutral => neutralIconColor,
+      AppTextFieldTone.destructive => colors.icon.destructive,
+      AppTextFieldTone.brandCrimson => colors.icon.brandCrimson,
+    };
     final gap = _multiline ? AppSpacing.xs : AppSpacing.xxs;
     final shellHeight = _multiline ? 148.0 : 46.0;
-    const shellRadius = 12.0;
+    const shellRadius = AppRadii.small;
     const focusRingWidth = 3.0;
     const focusRingStrokeWidth = 2.0;
     final useFixedSlotLayout =
@@ -274,20 +279,22 @@ class _AppTextFieldState extends State<AppTextField> {
 
     final isNeutralTone = widget.tone == AppTextFieldTone.neutral;
     final borderColor = switch (widget.tone) {
-      AppTextFieldTone.neutral when _isFocused => colors.border.strong,
+      AppTextFieldTone.neutral when _isFocused || _hasText =>
+        colors.border.medium,
+      AppTextFieldTone.neutral when _hovered => colors.border.regular,
       AppTextFieldTone.neutral => colors.border.subtle,
       AppTextFieldTone.destructive => colors.border.utilityDestructive,
-      AppTextFieldTone.brandPurple => colors.border.brandPurpleStrong,
+      AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
     };
     final focusRingColor = switch (widget.tone) {
       AppTextFieldTone.neutral => colors.state.focusRing,
       AppTextFieldTone.destructive => colors.border.utilityDestructive,
-      AppTextFieldTone.brandPurple => colors.border.brandPurpleStrong,
+      AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
     };
     final messageColor = switch (widget.tone) {
       AppTextFieldTone.neutral => colors.text.secondary,
-      AppTextFieldTone.destructive => colors.text.warning,
-      AppTextFieldTone.brandPurple => colors.text.brandPurple,
+      AppTextFieldTone.destructive => colors.text.destructive,
+      AppTextFieldTone.brandCrimson => colors.text.brandCrimson,
     };
     final defaultMessageIcon = switch (widget.tone) {
       AppTextFieldTone.neutral => null,
@@ -296,7 +303,7 @@ class _AppTextFieldState extends State<AppTextField> {
         size: AppIconSize.medium,
         color: messageColor,
       ),
-      AppTextFieldTone.brandPurple => AppIcon(
+      AppTextFieldTone.brandCrimson => AppIcon(
         AppIcons.shieldKeyhole,
         size: AppIconSize.medium,
         color: messageColor,
@@ -311,7 +318,7 @@ class _AppTextFieldState extends State<AppTextField> {
         ? GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _clear,
-            child: AppIcon(AppIcons.cross, size: 20, color: iconColor),
+            child: AppIcon(AppIcons.cross, size: 20, color: neutralIconColor),
           )
         : widget.trailing;
 
@@ -440,7 +447,7 @@ class _AppTextFieldState extends State<AppTextField> {
               Positioned.fill(
                 child: IconTheme.merge(
                   data: IconThemeData(
-                    color: iconColor,
+                    color: neutralIconColor,
                     size: AppIconSize.large,
                   ),
                   child: _multiline
@@ -459,7 +466,7 @@ class _AppTextFieldState extends State<AppTextField> {
                                     alignment: Alignment.centerLeft,
                                     child: IconTheme.merge(
                                       data: IconThemeData(
-                                        color: iconColor,
+                                        color: leadingIconColor,
                                         size: 20,
                                       ),
                                       child: SizedBox(
@@ -509,10 +516,16 @@ class _AppTextFieldState extends State<AppTextField> {
                                 height: shellHeight,
                                 child: Align(
                                   alignment: Alignment.centerRight,
-                                  child: SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: widget.leading,
+                                  child: IconTheme.merge(
+                                    data: IconThemeData(
+                                      color: leadingIconColor,
+                                      size: 20,
+                                    ),
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: widget.leading,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -556,10 +569,16 @@ class _AppTextFieldState extends State<AppTextField> {
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               if (widget.leading != null)
-                                SizedBox(
-                                  width: AppIconSize.large,
-                                  height: AppIconSize.large,
-                                  child: widget.leading,
+                                IconTheme.merge(
+                                  data: IconThemeData(
+                                    color: leadingIconColor,
+                                    size: AppIconSize.large,
+                                  ),
+                                  child: SizedBox(
+                                    width: AppIconSize.large,
+                                    height: AppIconSize.large,
+                                    child: widget.leading,
+                                  ),
                                 ),
                               if (widget.leading != null)
                                 const SizedBox(width: AppSpacing.xs),

@@ -103,7 +103,7 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         bg: c.button.secondary.bg,
         bgHover: c.button.secondary.bgHover,
         bgPressed: c.button.secondary.bgPressed,
-        border: const Color(0x00000000),
+        border: c.background.ground.withValues(alpha: 0),
         borderWidth: 0,
         label: c.button.secondary.label,
         focusRing: c.state.focusRing,
@@ -112,10 +112,10 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
       // Ghost's visible base is transparent regardless of the nominal token
       // value — that way it composes correctly over any surface.
       return _VariantPalette(
-        bg: const Color(0x00000000),
+        bg: c.background.ground.withValues(alpha: 0),
         bgHover: c.button.ghost.bgHover,
         bgPressed: c.button.ghost.bgHover,
-        border: const Color(0x00000000),
+        border: c.background.ground.withValues(alpha: 0),
         borderWidth: 0,
         label: c.button.ghost.label,
         focusRing: c.state.focusRing,

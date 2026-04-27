@@ -118,7 +118,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       TextSpan(
         text: prefix,
         style: AppTypography.labelLarge.copyWith(
-          color: colors.text.brandPurple,
+          color: colors.text.brandCrimson,
         ),
       ),
       TextSpan(
@@ -129,7 +129,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         TextSpan(
           text: suffix,
           style: AppTypography.labelLarge.copyWith(
-            color: colors.text.brandPurple,
+            color: colors.text.brandCrimson,
           ),
         ),
     ];
@@ -400,7 +400,7 @@ class _SendReviewStatusBadge extends StatelessWidget {
         Text(
           isShielded ? 'Shielded' : 'Transparent',
           style: AppTypography.labelLarge.copyWith(
-            color: isShielded ? colors.text.brandPurple : colors.text.muted,
+            color: isShielded ? colors.text.brandCrimson : colors.text.muted,
           ),
         ),
         const SizedBox(width: AppSpacing.xxs),
@@ -491,7 +491,7 @@ class _SendShieldedBadgeIcon extends StatelessWidget {
           AppIcon(
             AppIcons.shieldKeyhole,
             size: 16,
-            color: colors.text.brandPurple,
+            color: colors.text.brandCrimson,
           ),
         ],
       ),
