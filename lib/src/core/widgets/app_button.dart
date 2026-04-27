@@ -245,14 +245,17 @@ class _AppButtonState extends State<AppButton> {
         )
         ..add(SizedBox(width: sizing.gap));
     }
+    final label = DefaultTextStyle.merge(
+      style: sizing.labelStyle.copyWith(color: labelColor),
+      child: widget.child,
+    );
     rowChildren.add(
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-        child: DefaultTextStyle.merge(
-          style: sizing.labelStyle.copyWith(color: labelColor),
-          child: widget.child,
-        ),
-      ),
+      widget.size == AppButtonSize.small
+          ? label
+          : Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+              child: label,
+            ),
     );
     if (widget.trailing != null) {
       rowChildren
