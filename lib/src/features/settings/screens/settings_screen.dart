@@ -1,4 +1,7 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,18 +11,56 @@ import '../../../core/config/network_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+enum _SettingsModalType { accountName, theme }
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  _SettingsModalType? _activeModal;
+
+  void _showModal(_SettingsModalType modal) {
+    setState(() {
+      _activeModal = modal;
+    });
+  }
+
+  void _closeModal() {
+    setState(() {
+      _activeModal = null;
+    });
+  }
+
+  Future<void> _updateAccountName(String name) async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    await ref.read(accountProvider.notifier).renameAccount(accountUuid, name);
+    if (!mounted) return;
+    _closeModal();
+  }
+
+  Future<void> _updateTheme(ThemeMode mode) async {
+    await ref.read(themeModeProvider.notifier).set(mode);
+    if (!mounted) return;
+    _closeModal();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final accountState = ref.watch(accountProvider).value;
     final activeAccountName = accountState?.activeAccount?.name ?? 'Wallet 1';
+    final hasActiveAccount = accountState?.activeAccountUuid != null;
     final activeAccountIsHardware =
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
@@ -31,15 +72,42 @@ class SettingsScreen extends ConsumerWidget {
       sidebarWidth: 240,
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: _SettingsPane(
-          accountName: activeAccountName,
-          activeAccountIsHardware: activeAccountIsHardware,
-          endpointLabel: endpointLabel,
-          themeLabel: _themeLabel(themeMode),
-          onBack: () => _handleBack(context),
-          onSeedPhrase: () => context.go('/settings/secret-passphrase'),
-          onChangePassword: () => context.go('/settings/change-password'),
+        padding: EdgeInsets.zero,
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: _SettingsPane(
+                accountName: activeAccountName,
+                activeAccountIsHardware: activeAccountIsHardware,
+                endpointLabel: endpointLabel,
+                themeLabel: _themeLabel(themeMode),
+                onBack: () => _handleBack(context),
+                onSeedPhrase: () => context.go('/settings/secret-passphrase'),
+                onChangePassword: () => context.go('/settings/change-password'),
+                onAccountName: hasActiveAccount
+                    ? () => _showModal(_SettingsModalType.accountName)
+                    : null,
+                onTheme: () => _showModal(_SettingsModalType.theme),
+              ),
+            ),
+            if (_activeModal != null)
+              _SettingsModalOverlay(
+                onDismiss: _closeModal,
+                child: switch (_activeModal!) {
+                  _SettingsModalType.accountName => _AccountNameModal(
+                    accountName: activeAccountName,
+                    onCancel: _closeModal,
+                    onUpdate: _updateAccountName,
+                  ),
+                  _SettingsModalType.theme => _ThemeModal(
+                    currentMode: themeMode,
+                    onCancel: _closeModal,
+                    onUpdate: _updateTheme,
+                  ),
+                },
+              ),
+          ],
         ),
       ),
     );
@@ -78,6 +146,8 @@ class _SettingsPane extends StatelessWidget {
     required this.onBack,
     required this.onSeedPhrase,
     required this.onChangePassword,
+    required this.onAccountName,
+    required this.onTheme,
   });
 
   final String accountName;
@@ -87,6 +157,8 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
+  final VoidCallback? onAccountName;
+  final VoidCallback onTheme;
 
   @override
   Widget build(BuildContext context) {
@@ -127,6 +199,8 @@ class _SettingsPane extends StatelessWidget {
                         themeLabel: themeLabel,
                         onSeedPhrase: onSeedPhrase,
                         onChangePassword: onChangePassword,
+                        onAccountName: onAccountName,
+                        onTheme: onTheme,
                       ),
                     ],
                   ),
@@ -187,6 +261,8 @@ class _SettingsList extends StatelessWidget {
     required this.themeLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
+    required this.onAccountName,
+    required this.onTheme,
   });
 
   final String accountName;
@@ -195,6 +271,8 @@ class _SettingsList extends StatelessWidget {
   final String themeLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
+  final VoidCallback? onAccountName;
+  final VoidCallback onTheme;
 
   @override
   Widget build(BuildContext context) {
@@ -228,6 +306,7 @@ class _SettingsList extends StatelessWidget {
               iconName: AppIcons.scroll,
               label: 'Account Name',
               value: accountName,
+              onTap: onAccountName,
             ),
           ],
         ),
@@ -245,10 +324,506 @@ class _SettingsList extends StatelessWidget {
               iconName: AppIcons.theme,
               label: 'Theme',
               value: themeLabel,
+              onTap: onTheme,
             ),
           ],
         ),
       ],
+    );
+  }
+}
+
+class _SettingsModalOverlay extends StatelessWidget {
+  const _SettingsModalOverlay({required this.child, required this.onDismiss});
+
+  final Widget child;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return Positioned.fill(
+      child: PopScope<void>(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) onDismiss();
+        },
+        child: Focus(
+          autofocus: true,
+          onKeyEvent: (_, event) {
+            if (event is KeyDownEvent &&
+                event.logicalKey == LogicalKeyboardKey.escape) {
+              onDismiss();
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
+          },
+          child: ClipRect(
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onDismiss,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.background.neutralScrim,
+                  ),
+                  child: Center(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {},
+                      child: child,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsModalCard extends StatelessWidget {
+  const _SettingsModalCard({required this.header, required this.child});
+
+  final Widget header;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 312,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: context.colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          header,
+          const SizedBox(height: AppSpacing.md),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _ModalHeader extends StatelessWidget {
+  const _ModalHeader({required this.leading, required this.title});
+
+  final Widget leading;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        leading,
+        const SizedBox(width: AppSpacing.xs),
+        Flexible(
+          child: Text(
+            title,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyLarge.copyWith(
+              color: context.colors.text.accent,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ModalAccountAvatar extends StatelessWidget {
+  const _ModalAccountAvatar();
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipOval(
+      child: Image.asset(
+        'assets/illustrations/sidebar_account_avatar_knight.png',
+        width: 32,
+        height: 32,
+        fit: BoxFit.cover,
+      ),
+    );
+  }
+}
+
+class _ModalUtilityIcon extends StatelessWidget {
+  const _ModalUtilityIcon({required this.iconName});
+
+  final String iconName;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: colors.background.neutralSubtleOpacity,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: AppIcon(
+          iconName,
+          size: AppIconSize.medium,
+          color: colors.icon.accent,
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountNameModal extends StatefulWidget {
+  const _AccountNameModal({
+    required this.accountName,
+    required this.onCancel,
+    required this.onUpdate,
+  });
+
+  final String accountName;
+  final VoidCallback onCancel;
+  final Future<void> Function(String name) onUpdate;
+
+  @override
+  State<_AccountNameModal> createState() => _AccountNameModalState();
+}
+
+class _AccountNameModalState extends State<_AccountNameModal> {
+  static const _fieldHeight = 86.0;
+  static const _buttonWidth = 280.0;
+  static const _minNameLength = 5;
+  static const _maxNameLength = 20;
+
+  final _controller = TextEditingController();
+  bool _isSubmitting = false;
+  String? _submitError;
+
+  String get _trimmedName => _controller.text.trim();
+
+  bool get _isLengthValid =>
+      _trimmedName.length >= _minNameLength &&
+      _trimmedName.length <= _maxNameLength;
+
+  bool get _canUpdate =>
+      !_isSubmitting &&
+      _isLengthValid &&
+      _trimmedName != widget.accountName.trim();
+
+  String? get _messageText {
+    if (_submitError != null) return _submitError;
+    if (_controller.text.isEmpty || _isLengthValid) return null;
+    return 'Use 5-20 characters.';
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_canUpdate) return;
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
+
+    try {
+      await widget.onUpdate(_trimmedName);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _submitError = "Couldn't update account name.";
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  void _handleChanged() {
+    setState(() {
+      _submitError = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsModalCard(
+      header: _ModalHeader(
+        leading: const _ModalAccountAvatar(),
+        title: widget.accountName,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: _fieldHeight,
+            child: AppTextField(
+              label: 'New Account Name',
+              hintText: '5-20 Characters',
+              controller: _controller,
+              autofocus: true,
+              enabled: !_isSubmitting,
+              trailingSlotWidth: 40,
+              inputHorizontalPadding: AppSpacing.s,
+              inputFormatters: [
+                LengthLimitingTextInputFormatter(_maxNameLength),
+              ],
+              messageText: _messageText,
+              tone: _messageText == null
+                  ? AppTextFieldTone.neutral
+                  : AppTextFieldTone.destructive,
+              onChanged: (_) => _handleChanged(),
+              onSubmitted: (_) => _submit(),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            onPressed: _canUpdate ? _submit : null,
+            variant: AppButtonVariant.primary,
+            minWidth: _buttonWidth,
+            child: Text(_isSubmitting ? 'Updating...' : 'Update'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          AppButton(
+            onPressed: _isSubmitting ? null : widget.onCancel,
+            variant: AppButtonVariant.ghost,
+            minWidth: _buttonWidth,
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThemeModal extends StatefulWidget {
+  const _ThemeModal({
+    required this.currentMode,
+    required this.onCancel,
+    required this.onUpdate,
+  });
+
+  final ThemeMode currentMode;
+  final VoidCallback onCancel;
+  final Future<void> Function(ThemeMode mode) onUpdate;
+
+  @override
+  State<_ThemeModal> createState() => _ThemeModalState();
+}
+
+class _ThemeModalState extends State<_ThemeModal> {
+  static const _buttonWidth = 280.0;
+
+  late ThemeMode _selectedMode = widget.currentMode;
+  bool _isSubmitting = false;
+  String? _submitError;
+
+  bool get _canUpdate => !_isSubmitting && _selectedMode != widget.currentMode;
+
+  Future<void> _submit() async {
+    if (!_canUpdate) return;
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
+    try {
+      await widget.onUpdate(_selectedMode);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _submitError = "Couldn't update theme.";
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsModalCard(
+      header: const _ModalHeader(
+        leading: _ModalUtilityIcon(iconName: AppIcons.theme),
+        title: 'Theme',
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Column(
+            children: [
+              _ThemeOptionCard(
+                iconName: AppIcons.monitor,
+                label: 'System (Auto)',
+                selected: _selectedMode == ThemeMode.system,
+                onTap: () => setState(() {
+                  _submitError = null;
+                  _selectedMode = ThemeMode.system;
+                }),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              _ThemeOptionCard(
+                iconName: AppIcons.day,
+                label: 'Light Mode',
+                selected: _selectedMode == ThemeMode.light,
+                onTap: () => setState(() {
+                  _submitError = null;
+                  _selectedMode = ThemeMode.light;
+                }),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              _ThemeOptionCard(
+                iconName: AppIcons.night,
+                label: 'Dark Mode',
+                selected: _selectedMode == ThemeMode.dark,
+                onTap: () => setState(() {
+                  _submitError = null;
+                  _selectedMode = ThemeMode.dark;
+                }),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (_submitError != null) ...[
+            Text(
+              _submitError!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.destructive,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
+          AppButton(
+            onPressed: _canUpdate ? _submit : null,
+            variant: AppButtonVariant.primary,
+            minWidth: _buttonWidth,
+            child: Text(_isSubmitting ? 'Updating...' : 'Update'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          AppButton(
+            onPressed: _isSubmitting ? null : widget.onCancel,
+            variant: AppButtonVariant.ghost,
+            minWidth: _buttonWidth,
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThemeOptionCard extends StatelessWidget {
+  const _ThemeOptionCard({
+    required this.iconName,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String iconName;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 280,
+          height: 40,
+          padding: const EdgeInsets.only(
+            left: AppSpacing.xs,
+            right: AppSpacing.s,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            border: Border.all(
+              color: selected ? colors.border.strong : colors.border.regular,
+              width: selected ? 2 : 1.5,
+              strokeAlign: BorderSide.strokeAlignInside,
+            ),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: Center(
+                  child: AppIcon(iconName, size: 18, color: colors.icon.accent),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+              _ThemeOptionIndicator(selected: selected),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeOptionIndicator extends StatelessWidget {
+  const _ThemeOptionIndicator({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: 16,
+      height: 16,
+      decoration: BoxDecoration(
+        color: selected
+            ? colors.background.inverse
+            : colors.background.neutralSubtleOpacity,
+        shape: BoxShape.circle,
+      ),
+      child: selected
+          ? Center(
+              child: AppIcon(
+                AppIcons.check,
+                size: 12,
+                color: colors.background.ground,
+              ),
+            )
+          : null,
     );
   }
 }

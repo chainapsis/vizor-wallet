@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../security/password_policy.dart';
 
 const kWalletDbNameKey = 'zcash_wallet_db_name';
+const kThemeModeKey = 'zcash_theme_mode';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';
 const _passwordVerifierKey = 'zcash_password_verifier';
 const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';

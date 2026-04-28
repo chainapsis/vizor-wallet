@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../main.dart' show log;
@@ -23,6 +24,7 @@ class AppBootstrapState {
     required this.initialAccountState,
     required this.initialSyncSnapshot,
     required this.network,
+    required this.themeMode,
     required this.isPasswordConfigured,
     required this.isUnlocked,
   });
@@ -31,6 +33,7 @@ class AppBootstrapState {
   final AccountState initialAccountState;
   final AppSyncSnapshot initialSyncSnapshot;
   final String network;
+  final ThemeMode themeMode;
   final bool isPasswordConfigured;
   final bool isUnlocked;
 
@@ -42,6 +45,7 @@ class AppBootstrapState {
     initialAccountState: AccountState(),
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: 'main',
+    themeMode: ThemeMode.system,
     isPasswordConfigured: false,
     isUnlocked: false,
   );
@@ -113,6 +117,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       log('bootstrap: failed to recover password rotation: $e');
     }
     final network = await storage.readString(_networkKey) ?? 'main';
+    final themeMode = await _readThemeMode(storage);
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
@@ -189,6 +194,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       ),
       initialSyncSnapshot: initialSyncSnapshot,
       network: network,
+      themeMode: themeMode,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
     );
@@ -196,6 +202,23 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     log('bootstrap: failed, falling back to welcome: $e');
     return AppBootstrapState.empty;
   }
+}
+
+Future<ThemeMode> _readThemeMode(AppSecureStore storage) async {
+  try {
+    return _decodeThemeMode(await storage.readString(kThemeModeKey));
+  } catch (e) {
+    log('bootstrap: failed to read theme mode: $e');
+    return ThemeMode.system;
+  }
+}
+
+ThemeMode _decodeThemeMode(String? raw) {
+  return switch (raw) {
+    'light' => ThemeMode.light,
+    'dark' => ThemeMode.dark,
+    _ => ThemeMode.system,
+  };
 }
 
 Future<List<AccountInfo>> _readStoredAccounts(AppSecureStore storage) async {
