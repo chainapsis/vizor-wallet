@@ -19,6 +19,7 @@ class SyncProgressEvent {
   final bool isComplete;
   final bool hasNewTx;
   final bool isBackground;
+
   /// Current sync phase from Rust: `"download"`, `"scan"`,
   /// `"enhance"`, or `""` (unspecified / completion).
   final String phase;
@@ -52,8 +53,10 @@ abstract class BackgroundSyncDelegate {
   void disposeListeners();
 
   Future<void> enable();
+
   /// Returns true if foreground sync needs to be restarted after disabling.
   Future<bool> disable();
+
   /// Tear background-sync bookkeeping down for a lock/sign-out transition.
   /// Unlike [disable], this must not request a foreground handoff.
   Future<void> shutdownForLock();
@@ -74,7 +77,7 @@ abstract class BackgroundSyncDelegate {
 
 class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
   bool _active = false;
-  StreamSubscription? _portSub;
+  DataCallback? _taskDataCallback;
 
   @override
   bool get isActive => _active;
@@ -87,22 +90,24 @@ class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
     required void Function() onStopRequested,
     required void Function(SyncProgressEvent) onBackgroundProgress,
   }) {
-    final port = FlutterForegroundTask.receivePort;
-    if (port == null) {
-      log('BackgroundSyncDelegate(Android): WARNING: receivePort is null, stop-from-notification unavailable');
-      return;
-    }
-    _portSub = port.listen((message) {
-      if (message == 'stop_sync') {
-        log('BackgroundSyncDelegate(Android): stop requested from notification');
+    disposeListeners();
+    _taskDataCallback = (data) {
+      if (data == 'stop_sync') {
+        log(
+          'BackgroundSyncDelegate(Android): stop requested from notification',
+        );
         onStopRequested();
       }
-    });
+    };
+    FlutterForegroundTask.addTaskDataCallback(_taskDataCallback!);
   }
 
   @override
   void disposeListeners() {
-    _portSub?.cancel();
+    final callback = _taskDataCallback;
+    if (callback == null) return;
+    FlutterForegroundTask.removeTaskDataCallback(callback);
+    _taskDataCallback = null;
   }
 
   @override
@@ -172,17 +177,21 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
       (event) {
         try {
           final map = event as Map;
-          onBackgroundProgress(SyncProgressEvent(
-            scannedHeight: (map['scannedHeight'] as num?)?.toInt() ?? 0,
-            chainTipHeight: (map['chainTipHeight'] as num?)?.toInt() ?? 0,
-            percentage: (map['percentage'] as num?)?.toDouble() ?? 0.0,
-            isSyncing: map['isSyncing'] as bool? ?? false,
-            isComplete: map['isComplete'] as bool? ?? false,
-            hasNewTx: map['hasNewTx'] as bool? ?? false,
-            isBackground: true,
-          ));
+          onBackgroundProgress(
+            SyncProgressEvent(
+              scannedHeight: (map['scannedHeight'] as num?)?.toInt() ?? 0,
+              chainTipHeight: (map['chainTipHeight'] as num?)?.toInt() ?? 0,
+              percentage: (map['percentage'] as num?)?.toDouble() ?? 0.0,
+              isSyncing: map['isSyncing'] as bool? ?? false,
+              isComplete: map['isComplete'] as bool? ?? false,
+              hasNewTx: map['hasNewTx'] as bool? ?? false,
+              isBackground: true,
+            ),
+          );
         } catch (e) {
-          log('BackgroundSyncDelegate(iOS): failed to parse progress event: $e');
+          log(
+            'BackgroundSyncDelegate(iOS): failed to parse progress event: $e',
+          );
         }
       },
       onError: (e) {
@@ -214,7 +223,9 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
       waited += 200;
     }
     if (rust_sync.isSyncRunning()) {
-      log('BackgroundSyncDelegate(iOS): WARNING: timed out waiting for bg sync to stop');
+      log(
+        'BackgroundSyncDelegate(iOS): WARNING: timed out waiting for bg sync to stop',
+      );
     }
     _active = false;
     log('BackgroundSyncDelegate(iOS): disabled');

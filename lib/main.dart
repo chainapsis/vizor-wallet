@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 
 import 'app.dart';
@@ -12,6 +13,7 @@ void log(String message) => debugPrint('[zcash] $message');
 Future<void> main() async {
   log('main: starting');
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterForegroundTask.initCommunicationPort();
   log('main: initializing RustLib');
   await RustLib.init();
   // Order matters: window_manager creates and shows the NSWindow inside
