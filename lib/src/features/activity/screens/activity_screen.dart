@@ -18,18 +18,18 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../activity/activity_row_mapper.dart';
-import '../../activity/models/activity_row_data.dart';
-import '../../activity/widgets/activity_table.dart';
+import '../activity_row_mapper.dart';
+import '../models/activity_row_data.dart';
+import '../widgets/activity_table.dart';
 
-class HistoryScreen extends ConsumerStatefulWidget {
-  const HistoryScreen({super.key});
+class ActivityScreen extends ConsumerStatefulWidget {
+  const ActivityScreen({super.key});
 
   @override
-  ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
+  ConsumerState<ActivityScreen> createState() => _ActivityScreenState();
 }
 
-class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   static const _transactionsPerPage = 5;
 
   final ScrollController _scrollController = ScrollController();
@@ -54,7 +54,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 
   @override
-  void didUpdateWidget(covariant HistoryScreen oldWidget) {
+  void didUpdateWidget(covariant ActivityScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -115,7 +115,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         if (resetPage) _currentPage = 1;
       });
     } catch (e, st) {
-      log('Activity: history load failed: $e\n$st');
+      log('Activity: transaction load failed: $e\n$st');
       if (!mounted) return;
       setState(() {
         _error = 'Activity could not be loaded.';

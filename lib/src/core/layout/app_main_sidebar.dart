@@ -160,10 +160,10 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         AppSidebarItem(
                           label: 'Activity',
                           iconName: AppIcons.history,
-                          active: _matches('/history'),
-                          onTap: _matches('/history')
+                          active: _matches('/activity'),
+                          onTap: _matches('/activity')
                               ? null
-                              : () => context.go('/history'),
+                              : () => context.go('/activity'),
                         ),
                       ],
                     ),

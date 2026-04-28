@@ -8,6 +8,7 @@ import 'src/app_bootstrap.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/legacy_material_theme.dart';
+import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
 import 'src/features/onboarding/create/intro_zcash_screen.dart';
@@ -22,7 +23,6 @@ import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
-import 'src/features/history/screens/history_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/keystone/screens/import_keystone_screen.dart';
@@ -291,6 +291,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const LostPasswordScreen(),
       ),
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+      GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),
       GoRoute(path: '/send', builder: (_, _) => const SendScreen()),
       GoRoute(
         path: '/send/review',
@@ -309,7 +310,6 @@ final _routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
-      GoRoute(path: '/history', builder: (_, _) => const HistoryScreen()),
       GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
       GoRoute(
         path: '/import-keystone',

@@ -371,7 +371,7 @@ class _HomePaneState extends State<_HomePane> {
                           child: ActivityTable(
                             rows: rows,
                             title: 'Recent Activity',
-                            onTitleTap: () => context.push('/history'),
+                            onTitleTap: () => context.push('/activity'),
                           ),
                         ),
                         const SizedBox(height: AppSpacing.sm),
