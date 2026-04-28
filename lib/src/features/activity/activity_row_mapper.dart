@@ -104,13 +104,19 @@ ActivityRowData buildTransactionActivityRow({
     subtitleIconName: transaction.displayPool == 'shielded'
         ? AppIcons.shieldKeyholeOutline
         : null,
-    amountText: amount == BigInt.zero
-        ? '--'
-        : isShielded || kind == 'internal'
-        ? formatActivityZec(amount)
-        : formatSignedActivityZec(signedAmount),
+    amountText: _transactionAmountText(
+      amount: amount,
+      signedAmount: signedAmount,
+      isFailed: isFailed,
+      isShielded: isShielded,
+      kind: kind,
+    ),
+    amountIconName: isFailed && amount != BigInt.zero
+        ? AppIcons.arrowBack
+        : null,
+    amountIconColor: isFailed ? colors.icon.regular : null,
     amountColor: isFailed
-        ? colors.text.muted
+        ? colors.text.accent
         : isReceived
         ? colors.text.brandCrimson
         : colors.text.accent,
@@ -127,6 +133,20 @@ ActivityRowData buildTransactionActivityRow({
     statusColor: isFailed ? colors.text.destructive : colors.text.secondary,
     timestampText: formatActivityTimestamp(_txTimestamp(transaction)),
   );
+}
+
+String _transactionAmountText({
+  required BigInt amount,
+  required BigInt signedAmount,
+  required bool isFailed,
+  required bool isShielded,
+  required String kind,
+}) {
+  if (amount == BigInt.zero) return '--';
+  if (isFailed || isShielded || kind == 'internal') {
+    return formatActivityZec(amount);
+  }
+  return formatSignedActivityZec(signedAmount);
 }
 
 String formatActivityZec(BigInt zatoshi) {

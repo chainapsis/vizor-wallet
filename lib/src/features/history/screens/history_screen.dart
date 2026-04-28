@@ -197,12 +197,20 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         .take(_transactionsPerPage);
     final rows = accountUuid == null
         ? const <ActivityRowData>[]
-        : buildActivityRows(
-            context: context,
-            sync: sync,
-            transactions: pageTransactions,
-            onRetrySync: () => ref.read(syncProvider.notifier).startSync(),
-          );
+        : [
+            if (currentPage == 1)
+              buildSyncActivityRow(
+                context: context,
+                sync: sync,
+                onRetrySync: () => ref.read(syncProvider.notifier).startSync(),
+              ),
+            ...pageTransactions.map(
+              (tx) => buildTransactionActivityRow(
+                context: context,
+                transaction: tx,
+              ),
+            ),
+          ];
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),

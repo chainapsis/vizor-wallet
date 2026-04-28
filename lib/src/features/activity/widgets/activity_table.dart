@@ -344,14 +344,7 @@ class ActivityTableRow extends StatelessWidget {
             ),
           ],
         ),
-        amount: Text(
-          row.amountText,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelMedium.copyWith(
-            color: row.amountColor ?? colors.text.accent,
-          ),
-        ),
+        amount: _AmountLabel(row: row),
         status: _StatusLabel(row: row),
         timestamp: Text(
           row.timestampText,
@@ -373,6 +366,43 @@ class ActivityTableRow extends StatelessWidget {
         onTap: row.onTap,
         child: content,
       ),
+    );
+  }
+}
+
+class _AmountLabel extends StatelessWidget {
+  const _AmountLabel({required this.row});
+
+  final ActivityRowData row;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = row.amountColor ?? colors.text.accent;
+    final text = Text(
+      row.amountText,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppTypography.labelMedium.copyWith(color: color),
+    );
+
+    final iconName = row.amountIconName;
+    if (iconName == null) return text;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Transform.translate(
+          offset: const Offset(0, -1),
+          child: AppIcon(
+            iconName,
+            size: 16,
+            color: row.amountIconColor ?? color,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xxs),
+        Flexible(child: text),
+      ],
     );
   }
 }
