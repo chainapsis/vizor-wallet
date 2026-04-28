@@ -43,10 +43,10 @@ use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector
 use zcash_client_backend::{
     data_api::{
         wallet::{
-            self, create_proposed_transactions, propose_shielding, propose_transfer,
-            ConfirmationsPolicy,
+            self, create_proposed_transactions, propose_send_max_transfer, propose_shielding,
+            propose_transfer, ConfirmationsPolicy,
         },
-        Account as _, Balance, InputSource, WalletRead,
+        Account as _, Balance, InputSource, MaxSpendMode, WalletRead,
     },
     fees::{zip317::MultiOutputChangeStrategy, DustOutputPolicy, SplitPolicy, StandardFeeRule},
     proposal::Proposal,
@@ -60,7 +60,7 @@ use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
     memo::{Memo, MemoBytes},
     value::Zatoshis,
-    ShieldedProtocol,
+    PoolType, ShieldedProtocol,
 };
 
 use crate::wallet::db::with_wallet_db_write_lock;
@@ -82,6 +82,12 @@ pub(crate) struct ProposalResult {
     pub proposal_id: u64,
     pub needs_sapling_params: bool,
     pub fee_zatoshi: u64,
+}
+
+pub(crate) struct SendMaxEstimateResult {
+    pub amount_zatoshi: u64,
+    pub fee_zatoshi: u64,
+    pub needs_sapling_params: bool,
 }
 
 pub(crate) struct ShieldTransparentResult {
@@ -226,6 +232,25 @@ pub fn estimate_fee(
         .sum();
 
     Ok(fee)
+}
+
+/// Estimate the maximum recipient amount for the current destination and memo.
+///
+/// This uses librustzcash's max-spend proposal path instead of subtracting a
+/// guessed fee from the aggregate balance. That keeps note selection, ZIP-317
+/// fees, recipient pool choice, and ZIP-315 confirmation policy aligned with
+/// the actual send flow.
+pub(crate) fn estimate_send_max(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    to_address: &str,
+    memo_str: Option<&str>,
+) -> Result<SendMaxEstimateResult, String> {
+    let mut db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let proposal = build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)?;
+    summarize_send_max_proposal(&proposal)
 }
 
 /// Dry-run the transparent shielding proposal path without creating or
@@ -438,6 +463,63 @@ fn build_shielding_proposal(
     Ok((proposal, selected_value))
 }
 
+fn build_send_max_proposal(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+    to_address: &str,
+    memo_str: Option<&str>,
+) -> Result<Proposal<StandardFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
+    let to: zcash_address::ZcashAddress = to_address
+        .parse()
+        .map_err(|e| format!("Bad address: {e}"))?;
+    let memo_bytes = match memo_str {
+        Some(m) => {
+            let bytes = MemoBytes::from(
+                Memo::from_bytes(m.as_bytes()).map_err(|e| format!("Bad memo: {e}"))?,
+            );
+            Some(bytes)
+        }
+        None => None,
+    };
+    let fee_rule = StandardFeeRule::Zip317;
+    propose_send_max_transfer::<_, _, _, Infallible>(
+        db,
+        &network,
+        account_id,
+        &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+        &fee_rule,
+        to,
+        memo_bytes,
+        MaxSpendMode::MaxSpendable,
+        ConfirmationsPolicy::default(),
+    )
+    .map_err(|e| format!("Propose max failed: {e}"))
+}
+
+fn summarize_send_max_proposal<NoteRef>(
+    proposal: &Proposal<StandardFeeRule, NoteRef>,
+) -> Result<SendMaxEstimateResult, String> {
+    let amount_zatoshi = proposal.steps().iter().try_fold(0u64, |acc, step| {
+        let step_total = step
+            .transaction_request()
+            .total()
+            .map_err(|e| format!("Max amount calculation failed: {e}"))?;
+        acc.checked_add(u64::from(step_total))
+            .ok_or_else(|| "Max amount overflow".to_string())
+    })?;
+    let needs_sapling_params = proposal
+        .steps()
+        .iter()
+        .any(|step| step.involves(PoolType::Shielded(ShieldedProtocol::Sapling)));
+
+    Ok(SendMaxEstimateResult {
+        amount_zatoshi,
+        fee_zatoshi: proposal_fee_zatoshi(proposal),
+        needs_sapling_params,
+    })
+}
+
 fn select_shielding_sources(
     account_receivers: HashMap<TransparentAddress, (TransparentKeyScope, Balance)>,
     shielding_threshold: Zatoshis,
@@ -483,7 +565,7 @@ fn select_shielding_sources(
     Ok((addresses, total))
 }
 
-fn proposal_fee_zatoshi(proposal: &Proposal<StandardFeeRule, Infallible>) -> u64 {
+fn proposal_fee_zatoshi<NoteRef>(proposal: &Proposal<StandardFeeRule, NoteRef>) -> u64 {
     proposal
         .steps()
         .iter()

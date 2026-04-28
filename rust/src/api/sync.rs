@@ -566,6 +566,12 @@ pub struct ProposalResult {
     pub fee_zatoshi: u64,
 }
 
+pub struct SendMaxEstimateResult {
+    pub amount_zatoshi: u64,
+    pub fee_zatoshi: u64,
+    pub needs_sapling_params: bool,
+}
+
 pub struct ShieldTransparentResult {
     pub txids: String,
     pub fee_zatoshi: u64,
@@ -625,6 +631,31 @@ pub fn estimate_fee(
             amount_zatoshi,
             memo.as_deref(),
         )
+    })
+}
+
+/// Estimate the maximum recipient amount for the current recipient and memo.
+pub fn estimate_send_max(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    to_address: String,
+    memo: Option<String>,
+) -> Result<SendMaxEstimateResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let r = wallet_sync::estimate_send_max(
+            &db_path,
+            network,
+            &account_uuid,
+            &to_address,
+            memo.as_deref(),
+        )?;
+        Ok(SendMaxEstimateResult {
+            amount_zatoshi: r.amount_zatoshi,
+            fee_zatoshi: r.fee_zatoshi,
+            needs_sapling_params: r.needs_sapling_params,
+        })
     })
 }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -66,10 +67,25 @@ class _SendComposeBody extends ConsumerStatefulWidget {
   ConsumerState<_SendComposeBody> createState() => _SendComposeBodyState();
 }
 
+class _MaxQuote {
+  const _MaxQuote({
+    required this.accountUuid,
+    required this.address,
+    required this.memo,
+    required this.amountZatoshi,
+  });
+
+  final String accountUuid;
+  final String address;
+  final String memo;
+  final BigInt amountZatoshi;
+}
+
 class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldOverlayReserve = 20.0;
   static const _singleLineFieldGap = AppSpacing.xs;
   static const _multilineFieldOverlayReserve = 24.0;
+  static const _maxDebounceDuration = Duration(milliseconds: 300);
   final _addressController = TextEditingController();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
@@ -83,6 +99,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   String _addressType = '';
   String?
   _amountError; // null = no error, empty string = silent invalid (empty/dot)
+  bool _isMaxMode = false;
+  bool _isResolvingMax = false;
+  bool _programmaticAmountEdit = false;
+  _MaxQuote? _maxQuote;
+  Timer? _maxDebounceTimer;
+  int _addressSeq = 0;
+  int _maxSeq = 0;
   int _validateSeq = 0;
 
   @override
@@ -100,6 +123,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   @override
   void dispose() {
+    _maxDebounceTimer?.cancel();
     _memoController.removeListener(_handleMemoChanged);
     _addressFocusNode.removeListener(_handleFieldVisualStateChanged);
     _amountFocusNode.removeListener(_handleFieldVisualStateChanged);
@@ -118,7 +142,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (_memoController.text.isNotEmpty && !_messageExpanded) {
       _messageExpanded = true;
     }
-    _validateAmount();
+    if (_isMaxMode) {
+      _scheduleMaxEstimate();
+    } else {
+      _validateAmount();
+    }
     if (mounted) setState(() {});
   }
 
@@ -129,29 +157,80 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   @override
   void didUpdateWidget(covariant _SendComposeBody oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.spendableBalance != widget.spendableBalance &&
-        _amountController.text.trim().isNotEmpty) {
-      _validateAmount();
+    if (oldWidget.spendableBalance != widget.spendableBalance) {
+      if (_isMaxMode) {
+        _scheduleMaxEstimate(immediate: true);
+      } else if (_amountController.text.trim().isNotEmpty) {
+        _validateAmount();
+      }
     }
   }
 
   Future<void> _validateAddress() async {
+    final seq = ++_addressSeq;
     final addr = _addressController.text.trim();
     if (addr.isEmpty) {
+      if (!mounted || seq != _addressSeq) return;
       setState(() => _addressType = '');
+      _handleAddressValidationSettled();
       return;
     }
     try {
       final result = await rust_sync.validateAddress(address: addr);
-      if (!mounted) return;
+      if (!mounted || seq != _addressSeq) return;
       setState(
         () => _addressType = result.isValid ? result.addressType : 'invalid',
       );
+      _handleAddressValidationSettled();
     } catch (e) {
       log('Send: address validation error: $e');
-      if (!mounted) return;
+      if (!mounted || seq != _addressSeq) return;
       setState(() => _addressType = 'error');
+      _handleAddressValidationSettled();
     }
+  }
+
+  void _handleAddressValidationSettled() {
+    if (_isMaxMode) {
+      _scheduleMaxEstimate();
+    } else {
+      _validateAmount();
+    }
+  }
+
+  void _handleAddressChanged() {
+    _addressSeq++;
+    _maxDebounceTimer?.cancel();
+    setState(() {
+      _addressType = '';
+      _error = null;
+      if (_isMaxMode) {
+        _validateSeq++;
+        _maxSeq++;
+        _maxQuote = null;
+        _isResolvingMax = false;
+        _amountError = '';
+      }
+    });
+    unawaited(_validateAddress());
+    if (!_isMaxMode) {
+      _validateAmount();
+    }
+  }
+
+  void _handleAmountChanged() {
+    if (_programmaticAmountEdit) return;
+    if (_isMaxMode) {
+      _maxDebounceTimer?.cancel();
+      _maxSeq++;
+      setState(() {
+        _isMaxMode = false;
+        _isResolvingMax = false;
+        _maxQuote = null;
+        _error = null;
+      });
+    }
+    _validateAmount();
   }
 
   bool get _hasValidAddress =>
@@ -166,6 +245,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool get _showAmountError =>
       _amountError != null && _amountError!.trim().isNotEmpty;
 
+  bool get _hasCurrentMaxQuote {
+    final quote = _maxQuote;
+    if (quote == null) return false;
+    return quote.accountUuid == widget.activeAccountUuid &&
+        quote.address == _addressController.text.trim() &&
+        quote.memo == _memoController.text.trim() &&
+        parseZecAmount(_amountController.text.trim()) == quote.amountZatoshi;
+  }
+
   int get _memoLength => utf8.encode(_memoController.text).length;
 
   String? get _memoError {
@@ -178,10 +266,118 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   bool get _canReview =>
       !_isSending &&
+      !_isResolvingMax &&
       _hasValidAddress &&
       _isAmountValid &&
+      (!_isMaxMode || _hasCurrentMaxQuote) &&
       _memoError == null &&
       (_isShieldedAddress || _memoController.text.trim().isEmpty);
+
+  void _activateMaxMode() {
+    if (_isResolvingMax) return;
+    setState(() {
+      _isMaxMode = true;
+      _maxQuote = null;
+      _error = null;
+    });
+    _scheduleMaxEstimate(immediate: true);
+  }
+
+  String? _maxEstimatePreconditionError() {
+    if (widget.activeAccountUuid == null) return 'No active account';
+    if (!_hasValidAddress) return 'Enter a valid address to use Max';
+    return _memoError;
+  }
+
+  void _scheduleMaxEstimate({bool immediate = false}) {
+    _maxDebounceTimer?.cancel();
+    _validateSeq++;
+    final seq = ++_maxSeq;
+    if (!_isMaxMode) return;
+
+    final preconditionError = _maxEstimatePreconditionError();
+    setState(() {
+      _maxQuote = null;
+      _isResolvingMax = preconditionError == null;
+      _amountError = preconditionError ?? '';
+      _error = null;
+    });
+
+    if (preconditionError != null) return;
+
+    if (immediate) {
+      unawaited(_resolveMaxEstimate(seq));
+    } else {
+      _maxDebounceTimer = Timer(
+        _maxDebounceDuration,
+        () => unawaited(_resolveMaxEstimate(seq)),
+      );
+    }
+  }
+
+  Future<void> _resolveMaxEstimate(int seq) async {
+    final accountUuid = widget.activeAccountUuid;
+    final address = _addressController.text.trim();
+    final memo = _memoController.text.trim();
+    if (accountUuid == null || !_isMaxMode || seq != _maxSeq) return;
+
+    try {
+      final dbPath = await getWalletDbPath();
+      if (!mounted || !_isMaxMode || seq != _maxSeq) return;
+
+      final estimate = await rust_sync.estimateSendMax(
+        dbPath: dbPath,
+        network: 'main',
+        accountUuid: accountUuid,
+        toAddress: address,
+        memo: memo.isNotEmpty ? memo : null,
+      );
+
+      if (!mounted || !_isMaxMode || seq != _maxSeq) return;
+
+      if (estimate.amountZatoshi <= BigInt.zero) {
+        setState(() {
+          _isResolvingMax = false;
+          _maxQuote = null;
+          _amountError = 'Insufficient shielded balance to cover fee';
+        });
+        return;
+      }
+
+      final amountText = formatZecAmount(estimate.amountZatoshi);
+      _programmaticAmountEdit = true;
+      _amountController.value = TextEditingValue(
+        text: amountText,
+        selection: TextSelection.collapsed(offset: amountText.length),
+      );
+      _programmaticAmountEdit = false;
+
+      setState(() {
+        _isResolvingMax = false;
+        _amountError = null;
+        _maxQuote = _MaxQuote(
+          accountUuid: accountUuid,
+          address: address,
+          memo: memo,
+          amountZatoshi: estimate.amountZatoshi,
+        );
+      });
+    } catch (e) {
+      if (!mounted || !_isMaxMode || seq != _maxSeq) return;
+      final msg = e.toString().toLowerCase();
+      setState(() {
+        _isResolvingMax = false;
+        _maxQuote = null;
+        if (msg.contains('insufficient')) {
+          _amountError = 'Insufficient shielded balance to cover fee';
+        } else {
+          _amountError = 'Max amount unavailable';
+        }
+      });
+    } finally {
+      _programmaticAmountEdit = false;
+    }
+  }
 
   Future<void> _validateAmount() async {
     final seq = ++_validateSeq;
@@ -301,6 +497,14 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     try {
       final address = _addressController.text.trim();
       final amountZatoshi = parseZecAmount(_amountController.text.trim());
+
+      if (_isResolvingMax) {
+        setState(() {
+          _error = 'Calculating max amount';
+          _isSending = false;
+        });
+        return;
+      }
 
       if (!_hasValidAddress) {
         setState(() {
@@ -508,18 +712,27 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                               messageText: addressMessage,
                                               messageIcon: addressMessageIcon,
                                               messageStyle: addressMessageStyle,
-                                              onChanged: (_) {
-                                                _validateAddress();
-                                                _validateAmount();
-                                              },
+                                              onChanged: (_) =>
+                                                  _handleAddressChanged(),
                                               keyboardType: TextInputType.text,
                                               showClearButton: true,
                                               onClear: () {
+                                                _addressSeq++;
+                                                _maxDebounceTimer?.cancel();
                                                 setState(() {
                                                   _addressType = '';
                                                   _error = null;
+                                                  if (_isMaxMode) {
+                                                    _validateSeq++;
+                                                    _maxSeq++;
+                                                    _maxQuote = null;
+                                                    _isResolvingMax = false;
+                                                    _amountError = '';
+                                                  }
                                                 });
-                                                _validateAmount();
+                                                if (!_isMaxMode) {
+                                                  _validateAmount();
+                                                }
                                               },
                                             ),
                                             const SizedBox(
@@ -547,13 +760,27 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                                     ? colors.icon.accent
                                                     : colors.icon.regular,
                                               ),
-                                              rightSlot: Text(
-                                                'Max: ${formatZecAmount(spendable)} ZEC',
-                                                style: AppTypography.labelMedium
-                                                    .copyWith(
-                                                      color:
-                                                          colors.text.secondary,
-                                                    ),
+                                              rightSlot: MouseRegion(
+                                                cursor: _isResolvingMax
+                                                    ? SystemMouseCursors.basic
+                                                    : SystemMouseCursors.click,
+                                                child: GestureDetector(
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  onTap: _isResolvingMax
+                                                      ? null
+                                                      : _activateMaxMode,
+                                                  child: Text(
+                                                    'Max: ${formatZecAmount(spendable)} ZEC',
+                                                    style: AppTypography
+                                                        .labelMedium
+                                                        .copyWith(
+                                                          color: colors
+                                                              .text
+                                                              .secondary,
+                                                        ),
+                                                  ),
+                                                ),
                                               ),
                                               messageText: _showAmountError
                                                   ? _amountError
@@ -575,10 +802,16 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                                 const ZecAmountInputFormatter(),
                                               ],
                                               onChanged: (_) =>
-                                                  _validateAmount(),
+                                                  _handleAmountChanged(),
                                               showClearButton: true,
                                               onClear: () {
+                                                _maxDebounceTimer?.cancel();
+                                                _validateSeq++;
+                                                _maxSeq++;
                                                 setState(() {
+                                                  _isMaxMode = false;
+                                                  _isResolvingMax = false;
+                                                  _maxQuote = null;
                                                   _amountError = '';
                                                   _error = null;
                                                 });
@@ -678,7 +911,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                                     _messageExpanded = false;
                                                     _error = null;
                                                   });
-                                                  _validateAmount();
+                                                  if (_isMaxMode) {
+                                                    _scheduleMaxEstimate();
+                                                  } else {
+                                                    _validateAmount();
+                                                  }
                                                 },
                                               ),
                                               const SizedBox(

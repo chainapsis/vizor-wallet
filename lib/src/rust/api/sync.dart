@@ -234,6 +234,21 @@ Future<BigInt> estimateFee({
   memo: memo,
 );
 
+/// Estimate the maximum recipient amount for the current recipient and memo.
+Future<SendMaxEstimateResult> estimateSendMax({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String toAddress,
+  String? memo,
+}) => RustLib.instance.api.crateApiSyncEstimateSendMax(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  toAddress: toAddress,
+  memo: memo,
+);
+
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
 /// spend_params_path and output_params_path are required only if needs_sapling_params was true.
 Future<String> executeProposal({
@@ -602,6 +617,33 @@ class ScanResult {
       other is ScanResult &&
           runtimeType == other.runtimeType &&
           blocksScanned == other.blocksScanned;
+}
+
+class SendMaxEstimateResult {
+  final BigInt amountZatoshi;
+  final BigInt feeZatoshi;
+  final bool needsSaplingParams;
+
+  const SendMaxEstimateResult({
+    required this.amountZatoshi,
+    required this.feeZatoshi,
+    required this.needsSaplingParams,
+  });
+
+  @override
+  int get hashCode =>
+      amountZatoshi.hashCode ^
+      feeZatoshi.hashCode ^
+      needsSaplingParams.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SendMaxEstimateResult &&
+          runtimeType == other.runtimeType &&
+          amountZatoshi == other.amountZatoshi &&
+          feeZatoshi == other.feeZatoshi &&
+          needsSaplingParams == other.needsSaplingParams;
 }
 
 class ShieldTransparentResult {
