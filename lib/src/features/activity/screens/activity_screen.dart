@@ -30,7 +30,8 @@ class ActivityScreen extends ConsumerStatefulWidget {
 }
 
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
-  static const _transactionsPerPage = 5;
+  static const _activityRowsPerPage = 6;
+  static const _firstPageTransactionCount = _activityRowsPerPage - 1;
 
   final ScrollController _scrollController = ScrollController();
   List<rust_sync.TransactionInfo>? _transactions;
@@ -186,15 +187,23 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     final sync = ref.watch(syncProvider).value ?? SyncState();
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final transactions = _transactions ?? sync.recentTransactions;
-    final totalPages = math.max(
-      1,
-      (transactions.length / _transactionsPerPage).ceil(),
+    final transactionsAfterFirstPage = math.max(
+      0,
+      transactions.length - _firstPageTransactionCount,
     );
+    final totalPages =
+        1 + (transactionsAfterFirstPage / _activityRowsPerPage).ceil();
     final currentPage = math.min(math.max(_currentPage, 1), totalPages);
-    final firstTxIndex = (currentPage - 1) * _transactionsPerPage;
+    final firstTxIndex = currentPage == 1
+        ? 0
+        : _firstPageTransactionCount +
+              ((currentPage - 2) * _activityRowsPerPage);
+    final transactionCount = currentPage == 1
+        ? _firstPageTransactionCount
+        : _activityRowsPerPage;
     final pageTransactions = transactions
         .skip(firstTxIndex)
-        .take(_transactionsPerPage);
+        .take(transactionCount);
     final rows = accountUuid == null
         ? const <ActivityRowData>[]
         : [
