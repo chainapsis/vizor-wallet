@@ -247,19 +247,43 @@ struct TxOutput {
     output_pool: i64,
     from_account_uuid: Option<Vec<u8>>,
     to_account_uuid: Option<Vec<u8>>,
+    to_address: Option<String>,
+    to_key_scope: Option<i64>,
     value: u64,
-    is_change: bool,
 }
 
 #[derive(Default, Clone)]
-struct OutputSummary {
-    is_transparent: bool,
-    external_sent_amount: u64,
-    external_received_amount: u64,
-    display_has_transparent: bool,
-    display_has_shielded: bool,
-    own_non_change_amount: u64,
-    has_external_display_output: bool,
+struct ActivityAmounts {
+    amount: u64,
+    has_transparent: bool,
+    has_shielded: bool,
+}
+
+impl ActivityAmounts {
+    fn add_output(&mut self, output: &TxOutput) {
+        self.amount = self.amount.saturating_add(output.value);
+        match output.output_pool {
+            0 => self.has_transparent = true,
+            2 | 3 => self.has_shielded = true,
+            _ => {}
+        }
+    }
+
+    fn display_pool(&self) -> &'static str {
+        match (self.has_transparent, self.has_shielded) {
+            (true, false) => "transparent",
+            (false, true) => "shielded",
+            (true, true) => "mixed",
+            (false, false) => "unknown",
+        }
+    }
+}
+
+#[derive(Default, Clone)]
+struct ActivitySummary {
+    sent: ActivityAmounts,
+    received: ActivityAmounts,
+    shielded: ActivityAmounts,
     has_own_transparent_output: bool,
     has_external_transparent_send: bool,
 }
@@ -269,6 +293,7 @@ struct ClassifiedTx {
     sort_timestamp: u64,
     sort_mined_height: u64,
     tx_index: i64,
+    row_order: u8,
 }
 
 pub fn get_transaction_history(
@@ -291,7 +316,7 @@ pub fn get_transaction_history(
     }
 
     let outputs_by_txid = read_history_outputs(&read_tx, &uuid_bytes)?;
-    let summaries: HashMap<Vec<u8>, OutputSummary> = bases
+    let summaries: HashMap<Vec<u8>, ActivitySummary> = bases
         .iter()
         .map(|base| {
             let outputs = outputs_by_txid
@@ -300,25 +325,25 @@ pub fn get_transaction_history(
                 .unwrap_or(&[]);
             (
                 base.txid.clone(),
-                summarize_outputs(outputs, uuid_bytes.as_slice()),
+                summarize_activity_outputs(base, outputs, uuid_bytes.as_slice()),
             )
         })
         .collect();
     let external_send_keys = build_external_send_keys(&bases, &summaries);
 
-    let mut visible = bases
-        .iter()
-        .filter_map(|base| {
-            let summary = summaries.get(&base.txid).cloned().unwrap_or_default();
-            if should_suppress_funding_step(base, &summary, &external_send_keys)
-                || should_suppress_change_only_internal(base, &summary)
-            {
-                None
-            } else {
-                Some(classify_history_tx(base, &summary))
-            }
-        })
-        .collect::<Vec<_>>();
+    let mut visible = Vec::new();
+    for base in &bases {
+        let summary = summaries.get(&base.txid).cloned().unwrap_or_default();
+        if should_suppress_funding_step(base, &summary, &external_send_keys) {
+            continue;
+        }
+
+        visible.extend(classify_history_tx(base, &summary));
+    }
+
+    visible.retain(|tx| {
+        tx.info.display_amount > 0 || tx.info.tx_kind == "unknown" || tx.info.tx_kind == "shielded"
+    });
 
     visible.sort_by(|a, b| {
         b.sort_timestamp
@@ -326,6 +351,7 @@ pub fn get_transaction_history(
             .then_with(|| b.sort_mined_height.cmp(&a.sort_mined_height))
             .then_with(|| b.tx_index.cmp(&a.tx_index))
             .then_with(|| b.info.txid_hex.cmp(&a.info.txid_hex))
+            .then_with(|| a.row_order.cmp(&b.row_order))
     });
 
     if let Some(limit) = limit {
@@ -399,8 +425,19 @@ fn read_history_outputs(
             txo.output_pool,
             txo.from_account_uuid,
             txo.to_account_uuid,
-            txo.value,
-            txo.is_change
+            txo.to_address,
+            (
+                SELECT a.key_scope
+                FROM accounts acc
+                JOIN addresses a ON a.account_id = acc.id
+                WHERE acc.uuid = txo.to_account_uuid
+                  AND (
+                      a.address = txo.to_address
+                      OR a.cached_transparent_receiver_address = txo.to_address
+                  )
+                LIMIT 1
+            ) AS to_key_scope,
+            txo.value
         FROM v_tx_outputs txo
         JOIN (
             SELECT DISTINCT txid
@@ -420,8 +457,9 @@ fn read_history_outputs(
                 output_pool: row.get(1)?,
                 from_account_uuid: row.get(2)?,
                 to_account_uuid: row.get(3)?,
-                value: row.get::<_, i64>(4)?.unsigned_abs(),
-                is_change: row.get(5)?,
+                to_address: row.get(4)?,
+                to_key_scope: row.get(5)?,
+                value: row.get::<_, i64>(6)?.unsigned_abs(),
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -434,55 +472,66 @@ fn read_history_outputs(
     Ok(outputs)
 }
 
-fn summarize_outputs(outputs: &[TxOutput], account_uuid: &[u8]) -> OutputSummary {
-    let mut summary = OutputSummary::default();
+fn summarize_activity_outputs(
+    base: &TxBase,
+    outputs: &[TxOutput],
+    account_uuid: &[u8],
+) -> ActivitySummary {
+    let mut summary = ActivitySummary::default();
 
     for output in outputs {
         let from_own = output.from_account_uuid.as_deref() == Some(account_uuid);
         let to_own = output.to_account_uuid.as_deref() == Some(account_uuid);
-        let external_send = from_own && !to_own && !output.is_change;
-        let external_receive = to_own && !from_own && !output.is_change;
-        let external_display_output = external_send || external_receive;
 
-        if output.output_pool == 0 {
-            summary.is_transparent = true;
+        if base.is_shielding {
+            if to_own && is_shielded_pool(output.output_pool) {
+                summary.shielded.add_output(output);
+            }
+            continue;
         }
-        if external_send {
-            summary.external_sent_amount =
-                summary.external_sent_amount.saturating_add(output.value);
-        }
-        if external_receive {
-            summary.external_received_amount = summary
-                .external_received_amount
-                .saturating_add(output.value);
-        }
-        if output.output_pool == 0 && external_display_output {
-            summary.display_has_transparent = true;
-        }
-        if matches!(output.output_pool, 2 | 3) && external_display_output {
-            summary.display_has_shielded = true;
-        }
-        if external_display_output {
-            summary.has_external_display_output = true;
-        }
-        if from_own && to_own && !output.is_change {
-            summary.own_non_change_amount =
-                summary.own_non_change_amount.saturating_add(output.value);
-        }
-        if output.output_pool == 0 && from_own && to_own && !output.is_change {
+
+        if output.output_pool == 0 && from_own && to_own {
             summary.has_own_transparent_output = true;
         }
-        if output.output_pool == 0 && external_send {
-            summary.has_external_transparent_send = true;
+
+        let visible_self_output = from_own && to_own && is_user_visible_self_output(output);
+        let visible_sent = from_own && (!to_own || visible_self_output);
+        let visible_received = to_own && (!from_own || visible_self_output);
+
+        if visible_sent {
+            summary.sent.add_output(output);
+            if output.output_pool == 0 && !to_own {
+                summary.has_external_transparent_send = true;
+            }
+        }
+        if visible_received {
+            summary.received.add_output(output);
         }
     }
 
     summary
 }
 
+fn is_shielded_pool(output_pool: i64) -> bool {
+    matches!(output_pool, 2 | 3)
+}
+
+fn is_user_visible_self_output(output: &TxOutput) -> bool {
+    match output.output_pool {
+        // Transparent self outputs are user-visible only when they land on a
+        // normal external/foreign receiver. Internal and ephemeral receivers
+        // are change/funding mechanics.
+        0 => matches!(output.to_key_scope, Some(0) | Some(-1)),
+        // Shielded explicit self-sends preserve the recipient address in
+        // sent_notes. Wallet-internal change does not.
+        2 | 3 => output.to_address.is_some() || matches!(output.to_key_scope, Some(0) | Some(-1)),
+        _ => false,
+    }
+}
+
 fn build_external_send_keys(
     bases: &[TxBase],
-    summaries: &HashMap<Vec<u8>, OutputSummary>,
+    summaries: &HashMap<Vec<u8>, ActivitySummary>,
 ) -> HashSet<(String, i64)> {
     bases
         .iter()
@@ -501,7 +550,7 @@ fn build_external_send_keys(
 
 fn should_suppress_funding_step(
     base: &TxBase,
-    summary: &OutputSummary,
+    summary: &ActivitySummary,
     external_send_keys: &HashSet<(String, i64)>,
 ) -> bool {
     !base.is_shielding
@@ -509,49 +558,76 @@ fn should_suppress_funding_step(
         && base.total_received > 0
         && base.account_balance_delta <= 0
         && base.created.is_some()
-        && !summary.has_external_display_output
+        && summary.sent.amount == 0
+        && summary.received.amount == 0
         && summary.has_own_transparent_output
         && external_send_keys
             .contains(&(base.created.clone().unwrap_or_default(), base.expiry_key()))
 }
 
-fn should_suppress_change_only_internal(base: &TxBase, summary: &OutputSummary) -> bool {
-    !base.is_shielding
-        && base.total_spent > 0
-        && base.total_received > 0
-        && !summary.has_external_display_output
-        && summary.own_non_change_amount == 0
+fn classify_history_tx(base: &TxBase, summary: &ActivitySummary) -> Vec<ClassifiedTx> {
+    if base.is_shielding {
+        let amount = if summary.shielded.amount > 0 {
+            summary.shielded.amount
+        } else {
+            base.total_received
+        };
+        return vec![build_classified_tx(
+            base, "shielded", amount, "shielded", false, 0,
+        )];
+    }
+
+    let mut rows = Vec::new();
+    if summary.sent.amount > 0 {
+        rows.push(build_classified_tx(
+            base,
+            "sent",
+            summary.sent.amount,
+            summary.sent.display_pool(),
+            summary.sent.has_transparent,
+            1,
+        ));
+    }
+    if summary.received.amount > 0 {
+        rows.push(build_classified_tx(
+            base,
+            "received",
+            summary.received.amount,
+            summary.received.display_pool(),
+            summary.received.has_transparent,
+            2,
+        ));
+    }
+
+    if rows.is_empty() {
+        if base.total_spent > 0 && base.total_received > 0 {
+            return rows;
+        }
+        if base.account_balance_delta > 0 {
+            rows.push(build_classified_tx(
+                base,
+                "received",
+                base.account_balance_delta as u64,
+                "unknown",
+                false,
+                2,
+            ));
+        } else {
+            rows.push(build_classified_tx(base, "unknown", 0, "unknown", false, 3));
+        }
+    }
+
+    rows
 }
 
-fn classify_history_tx(base: &TxBase, summary: &OutputSummary) -> ClassifiedTx {
-    let display_pool = if base.is_shielding {
-        "shielded"
-    } else {
-        match (
-            summary.display_has_transparent,
-            summary.display_has_shielded,
-        ) {
-            (true, false) => "transparent",
-            (false, true) => "shielded",
-            (true, true) => "mixed",
-            (false, false) => "unknown",
-        }
-    };
-
-    let (tx_kind, display_amount) = if base.is_shielding {
-        ("shielded", base.total_received)
-    } else if summary.external_sent_amount > 0 {
-        ("sent", summary.external_sent_amount)
-    } else if summary.external_received_amount > 0 {
-        ("received", summary.external_received_amount)
-    } else if base.total_spent > 0 && base.total_received > 0 {
-        ("internal", summary.own_non_change_amount)
-    } else if base.account_balance_delta > 0 {
-        ("received", base.account_balance_delta as u64)
-    } else {
-        ("unknown", 0)
-    };
-
+fn build_classified_tx(
+    base: &TxBase,
+    tx_kind: &str,
+    display_amount: u64,
+    display_pool: &str,
+    is_transparent: bool,
+    row_order: u8,
+) -> ClassifiedTx {
     let sort_timestamp = base.display_timestamp();
     ClassifiedTx {
         info: TransactionInfo {
@@ -561,7 +637,7 @@ fn classify_history_tx(base: &TxBase, summary: &OutputSummary) -> ClassifiedTx {
             account_balance_delta: base.account_balance_delta,
             fee: base.fee,
             block_time: base.block_time,
-            is_transparent: summary.is_transparent,
+            is_transparent,
             tx_kind: tx_kind.to_string(),
             display_amount,
             display_pool: display_pool.to_string(),
@@ -570,6 +646,7 @@ fn classify_history_tx(base: &TxBase, summary: &OutputSummary) -> ClassifiedTx {
         sort_timestamp,
         sort_mined_height: base.mined_height.unwrap_or(0) as u64,
         tx_index: base.tx_index,
+        row_order,
     }
 }
 
@@ -825,7 +902,18 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         conn.execute_batch(
-            "CREATE TABLE v_transactions (
+            "CREATE TABLE accounts (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 uuid BLOB NOT NULL UNIQUE
+             );
+             CREATE TABLE addresses (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 account_id INTEGER NOT NULL,
+                 key_scope INTEGER NOT NULL,
+                 address TEXT NOT NULL,
+                 cached_transparent_receiver_address TEXT
+             );
+             CREATE TABLE v_transactions (
                  account_uuid BLOB NOT NULL,
                  txid BLOB NOT NULL,
                  mined_height INTEGER,
@@ -846,8 +934,10 @@ mod tests {
              CREATE TABLE v_tx_outputs (
                  txid BLOB NOT NULL,
                  output_pool INTEGER NOT NULL,
+                 output_index INTEGER NOT NULL,
                  from_account_uuid BLOB,
                  to_account_uuid BLOB,
+                 to_address TEXT,
                  value INTEGER NOT NULL,
                  is_change INTEGER NOT NULL
              );",
@@ -871,6 +961,7 @@ mod tests {
         created: Option<&str>,
     ) {
         let conn = rusqlite::Connection::open(db.path()).unwrap();
+        ensure_account_row(&conn, account);
         conn.execute(
             "INSERT INTO transactions (txid, created) VALUES (?1, ?2)",
             rusqlite::params![txid, created],
@@ -897,6 +988,20 @@ mod tests {
         .unwrap();
     }
 
+    fn ensure_account_row(conn: &rusqlite::Connection, account: uuid::Uuid) -> i64 {
+        conn.execute(
+            "INSERT OR IGNORE INTO accounts (uuid) VALUES (?1)",
+            rusqlite::params![account.as_bytes().as_slice()],
+        )
+        .unwrap();
+        conn.query_row(
+            "SELECT id FROM accounts WHERE uuid = ?1",
+            rusqlite::params![account.as_bytes().as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
     fn insert_output(
         db: &NamedTempFile,
         txid: &[u8],
@@ -906,14 +1011,73 @@ mod tests {
         value: i64,
         is_change: bool,
     ) {
+        insert_output_with_address(
+            db,
+            txid,
+            output_pool,
+            from_account,
+            to_account,
+            value,
+            is_change,
+            None,
+            None,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_output_with_address(
+        db: &NamedTempFile,
+        txid: &[u8],
+        output_pool: i64,
+        from_account: Option<uuid::Uuid>,
+        to_account: Option<uuid::Uuid>,
+        value: i64,
+        is_change: bool,
+        to_address: Option<&str>,
+        to_key_scope: Option<i64>,
+    ) {
         let conn = rusqlite::Connection::open(db.path()).unwrap();
+        if let Some(account) = from_account {
+            ensure_account_row(&conn, account);
+        }
+        if let Some(account) = to_account {
+            let account_id = ensure_account_row(&conn, account);
+            if let (Some(address), Some(key_scope)) = (to_address, to_key_scope) {
+                conn.execute(
+                    "INSERT INTO addresses (
+                         account_id, key_scope, address, cached_transparent_receiver_address
+                     ) VALUES (?1, ?2, ?3, ?3)",
+                    rusqlite::params![account_id, key_scope, address],
+                )
+                .unwrap();
+            }
+        }
+        let output_index = conn
+            .query_row(
+                "SELECT COALESCE(MAX(output_index) + 1, 0)
+                 FROM v_tx_outputs
+                 WHERE txid = ?1 AND output_pool = ?2",
+                rusqlite::params![txid, output_pool],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
         let from_bytes = from_account.map(|uuid| uuid.as_bytes().to_vec());
         let to_bytes = to_account.map(|uuid| uuid.as_bytes().to_vec());
         conn.execute(
             "INSERT INTO v_tx_outputs (
-                 txid, output_pool, from_account_uuid, to_account_uuid, value, is_change
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![txid, output_pool, from_bytes, to_bytes, value, is_change],
+                 txid, output_pool, output_index, from_account_uuid,
+                 to_account_uuid, to_address, value, is_change
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                txid,
+                output_pool,
+                output_index,
+                from_bytes,
+                to_bytes,
+                to_address,
+                value,
+                is_change,
+            ],
         )
         .unwrap();
     }
@@ -957,7 +1121,7 @@ mod tests {
             false,
             Some(created),
         );
-        insert_output(
+        insert_output_with_address(
             &db,
             &funding_step,
             0,
@@ -965,6 +1129,8 @@ mod tests {
             Some(account),
             10_010_000,
             false,
+            Some("t-ephemeral"),
+            Some(2),
         );
 
         insert_history_tx(
@@ -1005,15 +1171,15 @@ mod tests {
     }
 
     #[test]
-    fn history_keeps_internal_transfer_without_external_send_sibling() {
+    fn history_splits_same_account_transparent_self_send() {
         let db = fresh_history_db();
         let account = test_account_uuid();
-        let internal_tx = fake_txid(0xB1);
+        let self_tx = fake_txid(0xB1);
 
         insert_history_tx(
             &db,
             account,
-            &internal_tx,
+            &self_tx,
             Some(1_000_000),
             1,
             Some(1_000_100),
@@ -1023,14 +1189,16 @@ mod tests {
             false,
             Some("2026-04-28T13:03:00Z"),
         );
-        insert_output(
+        insert_output_with_address(
             &db,
-            &internal_tx,
+            &self_tx,
             0,
             Some(account),
             Some(account),
             18_262_101,
             false,
+            Some("t-self"),
+            Some(0),
         );
 
         let got = get_transaction_history(
@@ -1041,10 +1209,15 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(got.len(), 1);
-        assert_eq!(got[0].txid_hex, hex::encode(internal_tx));
-        assert_eq!(got[0].tx_kind, "internal");
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].txid_hex, hex::encode(self_tx));
+        assert_eq!(got[0].tx_kind, "sent");
         assert_eq!(got[0].display_amount, 18_262_101);
+        assert_eq!(got[0].display_pool, "transparent");
+        assert_eq!(got[1].txid_hex, hex::encode(self_tx));
+        assert_eq!(got[1].tx_kind, "received");
+        assert_eq!(got[1].display_amount, 18_262_101);
+        assert_eq!(got[1].display_pool, "transparent");
     }
 
     #[test]
@@ -1136,15 +1309,15 @@ mod tests {
     }
 
     #[test]
-    fn history_internal_amount_excludes_change_outputs() {
+    fn history_splits_same_account_shielded_self_send_and_hides_change() {
         let db = fresh_history_db();
         let account = test_account_uuid();
-        let internal_tx = fake_txid(0xC0);
+        let self_tx = fake_txid(0xC0);
 
         insert_history_tx(
             &db,
             account,
-            &internal_tx,
+            &self_tx,
             Some(1_000_000),
             1,
             Some(1_000_100),
@@ -1154,18 +1327,20 @@ mod tests {
             false,
             Some("2026-04-28T16:32:00Z"),
         );
-        insert_output(
+        insert_output_with_address(
             &db,
-            &internal_tx,
-            0,
+            &self_tx,
+            3,
             Some(account),
             Some(account),
             1_000_000,
-            false,
+            true,
+            Some("u-self"),
+            Some(0),
         );
         insert_output(
             &db,
-            &internal_tx,
+            &self_tx,
             3,
             Some(account),
             Some(account),
@@ -1181,10 +1356,15 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(got.len(), 1);
-        assert_eq!(got[0].txid_hex, hex::encode(internal_tx));
-        assert_eq!(got[0].tx_kind, "internal");
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].txid_hex, hex::encode(self_tx));
+        assert_eq!(got[0].tx_kind, "sent");
         assert_eq!(got[0].display_amount, 1_000_000);
+        assert_eq!(got[0].display_pool, "shielded");
+        assert_eq!(got[1].txid_hex, hex::encode(self_tx));
+        assert_eq!(got[1].tx_kind, "received");
+        assert_eq!(got[1].display_amount, 1_000_000);
+        assert_eq!(got[1].display_pool, "shielded");
     }
 
     #[test]
@@ -1237,11 +1417,55 @@ mod tests {
     }
 
     #[test]
+    fn history_keeps_shielding_tx_as_single_shielded_row() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let shielding_tx = fake_txid(0xC4);
+
+        insert_history_tx(
+            &db,
+            account,
+            &shielding_tx,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -10_000,
+            10_010_000,
+            10_000_000,
+            true,
+            Some("2026-04-28T15:44:00Z"),
+        );
+        insert_output(
+            &db,
+            &shielding_tx,
+            3,
+            Some(account),
+            Some(account),
+            10_000_000,
+            true,
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(shielding_tx));
+        assert_eq!(got[0].tx_kind, "shielded");
+        assert_eq!(got[0].display_amount, 10_000_000);
+        assert_eq!(got[0].display_pool, "shielded");
+    }
+
+    #[test]
     fn history_sorts_by_display_timestamp_before_limit() {
         let db = fresh_history_db();
         let account = test_account_uuid();
         let older_failed = fake_txid(0xC1);
-        let newer_internal = fake_txid(0xC2);
+        let newer_self_send = fake_txid(0xC2);
 
         insert_history_tx(
             &db,
@@ -1270,7 +1494,7 @@ mod tests {
         insert_history_tx(
             &db,
             account,
-            &newer_internal,
+            &newer_self_send,
             Some(1_000_000),
             1,
             Some(1_000_100),
@@ -1280,14 +1504,16 @@ mod tests {
             false,
             Some("2026-04-28T16:32:00Z"),
         );
-        insert_output(
+        insert_output_with_address(
             &db,
-            &newer_internal,
+            &newer_self_send,
             0,
             Some(account),
             Some(account),
             17_000_000,
             false,
+            Some("t-newer-self"),
+            Some(0),
         );
 
         let got = get_transaction_history(
@@ -1298,10 +1524,13 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(got.len(), 2);
-        assert_eq!(got[0].txid_hex, hex::encode(newer_internal));
-        assert_eq!(got[1].txid_hex, hex::encode(older_failed));
-        assert!(got[1].expired_unmined);
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0].txid_hex, hex::encode(newer_self_send));
+        assert_eq!(got[0].tx_kind, "sent");
+        assert_eq!(got[1].txid_hex, hex::encode(newer_self_send));
+        assert_eq!(got[1].tx_kind, "received");
+        assert_eq!(got[2].txid_hex, hex::encode(older_failed));
+        assert!(got[2].expired_unmined);
 
         let limited = get_transaction_history(
             db.path().to_str().unwrap(),
@@ -1312,7 +1541,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(limited.len(), 1);
-        assert_eq!(limited[0].txid_hex, hex::encode(newer_internal));
+        assert_eq!(limited[0].txid_hex, hex::encode(newer_self_send));
+        assert_eq!(limited[0].tx_kind, "sent");
     }
 
     #[test]
