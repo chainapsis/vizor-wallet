@@ -76,13 +76,32 @@ class ImportOnboardingShell extends StatelessWidget {
 }
 
 class ImportOnboardingTrailingPane extends StatelessWidget {
-  const ImportOnboardingTrailingPane({required this.child, super.key});
+  const ImportOnboardingTrailingPane({
+    required this.child,
+    this.overlay,
+    super.key,
+  });
 
   final Widget child;
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
-    return AppDesktopPane(child: child);
+    final overlay = this.overlay;
+    if (overlay == null) {
+      return AppDesktopPane(child: child);
+    }
+
+    return AppDesktopPane(
+      padding: EdgeInsets.zero,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Padding(padding: const EdgeInsets.all(AppSpacing.md), child: child),
+          overlay,
+        ],
+      ),
+    );
   }
 }
 

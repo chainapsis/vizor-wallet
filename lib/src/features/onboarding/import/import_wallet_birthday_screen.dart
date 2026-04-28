@@ -15,6 +15,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'import_birthday_estimator.dart';
+import 'import_birthday_calendar_overlay.dart';
 import 'import_split_view.dart';
 
 enum ImportBirthdayTab { date, blockHeight }
@@ -48,9 +49,11 @@ class _ImportWalletBirthdayScreenState
   int? _birthdayHeight;
   bool _isLoadingMetadata = true;
   bool _isEstimating = false;
+  bool _isCalendarOpen = false;
   _ImportWalletSubmitPhase _submitPhase = _ImportWalletSubmitPhase.idle;
   String? _metadataError;
   String? _submitError;
+  DateTime? _calendarInitialDate;
   int _estimateSeq = 0;
 
   bool get _isSubmitting => _submitPhase != _ImportWalletSubmitPhase.idle;
@@ -179,93 +182,24 @@ class _ImportWalletBirthdayScreenState
       metadata.tipDate,
     );
 
-    final selected = await material.showDatePicker(
-      context: context,
-      initialDate: initialDate,
-      firstDate: metadata.saplingActivationDate,
-      lastDate: metadata.tipDate,
-      helpText: '',
-      builder: (context, child) {
-        final colors = context.colors;
-        final baseTheme = material.Theme.of(context);
-        final theme = baseTheme.copyWith(
-          colorScheme: baseTheme.colorScheme.copyWith(
-            primary: colors.border.brandCrimsonStrong,
-            onPrimary: colors.text.inverse,
-            surface: colors.background.ground,
-            onSurface: colors.text.accent,
-          ),
-          dialogTheme: material.DialogThemeData(
-            backgroundColor: colors.background.ground,
-          ),
-          datePickerTheme: material.DatePickerThemeData(
-            backgroundColor: colors.background.ground,
-            surfaceTintColor: colors.background.ground.withValues(alpha: 0),
-            shadowColor: colors.background.neutralScrim,
-            dividerColor: colors.border.subtle.withValues(alpha: 0.2),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadii.xLarge),
-            ),
-            headerForegroundColor: colors.text.accent,
-            headerBackgroundColor: colors.background.ground,
-            weekdayStyle: AppTypography.labelLarge.copyWith(
-              color: colors.text.muted,
-            ),
-            dayStyle: AppTypography.labelLarge.copyWith(
-              color: colors.text.accent,
-            ),
-            yearStyle: AppTypography.labelLarge.copyWith(
-              color: colors.text.accent,
-            ),
-            dayForegroundColor: material.WidgetStateProperty.resolveWith((
-              states,
-            ) {
-              if (states.contains(material.WidgetState.disabled)) {
-                return colors.text.muted;
-              }
-              if (states.contains(material.WidgetState.selected)) {
-                return colors.text.inverse;
-              }
-              return colors.text.accent;
-            }),
-            dayBackgroundColor: material.WidgetStateProperty.resolveWith((
-              states,
-            ) {
-              if (states.contains(material.WidgetState.selected)) {
-                return colors.border.brandCrimsonStrong;
-              }
-              return null;
-            }),
-            yearForegroundColor: material.WidgetStateProperty.resolveWith((
-              states,
-            ) {
-              if (states.contains(material.WidgetState.selected)) {
-                return colors.text.inverse;
-              }
-              return colors.text.accent;
-            }),
-            yearBackgroundColor: material.WidgetStateProperty.resolveWith((
-              states,
-            ) {
-              if (states.contains(material.WidgetState.selected)) {
-                return colors.border.brandCrimsonStrong;
-              }
-              return null;
-            }),
-            todayForegroundColor: material.WidgetStatePropertyAll(
-              colors.text.accent,
-            ),
-            todayBackgroundColor: const material.WidgetStatePropertyAll<Color?>(
-              null,
-            ),
-            todayBorder: BorderSide(color: colors.border.regular),
-          ),
-        );
-        return material.Theme(data: theme, child: child!);
-      },
-    );
+    setState(() {
+      _calendarInitialDate = initialDate;
+      _isCalendarOpen = true;
+      _submitError = null;
+    });
+  }
 
-    if (selected == null || !mounted) return;
+  void _dismissCalendar() {
+    if (!_isCalendarOpen) return;
+    setState(() {
+      _isCalendarOpen = false;
+    });
+  }
+
+  Future<void> _handleCalendarDateSelected(DateTime selected) async {
+    setState(() {
+      _isCalendarOpen = false;
+    });
     await _estimateSelectedDate(selected);
   }
 
@@ -393,6 +327,16 @@ class _ImportWalletBirthdayScreenState
     };
 
     return ImportOnboardingTrailingPane(
+      overlay: _isCalendarOpen && _metadata != null
+          ? ImportBirthdayCalendarOverlay(
+              initialMonth: _calendarInitialDate ?? _metadata!.tipDate,
+              selectedDate: _selectedDate,
+              firstDate: _metadata!.saplingActivationDate,
+              lastDate: _metadata!.tipDate,
+              onDismiss: _dismissCalendar,
+              onDateSelected: _handleCalendarDateSelected,
+            )
+          : null,
       child: Column(
         children: [
           _BackRow(
@@ -774,9 +718,12 @@ class _InlineMessage extends StatelessWidget {
 }
 
 DateTime _clampDate(DateTime value, DateTime min, DateTime max) {
-  if (value.isBefore(min)) return min;
-  if (value.isAfter(max)) return max;
-  return value;
+  final date = DateTime(value.year, value.month, value.day);
+  final minDate = DateTime(min.year, min.month, min.day);
+  final maxDate = DateTime(max.year, max.month, max.day);
+  if (date.isBefore(minDate)) return minDate;
+  if (date.isAfter(maxDate)) return maxDate;
+  return date;
 }
 
 String _formatDate(DateTime date) {
