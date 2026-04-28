@@ -160,13 +160,47 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   }
 
   void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
+    unawaited(_pushTransactionStatus(transaction));
+  }
+
+  Future<void> _pushTransactionStatus(
+    rust_sync.TransactionInfo transaction,
+  ) async {
+    final detail = await _loadTransactionDetail(transaction);
+    if (!mounted) return;
     context.push(
       '/activity/tx/${transaction.txidHex}',
       extra: ActivityTransactionStatusArgs(
         txidHex: transaction.txidHex,
         initialTransaction: transaction,
+        initialDetail: detail,
       ),
     );
+  }
+
+  Future<rust_sync.TransactionDetail?> _loadTransactionDetail(
+    rust_sync.TransactionInfo transaction,
+  ) async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return null;
+
+    try {
+      final dbPath = await getWalletDbPath();
+      if (!mounted ||
+          accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+        return null;
+      }
+      return rust_sync.getTransactionDetail(
+        dbPath: dbPath,
+        network: ZcashNetwork.mainnet.name,
+        accountUuid: accountUuid,
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+      );
+    } catch (e, st) {
+      log('Activity: transaction detail load failed: $e\n$st');
+      return null;
+    }
   }
 
   String _recentSignature(SyncState? sync) {

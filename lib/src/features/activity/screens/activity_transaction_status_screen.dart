@@ -23,10 +23,12 @@ class ActivityTransactionStatusArgs {
   const ActivityTransactionStatusArgs({
     required this.txidHex,
     this.initialTransaction,
+    this.initialDetail,
   });
 
   final String txidHex;
   final rust_sync.TransactionInfo? initialTransaction;
+  final rust_sync.TransactionDetail? initialDetail;
 }
 
 class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
@@ -51,6 +53,7 @@ class _ActivityTransactionStatusScreenState
   void initState() {
     super.initState();
     _transaction = widget.args.initialTransaction;
+    _detail = widget.args.initialDetail;
     _activeAccountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -99,7 +102,7 @@ class _ActivityTransactionStatusScreenState
       rust_sync.TransactionDetail? detail;
       if (tx != null) {
         try {
-          detail = await rust_sync.getTransactionDetail(
+          detail = rust_sync.getTransactionDetail(
             dbPath: dbPath,
             network: ZcashNetwork.mainnet.name,
             accountUuid: accountUuid,
