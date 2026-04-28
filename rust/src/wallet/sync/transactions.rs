@@ -288,6 +288,49 @@ pub fn get_transaction_history(
              FROM v_transactions vt \
              LEFT JOIN transactions tx ON tx.txid = vt.txid \
              WHERE vt.account_uuid = ?1 \
+               AND NOT ( \
+                   COALESCE(vt.is_shielding, 0) = 0 \
+                   AND COALESCE(vt.total_spent, 0) > 0 \
+                   AND COALESCE(vt.total_received, 0) > 0 \
+                   AND COALESCE(vt.account_balance_delta, 0) <= 0 \
+                   AND tx.created IS NOT NULL \
+                   AND NOT EXISTS ( \
+                       SELECT 1 \
+                       FROM v_tx_outputs txo \
+                       WHERE txo.txid = vt.txid \
+                         AND ( \
+                             (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
+                             OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
+                         ) \
+                   ) \
+                   AND EXISTS ( \
+                       SELECT 1 \
+                       FROM v_tx_outputs txo \
+                       WHERE txo.txid = vt.txid \
+                         AND txo.output_pool = 0 \
+                         AND txo.from_account_uuid = vt.account_uuid \
+                         AND txo.to_account_uuid = vt.account_uuid \
+                         AND txo.is_change = 0 \
+                   ) \
+                   AND EXISTS ( \
+                       SELECT 1 \
+                       FROM v_transactions sibling_vt \
+                       JOIN transactions sibling_tx ON sibling_tx.txid = sibling_vt.txid \
+                       WHERE sibling_vt.account_uuid = vt.account_uuid \
+                         AND sibling_vt.txid != vt.txid \
+                         AND sibling_tx.created = tx.created \
+                         AND COALESCE(sibling_vt.expiry_height, -1) = COALESCE(vt.expiry_height, -1) \
+                         AND EXISTS ( \
+                             SELECT 1 \
+                             FROM v_tx_outputs sibling_txo \
+                             WHERE sibling_txo.txid = sibling_vt.txid \
+                               AND sibling_txo.output_pool = 0 \
+                               AND sibling_txo.from_account_uuid = sibling_vt.account_uuid \
+                               AND sibling_txo.to_account_uuid IS NULL \
+                               AND sibling_txo.is_change = 0 \
+                         ) \
+                   ) \
+               ) \
              ORDER BY COALESCE(vt.mined_height, 999999999) DESC, vt.tx_index DESC \
              LIMIT ?2"
         }
@@ -344,6 +387,49 @@ pub fn get_transaction_history(
              FROM v_transactions vt \
              LEFT JOIN transactions tx ON tx.txid = vt.txid \
              WHERE vt.account_uuid = ?1 \
+               AND NOT ( \
+                   COALESCE(vt.is_shielding, 0) = 0 \
+                   AND COALESCE(vt.total_spent, 0) > 0 \
+                   AND COALESCE(vt.total_received, 0) > 0 \
+                   AND COALESCE(vt.account_balance_delta, 0) <= 0 \
+                   AND tx.created IS NOT NULL \
+                   AND NOT EXISTS ( \
+                       SELECT 1 \
+                       FROM v_tx_outputs txo \
+                       WHERE txo.txid = vt.txid \
+                         AND ( \
+                             (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
+                             OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
+                         ) \
+                   ) \
+                   AND EXISTS ( \
+                       SELECT 1 \
+                       FROM v_tx_outputs txo \
+                       WHERE txo.txid = vt.txid \
+                         AND txo.output_pool = 0 \
+                         AND txo.from_account_uuid = vt.account_uuid \
+                         AND txo.to_account_uuid = vt.account_uuid \
+                         AND txo.is_change = 0 \
+                   ) \
+                   AND EXISTS ( \
+                       SELECT 1 \
+                       FROM v_transactions sibling_vt \
+                       JOIN transactions sibling_tx ON sibling_tx.txid = sibling_vt.txid \
+                       WHERE sibling_vt.account_uuid = vt.account_uuid \
+                         AND sibling_vt.txid != vt.txid \
+                         AND sibling_tx.created = tx.created \
+                         AND COALESCE(sibling_vt.expiry_height, -1) = COALESCE(vt.expiry_height, -1) \
+                         AND EXISTS ( \
+                             SELECT 1 \
+                             FROM v_tx_outputs sibling_txo \
+                             WHERE sibling_txo.txid = sibling_vt.txid \
+                               AND sibling_txo.output_pool = 0 \
+                               AND sibling_txo.from_account_uuid = sibling_vt.account_uuid \
+                               AND sibling_txo.to_account_uuid IS NULL \
+                               AND sibling_txo.is_change = 0 \
+                         ) \
+                   ) \
+               ) \
              ORDER BY COALESCE(vt.mined_height, 999999999) DESC, vt.tx_index DESC"
         }
     };
