@@ -42,6 +42,7 @@ class ActivityTransactionStatusScreen extends ConsumerStatefulWidget {
 class _ActivityTransactionStatusScreenState
     extends ConsumerState<ActivityTransactionStatusScreen> {
   rust_sync.TransactionInfo? _transaction;
+  rust_sync.TransactionDetail? _detail;
   bool _isLoading = false;
   String? _error;
   String? _activeAccountUuid;
@@ -95,11 +96,31 @@ class _ActivityTransactionStatusScreenState
         widget.args.txidHex,
         txKind: _transaction?.txKind ?? widget.args.initialTransaction?.txKind,
       );
+      rust_sync.TransactionDetail? detail;
+      if (tx != null) {
+        try {
+          detail = await rust_sync.getTransactionDetail(
+            dbPath: dbPath,
+            network: ZcashNetwork.mainnet.name,
+            accountUuid: accountUuid,
+            txidHex: tx.txidHex,
+            txKind: tx.txKind,
+          );
+        } catch (e, st) {
+          log('ActivityTransactionStatus: detail load failed: $e\n$st');
+        }
+        if (!mounted) return;
+        if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+          return;
+        }
+      }
       setState(() {
         if (tx != null) {
           _transaction = tx;
+          _detail = detail;
           _error = null;
         } else {
+          _detail = null;
           _error = _transaction == null
               ? 'Transaction could not be loaded.'
               : 'Latest transaction status could not be refreshed.';
@@ -110,6 +131,7 @@ class _ActivityTransactionStatusScreenState
       log('ActivityTransactionStatus: transaction load failed: $e\n$st');
       if (!mounted) return;
       setState(() {
+        _detail = null;
         _error = _transaction == null
             ? 'Transaction could not be loaded.'
             : 'Latest transaction status could not be refreshed.';
@@ -252,6 +274,106 @@ class _ActivityTransactionStatusScreenState
     return [txid.substring(0, 32), txid.substring(32)];
   }
 
+  List<String> _splitAddress(String address) {
+    final trimmed = address.trim();
+    if (trimmed.length <= 16) return [trimmed];
+    final midpoint = (trimmed.length / 2).ceil();
+    return [trimmed.substring(0, midpoint), trimmed.substring(midpoint)];
+  }
+
+  rust_sync.TransactionDetail? _matchingDetailFor(
+    rust_sync.TransactionInfo? tx,
+  ) {
+    final detail = _detail;
+    if (tx == null || detail == null) return null;
+    if (detail.txidHex.toLowerCase() != tx.txidHex.toLowerCase()) {
+      return null;
+    }
+    if (detail.txKind != tx.txKind) return null;
+    return detail;
+  }
+
+  TransactionReceiptBlockData _transactionHashBlock(BuildContext context) {
+    final colors = context.colors;
+    final txidLines = _splitTxid(widget.args.txidHex);
+    return TransactionReceiptBlockData(
+      title: 'Transaction Hash',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final line in txidLines)
+            Text(
+              line,
+              style: AppTypography.codeSmall.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  TransactionReceiptBlockData _addressBlock(
+    BuildContext context, {
+    required String title,
+    required String address,
+  }) {
+    final colors = context.colors;
+    return TransactionReceiptBlockData(
+      title: title,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final line in _splitAddress(address))
+            Text(
+              line,
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  TransactionReceiptBlockData _primaryBlockFor(
+    BuildContext context,
+    rust_sync.TransactionInfo? tx,
+    rust_sync.TransactionDetail? detail,
+  ) {
+    final primaryAddress = detail?.primaryAddress?.trim();
+    if (tx?.txKind == 'sent' &&
+        primaryAddress != null &&
+        primaryAddress.isNotEmpty) {
+      return _addressBlock(context, title: 'To', address: primaryAddress);
+    }
+    if (tx?.txKind == 'received' &&
+        primaryAddress != null &&
+        primaryAddress.isNotEmpty) {
+      return _addressBlock(context, title: 'From', address: primaryAddress);
+    }
+    return _transactionHashBlock(context);
+  }
+
+  List<TransactionReceiptBlockData> _extraBlocksFor(
+    BuildContext context,
+    rust_sync.TransactionDetail? detail,
+  ) {
+    final memo = detail?.memo?.trim();
+    if (memo == null || memo.isEmpty) return const [];
+    return [
+      TransactionReceiptBlockData(
+        title: 'Message',
+        child: Text(
+          memo,
+          style: AppTypography.labelLarge.copyWith(
+            color: context.colors.text.accent,
+          ),
+        ),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<AsyncValue<AccountState>>(accountProvider, (previous, next) {
@@ -269,8 +391,7 @@ class _ActivityTransactionStatusScreenState
     });
 
     final tx = _transaction;
-    final colors = context.colors;
-    final txidLines = _splitTxid(widget.args.txidHex);
+    final detail = _matchingDetailFor(tx);
     final error = tx?.expiredUnmined == true
         ? 'Transaction expired before it was mined.'
         : _error;
@@ -303,21 +424,8 @@ class _ActivityTransactionStatusScreenState
                           child: TransactionReceiptView(
                             phase: _phaseFor(tx),
                             amountText: _amountText(tx),
-                            primaryBlock: TransactionReceiptBlockData(
-                              title: 'Transaction Hash',
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  for (final line in txidLines)
-                                    Text(
-                                      line,
-                                      style: AppTypography.codeSmall.copyWith(
-                                        color: colors.text.accent,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
+                            primaryBlock: _primaryBlockFor(context, tx, detail),
+                            extraBlocks: _extraBlocksFor(context, detail),
                             dateText: _dateText(tx),
                             feeText: _feeText(tx),
                             error: error,

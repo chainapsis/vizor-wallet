@@ -21,8 +21,12 @@
 
 use std::collections::{HashMap, HashSet};
 
+use rusqlite::OptionalExtension;
 use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletWrite};
-use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::{
+    consensus::BlockHeight,
+    memo::{Memo, MemoBytes},
+};
 
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::keys::parse_account_uuid;
@@ -225,6 +229,20 @@ pub(crate) struct TransactionInfo {
     pub created_time: u64,
 }
 
+pub(crate) struct TransactionDetail {
+    pub txid_hex: String,
+    pub tx_kind: String,
+    pub primary_address: Option<String>,
+    pub memo: Option<String>,
+    pub outputs: Vec<TransactionDetailOutput>,
+}
+
+pub(crate) struct TransactionDetailOutput {
+    pub address: Option<String>,
+    pub amount_zatoshi: u64,
+    pub pool: String,
+}
+
 #[derive(Clone)]
 struct TxBase {
     txid: Vec<u8>,
@@ -245,11 +263,13 @@ struct TxBase {
 struct TxOutput {
     txid: Vec<u8>,
     output_pool: i64,
+    output_index: i64,
     from_account_uuid: Option<Vec<u8>>,
     to_account_uuid: Option<Vec<u8>>,
     to_address: Option<String>,
     to_key_scope: Option<i64>,
     value: u64,
+    memo: Option<Vec<u8>>,
 }
 
 #[derive(Default, Clone)]
@@ -361,6 +381,121 @@ pub fn get_transaction_history(
     Ok(visible.into_iter().map(|tx| tx.info).collect())
 }
 
+pub fn get_transaction_detail(
+    db_path: &str,
+    _network: WalletNetwork,
+    account_uuid: &str,
+    txid_hex: &str,
+    tx_kind: &str,
+) -> Result<TransactionDetail, String> {
+    let uuid = uuid::Uuid::parse_str(account_uuid).map_err(|e| format!("Invalid UUID: {e}"))?;
+    let uuid_bytes = uuid.as_bytes().to_vec();
+    let txid = hex::decode(txid_hex).map_err(|e| format!("Invalid txid: {e}"))?;
+    if txid.len() != 32 {
+        return Err("Invalid txid length".to_string());
+    }
+
+    let conn = open_readonly_conn(db_path)?;
+    let read_tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("SQL error: {e}"))?;
+    let Some(base) = read_history_base_by_txid(&read_tx, &uuid_bytes, &txid)? else {
+        return Err("Transaction not found".to_string());
+    };
+    let mut outputs = read_outputs_for_tx(&read_tx, &uuid_bytes, &txid)?;
+    outputs.sort_by(|a, b| {
+        a.output_index
+            .cmp(&b.output_index)
+            .then_with(|| a.output_pool.cmp(&b.output_pool))
+    });
+
+    let visible_outputs = outputs
+        .iter()
+        .filter(|output| detail_includes_output(&base, output, uuid_bytes.as_slice(), tx_kind))
+        .collect::<Vec<_>>();
+    let memo = visible_outputs
+        .iter()
+        .find_map(|output| decode_text_memo(output.memo.as_deref()));
+    let primary_address = if tx_kind == "sent" {
+        visible_outputs
+            .iter()
+            .find_map(|output| output.to_address.clone())
+    } else {
+        None
+    };
+    let outputs = visible_outputs
+        .into_iter()
+        .map(|output| TransactionDetailOutput {
+            address: output.to_address.clone(),
+            amount_zatoshi: output.value,
+            pool: output_pool_label(output.output_pool).to_string(),
+        })
+        .collect();
+
+    Ok(TransactionDetail {
+        txid_hex: hex::encode(&base.txid),
+        tx_kind: tx_kind.to_string(),
+        primary_address,
+        memo,
+        outputs,
+    })
+}
+
+fn read_history_base_by_txid(
+    conn: &rusqlite::Connection,
+    account_uuid: &[u8],
+    txid: &[u8],
+) -> Result<Option<TxBase>, String> {
+    let mut stmt = conn
+        .prepare(
+            r#"
+        SELECT
+            vt.txid,
+            vt.mined_height,
+            vt.expired_unmined,
+            vt.account_balance_delta,
+            COALESCE(vt.fee_paid, 0) AS fee_paid,
+            COALESCE(vt.block_time, 0) AS block_time,
+            COALESCE(vt.total_spent, 0) AS total_spent,
+            COALESCE(vt.total_received, 0) AS total_received,
+            COALESCE(vt.is_shielding, 0) AS is_shielding,
+            vt.expiry_height,
+            COALESCE(vt.tx_index, -1) AS tx_index,
+            tx.created,
+            CAST(COALESCE(strftime('%s', tx.created), 0) AS INTEGER) AS created_time
+        FROM v_transactions vt
+        LEFT JOIN transactions tx ON tx.txid = vt.txid
+        WHERE vt.account_uuid = ?1
+          AND vt.txid = ?2
+        LIMIT 1
+        "#,
+        )
+        .map_err(|e| format!("SQL error: {e}"))?;
+
+    let row = stmt
+        .query_row(rusqlite::params![account_uuid, txid], |row| {
+            Ok(TxBase {
+                txid: row.get(0)?,
+                mined_height: row.get(1)?,
+                expired_unmined: row.get(2)?,
+                account_balance_delta: row.get(3)?,
+                fee: row.get::<_, i64>(4)?.unsigned_abs(),
+                block_time: row.get::<_, i64>(5)?.unsigned_abs(),
+                total_spent: row.get::<_, i64>(6)?.unsigned_abs(),
+                total_received: row.get::<_, i64>(7)?.unsigned_abs(),
+                is_shielding: row.get(8)?,
+                expiry_height: row.get(9)?,
+                tx_index: row.get(10)?,
+                created: row.get(11)?,
+                created_time: row.get::<_, i64>(12)?.unsigned_abs(),
+            })
+        })
+        .optional()
+        .map_err(|e| format!("Query error: {e}"))?;
+
+    Ok(row)
+}
+
 fn read_history_bases(
     conn: &rusqlite::Connection,
     account_uuid: &[u8],
@@ -423,6 +558,7 @@ fn read_history_outputs(
         SELECT
             txo.txid,
             txo.output_pool,
+            txo.output_index,
             txo.from_account_uuid,
             txo.to_account_uuid,
             txo.to_address,
@@ -437,7 +573,8 @@ fn read_history_outputs(
                   )
                 LIMIT 1
             ) AS to_key_scope,
-            txo.value
+            txo.value,
+            txo.memo
         FROM v_tx_outputs txo
         JOIN (
             SELECT DISTINCT txid
@@ -455,11 +592,13 @@ fn read_history_outputs(
             Ok(TxOutput {
                 txid: row.get(0)?,
                 output_pool: row.get(1)?,
-                from_account_uuid: row.get(2)?,
-                to_account_uuid: row.get(3)?,
-                to_address: row.get(4)?,
-                to_key_scope: row.get(5)?,
-                value: row.get::<_, i64>(6)?.unsigned_abs(),
+                output_index: row.get(2)?,
+                from_account_uuid: row.get(3)?,
+                to_account_uuid: row.get(4)?,
+                to_address: row.get(5)?,
+                to_key_scope: row.get(6)?,
+                value: row.get::<_, i64>(7)?.unsigned_abs(),
+                memo: row.get(8)?,
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -470,6 +609,64 @@ fn read_history_outputs(
         outputs.entry(output.txid.clone()).or_default().push(output);
     }
     Ok(outputs)
+}
+
+fn read_outputs_for_tx(
+    conn: &rusqlite::Connection,
+    account_uuid: &[u8],
+    txid: &[u8],
+) -> Result<Vec<TxOutput>, String> {
+    let mut stmt = conn
+        .prepare(
+            r#"
+        SELECT
+            txo.txid,
+            txo.output_pool,
+            txo.output_index,
+            txo.from_account_uuid,
+            txo.to_account_uuid,
+            txo.to_address,
+            (
+                SELECT a.key_scope
+                FROM accounts acc
+                JOIN addresses a ON a.account_id = acc.id
+                WHERE acc.uuid = txo.to_account_uuid
+                  AND (
+                      a.address = txo.to_address
+                      OR a.cached_transparent_receiver_address = txo.to_address
+                  )
+                LIMIT 1
+            ) AS to_key_scope,
+            txo.value,
+            txo.memo
+        FROM v_tx_outputs txo
+        WHERE txo.txid = ?2
+          AND (
+              txo.from_account_uuid = ?1
+              OR txo.to_account_uuid = ?1
+          )
+        "#,
+        )
+        .map_err(|e| format!("SQL error: {e}"))?;
+
+    let rows = stmt
+        .query_map(rusqlite::params![account_uuid, txid], |row| {
+            Ok(TxOutput {
+                txid: row.get(0)?,
+                output_pool: row.get(1)?,
+                output_index: row.get(2)?,
+                from_account_uuid: row.get(3)?,
+                to_account_uuid: row.get(4)?,
+                to_address: row.get(5)?,
+                to_key_scope: row.get(6)?,
+                value: row.get::<_, i64>(7)?.unsigned_abs(),
+                memo: row.get(8)?,
+            })
+        })
+        .map_err(|e| format!("Query error: {e}"))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Row error: {e}"))
 }
 
 fn summarize_activity_outputs(
@@ -512,8 +709,37 @@ fn summarize_activity_outputs(
     summary
 }
 
+fn detail_includes_output(
+    base: &TxBase,
+    output: &TxOutput,
+    account_uuid: &[u8],
+    tx_kind: &str,
+) -> bool {
+    let from_own = output.from_account_uuid.as_deref() == Some(account_uuid);
+    let to_own = output.to_account_uuid.as_deref() == Some(account_uuid);
+
+    match tx_kind {
+        "shielded" => base.is_shielding && to_own && is_shielded_pool(output.output_pool),
+        "sent" => {
+            !base.is_shielding && from_own && (!to_own || is_user_visible_self_output(output))
+        }
+        "received" => {
+            !base.is_shielding && to_own && (!from_own || is_user_visible_self_output(output))
+        }
+        _ => false,
+    }
+}
+
 fn is_shielded_pool(output_pool: i64) -> bool {
     matches!(output_pool, 2 | 3)
+}
+
+fn output_pool_label(output_pool: i64) -> &'static str {
+    match output_pool {
+        0 => "transparent",
+        2 | 3 => "shielded",
+        _ => "unknown",
+    }
 }
 
 fn is_user_visible_self_output(output: &TxOutput) -> bool {
@@ -526,6 +752,22 @@ fn is_user_visible_self_output(output: &TxOutput) -> bool {
         // sent_notes. Wallet-internal change does not.
         2 | 3 => output.to_address.is_some() || matches!(output.to_key_scope, Some(0) | Some(-1)),
         _ => false,
+    }
+}
+
+fn decode_text_memo(memo: Option<&[u8]>) -> Option<String> {
+    let memo = memo?;
+    let memo_bytes = MemoBytes::from_bytes(memo).ok()?;
+    match Memo::try_from(&memo_bytes).ok()? {
+        Memo::Text(text) => {
+            let text = String::from(text);
+            if text.trim().is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        }
+        Memo::Empty | Memo::Future(_) | Memo::Arbitrary(_) => None,
     }
 }
 
@@ -939,7 +1181,8 @@ mod tests {
                  to_account_uuid BLOB,
                  to_address TEXT,
                  value INTEGER NOT NULL,
-                 is_change INTEGER NOT NULL
+                 is_change INTEGER NOT NULL,
+                 memo BLOB
              );",
         )
         .unwrap();
@@ -1036,6 +1279,33 @@ mod tests {
         to_address: Option<&str>,
         to_key_scope: Option<i64>,
     ) {
+        insert_output_with_address_and_memo(
+            db,
+            txid,
+            output_pool,
+            from_account,
+            to_account,
+            value,
+            is_change,
+            to_address,
+            to_key_scope,
+            None,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_output_with_address_and_memo(
+        db: &NamedTempFile,
+        txid: &[u8],
+        output_pool: i64,
+        from_account: Option<uuid::Uuid>,
+        to_account: Option<uuid::Uuid>,
+        value: i64,
+        is_change: bool,
+        to_address: Option<&str>,
+        to_key_scope: Option<i64>,
+        memo: Option<&[u8]>,
+    ) {
         let conn = rusqlite::Connection::open(db.path()).unwrap();
         if let Some(account) = from_account {
             ensure_account_row(&conn, account);
@@ -1066,8 +1336,8 @@ mod tests {
         conn.execute(
             "INSERT INTO v_tx_outputs (
                  txid, output_pool, output_index, from_account_uuid,
-                 to_account_uuid, to_address, value, is_change
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 to_account_uuid, to_address, value, is_change, memo
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 txid,
                 output_pool,
@@ -1077,6 +1347,7 @@ mod tests {
                 to_address,
                 value,
                 is_change,
+                memo,
             ],
         )
         .unwrap();
@@ -1458,6 +1729,257 @@ mod tests {
         assert_eq!(got[0].tx_kind, "shielded");
         assert_eq!(got[0].display_amount, 10_000_000);
         assert_eq!(got[0].display_pool, "shielded");
+    }
+
+    #[test]
+    fn detail_sent_row_returns_recipient_address_and_memo() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD1);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -1_010_000,
+            1_010_000,
+            0,
+            false,
+            Some("2026-04-28T17:00:00Z"),
+        );
+        insert_output_with_address_and_memo(
+            &db,
+            &txid,
+            3,
+            Some(account),
+            None,
+            1_000_000,
+            false,
+            Some("u-recipient"),
+            None,
+            Some(b"hello from activity"),
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "sent",
+        )
+        .unwrap();
+
+        assert_eq!(got.txid_hex, hex::encode(txid));
+        assert_eq!(got.tx_kind, "sent");
+        assert_eq!(got.primary_address.as_deref(), Some("u-recipient"));
+        assert_eq!(got.memo.as_deref(), Some("hello from activity"));
+        assert_eq!(got.outputs.len(), 1);
+        assert_eq!(got.outputs[0].address.as_deref(), Some("u-recipient"));
+        assert_eq!(got.outputs[0].amount_zatoshi, 1_000_000);
+        assert_eq!(got.outputs[0].pool, "shielded");
+    }
+
+    #[test]
+    fn detail_received_row_does_not_invent_from_address() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD2);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            2_000_000,
+            0,
+            2_000_000,
+            false,
+            Some("2026-04-28T17:01:00Z"),
+        );
+        insert_output_with_address_and_memo(
+            &db,
+            &txid,
+            3,
+            None,
+            Some(account),
+            2_000_000,
+            false,
+            Some("u-my-receiver"),
+            Some(0),
+            Some(b"incoming memo"),
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "received",
+        )
+        .unwrap();
+
+        assert_eq!(got.tx_kind, "received");
+        assert_eq!(got.primary_address, None);
+        assert_eq!(got.memo.as_deref(), Some("incoming memo"));
+        assert_eq!(got.outputs.len(), 1);
+        assert_eq!(got.outputs[0].address.as_deref(), Some("u-my-receiver"));
+    }
+
+    #[test]
+    fn detail_separates_same_account_self_send_by_kind() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD3);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -10_000,
+            1_010_000,
+            1_000_000,
+            false,
+            Some("2026-04-28T17:02:00Z"),
+        );
+        insert_output_with_address_and_memo(
+            &db,
+            &txid,
+            3,
+            Some(account),
+            Some(account),
+            1_000_000,
+            true,
+            Some("u-self"),
+            Some(0),
+            Some(b"self memo"),
+        );
+        insert_output(&db, &txid, 3, Some(account), Some(account), 500_000, true);
+
+        let sent = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "sent",
+        )
+        .unwrap();
+        let received = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "received",
+        )
+        .unwrap();
+
+        assert_eq!(sent.primary_address.as_deref(), Some("u-self"));
+        assert_eq!(sent.memo.as_deref(), Some("self memo"));
+        assert_eq!(sent.outputs.len(), 1);
+        assert_eq!(sent.outputs[0].amount_zatoshi, 1_000_000);
+        assert_eq!(received.primary_address, None);
+        assert_eq!(received.memo.as_deref(), Some("self memo"));
+        assert_eq!(received.outputs.len(), 1);
+        assert_eq!(received.outputs[0].amount_zatoshi, 1_000_000);
+    }
+
+    #[test]
+    fn detail_hides_change_only_outputs_and_empty_memos() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD4);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -10_000,
+            1_010_000,
+            1_000_000,
+            false,
+            Some("2026-04-28T17:03:00Z"),
+        );
+        insert_output_with_address_and_memo(
+            &db,
+            &txid,
+            3,
+            Some(account),
+            Some(account),
+            1_000_000,
+            true,
+            None,
+            None,
+            Some(&[0xF6]),
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "sent",
+        )
+        .unwrap();
+
+        assert_eq!(got.primary_address, None);
+        assert_eq!(got.memo, None);
+        assert!(got.outputs.is_empty());
+    }
+
+    #[test]
+    fn detail_shielding_row_has_no_primary_address() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD5);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -10_000,
+            1_010_000,
+            1_000_000,
+            true,
+            Some("2026-04-28T17:04:00Z"),
+        );
+        insert_output_with_address(
+            &db,
+            &txid,
+            3,
+            Some(account),
+            Some(account),
+            1_000_000,
+            true,
+            Some("u-shielded-self"),
+            Some(0),
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "shielded",
+        )
+        .unwrap();
+
+        assert_eq!(got.tx_kind, "shielded");
+        assert_eq!(got.primary_address, None);
+        assert_eq!(got.outputs.len(), 1);
+        assert_eq!(got.outputs[0].amount_zatoshi, 1_000_000);
     }
 
     #[test]

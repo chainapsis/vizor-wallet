@@ -353,6 +353,20 @@ Future<List<TransactionInfo>> getTransactionHistory({
   accountUuid: accountUuid,
 );
 
+Future<TransactionDetail> getTransactionDetail({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String txidHex,
+  required String txKind,
+}) => RustLib.instance.api.crateApiSyncGetTransactionDetail(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  txidHex: txidHex,
+  txKind: txKind,
+);
+
 String getBlocksDir({required String cachePath}) =>
     RustLib.instance.api.crateApiSyncGetBlocksDir(cachePath: cachePath);
 
@@ -775,6 +789,65 @@ class SyncProgress {
           scannedHeight == other.scannedHeight &&
           chainTipHeight == other.chainTipHeight &&
           isSyncing == other.isSyncing;
+}
+
+class TransactionDetail {
+  final String txidHex;
+  final String txKind;
+  final String? primaryAddress;
+  final String? memo;
+  final List<TransactionDetailOutput> outputs;
+
+  const TransactionDetail({
+    required this.txidHex,
+    required this.txKind,
+    this.primaryAddress,
+    this.memo,
+    required this.outputs,
+  });
+
+  @override
+  int get hashCode =>
+      txidHex.hashCode ^
+      txKind.hashCode ^
+      primaryAddress.hashCode ^
+      memo.hashCode ^
+      outputs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TransactionDetail &&
+          runtimeType == other.runtimeType &&
+          txidHex == other.txidHex &&
+          txKind == other.txKind &&
+          primaryAddress == other.primaryAddress &&
+          memo == other.memo &&
+          outputs == other.outputs;
+}
+
+class TransactionDetailOutput {
+  final String? address;
+  final BigInt amountZatoshi;
+  final String pool;
+
+  const TransactionDetailOutput({
+    this.address,
+    required this.amountZatoshi,
+    required this.pool,
+  });
+
+  @override
+  int get hashCode => address.hashCode ^ amountZatoshi.hashCode ^ pool.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TransactionDetailOutput &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          amountZatoshi == other.amountZatoshi &&
+          pool == other.pool;
 }
 
 class TransactionInfo {

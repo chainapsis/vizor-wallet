@@ -97,6 +97,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SubtreeRoot> dco_decode_list_subtree_root(dynamic raw);
 
   @protected
+  List<TransactionDetailOutput> dco_decode_list_transaction_detail_output(
+    dynamic raw,
+  );
+
+  @protected
   List<TransactionInfo> dco_decode_list_transaction_info(dynamic raw);
 
   @protected
@@ -140,6 +145,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SyncProgress dco_decode_sync_progress(dynamic raw);
+
+  @protected
+  TransactionDetail dco_decode_transaction_detail(dynamic raw);
+
+  @protected
+  TransactionDetailOutput dco_decode_transaction_detail_output(dynamic raw);
 
   @protected
   TransactionInfo dco_decode_transaction_info(dynamic raw);
@@ -267,6 +278,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SubtreeRoot> sse_decode_list_subtree_root(SseDeserializer deserializer);
 
   @protected
+  List<TransactionDetailOutput> sse_decode_list_transaction_detail_output(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<TransactionInfo> sse_decode_list_transaction_info(
     SseDeserializer deserializer,
   );
@@ -320,6 +336,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SyncProgress sse_decode_sync_progress(SseDeserializer deserializer);
+
+  @protected
+  TransactionDetail sse_decode_transaction_detail(SseDeserializer deserializer);
+
+  @protected
+  TransactionDetailOutput sse_decode_transaction_detail_output(
+    SseDeserializer deserializer,
+  );
 
   @protected
   TransactionInfo sse_decode_transaction_info(SseDeserializer deserializer);
@@ -476,6 +500,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_transaction_detail_output(
+    List<TransactionDetailOutput> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_transaction_info(
     List<TransactionInfo> self,
     SseSerializer serializer,
@@ -543,6 +573,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_sync_progress(SyncProgress self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_transaction_detail(
+    TransactionDetail self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_transaction_detail_output(
+    TransactionDetailOutput self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_transaction_info(

@@ -815,6 +815,20 @@ pub struct TransactionInfo {
     pub created_time: u64,
 }
 
+pub struct TransactionDetail {
+    pub txid_hex: String,
+    pub tx_kind: String,
+    pub primary_address: Option<String>,
+    pub memo: Option<String>,
+    pub outputs: Vec<TransactionDetailOutput>,
+}
+
+pub struct TransactionDetailOutput {
+    pub address: Option<String>,
+    pub amount_zatoshi: u64,
+    pub pool: String,
+}
+
 pub fn get_transaction_history(
     db_path: String,
     network: String,
@@ -840,6 +854,40 @@ pub fn get_transaction_history(
                 created_time: t.created_time,
             })
             .collect())
+    })
+}
+
+pub fn get_transaction_detail(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    txid_hex: String,
+    tx_kind: String,
+) -> Result<TransactionDetail, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let detail = wallet_sync::get_transaction_detail(
+            &db_path,
+            network,
+            &account_uuid,
+            &txid_hex,
+            &tx_kind,
+        )?;
+        Ok(TransactionDetail {
+            txid_hex: detail.txid_hex,
+            tx_kind: detail.tx_kind,
+            primary_address: detail.primary_address,
+            memo: detail.memo,
+            outputs: detail
+                .outputs
+                .into_iter()
+                .map(|output| TransactionDetailOutput {
+                    address: output.address,
+                    amount_zatoshi: output.amount_zatoshi,
+                    pool: output.pool,
+                })
+                .collect(),
+        })
     })
 }
 

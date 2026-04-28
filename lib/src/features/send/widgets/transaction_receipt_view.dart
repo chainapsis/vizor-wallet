@@ -64,6 +64,7 @@ class TransactionReceiptView extends StatelessWidget {
     required this.primaryBlock,
     required this.dateText,
     required this.feeText,
+    this.extraBlocks = const [],
     this.error,
     this.failureFallbackText = 'Transaction failed',
     this.onCopyTxid,
@@ -74,6 +75,7 @@ class TransactionReceiptView extends StatelessWidget {
   final TransactionReceiptPhase phase;
   final String amountText;
   final TransactionReceiptBlockData primaryBlock;
+  final List<TransactionReceiptBlockData> extraBlocks;
   final String dateText;
   final String feeText;
   final String? error;
@@ -99,6 +101,13 @@ class TransactionReceiptView extends StatelessWidget {
                 title: primaryBlock.title,
                 child: primaryBlock.child,
               ),
+              for (final block in extraBlocks) ...[
+                const SizedBox(height: AppSpacing.md),
+                _TransactionReceiptBlock(
+                  title: block.title,
+                  child: block.child,
+                ),
+              ],
               const SizedBox(height: AppSpacing.md),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
