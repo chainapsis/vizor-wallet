@@ -258,6 +258,7 @@ struct OutputSummary {
     external_received_amount: u64,
     display_has_transparent: bool,
     display_has_shielded: bool,
+    own_non_change_amount: u64,
     has_external_display_output: bool,
     has_own_transparent_output: bool,
     has_external_transparent_send: bool,
@@ -309,7 +310,9 @@ pub fn get_transaction_history(
         .iter()
         .filter_map(|base| {
             let summary = summaries.get(&base.txid).cloned().unwrap_or_default();
-            if should_suppress_funding_step(base, &summary, &external_send_keys) {
+            if should_suppress_funding_step(base, &summary, &external_send_keys)
+                || should_suppress_change_only_internal(base, &summary)
+            {
                 None
             } else {
                 Some(classify_history_tx(base, &summary))
@@ -462,6 +465,10 @@ fn summarize_outputs(outputs: &[TxOutput], account_uuid: &[u8]) -> OutputSummary
         if external_display_output {
             summary.has_external_display_output = true;
         }
+        if from_own && to_own && !output.is_change {
+            summary.own_non_change_amount =
+                summary.own_non_change_amount.saturating_add(output.value);
+        }
         if output.output_pool == 0 && from_own && to_own && !output.is_change {
             summary.has_own_transparent_output = true;
         }
@@ -508,6 +515,14 @@ fn should_suppress_funding_step(
             .contains(&(base.created.clone().unwrap_or_default(), base.expiry_key()))
 }
 
+fn should_suppress_change_only_internal(base: &TxBase, summary: &OutputSummary) -> bool {
+    !base.is_shielding
+        && base.total_spent > 0
+        && base.total_received > 0
+        && !summary.has_external_display_output
+        && summary.own_non_change_amount == 0
+}
+
 fn classify_history_tx(base: &TxBase, summary: &OutputSummary) -> ClassifiedTx {
     let display_pool = if base.is_shielding {
         "shielded"
@@ -530,7 +545,7 @@ fn classify_history_tx(base: &TxBase, summary: &OutputSummary) -> ClassifiedTx {
     } else if summary.external_received_amount > 0 {
         ("received", summary.external_received_amount)
     } else if base.total_spent > 0 && base.total_received > 0 {
-        ("internal", base.total_received)
+        ("internal", summary.own_non_change_amount)
     } else if base.account_balance_delta > 0 {
         ("received", base.account_balance_delta as u64)
     } else {
@@ -1026,6 +1041,107 @@ mod tests {
         assert_eq!(got[0].txid_hex, hex::encode(internal_tx));
         assert_eq!(got[0].tx_kind, "internal");
         assert_eq!(got[0].display_amount, 18_262_101);
+    }
+
+    #[test]
+    fn history_internal_amount_excludes_change_outputs() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let internal_tx = fake_txid(0xC0);
+
+        insert_history_tx(
+            &db,
+            account,
+            &internal_tx,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -15_000,
+            17_252_101,
+            17_237_101,
+            false,
+            Some("2026-04-28T16:32:00Z"),
+        );
+        insert_output(
+            &db,
+            &internal_tx,
+            0,
+            Some(account),
+            Some(account),
+            1_000_000,
+            false,
+        );
+        insert_output(
+            &db,
+            &internal_tx,
+            3,
+            Some(account),
+            Some(account),
+            16_237_101,
+            true,
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(internal_tx));
+        assert_eq!(got[0].tx_kind, "internal");
+        assert_eq!(got[0].display_amount, 1_000_000);
+    }
+
+    #[test]
+    fn history_hides_change_only_internal_tx() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let change_only_tx = fake_txid(0xC3);
+
+        insert_history_tx(
+            &db,
+            account,
+            &change_only_tx,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -10_000,
+            17_252_102,
+            17_242_102,
+            false,
+            Some("2026-04-28T15:43:00Z"),
+        );
+        insert_output(
+            &db,
+            &change_only_tx,
+            3,
+            Some(account),
+            Some(account),
+            7_242_102,
+            true,
+        );
+        insert_output(
+            &db,
+            &change_only_tx,
+            3,
+            Some(account),
+            Some(account),
+            10_000_000,
+            true,
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert!(got.is_empty());
     }
 
     #[test]
