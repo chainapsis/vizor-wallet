@@ -428,7 +428,7 @@ class _HomePaneState extends State<_HomePane> {
     return buildActivityRows(
       context: context,
       sync: widget.sync,
-      transactions: widget.sync.recentTransactions.take(8),
+      transactions: widget.sync.recentTransactions.take(9),
       onRetrySync: widget.onRetrySync,
       onTransactionTap: _openTransactionStatus,
     );
