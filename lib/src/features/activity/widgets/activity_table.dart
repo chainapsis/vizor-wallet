@@ -1,10 +1,16 @@
 import 'dart:math' as math;
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../models/activity_row_data.dart';
+
+const _paginationActivationShortcuts = <ShortcutActivator, Intent>{
+  SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+  SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+};
 
 class ActivityTable extends StatelessWidget {
   const ActivityTable({
@@ -688,25 +694,44 @@ class _PaginationItemShell extends StatelessWidget {
 
     final tracksPointer = enabled && onHoverChanged != null;
     final canActivate = enabled && onTap != null;
+    final canFocus = enabled && onFocusChanged != null;
 
-    if (!tracksPointer && !canActivate) return content;
+    if (!tracksPointer && !canActivate && !canFocus) return content;
 
-    final activatableContent = canActivate
-        ? FocusableActionDetector(
-            mouseCursor: SystemMouseCursors.click,
-            onShowFocusHighlight: onFocusChanged,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                FocusManager.instance.primaryFocus?.unfocus();
-                onFocusChanged?.call(false);
-                onHoverChanged?.call(false);
-                onTap?.call();
-              },
-              child: content,
-            ),
+    void activate() {
+      onHoverChanged?.call(false);
+      onTap?.call();
+    }
+
+    final gestureContent = canActivate
+        ? GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: activate,
+            child: content,
           )
         : content;
+
+    final focusableContent = canFocus
+        ? FocusableActionDetector(
+            mouseCursor: canActivate
+                ? SystemMouseCursors.click
+                : MouseCursor.defer,
+            onShowFocusHighlight: onFocusChanged,
+            includeFocusSemantics: false,
+            shortcuts: canActivate ? _paginationActivationShortcuts : null,
+            actions: canActivate
+                ? <Type, Action<Intent>>{
+                    ActivateIntent: CallbackAction<Intent>(
+                      onInvoke: (_) {
+                        activate();
+                        return null;
+                      },
+                    ),
+                  }
+                : null,
+            child: gestureContent,
+          )
+        : gestureContent;
 
     return Semantics(
       button: canActivate,
@@ -715,7 +740,7 @@ class _PaginationItemShell extends StatelessWidget {
         cursor: canActivate ? SystemMouseCursors.click : MouseCursor.defer,
         onEnter: (_) => onHoverChanged?.call(true),
         onExit: (_) => onHoverChanged?.call(false),
-        child: activatableContent,
+        child: focusableContent,
       ),
     );
   }
