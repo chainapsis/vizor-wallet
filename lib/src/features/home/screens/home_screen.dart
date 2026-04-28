@@ -20,6 +20,9 @@ import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../../activity/activity_row_mapper.dart';
+import '../../activity/models/activity_row_data.dart';
+import '../../activity/widgets/activity_table.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -63,20 +66,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     return '$whole.${frac.substring(0, 2)}';
   }
-
-  String _formatSignedZec(BigInt zatoshi) {
-    final isPositive = zatoshi >= BigInt.zero;
-    final abs = zatoshi.abs();
-    final whole = abs ~/ BigInt.from(100000000);
-    final frac = (abs % BigInt.from(100000000)).toString().padLeft(8, '0');
-    final digits = whole == BigInt.zero && int.parse(frac) < 1000000
-        ? frac
-        : frac.substring(0, 2);
-    final sign = isPositive ? '+' : '-';
-    return '$sign$whole.$digits ZEC';
-  }
-
-  String _formatZecWithUnit(BigInt zatoshi) => '${_formatZec(zatoshi)} ZEC';
 
   void _toggleBalanceVisibility() {
     setState(() {
@@ -221,8 +210,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               canShieldBalance: canShieldTransparentBalance,
               isShieldingBalance: _isShieldingBalance,
               shieldBalanceError: _shieldBalanceError,
-              formatZec: _formatZecWithUnit,
-              formatSignedZec: _formatSignedZec,
               onToggleBalanceVisibility: _toggleBalanceVisibility,
               onShieldBalancePressed: () =>
                   unawaited(_shieldTransparentBalance()),
@@ -238,25 +225,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     );
   }
-
-  static String _monthName(int month) {
-    const months = [
-      '',
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return months[month];
-  }
 }
 
 class _HomePane extends StatefulWidget {
@@ -270,8 +238,6 @@ class _HomePane extends StatefulWidget {
     required this.canShieldBalance,
     required this.isShieldingBalance,
     required this.shieldBalanceError,
-    required this.formatZec,
-    required this.formatSignedZec,
     required this.onToggleBalanceVisibility,
     required this.onShieldBalancePressed,
     required this.onDismissShieldBalanceError,
@@ -289,8 +255,6 @@ class _HomePane extends StatefulWidget {
   final bool canShieldBalance;
   final bool isShieldingBalance;
   final String? shieldBalanceError;
-  final String Function(BigInt zatoshi) formatZec;
-  final String Function(BigInt zatoshi) formatSignedZec;
   final VoidCallback onToggleBalanceVisibility;
   final VoidCallback onShieldBalancePressed;
   final VoidCallback onDismissShieldBalanceError;
@@ -400,7 +364,16 @@ class _HomePaneState extends State<_HomePane> {
                           _HomeNoticeCard(data: notice),
                         ],
                         const SizedBox(height: AppSpacing.sm),
-                        _HomeActivitySection(rows: rows),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs,
+                          ),
+                          child: ActivityTable(
+                            rows: rows,
+                            title: 'Recent Activity',
+                            onTitleTap: () => context.push('/history'),
+                          ),
+                        ),
                         const SizedBox(height: AppSpacing.sm),
                       ],
                     ),
@@ -450,169 +423,13 @@ class _HomePaneState extends State<_HomePane> {
     return null;
   }
 
-  List<_HomeActivityRowData> _activityRows(BuildContext context) {
-    return [
-      _syncActivityRow(context),
-      ...widget.sync.recentTransactions
-          .take(6)
-          .map((tx) => _transactionActivityRow(context, tx)),
-    ];
-  }
-
-  _HomeActivityRowData _syncActivityRow(BuildContext context) {
-    final colors = context.colors;
-
-    if (widget.sync.error != null) {
-      return _HomeActivityRowData(
-        title: 'Wallet Synced',
-        leadingIconName: AppIcons.sync,
-        leadingBackgroundColor: colors.background.neutralSubtleOpacity,
-        leadingIconColor: colors.icon.regular,
-        amountText: 'Retry',
-        amountColor: colors.text.warning,
-        statusText: 'Failed',
-        statusIconName: AppIcons.skull,
-        statusColor: colors.text.destructive,
-        timestampText: _formatTimestamp(widget.sync.lastSyncFailedAt),
-        onTap: widget.onRetrySync,
-      );
-    }
-
-    if (widget.sync.isSyncing) {
-      final pct = (widget.sync.percentage * 100).toStringAsFixed(0);
-      return _HomeActivityRowData(
-        title: 'Wallet Synced',
-        leadingIconName: AppIcons.sync,
-        leadingBackgroundColor: colors.background.neutralSubtleOpacity,
-        leadingIconColor: colors.icon.regular,
-        subtitle: widget.sync.phase.isEmpty
-            ? null
-            : _capitalize(widget.sync.phase),
-        amountText: '$pct%',
-        amountColor: colors.text.secondary,
-        statusText: 'In progress',
-        statusIconName: AppIcons.loader,
-        statusColor: colors.text.secondary,
-        timestampText: _formatTimestamp(widget.sync.lastSyncStartedAt),
-      );
-    }
-
-    return _HomeActivityRowData(
-      title: 'Wallet Synced',
-      leadingIconName: AppIcons.sync,
-      leadingBackgroundColor: colors.background.neutralSubtleOpacity,
-      leadingIconColor: colors.icon.regular,
-      amountText: widget.formatZec(widget.sync.totalBalance),
-      amountColor: colors.text.accent,
-      statusText: 'Completed',
-      statusColor: colors.text.secondary,
-      timestampText: _formatTimestamp(widget.sync.lastSyncCompletedAt),
+  List<ActivityRowData> _activityRows(BuildContext context) {
+    return buildActivityRows(
+      context: context,
+      sync: widget.sync,
+      transactions: widget.sync.recentTransactions.take(6),
+      onRetrySync: widget.onRetrySync,
     );
-  }
-
-  _HomeActivityRowData _transactionActivityRow(
-    BuildContext context,
-    rust_sync.TransactionInfo tx,
-  ) {
-    final colors = context.colors;
-    final isPending = tx.minedHeight == BigInt.zero && !tx.expiredUnmined;
-    final isFailed = tx.expiredUnmined;
-    final kind = tx.txKind;
-    final amount = tx.displayAmount;
-    final isReceived = kind == 'received';
-    final isSent = kind == 'sent';
-    final isShielded = kind == 'shielded';
-    final signedAmount = isSent ? -amount : amount;
-    final subtitle = isReceived || isSent ? _poolLabel(tx.displayPool) : null;
-
-    return _HomeActivityRowData(
-      title: _txTitle(kind),
-      leadingIconName: _txIcon(kind),
-      leadingBackgroundColor: colors.background.neutralSubtleOpacity,
-      leadingIconColor: colors.icon.regular,
-      subtitle: subtitle,
-      subtitleIconName: tx.displayPool == 'shielded'
-          ? AppIcons.shieldKeyholeOutline
-          : null,
-      amountText: amount == BigInt.zero
-          ? '--'
-          : isShielded || kind == 'internal'
-          ? widget.formatZec(amount)
-          : widget.formatSignedZec(signedAmount),
-      amountColor: isFailed
-          ? colors.text.muted
-          : isReceived
-          ? colors.text.brandCrimson
-          : colors.text.accent,
-      statusText: isFailed
-          ? 'Failed'
-          : isPending
-          ? 'In progress'
-          : 'Completed',
-      statusIconName: isFailed
-          ? AppIcons.skull
-          : isPending
-          ? AppIcons.loader
-          : null,
-      statusColor: isFailed ? colors.text.destructive : colors.text.secondary,
-      timestampText: _formatTimestamp(_txTimestamp(tx)),
-    );
-  }
-
-  String _txTitle(String kind) {
-    return switch (kind) {
-      'received' => 'Received',
-      'sent' => 'Sent',
-      'shielded' => 'Shielded',
-      'internal' => 'Internal',
-      _ => 'Transaction',
-    };
-  }
-
-  String _txIcon(String kind) {
-    return switch (kind) {
-      'received' => AppIcons.arrowDownCircle,
-      'sent' => AppIcons.plane,
-      'shielded' => AppIcons.shieldAsset,
-      'internal' => AppIcons.sync,
-      _ => AppIcons.history,
-    };
-  }
-
-  String? _poolLabel(String pool) {
-    return switch (pool) {
-      'transparent' => 'Transparent',
-      'shielded' => 'Shielded',
-      'mixed' => 'Mixed',
-      _ => null,
-    };
-  }
-
-  DateTime? _txTimestamp(rust_sync.TransactionInfo tx) {
-    final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
-    if (seconds <= BigInt.zero) return null;
-    return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
-  }
-
-  String _formatTimestamp(DateTime? timestamp) {
-    if (timestamp == null) return '--';
-    final now = DateTime.now();
-    final local = timestamp.toLocal();
-    final today = DateTime(now.year, now.month, now.day);
-    final date = DateTime(local.year, local.month, local.day);
-    final time =
-        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-
-    if (date == today) return 'Today, $time';
-    if (date == today.subtract(const Duration(days: 1))) {
-      return 'Yesterday, $time';
-    }
-    return '${_HomeScreenState._monthName(local.month)} ${local.day}, $time';
-  }
-
-  String _capitalize(String value) {
-    if (value.isEmpty) return value;
-    return '${value[0].toUpperCase()}${value.substring(1)}';
   }
 }
 
@@ -1119,380 +936,6 @@ class _HomeNoticeCard extends StatelessWidget {
             size: AppButtonSize.small,
             trailing: const AppIcon(AppIcons.chevronForward),
             child: Text(data.actionLabel),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HomeActivitySection extends StatelessWidget {
-  const _HomeActivitySection({required this.rows});
-
-  final List<_HomeActivityRowData> rows;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => context.push('/history'),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.xxs),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Recent Activity',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                    AppIcon(
-                      AppIcons.chevronForward,
-                      size: 16,
-                      color: colors.icon.accent,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          const _HomeActivityTableHeader(),
-          const SizedBox(height: AppSpacing.s),
-          for (var i = 0; i < rows.length; i++) ...[
-            _HomeActivityRow(row: rows[i]),
-            if (i != rows.length - 1) ...[
-              const SizedBox(height: AppSpacing.xs),
-              const _HomeActivityDivider(),
-              const SizedBox(height: AppSpacing.xs),
-            ],
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _HomeActivityTableHeader extends StatelessWidget {
-  const _HomeActivityTableHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final style = AppTypography.labelMedium.copyWith(color: colors.text.muted);
-    return SizedBox(
-      height: 32,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-        child: _HomeActivityColumnLayout(
-          txType: Text('Tx Type', style: style),
-          amount: Text('Amount', style: style),
-          status: Text('Status', style: style),
-          timestamp: Text('Time Stamp', textAlign: TextAlign.end, style: style),
-        ),
-      ),
-    );
-  }
-}
-
-const double _homeActivityLeftCellWidth = 190;
-const double _homeActivityMiddleCellWidth = 160;
-const double _homeActivityRightCellWidth = 140;
-const double _homeActivityFixedColumnsWidth =
-    _homeActivityLeftCellWidth +
-    (_homeActivityMiddleCellWidth * 2) +
-    _homeActivityRightCellWidth;
-
-class _HomeActivityDivider extends StatelessWidget {
-  const _HomeActivityDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(height: 1, color: context.colors.border.subtle);
-  }
-}
-
-class _HomeActivityColumnLayout extends StatelessWidget {
-  const _HomeActivityColumnLayout({
-    required this.txType,
-    required this.amount,
-    required this.status,
-    required this.timestamp,
-  });
-
-  final Widget txType;
-  final Widget amount;
-  final Widget status;
-  final Widget timestamp;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final useFixedColumns =
-            constraints.maxWidth >= _homeActivityFixedColumnsWidth;
-        if (useFixedColumns) {
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _HomeActivityCell(
-                width: _homeActivityLeftCellWidth,
-                child: txType,
-              ),
-              _HomeActivityCell(
-                width: _homeActivityMiddleCellWidth,
-                child: amount,
-              ),
-              _HomeActivityCell(
-                width: _homeActivityMiddleCellWidth,
-                child: status,
-              ),
-              _HomeActivityCell(
-                width: _homeActivityRightCellWidth,
-                alignEnd: true,
-                child: timestamp,
-              ),
-            ],
-          );
-        }
-
-        return Row(
-          children: [
-            _HomeActivityCell(flex: 190, child: txType),
-            _HomeActivityCell(flex: 160, child: amount),
-            _HomeActivityCell(flex: 160, child: status),
-            _HomeActivityCell(flex: 140, alignEnd: true, child: timestamp),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _HomeActivityCell extends StatelessWidget {
-  const _HomeActivityCell({
-    required this.child,
-    this.width,
-    this.flex,
-    this.alignEnd = false,
-  });
-
-  final Widget child;
-  final double? width;
-  final int? flex;
-  final bool alignEnd;
-
-  @override
-  Widget build(BuildContext context) {
-    final content = Align(
-      alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
-      child: child,
-    );
-    final width = this.width;
-    if (width != null) {
-      return SizedBox(width: width, child: content);
-    }
-    return Expanded(flex: flex ?? 1, child: content);
-  }
-}
-
-class _StatusLabel extends StatelessWidget {
-  const _StatusLabel({required this.row});
-
-  final _HomeActivityRowData row;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (row.statusIconName != null) ...[
-          AppIcon(
-            row.statusIconName!,
-            size: 16,
-            color: row.statusColor ?? colors.text.secondary,
-          ),
-          const SizedBox(width: AppSpacing.xxs),
-        ],
-        Text(
-          row.statusText,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelMedium.copyWith(
-            color: row.statusColor ?? colors.text.secondary,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _HomeActivityRowData {
-  const _HomeActivityRowData({
-    required this.title,
-    required this.leadingIconName,
-    required this.leadingBackgroundColor,
-    required this.leadingIconColor,
-    this.subtitle,
-    this.subtitleIconName,
-    required this.amountText,
-    this.amountColor,
-    required this.statusText,
-    required this.timestampText,
-    this.statusIconName,
-    this.statusColor,
-    this.onTap,
-  });
-
-  final String title;
-  final String leadingIconName;
-  final Color leadingBackgroundColor;
-  final Color leadingIconColor;
-  final String? subtitle;
-  final String? subtitleIconName;
-  final String amountText;
-  final Color? amountColor;
-  final String statusText;
-  final String timestampText;
-  final String? statusIconName;
-  final Color? statusColor;
-  final VoidCallback? onTap;
-}
-
-class _HomeActivityRow extends StatelessWidget {
-  const _HomeActivityRow({required this.row});
-
-  final _HomeActivityRowData row;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final content = Container(
-      height: 48,
-      padding: const EdgeInsets.all(AppSpacing.xxs),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: _HomeActivityColumnLayout(
-        txType: Row(
-          children: [
-            _ActivityAvatar(row: row),
-            const SizedBox(width: AppSpacing.s),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    row.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                  if (row.subtitle != null)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (row.subtitleIconName != null) ...[
-                          AppIcon(
-                            row.subtitleIconName!,
-                            size: 16,
-                            color: colors.icon.brandCrimson,
-                          ),
-                          const SizedBox(width: AppSpacing.xxs),
-                        ],
-                        Flexible(
-                          child: Text(
-                            row.subtitle!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.labelMedium.copyWith(
-                              color: row.subtitleIconName == null
-                                  ? colors.text.secondary
-                                  : colors.text.brandCrimson,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        amount: Text(
-          row.amountText,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelMedium.copyWith(
-            color: row.amountColor ?? colors.text.accent,
-          ),
-        ),
-        status: _StatusLabel(row: row),
-        timestamp: Text(
-          row.timestampText,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.end,
-          style: AppTypography.labelMedium.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
-      ),
-    );
-
-    if (row.onTap == null) return content;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: row.onTap,
-        child: content,
-      ),
-    );
-  }
-}
-
-class _ActivityAvatar extends StatelessWidget {
-  const _ActivityAvatar({required this.row});
-
-  final _HomeActivityRowData row;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 32,
-      height: 32,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: row.leadingBackgroundColor,
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: AppIcon(
-                  row.leadingIconName,
-                  size: 16,
-                  color: row.leadingIconColor,
-                ),
-              ),
-            ),
           ),
         ],
       ),
