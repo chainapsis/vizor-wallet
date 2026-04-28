@@ -263,7 +263,9 @@ class _SidebarAccountSelectorButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final backgroundColor = (isOpen || isHovered) ? colors.surface.input : null;
+    final backgroundColor = (isOpen || isHovered)
+        ? colors.state.selectedOpacity
+        : null;
     final textColor = colors.text.accent;
     final iconColor = colors.icon.accent;
 
