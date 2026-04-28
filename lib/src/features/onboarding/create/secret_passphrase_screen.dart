@@ -417,15 +417,15 @@ class _SeedPhraseCard extends StatelessWidget {
                     padding: const EdgeInsets.all(AppSpacing.lg),
                     child: IgnorePointer(
                       ignoring: !revealed,
-                      child: ImageFiltered(
-                        imageFilter: ImageFilter.blur(
-                          sigmaX: hiddenBlurSigma,
-                          sigmaY: hiddenBlurSigma,
-                        ),
-                        child: revealed
-                            ? _SeedGrid(mnemonic: value)
-                            : _HiddenContents(mnemonic: value),
-                      ),
+                      child: revealed
+                          ? _SeedGrid(mnemonic: value)
+                          : ImageFiltered(
+                              imageFilter: ImageFilter.blur(
+                                sigmaX: hiddenBlurSigma,
+                                sigmaY: hiddenBlurSigma,
+                              ),
+                              child: const _HiddenContents(),
+                            ),
                     ),
                   ),
                 ),
@@ -518,13 +518,47 @@ class _CopyButton extends StatelessWidget {
 }
 
 class _HiddenContents extends StatelessWidget {
-  const _HiddenContents({required this.mnemonic});
-
-  final String mnemonic;
+  const _HiddenContents();
 
   @override
   Widget build(BuildContext context) {
-    return _SeedGrid(mnemonic: mnemonic);
+    return ExcludeSemantics(
+      child: Opacity(opacity: 0.7, child: const _SeedPlaceholderGrid()),
+    );
+  }
+}
+
+class _SeedPlaceholderGrid extends StatelessWidget {
+  const _SeedPlaceholderGrid();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Secret Passphrase',
+          style: AppTypography.bodyLarge.copyWith(
+            color: colors.text.accent,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.base),
+        Wrap(
+          spacing: AppSpacing.xxs,
+          runSpacing: AppSpacing.xs,
+          children: [
+            for (var i = 0; i < 24; i++)
+              AppChip(
+                width: 90,
+                leadingText: '${i + 1}'.padLeft(2, '0'),
+                label: '------',
+              ),
+          ],
+        ),
+      ],
+    );
   }
 }
 
