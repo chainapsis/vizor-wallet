@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_flow_args.dart';
@@ -26,6 +25,9 @@ class _ImportSecretPassphraseScreenState
     extends ConsumerState<ImportSecretPassphraseScreen> {
   static const _wordCount = 24;
   static const _gridWidth = 588.0;
+  static const _titleWidth = 504.0;
+  static const _subtitleWidth = 343.0;
+  static const _buttonWidth = 256.0;
 
   late final List<TextEditingController> _controllers;
   late final List<FocusNode> _focusNodes;
@@ -202,30 +204,27 @@ class _ImportSecretPassphraseScreenState
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: _handleBack,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AppIcon(
-                        AppIcons.chevronBackward,
-                        size: AppIconSize.medium,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppIcon(
+                      AppIcons.chevronBackward,
+                      size: AppIconSize.medium,
+                      color: colors.text.accent,
+                    ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    Text(
+                      'Back',
+                      style: AppTypography.labelLarge.copyWith(
                         color: colors.text.accent,
                       ),
-                      const SizedBox(width: AppSpacing.xxs),
-                      Text(
-                        'Back',
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.xxs),
+          const SizedBox(height: AppSpacing.s),
           Expanded(
             child: Column(
               children: [
@@ -235,86 +234,86 @@ class _ImportSecretPassphraseScreenState
                       padding: const EdgeInsets.symmetric(
                         vertical: AppSpacing.s,
                       ),
-                      child: SingleChildScrollView(
-                        child: SizedBox(
-                          width: 640,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Welcome, Adventurer',
-                                style: AppTypography.displaySmall.copyWith(
-                                  color: colors.text.accent,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: AppSpacing.s),
-                              Text(
-                                'Import your wallet by entering your Secret Passphrase.',
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: colors.text.accent,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: AppSpacing.s),
-                              const AppDecorativeDivider(width: 256),
-                              const SizedBox(height: 16),
-                              SizedBox(
-                                width: _gridWidth,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: AppSpacing.s,
-                                  ),
-                                  child: Wrap(
-                                    alignment: WrapAlignment.center,
-                                    spacing: AppSpacing.xs,
-                                    runSpacing: AppSpacing.xs,
-                                    children: List.generate(
-                                      _wordCount,
-                                      (index) => _MnemonicWordCell(
-                                        index: index,
-                                        controller: _controllers[index],
-                                        focusNode: _focusNodes[index],
-                                        destructive:
-                                            _showValidationError &&
-                                            _controllers[index].text
-                                                .trim()
-                                                .isNotEmpty,
-                                        autofocus: index == 0,
-                                        onChanged: (value) =>
-                                            _handleWordChanged(index, value),
-                                        onSubmitted: (_) {
-                                          if (index == _wordCount - 1) {
-                                            _submit();
-                                          } else {
-                                            _focusIndex(index + 1);
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (_errorText != null) ...[
-                                const SizedBox(height: AppSpacing.s),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: _titleWidth,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
                                 Text(
-                                  _errorText!,
-                                  style: AppTypography.bodyMedium.copyWith(
-                                    color: colors.text.destructive,
+                                  'Welcome, Adventurer',
+                                  style: AppTypography.displayLarge.copyWith(
+                                    color: colors.text.accent,
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
+                                const SizedBox(height: AppSpacing.sm),
+                                SizedBox(
+                                  width: _subtitleWidth,
+                                  child: Text(
+                                    'Import your wallet by entering your Secret Passphrase.',
+                                    style: AppTypography.bodyMedium.copyWith(
+                                      color: colors.text.accent,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
                               ],
-                            ],
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: AppSpacing.lg),
+                          SizedBox(
+                            width: _gridWidth,
+                            child: Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: AppSpacing.s,
+                              runSpacing: AppSpacing.s,
+                              children: List.generate(
+                                _wordCount,
+                                (index) => _MnemonicWordCell(
+                                  index: index,
+                                  controller: _controllers[index],
+                                  focusNode: _focusNodes[index],
+                                  destructive:
+                                      _showValidationError &&
+                                      _controllers[index].text
+                                          .trim()
+                                          .isNotEmpty,
+                                  autofocus: index == 0,
+                                  onChanged: (value) =>
+                                      _handleWordChanged(index, value),
+                                  onSubmitted: (_) {
+                                    if (index == _wordCount - 1) {
+                                      _submit();
+                                    } else {
+                                      _focusIndex(index + 1);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (_errorText != null) ...[
+                            const SizedBox(height: AppSpacing.s),
+                            Text(
+                              _errorText!,
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: colors.text.destructive,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ),
                 ),
+                const SizedBox(height: AppSpacing.md),
                 AppButton(
                   onPressed: _canSubmit ? _submit : null,
-                  minWidth: 256,
+                  minWidth: _buttonWidth,
                   trailing: const AppIcon(AppIcons.chevronForward),
                   child: Text(_isSubmitting ? 'Importing...' : 'Import'),
                 ),
@@ -504,7 +503,7 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: colors.surface.input,
+                      color: colors.background.base,
                       borderRadius: BorderRadius.circular(AppRadii.xSmall),
                       border: Border.all(
                         color: borderColor,

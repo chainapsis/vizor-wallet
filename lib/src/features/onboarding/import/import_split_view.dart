@@ -59,6 +59,7 @@ class ImportOnboardingShell extends StatelessWidget {
     );
 
     return AppDesktopShell(
+      sidebarWidth: 256,
       sidebar: SlideTransition(
         position: Tween<Offset>(
           begin: const Offset(-1, 0),
@@ -113,13 +114,13 @@ class _Sidebar extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (var i = 0; i < _steps.length; i++) ...[
-                    AppSidebarItem(
+                    _ImportSidebarItem(
                       label: _steps[i].label,
                       iconName: _steps[i].iconName,
                       active: _steps[i] == activeStep,
                     ),
                     if (i != _steps.length - 1)
-                      const SizedBox(height: AppSpacing.xxs),
+                      const SizedBox(height: AppSpacing.xs),
                   ],
                 ],
               ),
@@ -131,18 +132,57 @@ class _Sidebar extends StatelessWidget {
   }
 }
 
+class _ImportSidebarItem extends StatelessWidget {
+  const _ImportSidebarItem({
+    required this.label,
+    required this.iconName,
+    required this.active,
+  });
+
+  final String label;
+  final String iconName;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: active ? colors.state.selectedOpacity : null,
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
+      padding: const EdgeInsets.only(
+        left: AppSpacing.xs,
+        top: AppSpacing.xs,
+        bottom: AppSpacing.xs,
+      ),
+      child: Row(
+        children: [
+          AppIcon(iconName, size: 20, color: colors.icon.accent),
+          const SizedBox(width: AppSpacing.s),
+          Text(
+            label,
+            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SidebarIllustration extends StatelessWidget {
   const _SidebarIllustration();
 
-  static const _frameWidth = 240.0;
-  static const _frameHeight = 411.0;
+  static const _frameWidth = 256.0;
+  static const _frameHeight = 405.0;
 
   @override
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = isDark
-        ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_dark.png'
-        : 'assets/illustrations/onboarding_secret_passphrase_sidebar_light.png';
+        ? 'assets/illustrations/onboarding_intro_sidebar_dark.png'
+        : 'assets/illustrations/onboarding_intro_sidebar_light.png';
     return IgnorePointer(
       child: Align(
         alignment: Alignment.bottomCenter,
