@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../security/password_policy.dart';
@@ -10,14 +11,21 @@ const kWalletDbNameKey = 'zcash_wallet_db_name';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';
 const _passwordVerifierKey = 'zcash_password_verifier';
 const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
+const _passwordRotationInProgressKey = 'zcash_rotation_in_progress';
+const _accountMnemonicKeyPrefix = 'zcash_account_mnemonic_';
 const _secureStoreService = 'com.keplr.vizor.secure_store';
 
 class AppSecureStore {
-  AppSecureStore._();
+  AppSecureStore._({FlutterSecureStorage storage = _defaultStorage})
+    : _storage = storage;
+
+  @visibleForTesting
+  AppSecureStore.testing({required FlutterSecureStorage storage})
+    : _storage = storage;
 
   static final AppSecureStore instance = AppSecureStore._();
 
-  static const _storage = FlutterSecureStorage(
+  static const _defaultStorage = FlutterSecureStorage(
     iOptions: IOSOptions(
       accountName: _secureStoreService,
       accessibility: KeychainAccessibility.first_unlock,
@@ -36,8 +44,9 @@ class AppSecureStore {
     bits: 256,
   );
 
-  static SecretKey? _cachedSecretKey;
-  static String? _sessionPassword;
+  final FlutterSecureStorage _storage;
+  SecretKey? _cachedSecretKey;
+  String? _sessionPassword;
 
   bool get hasSessionPassword => _sessionPassword != null;
 
@@ -138,7 +147,7 @@ class AppSecureStore {
   }
 
   Future<void> configurePassword(String password) async {
-    final error = validateWalletPassword(password);
+    final error = validateRequiredWalletPassword(password);
     if (error != null) {
       throw ArgumentError(error);
     }
@@ -149,9 +158,111 @@ class AppSecureStore {
     setSessionPassword(password);
   }
 
+  /// Rotates the wallet password and re-encrypts every app-managed encrypted
+  /// secure-storage payload so mnemonic entries remain readable afterwards.
+  Future<bool> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (!isWalletPasswordValid(currentPassword)) {
+      return false;
+    }
+    if (currentPassword == newPassword) {
+      throw ArgumentError(kWalletPasswordMustDifferMessage);
+    }
+    final newPasswordError = validateRequiredWalletPassword(newPassword);
+    if (newPasswordError != null) {
+      throw ArgumentError(newPasswordError);
+    }
+
+    final isCurrentPasswordValid = await verifyPasswordOnly(currentPassword);
+    if (!isCurrentPasswordValid) {
+      return false;
+    }
+
+    final oldVerifierSalt = await readPlain(_passwordVerifierSaltKey);
+    final oldVerifier = await readPlain(_passwordVerifierKey);
+    final currentSecretKey = await _deriveSecretKeyForPassword(currentPassword);
+    final newSecretKey = await _deriveSecretKeyForPassword(newPassword);
+    try {
+      final storedValues = await _storage.readAll();
+      final rotatedSecrets = <_PasswordRotationEntry>[];
+
+      for (final entry in storedValues.entries) {
+        if (!entry.key.startsWith(_accountMnemonicKeyPrefix)) continue;
+
+        final payload = _EncryptedPayload.tryParse(entry.value);
+        if (payload == null) continue;
+
+        final clearText = await _decryptPayloadForKey(
+          entry.key,
+          payload,
+          currentSecretKey,
+        );
+        final rotatedValue = await _encryptStringWithKey(
+          clearText,
+          newSecretKey,
+        );
+        rotatedSecrets.add(
+          _PasswordRotationEntry(
+            key: entry.key,
+            originalValue: entry.value,
+            rotatedValue: rotatedValue,
+          ),
+        );
+      }
+
+      final newVerifierSalt = _randomBytes(16);
+      final newVerifier = await _derivePasswordVerifier(
+        newPassword,
+        newVerifierSalt,
+      );
+
+      final rotation = _PasswordRotationRecord(
+        oldVerifierSalt: oldVerifierSalt,
+        oldVerifier: oldVerifier,
+        newVerifierSalt: base64Encode(newVerifierSalt),
+        newVerifier: newVerifier,
+        entries: rotatedSecrets,
+      );
+      await writePlain(_passwordRotationInProgressKey, rotation.serialize());
+
+      try {
+        await _writeRotatedPasswordState(rotation);
+      } catch (error, stackTrace) {
+        await _rollbackPasswordRotation(rotation, currentPassword);
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+
+      setSessionPassword(newPassword);
+      await _deleteRotationRecordBestEffort();
+    } finally {
+      currentSecretKey.destroy();
+      newSecretKey.destroy();
+    }
+
+    return true;
+  }
+
+  Future<void> recoverInterruptedPasswordRotation() async {
+    final raw = await readPlain(_passwordRotationInProgressKey);
+    if (raw == null || raw.isEmpty) return;
+
+    final rotation = _PasswordRotationRecord.tryParse(raw);
+    if (rotation == null) {
+      await delete(_passwordRotationInProgressKey);
+      throw StateError('Password rotation recovery record is invalid.');
+    }
+
+    await _writeRotatedPasswordState(rotation);
+    await _deleteRotationRecordBestEffort();
+    clearSessionPassword();
+  }
+
   Future<void> clearPasswordConfiguration() async {
     await delete(_passwordVerifierSaltKey);
     await delete(_passwordVerifierKey);
+    await delete(_passwordRotationInProgressKey);
     clearSessionPassword();
   }
 
@@ -214,6 +325,58 @@ class AppSecureStore {
     return key;
   }
 
+  Future<SecretKey> _deriveSecretKeyForPassword(String password) async {
+    final salt = await _getOrCreateSalt();
+    return _kdf.deriveKeyFromPassword(password: password, nonce: salt);
+  }
+
+  Future<String> _decryptPayload(
+    _EncryptedPayload payload,
+    SecretKey secretKey,
+  ) async {
+    final clearText = await _cipher.decrypt(
+      SecretBox(
+        payload.cipherText,
+        nonce: payload.nonce,
+        mac: Mac(payload.mac),
+      ),
+      secretKey: secretKey,
+    );
+    return utf8.decode(clearText);
+  }
+
+  Future<String> _decryptPayloadForKey(
+    String key,
+    _EncryptedPayload payload,
+    SecretKey secretKey,
+  ) async {
+    try {
+      return await _decryptPayload(payload, secretKey);
+    } catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        StateError('Failed to decrypt secure-storage value for "$key": $error'),
+        stackTrace,
+      );
+    }
+  }
+
+  Future<String> _encryptStringWithKey(
+    String value,
+    SecretKey secretKey,
+  ) async {
+    final nonce = _randomBytes(12);
+    final secretBox = await _cipher.encrypt(
+      utf8.encode(value),
+      secretKey: secretKey,
+      nonce: nonce,
+    );
+    return _EncryptedPayload(
+      nonce: secretBox.nonce,
+      cipherText: secretBox.cipherText,
+      mac: secretBox.mac.bytes,
+    ).serialize();
+  }
+
   Future<String> _derivePasswordVerifier(
     String password,
     List<int> salt,
@@ -222,7 +385,65 @@ class AppSecureStore {
       password: password,
       nonce: salt,
     );
-    return base64Encode(await key.extractBytes());
+    try {
+      return base64Encode(await key.extractBytes());
+    } finally {
+      key.destroy();
+    }
+  }
+
+  Future<void> _writeRotatedPasswordState(
+    _PasswordRotationRecord rotation,
+  ) async {
+    for (final entry in rotation.entries) {
+      await writePlain(entry.key, entry.rotatedValue);
+    }
+    await writePlain(_passwordVerifierSaltKey, rotation.newVerifierSalt);
+    await writePlain(_passwordVerifierKey, rotation.newVerifier);
+  }
+
+  Future<void> _rollbackPasswordRotation(
+    _PasswordRotationRecord rotation,
+    String currentPassword,
+  ) async {
+    try {
+      final rollbackRecord = rotation.toRollbackRecord();
+      if (rollbackRecord != null) {
+        await writePlain(
+          _passwordRotationInProgressKey,
+          rollbackRecord.serialize(),
+        );
+      }
+      for (final entry in rotation.entries) {
+        await writePlain(entry.key, entry.originalValue);
+      }
+      if (rotation.oldVerifierSalt == null) {
+        await delete(_passwordVerifierSaltKey);
+      } else {
+        await writePlain(_passwordVerifierSaltKey, rotation.oldVerifierSalt!);
+      }
+      if (rotation.oldVerifier == null) {
+        await delete(_passwordVerifierKey);
+      } else {
+        await writePlain(_passwordVerifierKey, rotation.oldVerifier!);
+      }
+      setSessionPassword(currentPassword);
+      await _deleteRotationRecordBestEffort();
+    } catch (rollbackError, rollbackStackTrace) {
+      debugPrint(
+        'AppSecureStore: rollback failed: $rollbackError\n$rollbackStackTrace',
+      );
+    }
+  }
+
+  Future<void> _deleteRotationRecordBestEffort() async {
+    try {
+      await delete(_passwordRotationInProgressKey);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppSecureStore: failed to delete rotation record: $error\n$stackTrace',
+      );
+    }
   }
 
   Future<List<int>> _getOrCreateSalt() async {
@@ -248,6 +469,104 @@ class AppSecureStore {
       buffer.write(byte.toRadixString(16).padLeft(2, '0'));
     }
     return buffer.toString();
+  }
+}
+
+class _PasswordRotationEntry {
+  const _PasswordRotationEntry({
+    required this.key,
+    required this.originalValue,
+    required this.rotatedValue,
+  });
+
+  final String key;
+  final String originalValue;
+  final String rotatedValue;
+}
+
+class _PasswordRotationRecord {
+  const _PasswordRotationRecord({
+    required this.oldVerifierSalt,
+    required this.oldVerifier,
+    required this.newVerifierSalt,
+    required this.newVerifier,
+    required this.entries,
+  });
+
+  final String? oldVerifierSalt;
+  final String? oldVerifier;
+  final String newVerifierSalt;
+  final String newVerifier;
+  final List<_PasswordRotationEntry> entries;
+
+  String serialize() {
+    return jsonEncode({
+      'v': 1,
+      'oldVerifierSalt': oldVerifierSalt,
+      'oldVerifier': oldVerifier,
+      'newVerifierSalt': newVerifierSalt,
+      'newVerifier': newVerifier,
+      'entries': entries
+          .map(
+            (entry) => {
+              'key': entry.key,
+              'originalValue': entry.originalValue,
+              'rotatedValue': entry.rotatedValue,
+            },
+          )
+          .toList(),
+    });
+  }
+
+  static _PasswordRotationRecord? tryParse(String raw) {
+    try {
+      final json = jsonDecode(raw);
+      if (json is! Map<String, dynamic>) return null;
+      if (json['v'] != 1) return null;
+
+      final entriesJson = json['entries'];
+      if (entriesJson is! List) return null;
+
+      return _PasswordRotationRecord(
+        oldVerifierSalt: json['oldVerifierSalt'] as String?,
+        oldVerifier: json['oldVerifier'] as String?,
+        newVerifierSalt: json['newVerifierSalt'] as String,
+        newVerifier: json['newVerifier'] as String,
+        entries: entriesJson
+            .map(
+              (entry) => _PasswordRotationEntry(
+                key: (entry as Map<String, dynamic>)['key'] as String,
+                originalValue: entry['originalValue'] as String,
+                rotatedValue: entry['rotatedValue'] as String,
+              ),
+            )
+            .toList(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _PasswordRotationRecord? toRollbackRecord() {
+    final oldSalt = oldVerifierSalt;
+    final oldPasswordVerifier = oldVerifier;
+    if (oldSalt == null || oldPasswordVerifier == null) return null;
+
+    return _PasswordRotationRecord(
+      oldVerifierSalt: newVerifierSalt,
+      oldVerifier: newVerifier,
+      newVerifierSalt: oldSalt,
+      newVerifier: oldPasswordVerifier,
+      entries: entries
+          .map(
+            (entry) => _PasswordRotationEntry(
+              key: entry.key,
+              originalValue: entry.rotatedValue,
+              rotatedValue: entry.originalValue,
+            ),
+          )
+          .toList(),
+    );
   }
 }
 

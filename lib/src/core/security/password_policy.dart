@@ -3,6 +3,7 @@ const kWalletPasswordMinLengthMessage =
     'Password must be at least 8 characters.';
 const kWalletPasswordAsciiMessage =
     'Use only English letters, numbers, and symbols.';
+const kWalletPasswordMustDifferMessage = 'Use a different password.';
 
 bool isWalletPasswordAsciiOnly(String value) {
   return value.runes.every((rune) => rune >= 0x21 && rune <= 0x7E);
@@ -17,6 +18,11 @@ String? validateWalletPassword(String value) {
     return kWalletPasswordMinLengthMessage;
   }
   return null;
+}
+
+String? validateRequiredWalletPassword(String value) {
+  if (value.isEmpty) return kWalletPasswordMinLengthMessage;
+  return validateWalletPassword(value);
 }
 
 bool isWalletPasswordValid(String value) {

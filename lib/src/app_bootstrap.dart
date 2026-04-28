@@ -107,6 +107,11 @@ Future<AppBootstrapState> loadAppBootstrap() async {
   try {
     log('bootstrap: loading startup snapshot');
     await storage.ensureWalletDbName();
+    try {
+      await storage.recoverInterruptedPasswordRotation();
+    } catch (e) {
+      log('bootstrap: failed to recover password rotation: $e');
+    }
     final network = await storage.readString(_networkKey) ?? 'main';
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;

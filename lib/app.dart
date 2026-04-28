@@ -31,6 +31,7 @@ import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
 import 'src/features/settings/screens/settings_screen.dart';
+import 'src/features/settings/screens/settings_change_password_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
@@ -346,6 +347,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings/secret-passphrase',
         builder: (_, _) => const SettingsSeedPhraseScreen(),
+      ),
+      GoRoute(
+        path: '/settings/change-password',
+        builder: (_, _) => const SettingsChangePasswordScreen(),
       ),
     ],
   );

@@ -48,7 +48,7 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     if (_isPasswordSetupPrepared) {
       throw StateError('Password setup is already pending.');
     }
-    final error = validateWalletPassword(password);
+    final error = validateRequiredWalletPassword(password);
     if (error != null) {
       throw ArgumentError(error);
     }
@@ -93,6 +93,32 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
       return false;
     }
     return _store.verifyPasswordOnly(password);
+  }
+
+  /// Changes the wallet password without using the setup path. The store must
+  /// rotate encrypted secure-storage payloads before the verifier is updated.
+  Future<bool> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (!state.isUnlocked) {
+      throw StateError('Wallet must be unlocked to change the password.');
+    }
+    if (currentPassword == newPassword) {
+      throw ArgumentError(kWalletPasswordMustDifferMessage);
+    }
+    final newPasswordError = validateRequiredWalletPassword(newPassword);
+    if (newPasswordError != null) {
+      throw ArgumentError(newPasswordError);
+    }
+    final didChange = await _store.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+    if (didChange) {
+      state = state.copyWith(isPasswordConfigured: true, isUnlocked: true);
+    }
+    return didChange;
   }
 
   void lock() {

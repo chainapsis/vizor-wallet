@@ -39,6 +39,7 @@ class SettingsScreen extends ConsumerWidget {
           themeLabel: _themeLabel(themeMode),
           onBack: () => _handleBack(context),
           onSeedPhrase: () => context.go('/settings/secret-passphrase'),
+          onChangePassword: () => context.go('/settings/change-password'),
         ),
       ),
     );
@@ -76,6 +77,7 @@ class _SettingsPane extends StatelessWidget {
     required this.themeLabel,
     required this.onBack,
     required this.onSeedPhrase,
+    required this.onChangePassword,
   });
 
   final String accountName;
@@ -84,6 +86,7 @@ class _SettingsPane extends StatelessWidget {
   final String themeLabel;
   final VoidCallback onBack;
   final VoidCallback onSeedPhrase;
+  final VoidCallback onChangePassword;
 
   @override
   Widget build(BuildContext context) {
@@ -123,6 +126,7 @@ class _SettingsPane extends StatelessWidget {
                         endpointLabel: endpointLabel,
                         themeLabel: themeLabel,
                         onSeedPhrase: onSeedPhrase,
+                        onChangePassword: onChangePassword,
                       ),
                     ],
                   ),
@@ -182,6 +186,7 @@ class _SettingsList extends StatelessWidget {
     required this.endpointLabel,
     required this.themeLabel,
     required this.onSeedPhrase,
+    required this.onChangePassword,
   });
 
   final String accountName;
@@ -189,6 +194,7 @@ class _SettingsList extends StatelessWidget {
   final String endpointLabel;
   final String themeLabel;
   final VoidCallback onSeedPhrase;
+  final VoidCallback onChangePassword;
 
   @override
   Widget build(BuildContext context) {
@@ -205,10 +211,11 @@ class _SettingsList extends StatelessWidget {
               onTap: activeAccountIsHardware ? null : onSeedPhrase,
             ),
             const _SettingsRowDivider(),
-            const _SettingsRow(
+            _SettingsRow(
               iconName: AppIcons.lock,
               label: 'Password',
               value: 'Change',
+              onTap: onChangePassword,
             ),
             const _SettingsRowDivider(),
             const _SettingsRow(
