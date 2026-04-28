@@ -487,6 +487,7 @@ class ActivityTablePagination extends StatelessWidget {
             page == null
                 ? const _PaginationEllipsis()
                 : _PaginationPageButton(
+                    key: ValueKey<int>(page),
                     page: page,
                     selected: page == currentPage,
                     onTap: () => onPageChanged?.call(page),
@@ -522,6 +523,15 @@ class _PaginationIconButton extends StatefulWidget {
 class _PaginationIconButtonState extends State<_PaginationIconButton> {
   bool _hovered = false;
   bool _focused = false;
+
+  @override
+  void didUpdateWidget(covariant _PaginationIconButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled != widget.enabled) {
+      _hovered = false;
+      _focused = false;
+    }
+  }
 
   void _handleHoverChanged(bool value) {
     if (_hovered == value) return;
@@ -570,6 +580,7 @@ class _PaginationPageButton extends StatefulWidget {
     required this.page,
     required this.selected,
     required this.onTap,
+    super.key,
   });
 
   final int page;
@@ -583,6 +594,16 @@ class _PaginationPageButton extends StatefulWidget {
 class _PaginationPageButtonState extends State<_PaginationPageButton> {
   bool _hovered = false;
   bool _focused = false;
+
+  @override
+  void didUpdateWidget(covariant _PaginationPageButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.page != widget.page ||
+        oldWidget.selected != widget.selected) {
+      _hovered = false;
+      _focused = false;
+    }
+  }
 
   void _handleHoverChanged(bool value) {
     if (_hovered == value) return;
@@ -665,24 +686,36 @@ class _PaginationItemShell extends StatelessWidget {
       child: child,
     );
 
-    if (!enabled || onTap == null) return content;
+    final tracksPointer = enabled && onHoverChanged != null;
+    final canActivate = enabled && onTap != null;
+
+    if (!tracksPointer && !canActivate) return content;
+
+    final activatableContent = canActivate
+        ? FocusableActionDetector(
+            mouseCursor: SystemMouseCursors.click,
+            onShowFocusHighlight: onFocusChanged,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                onFocusChanged?.call(false);
+                onHoverChanged?.call(false);
+                onTap?.call();
+              },
+              child: content,
+            ),
+          )
+        : content;
 
     return Semantics(
-      button: true,
+      button: canActivate,
       selected: selected,
       child: MouseRegion(
-        cursor: SystemMouseCursors.click,
+        cursor: canActivate ? SystemMouseCursors.click : MouseCursor.defer,
         onEnter: (_) => onHoverChanged?.call(true),
         onExit: (_) => onHoverChanged?.call(false),
-        child: FocusableActionDetector(
-          mouseCursor: SystemMouseCursors.click,
-          onShowFocusHighlight: onFocusChanged,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onTap,
-            child: content,
-          ),
-        ),
+        child: activatableContent,
       ),
     );
   }
