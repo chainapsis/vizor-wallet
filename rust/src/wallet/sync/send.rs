@@ -68,8 +68,8 @@ use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
 
 use super::{
-    open_readonly_conn, open_wallet_db, open_wallet_db_for_read, StoredProposal, WalletDatabase,
-    PROPOSAL_STORE,
+    consume_stored_proposal, open_readonly_conn, open_wallet_db, open_wallet_db_for_read,
+    StoredProposal, WalletDatabase, PROPOSAL_STORE,
 };
 
 /// Result of a successful [`propose_send`]. `proposal_id` is the
@@ -109,11 +109,16 @@ pub fn propose_send(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
+    send_flow_id: &str,
     to_address: &str,
     amount_zatoshi: u64,
     memo_str: Option<&str>,
 ) -> Result<ProposalResult, String> {
     use zcash_protocol::{PoolType, ShieldedProtocol as SP};
+
+    if send_flow_id.is_empty() {
+        return Err("Send flow id is required".to_string());
+    }
 
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
@@ -171,6 +176,7 @@ pub fn propose_send(
             proposal,
             network,
             account_id,
+            send_flow_id: send_flow_id.to_string(),
         },
     );
 
@@ -355,19 +361,17 @@ pub async fn execute_proposal(
     db_path: &str,
     lightwalletd_url: &str,
     proposal_id: u64,
+    send_flow_id: &str,
     seed_bytes: &[u8],
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<String, String> {
-    let mut store = PROPOSAL_STORE
-        .lock()
-        .map_err(|e| format!("Lock error: {e}"))?;
-    let stored = store
-        .proposals
-        .remove(&proposal_id)
-        .ok_or("Proposal not found (expired or already executed)")?;
+    let stored = consume_stored_proposal(
+        proposal_id,
+        send_flow_id,
+        "Proposal not found (expired or already executed)",
+    )?;
     let network = stored.network;
-    drop(store);
 
     // Scope DB writes and seed/USK so they are dropped before network I/O (broadcast).
     let txids = with_wallet_db_write_lock("send.execute_proposal.create_transactions", || {

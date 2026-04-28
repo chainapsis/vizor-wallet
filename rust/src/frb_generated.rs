@@ -183,6 +183,7 @@ fn wire__crate__api__sync__create_pczt_from_proposal_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_proposal_id = <u64>::sse_decode(&mut deserializer);
+            let api_send_flow_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -190,6 +191,7 @@ fn wire__crate__api__sync__create_pczt_from_proposal_impl(
                         api_db_path,
                         api_network,
                         api_proposal_id,
+                        api_send_flow_id,
                     )?;
                     Ok(output_ok)
                 })())
@@ -502,11 +504,12 @@ fn wire__crate__api__sync__discard_proposal_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_proposal_id = <u64>::sse_decode(&mut deserializer);
+            let api_send_flow_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, ()>((move || {
                     let output_ok = Result::<_, ()>::Ok({
-                        crate::api::sync::discard_proposal(api_proposal_id);
+                        crate::api::sync::discard_proposal(api_proposal_id, api_send_flow_id);
                     })?;
                     Ok(output_ok)
                 })())
@@ -697,6 +700,7 @@ fn wire__crate__api__sync__execute_proposal_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             let api_proposal_id = <u64>::sse_decode(&mut deserializer);
+            let api_send_flow_id = <String>::sse_decode(&mut deserializer);
             let api_seed = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_spend_params_path = <Option<String>>::sse_decode(&mut deserializer);
             let api_output_params_path = <Option<String>>::sse_decode(&mut deserializer);
@@ -707,6 +711,7 @@ fn wire__crate__api__sync__execute_proposal_impl(
                         api_db_path,
                         api_lightwalletd_url,
                         api_proposal_id,
+                        api_send_flow_id,
                         api_seed,
                         api_spend_params_path,
                         api_output_params_path,
@@ -1603,6 +1608,7 @@ fn wire__crate__api__sync__propose_send_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
+            let api_send_flow_id = <String>::sse_decode(&mut deserializer);
             let api_to_address = <String>::sse_decode(&mut deserializer);
             let api_amount_zatoshi = <u64>::sse_decode(&mut deserializer);
             let api_memo = <Option<String>>::sse_decode(&mut deserializer);
@@ -1613,6 +1619,7 @@ fn wire__crate__api__sync__propose_send_impl(
                         api_db_path,
                         api_network,
                         api_account_uuid,
+                        api_send_flow_id,
                         api_to_address,
                         api_amount_zatoshi,
                         api_memo,

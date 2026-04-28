@@ -75,7 +75,7 @@ use zcash_proofs::prover::LocalTxProver;
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::network::WalletNetwork;
 
-use super::{open_wallet_db, PROPOSAL_STORE};
+use super::{consume_stored_proposal, discard_stored_proposal, open_wallet_db};
 
 /// Create a PCZT from a stored proposal (for hardware wallet signing).
 ///
@@ -91,20 +91,18 @@ pub fn create_pczt_from_proposal(
     db_path: &str,
     network: WalletNetwork,
     proposal_id: u64,
+    send_flow_id: &str,
 ) -> Result<Vec<u8>, String> {
     use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
     use zcash_client_backend::wallet::OvkPolicy;
 
     // Consume the proposal up-front (matches execute_proposal), so
     // that any later failure path leaves the PROPOSAL_STORE clean.
-    let stored = {
-        let mut store = PROPOSAL_STORE.lock().map_err(|e| format!("Lock: {e}"))?;
-        store
-            .proposals
-            .remove(&proposal_id)
-            .ok_or("Proposal not found (expired or already consumed)")?
-        // lock dropped here, before heavy work
-    };
+    let stored = consume_stored_proposal(
+        proposal_id,
+        send_flow_id,
+        "Proposal not found (expired or already consumed)",
+    )?;
 
     let pczt = with_wallet_db_write_lock("pczt.create_pczt_from_proposal", || {
         let mut db = open_wallet_db(db_path, network)?;
@@ -127,10 +125,8 @@ pub fn create_pczt_from_proposal(
 /// dialog, cancels the Sapling params download prompt). Idempotent:
 /// safe to call for a proposal that has already been consumed or
 /// never existed.
-pub fn discard_proposal(proposal_id: u64) {
-    if let Ok(mut store) = PROPOSAL_STORE.lock() {
-        store.proposals.remove(&proposal_id);
-    }
+pub fn discard_proposal(proposal_id: u64, send_flow_id: &str) {
+    discard_stored_proposal(proposal_id, send_flow_id);
 }
 
 /// Add Orchard (and, if needed, Sapling) proofs to a PCZT locally.

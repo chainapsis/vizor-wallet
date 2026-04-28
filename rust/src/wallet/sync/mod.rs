@@ -364,6 +364,7 @@ pub(super) struct StoredProposal {
     >,
     pub network: WalletNetwork,
     pub account_id: AccountUuid,
+    pub send_flow_id: String,
 }
 
 pub(super) static PROPOSAL_STORE: std::sync::LazyLock<Mutex<ProposalStore>> =
@@ -377,6 +378,49 @@ pub(super) static PROPOSAL_STORE: std::sync::LazyLock<Mutex<ProposalStore>> =
 pub(super) struct ProposalStore {
     pub proposals: HashMap<u64, StoredProposal>,
     pub next_id: u64,
+}
+
+pub(super) fn consume_stored_proposal(
+    proposal_id: u64,
+    send_flow_id: &str,
+    not_found_message: &str,
+) -> Result<StoredProposal, String> {
+    let mut store = PROPOSAL_STORE
+        .lock()
+        .map_err(|e| format!("Lock error: {e}"))?;
+
+    match store.proposals.get(&proposal_id) {
+        Some(stored) if stored.send_flow_id == send_flow_id => {}
+        Some(_) => {
+            log::warn!("proposal store: send flow mismatch for proposal_id={proposal_id}");
+            return Err("Send flow mismatch".to_string());
+        }
+        None => return Err(not_found_message.to_string()),
+    }
+
+    store
+        .proposals
+        .remove(&proposal_id)
+        .ok_or_else(|| not_found_message.to_string())
+}
+
+pub(super) fn discard_stored_proposal(proposal_id: u64, send_flow_id: &str) {
+    match PROPOSAL_STORE.lock() {
+        Ok(mut store) => match store.proposals.get(&proposal_id) {
+            Some(stored) if stored.send_flow_id == send_flow_id => {
+                store.proposals.remove(&proposal_id);
+            }
+            Some(_) => {
+                log::warn!(
+                    "proposal store: discard ignored for send flow mismatch proposal_id={proposal_id}"
+                );
+            }
+            None => {}
+        },
+        Err(e) => {
+            log::warn!("proposal store: discard lock failed: {e}");
+        }
+    }
 }
 
 // ======================== Helpers ========================
@@ -422,8 +466,8 @@ mod tests {
     fn discard_proposal_is_idempotent_for_missing_id() {
         // Should not panic, should not poison the mutex.
         let id = unique_proposal_id();
-        discard_proposal(id);
-        discard_proposal(id); // second call must also be a no-op
+        discard_proposal(id, "missing-flow");
+        discard_proposal(id, "missing-flow"); // second call must also be a no-op
     }
 
     #[test]
@@ -439,6 +483,7 @@ mod tests {
             "/nonexistent/path/that/should/not/exist.db",
             WalletNetwork::Main,
             id,
+            "missing-flow",
         );
 
         match result {
@@ -463,7 +508,8 @@ mod tests {
             "/nonexistent/path/that/should/not/exist.db",
             WalletNetwork::Main,
             id,
+            "missing-flow",
         );
-        discard_proposal(id); // cleanup must not panic
+        discard_proposal(id, "missing-flow"); // cleanup must not panic
     }
 }

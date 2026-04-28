@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -81,6 +82,14 @@ class _MaxQuote {
   final BigInt amountZatoshi;
 }
 
+String _newSendFlowId() {
+  final random = math.Random.secure();
+  return List<int>.generate(
+    16,
+    (_) => random.nextInt(256),
+  ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+}
+
 class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldOverlayReserve = 20.0;
   static const _singleLineFieldGap = AppSpacing.xs;
@@ -93,6 +102,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   final _amountFocusNode = FocusNode();
   final _memoFocusNode = FocusNode();
   final _memoScrollController = ScrollController();
+  late final String _sendFlowId = _newSendFlowId();
   bool _isSending = false;
   bool _messageExpanded = false;
   String? _error;
@@ -479,7 +489,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     if (lower.contains('broadcast rejected')) {
       return 'Transaction was rejected by the network. Please try again.';
     }
-    if (lower.contains('proposal not found')) {
+    if (lower.contains('proposal not found') ||
+        lower.contains('send flow mismatch')) {
       return 'Transaction expired. Please try again.';
     }
     return 'Send failed. Please try again.';
@@ -558,6 +569,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         dbPath: dbPath,
         network: 'main',
         accountUuid: accountUuid,
+        sendFlowId: _sendFlowId,
         toAddress: address,
         amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
@@ -573,6 +585,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         '/send/review',
         extra: SendReviewArgs(
           proposalId: proposal.proposalId,
+          sendFlowId: _sendFlowId,
           proposalAccountUuid: accountUuid,
           address: address,
           addressType: _addressType,
@@ -592,7 +605,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     } finally {
       if (activeProposalId != null && !pushedReview) {
         try {
-          await rust_sync.discardProposal(proposalId: activeProposalId);
+          await rust_sync.discardProposal(
+            proposalId: activeProposalId,
+            sendFlowId: _sendFlowId,
+          );
           log('Send: released proposal $activeProposalId (review not opened)');
         } catch (e) {
           log('Send: discardProposal cleanup failed (non-critical): $e');

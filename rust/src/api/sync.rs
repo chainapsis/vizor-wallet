@@ -590,6 +590,7 @@ pub fn propose_send(
     db_path: String,
     network: String,
     account_uuid: String,
+    send_flow_id: String,
     to_address: String,
     amount_zatoshi: u64,
     memo: Option<String>,
@@ -600,6 +601,7 @@ pub fn propose_send(
             &db_path,
             network,
             &account_uuid,
+            &send_flow_id,
             &to_address,
             amount_zatoshi,
             memo.as_deref(),
@@ -665,6 +667,7 @@ pub fn execute_proposal(
     db_path: String,
     lightwalletd_url: String,
     proposal_id: u64,
+    send_flow_id: String,
     seed: Vec<u8>,
     spend_params_path: Option<String>,
     output_params_path: Option<String>,
@@ -675,6 +678,7 @@ pub fn execute_proposal(
             &db_path,
             &lightwalletd_url,
             proposal_id,
+            &send_flow_id,
             &seed,
             spend_params_path.as_deref(),
             output_params_path.as_deref(),
@@ -853,18 +857,19 @@ pub fn create_pczt_from_proposal(
     db_path: String,
     network: String,
     proposal_id: u64,
+    send_flow_id: String,
 ) -> Result<Vec<u8>, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        wallet_sync::create_pczt_from_proposal(&db_path, network, proposal_id)
+        wallet_sync::create_pczt_from_proposal(&db_path, network, proposal_id, &send_flow_id)
     })
 }
 
 /// Release a stored proposal without executing it. Called by the Dart send
 /// flow when the user cancels before `create_pczt_from_proposal` so the
 /// proposal ID cannot be replayed. Idempotent.
-pub fn discard_proposal(proposal_id: u64) {
-    wallet_sync::discard_proposal(proposal_id);
+pub fn discard_proposal(proposal_id: u64, send_flow_id: String) {
+    wallet_sync::discard_proposal(proposal_id, &send_flow_id);
 }
 
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output

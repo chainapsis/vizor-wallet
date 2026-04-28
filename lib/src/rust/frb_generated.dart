@@ -101,6 +101,7 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String network,
     required BigInt proposalId,
+    required String sendFlowId,
   });
 
   Future<WalletCreationResult> crateApiWalletCreateWallet({
@@ -138,7 +139,10 @@ abstract class RustLibApi extends BaseApi {
 
   Future<Uint8List> crateApiWalletDeriveSeed({required String mnemonic});
 
-  Future<void> crateApiSyncDiscardProposal({required BigInt proposalId});
+  Future<void> crateApiSyncDiscardProposal({
+    required BigInt proposalId,
+    required String sendFlowId,
+  });
 
   Future<String> crateApiKeystoneEncodePcztToUr({required List<int> pcztBytes});
 
@@ -168,6 +172,7 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String lightwalletdUrl,
     required BigInt proposalId,
+    required String sendFlowId,
     required List<int> seed,
     String? spendParamsPath,
     String? outputParamsPath,
@@ -288,6 +293,7 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String network,
     required String accountUuid,
+    required String sendFlowId,
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
@@ -504,6 +510,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String network,
     required BigInt proposalId,
+    required String sendFlowId,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -512,6 +519,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
           sse_encode_u_64(proposalId, serializer);
+          sse_encode_String(sendFlowId, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -524,7 +532,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncCreatePcztFromProposalConstMeta,
-        argValues: [dbPath, network, proposalId],
+        argValues: [dbPath, network, proposalId, sendFlowId],
         apiImpl: this,
       ),
     );
@@ -533,7 +541,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncCreatePcztFromProposalConstMeta =>
       const TaskConstMeta(
         debugName: "create_pczt_from_proposal",
-        argNames: ["dbPath", "network", "proposalId"],
+        argNames: ["dbPath", "network", "proposalId", "sendFlowId"],
       );
 
   @override
@@ -807,12 +815,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "derive_seed", argNames: ["mnemonic"]);
 
   @override
-  Future<void> crateApiSyncDiscardProposal({required BigInt proposalId}) {
+  Future<void> crateApiSyncDiscardProposal({
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_64(proposalId, serializer);
+          sse_encode_String(sendFlowId, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -825,7 +837,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: null,
         ),
         constMeta: kCrateApiSyncDiscardProposalConstMeta,
-        argValues: [proposalId],
+        argValues: [proposalId, sendFlowId],
         apiImpl: this,
       ),
     );
@@ -834,7 +846,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncDiscardProposalConstMeta =>
       const TaskConstMeta(
         debugName: "discard_proposal",
-        argNames: ["proposalId"],
+        argNames: ["proposalId", "sendFlowId"],
       );
 
   @override
@@ -1007,6 +1019,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String lightwalletdUrl,
     required BigInt proposalId,
+    required String sendFlowId,
     required List<int> seed,
     String? spendParamsPath,
     String? outputParamsPath,
@@ -1018,6 +1031,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
           sse_encode_u_64(proposalId, serializer);
+          sse_encode_String(sendFlowId, serializer);
           sse_encode_list_prim_u_8_loose(seed, serializer);
           sse_encode_opt_String(spendParamsPath, serializer);
           sse_encode_opt_String(outputParamsPath, serializer);
@@ -1037,6 +1051,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           dbPath,
           lightwalletdUrl,
           proposalId,
+          sendFlowId,
           seed,
           spendParamsPath,
           outputParamsPath,
@@ -1053,6 +1068,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "dbPath",
           "lightwalletdUrl",
           "proposalId",
+          "sendFlowId",
           "seed",
           "spendParamsPath",
           "outputParamsPath",
@@ -1872,6 +1888,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String network,
     required String accountUuid,
+    required String sendFlowId,
     required String toAddress,
     required BigInt amountZatoshi,
     String? memo,
@@ -1883,6 +1900,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
+          sse_encode_String(sendFlowId, serializer);
           sse_encode_String(toAddress, serializer);
           sse_encode_u_64(amountZatoshi, serializer);
           sse_encode_opt_String(memo, serializer);
@@ -1902,6 +1920,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           dbPath,
           network,
           accountUuid,
+          sendFlowId,
           toAddress,
           amountZatoshi,
           memo,
@@ -1917,6 +1936,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       "dbPath",
       "network",
       "accountUuid",
+      "sendFlowId",
       "toAddress",
       "amountZatoshi",
       "memo",

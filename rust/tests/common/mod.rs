@@ -174,10 +174,12 @@ pub fn execute_send(
     to_address: &str,
     amount_zatoshi: u64,
 ) -> String {
+    let send_flow_id = "regtest-send-flow";
     let proposal = sync_api::propose_send(
         path_str(db_path),
         REGTEST_NETWORK.into(),
         sender_account_uuid.into(),
+        send_flow_id.into(),
         to_address.into(),
         amount_zatoshi,
         None,
@@ -199,6 +201,7 @@ pub fn execute_send(
         path_str(db_path),
         LIGHTWALLETD_URL.into(),
         proposal.proposal_id,
+        send_flow_id.into(),
         seed,
         sapling_params.as_ref().map(|p| p.spend_path.clone()),
         sapling_params.as_ref().map(|p| p.output_path.clone()),

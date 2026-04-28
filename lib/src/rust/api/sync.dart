@@ -205,6 +205,7 @@ Future<ProposalResult> proposeSend({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required String sendFlowId,
   required String toAddress,
   required BigInt amountZatoshi,
   String? memo,
@@ -212,6 +213,7 @@ Future<ProposalResult> proposeSend({
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
   toAddress: toAddress,
   amountZatoshi: amountZatoshi,
   memo: memo,
@@ -255,6 +257,7 @@ Future<String> executeProposal({
   required String dbPath,
   required String lightwalletdUrl,
   required BigInt proposalId,
+  required String sendFlowId,
   required List<int> seed,
   String? spendParamsPath,
   String? outputParamsPath,
@@ -262,6 +265,7 @@ Future<String> executeProposal({
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   proposalId: proposalId,
+  sendFlowId: sendFlowId,
   seed: seed,
   spendParamsPath: spendParamsPath,
   outputParamsPath: outputParamsPath,
@@ -357,17 +361,24 @@ Future<Uint8List> createPcztFromProposal({
   required String dbPath,
   required String network,
   required BigInt proposalId,
+  required String sendFlowId,
 }) => RustLib.instance.api.crateApiSyncCreatePcztFromProposal(
   dbPath: dbPath,
   network: network,
   proposalId: proposalId,
+  sendFlowId: sendFlowId,
 );
 
 /// Release a stored proposal without executing it. Called by the Dart send
 /// flow when the user cancels before `create_pczt_from_proposal` so the
 /// proposal ID cannot be replayed. Idempotent.
-Future<void> discardProposal({required BigInt proposalId}) =>
-    RustLib.instance.api.crateApiSyncDiscardProposal(proposalId: proposalId);
+Future<void> discardProposal({
+  required BigInt proposalId,
+  required String sendFlowId,
+}) => RustLib.instance.api.crateApiSyncDiscardProposal(
+  proposalId: proposalId,
+  sendFlowId: sendFlowId,
+);
 
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output
 /// is the "PCZT with proofs" half that is later combined with the signed PCZT

@@ -18,6 +18,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 class SendReviewArgs {
   const SendReviewArgs({
     required this.proposalId,
+    required this.sendFlowId,
     required this.proposalAccountUuid,
     required this.address,
     required this.addressType,
@@ -28,6 +29,7 @@ class SendReviewArgs {
   });
 
   final BigInt proposalId;
+  final String sendFlowId;
   final String proposalAccountUuid;
   final String address;
   final String addressType;
@@ -71,7 +73,10 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     _discardScheduled = true;
     unawaited(
       rust_sync
-          .discardProposal(proposalId: widget.args.proposalId)
+          .discardProposal(
+            proposalId: widget.args.proposalId,
+            sendFlowId: widget.args.sendFlowId,
+          )
           .then((_) {
             log('SendReview: released proposal ${widget.args.proposalId}');
           })

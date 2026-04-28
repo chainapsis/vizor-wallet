@@ -70,7 +70,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     _discardScheduled = true;
     unawaited(
       rust_sync
-          .discardProposal(proposalId: widget.args.proposalId)
+          .discardProposal(
+            proposalId: widget.args.proposalId,
+            sendFlowId: widget.args.sendFlowId,
+          )
           .then((_) {
             log(
               'SendStatus: released proposal ${widget.args.proposalId} on dispose',
@@ -102,7 +105,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     if (lower.contains('broadcast rejected')) {
       return 'Transaction was rejected by the network. Please try again later.';
     }
-    if (lower.contains('proposal not found')) {
+    if (lower.contains('proposal not found') ||
+        lower.contains('send flow mismatch')) {
       return 'Transaction expired before it could be sent.';
     }
     return 'Transaction could not be sent. Please return to your wallet and verify the latest status.';
@@ -264,7 +268,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     if (!_proposalConsumed && !_discardScheduled) {
       _discardScheduled = true;
       try {
-        await rust_sync.discardProposal(proposalId: widget.args.proposalId);
+        await rust_sync.discardProposal(
+          proposalId: widget.args.proposalId,
+          sendFlowId: widget.args.sendFlowId,
+        );
       } catch (e) {
         log(
           'SendStatus: discardProposal cleanup failed after unmount (non-critical): $e',
@@ -335,6 +342,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           dbPath: dbPath,
           network: ZcashNetwork.mainnet.name,
           proposalId: widget.args.proposalId,
+          sendFlowId: widget.args.sendFlowId,
         );
         _proposalConsumed = true;
 
@@ -393,6 +401,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           dbPath: dbPath,
           lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
           proposalId: widget.args.proposalId,
+          sendFlowId: widget.args.sendFlowId,
           seed: seedBytes,
           spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
           outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
@@ -431,7 +440,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       if (!mounted) {
         if (!_proposalConsumed) {
           try {
-            await rust_sync.discardProposal(proposalId: widget.args.proposalId);
+            await rust_sync.discardProposal(
+              proposalId: widget.args.proposalId,
+              sendFlowId: widget.args.sendFlowId,
+            );
           } catch (_) {}
         }
         return;
