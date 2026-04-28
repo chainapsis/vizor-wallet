@@ -231,7 +231,7 @@ abstract class RustLibApi extends BaseApi {
     required String network,
   });
 
-  Future<TransactionDetail> crateApiSyncGetTransactionDetail({
+  TransactionDetail crateApiSyncGetTransactionDetail({
     required String dbPath,
     required String network,
     required String accountUuid,
@@ -1459,28 +1459,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<TransactionDetail> crateApiSyncGetTransactionDetail({
+  TransactionDetail crateApiSyncGetTransactionDetail({
     required String dbPath,
     required String network,
     required String accountUuid,
     required String txidHex,
     required String txKind,
   }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(txidHex, serializer);
           sse_encode_String(txKind, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 30,
-            port: port_,
-          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 30)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_transaction_detail,

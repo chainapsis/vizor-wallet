@@ -223,7 +223,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-class _HomePane extends StatefulWidget {
+class _HomePane extends ConsumerStatefulWidget {
   const _HomePane({
     required this.sync,
     required this.canBackgroundSync,
@@ -259,10 +259,10 @@ class _HomePane extends StatefulWidget {
   final VoidCallback onRetrySync;
 
   @override
-  State<_HomePane> createState() => _HomePaneState();
+  ConsumerState<_HomePane> createState() => _HomePaneState();
 }
 
-class _HomePaneState extends State<_HomePane> {
+class _HomePaneState extends ConsumerState<_HomePane> {
   final ScrollController _scrollController = ScrollController();
   bool _isHovered = false;
   bool _canScroll = false;
@@ -430,13 +430,47 @@ class _HomePaneState extends State<_HomePane> {
   }
 
   void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
+    unawaited(_pushTransactionStatus(transaction));
+  }
+
+  Future<void> _pushTransactionStatus(
+    rust_sync.TransactionInfo transaction,
+  ) async {
+    final detail = await _loadTransactionDetail(transaction);
+    if (!mounted) return;
     context.push(
       '/activity/tx/${transaction.txidHex}',
       extra: ActivityTransactionStatusArgs(
         txidHex: transaction.txidHex,
         initialTransaction: transaction,
+        initialDetail: detail,
       ),
     );
+  }
+
+  Future<rust_sync.TransactionDetail?> _loadTransactionDetail(
+    rust_sync.TransactionInfo transaction,
+  ) async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return null;
+
+    try {
+      final dbPath = await getWalletDbPath();
+      if (!mounted ||
+          accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+        return null;
+      }
+      return rust_sync.getTransactionDetail(
+        dbPath: dbPath,
+        network: ZcashNetwork.mainnet.name,
+        accountUuid: accountUuid,
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+      );
+    } catch (e, st) {
+      log('HomeScreen: transaction detail load failed: $e\n$st');
+      return null;
+    }
   }
 }
 

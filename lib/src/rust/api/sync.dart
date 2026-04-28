@@ -353,7 +353,7 @@ Future<List<TransactionInfo>> getTransactionHistory({
   accountUuid: accountUuid,
 );
 
-Future<TransactionDetail> getTransactionDetail({
+TransactionDetail getTransactionDetail({
   required String dbPath,
   required String network,
   required String accountUuid,

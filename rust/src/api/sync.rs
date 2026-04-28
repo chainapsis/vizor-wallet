@@ -857,6 +857,7 @@ pub fn get_transaction_history(
     })
 }
 
+#[frb(sync)]
 pub fn get_transaction_detail(
     db_path: String,
     network: String,
