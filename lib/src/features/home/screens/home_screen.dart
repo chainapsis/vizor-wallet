@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
@@ -59,13 +60,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   String _formatZec(BigInt zatoshi) {
-    if (zatoshi == BigInt.zero) return '0.00';
-    final whole = zatoshi ~/ BigInt.from(100000000);
-    final frac = (zatoshi % BigInt.from(100000000)).toString().padLeft(8, '0');
-    if (whole == BigInt.zero && int.parse(frac) < 1000000) {
-      return '0.$frac';
-    }
-    return '$whole.${frac.substring(0, 2)}';
+    return formatZecAmount(zatoshi, minFractionDigits: 2);
   }
 
   void _toggleBalanceVisibility() {

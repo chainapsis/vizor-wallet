@@ -1,11 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -183,19 +183,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _memoError == null &&
       (_isShieldedAddress || _memoController.text.trim().isEmpty);
 
-  String _formatSpendableLabel(BigInt zatoshi) {
-    final whole = zatoshi ~/ BigInt.from(100000000);
-    final frac = (zatoshi % BigInt.from(100000000)).toString().padLeft(8, '0');
-
-    if (frac == '00000000') return whole.toString();
-    if (whole == BigInt.zero && int.parse(frac) < 1000000) {
-      return '0.${frac.replaceFirst(RegExp(r'0+$'), '')}';
-    }
-
-    final short = frac.substring(0, 2).replaceFirst(RegExp(r'0+$'), '');
-    return short.isEmpty ? whole.toString() : '$whole.$short';
-  }
-
   Future<void> _validateAmount() async {
     final seq = ++_validateSeq;
     final text = _amountController.text.trim();
@@ -206,15 +193,15 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       return;
     }
 
-    final zatoshi = _parseZecToZatoshi(text);
-    if (zatoshi == null || zatoshi <= 0) {
+    final zatoshi = parseZecAmount(text);
+    if (zatoshi == null || zatoshi <= BigInt.zero) {
       setState(() => _amountError = 'Invalid amount');
       return;
     }
 
     // Quick balance pre-check
     final spendable = widget.spendableBalance;
-    if (BigInt.from(zatoshi) > spendable) {
+    if (zatoshi > spendable) {
       setState(() => _amountError = 'Insufficient balance');
       return;
     }
@@ -243,16 +230,16 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         network: 'main',
         accountUuid: accountUuid,
         toAddress: address,
-        amountZatoshi: BigInt.from(zatoshi),
+        amountZatoshi: zatoshi,
         memo: memo.isNotEmpty ? memo : null,
       );
 
       // Stale check — new input arrived while awaiting
       if (!mounted || seq != _validateSeq) return;
 
-      final totalNeeded = BigInt.from(zatoshi) + fee;
+      final totalNeeded = zatoshi + fee;
       if (totalNeeded > spendable) {
-        final feeZec = _formatZec(fee);
+        final feeZec = formatZecAmount(fee);
         setState(
           () => _amountError = 'Insufficient balance (fee: $feeZec ZEC)',
         );
@@ -299,37 +286,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     return 'Send failed. Please try again.';
   }
 
-  String _formatZec(BigInt zatoshi) {
-    final abs = zatoshi.abs();
-    final whole = abs ~/ BigInt.from(100000000);
-    final frac = (abs % BigInt.from(100000000)).toString().padLeft(8, '0');
-    final sign = zatoshi < BigInt.zero ? '-' : '';
-    return '$sign$whole.$frac';
-  }
-
-  /// Parse a ZEC string to zatoshi without floating-point.
-  /// Handles: "1.5", ".01", "100", "0.00000001"
-  int? _parseZecToZatoshi(String input) {
-    var s = input.trim();
-    if (s.isEmpty) return null;
-    if (s.startsWith('.')) s = '0$s';
-
-    final parts = s.split('.');
-    if (parts.length > 2) return null;
-
-    final whole = int.tryParse(parts[0].isEmpty ? '0' : parts[0]);
-    if (whole == null || whole < 0) return null;
-
-    String frac = parts.length > 1 ? parts[1] : '';
-    if (frac.length > 8) frac = frac.substring(0, 8);
-    frac = frac.padRight(8, '0');
-
-    final fracInt = int.tryParse(frac);
-    if (fracInt == null) return null;
-
-    return whole * 100000000 + fracInt;
-  }
-
   Future<void> _openReview() async {
     setState(() {
       _isSending = true;
@@ -341,7 +297,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     try {
       final address = _addressController.text.trim();
-      final amountZatoshi = _parseZecToZatoshi(_amountController.text.trim());
+      final amountZatoshi = parseZecAmount(_amountController.text.trim());
 
       if (!_hasValidAddress) {
         setState(() {
@@ -351,7 +307,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
 
-      if (amountZatoshi == null || amountZatoshi <= 0) {
+      if (amountZatoshi == null || amountZatoshi <= BigInt.zero) {
         setState(() {
           _error = 'Invalid amount';
           _isSending = false;
@@ -369,7 +325,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
       // Check balance before proposing
       final spendable = widget.spendableBalance;
-      if (BigInt.from(amountZatoshi) > spendable) {
+      if (amountZatoshi > spendable) {
         setState(() {
           _error = 'Insufficient balance.';
           _isSending = false;
@@ -396,7 +352,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         network: 'main',
         accountUuid: accountUuid,
         toAddress: address,
-        amountZatoshi: BigInt.from(amountZatoshi),
+        amountZatoshi: amountZatoshi,
         memo: memo.isNotEmpty ? memo : null,
       );
       activeProposalId = proposal.proposalId;
@@ -413,7 +369,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
           proposalAccountUuid: accountUuid,
           address: address,
           addressType: _addressType,
-          amountZatoshi: BigInt.from(amountZatoshi),
+          amountZatoshi: amountZatoshi,
           feeZatoshi: proposal.feeZatoshi,
           memo: memo.isNotEmpty ? memo : null,
           needsSaplingParams: proposal.needsSaplingParams,
@@ -589,7 +545,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                                     : colors.icon.regular,
                                               ),
                                               rightSlot: Text(
-                                                'Max: ${_formatSpendableLabel(spendable)} ZEC',
+                                                'Max: ${formatZecAmount(spendable)} ZEC',
                                                 style: AppTypography.labelMedium
                                                     .copyWith(
                                                       color:
@@ -613,10 +569,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                                     decimal: true,
                                                   ),
                                               inputFormatters: [
-                                                FilteringTextInputFormatter.allow(
-                                                  RegExp(r'[\d.]'),
-                                                ),
-                                                _ZecAmountFormatter(),
+                                                const ZecAmountInputFormatter(),
                                               ],
                                               onChanged: (_) =>
                                                   _validateAmount(),
@@ -909,28 +862,5 @@ class _SendGlobalError extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-
-/// Enforces: one decimal point max, up to 8 fractional digits.
-class _ZecAmountFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final text = newValue.text;
-
-    // Allow empty
-    if (text.isEmpty) return newValue;
-
-    // Only one decimal point
-    if ('.'.allMatches(text).length > 1) return oldValue;
-
-    // Limit fractional digits to 8
-    final dotIndex = text.indexOf('.');
-    if (dotIndex != -1 && text.length - dotIndex - 1 > 8) return oldValue;
-
-    return newValue;
   }
 }

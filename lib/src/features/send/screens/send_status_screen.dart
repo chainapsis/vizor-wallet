@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -108,22 +109,11 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   }
 
   String _formatReceiptAmount(BigInt zatoshi) {
-    final whole = zatoshi ~/ BigInt.from(100000000);
-    final fraction =
-        ((zatoshi % BigInt.from(100000000)) ~/ BigInt.from(1000000))
-            .toString()
-            .padLeft(2, '0');
-    return '$whole,$fraction zec';
+    return '${formatZecAmount(zatoshi, minFractionDigits: 2)} zec';
   }
 
   String _formatFee(BigInt zatoshi) {
-    final whole = zatoshi ~/ BigInt.from(100000000);
-    var fraction = (zatoshi % BigInt.from(100000000)).toString().padLeft(
-      8,
-      '0',
-    );
-    fraction = fraction.replaceFirst(RegExp(r'0+$'), '');
-    return fraction.isEmpty ? '$whole' : '$whole.$fraction';
+    return formatZecAmount(zatoshi);
   }
 
   String _formatDate(DateTime value) {
