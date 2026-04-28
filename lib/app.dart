@@ -6,7 +6,7 @@ import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'main.dart' show log;
 import 'src/app_bootstrap.dart';
 import 'src/core/motion/onboarding_motion.dart';
-import 'src/core/theme/app_theme.dart';
+import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
@@ -407,20 +407,8 @@ class ZcashWalletApp extends ConsumerWidget {
       themeMode: themeMode,
       routerConfig: router,
       builder: (context, child) {
-        // Resolve themeMode intent → concrete brightness using the OS's
-        // current platformBrightness when mode is `system`. Rebuilds when
-        // either themeMode or platform brightness changes.
-        final platformBrightness = MediaQuery.platformBrightnessOf(context);
-        final brightness = switch (themeMode) {
-          ThemeMode.system => platformBrightness,
-          ThemeMode.dark => Brightness.dark,
-          ThemeMode.light => Brightness.light,
-        };
-        final appThemeData = brightness == Brightness.dark
-            ? AppThemeData.dark
-            : AppThemeData.light;
-        return AppTheme(
-          data: appThemeData,
+        return AppThemeHost(
+          themeMode: themeMode,
           // `DesktopWindowTitlebarSafeArea` pads the app content down past the macOS
           // titlebar area when the native full-size content view is
           // enabled, so traffic-light controls don't overlap UI. It is a

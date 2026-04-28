@@ -103,6 +103,9 @@ class AppSidebarItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final disabled = onTap == null && !active;
+    final iconColor = disabled ? colors.icon.disabled : colors.icon.accent;
+    final textColor = disabled ? colors.text.disabled : colors.text.accent;
     final row = AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
@@ -114,34 +117,29 @@ class AppSidebarItem extends StatelessWidget {
       ),
       child: Row(
         children: [
-          AppIcon(iconName, size: 20, color: colors.icon.accent),
+          AppIcon(iconName, size: 20, color: iconColor),
           const SizedBox(width: AppSpacing.s),
           Expanded(
             child: Text(
               label,
               overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.accent,
-              ),
+              style: AppTypography.labelLarge.copyWith(color: textColor),
             ),
           ),
         ],
       ),
     );
 
-    return Opacity(
-      opacity: active ? 1.0 : 0.5,
-      child: onTap == null
-          ? row
-          : MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onTap,
-                child: row,
-              ),
+    return onTap == null
+        ? row
+        : MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: row,
             ),
-    );
+          );
   }
 }
 
