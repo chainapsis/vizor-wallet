@@ -24,7 +24,7 @@ extension OnboardingStepX on OnboardingStep {
 
   String get iconName => switch (this) {
     OnboardingStep.intro => AppIcons.zcash,
-    OnboardingStep.addressTypes => AppIcons.shieldKeyhole,
+    OnboardingStep.addressTypes => AppIcons.shieldKeyholeOutline,
     OnboardingStep.thingsToKnow => AppIcons.crystalBall,
     OnboardingStep.secretPassphrase => AppIcons.key,
     OnboardingStep.setPassword => AppIcons.lock,
@@ -232,9 +232,7 @@ class _OnboardingSidebarItem extends StatelessWidget {
           const SizedBox(width: AppSpacing.s),
           Text(
             label,
-            style: AppTypography.labelLarge.copyWith(
-              color: colors.text.accent,
-            ),
+            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
           ),
         ],
       ),
