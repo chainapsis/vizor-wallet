@@ -190,7 +190,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
       final prevSig = _recentSignature(previous?.value);
       final nextSig = _recentSignature(next.value);
-      if (prevSig != nextSig && nextSig.isNotEmpty) {
+      if (prevSig != nextSig) {
         unawaited(_loadTransactions(resetPage: true));
       }
     });
