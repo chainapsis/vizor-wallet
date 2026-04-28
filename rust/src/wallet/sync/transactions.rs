@@ -234,205 +234,167 @@ pub fn get_transaction_history(
 
     // Open a separate read-only connection (WalletDb.conn is private).
     let conn = open_readonly_conn(db_path)?;
-    let sql = match limit {
-        Some(_) => {
-            "SELECT vt.txid, vt.mined_height, vt.expired_unmined, vt.account_balance_delta, \
-             COALESCE(vt.fee_paid, 0), COALESCE(vt.block_time, 0), \
-             EXISTS( \
-                 SELECT 1 \
-                 FROM v_tx_outputs txo \
-                 WHERE txo.txid = vt.txid \
-                   AND txo.output_pool = 0 \
-                   AND (txo.from_account_uuid = vt.account_uuid OR txo.to_account_uuid = vt.account_uuid) \
-             ) AS is_transparent, \
-             COALESCE(vt.total_spent, 0) AS total_spent, \
-             COALESCE(vt.total_received, 0) AS total_received, \
-             COALESCE(vt.is_shielding, 0) AS is_shielding, \
-             COALESCE(( \
-                 SELECT SUM(txo.value) \
-                 FROM v_tx_outputs txo \
-                 WHERE txo.txid = vt.txid \
-                   AND txo.from_account_uuid = vt.account_uuid \
-                   AND txo.to_account_uuid IS NULL \
-                   AND txo.is_change = 0 \
-             ), 0) AS external_sent_amount, \
-             COALESCE(( \
-                 SELECT SUM(txo.value) \
-                 FROM v_tx_outputs txo \
-                 WHERE txo.txid = vt.txid \
-                   AND txo.to_account_uuid = vt.account_uuid \
-                   AND txo.from_account_uuid IS NULL \
-                   AND txo.is_change = 0 \
-             ), 0) AS external_received_amount, \
-             EXISTS( \
-                 SELECT 1 \
-                 FROM v_tx_outputs txo \
-                 WHERE txo.txid = vt.txid \
-                   AND txo.output_pool = 0 \
-                   AND ( \
-                       (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
-                       OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
-                   ) \
-             ) AS display_has_transparent, \
-             EXISTS( \
-                 SELECT 1 \
-                 FROM v_tx_outputs txo \
-                 WHERE txo.txid = vt.txid \
-                   AND txo.output_pool IN (2, 3) \
-                   AND ( \
-                       (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
-                       OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
-                   ) \
-             ) AS display_has_shielded, \
-             CAST(COALESCE(strftime('%s', tx.created), 0) AS INTEGER) AS created_time \
-             FROM v_transactions vt \
-             LEFT JOIN transactions tx ON tx.txid = vt.txid \
-             WHERE vt.account_uuid = ?1 \
-               AND NOT ( \
-                   COALESCE(vt.is_shielding, 0) = 0 \
-                   AND COALESCE(vt.total_spent, 0) > 0 \
-                   AND COALESCE(vt.total_received, 0) > 0 \
-                   AND COALESCE(vt.account_balance_delta, 0) <= 0 \
-                   AND tx.created IS NOT NULL \
-                   AND NOT EXISTS ( \
-                       SELECT 1 \
-                       FROM v_tx_outputs txo \
-                       WHERE txo.txid = vt.txid \
-                         AND ( \
-                             (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
-                             OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
-                         ) \
-                   ) \
-                   AND EXISTS ( \
-                       SELECT 1 \
-                       FROM v_tx_outputs txo \
-                       WHERE txo.txid = vt.txid \
-                         AND txo.output_pool = 0 \
-                         AND txo.from_account_uuid = vt.account_uuid \
-                         AND txo.to_account_uuid = vt.account_uuid \
-                         AND txo.is_change = 0 \
-                   ) \
-                   AND EXISTS ( \
-                       SELECT 1 \
-                       FROM v_transactions sibling_vt \
-                       JOIN transactions sibling_tx ON sibling_tx.txid = sibling_vt.txid \
-                       WHERE sibling_vt.account_uuid = vt.account_uuid \
-                         AND sibling_vt.txid != vt.txid \
-                         AND sibling_tx.created = tx.created \
-                         AND COALESCE(sibling_vt.expiry_height, -1) = COALESCE(vt.expiry_height, -1) \
-                         AND EXISTS ( \
-                             SELECT 1 \
-                             FROM v_tx_outputs sibling_txo \
-                             WHERE sibling_txo.txid = sibling_vt.txid \
-                               AND sibling_txo.output_pool = 0 \
-                               AND sibling_txo.from_account_uuid = sibling_vt.account_uuid \
-                               AND sibling_txo.to_account_uuid IS NULL \
-                               AND sibling_txo.is_change = 0 \
-                         ) \
-                   ) \
-               ) \
-             ORDER BY COALESCE(vt.mined_height, 999999999) DESC, vt.tx_index DESC \
-             LIMIT ?2"
-        }
-        None => {
-            "SELECT vt.txid, vt.mined_height, vt.expired_unmined, vt.account_balance_delta, \
-             COALESCE(vt.fee_paid, 0), COALESCE(vt.block_time, 0), \
-             EXISTS( \
-                 SELECT 1 \
-                 FROM v_tx_outputs txo \
-                 WHERE txo.txid = vt.txid \
-                   AND txo.output_pool = 0 \
-                   AND (txo.from_account_uuid = vt.account_uuid OR txo.to_account_uuid = vt.account_uuid) \
-             ) AS is_transparent, \
-             COALESCE(vt.total_spent, 0) AS total_spent, \
-             COALESCE(vt.total_received, 0) AS total_received, \
-             COALESCE(vt.is_shielding, 0) AS is_shielding, \
-             COALESCE(( \
-                 SELECT SUM(txo.value) \
-                 FROM v_tx_outputs txo \
-                 WHERE txo.txid = vt.txid \
-                   AND txo.from_account_uuid = vt.account_uuid \
-                   AND txo.to_account_uuid IS NULL \
-                   AND txo.is_change = 0 \
-             ), 0) AS external_sent_amount, \
-             COALESCE(( \
-                 SELECT SUM(txo.value) \
-                 FROM v_tx_outputs txo \
-                 WHERE txo.txid = vt.txid \
-                   AND txo.to_account_uuid = vt.account_uuid \
-                   AND txo.from_account_uuid IS NULL \
-                   AND txo.is_change = 0 \
-             ), 0) AS external_received_amount, \
-             EXISTS( \
-                 SELECT 1 \
-                 FROM v_tx_outputs txo \
-                 WHERE txo.txid = vt.txid \
-                   AND txo.output_pool = 0 \
-                   AND ( \
-                       (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
-                       OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
-                   ) \
-             ) AS display_has_transparent, \
-             EXISTS( \
-                 SELECT 1 \
-                 FROM v_tx_outputs txo \
-                 WHERE txo.txid = vt.txid \
-                   AND txo.output_pool IN (2, 3) \
-                   AND ( \
-                       (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
-                       OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
-                   ) \
-             ) AS display_has_shielded, \
-             CAST(COALESCE(strftime('%s', tx.created), 0) AS INTEGER) AS created_time \
-             FROM v_transactions vt \
-             LEFT JOIN transactions tx ON tx.txid = vt.txid \
-             WHERE vt.account_uuid = ?1 \
-               AND NOT ( \
-                   COALESCE(vt.is_shielding, 0) = 0 \
-                   AND COALESCE(vt.total_spent, 0) > 0 \
-                   AND COALESCE(vt.total_received, 0) > 0 \
-                   AND COALESCE(vt.account_balance_delta, 0) <= 0 \
-                   AND tx.created IS NOT NULL \
-                   AND NOT EXISTS ( \
-                       SELECT 1 \
-                       FROM v_tx_outputs txo \
-                       WHERE txo.txid = vt.txid \
-                         AND ( \
-                             (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
-                             OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
-                         ) \
-                   ) \
-                   AND EXISTS ( \
-                       SELECT 1 \
-                       FROM v_tx_outputs txo \
-                       WHERE txo.txid = vt.txid \
-                         AND txo.output_pool = 0 \
-                         AND txo.from_account_uuid = vt.account_uuid \
-                         AND txo.to_account_uuid = vt.account_uuid \
-                         AND txo.is_change = 0 \
-                   ) \
-                   AND EXISTS ( \
-                       SELECT 1 \
-                       FROM v_transactions sibling_vt \
-                       JOIN transactions sibling_tx ON sibling_tx.txid = sibling_vt.txid \
-                       WHERE sibling_vt.account_uuid = vt.account_uuid \
-                         AND sibling_vt.txid != vt.txid \
-                         AND sibling_tx.created = tx.created \
-                         AND COALESCE(sibling_vt.expiry_height, -1) = COALESCE(vt.expiry_height, -1) \
-                         AND EXISTS ( \
-                             SELECT 1 \
-                             FROM v_tx_outputs sibling_txo \
-                             WHERE sibling_txo.txid = sibling_vt.txid \
-                               AND sibling_txo.output_pool = 0 \
-                               AND sibling_txo.from_account_uuid = sibling_vt.account_uuid \
-                               AND sibling_txo.to_account_uuid IS NULL \
-                               AND sibling_txo.is_change = 0 \
-                         ) \
-                   ) \
-               ) \
-             ORDER BY COALESCE(vt.mined_height, 999999999) DESC, vt.tx_index DESC"
-        }
-    };
+    // Force materialization so SQLite does not repeatedly inline the SDK views.
+    let sql = r#"
+        WITH
+        base AS MATERIALIZED (
+            SELECT
+                vt.account_uuid,
+                vt.txid,
+                vt.mined_height,
+                vt.expired_unmined,
+                vt.account_balance_delta,
+                COALESCE(vt.fee_paid, 0) AS fee_paid,
+                COALESCE(vt.block_time, 0) AS block_time,
+                COALESCE(vt.total_spent, 0) AS total_spent,
+                COALESCE(vt.total_received, 0) AS total_received,
+                COALESCE(vt.is_shielding, 0) AS is_shielding,
+                vt.expiry_height,
+                vt.tx_index,
+                tx.created,
+                CAST(COALESCE(strftime('%s', tx.created), 0) AS INTEGER) AS created_time
+            FROM v_transactions vt
+            LEFT JOIN transactions tx ON tx.txid = vt.txid
+            WHERE vt.account_uuid = ?1
+        ),
+        base_keys AS MATERIALIZED (
+            SELECT DISTINCT txid, account_uuid
+            FROM base
+        ),
+        account_outputs AS MATERIALIZED (
+            SELECT txo.*
+            FROM v_tx_outputs txo
+            JOIN base_keys bk ON bk.txid = txo.txid
+            WHERE txo.from_account_uuid = bk.account_uuid
+               OR txo.to_account_uuid = bk.account_uuid
+        ),
+        output_summary AS MATERIALIZED (
+            SELECT
+                b.txid,
+                MAX(CASE
+                    WHEN txo.output_pool = 0
+                    THEN 1 ELSE 0
+                END) AS is_transparent,
+                COALESCE(SUM(CASE
+                    WHEN txo.from_account_uuid = b.account_uuid
+                     AND txo.to_account_uuid IS NULL
+                     AND txo.is_change = 0
+                    THEN txo.value ELSE 0
+                END), 0) AS external_sent_amount,
+                COALESCE(SUM(CASE
+                    WHEN txo.to_account_uuid = b.account_uuid
+                     AND txo.from_account_uuid IS NULL
+                     AND txo.is_change = 0
+                    THEN txo.value ELSE 0
+                END), 0) AS external_received_amount,
+                MAX(CASE
+                    WHEN txo.output_pool = 0
+                     AND (
+                         (
+                             txo.from_account_uuid = b.account_uuid
+                             AND txo.to_account_uuid IS NULL
+                             AND txo.is_change = 0
+                         )
+                         OR (
+                             txo.to_account_uuid = b.account_uuid
+                             AND txo.from_account_uuid IS NULL
+                             AND txo.is_change = 0
+                         )
+                     )
+                    THEN 1 ELSE 0
+                END) AS display_has_transparent,
+                MAX(CASE
+                    WHEN txo.output_pool IN (2, 3)
+                     AND (
+                         (
+                             txo.from_account_uuid = b.account_uuid
+                             AND txo.to_account_uuid IS NULL
+                             AND txo.is_change = 0
+                         )
+                         OR (
+                             txo.to_account_uuid = b.account_uuid
+                             AND txo.from_account_uuid IS NULL
+                             AND txo.is_change = 0
+                         )
+                     )
+                    THEN 1 ELSE 0
+                END) AS display_has_shielded,
+                MAX(CASE
+                    WHEN (
+                         txo.from_account_uuid = b.account_uuid
+                         AND txo.to_account_uuid IS NULL
+                         AND txo.is_change = 0
+                    )
+                    OR (
+                         txo.to_account_uuid = b.account_uuid
+                         AND txo.from_account_uuid IS NULL
+                         AND txo.is_change = 0
+                    )
+                    THEN 1 ELSE 0
+                END) AS has_external_display_output,
+                MAX(CASE
+                    WHEN txo.output_pool = 0
+                     AND txo.from_account_uuid = b.account_uuid
+                     AND txo.to_account_uuid = b.account_uuid
+                     AND txo.is_change = 0
+                    THEN 1 ELSE 0
+                END) AS has_own_transparent_output,
+                MAX(CASE
+                    WHEN txo.output_pool = 0
+                     AND txo.from_account_uuid = b.account_uuid
+                     AND txo.to_account_uuid IS NULL
+                     AND txo.is_change = 0
+                    THEN 1 ELSE 0
+                END) AS has_external_transparent_send
+            FROM base b
+            LEFT JOIN account_outputs txo ON txo.txid = b.txid
+            GROUP BY b.txid
+        ),
+        external_send_keys AS MATERIALIZED (
+            SELECT
+                b.created,
+                COALESCE(b.expiry_height, -1) AS expiry_key
+            FROM base b
+            JOIN output_summary os ON os.txid = b.txid
+            WHERE b.created IS NOT NULL
+              AND os.has_external_transparent_send = 1
+            GROUP BY b.created, COALESCE(b.expiry_height, -1)
+        )
+        SELECT
+            b.txid,
+            b.mined_height,
+            b.expired_unmined,
+            b.account_balance_delta,
+            b.fee_paid,
+            b.block_time,
+            COALESCE(os.is_transparent, 0) AS is_transparent,
+            b.total_spent,
+            b.total_received,
+            b.is_shielding,
+            COALESCE(os.external_sent_amount, 0) AS external_sent_amount,
+            COALESCE(os.external_received_amount, 0) AS external_received_amount,
+            COALESCE(os.display_has_transparent, 0) AS display_has_transparent,
+            COALESCE(os.display_has_shielded, 0) AS display_has_shielded,
+            b.created_time
+        FROM base b
+        LEFT JOIN output_summary os ON os.txid = b.txid
+        LEFT JOIN external_send_keys esk
+          ON esk.created = b.created
+         AND esk.expiry_key = COALESCE(b.expiry_height, -1)
+        WHERE NOT (
+            b.is_shielding = 0
+            AND b.total_spent > 0
+            AND b.total_received > 0
+            AND COALESCE(b.account_balance_delta, 0) <= 0
+            AND b.created IS NOT NULL
+            AND COALESCE(os.has_external_display_output, 0) = 0
+            AND COALESCE(os.has_own_transparent_output, 0) = 1
+            AND esk.created IS NOT NULL
+        )
+        ORDER BY COALESCE(b.mined_height, 999999999) DESC, b.tx_index DESC
+        LIMIT ?2
+    "#;
+    let limit_param = limit.map(i64::from).unwrap_or(-1);
     let mut stmt = conn.prepare(sql).map_err(|e| format!("SQL error: {e}"))?;
 
     let map_row = |row: &rusqlite::Row| -> rusqlite::Result<TransactionInfo> {
@@ -493,12 +455,9 @@ pub fn get_transaction_history(
         })
     };
 
-    let rows = if let Some(n) = limit {
-        stmt.query_map(rusqlite::params![&uuid_bytes, n], map_row)
-    } else {
-        stmt.query_map(rusqlite::params![&uuid_bytes], map_row)
-    }
-    .map_err(|e| format!("Query error: {e}"))?;
+    let rows = stmt
+        .query_map(rusqlite::params![&uuid_bytes, limit_param], map_row)
+        .map_err(|e| format!("Query error: {e}"))?;
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Row error: {e}"))
@@ -728,6 +687,218 @@ mod tests {
 
     fn fake_raw() -> Vec<u8> {
         vec![0xDE, 0xAD, 0xBE, 0xEF]
+    }
+
+    fn test_account_uuid() -> uuid::Uuid {
+        uuid::Uuid::from_u128(0x7e2b16db08384ddba8026fd48b9e0d02)
+    }
+
+    fn fresh_history_db() -> NamedTempFile {
+        let file = NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE v_transactions (
+                 account_uuid BLOB NOT NULL,
+                 txid BLOB NOT NULL,
+                 mined_height INTEGER,
+                 expired_unmined INTEGER NOT NULL,
+                 account_balance_delta INTEGER NOT NULL,
+                 fee_paid INTEGER,
+                 block_time INTEGER,
+                 total_spent INTEGER,
+                 total_received INTEGER,
+                 is_shielding INTEGER,
+                 expiry_height INTEGER,
+                 tx_index INTEGER NOT NULL
+             );
+             CREATE TABLE transactions (
+                 txid BLOB PRIMARY KEY,
+                 created TEXT
+             );
+             CREATE TABLE v_tx_outputs (
+                 txid BLOB NOT NULL,
+                 output_pool INTEGER NOT NULL,
+                 from_account_uuid BLOB,
+                 to_account_uuid BLOB,
+                 value INTEGER NOT NULL,
+                 is_change INTEGER NOT NULL
+             );",
+        )
+        .unwrap();
+        file
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_history_tx(
+        db: &NamedTempFile,
+        account: uuid::Uuid,
+        txid: &[u8],
+        mined_height: Option<i64>,
+        tx_index: i64,
+        expiry_height: Option<i64>,
+        account_balance_delta: i64,
+        total_spent: i64,
+        total_received: i64,
+        is_shielding: bool,
+        created: Option<&str>,
+    ) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "INSERT INTO transactions (txid, created) VALUES (?1, ?2)",
+            rusqlite::params![txid, created],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO v_transactions (
+                 account_uuid, txid, mined_height, expired_unmined,
+                 account_balance_delta, fee_paid, block_time, total_spent,
+                 total_received, is_shielding, expiry_height, tx_index
+             ) VALUES (?1, ?2, ?3, 0, ?4, 0, 0, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                account.as_bytes().as_slice(),
+                txid,
+                mined_height,
+                account_balance_delta,
+                total_spent,
+                total_received,
+                is_shielding,
+                expiry_height,
+                tx_index,
+            ],
+        )
+        .unwrap();
+    }
+
+    fn insert_output(
+        db: &NamedTempFile,
+        txid: &[u8],
+        output_pool: i64,
+        from_account: Option<uuid::Uuid>,
+        to_account: Option<uuid::Uuid>,
+        value: i64,
+        is_change: bool,
+    ) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        let from_bytes = from_account.map(|uuid| uuid.as_bytes().to_vec());
+        let to_bytes = to_account.map(|uuid| uuid.as_bytes().to_vec());
+        conn.execute(
+            "INSERT INTO v_tx_outputs (
+                 txid, output_pool, from_account_uuid, to_account_uuid, value, is_change
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![txid, output_pool, from_bytes, to_bytes, value, is_change],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn history_suppresses_funding_step_after_limit_filtering() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let external_send = fake_txid(0xA1);
+        let funding_step = fake_txid(0xA2);
+        let created = "2026-04-28T13:03:00Z";
+
+        insert_history_tx(
+            &db,
+            account,
+            &funding_step,
+            None,
+            2,
+            Some(1_000_100),
+            -40_000,
+            18_302_101,
+            18_262_101,
+            false,
+            Some(created),
+        );
+        insert_output(
+            &db,
+            &funding_step,
+            0,
+            Some(account),
+            Some(account),
+            10_010_000,
+            false,
+        );
+
+        insert_history_tx(
+            &db,
+            account,
+            &external_send,
+            None,
+            1,
+            Some(1_000_100),
+            -10_010_000,
+            10_010_000,
+            0,
+            false,
+            Some(created),
+        );
+        insert_output(
+            &db,
+            &external_send,
+            0,
+            Some(account),
+            None,
+            10_000_000,
+            false,
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            Some(1),
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(external_send));
+        assert_eq!(got[0].tx_kind, "sent");
+        assert_eq!(got[0].display_amount, 10_000_000);
+    }
+
+    #[test]
+    fn history_keeps_internal_transfer_without_external_send_sibling() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let internal_tx = fake_txid(0xB1);
+
+        insert_history_tx(
+            &db,
+            account,
+            &internal_tx,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -40_000,
+            18_302_101,
+            18_262_101,
+            false,
+            Some("2026-04-28T13:03:00Z"),
+        );
+        insert_output(
+            &db,
+            &internal_tx,
+            0,
+            Some(account),
+            Some(account),
+            18_262_101,
+            false,
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(internal_tx));
+        assert_eq!(got[0].tx_kind, "internal");
+        assert_eq!(got[0].display_amount, 18_262_101);
     }
 
     #[test]
