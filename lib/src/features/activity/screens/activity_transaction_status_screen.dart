@@ -90,7 +90,11 @@ class _ActivityTransactionStatusScreenState
         return;
       }
 
-      final tx = _findTransaction(txs, widget.args.txidHex);
+      final tx = _findTransaction(
+        txs,
+        widget.args.txidHex,
+        txKind: _transaction?.txKind ?? widget.args.initialTransaction?.txKind,
+      );
       setState(() {
         if (tx != null) {
           _transaction = tx;
@@ -116,9 +120,17 @@ class _ActivityTransactionStatusScreenState
 
   rust_sync.TransactionInfo? _findTransaction(
     Iterable<rust_sync.TransactionInfo> transactions,
-    String txidHex,
-  ) {
+    String txidHex, {
+    String? txKind,
+  }) {
     final normalized = txidHex.toLowerCase();
+    if (txKind != null) {
+      for (final tx in transactions) {
+        if (tx.txidHex.toLowerCase() == normalized && tx.txKind == txKind) {
+          return tx;
+        }
+      }
+    }
     for (final tx in transactions) {
       if (tx.txidHex.toLowerCase() == normalized) return tx;
     }
@@ -127,6 +139,21 @@ class _ActivityTransactionStatusScreenState
 
   String _recentTxSignature(SyncState? sync) {
     final txid = widget.args.txidHex.toLowerCase();
+    final txKind =
+        _transaction?.txKind ?? widget.args.initialTransaction?.txKind;
+    if (txKind != null) {
+      for (final tx in sync?.recentTransactions ?? const []) {
+        if (tx.txidHex.toLowerCase() == txid && tx.txKind == txKind) {
+          return [
+            tx.txidHex,
+            tx.minedHeight,
+            tx.expiredUnmined,
+            tx.txKind,
+            tx.displayAmount,
+          ].join(':');
+        }
+      }
+    }
     for (final tx in sync?.recentTransactions ?? const []) {
       if (tx.txidHex.toLowerCase() == txid) {
         return [
