@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
@@ -31,7 +32,7 @@ class _AppLoadingIconState extends State<AppLoadingIcon>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 900),
+    duration: AppLoadingIconTiming.period,
   );
 
   @override
@@ -72,7 +73,7 @@ class _AppLoadingIconState extends State<AppLoadingIcon>
     final icon = CustomPaint(
       painter: _LoaderIconPainter(
         color: resolved,
-        animation: widget.animated ? _controller : null,
+        repaint: widget.animated ? _controller : null,
       ),
       size: Size.square(widget.size),
     );
@@ -84,18 +85,51 @@ class _AppLoadingIconState extends State<AppLoadingIcon>
   }
 }
 
-class _LoaderIconPainter extends CustomPainter {
-  _LoaderIconPainter({required this.color, required this.animation})
-    : super(repaint: animation);
+abstract final class AppLoadingIconTiming {
+  static const period = Duration(milliseconds: 900);
 
-  static const _spokeCount = 8;
+  @visibleForTesting
+  static const spokeCount = 8;
+
+  @visibleForTesting
+  static const trailLength = 3.2;
+
+  @visibleForTesting
+  static const minOpacity = 0.28;
+
+  @visibleForTesting
+  static double progressForFrameTime(Duration frameTime) {
+    final frameMicros = frameTime.inMicroseconds;
+    final periodMicros = period.inMicroseconds;
+    return (frameMicros % periodMicros) / periodMicros;
+  }
+
+  @visibleForTesting
+  static double opacityForSpokeAtProgress(int index, double progress) {
+    final active = progress * spokeCount;
+    final trailDistance = (active - index + spokeCount) % spokeCount;
+    if (trailDistance > trailLength) {
+      return minOpacity;
+    }
+    final falloff = Curves.easeOutCubic.transform(
+      1 - trailDistance / trailLength,
+    );
+    return minOpacity + falloff * (1 - minOpacity);
+  }
+}
+
+class _LoaderIconPainter extends CustomPainter {
+  _LoaderIconPainter({required this.color, required super.repaint})
+    : _animated = repaint != null,
+      super();
+
   static const _viewBoxSize = 24.0;
   static const _center = Offset(12, 12);
   static const _spokeRect = Rect.fromLTWH(10.5724, 1, 2.8552, 6.0464);
   static const _spokeRadius = Radius.circular(1.4276);
 
   final Color color;
-  final Animation<double>? animation;
+  final bool _animated;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -110,7 +144,7 @@ class _LoaderIconPainter extends CustomPainter {
       ..translate(dx, dy)
       ..scale(scale);
 
-    for (var i = 0; i < _spokeCount; i++) {
+    for (var i = 0; i < AppLoadingIconTiming.spokeCount; i++) {
       paint.color = color.withValues(alpha: _opacityForSpoke(i));
       canvas
         ..save()
@@ -125,25 +159,17 @@ class _LoaderIconPainter extends CustomPainter {
   }
 
   double _opacityForSpoke(int index) {
-    final progress = animation?.value;
-    if (progress == null) {
+    if (!_animated) {
       return 1;
     }
-    final active = progress * _spokeCount;
-    final trailDistance = (active - index + _spokeCount) % _spokeCount;
-    const trailLength = 3.2;
-    const minOpacity = 0.28;
-    if (trailDistance > trailLength) {
-      return minOpacity;
-    }
-    final falloff = Curves.easeOutCubic.transform(
-      1 - trailDistance / trailLength,
+    final progress = AppLoadingIconTiming.progressForFrameTime(
+      SchedulerBinding.instance.currentFrameTimeStamp,
     );
-    return minOpacity + falloff * (1 - minOpacity);
+    return AppLoadingIconTiming.opacityForSpokeAtProgress(index, progress);
   }
 
   @override
   bool shouldRepaint(covariant _LoaderIconPainter oldDelegate) {
-    return oldDelegate.color != color || oldDelegate.animation != animation;
+    return oldDelegate.color != color || oldDelegate._animated != _animated;
   }
 }
