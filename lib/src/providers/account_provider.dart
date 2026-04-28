@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/network_config.dart';
+import '../core/profile_pictures.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
@@ -300,6 +301,32 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('renameAccount: $uuid → $newName');
+  }
+
+  /// Update an account profile picture.
+  Future<void> updateProfilePicture(
+    String uuid,
+    String profilePictureId,
+  ) async {
+    if (!isKnownProfilePictureId(profilePictureId)) {
+      throw ArgumentError.value(
+        profilePictureId,
+        'profilePictureId',
+        'Unknown profile picture id',
+      );
+    }
+
+    final prev = state.value ?? const AccountState();
+    final updated = prev.accounts
+        .map(
+          (a) => a.uuid == uuid
+              ? a.copyWith(profilePictureId: profilePictureId)
+              : a,
+        )
+        .toList();
+    await _saveAccounts(updated);
+    state = AsyncData(prev.copyWith(accounts: updated));
+    log('updateProfilePicture: $uuid → $profilePictureId');
   }
 
   /// Delete all wallet data (DB + keychain). Caller must stop sync first.

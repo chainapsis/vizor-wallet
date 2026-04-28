@@ -10,6 +10,7 @@ import '../../../app_bootstrap.dart';
 import '../../../core/config/network_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
@@ -25,7 +26,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-enum _SettingsModalType { accountName, theme }
+enum _SettingsModalType { accountName, profilePicture, theme }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   _SettingsModalType? _activeModal;
@@ -56,10 +57,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _closeModal();
   }
 
+  Future<void> _updateProfilePicture(String profilePictureId) async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    await ref
+        .read(accountProvider.notifier)
+        .updateProfilePicture(accountUuid, profilePictureId);
+    if (!mounted) return;
+    _closeModal();
+  }
+
   @override
   Widget build(BuildContext context) {
     final accountState = ref.watch(accountProvider).value;
     final activeAccountName = accountState?.activeAccount?.name ?? 'Wallet 1';
+    final activeProfilePictureId =
+        accountState?.activeAccount?.profilePictureId ??
+        kDefaultProfilePictureId;
     final hasActiveAccount = accountState?.activeAccountUuid != null;
     final activeAccountIsHardware =
         accountState?.activeAccount?.isHardware ?? false;
@@ -79,6 +93,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding: const EdgeInsets.all(AppSpacing.md),
               child: _SettingsPane(
                 accountName: activeAccountName,
+                profilePictureLabel: _profilePictureLabel(
+                  activeProfilePictureId,
+                ),
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: _themeLabel(themeMode),
@@ -87,6 +104,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onChangePassword: () => context.go('/settings/change-password'),
                 onAccountName: hasActiveAccount
                     ? () => _showModal(_SettingsModalType.accountName)
+                    : null,
+                onProfilePicture: hasActiveAccount
+                    ? () => _showModal(_SettingsModalType.profilePicture)
                     : null,
                 onTheme: () => _showModal(_SettingsModalType.theme),
               ),
@@ -97,8 +117,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: switch (_activeModal!) {
                   _SettingsModalType.accountName => _AccountNameModal(
                     accountName: activeAccountName,
+                    profilePictureId: activeProfilePictureId,
                     onCancel: _closeModal,
                     onUpdate: _updateAccountName,
+                  ),
+                  _SettingsModalType.profilePicture => _ProfilePictureModal(
+                    currentProfilePictureId: activeProfilePictureId,
+                    onCancel: _closeModal,
+                    onUpdate: _updateProfilePicture,
                   ),
                   _SettingsModalType.theme => _ThemeModal(
                     currentMode: themeMode,
@@ -129,6 +155,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     };
   }
 
+  static String _profilePictureLabel(String profilePictureId) {
+    return findProfilePictureOption(profilePictureId)?.label ?? 'Custom';
+  }
+
   static String _endpointLabel(String networkName) {
     final network = networkName == ZcashNetwork.testnet.name
         ? ZcashNetwork.testnet
@@ -140,6 +170,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 class _SettingsPane extends StatelessWidget {
   const _SettingsPane({
     required this.accountName,
+    required this.profilePictureLabel,
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
@@ -147,10 +178,12 @@ class _SettingsPane extends StatelessWidget {
     required this.onSeedPhrase,
     required this.onChangePassword,
     required this.onAccountName,
+    required this.onProfilePicture,
     required this.onTheme,
   });
 
   final String accountName;
+  final String profilePictureLabel;
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
@@ -158,6 +191,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
   final VoidCallback? onAccountName;
+  final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
 
   @override
@@ -194,12 +228,14 @@ class _SettingsPane extends StatelessWidget {
                       const SizedBox(height: AppSpacing.sm),
                       _SettingsList(
                         accountName: accountName,
+                        profilePictureLabel: profilePictureLabel,
                         activeAccountIsHardware: activeAccountIsHardware,
                         endpointLabel: endpointLabel,
                         themeLabel: themeLabel,
                         onSeedPhrase: onSeedPhrase,
                         onChangePassword: onChangePassword,
                         onAccountName: onAccountName,
+                        onProfilePicture: onProfilePicture,
                         onTheme: onTheme,
                       ),
                     ],
@@ -256,22 +292,26 @@ class _SettingsBackButton extends StatelessWidget {
 class _SettingsList extends StatelessWidget {
   const _SettingsList({
     required this.accountName,
+    required this.profilePictureLabel,
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
     required this.onAccountName,
+    required this.onProfilePicture,
     required this.onTheme,
   });
 
   final String accountName;
+  final String profilePictureLabel;
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
   final VoidCallback? onAccountName;
+  final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
 
   @override
@@ -296,10 +336,11 @@ class _SettingsList extends StatelessWidget {
               onTap: onChangePassword,
             ),
             const _SettingsRowDivider(),
-            const _SettingsRow(
+            _SettingsRow(
               iconName: AppIcons.users,
               label: 'Profile Picture',
-              value: 'Knight',
+              value: profilePictureLabel,
+              onTap: onProfilePicture,
             ),
             const _SettingsRowDivider(),
             _SettingsRow(
@@ -387,10 +428,15 @@ class _SettingsModalOverlay extends StatelessWidget {
 }
 
 class _SettingsModalCard extends StatelessWidget {
-  const _SettingsModalCard({required this.header, required this.child});
+  const _SettingsModalCard({
+    required this.header,
+    required this.child,
+    this.gap = AppSpacing.md,
+  });
 
   final Widget header;
   final Widget child;
+  final double gap;
 
   @override
   Widget build(BuildContext context) {
@@ -408,7 +454,7 @@ class _SettingsModalCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           header,
-          const SizedBox(height: AppSpacing.md),
+          SizedBox(height: gap),
           child,
         ],
       ),
@@ -444,15 +490,31 @@ class _ModalHeader extends StatelessWidget {
 }
 
 class _ModalAccountAvatar extends StatelessWidget {
-  const _ModalAccountAvatar();
+  const _ModalAccountAvatar({required this.profilePictureId});
+
+  final String profilePictureId;
+
+  @override
+  Widget build(BuildContext context) {
+    final option = resolveProfilePictureOption(profilePictureId);
+
+    return _ProfilePictureImage(assetPath: option.assetPath, size: 32);
+  }
+}
+
+class _ProfilePictureImage extends StatelessWidget {
+  const _ProfilePictureImage({required this.assetPath, required this.size});
+
+  final String assetPath;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     return ClipOval(
       child: Image.asset(
-        'assets/illustrations/sidebar_account_avatar_knight.png',
-        width: 32,
-        height: 32,
+        assetPath,
+        width: size,
+        height: size,
         fit: BoxFit.cover,
       ),
     );
@@ -486,14 +548,198 @@ class _ModalUtilityIcon extends StatelessWidget {
   }
 }
 
+class _ProfilePictureModal extends StatefulWidget {
+  const _ProfilePictureModal({
+    required this.currentProfilePictureId,
+    required this.onCancel,
+    required this.onUpdate,
+  });
+
+  final String currentProfilePictureId;
+  final VoidCallback onCancel;
+  final Future<void> Function(String profilePictureId) onUpdate;
+
+  @override
+  State<_ProfilePictureModal> createState() => _ProfilePictureModalState();
+}
+
+class _ProfilePictureModalState extends State<_ProfilePictureModal> {
+  static const _buttonWidth = 280.0;
+  static const _optionSize = 32.0;
+
+  late String _selectedId = _initialSelectedId();
+  bool _isSubmitting = false;
+  String? _submitError;
+
+  bool get _canUpdate =>
+      !_isSubmitting &&
+      isKnownProfilePictureId(_selectedId) &&
+      _selectedId != widget.currentProfilePictureId;
+
+  String _initialSelectedId() {
+    return widget.currentProfilePictureId;
+  }
+
+  Future<void> _submit() async {
+    if (!_canUpdate) return;
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+    });
+    try {
+      await widget.onUpdate(_selectedId);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _submitError = "Couldn't update profile picture.";
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  void _select(String id) {
+    if (_isSubmitting) return;
+    setState(() {
+      _selectedId = id;
+      _submitError = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final previewOption = resolveProfilePictureOption(_selectedId);
+
+    return _SettingsModalCard(
+      gap: AppSpacing.sm,
+      header: _ModalHeader(
+        leading: _ProfilePictureImage(
+          assetPath: previewOption.assetPath,
+          size: 56,
+        ),
+        title: 'Select Profile Picture',
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: AppSpacing.s,
+              runSpacing: AppSpacing.s,
+              children: [
+                for (final option in kProfilePictureOptions)
+                  _ProfilePictureOptionButton(
+                    option: option,
+                    size: _optionSize,
+                    selected: option.id == _selectedId,
+                    onTap: () => _select(option.id),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          if (_submitError != null) ...[
+            Text(
+              _submitError!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.destructive,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
+          AppButton(
+            onPressed: _canUpdate ? _submit : null,
+            variant: AppButtonVariant.primary,
+            minWidth: _buttonWidth,
+            child: Text(_isSubmitting ? 'Updating...' : 'Update'),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          AppButton(
+            onPressed: _isSubmitting ? null : widget.onCancel,
+            variant: AppButtonVariant.ghost,
+            minWidth: _buttonWidth,
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfilePictureOptionButton extends StatelessWidget {
+  const _ProfilePictureOptionButton({
+    required this.option,
+    required this.size,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ProfilePictureOption option;
+  final double size;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _ProfilePictureImage(assetPath: option.assetPath, size: size),
+              if (selected)
+                Positioned(
+                  right: -4,
+                  bottom: -2,
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: colors.background.inverse,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: AppIcon(
+                        AppIcons.check,
+                        size: 12,
+                        color: colors.background.ground,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _AccountNameModal extends StatefulWidget {
   const _AccountNameModal({
     required this.accountName,
+    required this.profilePictureId,
     required this.onCancel,
     required this.onUpdate,
   });
 
   final String accountName;
+  final String profilePictureId;
   final VoidCallback onCancel;
   final Future<void> Function(String name) onUpdate;
 
@@ -567,7 +813,7 @@ class _AccountNameModalState extends State<_AccountNameModal> {
   Widget build(BuildContext context) {
     return _SettingsModalCard(
       header: _ModalHeader(
-        leading: const _ModalAccountAvatar(),
+        leading: _ModalAccountAvatar(profilePictureId: widget.profilePictureId),
         title: widget.accountName,
       ),
       child: Column(

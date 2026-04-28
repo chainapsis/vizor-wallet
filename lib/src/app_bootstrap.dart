@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../main.dart' show log;
+import 'core/profile_pictures.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/wallet_paths.dart';
 import 'providers/account_models.dart';
@@ -144,6 +145,8 @@ Future<AppBootstrapState> loadAppBootstrap() async {
             name: account.name,
             order: index,
             isHardware: stored?.isHardware ?? false,
+            profilePictureId:
+                stored?.profilePictureId ?? kDefaultProfilePictureId,
           );
         }).toList();
         log('bootstrap: rust accounts=${rustAccounts.length}');

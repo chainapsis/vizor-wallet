@@ -1,28 +1,35 @@
+import '../core/profile_pictures.dart';
+
 class AccountInfo {
   final String uuid;
   final String name;
   final int order;
   final bool isHardware;
+  final String profilePictureId;
 
   const AccountInfo({
     required this.uuid,
     required this.name,
     required this.order,
     this.isHardware = false,
+    this.profilePictureId = kDefaultProfilePictureId,
   });
 
-  AccountInfo copyWith({String? name, int? order}) => AccountInfo(
-    uuid: uuid,
-    name: name ?? this.name,
-    order: order ?? this.order,
-    isHardware: isHardware,
-  );
+  AccountInfo copyWith({String? name, int? order, String? profilePictureId}) =>
+      AccountInfo(
+        uuid: uuid,
+        name: name ?? this.name,
+        order: order ?? this.order,
+        isHardware: isHardware,
+        profilePictureId: profilePictureId ?? this.profilePictureId,
+      );
 
   Map<String, dynamic> toJson() => {
     'uuid': uuid,
     'name': name,
     'order': order,
     'isHardware': isHardware,
+    'profilePictureId': profilePictureId,
   };
 
   factory AccountInfo.fromJson(Map<String, dynamic> json) => AccountInfo(
@@ -30,6 +37,8 @@ class AccountInfo {
     name: json['name'] as String,
     order: json['order'] as int? ?? 0,
     isHardware: json['isHardware'] as bool? ?? false,
+    profilePictureId:
+        json['profilePictureId'] as String? ?? kDefaultProfilePictureId,
   );
 }
 

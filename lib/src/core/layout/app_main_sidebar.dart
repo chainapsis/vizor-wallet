@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/app_button.dart';
@@ -205,6 +206,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                   children: [
                     _SidebarAccountSelectorButton(
                       label: accountName,
+                      profilePictureId:
+                          activeAccount?.profilePictureId ??
+                          kDefaultProfilePictureId,
                       isOpen: _isDropdownOpen,
                       isHovered: _isSelectorHovered,
                       onHoverChanged: (hovered) {
@@ -242,6 +246,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 class _SidebarAccountSelectorButton extends StatelessWidget {
   const _SidebarAccountSelectorButton({
     required this.label,
+    required this.profilePictureId,
     required this.isOpen,
     required this.isHovered,
     required this.onHoverChanged,
@@ -249,6 +254,7 @@ class _SidebarAccountSelectorButton extends StatelessWidget {
   });
 
   final String label;
+  final String profilePictureId;
   final bool isOpen;
   final bool isHovered;
   final ValueChanged<bool> onHoverChanged;
@@ -279,7 +285,7 @@ class _SidebarAccountSelectorButton extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const _SidebarAccountAvatar(),
+              _SidebarAccountAvatar(profilePictureId: profilePictureId),
               const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Text(
@@ -429,7 +435,7 @@ class _SidebarAccountRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const _SidebarAccountAvatar(),
+              _SidebarAccountAvatar(profilePictureId: account.profilePictureId),
               const SizedBox(width: AppSpacing.xs),
               Expanded(
                 child: Text(
@@ -480,13 +486,17 @@ class _SidebarCreateWalletRow extends StatelessWidget {
 }
 
 class _SidebarAccountAvatar extends StatelessWidget {
-  const _SidebarAccountAvatar();
+  const _SidebarAccountAvatar({required this.profilePictureId});
+
+  final String profilePictureId;
 
   @override
   Widget build(BuildContext context) {
+    final option = resolveProfilePictureOption(profilePictureId);
+
     return ClipOval(
       child: Image.asset(
-        'assets/illustrations/sidebar_account_avatar_knight.png',
+        option.assetPath,
         width: 24,
         height: 24,
         fit: BoxFit.cover,
