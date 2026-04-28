@@ -429,8 +429,11 @@ class _HomePaneState extends State<_HomePane> {
       sync: widget.sync,
       transactions: widget.sync.recentTransactions.take(8),
       onRetrySync: widget.onRetrySync,
+      onTransactionTap: _handleActivityRowAction,
     );
   }
+
+  void _handleActivityRowAction() {}
 }
 
 class _HomeBalanceCard extends StatelessWidget {

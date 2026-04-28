@@ -158,6 +158,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     }
   }
 
+  void _handleTransactionRowAction() {}
+
   String _recentSignature(SyncState? sync) {
     return sync?.recentTransactions
             .map(
@@ -217,6 +219,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               (tx) => buildTransactionActivityRow(
                 context: context,
                 transaction: tx,
+                onTap: _handleTransactionRowAction,
               ),
             ),
           ];

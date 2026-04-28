@@ -11,6 +11,7 @@ List<ActivityRowData> buildActivityRows({
   required SyncState sync,
   required Iterable<rust_sync.TransactionInfo> transactions,
   VoidCallback? onRetrySync,
+  VoidCallback? onTransactionTap,
 }) {
   return [
     buildSyncActivityRow(
@@ -19,7 +20,11 @@ List<ActivityRowData> buildActivityRows({
       onRetrySync: onRetrySync,
     ),
     ...transactions.map(
-      (tx) => buildTransactionActivityRow(context: context, transaction: tx),
+      (tx) => buildTransactionActivityRow(
+        context: context,
+        transaction: tx,
+        onTap: onTransactionTap,
+      ),
     ),
   ];
 }
@@ -37,13 +42,12 @@ ActivityRowData buildSyncActivityRow({
       leadingIconName: AppIcons.sync,
       leadingBackgroundColor: colors.background.neutralSubtleOpacity,
       leadingIconColor: colors.icon.regular,
-      amountText: onRetrySync == null ? '--' : 'Retry',
-      amountColor: colors.text.warning,
+      amountText: '--',
+      amountColor: colors.text.secondary,
       statusText: 'Failed',
       statusIconName: AppIcons.skull,
       statusColor: colors.text.destructive,
       timestampText: formatActivityTimestamp(sync.lastSyncFailedAt),
-      onTap: onRetrySync,
     );
   }
 
@@ -80,6 +84,7 @@ ActivityRowData buildSyncActivityRow({
 ActivityRowData buildTransactionActivityRow({
   required BuildContext context,
   required rust_sync.TransactionInfo transaction,
+  VoidCallback? onTap,
 }) {
   final colors = context.colors;
   final isPending =
@@ -132,6 +137,7 @@ ActivityRowData buildTransactionActivityRow({
         : null,
     statusColor: isFailed ? colors.text.destructive : colors.text.secondary,
     timestampText: formatActivityTimestamp(_txTimestamp(transaction)),
+    onTap: onTap,
   );
 }
 

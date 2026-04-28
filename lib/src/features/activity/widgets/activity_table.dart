@@ -7,7 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../models/activity_row_data.dart';
 
-const _paginationActivationShortcuts = <ShortcutActivator, Intent>{
+const _activityActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
   SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
 };
@@ -287,90 +287,172 @@ class _StatusLabel extends StatelessWidget {
   }
 }
 
-class ActivityTableRow extends StatelessWidget {
+class ActivityTableRow extends StatefulWidget {
   const ActivityTableRow({required this.row, super.key});
 
   final ActivityRowData row;
 
   @override
+  State<ActivityTableRow> createState() => _ActivityTableRowState();
+}
+
+class _ActivityTableRowState extends State<ActivityTableRow> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  @override
+  void didUpdateWidget(covariant ActivityTableRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.row.title != widget.row.title ||
+        oldWidget.row.amountText != widget.row.amountText ||
+        oldWidget.row.statusText != widget.row.statusText ||
+        oldWidget.row.timestampText != widget.row.timestampText) {
+      _hovered = false;
+      _focused = false;
+    }
+  }
+
+  void _handleHoverChanged(bool value) {
+    if (_hovered == value) return;
+    setState(() {
+      _hovered = value;
+    });
+  }
+
+  void _handleFocusChanged(bool value) {
+    if (_focused == value) return;
+    setState(() {
+      _focused = value;
+    });
+  }
+
+  void _activate() {
+    _handleHoverChanged(false);
+    widget.row.onTap?.call();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final content = Container(
-      height: 48,
-      padding: const EdgeInsets.all(AppSpacing.xxs),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: _ActivityColumnLayout(
-        txType: Row(
-          children: [
-            _ActivityAvatar(row: row),
-            const SizedBox(width: AppSpacing.s),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    row.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                  if (row.subtitle != null)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (row.subtitleIconName != null) ...[
-                          AppIcon(
-                            row.subtitleIconName!,
-                            size: 16,
-                            color: colors.icon.brandCrimson,
-                          ),
-                          const SizedBox(width: AppSpacing.xxs),
-                        ],
-                        Flexible(
-                          child: Text(
-                            row.subtitle!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.labelMedium.copyWith(
-                              color: row.subtitleIconName == null
-                                  ? colors.text.secondary
-                                  : colors.text.brandCrimson,
-                            ),
-                          ),
+    final row = widget.row;
+    final isInteractive = row.onTap != null;
+    final content = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          height: 48,
+          padding: const EdgeInsets.all(AppSpacing.xxs),
+          decoration: BoxDecoration(
+            color: isInteractive && _hovered
+                ? _neutralHoverBackgroundColor(context)
+                : null,
+            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          ),
+          child: _ActivityColumnLayout(
+            txType: Row(
+              children: [
+                _ActivityAvatar(row: row),
+                const SizedBox(width: AppSpacing.s),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        row.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.accent,
                         ),
-                      ],
-                    ),
-                ],
+                      ),
+                      if (row.subtitle != null)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (row.subtitleIconName != null) ...[
+                              AppIcon(
+                                row.subtitleIconName!,
+                                size: 16,
+                                color: colors.icon.brandCrimson,
+                              ),
+                              const SizedBox(width: AppSpacing.xxs),
+                            ],
+                            Flexible(
+                              child: Text(
+                                row.subtitle!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.labelMedium.copyWith(
+                                  color: row.subtitleIconName == null
+                                      ? colors.text.secondary
+                                      : colors.text.brandCrimson,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            amount: _AmountLabel(row: row),
+            status: _StatusLabel(row: row),
+            timestamp: Text(
+              row.timestampText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
               ),
             ),
-          ],
-        ),
-        amount: _AmountLabel(row: row),
-        status: _StatusLabel(row: row),
-        timestamp: Text(
-          row.timestampText,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.end,
-          style: AppTypography.labelMedium.copyWith(
-            color: colors.text.secondary,
           ),
         ),
-      ),
+        if (isInteractive && _focused)
+          Positioned(
+            left: -1,
+            top: -1,
+            right: -1,
+            bottom: -1,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: colors.state.focusRing, width: 2),
+                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
 
-    if (row.onTap == null) return content;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: row.onTap,
-        child: content,
+    if (!isInteractive) return content;
+    return Semantics(
+      button: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => _handleHoverChanged(true),
+        onExit: (_) => _handleHoverChanged(false),
+        child: FocusableActionDetector(
+          mouseCursor: SystemMouseCursors.click,
+          onShowFocusHighlight: _handleFocusChanged,
+          shortcuts: _activityActivationShortcuts,
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<Intent>(
+              onInvoke: (_) {
+                _activate();
+                return null;
+              },
+            ),
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _activate,
+            child: content,
+          ),
+        ),
       ),
     );
   }
@@ -564,7 +646,7 @@ class _PaginationIconButtonState extends State<_PaginationIconButton> {
     return _PaginationItemShell(
       enabled: enabled,
       backgroundColor: enabled && _hovered
-          ? _paginationHoverBackgroundColor(context)
+          ? _neutralHoverBackgroundColor(context)
           : null,
       border: border,
       onTap: widget.onTap,
@@ -632,7 +714,7 @@ class _PaginationPageButtonState extends State<_PaginationPageButton> {
     final backgroundColor = selected
         ? colors.background.brandCrimsonStrong
         : _hovered
-        ? _paginationHoverBackgroundColor(context)
+        ? _neutralHoverBackgroundColor(context)
         : null;
     final textColor = selected ? colors.text.inverse : colors.text.accent;
     final border = !selected && _focused
@@ -718,7 +800,7 @@ class _PaginationItemShell extends StatelessWidget {
                 : MouseCursor.defer,
             onShowFocusHighlight: onFocusChanged,
             includeFocusSemantics: false,
-            shortcuts: canActivate ? _paginationActivationShortcuts : null,
+            shortcuts: canActivate ? _activityActivationShortcuts : null,
             actions: canActivate
                 ? <Type, Action<Intent>>{
                     ActivateIntent: CallbackAction<Intent>(
@@ -766,7 +848,7 @@ class _PaginationEllipsis extends StatelessWidget {
   }
 }
 
-Color _paginationHoverBackgroundColor(BuildContext context) {
+Color _neutralHoverBackgroundColor(BuildContext context) {
   final colors = context.colors;
   final isDark = AppTheme.of(context) == AppThemeData.dark;
   return isDark ? colors.background.raised : colors.background.base;
