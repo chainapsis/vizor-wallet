@@ -93,6 +93,6 @@ class AppBackgroundColors {
     utilitySuccessSubtle: GoldPrimitives.p50Light,
     utilitySuccessStrong: GoldPrimitives.p300Light,
     utilitySuccessAlpha: GoldPrimitives.p300Alpha25Light,
-    homeCard: Primitives.p100Dark,
+    homeCard: Primitives.p800Light,
   );
 }

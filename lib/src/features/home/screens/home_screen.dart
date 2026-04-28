@@ -590,14 +590,11 @@ class _HomeBalanceCard extends StatelessWidget {
                                       ),
                                     ),
                                     const Spacer(),
-                                    AppTheme(
-                                      data: AppThemeData.dark,
-                                      child: _IconPillButton(
-                                        iconName: isBalanceVisible
-                                            ? AppIcons.eye
-                                            : AppIcons.eyeClosed,
-                                        onPressed: onToggleBalanceVisibility,
-                                      ),
+                                    _IconPillButton(
+                                      iconName: isBalanceVisible
+                                          ? AppIcons.eye
+                                          : AppIcons.eyeClosed,
+                                      onPressed: onToggleBalanceVisibility,
                                     ),
                                   ],
                                 ),
@@ -609,38 +606,27 @@ class _HomeBalanceCard extends StatelessWidget {
                                   ),
                                 ),
                                 const Spacer(),
-                                AppTheme(
-                                  data: AppThemeData.dark,
-                                  child: Builder(
-                                    builder: (context) {
-                                      return Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          AppButton(
-                                            onPressed: () =>
-                                                context.push('/send'),
-                                            variant: AppButtonVariant.primary,
-                                            minWidth: _actionButtonMinWidth,
-                                            leading: const AppIcon(
-                                              AppIcons.plane,
-                                            ),
-                                            child: const Text('Send'),
-                                          ),
-                                          const SizedBox(width: AppSpacing.xs),
-                                          AppButton(
-                                            onPressed: () =>
-                                                context.push('/receive'),
-                                            variant: AppButtonVariant.secondary,
-                                            minWidth: _actionButtonMinWidth,
-                                            leading: const AppIcon(
-                                              AppIcons.arrowDownCircle,
-                                            ),
-                                            child: const Text('Receive'),
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    AppButton(
+                                      onPressed: () => context.push('/send'),
+                                      variant: AppButtonVariant.primary,
+                                      minWidth: _actionButtonMinWidth,
+                                      leading: const AppIcon(AppIcons.plane),
+                                      child: const Text('Send'),
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    AppButton(
+                                      onPressed: () => context.push('/receive'),
+                                      variant: AppButtonVariant.secondary,
+                                      minWidth: _actionButtonMinWidth,
+                                      leading: const AppIcon(
+                                        AppIcons.arrowDownCircle,
+                                      ),
+                                      child: const Text('Receive'),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
