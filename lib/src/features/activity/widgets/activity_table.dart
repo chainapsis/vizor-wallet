@@ -472,33 +472,39 @@ class ActivityTablePagination extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pages = _visiblePages(currentPage, totalPages);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _PaginationIconButton(
-          iconName: AppIcons.chevronBackward,
-          enabled: currentPage > 1,
-          onTap: () => onPageChanged?.call(currentPage - 1),
-        ),
-        for (final page in pages)
-          page == null
-              ? const _PaginationEllipsis()
-              : _PaginationPageButton(
-                  page: page,
-                  selected: page == currentPage,
-                  onTap: () => onPageChanged?.call(page),
-                ),
-        _PaginationIconButton(
-          iconName: AppIcons.chevronForward,
-          enabled: currentPage < totalPages,
-          onTap: () => onPageChanged?.call(currentPage + 1),
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.xxs),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _PaginationIconButton(
+            iconName: AppIcons.chevronBackward,
+            enabled: currentPage > 1,
+            onTap: () => onPageChanged?.call(currentPage - 1),
+          ),
+          for (final page in pages) ...[
+            const SizedBox(width: AppSpacing.xxs),
+            page == null
+                ? const _PaginationEllipsis()
+                : _PaginationPageButton(
+                    page: page,
+                    selected: page == currentPage,
+                    onTap: () => onPageChanged?.call(page),
+                  ),
+          ],
+          const SizedBox(width: AppSpacing.xxs),
+          _PaginationIconButton(
+            iconName: AppIcons.chevronForward,
+            enabled: currentPage < totalPages,
+            onTap: () => onPageChanged?.call(currentPage + 1),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _PaginationIconButton extends StatelessWidget {
+class _PaginationIconButton extends StatefulWidget {
   const _PaginationIconButton({
     required this.iconName,
     required this.enabled,
@@ -510,33 +516,56 @@ class _PaginationIconButton extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_PaginationIconButton> createState() => _PaginationIconButtonState();
+}
+
+class _PaginationIconButtonState extends State<_PaginationIconButton> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  void _handleHoverChanged(bool value) {
+    if (_hovered == value) return;
+    setState(() {
+      _hovered = value;
+    });
+  }
+
+  void _handleFocusChanged(bool value) {
+    if (_focused == value) return;
+    setState(() {
+      _focused = value;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final child = SizedBox(
-      width: 32,
-      height: 32,
+    final enabled = widget.enabled;
+    final border = enabled && _focused
+        ? Border.all(color: colors.state.focusRing, width: 1.5)
+        : null;
+
+    return _PaginationItemShell(
+      enabled: enabled,
+      backgroundColor: enabled && _hovered
+          ? _paginationHoverBackgroundColor(context)
+          : null,
+      border: border,
+      onTap: widget.onTap,
+      onHoverChanged: _handleHoverChanged,
+      onFocusChanged: _handleFocusChanged,
       child: Center(
         child: AppIcon(
-          iconName,
-          size: 16,
-          color: enabled ? colors.icon.accent : colors.text.disabled,
+          widget.iconName,
+          size: 14,
+          color: enabled ? colors.icon.accent : colors.icon.disabled,
         ),
-      ),
-    );
-
-    if (!enabled) return child;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: child,
       ),
     );
   }
 }
 
-class _PaginationPageButton extends StatelessWidget {
+class _PaginationPageButton extends StatefulWidget {
   const _PaginationPageButton({
     required this.page,
     required this.selected,
@@ -548,26 +577,112 @@ class _PaginationPageButton extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_PaginationPageButton> createState() => _PaginationPageButtonState();
+}
+
+class _PaginationPageButtonState extends State<_PaginationPageButton> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  void _handleHoverChanged(bool value) {
+    if (_hovered == value) return;
+    setState(() {
+      _hovered = value;
+    });
+  }
+
+  void _handleFocusChanged(bool value) {
+    if (_focused == value) return;
+    setState(() {
+      _focused = value;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final child = SizedBox(
-      width: 32,
-      height: 32,
+    final selected = widget.selected;
+    final backgroundColor = selected
+        ? colors.background.brandCrimsonStrong
+        : _hovered
+        ? _paginationHoverBackgroundColor(context)
+        : null;
+    final textColor = selected ? colors.text.inverse : colors.text.accent;
+    final border = !selected && _focused
+        ? Border.all(color: colors.state.focusRing, width: 1.5)
+        : null;
+
+    return _PaginationItemShell(
+      selected: selected,
+      backgroundColor: backgroundColor,
+      border: border,
+      onTap: selected ? null : widget.onTap,
+      onHoverChanged: _handleHoverChanged,
+      onFocusChanged: _handleFocusChanged,
       child: Center(
         child: Text(
-          '$page',
-          style: AppTypography.bodySmall.copyWith(color: colors.text.accent),
+          '${widget.page}',
+          style: AppTypography.labelMedium.copyWith(color: textColor),
         ),
       ),
     );
+  }
+}
 
-    if (selected) return child;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: child,
+class _PaginationItemShell extends StatelessWidget {
+  const _PaginationItemShell({
+    required this.child,
+    this.selected = false,
+    this.enabled = true,
+    this.backgroundColor,
+    this.border,
+    this.onTap,
+    this.onHoverChanged,
+    this.onFocusChanged,
+  });
+
+  final Widget child;
+  final bool selected;
+  final bool enabled;
+  final Color? backgroundColor;
+  final Border? border;
+  final VoidCallback? onTap;
+  final ValueChanged<bool>? onHoverChanged;
+  final ValueChanged<bool>? onFocusChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutCubic,
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        border: border,
+      ),
+      child: child,
+    );
+
+    if (!enabled || onTap == null) return content;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => onHoverChanged?.call(true),
+        onExit: (_) => onHoverChanged?.call(false),
+        child: FocusableActionDetector(
+          mouseCursor: SystemMouseCursors.click,
+          onShowFocusHighlight: onFocusChanged,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: content,
+          ),
+        ),
       ),
     );
   }
@@ -584,13 +699,19 @@ class _PaginationEllipsis extends StatelessWidget {
       child: Center(
         child: Text(
           '...',
-          style: AppTypography.bodySmall.copyWith(
+          style: AppTypography.labelMedium.copyWith(
             color: context.colors.text.accent,
           ),
         ),
       ),
     );
   }
+}
+
+Color _paginationHoverBackgroundColor(BuildContext context) {
+  final colors = context.colors;
+  final isDark = AppTheme.of(context) == AppThemeData.dark;
+  return isDark ? colors.background.raised : colors.background.base;
 }
 
 List<int?> _visiblePages(int currentPage, int totalPages) {
