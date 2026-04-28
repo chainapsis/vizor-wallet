@@ -300,12 +300,21 @@ final _routerProvider = Provider<GoRouter>((ref) {
           if (txid == null || txid.isEmpty) {
             return const ActivityScreen();
           }
+          final txKind = state.uri.queryParameters['kind'];
           final extra = state.extra;
           if (extra is ActivityTransactionStatusArgs) {
-            return ActivityTransactionStatusScreen(args: extra);
+            final args = extra.txKind == null && txKind != null
+                ? ActivityTransactionStatusArgs(
+                    txidHex: extra.txidHex,
+                    txKind: txKind,
+                    initialTransaction: extra.initialTransaction,
+                    initialDetail: extra.initialDetail,
+                  )
+                : extra;
+            return ActivityTransactionStatusScreen(args: args);
           }
           return ActivityTransactionStatusScreen(
-            args: ActivityTransactionStatusArgs(txidHex: txid),
+            args: ActivityTransactionStatusArgs(txidHex: txid, txKind: txKind),
           );
         },
       ),

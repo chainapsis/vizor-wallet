@@ -22,11 +22,13 @@ import '../activity_row_mapper.dart';
 class ActivityTransactionStatusArgs {
   const ActivityTransactionStatusArgs({
     required this.txidHex,
+    this.txKind,
     this.initialTransaction,
     this.initialDetail,
   });
 
   final String txidHex;
+  final String? txKind;
   final rust_sync.TransactionInfo? initialTransaction;
   final rust_sync.TransactionDetail? initialDetail;
 }
@@ -97,7 +99,10 @@ class _ActivityTransactionStatusScreenState
       final tx = _findTransaction(
         txs,
         widget.args.txidHex,
-        txKind: _transaction?.txKind ?? widget.args.initialTransaction?.txKind,
+        txKind:
+            _transaction?.txKind ??
+            widget.args.initialTransaction?.txKind ??
+            widget.args.txKind,
       );
       rust_sync.TransactionDetail? detail;
       if (tx != null) {
@@ -155,6 +160,7 @@ class _ActivityTransactionStatusScreenState
           return tx;
         }
       }
+      return null;
     }
     for (final tx in transactions) {
       if (tx.txidHex.toLowerCase() == normalized) return tx;
@@ -165,7 +171,9 @@ class _ActivityTransactionStatusScreenState
   String _recentTxSignature(SyncState? sync) {
     final txid = widget.args.txidHex.toLowerCase();
     final txKind =
-        _transaction?.txKind ?? widget.args.initialTransaction?.txKind;
+        _transaction?.txKind ??
+        widget.args.initialTransaction?.txKind ??
+        widget.args.txKind;
     if (txKind != null) {
       for (final tx in sync?.recentTransactions ?? const []) {
         if (tx.txidHex.toLowerCase() == txid && tx.txKind == txKind) {
@@ -178,6 +186,7 @@ class _ActivityTransactionStatusScreenState
           ].join(':');
         }
       }
+      return '';
     }
     for (final tx in sync?.recentTransactions ?? const []) {
       if (tx.txidHex.toLowerCase() == txid) {

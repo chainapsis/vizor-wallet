@@ -169,9 +169,13 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     final detail = await _loadTransactionDetail(transaction);
     if (!mounted) return;
     context.push(
-      '/activity/tx/${transaction.txidHex}',
+      Uri(
+        path: '/activity/tx/${transaction.txidHex}',
+        queryParameters: {'kind': transaction.txKind},
+      ).toString(),
       extra: ActivityTransactionStatusArgs(
         txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
         initialTransaction: transaction,
         initialDetail: detail,
       ),
