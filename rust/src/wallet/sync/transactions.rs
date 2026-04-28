@@ -440,8 +440,8 @@ fn summarize_outputs(outputs: &[TxOutput], account_uuid: &[u8]) -> OutputSummary
     for output in outputs {
         let from_own = output.from_account_uuid.as_deref() == Some(account_uuid);
         let to_own = output.to_account_uuid.as_deref() == Some(account_uuid);
-        let external_send = from_own && output.to_account_uuid.is_none() && !output.is_change;
-        let external_receive = to_own && output.from_account_uuid.is_none() && !output.is_change;
+        let external_send = from_own && !to_own && !output.is_change;
+        let external_receive = to_own && !from_own && !output.is_change;
         let external_display_output = external_send || external_receive;
 
         if output.output_pool == 0 {
@@ -817,6 +817,10 @@ mod tests {
         uuid::Uuid::from_u128(0x7e2b16db08384ddba8026fd48b9e0d02)
     }
 
+    fn second_test_account_uuid() -> uuid::Uuid {
+        uuid::Uuid::from_u128(0x3eb4ded306b74bf2a5393f1b78d792a6)
+    }
+
     fn fresh_history_db() -> NamedTempFile {
         let file = NamedTempFile::new().unwrap();
         let conn = rusqlite::Connection::open(file.path()).unwrap();
@@ -1041,6 +1045,94 @@ mod tests {
         assert_eq!(got[0].txid_hex, hex::encode(internal_tx));
         assert_eq!(got[0].tx_kind, "internal");
         assert_eq!(got[0].display_amount, 18_262_101);
+    }
+
+    #[test]
+    fn history_treats_send_to_other_local_account_as_sent() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let other_account = second_test_account_uuid();
+        let txid = fake_txid(0xB2);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -5_000_000,
+            5_000_000,
+            0,
+            false,
+            Some("2026-04-28T14:03:00Z"),
+        );
+        insert_output(
+            &db,
+            &txid,
+            0,
+            Some(account),
+            Some(other_account),
+            5_000_000,
+            false,
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(txid));
+        assert_eq!(got[0].tx_kind, "sent");
+        assert_eq!(got[0].display_amount, 5_000_000);
+    }
+
+    #[test]
+    fn history_treats_receive_from_other_local_account_as_received() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let other_account = second_test_account_uuid();
+        let txid = fake_txid(0xB3);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            5_000_000,
+            0,
+            5_000_000,
+            false,
+            Some("2026-04-28T14:04:00Z"),
+        );
+        insert_output(
+            &db,
+            &txid,
+            0,
+            Some(other_account),
+            Some(account),
+            5_000_000,
+            false,
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(txid));
+        assert_eq!(got[0].tx_kind, "received");
+        assert_eq!(got[0].display_amount, 5_000_000);
     }
 
     #[test]
