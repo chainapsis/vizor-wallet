@@ -513,266 +513,281 @@ class _HomeBalanceCard extends StatelessWidget {
           _shieldedCardBorderColor,
           revealProgress,
         )!;
+        final outerCardBorderRadius = BorderRadius.circular(_outerCardRadius);
+        final innerCardBorderRadius = BorderRadius.circular(
+          _outerCardRadius - _outerCardPadding,
+        );
 
         return ClipRRect(
-          borderRadius: BorderRadius.circular(_outerCardRadius),
+          borderRadius: outerCardBorderRadius,
           child: DecoratedBox(
-            decoration: BoxDecoration(color: colors.background.homeCard),
+            decoration: BoxDecoration(
+              color: colors.background.homeCard,
+              borderRadius: outerCardBorderRadius,
+            ),
             child: Padding(
               padding: const EdgeInsets.all(_outerCardPadding),
-              child: DecoratedBox(
-                decoration: BoxDecoration(color: colors.background.homeCard),
-                child: SizedBox(
-                  height: cardHeight,
-                  child: Stack(
-                    clipBehavior: Clip.hardEdge,
-                    children: [
-                      Positioned(
-                        left: 0,
-                        top: 0,
-                        right: 0,
-                        height: _shieldedCardHeight,
-                        child: ClipRRect(
-                          borderRadius: shieldedCardRadius,
-                          child: DecoratedBox(
-                            position: DecorationPosition.foreground,
-                            decoration: BoxDecoration(
-                              borderRadius: shieldedCardRadius,
-                              border: Border.all(
-                                color: shieldedCardBorderColor,
-                                width: _shieldedCardBorderWidth,
+              child: ClipRRect(
+                borderRadius: innerCardBorderRadius,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.background.homeCard,
+                    borderRadius: innerCardBorderRadius,
+                  ),
+                  child: SizedBox(
+                    height: cardHeight,
+                    child: Stack(
+                      clipBehavior: Clip.hardEdge,
+                      children: [
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          right: 0,
+                          height: _shieldedCardHeight,
+                          child: ClipRRect(
+                            borderRadius: shieldedCardRadius,
+                            child: DecoratedBox(
+                              position: DecorationPosition.foreground,
+                              decoration: BoxDecoration(
+                                borderRadius: shieldedCardRadius,
+                                border: Border.all(
+                                  color: shieldedCardBorderColor,
+                                  width: _shieldedCardBorderWidth,
+                                ),
+                              ),
+                              child: Stack(
+                                children: [
+                                  Positioned.fill(
+                                    child: IgnorePointer(
+                                      child: Stack(
+                                        children: [
+                                          Positioned.fill(
+                                            child: DecoratedBox(
+                                              decoration: BoxDecoration(
+                                                gradient: LinearGradient(
+                                                  begin: Alignment.centerLeft,
+                                                  end: Alignment.centerRight,
+                                                  colors: isDark
+                                                      ? [
+                                                          colors
+                                                              .background
+                                                              .homeCard
+                                                              .withValues(
+                                                                alpha: 0.90,
+                                                              ),
+                                                          colors
+                                                              .background
+                                                              .homeCard
+                                                              .withValues(
+                                                                alpha: 0.82,
+                                                              ),
+                                                          colors
+                                                              .background
+                                                              .homeCard
+                                                              .withValues(
+                                                                alpha: 0.48,
+                                                              ),
+                                                          colors
+                                                              .background
+                                                              .homeCard
+                                                              .withValues(
+                                                                alpha: 0.00,
+                                                              ),
+                                                        ]
+                                                      : [
+                                                          colors
+                                                              .background
+                                                              .homeCard
+                                                              .withValues(
+                                                                alpha: 0.98,
+                                                              ),
+                                                          colors
+                                                              .background
+                                                              .homeCard
+                                                              .withValues(
+                                                                alpha: 0.95,
+                                                              ),
+                                                          colors
+                                                              .background
+                                                              .homeCard
+                                                              .withValues(
+                                                                alpha: 0.70,
+                                                              ),
+                                                          colors
+                                                              .background
+                                                              .homeCard
+                                                              .withValues(
+                                                                alpha: 0.00,
+                                                              ),
+                                                        ],
+                                                  stops: const [
+                                                    0.0,
+                                                    0.28,
+                                                    0.56,
+                                                    0.86,
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          Positioned.fill(
+                                            child: Align(
+                                              alignment: Alignment.centerRight,
+                                              child: Image.asset(
+                                                isDark
+                                                    ? 'assets/illustrations/home_balance_card_bg_dark.png'
+                                                    : 'assets/illustrations/home_balance_card_bg_light.png',
+                                                fit: BoxFit.cover,
+                                                width: 604,
+                                                height: _shieldedCardHeight,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned.fill(
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        AppSpacing.sm,
+                                        AppSpacing.md,
+                                        AppSpacing.sm,
+                                        AppSpacing.md,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.all(
+                                                  AppSpacing.xxs,
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    _HomeBalanceShieldIcon(
+                                                      isDark: isDark,
+                                                      iconColor: colors
+                                                          .icon
+                                                          .brandCrimson,
+                                                    ),
+                                                    const SizedBox(
+                                                      width: AppSpacing.xs,
+                                                    ),
+                                                    Text(
+                                                      'Shielded Balance',
+                                                      style: AppTypography
+                                                          .labelLarge
+                                                          .copyWith(
+                                                            color: colors
+                                                                .text
+                                                                .homeCard,
+                                                          ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const Spacer(),
+                                              _IconPillButton(
+                                                iconName: isBalanceVisible
+                                                    ? AppIcons.eye
+                                                    : AppIcons.eyeClosed,
+                                                onPressed:
+                                                    onToggleBalanceVisibility,
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: AppSpacing.xs),
+                                          Text(
+                                            displayedShieldedBalance,
+                                            style: AppTypography.displayMedium
+                                                .copyWith(
+                                                  color: colors.text.homeCard,
+                                                ),
+                                          ),
+                                          const Spacer(),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              AppButton(
+                                                onPressed: () =>
+                                                    context.push('/send'),
+                                                variant:
+                                                    AppButtonVariant.primary,
+                                                minWidth: _actionButtonMinWidth,
+                                                leading: const AppIcon(
+                                                  AppIcons.plane,
+                                                ),
+                                                child: const Text('Send'),
+                                              ),
+                                              const SizedBox(
+                                                width: AppSpacing.xs,
+                                              ),
+                                              AppButton(
+                                                onPressed: () =>
+                                                    context.push('/receive'),
+                                                variant:
+                                                    AppButtonVariant.secondary,
+                                                minWidth: _actionButtonMinWidth,
+                                                leading: const AppIcon(
+                                                  AppIcons.arrowDownCircle,
+                                                ),
+                                                child: const Text('Receive'),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            child: Stack(
-                              children: [
-                                Positioned.fill(
-                                  child: IgnorePointer(
-                                    child: Stack(
-                                      children: [
-                                        Positioned.fill(
-                                          child: DecoratedBox(
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                begin: Alignment.centerLeft,
-                                                end: Alignment.centerRight,
-                                                colors: isDark
-                                                    ? [
-                                                        colors
-                                                            .background
-                                                            .homeCard
-                                                            .withValues(
-                                                              alpha: 0.90,
-                                                            ),
-                                                        colors
-                                                            .background
-                                                            .homeCard
-                                                            .withValues(
-                                                              alpha: 0.82,
-                                                            ),
-                                                        colors
-                                                            .background
-                                                            .homeCard
-                                                            .withValues(
-                                                              alpha: 0.48,
-                                                            ),
-                                                        colors
-                                                            .background
-                                                            .homeCard
-                                                            .withValues(
-                                                              alpha: 0.00,
-                                                            ),
-                                                      ]
-                                                    : [
-                                                        colors
-                                                            .background
-                                                            .homeCard
-                                                            .withValues(
-                                                              alpha: 0.98,
-                                                            ),
-                                                        colors
-                                                            .background
-                                                            .homeCard
-                                                            .withValues(
-                                                              alpha: 0.95,
-                                                            ),
-                                                        colors
-                                                            .background
-                                                            .homeCard
-                                                            .withValues(
-                                                              alpha: 0.70,
-                                                            ),
-                                                        colors
-                                                            .background
-                                                            .homeCard
-                                                            .withValues(
-                                                              alpha: 0.00,
-                                                            ),
-                                                      ],
-                                                stops: const [
-                                                  0.0,
-                                                  0.28,
-                                                  0.56,
-                                                  0.86,
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        Positioned.fill(
-                                          child: Align(
-                                            alignment: Alignment.centerRight,
-                                            child: Image.asset(
-                                              isDark
-                                                  ? 'assets/illustrations/home_balance_card_bg_dark.png'
-                                                  : 'assets/illustrations/home_balance_card_bg_light.png',
-                                              fit: BoxFit.cover,
-                                              width: 604,
-                                              height: _shieldedCardHeight,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                Positioned.fill(
-                                  child: Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      AppSpacing.sm,
-                                      AppSpacing.md,
-                                      AppSpacing.sm,
-                                      AppSpacing.md,
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.all(
-                                                AppSpacing.xxs,
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  _HomeBalanceShieldIcon(
-                                                    isDark: isDark,
-                                                    iconColor: colors
-                                                        .icon
-                                                        .brandCrimson,
-                                                  ),
-                                                  const SizedBox(
-                                                    width: AppSpacing.xs,
-                                                  ),
-                                                  Text(
-                                                    'Shielded Balance',
-                                                    style: AppTypography
-                                                        .labelLarge
-                                                        .copyWith(
-                                                          color: colors
-                                                              .text
-                                                              .homeCard,
-                                                        ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            const Spacer(),
-                                            _IconPillButton(
-                                              iconName: isBalanceVisible
-                                                  ? AppIcons.eye
-                                                  : AppIcons.eyeClosed,
-                                              onPressed:
-                                                  onToggleBalanceVisibility,
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: AppSpacing.xs),
-                                        Text(
-                                          displayedShieldedBalance,
-                                          style: AppTypography.displayMedium
-                                              .copyWith(
-                                                color: colors.text.homeCard,
-                                              ),
-                                        ),
-                                        const Spacer(),
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            AppButton(
-                                              onPressed: () =>
-                                                  context.push('/send'),
-                                              variant: AppButtonVariant.primary,
-                                              minWidth: _actionButtonMinWidth,
-                                              leading: const AppIcon(
-                                                AppIcons.plane,
-                                              ),
-                                              child: const Text('Send'),
-                                            ),
-                                            const SizedBox(
-                                              width: AppSpacing.xs,
-                                            ),
-                                            AppButton(
-                                              onPressed: () =>
-                                                  context.push('/receive'),
-                                              variant:
-                                                  AppButtonVariant.secondary,
-                                              minWidth: _actionButtonMinWidth,
-                                              leading: const AppIcon(
-                                                AppIcons.arrowDownCircle,
-                                              ),
-                                              child: const Text('Receive'),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
                           ),
                         ),
-                      ),
-                      Positioned(
-                        left: 0,
-                        top: _shieldedCardHeight,
-                        right: 0,
-                        height: stripHeight,
-                        child: SizedBox(
+                        Positioned(
+                          left: 0,
+                          top: _shieldedCardHeight,
+                          right: 0,
                           height: stripHeight,
-                          child: ClipRect(
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 220),
-                              switchInCurve: Curves.easeOutCubic,
-                              switchOutCurve: Curves.easeInCubic,
-                              transitionBuilder: (child, animation) {
-                                final curved = CurvedAnimation(
-                                  parent: animation,
-                                  curve: Curves.easeOutCubic,
-                                  reverseCurve: Curves.easeInCubic,
-                                );
-                                return ClipRect(
-                                  child: SizeTransition(
-                                    sizeFactor: curved,
-                                    axisAlignment: -1,
-                                    child: SlideTransition(
-                                      position: Tween<Offset>(
-                                        begin: const Offset(0, -0.85),
-                                        end: Offset.zero,
-                                      ).animate(curved),
-                                      child: child,
+                          child: SizedBox(
+                            height: stripHeight,
+                            child: ClipRect(
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 220),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
+                                transitionBuilder: (child, animation) {
+                                  final curved = CurvedAnimation(
+                                    parent: animation,
+                                    curve: Curves.easeOutCubic,
+                                    reverseCurve: Curves.easeInCubic,
+                                  );
+                                  return ClipRect(
+                                    child: SizeTransition(
+                                      sizeFactor: curved,
+                                      axisAlignment: -1,
+                                      child: SlideTransition(
+                                        position: Tween<Offset>(
+                                          begin: const Offset(0, -0.85),
+                                          end: Offset.zero,
+                                        ).animate(curved),
+                                        child: child,
+                                      ),
                                     ),
-                                  ),
-                                );
-                              },
-                              child: transparentStrip,
+                                  );
+                                },
+                                child: transparentStrip,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
