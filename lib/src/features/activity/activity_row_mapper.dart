@@ -11,7 +11,7 @@ List<ActivityRowData> buildActivityRows({
   required SyncState sync,
   required Iterable<rust_sync.TransactionInfo> transactions,
   VoidCallback? onRetrySync,
-  VoidCallback? onTransactionTap,
+  ValueChanged<rust_sync.TransactionInfo>? onTransactionTap,
 }) {
   return [
     buildSyncActivityRow(
@@ -23,7 +23,7 @@ List<ActivityRowData> buildActivityRows({
       (tx) => buildTransactionActivityRow(
         context: context,
         transaction: tx,
-        onTap: onTransactionTap,
+        onTap: onTransactionTap == null ? null : () => onTransactionTap(tx),
       ),
     ),
   ];

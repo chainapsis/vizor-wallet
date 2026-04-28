@@ -21,6 +21,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../activity_row_mapper.dart';
 import '../models/activity_row_data.dart';
 import '../widgets/activity_table.dart';
+import 'activity_transaction_status_screen.dart';
 
 class ActivityScreen extends ConsumerStatefulWidget {
   const ActivityScreen({super.key});
@@ -158,7 +159,15 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     }
   }
 
-  void _handleTransactionRowAction() {}
+  void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
+    context.push(
+      '/activity/tx/${transaction.txidHex}',
+      extra: ActivityTransactionStatusArgs(
+        txidHex: transaction.txidHex,
+        initialTransaction: transaction,
+      ),
+    );
+  }
 
   String _recentSignature(SyncState? sync) {
     return sync?.recentTransactions
@@ -219,7 +228,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               (tx) => buildTransactionActivityRow(
                 context: context,
                 transaction: tx,
-                onTap: _handleTransactionRowAction,
+                onTap: () => _openTransactionStatus(tx),
               ),
             ),
           ];

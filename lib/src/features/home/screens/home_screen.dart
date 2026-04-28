@@ -22,6 +22,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../activity/activity_row_mapper.dart';
 import '../../activity/models/activity_row_data.dart';
+import '../../activity/screens/activity_transaction_status_screen.dart';
 import '../../activity/widgets/activity_table.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -429,11 +430,19 @@ class _HomePaneState extends State<_HomePane> {
       sync: widget.sync,
       transactions: widget.sync.recentTransactions.take(8),
       onRetrySync: widget.onRetrySync,
-      onTransactionTap: _handleActivityRowAction,
+      onTransactionTap: _openTransactionStatus,
     );
   }
 
-  void _handleActivityRowAction() {}
+  void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
+    context.push(
+      '/activity/tx/${transaction.txidHex}',
+      extra: ActivityTransactionStatusArgs(
+        txidHex: transaction.txidHex,
+        initialTransaction: transaction,
+      ),
+    );
+  }
 }
 
 class _HomeBalanceCard extends StatelessWidget {

@@ -9,6 +9,7 @@ import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/features/activity/screens/activity_screen.dart';
+import 'src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
 import 'src/features/onboarding/create/intro_zcash_screen.dart';
@@ -292,6 +293,22 @@ final _routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
       GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),
+      GoRoute(
+        path: '/activity/tx/:txid',
+        builder: (_, state) {
+          final txid = state.pathParameters['txid'];
+          if (txid == null || txid.isEmpty) {
+            return const ActivityScreen();
+          }
+          final extra = state.extra;
+          if (extra is ActivityTransactionStatusArgs) {
+            return ActivityTransactionStatusScreen(args: extra);
+          }
+          return ActivityTransactionStatusScreen(
+            args: ActivityTransactionStatusArgs(txidHex: txid),
+          );
+        },
+      ),
       GoRoute(path: '/send', builder: (_, _) => const SendScreen()),
       GoRoute(
         path: '/send/review',

@@ -14,13 +14,12 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../../services/keystone_transport.dart';
+import '../widgets/transaction_receipt_view.dart';
 import 'send_review_screen.dart';
 
 const _saplingSpendHash = 'a15ab54c2888880e53c823a3063820c728444126';
@@ -457,6 +456,11 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   @override
   Widget build(BuildContext context) {
     final addressLines = _splitAddress();
+    final receiptPhase = switch (_phase) {
+      _SendStatusPhase.sending => TransactionReceiptPhase.sending,
+      _SendStatusPhase.succeeded => TransactionReceiptPhase.succeeded,
+      _SendStatusPhase.failed => TransactionReceiptPhase.failed,
+    };
 
     return PopScope<void>(
       canPop: false,
@@ -472,7 +476,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           child: Stack(
             children: [
               const Positioned.fill(
-                child: IgnorePointer(child: _SendStatusIllustration()),
+                child: IgnorePointer(child: TransactionReceiptIllustration()),
               ),
               Positioned.fill(
                 child: Padding(
@@ -484,24 +488,39 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                   ),
                   child: Column(
                     children: [
-                      _SendStatusBackRow(onTap: _goHome),
+                      TransactionReceiptBackRow(onTap: _goHome),
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.only(right: 255),
                           child: Align(
                             alignment: Alignment.centerLeft,
-                            child: _SendStatusContent(
-                              phase: _phase,
+                            child: TransactionReceiptView(
+                              phase: receiptPhase,
                               amountText: _formatReceiptAmount(
                                 widget.args.amountZatoshi,
                               ),
-                              addressLines: addressLines,
-                              addressSpanBuilder: (line) =>
-                                  _addressSpans(context, line),
+                              primaryBlock: TransactionReceiptBlockData(
+                                title: 'To',
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    for (final line in addressLines)
+                                      RichText(
+                                        text: TextSpan(
+                                          children: _addressSpans(
+                                            context,
+                                            line,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
                               feeText:
                                   '${_formatFee(widget.args.feeZatoshi)} ZEC',
                               dateText: _formatDate(_completedAt ?? _startedAt),
                               error: _error,
+                              failureFallbackText: 'Send failed',
                               onCopyTxid: _phase == _SendStatusPhase.succeeded
                                   ? _copyTransactionHash
                                   : null,
@@ -520,310 +539,6 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _SendStatusBackRow extends StatelessWidget {
-  const _SendStatusBackRow({required this.onTap});
-
-  final Future<void> Function() onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => unawaited(onTap()),
-          child: SizedBox(
-            height: 32,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: 16,
-                  color: colors.icon.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SendStatusContent extends StatelessWidget {
-  const _SendStatusContent({
-    required this.phase,
-    required this.amountText,
-    required this.addressLines,
-    required this.addressSpanBuilder,
-    required this.feeText,
-    required this.dateText,
-    required this.error,
-    required this.onCopyTxid,
-    required this.onBackToWallet,
-  });
-
-  final _SendStatusPhase phase;
-  final String amountText;
-  final List<String> addressLines;
-  final List<TextSpan> Function(String line) addressSpanBuilder;
-  final String feeText;
-  final String dateText;
-  final String? error;
-  final VoidCallback? onCopyTxid;
-  final VoidCallback? onBackToWallet;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 328,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _SendStatusHeadline(phase: phase, amountText: amountText),
-              const SizedBox(height: AppSpacing.md),
-              _SendStatusBlock(
-                title: 'To',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (final line in addressLines)
-                      RichText(
-                        text: TextSpan(children: addressSpanBuilder(line)),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: _SendStatusBlock(
-                      title: 'Date',
-                      child: Text(
-                        dateText,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: context.colors.text.accent,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: _SendStatusBlock(
-                      title: 'Tx Fee',
-                      child: Text(
-                        feeText,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: context.colors.text.accent,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        SizedBox(
-          width: 256,
-          child: switch (phase) {
-            _SendStatusPhase.sending => const SizedBox(height: 40),
-            _SendStatusPhase.succeeded => AppButton(
-              onPressed: onCopyTxid,
-              variant: AppButtonVariant.secondary,
-              minWidth: 256,
-              trailing: AppIcon(
-                AppIcons.arrowTopRight,
-                color: context.colors.button.secondary.label,
-              ),
-              child: const Text('Transaction Hash'),
-            ),
-            _SendStatusPhase.failed => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _SendStatusFailureMessage(message: error ?? 'Send failed'),
-                const SizedBox(height: AppSpacing.xs),
-                AppButton(
-                  onPressed: onBackToWallet,
-                  variant: AppButtonVariant.secondary,
-                  minWidth: 256,
-                  child: const Text('Back to Wallet'),
-                ),
-              ],
-            ),
-          },
-        ),
-      ],
-    );
-  }
-}
-
-class _SendStatusHeadline extends StatelessWidget {
-  const _SendStatusHeadline({required this.phase, required this.amountText});
-
-  final _SendStatusPhase phase;
-  final String amountText;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final icon = switch (phase) {
-      _SendStatusPhase.sending => AppIcons.loader,
-      _SendStatusPhase.succeeded => AppIcons.check,
-      _SendStatusPhase.failed => AppIcons.warning,
-    };
-    final label = switch (phase) {
-      _SendStatusPhase.sending => 'Sending...',
-      _SendStatusPhase.succeeded => 'Succeeded',
-      _SendStatusPhase.failed => 'Failed',
-    };
-    final labelColor = switch (phase) {
-      _SendStatusPhase.sending => colors.text.accent,
-      _SendStatusPhase.succeeded => colors.text.success,
-      _SendStatusPhase.failed => colors.text.destructive,
-    };
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(AppSpacing.xxs),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(icon, size: 16, color: labelColor),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                label,
-                style: AppTypography.labelMedium.copyWith(color: labelColor),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          amountText,
-          style: AppTypography.displayMedium.copyWith(
-            color: colors.text.accent,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SendStatusBlock extends StatelessWidget {
-  const _SendStatusBlock({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: AppTypography.labelMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        child,
-      ],
-    );
-  }
-}
-
-class _SendStatusFailureMessage extends StatelessWidget {
-  const _SendStatusFailureMessage({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AppIcon(
-          AppIcons.warning,
-          size: 16,
-          color: context.colors.text.destructive,
-        ),
-        const SizedBox(width: AppSpacing.xxs),
-        Expanded(
-          child: Text(
-            message,
-            style: AppTypography.labelMedium.copyWith(
-              color: context.colors.text.destructive,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SendStatusIllustration extends StatelessWidget {
-  const _SendStatusIllustration();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final assetPath = isDark
-        ? 'assets/illustrations/send_status_illustration_dark.png'
-        : 'assets/illustrations/send_status_illustration_light.png';
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Image.asset(
-              assetPath,
-              fit: BoxFit.fitHeight,
-              alignment: Alignment.centerRight,
-              height: double.infinity,
-            ),
-          ),
-        ),
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(color: colors.fade.illustration),
-          ),
-        ),
-      ],
     );
   }
 }
