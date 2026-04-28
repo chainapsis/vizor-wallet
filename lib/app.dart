@@ -31,6 +31,7 @@ import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
 import 'src/features/settings/screens/settings_screen.dart';
+import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
@@ -342,6 +343,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const ImportKeystoneScreen(),
       ),
       GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+      GoRoute(
+        path: '/settings/secret-passphrase',
+        builder: (_, _) => const SettingsSeedPhraseScreen(),
+      ),
     ],
   );
 });

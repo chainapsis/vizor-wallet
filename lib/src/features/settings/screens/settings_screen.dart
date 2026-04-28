@@ -20,20 +20,25 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final accountState = ref.watch(accountProvider).value;
     final activeAccountName = accountState?.activeAccount?.name ?? 'Wallet 1';
+    final activeAccountIsHardware =
+        accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
     final endpointLabel = _endpointLabel(
       ref.watch(appBootstrapProvider).network,
     );
 
     return AppDesktopShell(
+      sidebarWidth: 240,
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: _SettingsPane(
           accountName: activeAccountName,
+          activeAccountIsHardware: activeAccountIsHardware,
           endpointLabel: endpointLabel,
           themeLabel: _themeLabel(themeMode),
           onBack: () => _handleBack(context),
+          onSeedPhrase: () => context.go('/settings/secret-passphrase'),
         ),
       ),
     );
@@ -66,15 +71,19 @@ class SettingsScreen extends ConsumerWidget {
 class _SettingsPane extends StatelessWidget {
   const _SettingsPane({
     required this.accountName,
+    required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
     required this.onBack,
+    required this.onSeedPhrase,
   });
 
   final String accountName;
+  final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
   final VoidCallback onBack;
+  final VoidCallback onSeedPhrase;
 
   @override
   Widget build(BuildContext context) {
@@ -110,8 +119,10 @@ class _SettingsPane extends StatelessWidget {
                       const SizedBox(height: AppSpacing.sm),
                       _SettingsList(
                         accountName: accountName,
+                        activeAccountIsHardware: activeAccountIsHardware,
                         endpointLabel: endpointLabel,
                         themeLabel: themeLabel,
+                        onSeedPhrase: onSeedPhrase,
                       ),
                     ],
                   ),
@@ -167,13 +178,17 @@ class _SettingsBackButton extends StatelessWidget {
 class _SettingsList extends StatelessWidget {
   const _SettingsList({
     required this.accountName,
+    required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
+    required this.onSeedPhrase,
   });
 
   final String accountName;
+  final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
+  final VoidCallback onSeedPhrase;
 
   @override
   Widget build(BuildContext context) {
@@ -183,10 +198,11 @@ class _SettingsList extends StatelessWidget {
         _SettingsBlock(
           title: 'Account',
           rows: [
-            const _SettingsRow(
+            _SettingsRow(
               iconName: AppIcons.key,
               label: 'Secret Passphrase',
-              value: 'View',
+              value: activeAccountIsHardware ? 'Unavailable' : 'View',
+              onTap: activeAccountIsHardware ? null : onSeedPhrase,
             ),
             const _SettingsRowDivider(),
             const _SettingsRow(
@@ -285,16 +301,18 @@ class _SettingsRow extends StatelessWidget {
     required this.iconName,
     required this.label,
     required this.value,
+    this.onTap,
   });
 
   final String iconName;
   final String label;
   final String value;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
+    final row = Container(
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
       decoration: BoxDecoration(
@@ -328,6 +346,16 @@ class _SettingsRow extends StatelessWidget {
           const SizedBox(width: AppSpacing.xxs),
           AppIcon(AppIcons.chevronForward, size: 16, color: colors.icon.accent),
         ],
+      ),
+    );
+
+    if (onTap == null) return row;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: row,
       ),
     );
   }

@@ -155,7 +155,10 @@ class AppSecureStore {
     clearSessionPassword();
   }
 
-  Future<bool> verifyPassword(String password) async {
+  /// Checks the wallet password without opening or refreshing the encrypted
+  /// storage session. Use this for in-app re-authentication prompts where the
+  /// wallet is already unlocked and callers only need a fresh password check.
+  Future<bool> verifyPasswordOnly(String password) async {
     if (!isWalletPasswordValid(password)) {
       return false;
     }
@@ -172,7 +175,11 @@ class AppSecureStore {
       password,
       base64Decode(encodedSalt),
     );
-    final isMatch = derived == storedVerifier;
+    return derived == storedVerifier;
+  }
+
+  Future<bool> verifyPassword(String password) async {
+    final isMatch = await verifyPasswordOnly(password);
     if (isMatch) {
       setSessionPassword(password);
     }

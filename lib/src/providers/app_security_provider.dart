@@ -88,6 +88,13 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     return isValid;
   }
 
+  Future<bool> confirmPassword(String password) async {
+    if (!isWalletPasswordValid(password)) {
+      return false;
+    }
+    return _store.verifyPasswordOnly(password);
+  }
+
   void lock() {
     _store.clearSessionPassword();
     state = state.copyWith(isUnlocked: false);
