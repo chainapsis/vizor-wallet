@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../../main.dart' show log;
+import '../core/config/rpc_endpoint_config.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import 'background_sync_service.dart' as bg_sync;
 
@@ -56,7 +57,7 @@ abstract class BackgroundSyncDelegate {
 
   void disposeListeners();
 
-  Future<void> enable();
+  Future<void> enable({required RpcEndpointConfig endpoint});
 
   /// Returns true if foreground sync needs to be restarted after disabling.
   Future<bool> disable();
@@ -115,7 +116,7 @@ class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
   }
 
   @override
-  Future<void> enable() async {
+  Future<void> enable({required RpcEndpointConfig endpoint}) async {
     _active = true;
     await bg_sync.startBackgroundSync();
     log('BackgroundSyncDelegate(Android): enabled');
@@ -216,10 +217,10 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
   }
 
   @override
-  Future<void> enable() async {
+  Future<void> enable({required RpcEndpointConfig endpoint}) async {
     _active = true;
     rust_sync.setSyncMode(mode: 2);
-    await bg_sync.startBackgroundSync();
+    await bg_sync.startBackgroundSync(endpoint: endpoint);
     log('BackgroundSyncDelegate(iOS): enabled');
   }
 
@@ -296,7 +297,7 @@ class NoOpBackgroundSyncDelegate implements BackgroundSyncDelegate {
   void disposeListeners() {}
 
   @override
-  Future<void> enable() async {}
+  Future<void> enable({required RpcEndpointConfig endpoint}) async {}
 
   @override
   Future<bool> disable() async => false;

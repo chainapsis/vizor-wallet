@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
@@ -16,6 +15,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
@@ -303,6 +303,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     try {
       final supportDir = await getWalletSupportDirectory();
       final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
       final paramsDir =
           '${supportDir.path}${Platform.pathSeparator}sapling_params';
       final spendPath =
@@ -358,7 +359,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         );
         final pcztBytes = await rust_sync.createPcztFromProposal(
           dbPath: dbPath,
-          network: ZcashNetwork.mainnet.name,
+          network: endpoint.networkName,
           proposalId: widget.args.proposalId,
           sendFlowId: widget.args.sendFlowId,
         );
@@ -394,8 +395,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         );
         txid = await rust_sync.extractAndBroadcastPczt(
           dbPath: dbPath,
-          lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
-          network: ZcashNetwork.mainnet.name,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
           pcztWithProofsBytes: pcztWithProofs,
           pcztWithSignaturesBytes: pcztWithSignatures,
           spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
@@ -417,7 +418,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
         txid = await rust_sync.executeProposal(
           dbPath: dbPath,
-          lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           proposalId: widget.args.proposalId,
           sendFlowId: widget.args.sendFlowId,
           seed: seedBytes,
@@ -439,7 +440,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           final available =
               await channel.invokeMethod<bool>('isAvailable') ?? false;
           if (available) {
-            await channel.invokeMethod('startTxTracking');
+            await channel.invokeMethod('startTxTracking', {
+              'lightwalletdUrl': endpoint.normalizedLightwalletdUrl,
+            });
           }
         } catch (e) {
           log('SendStatus: iOS TX tracking failed (non-critical): $e');

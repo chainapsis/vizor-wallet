@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -17,6 +16,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -111,10 +111,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
       final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
       final result = await rust_sync.shieldTransparentBalance(
         dbPath: dbPath,
-        lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
-        network: ZcashNetwork.mainnet.name,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
         accountUuid: accountUuid,
         seed: seedBytes,
       );
@@ -460,13 +461,14 @@ class _HomePaneState extends ConsumerState<_HomePane> {
 
     try {
       final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
       if (!mounted ||
           accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
         return null;
       }
       return rust_sync.getTransactionDetail(
         dbPath: dbPath,
-        network: ZcashNetwork.mainnet.name,
+        network: endpoint.networkName,
         accountUuid: accountUuid,
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,

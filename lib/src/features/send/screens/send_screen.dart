@@ -18,6 +18,7 @@ import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -424,6 +425,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     try {
       final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
       if (!mounted || seq != _validateSeq) return;
       final memo = _memoController.text.trim();
       final accountUuid = widget.activeAccountUuid;
@@ -433,7 +435,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
       final fee = await rust_sync.estimateFee(
         dbPath: dbPath,
-        network: 'main',
+        network: endpoint.networkName,
         accountUuid: accountUuid,
         toAddress: address,
         amountZatoshi: zatoshi,
@@ -553,6 +555,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
       final memo = _memoController.text.trim();
       final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
       if (!mounted) return;
 
       // Step 1: Propose transfer
@@ -567,7 +570,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       }
       final proposal = await rust_sync.proposeSend(
         dbPath: dbPath,
-        network: 'main',
+        network: endpoint.networkName,
         accountUuid: accountUuid,
         sendFlowId: _sendFlowId,
         toAddress: address,

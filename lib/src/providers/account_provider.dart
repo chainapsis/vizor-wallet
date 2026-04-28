@@ -6,13 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
-import '../core/config/network_config.dart';
 import '../core/profile_pictures.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'app_security_provider.dart';
+import 'rpc_endpoint_provider.dart';
 
 export 'account_models.dart';
 
@@ -36,14 +36,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<String> createAccount({String? name}) async {
     try {
       final dbPath = await _getDbPath();
-      final network = await _getNetwork();
-      final networkConfig = network == 'main'
-          ? ZcashNetwork.mainnet
-          : ZcashNetwork.testnet;
+      final endpoint = ref.read(rpcEndpointProvider);
+      final network = endpoint.networkName;
 
       // Fetch chain tip as birthday
       final birthday = await rust_wallet.getLatestBlockHeight(
-        lightwalletdUrl: networkConfig.lightwalletdUrl,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       );
       log('createAccount: birthday=$birthday');
 
@@ -124,13 +122,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }) async {
     try {
       final dbPath = await _getDbPath();
-      final network = await _getNetwork();
-      final networkConfig = network == 'main'
-          ? ZcashNetwork.mainnet
-          : ZcashNetwork.testnet;
+      final endpoint = ref.read(rpcEndpointProvider);
+      final network = endpoint.networkName;
 
       final birthday = await rust_wallet.getLatestBlockHeight(
-        lightwalletdUrl: networkConfig.lightwalletdUrl,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       );
       log('createAccountFromMnemonic: birthday=$birthday');
 

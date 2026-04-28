@@ -6,13 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
-import '../core/config/network_config.dart';
+import '../core/config/rpc_endpoint_config.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/wallet.dart' as rust_wallet;
 import '../services/background_sync_delegate.dart';
 import 'account_provider.dart';
 import 'app_security_provider.dart';
+import 'rpc_endpoint_provider.dart';
 
 class SyncState {
   final bool isSyncing;
@@ -371,17 +372,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _getDbPath()
         .then((dbPath) {
           if (gen != _syncGen) return; // stopSync was called, abort
-          final network = ZcashNetwork.mainnet;
-          log('Sync: starting foreground sync');
+          final endpoint = _endpointConfig;
+          log('Sync: starting foreground sync via ${endpoint.hostPort}');
           // Fire up the mempool observer alongside the scan loop.
           // It has its own Rust cancel flag (MEMPOOL_CANCEL) and runs
           // on a separate tokio runtime, so it can accept events while
           // the scan loop is still catching up on old blocks.
-          _startMempoolObserver(dbPath, network);
+          _startMempoolObserver(dbPath, endpoint);
           final stream = rust_sync.startFullSync(
             dbPath: dbPath,
-            lightwalletdUrl: network.lightwalletdUrl,
-            network: network.name,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
             mode: 1,
           );
           _syncSub = stream.listen(
@@ -557,7 +558,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopDisplayProgressTimer();
     _stopPolling();
     if (_bgDelegate.isActive) {
-      _bgDelegate.disable();
+      unawaited(_bgDelegate.disable());
     }
     final prev = state.value;
     state = AsyncData(
@@ -704,7 +705,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<void> enableBackgroundSync() async {
     if (_bgDelegate.isActive) return;
-    await _bgDelegate.enable();
+    await _bgDelegate.enable(endpoint: _endpointConfig);
     _stopDisplayProgressTimer();
     log('SyncNotifier: background sync enabled');
   }
@@ -727,7 +728,27 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// silent for the rest of the session if the toggle fires while
   /// sync is already idle.
   Future<void> restartSync() async {
-    stopSync();
+    final hadBackgroundSync = _bgDelegate.isActive;
+    ++_syncGen;
+    rust_sync.cancelFullSync();
+    await _syncSub?.cancel();
+    _syncSub = null;
+    _stopMempoolObserver();
+    _isSyncing = false;
+    _stopPolling();
+    if (hadBackgroundSync) {
+      try {
+        await _bgDelegate.disable();
+      } catch (e) {
+        log('SyncNotifier: background disable before restart failed: $e');
+      }
+    }
+    final prev = state.value;
+    if (prev != null) {
+      state = AsyncData(
+        prev.copyWith(isSyncing: false, isBackgroundMode: false, phase: ''),
+      );
+    }
     // `cancelFullSync` / `stopMempoolObserver` set atomics that
     // the Rust loop and the mempool observer check at their own
     // cadence (batch boundaries for sync, the 100ms cancel-aware
@@ -762,6 +783,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
     startSync();
     _startPolling();
+    if (hadBackgroundSync) {
+      try {
+        await _bgDelegate.enable(endpoint: _endpointConfig);
+      } catch (e) {
+        log('SyncNotifier: background re-enable after restart failed: $e');
+      }
+    }
   }
 
   static Future<bool> isBackgroundSyncAvailable() async {
@@ -808,7 +836,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopPolling();
     try {
       final tip = await rust_wallet.getLatestBlockHeight(
-        lightwalletdUrl: ZcashNetwork.mainnet.lightwalletdUrl,
+        lightwalletdUrl: _endpointConfig.normalizedLightwalletdUrl,
       );
       final lastSynced = state.value?.chainTipHeight ?? 0;
       final syncComplete = (state.value?.percentage ?? 0) >= 1.0;
@@ -882,7 +910,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// `startMempoolObserver` FRB call is guarded on the Rust side
   /// by the MEMPOOL_RUNNING atomic, so a double-call just logs
   /// and returns an error; we catch and ignore it.
-  void _startMempoolObserver(String dbPath, ZcashNetwork network) {
+  void _startMempoolObserver(String dbPath, RpcEndpointConfig endpoint) {
     if (rust_sync.isMempoolObserverRunning()) {
       // Already up — happens if startSync fires while a previous
       // observer is still winding down. The Rust side will
@@ -893,8 +921,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _mempoolSub?.cancel();
     final stream = rust_sync.startMempoolObserver(
       dbPath: dbPath,
-      network: network.name,
-      lightwalletdUrl: network.lightwalletdUrl,
+      network: endpoint.networkName,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
     );
     _mempoolSub = stream.listen(
       (event) {
@@ -998,7 +1026,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     final prev = state.value;
     final dbPath = await _getDbPath();
-    final network = ZcashNetwork.mainnet.name;
+    final network = _endpointConfig.networkName;
     final accountUuid = _getActiveAccountUuid();
     if (accountUuid == null) {
       log('SyncNotifier: no active account, skipping refresh');
@@ -1153,7 +1181,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final epoch = _sensitiveStateEpoch;
     final prev = state.value;
     final dbPath = await _getDbPath();
-    final network = ZcashNetwork.mainnet.name;
+    final network = _endpointConfig.networkName;
     final accountUuid = _getActiveAccountUuid();
     if (accountUuid == null) {
       log('SyncNotifier: no active account, skipping refresh');
@@ -1327,6 +1355,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool get _requiresUnlock {
     return ref.read(appSecurityProvider).requiresUnlock;
   }
+
+  RpcEndpointConfig get _endpointConfig => ref.read(rpcEndpointProvider);
 }
 
 final syncProvider = AsyncNotifierProvider<SyncNotifier, SyncState>(
