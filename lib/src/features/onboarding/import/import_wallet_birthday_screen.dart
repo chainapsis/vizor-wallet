@@ -9,7 +9,6 @@ import '../../../app_bootstrap.dart';
 import '../../../core/config/network_config.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -34,9 +33,9 @@ class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
 
 class _ImportWalletBirthdayScreenState
     extends ConsumerState<ImportWalletBirthdayScreen> {
-  static const _titleWidth = 378.0;
+  static const _titleWidth = 574.0;
   static const _subtitleWidth = 270.0;
-  static const _contentWidth = 256.0;
+  static const _widgetWidth = 304.0;
   static const _buttonWidth = 256.0;
   static const _messageHeight = 16.0;
 
@@ -270,9 +269,9 @@ class _ImportWalletBirthdayScreenState
     await _estimateSelectedDate(selected);
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit({int? birthdayHeightOverride}) async {
     final mnemonic = widget.args.mnemonic;
-    final birthdayHeight = _resolvedBirthdayHeight();
+    final birthdayHeight = birthdayHeightOverride ?? _resolvedBirthdayHeight();
     if (_isSubmitting || birthdayHeight == null) {
       return;
     }
@@ -390,7 +389,7 @@ class _ImportWalletBirthdayScreenState
       _ImportWalletSubmitPhase.idle =>
         activeTab == ImportBirthdayTab.date && _isEstimating
             ? 'Estimating...'
-            : 'Import',
+            : 'Continue',
     };
 
     return ImportOnboardingTrailingPane(
@@ -402,7 +401,7 @@ class _ImportWalletBirthdayScreenState
               extra: ImportSecretPassphraseArgs(mnemonic: widget.args.mnemonic),
             ),
           ),
-          const SizedBox(height: AppSpacing.xxs),
+          const SizedBox(height: AppSpacing.s),
           Expanded(
             child: Column(
               children: [
@@ -412,76 +411,83 @@ class _ImportWalletBirthdayScreenState
                       padding: const EdgeInsets.symmetric(
                         vertical: AppSpacing.s,
                       ),
-                      child: SizedBox(
-                        width: 636,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: _titleWidth,
-                              child: Text(
-                                'Around when did you create your wallet?',
-                                style: AppTypography.displaySmall.copyWith(
-                                  color: context.colors.text.accent,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: _titleWidth,
+                            child: Text(
+                              'Around when did you\ncreate your wallet?',
+                              style: AppTypography.displayLarge.copyWith(
+                                color: context.colors.text.accent,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          SizedBox(
+                            width: _subtitleWidth,
+                            child: Text(
+                              'This will help to import your wallet faster.',
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: context.colors.text.accent,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                          SizedBox(
+                            width: _widgetWidth,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _BirthdayTabRow(
+                                  activeTab: activeTab,
+                                  onTabSelected: _handleTabSelected,
                                 ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.s),
-                            SizedBox(
-                              width: _subtitleWidth,
-                              child: Text(
-                                'This will help to import your wallet faster.',
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: context.colors.text.accent,
+                                const SizedBox(height: AppSpacing.md),
+                                if (activeTab == ImportBirthdayTab.date)
+                                  _DatePickerField(
+                                    width: _widgetWidth,
+                                    valueText: _selectedDate == null
+                                        ? null
+                                        : _formatDate(_selectedDate!),
+                                    enabled:
+                                        !_isLoadingMetadata &&
+                                        _metadata != null,
+                                    onTap: _pickDate,
+                                  )
+                                else
+                                  _BlockHeightField(
+                                    controller: _manualHeightController,
+                                    focusNode: _manualHeightFocusNode,
+                                    width: _widgetWidth,
+                                    errorText: _manualHeightError,
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _submitError = null;
+                                      });
+                                    },
+                                  ),
+                                const SizedBox(height: AppSpacing.xxs),
+                                SizedBox(
+                                  width: _widgetWidth,
+                                  height: _messageHeight,
+                                  child: activeTab == ImportBirthdayTab.date
+                                      ? _InlineMessage(text: _dateMessage)
+                                      : _InlineMessage(
+                                          text: _manualHeightError,
+                                        ),
                                 ),
-                                textAlign: TextAlign.center,
-                              ),
+                              ],
                             ),
-                            const SizedBox(height: AppSpacing.s),
-                            const AppDecorativeDivider(width: _contentWidth),
-                            const SizedBox(height: AppSpacing.md),
-                            _BirthdayTabRow(
-                              activeTab: activeTab,
-                              onTabSelected: _handleTabSelected,
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                            if (activeTab == ImportBirthdayTab.date)
-                              _DatePickerField(
-                                width: _contentWidth,
-                                valueText: _selectedDate == null
-                                    ? null
-                                    : _formatDate(_selectedDate!),
-                                enabled:
-                                    !_isLoadingMetadata && _metadata != null,
-                                onTap: _pickDate,
-                              )
-                            else
-                              _BlockHeightField(
-                                controller: _manualHeightController,
-                                focusNode: _manualHeightFocusNode,
-                                width: _contentWidth,
-                                errorText: _manualHeightError,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _submitError = null;
-                                  });
-                                },
-                              ),
-                            const SizedBox(height: AppSpacing.xxs),
-                            SizedBox(
-                              width: _contentWidth,
-                              height: _messageHeight,
-                              child: activeTab == ImportBirthdayTab.date
-                                  ? _InlineMessage(text: _dateMessage)
-                                  : _InlineMessage(text: _manualHeightError),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
+                const SizedBox(height: AppSpacing.md),
                 SizedBox(
                   width: _buttonWidth,
                   child: Column(
@@ -496,19 +502,16 @@ class _ImportWalletBirthdayScreenState
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       AppButton(
-                        onPressed: activeTab == ImportBirthdayTab.date
-                            ? () => _handleTabSelected(
-                                ImportBirthdayTab.blockHeight,
-                              )
-                            : () {},
+                        onPressed: _isSubmitting
+                            ? null
+                            : () => _submit(
+                                birthdayHeightOverride:
+                                    _network.saplingActivationHeight,
+                              ),
                         variant: AppButtonVariant.ghost,
                         minWidth: _buttonWidth,
                         trailing: const AppIcon(AppIcons.skip),
-                        child: Text(
-                          activeTab == ImportBirthdayTab.date
-                              ? 'I can’t Remember the Date'
-                              : 'I can’t remember the Block height',
-                        ),
+                        child: const Text('I can’t remember'),
                       ),
                     ],
                   ),
@@ -537,25 +540,22 @@ class _BackRow extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(
+                AppIcons.chevronBackward,
+                size: AppIconSize.medium,
+                color: colors.text.accent,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                'Back',
+                style: AppTypography.labelLarge.copyWith(
                   color: colors.text.accent,
                 ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -651,8 +651,8 @@ class _DatePickerField extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
         decoration: BoxDecoration(
           color: colors.background.base,
-          borderRadius: BorderRadius.circular(AppRadii.medium),
-          border: Border.all(color: colors.border.subtle, width: 1.5),
+          borderRadius: BorderRadius.circular(AppRadii.small),
+          border: Border.all(color: colors.border.medium, width: 1.5),
         ),
         child: Row(
           children: [
@@ -662,8 +662,8 @@ class _DatePickerField extends StatelessWidget {
                 style: AppTypography.labelLarge.copyWith(color: valueColor),
               ),
             ),
-            material.Icon(
-              material.Icons.calendar_month_outlined,
+            AppIcon(
+              AppIcons.calendar,
               size: 20,
               color: enabled ? colors.icon.accent : colors.icon.regular,
             ),
@@ -703,7 +703,7 @@ class _BlockHeightField extends StatelessWidget {
       width: width,
       height: 46,
       decoration: BoxDecoration(
-        color: colors.surface.input,
+        color: colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.small),
         border: Border.all(color: borderColor, width: 1.5),
       ),
