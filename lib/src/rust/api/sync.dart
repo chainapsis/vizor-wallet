@@ -732,6 +732,10 @@ class TransactionInfo {
   final BigInt fee;
   final BigInt blockTime;
   final bool isTransparent;
+  final String txKind;
+  final BigInt displayAmount;
+  final String displayPool;
+  final BigInt createdTime;
 
   const TransactionInfo({
     required this.txidHex,
@@ -741,6 +745,10 @@ class TransactionInfo {
     required this.fee,
     required this.blockTime,
     required this.isTransparent,
+    required this.txKind,
+    required this.displayAmount,
+    required this.displayPool,
+    required this.createdTime,
   });
 
   @override
@@ -751,7 +759,11 @@ class TransactionInfo {
       accountBalanceDelta.hashCode ^
       fee.hashCode ^
       blockTime.hashCode ^
-      isTransparent.hashCode;
+      isTransparent.hashCode ^
+      txKind.hashCode ^
+      displayAmount.hashCode ^
+      displayPool.hashCode ^
+      createdTime.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -764,7 +776,11 @@ class TransactionInfo {
           accountBalanceDelta == other.accountBalanceDelta &&
           fee == other.fee &&
           blockTime == other.blockTime &&
-          isTransparent == other.isTransparent;
+          isTransparent == other.isTransparent &&
+          txKind == other.txKind &&
+          displayAmount == other.displayAmount &&
+          displayPool == other.displayPool &&
+          createdTime == other.createdTime;
 }
 
 class TxDataRequest {

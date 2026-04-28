@@ -2878,8 +2878,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TransactionInfo dco_decode_transaction_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return TransactionInfo(
       txidHex: dco_decode_String(arr[0]),
       minedHeight: dco_decode_u_64(arr[1]),
@@ -2888,6 +2888,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       fee: dco_decode_u_64(arr[4]),
       blockTime: dco_decode_u_64(arr[5]),
       isTransparent: dco_decode_bool(arr[6]),
+      txKind: dco_decode_String(arr[7]),
+      displayAmount: dco_decode_u_64(arr[8]),
+      displayPool: dco_decode_String(arr[9]),
+      createdTime: dco_decode_u_64(arr[10]),
     );
   }
 
@@ -3433,6 +3437,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_fee = sse_decode_u_64(deserializer);
     var var_blockTime = sse_decode_u_64(deserializer);
     var var_isTransparent = sse_decode_bool(deserializer);
+    var var_txKind = sse_decode_String(deserializer);
+    var var_displayAmount = sse_decode_u_64(deserializer);
+    var var_displayPool = sse_decode_String(deserializer);
+    var var_createdTime = sse_decode_u_64(deserializer);
     return TransactionInfo(
       txidHex: var_txidHex,
       minedHeight: var_minedHeight,
@@ -3441,6 +3449,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       fee: var_fee,
       blockTime: var_blockTime,
       isTransparent: var_isTransparent,
+      txKind: var_txKind,
+      displayAmount: var_displayAmount,
+      displayPool: var_displayPool,
+      createdTime: var_createdTime,
     );
   }
 
@@ -3966,6 +3978,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.fee, serializer);
     sse_encode_u_64(self.blockTime, serializer);
     sse_encode_bool(self.isTransparent, serializer);
+    sse_encode_String(self.txKind, serializer);
+    sse_encode_u_64(self.displayAmount, serializer);
+    sse_encode_String(self.displayPool, serializer);
+    sse_encode_u_64(self.createdTime, serializer);
   }
 
   @protected

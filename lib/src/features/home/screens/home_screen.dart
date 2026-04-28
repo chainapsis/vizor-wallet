@@ -76,6 +76,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return '$sign$whole.$digits ZEC';
   }
 
+  String _formatZecWithUnit(BigInt zatoshi) => '${_formatZec(zatoshi)} ZEC';
+
   void _toggleBalanceVisibility() {
     setState(() {
       _isBalanceVisible = !_isBalanceVisible;
@@ -180,21 +182,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return 'Shield balance failed. Please try again.';
   }
 
-  String _groupLabelForTx(rust_sync.TransactionInfo tx) {
-    if (tx.minedHeight == BigInt.zero && !tx.expiredUnmined) {
-      return 'Today';
-    }
-
-    final date = DateTime.fromMillisecondsSinceEpoch(
-      tx.blockTime.toInt() * 1000,
-    );
-    final now = DateTime.now();
-    final isToday =
-        date.year == now.year && date.month == now.month && date.day == now.day;
-    if (isToday) return 'Today';
-    return '${_monthName(date.month)}, ${date.day}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final walletAsync = ref.watch(walletProvider);
@@ -234,8 +221,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               canShieldBalance: canShieldTransparentBalance,
               isShieldingBalance: _isShieldingBalance,
               shieldBalanceError: _shieldBalanceError,
+              formatZec: _formatZecWithUnit,
               formatSignedZec: _formatSignedZec,
-              groupLabelForTx: _groupLabelForTx,
               onToggleBalanceVisibility: _toggleBalanceVisibility,
               onShieldBalancePressed: () =>
                   unawaited(_shieldTransparentBalance()),
@@ -283,8 +270,8 @@ class _HomePane extends StatefulWidget {
     required this.canShieldBalance,
     required this.isShieldingBalance,
     required this.shieldBalanceError,
+    required this.formatZec,
     required this.formatSignedZec,
-    required this.groupLabelForTx,
     required this.onToggleBalanceVisibility,
     required this.onShieldBalancePressed,
     required this.onDismissShieldBalanceError,
@@ -302,8 +289,8 @@ class _HomePane extends StatefulWidget {
   final bool canShieldBalance;
   final bool isShieldingBalance;
   final String? shieldBalanceError;
+  final String Function(BigInt zatoshi) formatZec;
   final String Function(BigInt zatoshi) formatSignedZec;
-  final String Function(rust_sync.TransactionInfo tx) groupLabelForTx;
   final VoidCallback onToggleBalanceVisibility;
   final VoidCallback onShieldBalancePressed;
   final VoidCallback onDismissShieldBalanceError;
@@ -356,7 +343,7 @@ class _HomePaneState extends State<_HomePane> {
   @override
   Widget build(BuildContext context) {
     final notice = _noticeData();
-    final groups = _activityGroups(context);
+    final rows = _activityRows(context);
     final showHoverScrollbar = isDesktopLayoutPlatform;
 
     return LayoutBuilder(
@@ -413,7 +400,7 @@ class _HomePaneState extends State<_HomePane> {
                           _HomeNoticeCard(data: notice),
                         ],
                         const SizedBox(height: AppSpacing.sm),
-                        _HomeActivitySection(groups: groups),
+                        _HomeActivitySection(rows: rows),
                         const SizedBox(height: AppSpacing.sm),
                       ],
                     ),
@@ -463,108 +450,180 @@ class _HomePaneState extends State<_HomePane> {
     return null;
   }
 
-  List<_HomeActivityGroupData> _activityGroups(BuildContext context) {
-    final grouped = <String, List<_HomeActivityRowData>>{};
-    final todayRows = <_HomeActivityRowData>[];
+  List<_HomeActivityRowData> _activityRows(BuildContext context) {
+    return [
+      _syncActivityRow(context),
+      ...widget.sync.recentTransactions
+          .take(6)
+          .map((tx) => _transactionActivityRow(context, tx)),
+    ];
+  }
+
+  _HomeActivityRowData _syncActivityRow(BuildContext context) {
     final colors = context.colors;
     final successColor = Theme.of(context).colorScheme.tertiary;
 
     if (widget.sync.error != null) {
-      todayRows.add(
-        _HomeActivityRowData(
-          title: 'Sync Error',
-          leadingIconName: AppIcons.warning,
-          leadingBackgroundColor: colors.background.base,
-          leadingIconColor: colors.icon.warning,
-          amountText: 'Retry',
-          amountColor: colors.text.warning,
-          onTap: widget.onRetrySync,
-        ),
+      return _HomeActivityRowData(
+        title: 'Wallet Synced',
+        leadingIconName: AppIcons.warning,
+        leadingBackgroundColor: colors.background.base,
+        leadingIconColor: colors.icon.warning,
+        amountText: 'Retry',
+        amountColor: colors.text.warning,
+        statusText: 'Failed',
+        statusIconName: AppIcons.skull,
+        statusColor: colors.text.destructive,
+        timestampText: _formatTimestamp(widget.sync.lastSyncFailedAt),
+        onTap: widget.onRetrySync,
       );
-    } else if (widget.sync.isSyncing) {
+    }
+
+    if (widget.sync.isSyncing) {
       final pct = (widget.sync.percentage * 100).toStringAsFixed(0);
-      todayRows.add(
-        _HomeActivityRowData(
-          title: widget.sync.isBackgroundMode
-              ? 'Background Syncing...'
-              : 'Syncing...',
-          leadingIconName: AppIcons.renew,
-          leadingBackgroundColor: colors.background.base,
-          leadingIconColor: colors.icon.accent,
-          subtitle: widget.sync.phase.isEmpty
-              ? null
-              : '${widget.sync.phase[0].toUpperCase()}${widget.sync.phase.substring(1)}',
-          amountText: '$pct%',
-          amountColor: colors.text.secondary,
-        ),
-      );
-    } else {
-      todayRows.add(
-        _HomeActivityRowData(
-          title: 'Wallet Synced',
-          leadingIconName: AppIcons.check,
-          leadingBackgroundColor: successColor.withValues(alpha: 0.16),
-          leadingIconColor: successColor,
-        ),
+      return _HomeActivityRowData(
+        title: 'Wallet Synced',
+        leadingIconName: AppIcons.renew,
+        leadingBackgroundColor: colors.background.base,
+        leadingIconColor: colors.icon.accent,
+        subtitle: widget.sync.phase.isEmpty
+            ? null
+            : _capitalize(widget.sync.phase),
+        amountText: '$pct%',
+        amountColor: colors.text.secondary,
+        statusText: 'In progress',
+        statusIconName: AppIcons.loader,
+        statusColor: colors.text.secondary,
+        timestampText: _formatTimestamp(widget.sync.lastSyncStartedAt),
       );
     }
 
-    for (final tx in widget.sync.recentTransactions.take(6)) {
-      final groupLabel = widget.groupLabelForTx(tx);
-      final rows = grouped.putIfAbsent(groupLabel, () => []);
-      final isIncoming = tx.accountBalanceDelta >= 0;
-      final isPending = tx.minedHeight == BigInt.zero && !tx.expiredUnmined;
-      final isExpired = tx.expiredUnmined;
-      final subtitle = tx.isTransparent ? 'Transparent' : 'Shielded';
-      final subtitleIconName = tx.isTransparent
-          ? null
-          : AppIcons.shieldKeyholeOutline;
-      rows.add(
-        _HomeActivityRowData(
-          title: isExpired
-              ? (isIncoming ? 'Receive Expired' : 'Send Expired')
-              : isPending
-              ? (isIncoming ? 'Receiving...' : 'Sending...')
-              : isIncoming
-              ? 'Received'
-              : 'Sent',
-          subtitle: subtitle,
-          subtitleIconName: subtitleIconName,
-          leadingIconName: isIncoming
-              ? AppIcons.arrowDownCircle
-              : AppIcons.plane,
-          leadingBackgroundColor: colors.background.base,
-          leadingIconColor: isIncoming
-              ? colors.icon.accent
-              : colors.icon.brandCrimson,
-          subIconName: isPending ? AppIcons.loader : null,
-          subIconBackgroundColor: isPending
-              ? colors.background.overlay.withValues(alpha: 0.5)
-              : colors.background.brandCrimsonStrong,
-          amountText: widget.formatSignedZec(
-            BigInt.from(tx.accountBalanceDelta),
-          ),
-          amountColor: isExpired
-              ? colors.text.muted
-              : isIncoming
-              ? colors.text.accent
-              : colors.text.brandCrimson,
-        ),
-      );
-    }
+    return _HomeActivityRowData(
+      title: 'Wallet Synced',
+      leadingIconName: AppIcons.sync,
+      leadingBackgroundColor: successColor.withValues(alpha: 0.16),
+      leadingIconColor: successColor,
+      amountText: widget.formatZec(widget.sync.totalBalance),
+      amountColor: colors.text.accent,
+      statusText: 'Completed',
+      statusColor: colors.text.secondary,
+      timestampText: _formatTimestamp(widget.sync.lastSyncCompletedAt),
+    );
+  }
 
-    final results = <_HomeActivityGroupData>[];
-    final mergedToday = [
-      ...todayRows,
-      ...(grouped.remove('Today') ?? const <_HomeActivityRowData>[]),
-    ];
-    if (mergedToday.isNotEmpty) {
-      results.add(_HomeActivityGroupData(label: 'Today', rows: mergedToday));
+  _HomeActivityRowData _transactionActivityRow(
+    BuildContext context,
+    rust_sync.TransactionInfo tx,
+  ) {
+    final colors = context.colors;
+    final isPending = tx.minedHeight == BigInt.zero && !tx.expiredUnmined;
+    final isFailed = tx.expiredUnmined;
+    final kind = tx.txKind;
+    final amount = tx.displayAmount;
+    final isReceived = kind == 'received';
+    final isSent = kind == 'sent';
+    final isShielded = kind == 'shielded';
+    final signedAmount = isSent ? -amount : amount;
+    final subtitle = isReceived || isSent ? _poolLabel(tx.displayPool) : null;
+
+    return _HomeActivityRowData(
+      title: _txTitle(kind),
+      leadingIconName: _txIcon(kind),
+      leadingBackgroundColor: colors.background.base,
+      leadingIconColor: _txIconColor(colors, kind),
+      subtitle: subtitle,
+      subtitleIconName: tx.displayPool == 'shielded'
+          ? AppIcons.shieldKeyholeOutline
+          : null,
+      amountText: amount == BigInt.zero
+          ? '--'
+          : isShielded || kind == 'internal'
+          ? widget.formatZec(amount)
+          : widget.formatSignedZec(signedAmount),
+      amountColor: isFailed
+          ? colors.text.muted
+          : isReceived
+          ? colors.text.brandCrimson
+          : colors.text.accent,
+      statusText: isFailed
+          ? 'Failed'
+          : isPending
+          ? 'In progress'
+          : 'Completed',
+      statusIconName: isFailed
+          ? AppIcons.skull
+          : isPending
+          ? AppIcons.loader
+          : null,
+      statusColor: isFailed ? colors.text.destructive : colors.text.secondary,
+      timestampText: _formatTimestamp(_txTimestamp(tx)),
+    );
+  }
+
+  String _txTitle(String kind) {
+    return switch (kind) {
+      'received' => 'Received',
+      'sent' => 'Sent',
+      'shielded' => 'Shielded',
+      'internal' => 'Internal',
+      _ => 'Transaction',
+    };
+  }
+
+  String _txIcon(String kind) {
+    return switch (kind) {
+      'received' => AppIcons.arrowDownCircle,
+      'sent' => AppIcons.plane,
+      'shielded' => AppIcons.shieldAsset,
+      'internal' => AppIcons.sync,
+      _ => AppIcons.history,
+    };
+  }
+
+  Color _txIconColor(AppColors colors, String kind) {
+    return switch (kind) {
+      'received' => colors.icon.accent,
+      'sent' => colors.icon.brandCrimson,
+      'shielded' => colors.icon.brandCrimson,
+      'internal' => colors.icon.muted,
+      _ => colors.icon.regular,
+    };
+  }
+
+  String? _poolLabel(String pool) {
+    return switch (pool) {
+      'transparent' => 'Transparent',
+      'shielded' => 'Shielded',
+      'mixed' => 'Mixed',
+      _ => null,
+    };
+  }
+
+  DateTime? _txTimestamp(rust_sync.TransactionInfo tx) {
+    final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
+    if (seconds <= BigInt.zero) return null;
+    return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
+  }
+
+  String _formatTimestamp(DateTime? timestamp) {
+    if (timestamp == null) return '--';
+    final now = DateTime.now();
+    final local = timestamp.toLocal();
+    final today = DateTime(now.year, now.month, now.day);
+    final date = DateTime(local.year, local.month, local.day);
+    final time =
+        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+
+    if (date == today) return 'Today, $time';
+    if (date == today.subtract(const Duration(days: 1))) {
+      return 'Yesterday, $time';
     }
-    grouped.forEach((label, rows) {
-      results.add(_HomeActivityGroupData(label: label, rows: rows));
-    });
-    return results;
+    return '${_HomeScreenState._monthName(local.month)} ${local.day}, $time';
+  }
+
+  String _capitalize(String value) {
+    if (value.isEmpty) return value;
+    return '${value[0].toUpperCase()}${value.substring(1)}';
   }
 }
 
@@ -1079,9 +1138,9 @@ class _HomeNoticeCard extends StatelessWidget {
 }
 
 class _HomeActivitySection extends StatelessWidget {
-  const _HomeActivitySection({required this.groups});
+  const _HomeActivitySection({required this.rows});
 
-  final List<_HomeActivityGroupData> groups;
+  final List<_HomeActivityRowData> rows;
 
   @override
   Widget build(BuildContext context) {
@@ -1117,47 +1176,104 @@ class _HomeActivitySection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.s),
-        for (var i = 0; i < groups.length; i++) ...[
-          _HomeActivityGroup(group: groups[i]),
-          if (i != groups.length - 1) const SizedBox(height: AppSpacing.s),
+        const _HomeActivityTableHeader(),
+        const SizedBox(height: AppSpacing.xs),
+        for (var i = 0; i < rows.length; i++) ...[
+          _HomeActivityRow(row: rows[i]),
+          if (i != rows.length - 1) const _HomeActivityDivider(),
         ],
       ],
     );
   }
 }
 
-class _HomeActivityGroupData {
-  const _HomeActivityGroupData({required this.label, required this.rows});
-
-  final String label;
-  final List<_HomeActivityRowData> rows;
-}
-
-class _HomeActivityGroup extends StatelessWidget {
-  const _HomeActivityGroup({required this.group});
-
-  final _HomeActivityGroupData group;
+class _HomeActivityTableHeader extends StatelessWidget {
+  const _HomeActivityTableHeader();
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    final style = AppTypography.labelMedium.copyWith(color: colors.text.muted);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+      child: Row(
+        children: [
+          Expanded(flex: 30, child: Text('Tx Type', style: style)),
+          Expanded(flex: 22, child: Text('Amount', style: style)),
+          Expanded(flex: 22, child: Text('Status', style: style)),
+          Expanded(
+            flex: 26,
+            child: Text('Time Stamp', textAlign: TextAlign.end, style: style),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeActivityDivider extends StatelessWidget {
+  const _HomeActivityDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 1,
+      margin: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+      color: context.colors.border.subtle,
+    );
+  }
+}
+
+class _HomeActivityCell extends StatelessWidget {
+  const _HomeActivityCell({
+    required this.flex,
+    required this.child,
+    this.alignEnd = false,
+  });
+
+  final int flex;
+  final Widget child;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      flex: flex,
+      child: Align(
+        alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
+        child: child,
+      ),
+    );
+  }
+}
+
+class _StatusLabel extends StatelessWidget {
+  const _StatusLabel({required this.row});
+
+  final _HomeActivityRowData row;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-          child: Text(
-            group.label,
-            style: AppTypography.labelMedium.copyWith(
-              color: colors.text.secondary,
-            ),
+        if (row.statusIconName != null) ...[
+          AppIcon(
+            row.statusIconName!,
+            size: 16,
+            color: row.statusColor ?? colors.text.secondary,
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+        ],
+        Text(
+          row.statusText,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.labelMedium.copyWith(
+            color: row.statusColor ?? colors.text.secondary,
           ),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        for (var i = 0; i < group.rows.length; i++) ...[
-          _HomeActivityRow(row: group.rows[i]),
-          if (i != group.rows.length - 1) const SizedBox(height: AppSpacing.xs),
-        ],
       ],
     );
   }
@@ -1171,10 +1287,12 @@ class _HomeActivityRowData {
     required this.leadingIconColor,
     this.subtitle,
     this.subtitleIconName,
-    this.subIconName,
-    this.subIconBackgroundColor,
-    this.amountText,
+    required this.amountText,
     this.amountColor,
+    required this.statusText,
+    required this.timestampText,
+    this.statusIconName,
+    this.statusColor,
     this.onTap,
   });
 
@@ -1184,10 +1302,12 @@ class _HomeActivityRowData {
   final Color leadingIconColor;
   final String? subtitle;
   final String? subtitleIconName;
-  final String? subIconName;
-  final Color? subIconBackgroundColor;
-  final String? amountText;
+  final String amountText;
   final Color? amountColor;
+  final String statusText;
+  final String timestampText;
+  final String? statusIconName;
+  final Color? statusColor;
   final VoidCallback? onTap;
 }
 
@@ -1207,51 +1327,82 @@ class _HomeActivityRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _ActivityAvatar(row: row),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
+          _HomeActivityCell(
+            flex: 30,
+            child: Row(
               children: [
-                Text(
-                  row.title,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-                if (row.subtitle != null)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
+                _ActivityAvatar(row: row),
+                const SizedBox(width: AppSpacing.xs),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        row.subtitle!,
-                        style: AppTypography.labelMedium.copyWith(
-                          color: row.subtitleIconName == null
-                              ? colors.text.secondary
-                              : colors.text.brandCrimson,
+                        row.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.accent,
                         ),
                       ),
-                      if (row.subtitleIconName != null) ...[
-                        const SizedBox(width: AppSpacing.xxs),
-                        AppIcon(
-                          row.subtitleIconName!,
-                          size: 16,
-                          color: colors.icon.brandCrimson,
+                      if (row.subtitle != null)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (row.subtitleIconName != null) ...[
+                              AppIcon(
+                                row.subtitleIconName!,
+                                size: 16,
+                                color: colors.icon.brandCrimson,
+                              ),
+                              const SizedBox(width: AppSpacing.xxs),
+                            ],
+                            Flexible(
+                              child: Text(
+                                row.subtitle!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.labelMedium.copyWith(
+                                  color: row.subtitleIconName == null
+                                      ? colors.text.secondary
+                                      : colors.text.brandCrimson,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
                     ],
                   ),
+                ),
               ],
             ),
           ),
-          if (row.amountText != null)
-            Text(
-              row.amountText!,
+          _HomeActivityCell(
+            flex: 22,
+            child: Text(
+              row.amountText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: AppTypography.labelLarge.copyWith(
                 color: row.amountColor ?? colors.text.accent,
               ),
             ),
+          ),
+          _HomeActivityCell(flex: 22, child: _StatusLabel(row: row)),
+          _HomeActivityCell(
+            flex: 26,
+            alignEnd: true,
+            child: Text(
+              row.timestampText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1296,26 +1447,6 @@ class _ActivityAvatar extends StatelessWidget {
               ),
             ),
           ),
-          if (row.subIconName != null && row.subIconBackgroundColor != null)
-            Positioned(
-              right: -4,
-              bottom: -2,
-              child: Container(
-                width: 16,
-                height: 16,
-                decoration: BoxDecoration(
-                  color: row.subIconBackgroundColor,
-                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                ),
-                child: Center(
-                  child: AppIcon(
-                    row.subIconName!,
-                    size: 12,
-                    color: context.colors.icon.accent,
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );

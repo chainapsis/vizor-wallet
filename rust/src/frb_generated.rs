@@ -2705,6 +2705,10 @@ impl SseDecode for crate::api::sync::TransactionInfo {
         let mut var_fee = <u64>::sse_decode(deserializer);
         let mut var_blockTime = <u64>::sse_decode(deserializer);
         let mut var_isTransparent = <bool>::sse_decode(deserializer);
+        let mut var_txKind = <String>::sse_decode(deserializer);
+        let mut var_displayAmount = <u64>::sse_decode(deserializer);
+        let mut var_displayPool = <String>::sse_decode(deserializer);
+        let mut var_createdTime = <u64>::sse_decode(deserializer);
         return crate::api::sync::TransactionInfo {
             txid_hex: var_txidHex,
             mined_height: var_minedHeight,
@@ -2713,6 +2717,10 @@ impl SseDecode for crate::api::sync::TransactionInfo {
             fee: var_fee,
             block_time: var_blockTime,
             is_transparent: var_isTransparent,
+            tx_kind: var_txKind,
+            display_amount: var_displayAmount,
+            display_pool: var_displayPool,
+            created_time: var_createdTime,
         };
     }
 }
@@ -3345,6 +3353,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::TransactionInfo {
             self.fee.into_into_dart().into_dart(),
             self.block_time.into_into_dart().into_dart(),
             self.is_transparent.into_into_dart().into_dart(),
+            self.tx_kind.into_into_dart().into_dart(),
+            self.display_amount.into_into_dart().into_dart(),
+            self.display_pool.into_into_dart().into_dart(),
+            self.created_time.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -3813,6 +3825,10 @@ impl SseEncode for crate::api::sync::TransactionInfo {
         <u64>::sse_encode(self.fee, serializer);
         <u64>::sse_encode(self.block_time, serializer);
         <bool>::sse_encode(self.is_transparent, serializer);
+        <String>::sse_encode(self.tx_kind, serializer);
+        <u64>::sse_encode(self.display_amount, serializer);
+        <String>::sse_encode(self.display_pool, serializer);
+        <u64>::sse_encode(self.created_time, serializer);
     }
 }
 

@@ -36,6 +36,9 @@ class SyncState {
   final BigInt totalBalance;
   final String? error;
   final List<rust_sync.TransactionInfo> recentTransactions;
+  final DateTime? lastSyncStartedAt;
+  final DateTime? lastSyncCompletedAt;
+  final DateTime? lastSyncFailedAt;
 
   /// Current sync phase: `"download"`, `"scan"`, `"enhance"`, or
   /// empty. Widgets can use this to show e.g. "Downloading..."
@@ -64,6 +67,9 @@ class SyncState {
     BigInt? totalBalance,
     this.error,
     this.recentTransactions = const [],
+    this.lastSyncStartedAt,
+    this.lastSyncCompletedAt,
+    this.lastSyncFailedAt,
     this.phase = '',
   }) : transparentBalance = transparentBalance ?? BigInt.zero,
        saplingBalance = saplingBalance ?? BigInt.zero,
@@ -95,6 +101,9 @@ class SyncState {
     BigInt? totalBalance,
     String? error,
     List<rust_sync.TransactionInfo>? recentTransactions,
+    DateTime? lastSyncStartedAt,
+    DateTime? lastSyncCompletedAt,
+    DateTime? lastSyncFailedAt,
     String? phase,
   }) {
     return SyncState(
@@ -121,6 +130,9 @@ class SyncState {
       totalBalance: totalBalance ?? this.totalBalance,
       error: error ?? this.error,
       recentTransactions: recentTransactions ?? this.recentTransactions,
+      lastSyncStartedAt: lastSyncStartedAt ?? this.lastSyncStartedAt,
+      lastSyncCompletedAt: lastSyncCompletedAt ?? this.lastSyncCompletedAt,
+      lastSyncFailedAt: lastSyncFailedAt ?? this.lastSyncFailedAt,
       phase: phase ?? this.phase,
     );
   }
@@ -316,6 +328,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _lastLoggedHeight = 0;
     final gen = ++_syncGen;
     final prev = state.value;
+    final startedAt = DateTime.now();
     state = AsyncData(
       SyncState(
         isSyncing: true,
@@ -335,6 +348,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         spendableBalance: prev?.spendableBalance,
         totalBalance: prev?.totalBalance,
         recentTransactions: prev?.recentTransactions ?? const [],
+        lastSyncStartedAt: startedAt,
+        lastSyncCompletedAt: prev?.lastSyncCompletedAt,
+        lastSyncFailedAt: prev?.lastSyncFailedAt,
         phase: '',
       ),
     );
@@ -412,6 +428,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   spendableBalance: prev?.spendableBalance,
                   totalBalance: prev?.totalBalance,
                   recentTransactions: prev?.recentTransactions ?? const [],
+                  lastSyncStartedAt: prev?.lastSyncStartedAt,
+                  lastSyncCompletedAt: prev?.lastSyncCompletedAt,
+                  lastSyncFailedAt: DateTime.now(),
                 ),
               );
               _startPolling();
@@ -446,6 +465,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               spendableBalance: prev?.spendableBalance,
               totalBalance: prev?.totalBalance,
               recentTransactions: prev?.recentTransactions ?? const [],
+              lastSyncStartedAt: prev?.lastSyncStartedAt,
+              lastSyncCompletedAt: prev?.lastSyncCompletedAt,
+              lastSyncFailedAt: DateTime.now(),
             ),
           );
           _startPolling();
@@ -538,6 +560,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         spendableBalance: prev?.spendableBalance,
         totalBalance: prev?.totalBalance,
         recentTransactions: prev?.recentTransactions ?? const [],
+        lastSyncStartedAt: prev?.lastSyncStartedAt,
+        lastSyncCompletedAt: prev?.lastSyncCompletedAt,
+        lastSyncFailedAt: prev?.lastSyncFailedAt,
       ),
     );
   }
@@ -973,6 +998,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // Update delegate BEFORE state so isActive reflects completion
     _bgDelegate.onProgress(event);
 
+    final syncStartedAt =
+        prev?.lastSyncStartedAt ??
+        (event.isSyncing || event.isComplete ? DateTime.now() : null);
+    final syncCompletedAt = event.isComplete
+        ? DateTime.now()
+        : prev?.lastSyncCompletedAt;
+
     state = AsyncData(
       SyncState(
         isSyncing: event.isSyncing && !event.isComplete,
@@ -998,6 +1030,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         spendableBalance: spendable ?? prev?.spendableBalance,
         totalBalance: total ?? prev?.totalBalance,
         recentTransactions: recentTxs,
+        lastSyncStartedAt: syncStartedAt,
+        lastSyncCompletedAt: syncCompletedAt,
+        lastSyncFailedAt: prev?.lastSyncFailedAt,
         phase: event.phase,
       ),
     );
@@ -1125,6 +1160,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         spendableBalance: spendable ?? prev?.spendableBalance,
         totalBalance: total ?? prev?.totalBalance,
         recentTransactions: recentTxs,
+        lastSyncStartedAt: prev?.lastSyncStartedAt,
+        lastSyncCompletedAt: prev?.lastSyncCompletedAt,
+        lastSyncFailedAt: prev?.lastSyncFailedAt,
       ),
     );
   }

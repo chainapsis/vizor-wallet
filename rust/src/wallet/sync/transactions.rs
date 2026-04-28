@@ -217,6 +217,10 @@ pub(crate) struct TransactionInfo {
     pub fee: u64,
     pub block_time: u64,
     pub is_transparent: bool,
+    pub tx_kind: String,
+    pub display_amount: u64,
+    pub display_pool: String,
+    pub created_time: u64,
 }
 
 pub fn get_transaction_history(
@@ -240,8 +244,49 @@ pub fn get_transaction_history(
                  WHERE txo.txid = vt.txid \
                    AND txo.output_pool = 0 \
                    AND (txo.from_account_uuid = vt.account_uuid OR txo.to_account_uuid = vt.account_uuid) \
-             ) AS is_transparent \
+             ) AS is_transparent, \
+             COALESCE(vt.total_spent, 0) AS total_spent, \
+             COALESCE(vt.total_received, 0) AS total_received, \
+             COALESCE(vt.is_shielding, 0) AS is_shielding, \
+             COALESCE(( \
+                 SELECT SUM(txo.value) \
+                 FROM v_tx_outputs txo \
+                 WHERE txo.txid = vt.txid \
+                   AND txo.from_account_uuid = vt.account_uuid \
+                   AND txo.to_account_uuid IS NULL \
+                   AND txo.is_change = 0 \
+             ), 0) AS external_sent_amount, \
+             COALESCE(( \
+                 SELECT SUM(txo.value) \
+                 FROM v_tx_outputs txo \
+                 WHERE txo.txid = vt.txid \
+                   AND txo.to_account_uuid = vt.account_uuid \
+                   AND txo.from_account_uuid IS NULL \
+                   AND txo.is_change = 0 \
+             ), 0) AS external_received_amount, \
+             EXISTS( \
+                 SELECT 1 \
+                 FROM v_tx_outputs txo \
+                 WHERE txo.txid = vt.txid \
+                   AND txo.output_pool = 0 \
+                   AND ( \
+                       (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
+                       OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
+                   ) \
+             ) AS display_has_transparent, \
+             EXISTS( \
+                 SELECT 1 \
+                 FROM v_tx_outputs txo \
+                 WHERE txo.txid = vt.txid \
+                   AND txo.output_pool IN (2, 3) \
+                   AND ( \
+                       (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
+                       OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
+                   ) \
+             ) AS display_has_shielded, \
+             CAST(COALESCE(strftime('%s', tx.created), 0) AS INTEGER) AS created_time \
              FROM v_transactions vt \
+             LEFT JOIN transactions tx ON tx.txid = vt.txid \
              WHERE vt.account_uuid = ?1 \
              ORDER BY COALESCE(vt.mined_height, 999999999) DESC, vt.tx_index DESC \
              LIMIT ?2"
@@ -255,8 +300,49 @@ pub fn get_transaction_history(
                  WHERE txo.txid = vt.txid \
                    AND txo.output_pool = 0 \
                    AND (txo.from_account_uuid = vt.account_uuid OR txo.to_account_uuid = vt.account_uuid) \
-             ) AS is_transparent \
+             ) AS is_transparent, \
+             COALESCE(vt.total_spent, 0) AS total_spent, \
+             COALESCE(vt.total_received, 0) AS total_received, \
+             COALESCE(vt.is_shielding, 0) AS is_shielding, \
+             COALESCE(( \
+                 SELECT SUM(txo.value) \
+                 FROM v_tx_outputs txo \
+                 WHERE txo.txid = vt.txid \
+                   AND txo.from_account_uuid = vt.account_uuid \
+                   AND txo.to_account_uuid IS NULL \
+                   AND txo.is_change = 0 \
+             ), 0) AS external_sent_amount, \
+             COALESCE(( \
+                 SELECT SUM(txo.value) \
+                 FROM v_tx_outputs txo \
+                 WHERE txo.txid = vt.txid \
+                   AND txo.to_account_uuid = vt.account_uuid \
+                   AND txo.from_account_uuid IS NULL \
+                   AND txo.is_change = 0 \
+             ), 0) AS external_received_amount, \
+             EXISTS( \
+                 SELECT 1 \
+                 FROM v_tx_outputs txo \
+                 WHERE txo.txid = vt.txid \
+                   AND txo.output_pool = 0 \
+                   AND ( \
+                       (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
+                       OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
+                   ) \
+             ) AS display_has_transparent, \
+             EXISTS( \
+                 SELECT 1 \
+                 FROM v_tx_outputs txo \
+                 WHERE txo.txid = vt.txid \
+                   AND txo.output_pool IN (2, 3) \
+                   AND ( \
+                       (txo.from_account_uuid = vt.account_uuid AND txo.to_account_uuid IS NULL AND txo.is_change = 0) \
+                       OR (txo.to_account_uuid = vt.account_uuid AND txo.from_account_uuid IS NULL AND txo.is_change = 0) \
+                   ) \
+             ) AS display_has_shielded, \
+             CAST(COALESCE(strftime('%s', tx.created), 0) AS INTEGER) AS created_time \
              FROM v_transactions vt \
+             LEFT JOIN transactions tx ON tx.txid = vt.txid \
              WHERE vt.account_uuid = ?1 \
              ORDER BY COALESCE(vt.mined_height, 999999999) DESC, vt.tx_index DESC"
         }
@@ -271,6 +357,41 @@ pub fn get_transaction_history(
         let fee: u64 = row.get::<_, i64>(4)?.unsigned_abs();
         let block_time: u64 = row.get::<_, i64>(5)?.unsigned_abs();
         let is_transparent: bool = row.get(6)?;
+        let total_spent = row.get::<_, i64>(7)?.unsigned_abs();
+        let total_received = row.get::<_, i64>(8)?.unsigned_abs();
+        let is_shielding: bool = row.get(9)?;
+        let external_sent_amount = row.get::<_, i64>(10)?.unsigned_abs();
+        let external_received_amount = row.get::<_, i64>(11)?.unsigned_abs();
+        let display_has_transparent: bool = row.get(12)?;
+        let display_has_shielded: bool = row.get(13)?;
+        let created_time = row.get::<_, i64>(14)?.unsigned_abs();
+
+        let display_pool = if is_shielding {
+            "shielded"
+        } else {
+            match (display_has_transparent, display_has_shielded) {
+                (true, false) => "transparent",
+                (false, true) => "shielded",
+                (true, true) => "mixed",
+                (false, false) => "unknown",
+            }
+        }
+        .to_string();
+
+        let (tx_kind, display_amount) = if is_shielding {
+            ("shielded", total_received)
+        } else if external_sent_amount > 0 {
+            ("sent", external_sent_amount)
+        } else if external_received_amount > 0 {
+            ("received", external_received_amount)
+        } else if total_spent > 0 && total_received > 0 {
+            ("internal", total_received)
+        } else if balance_delta > 0 {
+            ("received", balance_delta as u64)
+        } else {
+            ("unknown", 0)
+        };
+
         Ok(TransactionInfo {
             txid_hex: hex::encode(&txid_blob),
             mined_height: mined_height.unwrap_or(0) as u64,
@@ -279,6 +400,10 @@ pub fn get_transaction_history(
             fee,
             block_time,
             is_transparent,
+            tx_kind: tx_kind.to_string(),
+            display_amount,
+            display_pool,
+            created_time,
         })
     };
 

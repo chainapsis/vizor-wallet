@@ -773,6 +773,10 @@ pub struct TransactionInfo {
     pub fee: u64,
     pub block_time: u64,
     pub is_transparent: bool,
+    pub tx_kind: String,
+    pub display_amount: u64,
+    pub display_pool: String,
+    pub created_time: u64,
 }
 
 pub fn get_transaction_history(
@@ -794,6 +798,10 @@ pub fn get_transaction_history(
                 fee: t.fee,
                 block_time: t.block_time,
                 is_transparent: t.is_transparent,
+                tx_kind: t.tx_kind,
+                display_amount: t.display_amount,
+                display_pool: t.display_pool,
+                created_time: t.created_time,
             })
             .collect())
     })

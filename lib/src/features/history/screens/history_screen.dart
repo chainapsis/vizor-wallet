@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 
 class HistoryScreen extends ConsumerStatefulWidget {
@@ -24,11 +27,25 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     _loadTransactions();
   }
 
-  Future<void> _loadTransactions() async {
+  Future<void> _loadTransactions({bool showLoading = false}) async {
+    if (showLoading && mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
     try {
       final dbPath = await getWalletDbPath();
       final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-      if (accountUuid == null) return;
+      if (accountUuid == null) {
+        if (mounted) {
+          setState(() {
+            _transactions = const [];
+            _isLoading = false;
+          });
+        }
+        return;
+      }
       final txs = await rust_sync.getTransactionHistory(
         dbPath: dbPath,
         network: 'main',
@@ -51,23 +68,77 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
   }
 
-  String _formatZec(int zatoshi) {
-    final zec = zatoshi.abs() / 100000000;
-    final sign = zatoshi >= 0 ? '+' : '-';
-    return '$sign${zec.toStringAsFixed(8)} ZEC';
+  String _formatZec(BigInt zatoshi, {String? sign}) {
+    final abs = zatoshi.abs();
+    final whole = abs ~/ BigInt.from(100000000);
+    final frac = (abs % BigInt.from(100000000)).toString().padLeft(8, '0');
+    final prefix = sign ?? '';
+    return '$prefix$whole.$frac ZEC';
   }
 
-  String _formatDate(int timestamp) {
-    if (timestamp == 0) return 'Pending';
-    final date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+  String _formatDate(BigInt timestamp) {
+    if (timestamp == BigInt.zero) return 'Pending';
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp.toInt() * 1000);
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} '
         '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
-  Widget _buildTransactionTile(BuildContext context, rust_sync.TransactionInfo tx) {
+  String _recentSignature(SyncState? sync) {
+    return sync?.recentTransactions
+            .map(
+              (tx) =>
+                  '${tx.txidHex}:${tx.minedHeight}:${tx.expiredUnmined}:${tx.txKind}:${tx.displayAmount}',
+            )
+            .join('|') ??
+        '';
+  }
+
+  String _titleForTx(rust_sync.TransactionInfo tx) {
+    final base = switch (tx.txKind) {
+      'received' => 'Received',
+      'sent' => 'Sent',
+      'shielded' => 'Shielded',
+      'internal' => 'Internal',
+      _ => 'Transaction',
+    };
+    if (!tx.expiredUnmined) return base;
+    return '$base Failed';
+  }
+
+  String? _poolLabel(rust_sync.TransactionInfo tx) {
+    if (tx.txKind != 'received' && tx.txKind != 'sent') return null;
+    return switch (tx.displayPool) {
+      'transparent' => 'Transparent',
+      'shielded' => 'Shielded',
+      'mixed' => 'Mixed',
+      _ => null,
+    };
+  }
+
+  String _amountForTx(rust_sync.TransactionInfo tx) {
+    if (tx.displayAmount == BigInt.zero) return '--';
+    return switch (tx.txKind) {
+      'received' => _formatZec(tx.displayAmount, sign: '+'),
+      'sent' => _formatZec(tx.displayAmount, sign: '-'),
+      'shielded' => _formatZec(tx.displayAmount),
+      'internal' => _formatZec(tx.displayAmount),
+      _ => _formatZec(tx.displayAmount),
+    };
+  }
+
+  BigInt _timestampForTx(rust_sync.TransactionInfo tx) {
+    return tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
+  }
+
+  Widget _buildTransactionTile(
+    BuildContext context,
+    rust_sync.TransactionInfo tx,
+  ) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final isIncoming = tx.accountBalanceDelta.toInt() >= 0;
+    final isIncoming = tx.txKind == 'received';
+    final isSent = tx.txKind == 'sent';
+    final isShielded = tx.txKind == 'shielded';
     final isPending = tx.minedHeight == BigInt.zero && !tx.expiredUnmined;
     final isExpired = tx.expiredUnmined;
 
@@ -80,47 +151,54 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     if (isExpired) {
       icon = Icons.cancel_outlined;
       iconColor = colors.error;
-      title = isIncoming ? 'Receive Expired' : 'Send Expired';
-      status = 'Transaction expired';
+      title = _titleForTx(tx);
+      status = 'Failed';
       amountColor = colors.outline;
     } else if (isPending) {
       icon = Icons.schedule;
       iconColor = colors.secondary;
-      title = isIncoming ? 'Receiving...' : 'Sending...';
-      status = 'Waiting for confirmation';
+      title = _titleForTx(tx);
+      status = 'In progress';
       amountColor = colors.outline;
     } else {
-      icon = isIncoming ? Icons.arrow_downward : Icons.arrow_upward;
+      icon = isShielded
+          ? Icons.shield_outlined
+          : isIncoming
+          ? Icons.arrow_downward
+          : Icons.arrow_upward;
       iconColor = isIncoming ? colors.tertiary : colors.secondary;
-      title = isIncoming ? 'Received' : 'Sent';
-      status = 'Block ${tx.minedHeight} \u2022 ${_formatDate(tx.blockTime.toInt())}';
+      title = _titleForTx(tx);
+      status = 'Block ${tx.minedHeight} • ${_formatDate(_timestampForTx(tx))}';
       amountColor = isIncoming ? colors.tertiary : colors.onSurface;
     }
+
+    final poolLabel = _poolLabel(tx);
 
     return ListTile(
       leading: isPending
           ? SizedBox(
               width: 24,
               height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2, color: iconColor),
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: iconColor,
+              ),
             )
           : Icon(icon, color: iconColor),
       title: Text(title, style: text.titleSmall),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(status, style: text.bodySmall?.copyWith(color: colors.outline)),
-          if (tx.fee > BigInt.zero)
-            Text(
-              'Fee: ${(tx.fee.toInt() / 100000000).toStringAsFixed(5)} ZEC',
-              style: text.labelSmall?.copyWith(color: colors.outline),
-            ),
+          Text(
+            poolLabel == null ? status : '$poolLabel • $status',
+            style: text.bodySmall?.copyWith(color: colors.outline),
+          ),
         ],
       ),
       trailing: Text(
-        _formatZec(tx.accountBalanceDelta.toInt()),
+        _amountForTx(tx),
         style: text.titleSmall?.copyWith(
-          color: amountColor,
+          color: isSent ? colors.onSurface : amountColor,
           fontWeight: FontWeight.w600,
           decoration: isExpired ? TextDecoration.lineThrough : null,
         ),
@@ -130,14 +208,21 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<SyncState>>(syncProvider, (previous, next) {
+      final prevSig = _recentSignature(previous?.value);
+      final nextSig = _recentSignature(next.value);
+      if (prevSig != nextSig && nextSig.isNotEmpty) {
+        unawaited(_loadTransactions());
+      }
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Transaction History'),
         actions: [
           IconButton(
             onPressed: () {
-              setState(() => _isLoading = true);
-              _loadTransactions();
+              unawaited(_loadTransactions(showLoading: true));
             },
             icon: const Icon(Icons.refresh),
           ),
@@ -146,14 +231,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text('Error: $_error'))
-              : _transactions == null || _transactions!.isEmpty
-                  ? const Center(child: Text('No transactions yet'))
-                  : ListView.builder(
-                      itemCount: _transactions!.length,
-                      itemBuilder: (context, index) =>
-                          _buildTransactionTile(context, _transactions![index]),
-                    ),
+          ? Center(child: Text('Error: $_error'))
+          : _transactions == null || _transactions!.isEmpty
+          ? const Center(child: Text('No transactions yet'))
+          : ListView.builder(
+              itemCount: _transactions!.length,
+              itemBuilder: (context, index) =>
+                  _buildTransactionTile(context, _transactions![index]),
+            ),
     );
   }
 }
