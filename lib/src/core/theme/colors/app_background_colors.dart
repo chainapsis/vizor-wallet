@@ -16,6 +16,7 @@ import '../primitives.dart';
 /// * [utilityDestructiveSubtle] / [utilitySuccessSubtle] / [utilitySuccessStrong]
 ///   — Utility backgrounds.
 /// * [utilityDestructiveAlpha] / [utilitySuccessAlpha] — Alpha utility overlays.
+/// * [homeCard] — Exception surface for the home balance card. Theme-invariant.
 class AppBackgroundColors {
   const AppBackgroundColors({
     required this.ground,
@@ -34,6 +35,7 @@ class AppBackgroundColors {
     required this.utilitySuccessSubtle,
     required this.utilitySuccessStrong,
     required this.utilitySuccessAlpha,
+    required this.homeCard,
   });
 
   final Color ground;
@@ -52,6 +54,7 @@ class AppBackgroundColors {
   final Color utilitySuccessSubtle;
   final Color utilitySuccessStrong;
   final Color utilitySuccessAlpha;
+  final Color homeCard;
 
   static const dark = AppBackgroundColors(
     ground: Primitives.p0Dark,
@@ -70,6 +73,7 @@ class AppBackgroundColors {
     utilitySuccessSubtle: GoldPrimitives.p150Dark,
     utilitySuccessStrong: GoldPrimitives.p500Dark,
     utilitySuccessAlpha: GoldPrimitives.p400Alpha25Dark,
+    homeCard: Primitives.p100Dark,
   );
 
   static const light = AppBackgroundColors(
@@ -89,5 +93,6 @@ class AppBackgroundColors {
     utilitySuccessSubtle: GoldPrimitives.p50Light,
     utilitySuccessStrong: GoldPrimitives.p300Light,
     utilitySuccessAlpha: GoldPrimitives.p300Alpha25Light,
+    homeCard: Primitives.p100Dark,
   );
 }
