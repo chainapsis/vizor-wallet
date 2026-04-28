@@ -210,15 +210,15 @@ abstract final class AppTypography {
     letterSpacing: 0,
   );
 
-  /// Code S — secondary monospace copy (e.g. inline tx hashes,
-  /// numeric metadata).
+  /// Code S — secondary monospace copy (e.g. mnemonic word indices,
+  /// compact numeric metadata).
   ///
-  /// Geist Mono Regular, 11 / 17 px, letter-spacing 0.
+  /// Geist Mono Medium, 12 / 17 px, letter-spacing 0.
   static const codeSmall = TextStyle(
     fontFamily: 'Geist Mono',
-    fontWeight: FontWeight.w400,
-    fontSize: 11,
-    height: 17 / 11,
+    fontWeight: FontWeight.w500,
+    fontSize: 12,
+    height: 17 / 12,
     letterSpacing: 0,
   );
 }

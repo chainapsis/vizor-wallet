@@ -1,9 +1,24 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/motion/onboarding_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+
+class OnboardingSecretPassphraseRevealedNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setRevealed(bool value) {
+    state = value;
+  }
+}
+
+final onboardingSecretPassphraseRevealedProvider =
+    NotifierProvider<OnboardingSecretPassphraseRevealedNotifier, bool>(
+      OnboardingSecretPassphraseRevealedNotifier.new,
+    );
 
 enum OnboardingStep {
   intro,
@@ -58,7 +73,7 @@ OnboardingStep onboardingStepFromLocation(String location) {
   return OnboardingStep.intro;
 }
 
-class OnboardingSplitViewShell extends StatelessWidget {
+class OnboardingSplitViewShell extends ConsumerWidget {
   const OnboardingSplitViewShell({
     required this.activeStep,
     required this.showPasswordStep,
@@ -71,7 +86,10 @@ class OnboardingSplitViewShell extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final secretPassphraseRevealed = ref.watch(
+      onboardingSecretPassphraseRevealedProvider,
+    );
     final routeAnimation =
         ModalRoute.of(context)?.animation ??
         const AlwaysStoppedAnimation<double>(1.0);
@@ -92,6 +110,7 @@ class OnboardingSplitViewShell extends StatelessWidget {
         child: _Sidebar(
           activeStep: activeStep,
           showPasswordStep: showPasswordStep,
+          secretPassphraseRevealed: secretPassphraseRevealed,
         ),
       ),
       pane: FadeTransition(opacity: entrance, child: child),
@@ -111,10 +130,15 @@ class OnboardingTrailingPane extends StatelessWidget {
 }
 
 class _Sidebar extends StatelessWidget {
-  const _Sidebar({required this.activeStep, required this.showPasswordStep});
+  const _Sidebar({
+    required this.activeStep,
+    required this.showPasswordStep,
+    required this.secretPassphraseRevealed,
+  });
 
   final OnboardingStep activeStep;
   final bool showPasswordStep;
+  final bool secretPassphraseRevealed;
 
   @override
   Widget build(BuildContext context) {
@@ -129,8 +153,11 @@ class _Sidebar extends StatelessWidget {
               switchOutCurve: kOnboardingReverseCurve,
               transitionBuilder: _fadeTransition,
               child: KeyedSubtree(
-                key: ValueKey(activeStep),
-                child: _SidebarIllustration(step: activeStep),
+                key: ValueKey('${activeStep.name}:$secretPassphraseRevealed'),
+                child: _SidebarIllustration(
+                  step: activeStep,
+                  secretPassphraseRevealed: secretPassphraseRevealed,
+                ),
               ),
             ),
           ),
@@ -241,9 +268,13 @@ class _OnboardingSidebarItem extends StatelessWidget {
 }
 
 class _SidebarIllustration extends StatelessWidget {
-  const _SidebarIllustration({required this.step});
+  const _SidebarIllustration({
+    required this.step,
+    required this.secretPassphraseRevealed,
+  });
 
   final OnboardingStep step;
+  final bool secretPassphraseRevealed;
 
   static const _frameWidth = 256.0;
   static const _frameHeight = 405.0;
@@ -253,13 +284,17 @@ class _SidebarIllustration extends StatelessWidget {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final asset = switch (step) {
       OnboardingStep.secretPassphrase =>
-        isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_secret_passphrase_sidebar_light.png',
+        secretPassphraseRevealed
+            ? isDark
+                  ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_dark.png'
+                  : 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_light.png'
+            : isDark
+            ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_dark.png'
+            : 'assets/illustrations/onboarding_secret_passphrase_sidebar_closed_light.png',
       OnboardingStep.setPassword =>
         isDark
-            ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_dark.png'
-            : 'assets/illustrations/onboarding_secret_passphrase_sidebar_light.png',
+            ? 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_dark.png'
+            : 'assets/illustrations/onboarding_secret_passphrase_sidebar_open_light.png',
       OnboardingStep.thingsToKnow =>
         isDark
             ? 'assets/illustrations/onboarding_things_to_know_sidebar_dark.png'
