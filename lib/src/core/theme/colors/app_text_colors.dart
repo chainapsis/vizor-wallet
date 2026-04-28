@@ -71,6 +71,6 @@ class AppTextColors {
     destructive: PlumPrimitives.p300Light,
     success: GoldPrimitives.p400Light,
     brandCrimson: CrimsonPrimitives.p400Light,
-    homeCard: Primitives.p800Dark,
+    homeCard: Primitives.p900Dark,
   );
 }
