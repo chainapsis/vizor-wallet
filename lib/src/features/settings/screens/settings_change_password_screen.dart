@@ -215,7 +215,6 @@ class _SettingsChangePasswordScreenState
   @override
   Widget build(BuildContext context) {
     return AppDesktopShell(
-      sidebarWidth: 240,
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: const EdgeInsets.all(AppSpacing.md),

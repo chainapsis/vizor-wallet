@@ -80,7 +80,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final endpointLabel = ref.watch(rpcEndpointProvider).hostPort;
 
     return AppDesktopShell(
-      sidebarWidth: 240,
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,

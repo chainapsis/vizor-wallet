@@ -174,7 +174,6 @@ class _SettingsEndpointScreenState
     final current = ref.watch(rpcEndpointProvider);
 
     return AppDesktopShell(
-      sidebarWidth: 240,
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: const EdgeInsets.all(AppSpacing.md),

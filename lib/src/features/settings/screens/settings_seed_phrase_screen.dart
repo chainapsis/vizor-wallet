@@ -232,7 +232,6 @@ class _SettingsSeedPhraseScreenState
     );
 
     return AppDesktopShell(
-      sidebarWidth: 240,
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: const EdgeInsets.all(AppSpacing.md),
