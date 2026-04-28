@@ -68,6 +68,27 @@ pub fn get_latest_block_height(lightwalletd_url: String) -> Result<u64, String> 
     })
 }
 
+/// Get the lightwalletd chain name ("main" or "test") for endpoint validation.
+pub fn get_lightwalletd_chain_name(lightwalletd_url: String) -> Result<String, String> {
+    catch(|| {
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        rt.block_on(async {
+            use zcash_client_backend::proto::service::Empty;
+
+            let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+                .await
+                .map_err(|e| e.to_string())?;
+            let info = client
+                .get_lightd_info(Empty {})
+                .await
+                .map_err(|e| format!("get_lightd_info: {e}"))?
+                .into_inner();
+
+            Ok(info.chain_name)
+        })
+    })
+}
+
 /// Create a new Zcash wallet with a fresh mnemonic.
 /// birthday_height should be the current chain tip (from get_latest_block_height).
 pub fn create_wallet(

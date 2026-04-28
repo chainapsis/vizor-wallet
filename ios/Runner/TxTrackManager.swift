@@ -11,7 +11,6 @@ class TxTrackManager {
     private let trackQueue = DispatchQueue(label: "com.keplr.vizor.txtrack", qos: .utility)
     private let pollInterval: TimeInterval = 5.0
     private let resultDisplayDelay: TimeInterval = 5.0
-    private let lightwalletdUrl = "https://zec.rocks:443"
     private var cancelled = false
 
     private init() {}
@@ -33,7 +32,8 @@ class TxTrackManager {
         print("[TxTrack] registered")
     }
 
-    func startTxTracking() -> Bool {
+    func startTxTracking(lightwalletdUrl: String? = nil) -> Bool {
+        RpcEndpointConfigStore.save(lightwalletdUrl: lightwalletdUrl)
         print("[TxTrack] submitting task request")
         let request = BGContinuedProcessingTaskRequest(
             identifier: Self.taskIdentifier,
@@ -105,6 +105,7 @@ class TxTrackManager {
         print("[TxTrack] tracking \(pending.count) transaction(s)")
         DynamicIslandManager.shared.showTxTracking(pendingCount: pending.count)
 
+        let lightwalletdUrl = RpcEndpointConfigStore.lightwalletdUrl
         var confirmed = 0
         var expired = 0
 
