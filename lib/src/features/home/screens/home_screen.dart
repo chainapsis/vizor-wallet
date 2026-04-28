@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart'
-    show CircularProgressIndicator, Scrollbar, Theme;
+    show CircularProgressIndicator, Scrollbar;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -461,14 +461,13 @@ class _HomePaneState extends State<_HomePane> {
 
   _HomeActivityRowData _syncActivityRow(BuildContext context) {
     final colors = context.colors;
-    final successColor = Theme.of(context).colorScheme.tertiary;
 
     if (widget.sync.error != null) {
       return _HomeActivityRowData(
         title: 'Wallet Synced',
-        leadingIconName: AppIcons.warning,
-        leadingBackgroundColor: colors.background.base,
-        leadingIconColor: colors.icon.warning,
+        leadingIconName: AppIcons.sync,
+        leadingBackgroundColor: colors.background.neutralSubtleOpacity,
+        leadingIconColor: colors.icon.regular,
         amountText: 'Retry',
         amountColor: colors.text.warning,
         statusText: 'Failed',
@@ -483,9 +482,9 @@ class _HomePaneState extends State<_HomePane> {
       final pct = (widget.sync.percentage * 100).toStringAsFixed(0);
       return _HomeActivityRowData(
         title: 'Wallet Synced',
-        leadingIconName: AppIcons.renew,
-        leadingBackgroundColor: colors.background.base,
-        leadingIconColor: colors.icon.accent,
+        leadingIconName: AppIcons.sync,
+        leadingBackgroundColor: colors.background.neutralSubtleOpacity,
+        leadingIconColor: colors.icon.regular,
         subtitle: widget.sync.phase.isEmpty
             ? null
             : _capitalize(widget.sync.phase),
@@ -501,8 +500,8 @@ class _HomePaneState extends State<_HomePane> {
     return _HomeActivityRowData(
       title: 'Wallet Synced',
       leadingIconName: AppIcons.sync,
-      leadingBackgroundColor: successColor.withValues(alpha: 0.16),
-      leadingIconColor: successColor,
+      leadingBackgroundColor: colors.background.neutralSubtleOpacity,
+      leadingIconColor: colors.icon.regular,
       amountText: widget.formatZec(widget.sync.totalBalance),
       amountColor: colors.text.accent,
       statusText: 'Completed',
@@ -529,8 +528,8 @@ class _HomePaneState extends State<_HomePane> {
     return _HomeActivityRowData(
       title: _txTitle(kind),
       leadingIconName: _txIcon(kind),
-      leadingBackgroundColor: colors.background.base,
-      leadingIconColor: _txIconColor(colors, kind),
+      leadingBackgroundColor: colors.background.neutralSubtleOpacity,
+      leadingIconColor: colors.icon.regular,
       subtitle: subtitle,
       subtitleIconName: tx.displayPool == 'shielded'
           ? AppIcons.shieldKeyholeOutline
@@ -577,16 +576,6 @@ class _HomePaneState extends State<_HomePane> {
       'shielded' => AppIcons.shieldAsset,
       'internal' => AppIcons.sync,
       _ => AppIcons.history,
-    };
-  }
-
-  Color _txIconColor(AppColors colors, String kind) {
-    return switch (kind) {
-      'received' => colors.icon.accent,
-      'sent' => colors.icon.brandCrimson,
-      'shielded' => colors.icon.brandCrimson,
-      'internal' => colors.icon.muted,
-      _ => colors.icon.regular,
     };
   }
 
@@ -1145,44 +1134,51 @@ class _HomeActivitySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => context.push('/history'),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Recent Activity',
-                    style: AppTypography.headlineSmall.copyWith(
-                      color: colors.text.accent,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => context.push('/history'),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.xxs),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Recent Activity',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.xxs),
-                  AppIcon(
-                    AppIcons.chevronForward,
-                    size: 16,
-                    color: colors.icon.accent,
-                  ),
-                ],
+                    const SizedBox(width: AppSpacing.xxs),
+                    AppIcon(
+                      AppIcons.chevronForward,
+                      size: 16,
+                      color: colors.icon.accent,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.s),
-        const _HomeActivityTableHeader(),
-        const SizedBox(height: AppSpacing.xs),
-        for (var i = 0; i < rows.length; i++) ...[
-          _HomeActivityRow(row: rows[i]),
-          if (i != rows.length - 1) const _HomeActivityDivider(),
+          const SizedBox(height: AppSpacing.xs),
+          const _HomeActivityTableHeader(),
+          const SizedBox(height: AppSpacing.s),
+          for (var i = 0; i < rows.length; i++) ...[
+            _HomeActivityRow(row: rows[i]),
+            if (i != rows.length - 1) ...[
+              const SizedBox(height: AppSpacing.xs),
+              const _HomeActivityDivider(),
+              const SizedBox(height: AppSpacing.xs),
+            ],
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -1194,56 +1190,119 @@ class _HomeActivityTableHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final style = AppTypography.labelMedium.copyWith(color: colors.text.muted);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-      child: Row(
-        children: [
-          Expanded(flex: 30, child: Text('Tx Type', style: style)),
-          Expanded(flex: 22, child: Text('Amount', style: style)),
-          Expanded(flex: 22, child: Text('Status', style: style)),
-          Expanded(
-            flex: 26,
-            child: Text('Time Stamp', textAlign: TextAlign.end, style: style),
-          ),
-        ],
+    return SizedBox(
+      height: 32,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+        child: _HomeActivityColumnLayout(
+          txType: Text('Tx Type', style: style),
+          amount: Text('Amount', style: style),
+          status: Text('Status', style: style),
+          timestamp: Text('Time Stamp', textAlign: TextAlign.end, style: style),
+        ),
       ),
     );
   }
 }
+
+const double _homeActivityLeftCellWidth = 190;
+const double _homeActivityMiddleCellWidth = 160;
+const double _homeActivityRightCellWidth = 140;
+const double _homeActivityFixedColumnsWidth =
+    _homeActivityLeftCellWidth +
+    (_homeActivityMiddleCellWidth * 2) +
+    _homeActivityRightCellWidth;
 
 class _HomeActivityDivider extends StatelessWidget {
   const _HomeActivityDivider();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 1,
-      margin: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-      color: context.colors.border.subtle,
+    return Container(height: 1, color: context.colors.border.subtle);
+  }
+}
+
+class _HomeActivityColumnLayout extends StatelessWidget {
+  const _HomeActivityColumnLayout({
+    required this.txType,
+    required this.amount,
+    required this.status,
+    required this.timestamp,
+  });
+
+  final Widget txType;
+  final Widget amount;
+  final Widget status;
+  final Widget timestamp;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useFixedColumns =
+            constraints.maxWidth >= _homeActivityFixedColumnsWidth;
+        if (useFixedColumns) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _HomeActivityCell(
+                width: _homeActivityLeftCellWidth,
+                child: txType,
+              ),
+              _HomeActivityCell(
+                width: _homeActivityMiddleCellWidth,
+                child: amount,
+              ),
+              _HomeActivityCell(
+                width: _homeActivityMiddleCellWidth,
+                child: status,
+              ),
+              _HomeActivityCell(
+                width: _homeActivityRightCellWidth,
+                alignEnd: true,
+                child: timestamp,
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            _HomeActivityCell(flex: 190, child: txType),
+            _HomeActivityCell(flex: 160, child: amount),
+            _HomeActivityCell(flex: 160, child: status),
+            _HomeActivityCell(flex: 140, alignEnd: true, child: timestamp),
+          ],
+        );
+      },
     );
   }
 }
 
 class _HomeActivityCell extends StatelessWidget {
   const _HomeActivityCell({
-    required this.flex,
     required this.child,
+    this.width,
+    this.flex,
     this.alignEnd = false,
   });
 
-  final int flex;
   final Widget child;
+  final double? width;
+  final int? flex;
   final bool alignEnd;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      flex: flex,
-      child: Align(
-        alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
-        child: child,
-      ),
+    final content = Align(
+      alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
+      child: child,
     );
+    final width = this.width;
+    if (width != null) {
+      return SizedBox(width: width, child: content);
+    }
+    return Expanded(flex: flex ?? 1, child: content);
   }
 }
 
@@ -1320,90 +1379,78 @@ class _HomeActivityRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final content = Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+      height: 48,
+      padding: const EdgeInsets.all(AppSpacing.xxs),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
-      child: Row(
-        children: [
-          _HomeActivityCell(
-            flex: 30,
-            child: Row(
-              children: [
-                _ActivityAvatar(row: row),
-                const SizedBox(width: AppSpacing.xs),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        row.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                      if (row.subtitle != null)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (row.subtitleIconName != null) ...[
-                              AppIcon(
-                                row.subtitleIconName!,
-                                size: 16,
-                                color: colors.icon.brandCrimson,
-                              ),
-                              const SizedBox(width: AppSpacing.xxs),
-                            ],
-                            Flexible(
-                              child: Text(
-                                row.subtitle!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.labelMedium.copyWith(
-                                  color: row.subtitleIconName == null
-                                      ? colors.text.secondary
-                                      : colors.text.brandCrimson,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
+      child: _HomeActivityColumnLayout(
+        txType: Row(
+          children: [
+            _ActivityAvatar(row: row),
+            const SizedBox(width: AppSpacing.s),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    row.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.accent,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          _HomeActivityCell(
-            flex: 22,
-            child: Text(
-              row.amountText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: row.amountColor ?? colors.text.accent,
+                  if (row.subtitle != null)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (row.subtitleIconName != null) ...[
+                          AppIcon(
+                            row.subtitleIconName!,
+                            size: 16,
+                            color: colors.icon.brandCrimson,
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
+                        ],
+                        Flexible(
+                          child: Text(
+                            row.subtitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelMedium.copyWith(
+                              color: row.subtitleIconName == null
+                                  ? colors.text.secondary
+                                  : colors.text.brandCrimson,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
               ),
             ),
+          ],
+        ),
+        amount: Text(
+          row.amountText,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.labelMedium.copyWith(
+            color: row.amountColor ?? colors.text.accent,
           ),
-          _HomeActivityCell(flex: 22, child: _StatusLabel(row: row)),
-          _HomeActivityCell(
-            flex: 26,
-            alignEnd: true,
-            child: Text(
-              row.timestampText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.end,
-              style: AppTypography.labelMedium.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
+        ),
+        status: _StatusLabel(row: row),
+        timestamp: Text(
+          row.timestampText,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.end,
+          style: AppTypography.labelMedium.copyWith(
+            color: colors.text.secondary,
           ),
-        ],
+        ),
       ),
     );
 
