@@ -505,8 +505,8 @@ class _HomeBalanceCard extends StatelessWidget {
           0.0,
           1.0,
         );
-        final shieldedCardRadius = BorderRadius.vertical(
-          bottom: Radius.circular(AppRadii.medium * revealProgress),
+        final shieldedCardRadius = BorderRadius.circular(
+          stripHeight > 0 ? AppRadii.medium : 0.0,
         );
         final shieldedCardBorderColor = Color.lerp(
           const Color(0x00FFFFFF),
