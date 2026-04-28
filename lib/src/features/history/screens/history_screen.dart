@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart' show Scrollbar;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
@@ -13,6 +14,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -147,6 +149,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
   }
 
+  void _goBack() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
+  }
+
   String _recentSignature(SyncState? sync) {
     return sync?.recentTransactions
             .map(
@@ -197,7 +207,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.fromLTRB(AppSpacing.sm, 0, AppSpacing.sm, 0),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.sm,
+          AppSpacing.sm,
+          AppSpacing.sm,
+          0,
+        ),
         child: LayoutBuilder(
           builder: (context, constraints) {
             return NotificationListener<ScrollMetricsNotification>(
@@ -243,6 +258,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         currentPage: currentPage,
                         totalPages: totalPages,
                         onPageChanged: _setPage,
+                        onBack: _goBack,
                       ),
                     ),
                   ),
@@ -264,6 +280,7 @@ class _ActivityPane extends StatelessWidget {
     required this.currentPage,
     required this.totalPages,
     required this.onPageChanged,
+    required this.onBack,
   });
 
   final List<ActivityRowData> rows;
@@ -272,6 +289,7 @@ class _ActivityPane extends StatelessWidget {
   final int currentPage;
   final int totalPages;
   final ValueChanged<int> onPageChanged;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -279,6 +297,7 @@ class _ActivityPane extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _ActivityBackRow(onTap: onBack),
         const SizedBox(height: AppSpacing.s),
         Center(
           child: Text(
@@ -303,8 +322,52 @@ class _ActivityPane extends StatelessWidget {
             onPageChanged: onPageChanged,
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
+        const SizedBox(height: AppSpacing.s),
       ],
+    );
+  }
+}
+
+class _ActivityBackRow extends StatelessWidget {
+  const _ActivityBackRow({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 60),
+            child: SizedBox(
+              height: 32,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(
+                    AppIcons.chevronBackward,
+                    size: 16,
+                    color: colors.icon.accent,
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  Text(
+                    'Back',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

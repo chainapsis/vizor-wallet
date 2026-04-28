@@ -526,9 +526,7 @@ class _PaginationPageButton extends StatelessWidget {
       child: Center(
         child: Text(
           '$page',
-          style: AppTypography.bodySmall.copyWith(
-            color: selected ? colors.text.accent : colors.text.secondary,
-          ),
+          style: AppTypography.bodySmall.copyWith(color: colors.text.accent),
         ),
       ),
     );
@@ -557,7 +555,7 @@ class _PaginationEllipsis extends StatelessWidget {
         child: Text(
           '...',
           style: AppTypography.bodySmall.copyWith(
-            color: context.colors.text.secondary,
+            color: context.colors.text.accent,
           ),
         ),
       ),
