@@ -8,7 +8,7 @@ class AppDesktopShell extends StatelessWidget {
   const AppDesktopShell({
     required this.sidebar,
     required this.pane,
-    this.sidebarWidth = 240,
+    this.sidebarWidth = 256,
     super.key,
   });
 
@@ -103,23 +103,28 @@ class AppSidebarItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final row = Padding(
-      padding: const EdgeInsets.only(
-        left: AppSpacing.xs,
-        top: AppSpacing.xxs,
-        bottom: AppSpacing.xxs,
+    final row = AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: active ? colors.state.selectedOpacity : null,
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       child: Row(
         children: [
+          AppIcon(iconName, size: 20, color: colors.icon.accent),
+          const SizedBox(width: AppSpacing.s),
           Expanded(
             child: Text(
               label,
+              overflow: TextOverflow.ellipsis,
               style: AppTypography.labelLarge.copyWith(
                 color: colors.text.accent,
               ),
             ),
           ),
-          AppIcon(iconName, size: 20, color: colors.icon.accent),
         ],
       ),
     );
