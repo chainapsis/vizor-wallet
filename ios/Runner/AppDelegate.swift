@@ -38,7 +38,13 @@ import UIKit
         #endif
       case "startBackgroundSync":
         if #available(iOS 26.0, *) {
-          let success = BackgroundSyncManager.shared.startBackgroundSync()
+          let args = call.arguments as? [String: Any]
+          let lightwalletdUrl = args?["lightwalletdUrl"] as? String
+          let network = args?["network"] as? String
+          let success = BackgroundSyncManager.shared.startBackgroundSync(
+            lightwalletdUrl: lightwalletdUrl,
+            network: network
+          )
           result(success)
         } else {
           result(false)
@@ -50,9 +56,22 @@ import UIKit
         } else {
           result(false)
         }
+      case "updateEndpoint":
+        let args = call.arguments as? [String: Any]
+        let lightwalletdUrl = args?["lightwalletdUrl"] as? String
+        let network = args?["network"] as? String
+        RpcEndpointConfigStore.save(
+          lightwalletdUrl: lightwalletdUrl,
+          network: network
+        )
+        result(true)
       case "startTxTracking":
         if #available(iOS 26.0, *) {
-          let success = TxTrackManager.shared.startTxTracking()
+          let args = call.arguments as? [String: Any]
+          let lightwalletdUrl = args?["lightwalletdUrl"] as? String
+          let success = TxTrackManager.shared.startTxTracking(
+            lightwalletdUrl: lightwalletdUrl
+          )
           result(success)
         } else {
           result(false)

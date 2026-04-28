@@ -1,10 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../main.dart' show log;
 import 'core/profile_pictures.dart';
+import 'core/config/rpc_endpoint_config.dart';
 import 'core/storage/app_secure_store.dart';
 import 'core/storage/wallet_paths.dart';
 import 'providers/account_models.dart';
@@ -14,6 +17,9 @@ import 'rust/api/wallet.dart' as rust_wallet;
 const _accountsKey = 'zcash_accounts';
 const _activeAccountKey = 'zcash_active_account';
 const _networkKey = 'zcash_wallet_network';
+const _backgroundSyncChannel = MethodChannel(
+  'com.zcash.wallet/background_sync',
+);
 
 final appBootstrapProvider = Provider<AppBootstrapState>((_) {
   throw StateError('appBootstrapProvider must be overridden in main()');
@@ -25,6 +31,7 @@ class AppBootstrapState {
     required this.initialAccountState,
     required this.initialSyncSnapshot,
     required this.network,
+    required this.rpcEndpointConfig,
     required this.themeMode,
     required this.isPasswordConfigured,
     required this.isUnlocked,
@@ -34,6 +41,7 @@ class AppBootstrapState {
   final AccountState initialAccountState;
   final AppSyncSnapshot initialSyncSnapshot;
   final String network;
+  final RpcEndpointConfig rpcEndpointConfig;
   final ThemeMode themeMode;
   final bool isPasswordConfigured;
   final bool isUnlocked;
@@ -46,6 +54,7 @@ class AppBootstrapState {
     initialAccountState: AccountState(),
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: 'main',
+    rpcEndpointConfig: defaultRpcEndpointConfig('main'),
     themeMode: ThemeMode.system,
     isPasswordConfigured: false,
     isUnlocked: false,
@@ -118,6 +127,8 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       log('bootstrap: failed to recover password rotation: $e');
     }
     final network = await storage.readString(_networkKey) ?? 'main';
+    final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
+    await _seedNativeRpcEndpointMirror(rpcEndpointConfig);
     final themeMode = await _readThemeMode(storage);
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
@@ -197,6 +208,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       ),
       initialSyncSnapshot: initialSyncSnapshot,
       network: network,
+      rpcEndpointConfig: rpcEndpointConfig,
       themeMode: themeMode,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
@@ -204,6 +216,49 @@ Future<AppBootstrapState> loadAppBootstrap() async {
   } catch (e) {
     log('bootstrap: failed, falling back to welcome: $e');
     return AppBootstrapState.empty;
+  }
+}
+
+Future<void> _seedNativeRpcEndpointMirror(RpcEndpointConfig endpoint) async {
+  if (!Platform.isIOS) return;
+  try {
+    final success = await _backgroundSyncChannel
+        .invokeMethod<bool>('updateEndpoint', {
+          'lightwalletdUrl': endpoint.normalizedLightwalletdUrl,
+          'network': endpoint.networkName,
+        });
+    if (success != true) {
+      log('bootstrap: iOS RPC endpoint mirror seed returned $success');
+    }
+  } catch (e) {
+    log('bootstrap: failed to seed iOS RPC endpoint mirror: $e');
+  }
+}
+
+Future<RpcEndpointConfig> _readRpcEndpointConfig(
+  AppSecureStore storage,
+  String network,
+) async {
+  try {
+    final storedUrl = await storage.readString(kRpcEndpointUrlKey);
+    final storedPreset = await storage.readString(kRpcEndpointPresetKey);
+    if (storedUrl == null || storedUrl.trim().isEmpty) {
+      return defaultRpcEndpointConfig(network);
+    }
+
+    return RpcEndpointConfig(
+      networkName: zcashNetworkFromName(network).name,
+      lightwalletdUrl: normalizeRpcEndpointUrl(
+        storedUrl,
+        allowDefaultPort: true,
+      ),
+      presetId: storedPreset == null || storedPreset.trim().isEmpty
+          ? findRpcEndpointPresetByUrl(storedUrl, networkName: network)?.id
+          : storedPreset,
+    );
+  } catch (e) {
+    log('bootstrap: failed to read RPC endpoint: $e');
+    return defaultRpcEndpointConfig(network);
   }
 }
 

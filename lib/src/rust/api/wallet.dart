@@ -14,6 +14,12 @@ Future<BigInt> getLatestBlockHeight({required String lightwalletdUrl}) =>
       lightwalletdUrl: lightwalletdUrl,
     );
 
+/// Get the lightwalletd chain name ("main" or "test") for endpoint validation.
+Future<String> getLightwalletdChainName({required String lightwalletdUrl}) =>
+    RustLib.instance.api.crateApiWalletGetLightwalletdChainName(
+      lightwalletdUrl: lightwalletdUrl,
+    );
+
 /// Create a new Zcash wallet with a fresh mnemonic.
 /// birthday_height should be the current chain tip (from get_latest_block_height).
 Future<WalletCreationResult> createWallet({

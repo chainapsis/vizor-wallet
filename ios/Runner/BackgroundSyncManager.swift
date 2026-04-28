@@ -124,11 +124,14 @@ class BackgroundSyncManager {
         hb.resume()
         heartbeat = hb
 
+        let lightwalletdUrl = RpcEndpointConfigStore.lightwalletdUrl
+        let network = RpcEndpointConfigStore.network
+
         // C FFI sync — blocks this thread (.utility QoS)
         let result = zcash_run_full_sync(
             dbPath,
-            "https://zec.rocks:443",
-            "main",
+            lightwalletdUrl,
+            network,
             { progress in
                 if #available(iOS 26.0, *) {
                     let mgr = BackgroundSyncManager.shared
@@ -172,7 +175,11 @@ class BackgroundSyncManager {
         try resolveWalletDbPath()
     }
 
-    func startBackgroundSync() -> Bool {
+    func startBackgroundSync(lightwalletdUrl: String? = nil, network: String? = nil) -> Bool {
+        RpcEndpointConfigStore.save(
+            lightwalletdUrl: lightwalletdUrl,
+            network: network
+        )
         print("[BGSync] startBackgroundSync: submitting BGContinuedProcessingTaskRequest")
         let request = BGContinuedProcessingTaskRequest(
             identifier: Self.taskIdentifier,

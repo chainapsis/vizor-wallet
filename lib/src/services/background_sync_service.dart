@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../../main.dart' show log;
+import '../core/config/rpc_endpoint_config.dart';
 
 const _iosChannel = MethodChannel('com.zcash.wallet/background_sync');
 
@@ -48,17 +49,38 @@ Future<bool> isBackgroundSyncAvailable() async {
 }
 
 /// Start background sync with platform notification.
-Future<void> startBackgroundSync() async {
+Future<void> startBackgroundSync({RpcEndpointConfig? endpoint}) async {
   if (Platform.isAndroid) {
     await _startAndroidForegroundService();
   } else if (Platform.isIOS) {
     try {
-      final success =
-          await _iosChannel.invokeMethod<bool>('startBackgroundSync');
+      final success = await _iosChannel.invokeMethod<bool>(
+        'startBackgroundSync',
+        endpoint == null
+            ? null
+            : {
+                'lightwalletdUrl': endpoint.normalizedLightwalletdUrl,
+                'network': endpoint.networkName,
+              },
+      );
       log('BackgroundSync: iOS BGTask submitted: $success');
     } catch (e) {
       log('BackgroundSync: iOS BGTask failed: $e');
     }
+  }
+}
+
+/// Mirror the Dart endpoint setting into native storage used by iOS BGTasks.
+Future<void> updateBackgroundSyncEndpoint({
+  required RpcEndpointConfig endpoint,
+}) async {
+  if (!Platform.isIOS) return;
+  final success = await _iosChannel.invokeMethod<bool>('updateEndpoint', {
+    'lightwalletdUrl': endpoint.normalizedLightwalletdUrl,
+    'network': endpoint.networkName,
+  });
+  if (success != true) {
+    throw StateError('iOS endpoint mirror update failed.');
   }
 }
 
@@ -83,8 +105,9 @@ Future<void> stopBackgroundSync() async {
     await FlutterForegroundTask.stopService();
   } else if (Platform.isIOS) {
     try {
-      final success =
-          await _iosChannel.invokeMethod<bool>('stopBackgroundSync');
+      final success = await _iosChannel.invokeMethod<bool>(
+        'stopBackgroundSync',
+      );
       log('BackgroundSync: iOS BGTask cancel requested: $success');
     } catch (e) {
       log('BackgroundSync: iOS BGTask cancel failed: $e');
