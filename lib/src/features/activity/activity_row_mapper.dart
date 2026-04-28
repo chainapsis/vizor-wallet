@@ -149,7 +149,7 @@ String _transactionAmountText({
   required String kind,
 }) {
   if (amount == BigInt.zero) return '--';
-  if (isFailed || isShielded || kind == 'internal') {
+  if (isFailed || isShielded) {
     return formatActivityZec(amount);
   }
   return formatSignedActivityZec(signedAmount);
@@ -191,7 +191,6 @@ String _txTitle(String kind) {
     'received' => 'Received',
     'sent' => 'Sent',
     'shielded' => 'Shielded',
-    'internal' => 'Internal',
     _ => 'Transaction',
   };
 }
@@ -201,7 +200,6 @@ String _txIcon(String kind) {
     'received' => AppIcons.arrowDownCircle,
     'sent' => AppIcons.plane,
     'shielded' => AppIcons.shieldAsset,
-    'internal' => AppIcons.sync,
     _ => AppIcons.history,
   };
 }
