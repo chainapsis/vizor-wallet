@@ -6,8 +6,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app_bootstrap.dart';
-import '../../../core/config/network_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/profile_pictures.dart';
@@ -17,6 +15,7 @@ import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -78,9 +77,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final activeAccountIsHardware =
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
-    final endpointLabel = _endpointLabel(
-      ref.watch(appBootstrapProvider).network,
-    );
+    final endpointLabel = ref.watch(rpcEndpointProvider).hostPort;
 
     return AppDesktopShell(
       sidebarWidth: 240,
@@ -102,6 +99,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onBack: () => _handleBack(context),
                 onSeedPhrase: () => context.go('/settings/secret-passphrase'),
                 onChangePassword: () => context.go('/settings/change-password'),
+                onEndpoint: () => context.go('/settings/endpoint'),
                 onAccountName: hasActiveAccount
                     ? () => _showModal(_SettingsModalType.accountName)
                     : null,
@@ -158,13 +156,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   static String _profilePictureLabel(String profilePictureId) {
     return findProfilePictureOption(profilePictureId)?.label ?? 'Custom';
   }
-
-  static String _endpointLabel(String networkName) {
-    final network = networkName == ZcashNetwork.testnet.name
-        ? ZcashNetwork.testnet
-        : ZcashNetwork.mainnet;
-    return network.lightwalletdHost;
-  }
 }
 
 class _SettingsPane extends StatelessWidget {
@@ -177,6 +168,7 @@ class _SettingsPane extends StatelessWidget {
     required this.onBack,
     required this.onSeedPhrase,
     required this.onChangePassword,
+    required this.onEndpoint,
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onTheme,
@@ -190,6 +182,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
+  final VoidCallback onEndpoint;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
@@ -234,6 +227,7 @@ class _SettingsPane extends StatelessWidget {
                         themeLabel: themeLabel,
                         onSeedPhrase: onSeedPhrase,
                         onChangePassword: onChangePassword,
+                        onEndpoint: onEndpoint,
                         onAccountName: onAccountName,
                         onProfilePicture: onProfilePicture,
                         onTheme: onTheme,
@@ -298,6 +292,7 @@ class _SettingsList extends StatelessWidget {
     required this.themeLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
+    required this.onEndpoint,
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onTheme,
@@ -310,6 +305,7 @@ class _SettingsList extends StatelessWidget {
   final String themeLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
+  final VoidCallback onEndpoint;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
@@ -359,6 +355,7 @@ class _SettingsList extends StatelessWidget {
               iconName: AppIcons.endpoint,
               label: 'Endpoint',
               value: endpointLabel,
+              onTap: onEndpoint,
             ),
             const _SettingsRowDivider(),
             _SettingsRow(
