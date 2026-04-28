@@ -86,6 +86,7 @@ class OnboardingSplitViewShell extends StatelessWidget {
     ).animate(entrance);
 
     return AppDesktopShell(
+      sidebarWidth: 256,
       sidebar: SlideTransition(
         position: sidebarOffset,
         child: _Sidebar(
@@ -187,13 +188,54 @@ class _SidebarNav extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var i = 0; i < _steps.length; i++) ...[
-            AppSidebarItem(
+            _OnboardingSidebarItem(
               label: _steps[i].label,
               iconName: _steps[i].iconName,
               active: _steps[i] == activeStep,
             ),
-            if (i != _steps.length - 1) const SizedBox(height: AppSpacing.xxs),
+            if (i != _steps.length - 1) const SizedBox(height: AppSpacing.xs),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _OnboardingSidebarItem extends StatelessWidget {
+  const _OnboardingSidebarItem({
+    required this.label,
+    required this.iconName,
+    required this.active,
+  });
+
+  final String label;
+  final String iconName;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: active ? colors.state.selectedOpacity : null,
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
+      padding: const EdgeInsets.only(
+        left: AppSpacing.xs,
+        top: AppSpacing.xs,
+        bottom: AppSpacing.xs,
+      ),
+      child: Row(
+        children: [
+          AppIcon(iconName, size: 20, color: colors.icon.accent),
+          const SizedBox(width: AppSpacing.s),
+          Text(
+            label,
+            style: AppTypography.labelLarge.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
         ],
       ),
     );
@@ -205,8 +247,8 @@ class _SidebarIllustration extends StatelessWidget {
 
   final OnboardingStep step;
 
-  static const _frameWidth = 240.0;
-  static const _frameHeight = 411.0;
+  static const _frameWidth = 256.0;
+  static const _frameHeight = 405.0;
 
   @override
   Widget build(BuildContext context) {

@@ -1,10 +1,8 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'onboarding_split_view.dart';
 
@@ -31,8 +29,9 @@ class _Content extends StatelessWidget {
     return const Column(
       children: [
         _BackRow(),
+        SizedBox(height: AppSpacing.xs),
         Expanded(
-          child: Center(child: SizedBox(width: 500, child: _HeroLayout())),
+          child: _HeroLayout(),
         ),
       ],
     );
@@ -50,10 +49,11 @@ class _BackRow extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => context.go('/welcome'),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+        child: SizedBox(
+          height: 32,
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               AppIcon(
                 AppIcons.chevronBackward,
@@ -78,13 +78,22 @@ class _BackRow extends StatelessWidget {
 class _HeroLayout extends StatelessWidget {
   const _HeroLayout();
 
+  static const double _contentWidth = 463;
+
   @override
   Widget build(BuildContext context) {
     return const Column(
       children: [
-        Expanded(child: Center(child: _HeroBlock())),
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.s),
+            child: Center(
+              child: SizedBox(width: _contentWidth, child: _HeroBlock()),
+            ),
+          ),
+        ),
+        SizedBox(height: AppSpacing.md),
         _ButtonStack(),
-        SizedBox(height: AppSpacing.s),
       ],
     );
   }
@@ -99,44 +108,27 @@ class _HeroBlock extends StatelessWidget {
     final bodyStyle = AppTypography.bodyMedium.copyWith(
       color: colors.text.primary,
     );
-    final subtitleStyle = AppTypography.bodyMedium.copyWith(
+    final subtitleStyle = AppTypography.bodyMediumStrong.copyWith(
       color: colors.text.accent,
     );
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        const _VizorLogo(),
-        const SizedBox(height: AppSpacing.s),
         Text(
           'The Shielded World',
-          style: AppTypography.displayMedium.copyWith(
+          style: AppTypography.displayLarge.copyWith(
             color: colors.text.accent,
           ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: AppSpacing.s),
-        Text.rich(
-          TextSpan(
-            style: subtitleStyle,
-            children: [
-              const TextSpan(text: 'Zcash (ZEC) built around '),
-              TextSpan(
-                text: 'financial privacy',
-                style: subtitleStyle.copyWith(fontWeight: FontWeight.w500),
-              ),
-              const TextSpan(text: ' & '),
-              TextSpan(
-                text: 'self-custody.',
-                style: subtitleStyle.copyWith(fontWeight: FontWeight.w500),
-              ),
-            ],
-          ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Zcash (ZEC) built around financial privacy & self-custody.',
+          style: subtitleStyle,
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: AppSpacing.s),
-        const AppDecorativeDivider(),
-        const SizedBox(height: AppSpacing.s),
+        const SizedBox(height: AppSpacing.lg),
         SizedBox(
           width: 384,
           child: Column(
@@ -148,7 +140,7 @@ class _HeroBlock extends StatelessWidget {
                 style: bodyStyle,
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: AppSpacing.sm),
+              const SizedBox(height: AppSpacing.md),
               Text(
                 "You're a few steps away from your first private wallet.\n"
                 "Let's get you set up.",
@@ -159,26 +151,6 @@ class _HeroBlock extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _VizorLogo extends StatelessWidget {
-  const _VizorLogo();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      width: 56,
-      height: 28,
-      child: SvgPicture.asset(
-        'assets/icons/vizor_logo.svg',
-        colorFilter: ColorFilter.mode(
-          colors.text.brandCrimson,
-          BlendMode.srcIn,
-        ),
-      ),
     );
   }
 }
@@ -200,14 +172,14 @@ class _ButtonStack extends StatelessWidget {
           trailing: const AppIcon(AppIcons.chevronForward),
           child: const Text('Tell me how Zcash works'),
         ),
-        const SizedBox(height: AppSpacing.xs),
+        const SizedBox(height: AppSpacing.s),
         AppButton(
           onPressed: () =>
               context.go(OnboardingStep.secretPassphrase.routePath),
           variant: AppButtonVariant.ghost,
           minWidth: _buttonWidth,
           trailing: const AppIcon(AppIcons.skip),
-          child: const Text('Create New Wallet'),
+          child: const Text('I know how to use Zcash'),
         ),
       ],
     );
