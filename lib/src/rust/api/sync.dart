@@ -826,10 +826,10 @@ class WalletBalance {
   final BigInt saplingPending;
   final BigInt orchardPending;
 
-  /// Sum of spendable balances across all pools. Use this for "available to send".
+  /// Sum of spendable shielded balances. Use this for "available to send".
   final BigInt spendable;
 
-  /// Sum of spendable + pending across all pools. Use this for "total holdings".
+  /// Sum of spendable + pending balances across all pools. Use this for "total holdings".
   final BigInt total;
 
   const WalletBalance({

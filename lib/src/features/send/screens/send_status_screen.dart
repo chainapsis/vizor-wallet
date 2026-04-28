@@ -87,7 +87,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   String _friendlyError(String raw) {
     final lower = raw.toLowerCase();
     if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
-      return 'Insufficient balance to cover amount and fee.';
+      return 'Insufficient shielded balance to cover amount and fee.';
     }
     if (lower.contains('grpc connect failed') ||
         lower.contains('connection refused') ||

@@ -29,10 +29,10 @@ class SyncState {
   final BigInt shieldTransparentFee;
   final BigInt shieldTransparentAmount;
 
-  /// Sum of spendable balances across all pools. Use for "available to send".
+  /// Spendable shielded balance. Use for "available to send".
   final BigInt spendableBalance;
 
-  /// Sum of spendable + pending across all pools. Use for "total holdings".
+  /// Sum of spendable + pending balances across all pools. Use for "total holdings".
   final BigInt totalBalance;
   final String? error;
   final List<rust_sync.TransactionInfo> recentTransactions;
@@ -46,7 +46,8 @@ class SyncState {
   final String phase;
 
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
-  BigInt get pendingBalance => totalBalance - spendableBalance;
+  BigInt get pendingBalance =>
+      transparentPendingBalance + saplingPendingBalance + orchardPendingBalance;
 
   SyncState({
     this.isSyncing = false,

@@ -202,7 +202,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     // Quick balance pre-check
     final spendable = widget.spendableBalance;
     if (zatoshi > spendable) {
-      setState(() => _amountError = 'Insufficient balance');
+      setState(() => _amountError = 'Insufficient shielded balance');
       return;
     }
 
@@ -241,7 +241,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (totalNeeded > spendable) {
         final feeZec = formatZecAmount(fee);
         setState(
-          () => _amountError = 'Insufficient balance (fee: $feeZec ZEC)',
+          () =>
+              _amountError = 'Insufficient shielded balance (fee: $feeZec ZEC)',
         );
       } else {
         setState(() => _amountError = null);
@@ -250,7 +251,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (!mounted || seq != _validateSeq) return;
       final msg = e.toString();
       if (msg.contains('InsufficientFunds') || msg.contains('insufficient')) {
-        setState(() => _amountError = 'Insufficient balance including fee');
+        setState(
+          () => _amountError = 'Insufficient shielded balance including fee',
+        );
       } else {
         log('Send: fee estimation failed (non-blocking): $e');
         setState(() => _amountError = null);
@@ -263,7 +266,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   String _friendlyError(String raw) {
     final lower = raw.toLowerCase();
     if (lower.contains('insufficientfunds') || lower.contains('insufficient')) {
-      return 'Insufficient balance to cover amount and fee.';
+      return 'Insufficient shielded balance to cover amount and fee.';
     }
     if (lower.contains('grpc connect failed') ||
         lower.contains('connection refused') ||
@@ -327,7 +330,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final spendable = widget.spendableBalance;
       if (amountZatoshi > spendable) {
         setState(() {
-          _error = 'Insufficient balance.';
+          _error = 'Insufficient shielded balance.';
           _isSending = false;
         });
         return;
