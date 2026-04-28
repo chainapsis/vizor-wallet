@@ -6,7 +6,6 @@ import '../../../../main.dart' show log;
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/password_text_field.dart';
@@ -193,8 +192,8 @@ class _SetPasswordContent extends StatelessWidget {
   final VoidCallback onChanged;
   final Future<void> Function() onSubmit;
 
-  static const _contentWidth = 256.0;
-  static const _contentGap = 16.0;
+  static const _formWidth = 304.0;
+  static const _buttonWidth = 256.0;
   static const _fieldGroupGap = 12.0;
   static const _fieldReservedMessageHeight = 20.0;
 
@@ -212,38 +211,36 @@ class _SetPasswordContent extends StatelessWidget {
                 child: Center(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-                    child: SizedBox(
-                      width: _contentWidth,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Set Password',
-                                style: AppTypography.displaySmall.copyWith(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Set Password',
+                              style: AppTypography.displayLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            SizedBox(
+                              width: 270,
+                              child: Text(
+                                'Minimum 8 symbols including characters.',
+                                style: AppTypography.bodyMedium.copyWith(
                                   color: colors.text.accent,
                                 ),
                                 textAlign: TextAlign.center,
                               ),
-                              const SizedBox(height: AppSpacing.s),
-                              SizedBox(
-                                width: 270,
-                                child: Text(
-                                  'Minimum 8 symbols including characters.',
-                                  style: AppTypography.bodyMedium.copyWith(
-                                    color: colors.text.accent,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: _contentGap),
-                          const AppDecorativeDivider(width: _contentWidth),
-                          const SizedBox(height: _contentGap),
-                          Column(
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        SizedBox(
+                          width: _formWidth,
+                          child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               _PasswordFieldBlock(
@@ -256,6 +253,9 @@ class _SetPasswordContent extends StatelessWidget {
                                   tone: passwordMessage == null
                                       ? AppTextFieldTone.neutral
                                       : AppTextFieldTone.destructive,
+                                  leadingSlotWidth: 32,
+                                  trailingSlotWidth: 40,
+                                  inputHorizontalPadding: AppSpacing.s,
                                   autofocus: true,
                                   onChanged: (_) => onChanged(),
                                   onSubmitted: (_) => onSubmit(),
@@ -272,20 +272,25 @@ class _SetPasswordContent extends StatelessWidget {
                                   tone: confirmMessage == null
                                       ? AppTextFieldTone.neutral
                                       : AppTextFieldTone.destructive,
+                                  leadingSlotWidth: 32,
+                                  trailingSlotWidth: 40,
+                                  inputHorizontalPadding: AppSpacing.s,
+                                  showVisibilityToggle: false,
                                   onChanged: (_) => onChanged(),
                                   onSubmitted: (_) => onSubmit(),
                                 ),
                               ),
                             ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
+              const SizedBox(height: AppSpacing.md),
               SizedBox(
-                width: _contentWidth,
+                width: _buttonWidth,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -304,7 +309,7 @@ class _SetPasswordContent extends StatelessWidget {
                     AppButton(
                       onPressed: canSubmit ? onSubmit : null,
                       variant: AppButtonVariant.primary,
-                      minWidth: _contentWidth,
+                      minWidth: _buttonWidth,
                       trailing: const AppIcon(AppIcons.chevronForward),
                       child: Text(switch (submitPhase) {
                         _SetPasswordSubmitPhase.stoppingSync =>
@@ -359,25 +364,22 @@ class _BackRow extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => context.go(routePath, extra: routeExtra),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: AppIconSize.medium,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(
+                AppIcons.chevronBackward,
+                size: AppIconSize.medium,
+                color: colors.text.accent,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                'Back',
+                style: AppTypography.labelLarge.copyWith(
                   color: colors.text.accent,
                 ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
