@@ -752,6 +752,8 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
   final bool isBalanceVisible;
   final VoidCallback onShieldBalancePressed;
 
+  static const _itemGap = 10.0;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -768,30 +770,33 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AppIcon(
-                      AppIcons.transparentBalance,
-                      size: 16,
-                      color: colors.text.accent,
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                    Flexible(
-                      child: Text(
-                        'Transparent balance: $displayedBalance',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xxs),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppIcon(
+                        AppIcons.transparentBalance,
+                        size: 16,
+                        color: colors.text.homeCard,
+                      ),
+                      const SizedBox(width: AppSpacing.xxs),
+                      Flexible(
+                        child: Text(
+                          'Transparent balance: $displayedBalance',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.homeCard,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               if (canShieldBalance || isShieldingBalance) ...[
-                const SizedBox(width: AppSpacing.xs),
+                const SizedBox(width: _itemGap),
                 _HomeShieldBalanceButton(
                   enabled: canShieldBalance,
                   isLoading: isShieldingBalance,
@@ -822,7 +827,7 @@ class _HomeShieldBalanceButton extends StatelessWidget {
     final colors = context.colors;
     final isInteractive = enabled && !isLoading;
     final contentColor = enabled
-        ? colors.text.accent
+        ? colors.text.homeCard
         : colors.text.secondary.withValues(alpha: 0.64);
 
     return Semantics(
@@ -858,11 +863,15 @@ class _HomeShieldBalanceButton extends StatelessWidget {
                       size: 16,
                       color: contentColor,
                     ),
-                  const SizedBox(width: AppSpacing.xxs),
-                  Text(
-                    'Shield Balance',
-                    style: AppTypography.labelLarge.copyWith(
-                      color: contentColor,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xxs,
+                    ),
+                    child: Text(
+                      'Shield Balance',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: contentColor,
+                      ),
                     ),
                   ),
                 ],
