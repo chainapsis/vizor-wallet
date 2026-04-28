@@ -19,6 +19,8 @@
 //! chain-tip update, scan range management) and the shared
 //! PROPOSAL_STORE used by both the software and PCZT send paths.
 
+use std::collections::{HashMap, HashSet};
+
 use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletWrite};
 use zcash_protocol::consensus::BlockHeight;
 
@@ -207,7 +209,7 @@ pub fn set_transaction_status(
     })
 }
 
-// ======================== Transaction History (SQL) ========================
+// ======================== Transaction History ========================
 
 pub(crate) struct TransactionInfo {
     pub txid_hex: String,
@@ -223,6 +225,51 @@ pub(crate) struct TransactionInfo {
     pub created_time: u64,
 }
 
+#[derive(Clone)]
+struct TxBase {
+    txid: Vec<u8>,
+    mined_height: Option<u32>,
+    expired_unmined: bool,
+    account_balance_delta: i64,
+    fee: u64,
+    block_time: u64,
+    total_spent: u64,
+    total_received: u64,
+    is_shielding: bool,
+    expiry_height: Option<i64>,
+    tx_index: i64,
+    created: Option<String>,
+    created_time: u64,
+}
+
+struct TxOutput {
+    txid: Vec<u8>,
+    output_pool: i64,
+    from_account_uuid: Option<Vec<u8>>,
+    to_account_uuid: Option<Vec<u8>>,
+    value: u64,
+    is_change: bool,
+}
+
+#[derive(Default, Clone)]
+struct OutputSummary {
+    is_transparent: bool,
+    external_sent_amount: u64,
+    external_received_amount: u64,
+    display_has_transparent: bool,
+    display_has_shielded: bool,
+    has_external_display_output: bool,
+    has_own_transparent_output: bool,
+    has_external_transparent_send: bool,
+}
+
+struct ClassifiedTx {
+    info: TransactionInfo,
+    sort_timestamp: u64,
+    sort_mined_height: u64,
+    tx_index: i64,
+}
+
 pub fn get_transaction_history(
     db_path: &str,
     _network: WalletNetwork,
@@ -234,233 +281,295 @@ pub fn get_transaction_history(
 
     // Open a separate read-only connection (WalletDb.conn is private).
     let conn = open_readonly_conn(db_path)?;
-    // Force materialization so SQLite does not repeatedly inline the SDK views.
-    let sql = r#"
-        WITH
-        base AS MATERIALIZED (
-            SELECT
-                vt.account_uuid,
-                vt.txid,
-                vt.mined_height,
-                vt.expired_unmined,
-                vt.account_balance_delta,
-                COALESCE(vt.fee_paid, 0) AS fee_paid,
-                COALESCE(vt.block_time, 0) AS block_time,
-                COALESCE(vt.total_spent, 0) AS total_spent,
-                COALESCE(vt.total_received, 0) AS total_received,
-                COALESCE(vt.is_shielding, 0) AS is_shielding,
-                vt.expiry_height,
-                vt.tx_index,
-                tx.created,
-                CAST(COALESCE(strftime('%s', tx.created), 0) AS INTEGER) AS created_time
-            FROM v_transactions vt
-            LEFT JOIN transactions tx ON tx.txid = vt.txid
-            WHERE vt.account_uuid = ?1
-        ),
-        base_keys AS MATERIALIZED (
-            SELECT DISTINCT txid, account_uuid
-            FROM base
-        ),
-        account_outputs AS MATERIALIZED (
-            SELECT txo.*
-            FROM v_tx_outputs txo
-            JOIN base_keys bk ON bk.txid = txo.txid
-            WHERE txo.from_account_uuid = bk.account_uuid
-               OR txo.to_account_uuid = bk.account_uuid
-        ),
-        output_summary AS MATERIALIZED (
-            SELECT
-                b.txid,
-                MAX(CASE
-                    WHEN txo.output_pool = 0
-                    THEN 1 ELSE 0
-                END) AS is_transparent,
-                COALESCE(SUM(CASE
-                    WHEN txo.from_account_uuid = b.account_uuid
-                     AND txo.to_account_uuid IS NULL
-                     AND txo.is_change = 0
-                    THEN txo.value ELSE 0
-                END), 0) AS external_sent_amount,
-                COALESCE(SUM(CASE
-                    WHEN txo.to_account_uuid = b.account_uuid
-                     AND txo.from_account_uuid IS NULL
-                     AND txo.is_change = 0
-                    THEN txo.value ELSE 0
-                END), 0) AS external_received_amount,
-                MAX(CASE
-                    WHEN txo.output_pool = 0
-                     AND (
-                         (
-                             txo.from_account_uuid = b.account_uuid
-                             AND txo.to_account_uuid IS NULL
-                             AND txo.is_change = 0
-                         )
-                         OR (
-                             txo.to_account_uuid = b.account_uuid
-                             AND txo.from_account_uuid IS NULL
-                             AND txo.is_change = 0
-                         )
-                     )
-                    THEN 1 ELSE 0
-                END) AS display_has_transparent,
-                MAX(CASE
-                    WHEN txo.output_pool IN (2, 3)
-                     AND (
-                         (
-                             txo.from_account_uuid = b.account_uuid
-                             AND txo.to_account_uuid IS NULL
-                             AND txo.is_change = 0
-                         )
-                         OR (
-                             txo.to_account_uuid = b.account_uuid
-                             AND txo.from_account_uuid IS NULL
-                             AND txo.is_change = 0
-                         )
-                     )
-                    THEN 1 ELSE 0
-                END) AS display_has_shielded,
-                MAX(CASE
-                    WHEN (
-                         txo.from_account_uuid = b.account_uuid
-                         AND txo.to_account_uuid IS NULL
-                         AND txo.is_change = 0
-                    )
-                    OR (
-                         txo.to_account_uuid = b.account_uuid
-                         AND txo.from_account_uuid IS NULL
-                         AND txo.is_change = 0
-                    )
-                    THEN 1 ELSE 0
-                END) AS has_external_display_output,
-                MAX(CASE
-                    WHEN txo.output_pool = 0
-                     AND txo.from_account_uuid = b.account_uuid
-                     AND txo.to_account_uuid = b.account_uuid
-                     AND txo.is_change = 0
-                    THEN 1 ELSE 0
-                END) AS has_own_transparent_output,
-                MAX(CASE
-                    WHEN txo.output_pool = 0
-                     AND txo.from_account_uuid = b.account_uuid
-                     AND txo.to_account_uuid IS NULL
-                     AND txo.is_change = 0
-                    THEN 1 ELSE 0
-                END) AS has_external_transparent_send
-            FROM base b
-            LEFT JOIN account_outputs txo ON txo.txid = b.txid
-            GROUP BY b.txid
-        ),
-        external_send_keys AS MATERIALIZED (
-            SELECT
-                b.created,
-                COALESCE(b.expiry_height, -1) AS expiry_key
-            FROM base b
-            JOIN output_summary os ON os.txid = b.txid
-            WHERE b.created IS NOT NULL
-              AND os.has_external_transparent_send = 1
-            GROUP BY b.created, COALESCE(b.expiry_height, -1)
-        )
-        SELECT
-            b.txid,
-            b.mined_height,
-            b.expired_unmined,
-            b.account_balance_delta,
-            b.fee_paid,
-            b.block_time,
-            COALESCE(os.is_transparent, 0) AS is_transparent,
-            b.total_spent,
-            b.total_received,
-            b.is_shielding,
-            COALESCE(os.external_sent_amount, 0) AS external_sent_amount,
-            COALESCE(os.external_received_amount, 0) AS external_received_amount,
-            COALESCE(os.display_has_transparent, 0) AS display_has_transparent,
-            COALESCE(os.display_has_shielded, 0) AS display_has_shielded,
-            b.created_time
-        FROM base b
-        LEFT JOIN output_summary os ON os.txid = b.txid
-        LEFT JOIN external_send_keys esk
-          ON esk.created = b.created
-         AND esk.expiry_key = COALESCE(b.expiry_height, -1)
-        WHERE NOT (
-            b.is_shielding = 0
-            AND b.total_spent > 0
-            AND b.total_received > 0
-            AND COALESCE(b.account_balance_delta, 0) <= 0
-            AND b.created IS NOT NULL
-            AND COALESCE(os.has_external_display_output, 0) = 0
-            AND COALESCE(os.has_own_transparent_output, 0) = 1
-            AND esk.created IS NOT NULL
-        )
-        ORDER BY COALESCE(b.mined_height, 999999999) DESC, b.tx_index DESC
-        LIMIT ?2
-    "#;
-    let limit_param = limit.map(i64::from).unwrap_or(-1);
-    let mut stmt = conn.prepare(sql).map_err(|e| format!("SQL error: {e}"))?;
+    let read_tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("SQL error: {e}"))?;
+    let bases = read_history_bases(&read_tx, &uuid_bytes)?;
+    if bases.is_empty() {
+        return Ok(Vec::new());
+    }
 
-    let map_row = |row: &rusqlite::Row| -> rusqlite::Result<TransactionInfo> {
-        let txid_blob: Vec<u8> = row.get(0)?;
-        let mined_height: Option<u32> = row.get(1)?;
-        let expired_unmined: bool = row.get(2)?;
-        let balance_delta: i64 = row.get(3)?;
-        let fee: u64 = row.get::<_, i64>(4)?.unsigned_abs();
-        let block_time: u64 = row.get::<_, i64>(5)?.unsigned_abs();
-        let is_transparent: bool = row.get(6)?;
-        let total_spent = row.get::<_, i64>(7)?.unsigned_abs();
-        let total_received = row.get::<_, i64>(8)?.unsigned_abs();
-        let is_shielding: bool = row.get(9)?;
-        let external_sent_amount = row.get::<_, i64>(10)?.unsigned_abs();
-        let external_received_amount = row.get::<_, i64>(11)?.unsigned_abs();
-        let display_has_transparent: bool = row.get(12)?;
-        let display_has_shielded: bool = row.get(13)?;
-        let created_time = row.get::<_, i64>(14)?.unsigned_abs();
-
-        let display_pool = if is_shielding {
-            "shielded"
-        } else {
-            match (display_has_transparent, display_has_shielded) {
-                (true, false) => "transparent",
-                (false, true) => "shielded",
-                (true, true) => "mixed",
-                (false, false) => "unknown",
-            }
-        }
-        .to_string();
-
-        let (tx_kind, display_amount) = if is_shielding {
-            ("shielded", total_received)
-        } else if external_sent_amount > 0 {
-            ("sent", external_sent_amount)
-        } else if external_received_amount > 0 {
-            ("received", external_received_amount)
-        } else if total_spent > 0 && total_received > 0 {
-            ("internal", total_received)
-        } else if balance_delta > 0 {
-            ("received", balance_delta as u64)
-        } else {
-            ("unknown", 0)
-        };
-
-        Ok(TransactionInfo {
-            txid_hex: hex::encode(&txid_blob),
-            mined_height: mined_height.unwrap_or(0) as u64,
-            expired_unmined,
-            account_balance_delta: balance_delta,
-            fee,
-            block_time,
-            is_transparent,
-            tx_kind: tx_kind.to_string(),
-            display_amount,
-            display_pool,
-            created_time,
+    let outputs_by_txid = read_history_outputs(&read_tx, &uuid_bytes)?;
+    let summaries: HashMap<Vec<u8>, OutputSummary> = bases
+        .iter()
+        .map(|base| {
+            let outputs = outputs_by_txid
+                .get(&base.txid)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            (
+                base.txid.clone(),
+                summarize_outputs(outputs, uuid_bytes.as_slice()),
+            )
         })
-    };
+        .collect();
+    let external_send_keys = build_external_send_keys(&bases, &summaries);
+
+    let mut visible = bases
+        .iter()
+        .filter_map(|base| {
+            let summary = summaries.get(&base.txid).cloned().unwrap_or_default();
+            if should_suppress_funding_step(base, &summary, &external_send_keys) {
+                None
+            } else {
+                Some(classify_history_tx(base, &summary))
+            }
+        })
+        .collect::<Vec<_>>();
+
+    visible.sort_by(|a, b| {
+        b.sort_timestamp
+            .cmp(&a.sort_timestamp)
+            .then_with(|| b.sort_mined_height.cmp(&a.sort_mined_height))
+            .then_with(|| b.tx_index.cmp(&a.tx_index))
+            .then_with(|| b.info.txid_hex.cmp(&a.info.txid_hex))
+    });
+
+    if let Some(limit) = limit {
+        visible.truncate(limit as usize);
+    }
+
+    Ok(visible.into_iter().map(|tx| tx.info).collect())
+}
+
+fn read_history_bases(
+    conn: &rusqlite::Connection,
+    account_uuid: &[u8],
+) -> Result<Vec<TxBase>, String> {
+    let mut stmt = conn
+        .prepare(
+            r#"
+        SELECT
+            vt.txid,
+            vt.mined_height,
+            vt.expired_unmined,
+            vt.account_balance_delta,
+            COALESCE(vt.fee_paid, 0) AS fee_paid,
+            COALESCE(vt.block_time, 0) AS block_time,
+            COALESCE(vt.total_spent, 0) AS total_spent,
+            COALESCE(vt.total_received, 0) AS total_received,
+            COALESCE(vt.is_shielding, 0) AS is_shielding,
+            vt.expiry_height,
+            COALESCE(vt.tx_index, -1) AS tx_index,
+            tx.created,
+            CAST(COALESCE(strftime('%s', tx.created), 0) AS INTEGER) AS created_time
+        FROM v_transactions vt
+        LEFT JOIN transactions tx ON tx.txid = vt.txid
+        WHERE vt.account_uuid = ?1
+        "#,
+        )
+        .map_err(|e| format!("SQL error: {e}"))?;
 
     let rows = stmt
-        .query_map(rusqlite::params![&uuid_bytes, limit_param], map_row)
+        .query_map(rusqlite::params![account_uuid], |row| {
+            Ok(TxBase {
+                txid: row.get(0)?,
+                mined_height: row.get(1)?,
+                expired_unmined: row.get(2)?,
+                account_balance_delta: row.get(3)?,
+                fee: row.get::<_, i64>(4)?.unsigned_abs(),
+                block_time: row.get::<_, i64>(5)?.unsigned_abs(),
+                total_spent: row.get::<_, i64>(6)?.unsigned_abs(),
+                total_received: row.get::<_, i64>(7)?.unsigned_abs(),
+                is_shielding: row.get(8)?,
+                expiry_height: row.get(9)?,
+                tx_index: row.get(10)?,
+                created: row.get(11)?,
+                created_time: row.get::<_, i64>(12)?.unsigned_abs(),
+            })
+        })
         .map_err(|e| format!("Query error: {e}"))?;
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Row error: {e}"))
+}
+
+fn read_history_outputs(
+    conn: &rusqlite::Connection,
+    account_uuid: &[u8],
+) -> Result<HashMap<Vec<u8>, Vec<TxOutput>>, String> {
+    let mut stmt = conn
+        .prepare(
+            r#"
+        SELECT
+            txo.txid,
+            txo.output_pool,
+            txo.from_account_uuid,
+            txo.to_account_uuid,
+            txo.value,
+            txo.is_change
+        FROM v_tx_outputs txo
+        JOIN (
+            SELECT DISTINCT txid
+            FROM v_transactions
+            WHERE account_uuid = ?1
+        ) active_tx ON active_tx.txid = txo.txid
+        WHERE txo.from_account_uuid = ?1
+           OR txo.to_account_uuid = ?1
+        "#,
+        )
+        .map_err(|e| format!("SQL error: {e}"))?;
+
+    let rows = stmt
+        .query_map(rusqlite::params![account_uuid], |row| {
+            Ok(TxOutput {
+                txid: row.get(0)?,
+                output_pool: row.get(1)?,
+                from_account_uuid: row.get(2)?,
+                to_account_uuid: row.get(3)?,
+                value: row.get::<_, i64>(4)?.unsigned_abs(),
+                is_change: row.get(5)?,
+            })
+        })
+        .map_err(|e| format!("Query error: {e}"))?;
+
+    let mut outputs = HashMap::<Vec<u8>, Vec<TxOutput>>::new();
+    for row in rows {
+        let output = row.map_err(|e| format!("Row error: {e}"))?;
+        outputs.entry(output.txid.clone()).or_default().push(output);
+    }
+    Ok(outputs)
+}
+
+fn summarize_outputs(outputs: &[TxOutput], account_uuid: &[u8]) -> OutputSummary {
+    let mut summary = OutputSummary::default();
+
+    for output in outputs {
+        let from_own = output.from_account_uuid.as_deref() == Some(account_uuid);
+        let to_own = output.to_account_uuid.as_deref() == Some(account_uuid);
+        let external_send = from_own && output.to_account_uuid.is_none() && !output.is_change;
+        let external_receive = to_own && output.from_account_uuid.is_none() && !output.is_change;
+        let external_display_output = external_send || external_receive;
+
+        if output.output_pool == 0 {
+            summary.is_transparent = true;
+        }
+        if external_send {
+            summary.external_sent_amount =
+                summary.external_sent_amount.saturating_add(output.value);
+        }
+        if external_receive {
+            summary.external_received_amount = summary
+                .external_received_amount
+                .saturating_add(output.value);
+        }
+        if output.output_pool == 0 && external_display_output {
+            summary.display_has_transparent = true;
+        }
+        if matches!(output.output_pool, 2 | 3) && external_display_output {
+            summary.display_has_shielded = true;
+        }
+        if external_display_output {
+            summary.has_external_display_output = true;
+        }
+        if output.output_pool == 0 && from_own && to_own && !output.is_change {
+            summary.has_own_transparent_output = true;
+        }
+        if output.output_pool == 0 && external_send {
+            summary.has_external_transparent_send = true;
+        }
+    }
+
+    summary
+}
+
+fn build_external_send_keys(
+    bases: &[TxBase],
+    summaries: &HashMap<Vec<u8>, OutputSummary>,
+) -> HashSet<(String, i64)> {
+    bases
+        .iter()
+        .filter_map(|base| {
+            let summary = summaries.get(&base.txid)?;
+            if summary.has_external_transparent_send {
+                base.created
+                    .as_ref()
+                    .map(|created| (created.clone(), base.expiry_key()))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn should_suppress_funding_step(
+    base: &TxBase,
+    summary: &OutputSummary,
+    external_send_keys: &HashSet<(String, i64)>,
+) -> bool {
+    !base.is_shielding
+        && base.total_spent > 0
+        && base.total_received > 0
+        && base.account_balance_delta <= 0
+        && base.created.is_some()
+        && !summary.has_external_display_output
+        && summary.has_own_transparent_output
+        && external_send_keys
+            .contains(&(base.created.clone().unwrap_or_default(), base.expiry_key()))
+}
+
+fn classify_history_tx(base: &TxBase, summary: &OutputSummary) -> ClassifiedTx {
+    let display_pool = if base.is_shielding {
+        "shielded"
+    } else {
+        match (
+            summary.display_has_transparent,
+            summary.display_has_shielded,
+        ) {
+            (true, false) => "transparent",
+            (false, true) => "shielded",
+            (true, true) => "mixed",
+            (false, false) => "unknown",
+        }
+    };
+
+    let (tx_kind, display_amount) = if base.is_shielding {
+        ("shielded", base.total_received)
+    } else if summary.external_sent_amount > 0 {
+        ("sent", summary.external_sent_amount)
+    } else if summary.external_received_amount > 0 {
+        ("received", summary.external_received_amount)
+    } else if base.total_spent > 0 && base.total_received > 0 {
+        ("internal", base.total_received)
+    } else if base.account_balance_delta > 0 {
+        ("received", base.account_balance_delta as u64)
+    } else {
+        ("unknown", 0)
+    };
+
+    let sort_timestamp = base.display_timestamp();
+    ClassifiedTx {
+        info: TransactionInfo {
+            txid_hex: hex::encode(&base.txid),
+            mined_height: base.mined_height.unwrap_or(0) as u64,
+            expired_unmined: base.expired_unmined,
+            account_balance_delta: base.account_balance_delta,
+            fee: base.fee,
+            block_time: base.block_time,
+            is_transparent: summary.is_transparent,
+            tx_kind: tx_kind.to_string(),
+            display_amount,
+            display_pool: display_pool.to_string(),
+            created_time: base.created_time,
+        },
+        sort_timestamp,
+        sort_mined_height: base.mined_height.unwrap_or(0) as u64,
+        tx_index: base.tx_index,
+    }
+}
+
+impl TxBase {
+    fn expiry_key(&self) -> i64 {
+        self.expiry_height.unwrap_or(-1)
+    }
+
+    fn display_timestamp(&self) -> u64 {
+        if self.block_time > 0 {
+            self.block_time
+        } else {
+            self.created_time
+        }
+    }
 }
 
 // ======================== Pending TX Tracking ========================
@@ -709,7 +818,7 @@ mod tests {
                  total_received INTEGER,
                  is_shielding INTEGER,
                  expiry_height INTEGER,
-                 tx_index INTEGER NOT NULL
+                 tx_index INTEGER
              );
              CREATE TABLE transactions (
                  txid BLOB PRIMARY KEY,
@@ -786,6 +895,24 @@ mod tests {
                  txid, output_pool, from_account_uuid, to_account_uuid, value, is_change
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![txid, output_pool, from_bytes, to_bytes, value, is_change],
+        )
+        .unwrap();
+    }
+
+    fn mark_expired_unmined(db: &NamedTempFile, txid: &[u8]) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "UPDATE v_transactions SET expired_unmined = 1 WHERE txid = ?1",
+            rusqlite::params![txid],
+        )
+        .unwrap();
+    }
+
+    fn clear_tx_index(db: &NamedTempFile, txid: &[u8]) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "UPDATE v_transactions SET tx_index = NULL WHERE txid = ?1",
+            rusqlite::params![txid],
         )
         .unwrap();
     }
@@ -899,6 +1026,120 @@ mod tests {
         assert_eq!(got[0].txid_hex, hex::encode(internal_tx));
         assert_eq!(got[0].tx_kind, "internal");
         assert_eq!(got[0].display_amount, 18_262_101);
+    }
+
+    #[test]
+    fn history_sorts_by_display_timestamp_before_limit() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let older_failed = fake_txid(0xC1);
+        let newer_internal = fake_txid(0xC2);
+
+        insert_history_tx(
+            &db,
+            account,
+            &older_failed,
+            None,
+            2,
+            Some(1_000_100),
+            -10_010_000,
+            10_010_000,
+            0,
+            false,
+            Some("2026-04-28T13:04:00Z"),
+        );
+        mark_expired_unmined(&db, &older_failed);
+        insert_output(
+            &db,
+            &older_failed,
+            0,
+            Some(account),
+            None,
+            10_000_000,
+            false,
+        );
+
+        insert_history_tx(
+            &db,
+            account,
+            &newer_internal,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -40_000,
+            17_040_000,
+            17_000_000,
+            false,
+            Some("2026-04-28T16:32:00Z"),
+        );
+        insert_output(
+            &db,
+            &newer_internal,
+            0,
+            Some(account),
+            Some(account),
+            17_000_000,
+            false,
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].txid_hex, hex::encode(newer_internal));
+        assert_eq!(got[1].txid_hex, hex::encode(older_failed));
+        assert!(got[1].expired_unmined);
+
+        let limited = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            Some(1),
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(limited.len(), 1);
+        assert_eq!(limited[0].txid_hex, hex::encode(newer_internal));
+    }
+
+    #[test]
+    fn history_accepts_unmined_tx_with_null_tx_index() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD1);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            None,
+            0,
+            Some(1_000_100),
+            -10_010_000,
+            10_010_000,
+            0,
+            false,
+            Some("2026-04-28T13:04:00Z"),
+        );
+        clear_tx_index(&db, &txid);
+        insert_output(&db, &txid, 0, Some(account), None, 10_000_000, false);
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(txid));
+        assert_eq!(got[0].tx_kind, "sent");
     }
 
     #[test]
