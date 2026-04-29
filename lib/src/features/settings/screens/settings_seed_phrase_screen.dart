@@ -51,7 +51,7 @@ class _SettingsSeedPhraseScreenState
 
   @override
   void dispose() {
-    _copyResetTimer?.cancel();
+    _clearSensitiveState();
     _passwordController.dispose();
     super.dispose();
   }
