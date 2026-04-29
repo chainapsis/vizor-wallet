@@ -133,7 +133,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
           key: state.pageKey,
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
-          child: const WelcomeScreen(),
+          child: const WelcomeScreen(showBackButton: true),
           transitionsBuilder: _onboardingFadeTransition,
         ),
       ),

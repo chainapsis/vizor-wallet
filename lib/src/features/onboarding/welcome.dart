@@ -27,7 +27,9 @@ const double _welcomeActionWidth = 256;
 /// [AppLayoutMode.large] so a user who had previously toggled the window
 /// into small can still come back through onboarding.
 class WelcomeScreen extends ConsumerStatefulWidget {
-  const WelcomeScreen({super.key});
+  const WelcomeScreen({super.key, this.showBackButton = false});
+
+  final bool showBackButton;
 
   @override
   ConsumerState<WelcomeScreen> createState() => _WelcomeScreenState();
@@ -57,7 +59,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
           // Only the 8 dp gap around the pane is transparent — this is
           // the strip where the native acrylic is visible.
           padding: const EdgeInsets.all(AppSpacing.xs),
-          child: const _Pane(child: _Content()),
+          child: _Pane(
+            showBackButton: widget.showBackButton,
+            child: const _Content(),
+          ),
         ),
       ),
     );
@@ -99,9 +104,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 /// team decided it adds no depth in the transparent-window + acrylic
 /// context the app actually runs in.
 class _Pane extends StatelessWidget {
-  const _Pane({required this.child});
+  const _Pane({required this.child, required this.showBackButton});
 
   final Widget child;
+  final bool showBackButton;
 
   /// Fixed foreground design-canvas dimensions pulled from Figma's Welcome BG
   /// frame (node 1300:34883). The 1080 × 720 desktop window leaves a
@@ -166,7 +172,50 @@ class _Pane extends StatelessWidget {
               },
             ),
           ),
+          if (showBackButton)
+            const Positioned(
+              left: AppSpacing.md,
+              top: AppSpacing.md,
+              child: _BackRow(),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+class _BackRow extends StatelessWidget {
+  const _BackRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => context.canPop() ? context.pop() : context.go('/home'),
+        child: SizedBox(
+          height: 32,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              AppIcon(
+                AppIcons.chevronBackward,
+                size: AppIconSize.medium,
+                color: colors.icon.accent,
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                'Back',
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
