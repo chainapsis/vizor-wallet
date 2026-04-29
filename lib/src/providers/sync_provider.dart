@@ -973,22 +973,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
       if (next > current.displayPercentage) {
         state = AsyncData(current.copyWith(displayPercentage: next));
-        if (_bgDelegate.isActive) {
-          _bgDelegate.onProgress(
-            SyncProgressEvent(
-              scannedHeight: current.scannedHeight,
-              chainTipHeight: current.chainTipHeight,
-              percentage: next,
-              displayTargetPercentage: target,
-              displayTargetBlocks: targetBlocks,
-              isSyncing: current.isSyncing,
-              isComplete: false,
-              hasNewTx: false,
-              isBackground: current.isBackgroundMode,
-              phase: current.phase,
-            ),
-          );
-        }
       }
       if (virtualBlocks >= targetBlocks || next >= target) {
         _stopDisplayProgressTimer();
@@ -1133,7 +1117,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       ),
     );
 
-    if (event.isComplete || !event.isSyncing) {
+    if (event.isComplete || !event.isSyncing || _bgDelegate.isActive) {
       _stopDisplayProgressTimer();
     } else {
       _startDisplayProgressSmoothing(
