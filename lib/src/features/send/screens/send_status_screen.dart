@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
@@ -16,13 +15,12 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../../services/keystone_transport.dart';
+import '../widgets/sapling_params_prompt.dart';
 import '../widgets/transaction_receipt_view.dart';
 import 'send_review_screen.dart';
 
@@ -551,7 +549,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
               ),
               if (_showSaplingParamsPrompt)
                 Positioned.fill(
-                  child: _SaplingParamsPrompt(
+                  child: SaplingParamsPrompt(
                     onDownload: () => _resolveSaplingParamsDialog(true),
                     onCancel: () => _resolveSaplingParamsDialog(false),
                   ),
@@ -559,130 +557,6 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SaplingParamsPrompt extends StatelessWidget {
-  const _SaplingParamsPrompt({
-    required this.onDownload,
-    required this.onCancel,
-  });
-
-  final VoidCallback onDownload;
-  final VoidCallback onCancel;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return Material(
-      type: MaterialType.transparency,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onCancel,
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                child: ColoredBox(color: colors.background.neutralScrim),
-              ),
-            ),
-          ),
-          Center(
-            child: Container(
-              width: 312,
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.sm,
-                AppSpacing.md,
-                AppSpacing.sm,
-                AppSpacing.md,
-              ),
-              decoration: BoxDecoration(
-                color: colors.background.ground,
-                borderRadius: BorderRadius.circular(AppRadii.large),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: colors.background.neutralSubtleOpacity,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: AppIcon(
-                            AppIcons.importWallet,
-                            size: AppIconSize.medium,
-                            color: colors.icon.regular,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Text(
-                          'Download Required',
-                          style: AppTypography.bodyLarge.copyWith(
-                            color: colors.text.accent,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xxs,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'This transaction uses Sapling shielded notes, '
-                          'which require proving parameters (~50MB) to '
-                          'generate zero-knowledge proofs.',
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.accent,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          'This is a one-time download.\n'
-                          'Network data charges may apply.',
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.secondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  AppButton(
-                    onPressed: onDownload,
-                    minWidth: 280,
-                    child: const Text('Download'),
-                  ),
-                  const SizedBox(height: AppSpacing.s),
-                  AppButton(
-                    onPressed: onCancel,
-                    variant: AppButtonVariant.ghost,
-                    minWidth: 280,
-                    child: const Text('Cancel'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
