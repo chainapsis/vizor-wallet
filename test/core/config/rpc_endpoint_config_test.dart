@@ -57,6 +57,49 @@ void main() {
   });
 
   group('preset lookup', () {
+    test('mainnet presets include the zodl endpoint list', () {
+      final urls = kMainnetRpcEndpointPresets
+          .map((preset) => preset.url)
+          .map((url) => normalizeRpcEndpointUrl(url, allowDefaultPort: true))
+          .toSet();
+
+      expect(urls, {
+        'https://us.zec.stardust.rest:443',
+        'https://eu.zec.stardust.rest:443',
+        'https://eu2.zec.stardust.rest:443',
+        'https://jp.zec.stardust.rest:443',
+        'https://zec.rocks:443',
+        'https://na.zec.rocks:443',
+        'https://sa.zec.rocks:443',
+        'https://eu.zec.rocks:443',
+        'https://ap.zec.rocks:443',
+      });
+    });
+
+    test('mainnet presets are grouped by geography, not provider', () {
+      expect(
+        findRpcEndpointPresetByUrl(
+          'us.zec.stardust.rest:443',
+          networkName: 'main',
+        )?.region,
+        'Americas',
+      );
+      expect(
+        findRpcEndpointPresetByUrl(
+          'eu.zec.stardust.rest:443',
+          networkName: 'main',
+        )?.region,
+        'Europe',
+      );
+      expect(
+        findRpcEndpointPresetByUrl(
+          'jp.zec.stardust.rest:443',
+          networkName: 'main',
+        )?.region,
+        'Asia Pacific',
+      );
+    });
+
     test('matches normalized URLs within the requested network', () {
       final preset = findRpcEndpointPresetByUrl(
         'zec.rocks',
@@ -77,16 +120,19 @@ void main() {
   });
 
   group('RpcEndpointConfig', () {
-    test('derives the effective preset from the URL before stored preset id', () {
-      final defaultEndpoint = defaultRpcEndpointConfig('main');
-      final config = RpcEndpointConfig(
-        networkName: 'main',
-        lightwalletdUrl: defaultEndpoint.lightwalletdUrl,
-        presetId: kCustomRpcEndpointPresetId,
-      );
+    test(
+      'derives the effective preset from the URL before stored preset id',
+      () {
+        final defaultEndpoint = defaultRpcEndpointConfig('main');
+        final config = RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: defaultEndpoint.lightwalletdUrl,
+          presetId: kCustomRpcEndpointPresetId,
+        );
 
-      expect(config.effectivePresetId, defaultEndpoint.presetId);
-    });
+        expect(config.effectivePresetId, defaultEndpoint.presetId);
+      },
+    );
   });
 
   group('rpcEndpointHostPort', () {

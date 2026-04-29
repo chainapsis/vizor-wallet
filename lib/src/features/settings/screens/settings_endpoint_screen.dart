@@ -13,6 +13,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../providers/rpc_endpoint_latency_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 
@@ -38,6 +39,12 @@ class _SettingsEndpointScreenState
   void initState() {
     super.initState();
     final endpoint = ref.read(rpcEndpointProvider);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref
+          .read(rpcEndpointLatencyProvider.notifier)
+          .refresh(endpoint.networkName);
+    });
     final currentPreset = findRpcEndpointPresetByUrl(
       endpoint.normalizedLightwalletdUrl,
       networkName: endpoint.networkName,
@@ -143,6 +150,7 @@ class _SettingsEndpointScreenState
       await ref.read(syncProvider.notifier).restartSync();
       if (!mounted) return;
       final next = ref.read(rpcEndpointProvider);
+      ref.read(rpcEndpointLatencyProvider.notifier).refresh(next.networkName);
       setState(() {
         _selectedPresetId = findRpcEndpointPresetByUrl(
           next.normalizedLightwalletdUrl,
@@ -173,6 +181,7 @@ class _SettingsEndpointScreenState
   @override
   Widget build(BuildContext context) {
     final current = ref.watch(rpcEndpointProvider);
+    final latencyState = ref.watch(rpcEndpointLatencyProvider);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -180,6 +189,7 @@ class _SettingsEndpointScreenState
         padding: const EdgeInsets.all(AppSpacing.md),
         child: _SettingsEndpointPane(
           current: current,
+          latencyState: latencyState,
           activeTab: _activeTab,
           selectedPresetId: _selectedPresetId,
           customController: _customController,
@@ -203,6 +213,7 @@ class _SettingsEndpointScreenState
 class _SettingsEndpointPane extends StatelessWidget {
   const _SettingsEndpointPane({
     required this.current,
+    required this.latencyState,
     required this.activeTab,
     required this.selectedPresetId,
     required this.customController,
@@ -218,6 +229,7 @@ class _SettingsEndpointPane extends StatelessWidget {
   });
 
   final RpcEndpointConfig current;
+  final RpcEndpointLatencyState latencyState;
   final _EndpointTab activeTab;
   final String? selectedPresetId;
   final TextEditingController customController;
@@ -260,11 +272,15 @@ class _SettingsEndpointPane extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
-                  _CurrentEndpointText(current: current),
+                  _CurrentEndpointText(
+                    current: current,
+                    latencyState: latencyState,
+                  ),
                   const SizedBox(height: AppSpacing.sm),
                   _EndpointSelector(
                     width: _widgetWidth,
                     current: current,
+                    latencyState: latencyState,
                     activeTab: activeTab,
                     selectedPresetId: selectedPresetId,
                     customController: customController,
@@ -306,9 +322,13 @@ class _SettingsEndpointPane extends StatelessWidget {
 }
 
 class _CurrentEndpointText extends StatelessWidget {
-  const _CurrentEndpointText({required this.current});
+  const _CurrentEndpointText({
+    required this.current,
+    required this.latencyState,
+  });
 
   final RpcEndpointConfig current;
+  final RpcEndpointLatencyState latencyState;
 
   @override
   Widget build(BuildContext context) {
@@ -317,8 +337,11 @@ class _CurrentEndpointText extends StatelessWidget {
       current.normalizedLightwalletdUrl,
       networkName: current.networkName,
     );
+    final latency = latencyState.sampleForUrl(
+      current.normalizedLightwalletdUrl,
+    );
     final suffix = [
-      if (preset?.latencyLabel != null) preset!.latencyLabel!,
+      if (latency != null) latency.label,
       if (preset?.isDefault ?? false) '(Default)',
     ].join(' ');
 
@@ -343,6 +366,7 @@ class _EndpointSelector extends StatelessWidget {
   const _EndpointSelector({
     required this.width,
     required this.current,
+    required this.latencyState,
     required this.activeTab,
     required this.selectedPresetId,
     required this.customController,
@@ -355,6 +379,7 @@ class _EndpointSelector extends StatelessWidget {
 
   final double width;
   final RpcEndpointConfig current;
+  final RpcEndpointLatencyState latencyState;
   final _EndpointTab activeTab;
   final String? selectedPresetId;
   final TextEditingController customController;
@@ -394,6 +419,7 @@ class _EndpointSelector extends StatelessWidget {
               child: switch (activeTab) {
                 _EndpointTab.list => _PresetList(
                   networkName: current.networkName,
+                  latencyState: latencyState,
                   selectedPresetId: selectedPresetId,
                   onSelect: onSelectPreset,
                 ),
@@ -490,11 +516,13 @@ class _EndpointTabButton extends StatelessWidget {
 class _PresetList extends StatefulWidget {
   const _PresetList({
     required this.networkName,
+    required this.latencyState,
     required this.selectedPresetId,
     required this.onSelect,
   });
 
   final String networkName;
+  final RpcEndpointLatencyState latencyState;
   final String? selectedPresetId;
   final ValueChanged<String> onSelect;
 
@@ -548,6 +576,7 @@ class _PresetListState extends State<_PresetList> {
                 for (final preset in entry.value) ...[
                   _PresetCard(
                     preset: preset,
+                    latency: widget.latencyState.sampleForUrl(preset.url),
                     selected: preset.id == widget.selectedPresetId,
                     onTap: () => widget.onSelect(preset.id),
                   ),
@@ -585,11 +614,13 @@ class _PresetRegionLabel extends StatelessWidget {
 class _PresetCard extends StatelessWidget {
   const _PresetCard({
     required this.preset,
+    required this.latency,
     required this.selected,
     required this.onTap,
   });
 
   final RpcEndpointPreset preset;
+  final RpcEndpointLatencySample? latency;
   final bool selected;
   final VoidCallback onTap;
 
@@ -627,9 +658,9 @@ class _PresetCard extends StatelessWidget {
                         color: colors.text.accent,
                       ),
                     ),
-                    if (preset.latencyLabel != null)
+                    if (latency != null)
                       Text(
-                        preset.latencyLabel!,
+                        latency!.label,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelMedium.copyWith(
                           color: colors.text.secondary,

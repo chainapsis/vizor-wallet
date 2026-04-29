@@ -50,7 +50,6 @@ class RpcEndpointPreset {
     required this.region,
     required this.label,
     required this.url,
-    this.latencyLabel,
     this.isDefault = false,
   });
 
@@ -58,41 +57,68 @@ class RpcEndpointPreset {
   final String region;
   final String label;
   final String url;
-  final String? latencyLabel;
   final bool isDefault;
 
   String get hostPort => rpcEndpointHostPort(url);
 }
 
+// Mirrors the current zodl-android lightwalletd candidate list while keeping
+// this app's existing zec.rocks default unchanged.
 final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   RpcEndpointPreset(
     id: kDefaultRpcEndpointPresetId,
     region: 'Default',
     label: 'Zec Rocks',
     url: ZcashNetwork.mainnet.lightwalletdUrl,
-    latencyLabel: 'Default',
     isDefault: true,
+  ),
+  const RpcEndpointPreset(
+    id: 'us-zec-stardust',
+    region: 'Americas',
+    label: 'Stardust US',
+    url: 'https://us.zec.stardust.rest:443',
+  ),
+  const RpcEndpointPreset(
+    id: 'eu-zec-stardust',
+    region: 'Europe',
+    label: 'Stardust Europe',
+    url: 'https://eu.zec.stardust.rest:443',
+  ),
+  const RpcEndpointPreset(
+    id: 'eu2-zec-stardust',
+    region: 'Europe',
+    label: 'Stardust Europe 2',
+    url: 'https://eu2.zec.stardust.rest:443',
+  ),
+  const RpcEndpointPreset(
+    id: 'jp-zec-stardust',
+    region: 'Asia Pacific',
+    label: 'Stardust Japan',
+    url: 'https://jp.zec.stardust.rest:443',
   ),
   const RpcEndpointPreset(
     id: 'na-zec-rocks',
     region: 'Americas',
     label: 'Zec Rocks North America',
     url: 'https://na.zec.rocks:443',
-    latencyLabel: '75ms',
+  ),
+  const RpcEndpointPreset(
+    id: 'sa-zec-rocks',
+    region: 'Americas',
+    label: 'Zec Rocks South America',
+    url: 'https://sa.zec.rocks:443',
   ),
   const RpcEndpointPreset(
     id: 'eu-zec-rocks',
     region: 'Europe',
     label: 'Zec Rocks Europe',
     url: 'https://eu.zec.rocks:443',
-    latencyLabel: '160ms',
   ),
   const RpcEndpointPreset(
     id: 'ap-zec-rocks',
     region: 'Asia Pacific',
     label: 'Zec Rocks Asia Pacific',
     url: 'https://ap.zec.rocks:443',
-    latencyLabel: '240ms',
   ),
 ]);
 
@@ -102,7 +128,6 @@ final kTestnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     region: 'Testnet',
     label: 'Zec Rocks Testnet',
     url: 'https://testnet.zec.rocks:443',
-    latencyLabel: 'Default',
     isDefault: true,
   ),
 ]);
