@@ -103,6 +103,24 @@ void main() {
     expect(await store.readSecretStringWithOptions(_mnemonicKey), _mnemonic);
   });
 
+  test('changePassword rejects unreadable mnemonic payloads', () async {
+    await store.configurePassword(_oldPassword);
+    await store.writeString(_mnemonicKey, 'not encrypted json');
+
+    await expectLater(
+      () => store.changePassword(
+        currentPassword: _oldPassword,
+        newPassword: _newPassword,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(await store.readPlain(_rotationInProgressKey), isNull);
+    expect(await store.verifyPasswordOnly(_newPassword), isFalse);
+    expect(await store.verifyPassword(_oldPassword), isTrue);
+    expect(await store.readPlain(_mnemonicKey), 'not encrypted json');
+  });
+
   test('changePassword rolls back if the verifier write fails', () async {
     final failingStorage = _FailingWriteStorage(failKey: _passwordVerifierKey);
     store = AppSecureStore.testing(storage: failingStorage);

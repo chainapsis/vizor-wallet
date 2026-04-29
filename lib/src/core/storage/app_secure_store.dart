@@ -228,7 +228,11 @@ class AppSecureStore {
           if (!entry.key.startsWith(_accountMnemonicKeyPrefix)) continue;
 
           final payload = _EncryptedPayload.tryParse(entry.value);
-          if (payload == null) continue;
+          if (payload == null) {
+            throw StateError(
+              'Failed to parse secure-storage value for "${entry.key}".',
+            );
+          }
 
           final clearText = await _decryptPayloadForKey(
             entry.key,
