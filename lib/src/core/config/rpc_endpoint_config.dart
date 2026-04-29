@@ -232,7 +232,7 @@ bool _hasExplicitPort(String url) {
 
 String rpcEndpointHostPort(String url) {
   final uri = Uri.parse(normalizeRpcEndpointUrl(url, allowDefaultPort: true));
-  return '${uri.host}:${uri.port}';
+  return '${_formatRpcHost(uri.host)}:${uri.port}';
 }
 
 int _defaultPortForScheme(String scheme) {

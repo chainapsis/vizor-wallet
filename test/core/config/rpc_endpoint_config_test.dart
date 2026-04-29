@@ -75,4 +75,10 @@ void main() {
       expect(preset, isNull);
     });
   });
+
+  group('rpcEndpointHostPort', () {
+    test('keeps IPv6 brackets so custom endpoint fields can round-trip', () {
+      expect(rpcEndpointHostPort('https://[::1]:9067'), '[::1]:9067');
+    });
+  });
 }
