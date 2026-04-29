@@ -121,11 +121,11 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   }
 
   String _formatReceiptAmount(BigInt zatoshi) {
-    return '${formatZecAmount(zatoshi, minFractionDigits: 2)} zec';
+    return ZecAmount.fromZatoshi(zatoshi).receipt.toString();
   }
 
   String _formatFee(BigInt zatoshi) {
-    return formatZecAmount(zatoshi);
+    return ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
   }
 
   String _formatDate(DateTime value) {

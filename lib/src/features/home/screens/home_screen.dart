@@ -61,7 +61,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   String _formatZec(BigInt zatoshi) {
-    return formatZecAmount(zatoshi, minFractionDigits: 2);
+    return ZecAmount.fromZatoshi(zatoshi).balance.amountText;
   }
 
   void _toggleBalanceVisibility() {

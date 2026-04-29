@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../core/formatting/zec_amount.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../providers/sync_provider.dart';
@@ -73,7 +74,7 @@ ActivityRowData buildSyncActivityRow({
     leadingIconName: AppIcons.sync,
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
-    amountText: formatActivityZec(sync.totalBalance),
+    amountText: ZecAmount.fromZatoshi(sync.totalBalance).activity.toString(),
     amountColor: colors.text.accent,
     statusText: 'Completed',
     statusColor: colors.text.secondary,
@@ -155,24 +156,9 @@ String _transactionAmountText({
 }) {
   if (amount == BigInt.zero) return '--';
   if (isFailed || isShielded) {
-    return formatActivityZec(amount);
+    return ZecAmount.fromZatoshi(amount).activity.toString();
   }
-  return formatSignedActivityZec(signedAmount);
-}
-
-String formatActivityZec(BigInt zatoshi) {
-  final abs = zatoshi.abs();
-  final whole = abs ~/ BigInt.from(100000000);
-  final frac = (abs % BigInt.from(100000000)).toString().padLeft(8, '0');
-  final digits = whole == BigInt.zero && int.parse(frac) < 1000000
-      ? frac
-      : frac.substring(0, 2);
-  return '$whole.$digits ZEC';
-}
-
-String formatSignedActivityZec(BigInt zatoshi) {
-  final sign = zatoshi >= BigInt.zero ? '+' : '-';
-  return '$sign${formatActivityZec(zatoshi)}';
+  return ZecAmount.fromZatoshi(signedAmount).signedActivity.toString();
 }
 
 String formatActivityTimestamp(DateTime? timestamp) {

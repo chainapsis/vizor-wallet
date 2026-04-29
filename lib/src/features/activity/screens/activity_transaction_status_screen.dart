@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -17,7 +18,6 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../send/widgets/transaction_receipt_view.dart';
-import '../activity_row_mapper.dart';
 
 class ActivityTransactionStatusArgs {
   const ActivityTransactionStatusArgs({
@@ -237,7 +237,7 @@ class _ActivityTransactionStatusScreenState
   String _amountText(rust_sync.TransactionInfo? tx) {
     if (tx == null) return '--';
     if (tx.displayAmount == BigInt.zero) return '--';
-    return formatActivityZec(tx.displayAmount);
+    return ZecAmount.fromZatoshi(tx.displayAmount).activity.toString();
   }
 
   String _dateText(rust_sync.TransactionInfo? tx) {
@@ -251,17 +251,7 @@ class _ActivityTransactionStatusScreenState
 
   String _feeText(rust_sync.TransactionInfo? tx) {
     if (tx == null || tx.fee <= BigInt.zero) return '--';
-    return '${_formatZec(tx.fee)} ZEC';
-  }
-
-  String _formatZec(BigInt zatoshi) {
-    final whole = zatoshi ~/ BigInt.from(100000000);
-    var fraction = (zatoshi % BigInt.from(100000000)).toString().padLeft(
-      8,
-      '0',
-    );
-    fraction = fraction.replaceFirst(RegExp(r'0+$'), '');
-    return fraction.isEmpty ? '$whole' : '$whole.$fraction';
+    return ZecAmount.fromZatoshi(tx.fee).fee.toString();
   }
 
   String _formatDate(DateTime value) {

@@ -356,7 +356,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         return;
       }
 
-      final amountText = formatZecAmount(estimate.amountZatoshi);
+      final amountText = ZecAmount.fromZatoshi(
+        estimate.amountZatoshi,
+      ).pretty().amountText;
       _programmaticAmountEdit = true;
       _amountController.value = TextEditingValue(
         text: amountText,
@@ -448,10 +450,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
       final totalNeeded = zatoshi + fee;
       if (totalNeeded > spendable) {
-        final feeZec = formatZecAmount(fee);
+        final feeText = ZecAmount.fromZatoshi(fee).fee.toString();
         setState(
-          () =>
-              _amountError = 'Insufficient shielded balance (fee: $feeZec ZEC)',
+          () => _amountError = 'Insufficient shielded balance (fee: $feeText)',
         );
       } else {
         setState(() => _amountError = null);
@@ -624,6 +625,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   @override
   Widget build(BuildContext context) {
     final spendable = widget.spendableBalance;
+    final spendableText = ZecAmount.fromZatoshi(
+      spendable,
+    ).pretty(denomStyle: ZecDenomStyle.upper).toString();
     final colors = context.colors;
 
     final addressTone = switch (_addressType) {
@@ -791,7 +795,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                                       ? null
                                                       : _activateMaxMode,
                                                   child: Text(
-                                                    'Max: ${formatZecAmount(spendable)} ZEC',
+                                                    'Max: $spendableText',
                                                     style: AppTypography
                                                         .labelMedium
                                                         .copyWith(

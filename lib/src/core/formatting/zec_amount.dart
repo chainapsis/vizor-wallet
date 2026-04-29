@@ -115,7 +115,7 @@ class ZecAmount {
       signed ? zatoshi : abs,
       minFractionDigits: showFullFraction ? 0 : 2,
       maxFractionDigits: showFullFraction ? 8 : 2,
-      denomStyle: ZecDenomStyle.lower,
+      denomStyle: ZecDenomStyle.upper,
       signed: signed,
       trimTrailingZeros: showFullFraction,
     );

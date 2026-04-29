@@ -63,29 +63,29 @@ void main() {
     test('preserves existing activity precision rules', () {
       expect(
         ZecAmount.fromZatoshi(BigInt.from(123450000)).activity.toString(),
-        '1.23 zec',
+        '1.23 ZEC',
       );
       expect(
         ZecAmount.fromZatoshi(BigInt.from(10000)).activity.toString(),
-        '0.0001 zec',
+        '0.0001 ZEC',
       );
       expect(
         ZecAmount.fromZatoshi(BigInt.zero).activity.toString(),
-        '0.00 zec',
+        '0.00 ZEC',
       );
       expect(
         ZecAmount.fromZatoshi(-BigInt.from(100000000)).activity.toString(),
-        '1.00 zec',
+        '1.00 ZEC',
       );
       expect(
         ZecAmount.fromZatoshi(
           -BigInt.from(100000000),
         ).signedActivity.toString(),
-        '-1.00 zec',
+        '-1.00 ZEC',
       );
       expect(
         ZecAmount.fromZatoshi(BigInt.zero).signedActivity.toString(),
-        '0.00 zec',
+        '0.00 ZEC',
       );
     });
   });
