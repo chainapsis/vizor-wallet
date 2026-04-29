@@ -163,7 +163,7 @@ class WalletMutationSyncPause {
 }
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
-  static const _displayBlockDuration = Duration(milliseconds: 500);
+  static const _displayBlockDuration = Duration(milliseconds: 100);
 
   late final BackgroundSyncDelegate _bgDelegate;
   bool _isSyncing = false;
