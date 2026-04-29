@@ -705,6 +705,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> enableBackgroundSync() async {
     if (_bgDelegate.isActive) return;
     await _bgDelegate.enable();
+    _stopDisplayProgressTimer();
     log('SyncNotifier: background sync enabled');
   }
 
@@ -959,6 +960,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _displayProgressTimer = Timer.periodic(_displayBlockDuration, (timer) {
       final current = state.value;
       if (current == null ||
+          _bgDelegate.isActive ||
           (!current.isSyncing && !current.isBackgroundMode)) {
         _stopDisplayProgressTimer();
         return;
