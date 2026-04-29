@@ -10,6 +10,7 @@ import '../security/password_policy.dart';
 
 const kWalletDbNameKey = 'zcash_wallet_db_name';
 const kThemeModeKey = 'zcash_theme_mode';
+const kPrivacyModeEnabledKey = 'zcash_privacy_mode_enabled';
 const kRpcEndpointUrlKey = 'zcash_rpc_endpoint_url';
 const kRpcEndpointPresetKey = 'zcash_rpc_endpoint_preset';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';

@@ -98,6 +98,55 @@ void main() {
     expect(find.text('+1.23 ZEC'), findsOneWidget);
     expect(find.text('-1.00 ZEC'), findsOneWidget);
   });
+
+  testWidgets('activity rows hide asset amounts with a fixed mask', (
+    tester,
+  ) async {
+    late final List<ActivityRowData> rows;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              rows = buildActivityRows(
+                context: context,
+                sync: SyncState(totalBalance: BigInt.from(10000)),
+                privacyModeEnabled: true,
+                transactions: [
+                  _tx(
+                    txidHex: 'received',
+                    kind: 'received',
+                    amount: BigInt.from(123450000),
+                  ),
+                  _tx(
+                    txidHex: 'sent',
+                    kind: 'sent',
+                    amount: BigInt.from(100000000),
+                  ),
+                  _tx(
+                    txidHex: 'shielded',
+                    kind: 'shielded',
+                    amount: BigInt.from(10000),
+                  ),
+                ],
+              );
+              return ActivityTable(rows: rows);
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(rows[0].amountText, '*** ZEC');
+    expect(rows[1].amountText, '*** ZEC');
+    expect(rows[2].amountText, '*** ZEC');
+    expect(rows[3].amountText, '*** ZEC');
+    expect(find.text('*** ZEC'), findsNWidgets(4));
+    expect(find.text('+1.23 ZEC'), findsNothing);
+    expect(find.text('-1.00 ZEC'), findsNothing);
+  });
 }
 
 rust_sync.TransactionInfo _tx({

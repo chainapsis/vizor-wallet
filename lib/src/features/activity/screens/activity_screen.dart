@@ -15,6 +15,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -237,6 +238,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 
     final sync = ref.watch(syncProvider).value ?? SyncState();
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final transactions = _transactions ?? sync.recentTransactions;
     final transactionsAfterFirstPage = math.max(
       0,
@@ -262,12 +264,14 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               buildSyncActivityRow(
                 context: context,
                 sync: sync,
+                privacyModeEnabled: privacyModeEnabled,
                 onRetrySync: () => ref.read(syncProvider.notifier).startSync(),
               ),
             ...pageTransactions.map(
               (tx) => buildTransactionActivityRow(
                 context: context,
                 transaction: tx,
+                privacyModeEnabled: privacyModeEnabled,
                 onTap: () => _openTransactionStatus(tx),
               ),
             ),

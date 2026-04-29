@@ -11,6 +11,7 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -18,6 +19,7 @@ import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -625,9 +627,13 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   @override
   Widget build(BuildContext context) {
     final spendable = widget.spendableBalance;
-    final spendableText = ZecAmount.fromZatoshi(
+    final visibleSpendableText = ZecAmount.fromZatoshi(
       spendable,
     ).pretty(denomStyle: ZecDenomStyle.upper).toString();
+    final spendableText = hideAmountIfPrivacyMode(
+      visibleSpendableText,
+      privacyModeEnabled: ref.watch(privacyModeProvider),
+    );
     final colors = context.colors;
 
     final addressTone = switch (_addressType) {

@@ -12,11 +12,13 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
+import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -36,7 +38,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _canBackgroundSync = false;
-  bool _isBalanceVisible = true;
   bool _isShieldingBalance = false;
   String? _shieldBalanceError;
 
@@ -62,12 +63,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   String _formatZec(BigInt zatoshi) {
     return ZecAmount.fromZatoshi(zatoshi).balance.amountText;
-  }
-
-  void _toggleBalanceVisibility() {
-    setState(() {
-      _isBalanceVisible = !_isBalanceVisible;
-    });
   }
 
   void _dismissShieldBalanceError() {
@@ -175,6 +170,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final bootstrap = ref.watch(appBootstrapProvider);
     final syncAsync = ref.watch(syncProvider);
     final sync = syncAsync.value ?? SyncState();
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final shieldedBalance =
         sync.saplingBalance +
         sync.orchardBalance +
@@ -204,14 +200,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               passwordRotationRecoveryFailed:
                   bootstrap.passwordRotationRecoveryFailed,
               canBackgroundSync: _canBackgroundSync,
-              isBalanceVisible: _isBalanceVisible,
+              privacyModeEnabled: privacyModeEnabled,
               shieldedBalanceText: _formatZec(shieldedBalance),
               transparentBalanceText: _formatZec(transparentBalance),
               hasTransparentBalance: transparentBalance > BigInt.zero,
               canShieldBalance: canShieldTransparentBalance,
               isShieldingBalance: _isShieldingBalance,
               shieldBalanceError: _shieldBalanceError,
-              onToggleBalanceVisibility: _toggleBalanceVisibility,
+              onTogglePrivacyMode: () =>
+                  ref.read(privacyModeProvider.notifier).toggle(),
               onShieldBalancePressed: () =>
                   unawaited(_shieldTransparentBalance()),
               onDismissShieldBalanceError: _dismissShieldBalanceError,
@@ -233,14 +230,14 @@ class _HomePane extends ConsumerStatefulWidget {
     required this.sync,
     required this.passwordRotationRecoveryFailed,
     required this.canBackgroundSync,
-    required this.isBalanceVisible,
+    required this.privacyModeEnabled,
     required this.shieldedBalanceText,
     required this.transparentBalanceText,
     required this.hasTransparentBalance,
     required this.canShieldBalance,
     required this.isShieldingBalance,
     required this.shieldBalanceError,
-    required this.onToggleBalanceVisibility,
+    required this.onTogglePrivacyMode,
     required this.onShieldBalancePressed,
     required this.onDismissShieldBalanceError,
     required this.onSyncInBackground,
@@ -251,14 +248,14 @@ class _HomePane extends ConsumerStatefulWidget {
   final SyncState sync;
   final bool passwordRotationRecoveryFailed;
   final bool canBackgroundSync;
-  final bool isBalanceVisible;
+  final bool privacyModeEnabled;
   final String shieldedBalanceText;
   final String transparentBalanceText;
   final bool hasTransparentBalance;
   final bool canShieldBalance;
   final bool isShieldingBalance;
   final String? shieldBalanceError;
-  final VoidCallback onToggleBalanceVisibility;
+  final VoidCallback onTogglePrivacyMode;
   final VoidCallback onShieldBalancePressed;
   final VoidCallback onDismissShieldBalanceError;
   final VoidCallback onSyncInBackground;
@@ -357,9 +354,8 @@ class _HomePaneState extends ConsumerState<_HomePane> {
                           hasTransparentBalance: widget.hasTransparentBalance,
                           canShieldBalance: widget.canShieldBalance,
                           isShieldingBalance: widget.isShieldingBalance,
-                          isBalanceVisible: widget.isBalanceVisible,
-                          onToggleBalanceVisibility:
-                              widget.onToggleBalanceVisibility,
+                          privacyModeEnabled: widget.privacyModeEnabled,
+                          onTogglePrivacyMode: widget.onTogglePrivacyMode,
                           onShieldBalancePressed: widget.onShieldBalancePressed,
                         ),
                         if (notice != null) ...[
@@ -439,6 +435,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       context: context,
       sync: widget.sync,
       transactions: widget.sync.recentTransactions.take(9),
+      privacyModeEnabled: widget.privacyModeEnabled,
       onRetrySync: widget.onRetrySync,
       onTransactionTap: _openTransactionStatus,
     );
@@ -501,8 +498,8 @@ class _HomeBalanceCard extends StatelessWidget {
     required this.hasTransparentBalance,
     required this.canShieldBalance,
     required this.isShieldingBalance,
-    required this.isBalanceVisible,
-    required this.onToggleBalanceVisibility,
+    required this.privacyModeEnabled,
+    required this.onTogglePrivacyMode,
     required this.onShieldBalancePressed,
   });
 
@@ -511,8 +508,8 @@ class _HomeBalanceCard extends StatelessWidget {
   final bool hasTransparentBalance;
   final bool canShieldBalance;
   final bool isShieldingBalance;
-  final bool isBalanceVisible;
-  final VoidCallback onToggleBalanceVisibility;
+  final bool privacyModeEnabled;
+  final VoidCallback onTogglePrivacyMode;
   final VoidCallback onShieldBalancePressed;
 
   static const _shieldedCardHeight = 216.0;
@@ -526,9 +523,11 @@ class _HomeBalanceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final displayedShieldedBalance = isBalanceVisible
-        ? '$shieldedBalanceText zec'
-        : '•••••• zec';
+    final displayedShieldedBalance = hideIfPrivacyMode(
+      '$shieldedBalanceText zec',
+      privacyModeEnabled: privacyModeEnabled,
+      suffix: ' zec',
+    );
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final targetStripHeight = hasTransparentBalance
         ? _transparentStripHeight
@@ -539,7 +538,7 @@ class _HomeBalanceCard extends StatelessWidget {
             balanceText: transparentBalanceText,
             canShieldBalance: canShieldBalance,
             isShieldingBalance: isShieldingBalance,
-            isBalanceVisible: isBalanceVisible,
+            privacyModeEnabled: privacyModeEnabled,
             onShieldBalancePressed: onShieldBalancePressed,
           )
         : const SizedBox.shrink(key: ValueKey('transparent-balance-empty'));
@@ -742,11 +741,10 @@ class _HomeBalanceCard extends StatelessWidget {
                                               ),
                                               const Spacer(),
                                               _IconPillButton(
-                                                iconName: isBalanceVisible
-                                                    ? AppIcons.eye
-                                                    : AppIcons.eyeClosed,
-                                                onPressed:
-                                                    onToggleBalanceVisibility,
+                                                iconName: privacyModeEnabled
+                                                    ? AppIcons.eyeClosed
+                                                    : AppIcons.eye,
+                                                onPressed: onTogglePrivacyMode,
                                               ),
                                             ],
                                           ),
@@ -853,7 +851,7 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
     required this.balanceText,
     required this.canShieldBalance,
     required this.isShieldingBalance,
-    required this.isBalanceVisible,
+    required this.privacyModeEnabled,
     required this.onShieldBalancePressed,
     super.key,
   });
@@ -861,7 +859,7 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
   final String balanceText;
   final bool canShieldBalance;
   final bool isShieldingBalance;
-  final bool isBalanceVisible;
+  final bool privacyModeEnabled;
   final VoidCallback onShieldBalancePressed;
 
   static const _itemGap = 10.0;
@@ -869,9 +867,10 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final displayedBalance = isBalanceVisible
-        ? '$balanceText ZEC'
-        : '•••••• ZEC';
+    final displayedBalance = hideAmountIfPrivacyMode(
+      '$balanceText ZEC',
+      privacyModeEnabled: privacyModeEnabled,
+    );
 
     return SizedBox(
       height: 56,

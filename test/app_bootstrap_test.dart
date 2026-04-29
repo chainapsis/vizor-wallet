@@ -52,4 +52,8 @@ void main() {
   test('empty bootstrap has no password rotation recovery failure', () {
     expect(AppBootstrapState.empty.passwordRotationRecoveryFailed, isFalse);
   });
+
+  test('empty bootstrap starts with privacy mode disabled', () {
+    expect(AppBootstrapState.empty.privacyModeEnabled, isFalse);
+  });
 }

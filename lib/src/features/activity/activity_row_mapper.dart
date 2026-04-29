@@ -1,16 +1,20 @@
 import 'package:flutter/widgets.dart';
 
 import '../../core/formatting/zec_amount.dart';
+import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../providers/sync_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import 'models/activity_row_data.dart';
 
+const _activityAmountPrivacyMaskLength = 3;
+
 List<ActivityRowData> buildActivityRows({
   required BuildContext context,
   required SyncState sync,
   required Iterable<rust_sync.TransactionInfo> transactions,
+  bool privacyModeEnabled = false,
   VoidCallback? onRetrySync,
   ValueChanged<rust_sync.TransactionInfo>? onTransactionTap,
 }) {
@@ -18,12 +22,14 @@ List<ActivityRowData> buildActivityRows({
     buildSyncActivityRow(
       context: context,
       sync: sync,
+      privacyModeEnabled: privacyModeEnabled,
       onRetrySync: onRetrySync,
     ),
     ...transactions.map(
       (tx) => buildTransactionActivityRow(
         context: context,
         transaction: tx,
+        privacyModeEnabled: privacyModeEnabled,
         onTap: onTransactionTap == null ? null : () => onTransactionTap(tx),
       ),
     ),
@@ -33,6 +39,7 @@ List<ActivityRowData> buildActivityRows({
 ActivityRowData buildSyncActivityRow({
   required BuildContext context,
   required SyncState sync,
+  bool privacyModeEnabled = false,
   VoidCallback? onRetrySync,
 }) {
   final colors = context.colors;
@@ -74,7 +81,11 @@ ActivityRowData buildSyncActivityRow({
     leadingIconName: AppIcons.sync,
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
     leadingIconColor: colors.icon.regular,
-    amountText: ZecAmount.fromZatoshi(sync.totalBalance).activity.toString(),
+    amountText: hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(sync.totalBalance).activity.toString(),
+      privacyModeEnabled: privacyModeEnabled,
+      maskLength: _activityAmountPrivacyMaskLength,
+    ),
     amountColor: colors.text.accent,
     statusText: 'Completed',
     statusColor: colors.text.secondary,
@@ -90,6 +101,7 @@ String _formatInProgressSyncPercentage(double progress) {
 ActivityRowData buildTransactionActivityRow({
   required BuildContext context,
   required rust_sync.TransactionInfo transaction,
+  bool privacyModeEnabled = false,
   VoidCallback? onTap,
 }) {
   final colors = context.colors;
@@ -121,6 +133,7 @@ ActivityRowData buildTransactionActivityRow({
       isFailed: isFailed,
       isShielded: isShielded,
       kind: kind,
+      privacyModeEnabled: privacyModeEnabled,
     ),
     amountIconName: isFailed && amount != BigInt.zero
         ? AppIcons.arrowBack
@@ -153,7 +166,15 @@ String _transactionAmountText({
   required bool isFailed,
   required bool isShielded,
   required String kind,
+  required bool privacyModeEnabled,
 }) {
+  if (privacyModeEnabled) {
+    return hideAmountIfPrivacyMode(
+      '',
+      privacyModeEnabled: true,
+      maskLength: _activityAmountPrivacyMaskLength,
+    );
+  }
   if (amount == BigInt.zero) return '--';
   if (isFailed || isShielded) {
     return ZecAmount.fromZatoshi(amount).activity.toString();

@@ -11,9 +11,11 @@ import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -234,10 +236,19 @@ class _ActivityTransactionStatusScreenState
     return TransactionReceiptPhase.succeeded;
   }
 
-  String _amountText(rust_sync.TransactionInfo? tx) {
+  String _amountText(
+    rust_sync.TransactionInfo? tx, {
+    required bool privacyModeEnabled,
+  }) {
     if (tx == null) return '--';
+    if (privacyModeEnabled) {
+      return hideAmountIfPrivacyMode('', privacyModeEnabled: true);
+    }
     if (tx.displayAmount == BigInt.zero) return '--';
-    return ZecAmount.fromZatoshi(tx.displayAmount).activity.toString();
+    return hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(tx.displayAmount).activity.toString(),
+      privacyModeEnabled: privacyModeEnabled,
+    );
   }
 
   String _dateText(rust_sync.TransactionInfo? tx) {
@@ -249,9 +260,15 @@ class _ActivityTransactionStatusScreenState
     );
   }
 
-  String _feeText(rust_sync.TransactionInfo? tx) {
+  String _feeText(
+    rust_sync.TransactionInfo? tx, {
+    required bool privacyModeEnabled,
+  }) {
     if (tx == null || tx.fee <= BigInt.zero) return '--';
-    return ZecAmount.fromZatoshi(tx.fee).fee.toString();
+    return hideAmountIfPrivacyMode(
+      ZecAmount.fromZatoshi(tx.fee).fee.toString(),
+      privacyModeEnabled: privacyModeEnabled,
+    );
   }
 
   String _formatDate(DateTime value) {
@@ -423,6 +440,7 @@ class _ActivityTransactionStatusScreenState
 
     final tx = _transaction;
     final detail = _matchingDetailFor(tx);
+    final privacyModeEnabled = ref.watch(privacyModeProvider);
     final useFailedReceiptLayout = tx?.expiredUnmined == true;
     final error = useFailedReceiptLayout
         ? 'Transaction expired before it was mined.'
@@ -459,11 +477,17 @@ class _ActivityTransactionStatusScreenState
                           alignment: Alignment.centerLeft,
                           child: TransactionReceiptView(
                             phase: _phaseFor(tx),
-                            amountText: _amountText(tx),
+                            amountText: _amountText(
+                              tx,
+                              privacyModeEnabled: privacyModeEnabled,
+                            ),
                             primaryBlock: _primaryBlockFor(context, tx, detail),
                             extraBlocks: _extraBlocksFor(context, detail),
                             dateText: _dateText(tx),
-                            feeText: _feeText(tx),
+                            feeText: _feeText(
+                              tx,
+                              privacyModeEnabled: privacyModeEnabled,
+                            ),
                             error: error,
                             useFailedReceiptLayout: useFailedReceiptLayout,
                             onCopyTxid: _copyTransactionHash,

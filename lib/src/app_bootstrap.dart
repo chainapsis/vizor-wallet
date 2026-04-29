@@ -34,6 +34,7 @@ class AppBootstrapState {
     required this.network,
     required this.rpcEndpointConfig,
     required this.themeMode,
+    required this.privacyModeEnabled,
     required this.isPasswordConfigured,
     required this.isUnlocked,
     required this.passwordRotationRecoveryFailed,
@@ -45,6 +46,7 @@ class AppBootstrapState {
   final String network;
   final RpcEndpointConfig rpcEndpointConfig;
   final ThemeMode themeMode;
+  final bool privacyModeEnabled;
   final bool isPasswordConfigured;
   final bool isUnlocked;
   final bool passwordRotationRecoveryFailed;
@@ -59,6 +61,7 @@ class AppBootstrapState {
     network: 'main',
     rpcEndpointConfig: defaultRpcEndpointConfig('main'),
     themeMode: ThemeMode.system,
+    privacyModeEnabled: false,
     isPasswordConfigured: false,
     isUnlocked: false,
     passwordRotationRecoveryFailed: false,
@@ -140,6 +143,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
     await _seedNativeRpcEndpointMirror(rpcEndpointConfig);
     final themeMode = await _readThemeMode(storage);
+    final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
     final isPasswordConfigured = await storage.isPasswordConfigured();
     final isUnlocked = storage.hasSessionPassword;
     final dbPath = await _getDbPath();
@@ -221,6 +225,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       network: network,
       rpcEndpointConfig: rpcEndpointConfig,
       themeMode: themeMode,
+      privacyModeEnabled: privacyModeEnabled,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
       passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,
@@ -307,6 +312,15 @@ ThemeMode _decodeThemeMode(String? raw) {
     'dark' => ThemeMode.dark,
     _ => ThemeMode.system,
   };
+}
+
+Future<bool> _readPrivacyModeEnabled(AppSecureStore storage) async {
+  try {
+    return (await storage.readString(kPrivacyModeEnabledKey)) == 'true';
+  } catch (e) {
+    log('bootstrap: failed to read privacy mode: $e');
+    return false;
+  }
 }
 
 Future<List<AccountInfo>> _readStoredAccounts(AppSecureStore storage) async {
