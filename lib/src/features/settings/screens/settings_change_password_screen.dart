@@ -36,6 +36,9 @@ class _SettingsChangePasswordScreenState
   String? _submitError;
   bool _isSubmitting = false;
 
+  String? get _currentPasswordPolicyMessage =>
+      validateWalletPassword(_currentPasswordController.text);
+
   bool get _canContinue =>
       !_isSubmitting && isWalletPasswordValid(_currentPasswordController.text);
 
@@ -63,7 +66,7 @@ class _SettingsChangePasswordScreenState
   String? get _confirmMessage {
     final value = _confirmController.text;
     if (value.isEmpty || _passwordMessage != null || _matches) return null;
-    return "Password didn't match";
+    return 'Passwords do not match.';
   }
 
   @override
@@ -107,16 +110,13 @@ class _SettingsChangePasswordScreenState
   }
 
   Future<void> _submitCurrentPassword() async {
+    final policyError = _currentPasswordPolicyMessage;
     if (_isSubmitting) return;
     if (!isWalletPasswordValid(_currentPasswordController.text)) {
-      final policyError = validateWalletPassword(
-        _currentPasswordController.text,
-      );
-      if (policyError != null) {
-        setState(() {
-          _currentPasswordError = policyError;
-        });
-      }
+      if (policyError == null) return;
+      setState(() {
+        _currentPasswordError = policyError;
+      });
       return;
     }
 
@@ -133,7 +133,7 @@ class _SettingsChangePasswordScreenState
       if (!mounted) return;
       if (!isValid) {
         setState(() {
-          _currentPasswordError = 'Wrong password';
+          _currentPasswordError = 'Incorrect password. Please try again.';
           _isSubmitting = false;
         });
         return;
@@ -193,7 +193,7 @@ class _SettingsChangePasswordScreenState
           _passwordController.clear();
           _confirmController.clear();
           _stage = _ChangePasswordStage.currentPassword;
-          _currentPasswordError = 'Wrong password';
+          _currentPasswordError = 'Incorrect password. Please try again.';
           _isSubmitting = false;
         });
         return;
@@ -232,7 +232,8 @@ class _SettingsChangePasswordScreenState
           child: switch (_stage) {
             _ChangePasswordStage.currentPassword => _CurrentPasswordView(
               passwordController: _currentPasswordController,
-              messageText: _currentPasswordError,
+              messageText:
+                  _currentPasswordError ?? _currentPasswordPolicyMessage,
               isSubmitting: _isSubmitting,
               canSubmit: _canContinue,
               onChanged: _handleCurrentPasswordChanged,
@@ -464,7 +465,7 @@ class _NewPasswordView extends StatelessWidget {
                   SizedBox(
                     width: 270,
                     child: Text(
-                      kWalletPasswordMinLengthMessage,
+                      'Minimum 8 symbols including characters.',
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.accent,

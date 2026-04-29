@@ -46,6 +46,9 @@ class _SettingsSeedPhraseScreenState
   bool _copied = false;
   Timer? _copyResetTimer;
 
+  String? get _passwordPolicyMessage =>
+      validateWalletPassword(_passwordController.text);
+
   bool get _canSubmit =>
       !_isSubmitting && isWalletPasswordValid(_passwordController.text);
 
@@ -105,14 +108,13 @@ class _SettingsSeedPhraseScreenState
   }
 
   Future<void> _submitPassword() async {
+    final policyError = _passwordPolicyMessage;
     if (_isSubmitting) return;
     if (!isWalletPasswordValid(_passwordController.text)) {
-      final policyError = validateWalletPassword(_passwordController.text);
-      if (policyError != null) {
-        setState(() {
-          _passwordError = policyError;
-        });
-      }
+      if (policyError == null) return;
+      setState(() {
+        _passwordError = policyError;
+      });
       return;
     }
 
@@ -138,7 +140,7 @@ class _SettingsSeedPhraseScreenState
       if (!isValid) {
         if (!mounted) return;
         setState(() {
-          _passwordError = 'Wrong password';
+          _passwordError = 'Incorrect password. Please try again.';
           _isSubmitting = false;
         });
         return;
@@ -240,7 +242,7 @@ class _SettingsSeedPhraseScreenState
           child: switch (_stage) {
             _SettingsSeedPhraseStage.password => _PasswordGateView(
               passwordController: _passwordController,
-              messageText: _passwordError,
+              messageText: _passwordError ?? _passwordPolicyMessage,
               isSubmitting: _isSubmitting,
               canSubmit: _canSubmit,
               onChanged: _handlePasswordChanged,
