@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -15,8 +16,17 @@ const _secureStoreSaltKey = 'zcash_secure_store_salt';
 const _passwordVerifierKey = 'zcash_password_verifier';
 const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
 const _passwordRotationInProgressKey = 'zcash_rotation_in_progress';
+const _passwordRotationRollbackFailedKind = 'rollbackFailed';
 const _accountMnemonicKeyPrefix = 'zcash_account_mnemonic_';
 const _secureStoreService = 'com.keplr.vizor.secure_store';
+
+class PasswordRotationRecoveryFailedException implements Exception {
+  const PasswordRotationRecoveryFailedException();
+
+  @override
+  String toString() =>
+      'Password rotation rollback failed; automatic recovery is unsafe.';
+}
 
 class AppSecureStore {
   AppSecureStore._({FlutterSecureStorage storage = _defaultStorage})
@@ -48,6 +58,7 @@ class AppSecureStore {
   );
 
   final FlutterSecureStorage _storage;
+  final _secretMutationLock = _AsyncLock();
   SecretKey? _cachedSecretKey;
   String? _sessionPassword;
 
@@ -72,57 +83,65 @@ class AppSecureStore {
   Future<String?> readSecretStringWithOptions(
     String key, {
     bool requireUnlockedSession = false,
-  }) async {
-    if (requireUnlockedSession && !hasSessionPassword) {
-      return null;
-    }
-    if (!hasSessionPassword) {
-      throw StateError('Secret storage requires an unlocked session.');
-    }
+  }) {
+    return _secretMutationLock.run(() async {
+      if (requireUnlockedSession && !hasSessionPassword) {
+        return null;
+      }
+      if (!hasSessionPassword) {
+        throw StateError('Secret storage requires an unlocked session.');
+      }
 
-    final raw = await _storage.read(key: key);
-    if (raw == null || raw.isEmpty) return null;
+      final raw = await _storage.read(key: key);
+      if (raw == null || raw.isEmpty) return null;
 
-    final payload = _EncryptedPayload.tryParse(raw);
-    if (payload == null) {
-      return null;
-    }
+      final payload = _EncryptedPayload.tryParse(raw);
+      if (payload == null) {
+        return null;
+      }
 
-    final secretKey = await _getSecretKey();
-    final clearText = await _cipher.decrypt(
-      SecretBox(
-        payload.cipherText,
-        nonce: payload.nonce,
-        mac: Mac(payload.mac),
-      ),
-      secretKey: secretKey,
-    );
-    return utf8.decode(clearText);
+      final secretKey = await _getSecretKey();
+      final clearText = await _cipher.decrypt(
+        SecretBox(
+          payload.cipherText,
+          nonce: payload.nonce,
+          mac: Mac(payload.mac),
+        ),
+        secretKey: secretKey,
+      );
+      return utf8.decode(clearText);
+    });
   }
 
   Future<void> writeString(String key, String value) async {
     await _storage.write(key: key, value: value);
   }
 
-  Future<void> writeSecretString(String key, String value) async {
-    final secretKey = await _getSecretKey();
-    final nonce = _randomBytes(12);
-    final secretBox = await _cipher.encrypt(
-      utf8.encode(value),
-      secretKey: secretKey,
-      nonce: nonce,
-    );
-    await _storage.write(
-      key: key,
-      value: _EncryptedPayload(
-        nonce: secretBox.nonce,
-        cipherText: secretBox.cipherText,
-        mac: secretBox.mac.bytes,
-      ).serialize(),
-    );
+  Future<void> writeSecretString(String key, String value) {
+    return _secretMutationLock.run(() async {
+      final secretKey = await _getSecretKey();
+      final nonce = _randomBytes(12);
+      final secretBox = await _cipher.encrypt(
+        utf8.encode(value),
+        secretKey: secretKey,
+        nonce: nonce,
+      );
+      await _storage.write(
+        key: key,
+        value: _EncryptedPayload(
+          nonce: secretBox.nonce,
+          cipherText: secretBox.cipherText,
+          mac: secretBox.mac.bytes,
+        ).serialize(),
+      );
+    });
   }
 
   Future<void> delete(String key) async {
+    if (key.startsWith(_accountMnemonicKeyPrefix)) {
+      await _secretMutationLock.run(() => _storage.delete(key: key));
+      return;
+    }
     await _storage.delete(key: key);
   }
 
@@ -166,90 +185,108 @@ class AppSecureStore {
   Future<bool> changePassword({
     required String currentPassword,
     required String newPassword,
-  }) async {
-    if (!isWalletPasswordValid(currentPassword)) {
-      return false;
-    }
-    if (currentPassword == newPassword) {
-      throw ArgumentError(kWalletPasswordMustDifferMessage);
-    }
-    final newPasswordError = validateRequiredWalletPassword(newPassword);
-    if (newPasswordError != null) {
-      throw ArgumentError(newPasswordError);
-    }
-
-    final isCurrentPasswordValid = await verifyPasswordOnly(currentPassword);
-    if (!isCurrentPasswordValid) {
-      return false;
-    }
-
-    final oldVerifierSalt = await readPlain(_passwordVerifierSaltKey);
-    final oldVerifier = await readPlain(_passwordVerifierKey);
-    final currentSecretKey = await _deriveSecretKeyForPassword(currentPassword);
-    final newSecretKey = await _deriveSecretKeyForPassword(newPassword);
-    try {
-      final storedValues = await _storage.readAll();
-      final rotatedSecrets = <_PasswordRotationEntry>[];
-
-      for (final entry in storedValues.entries) {
-        if (!entry.key.startsWith(_accountMnemonicKeyPrefix)) continue;
-
-        final payload = _EncryptedPayload.tryParse(entry.value);
-        if (payload == null) continue;
-
-        final clearText = await _decryptPayloadForKey(
-          entry.key,
-          payload,
-          currentSecretKey,
-        );
-        final rotatedValue = await _encryptStringWithKey(
-          clearText,
-          newSecretKey,
-        );
-        rotatedSecrets.add(
-          _PasswordRotationEntry(
-            key: entry.key,
-            originalValue: entry.value,
-            rotatedValue: rotatedValue,
-          ),
-        );
+  }) {
+    // Secret writes and password rotation share one lock so a mnemonic cannot
+    // be encrypted with the old key after rotation has taken its key snapshot.
+    return _secretMutationLock.run(() async {
+      final existingRecoveryRecord = await readPlain(
+        _passwordRotationInProgressKey,
+      );
+      // Defense in depth: bootstrap normally reports this state, but password
+      // changes must still refuse to overwrite the sticky failure marker.
+      if (existingRecoveryRecord != null &&
+          _isRollbackFailedRotationRecord(existingRecoveryRecord)) {
+        throw const PasswordRotationRecoveryFailedException();
+      }
+      if (!isWalletPasswordValid(currentPassword)) {
+        return false;
+      }
+      if (currentPassword == newPassword) {
+        throw ArgumentError(kWalletPasswordMustDifferMessage);
+      }
+      final newPasswordError = validateRequiredWalletPassword(newPassword);
+      if (newPasswordError != null) {
+        throw ArgumentError(newPasswordError);
       }
 
-      final newVerifierSalt = _randomBytes(16);
-      final newVerifier = await _derivePasswordVerifier(
-        newPassword,
-        newVerifierSalt,
-      );
+      final isCurrentPasswordValid = await verifyPasswordOnly(currentPassword);
+      if (!isCurrentPasswordValid) {
+        return false;
+      }
 
-      final rotation = _PasswordRotationRecord(
-        oldVerifierSalt: oldVerifierSalt,
-        oldVerifier: oldVerifier,
-        newVerifierSalt: base64Encode(newVerifierSalt),
-        newVerifier: newVerifier,
-        entries: rotatedSecrets,
+      final oldVerifierSalt = await readPlain(_passwordVerifierSaltKey);
+      final oldVerifier = await readPlain(_passwordVerifierKey);
+      final currentSecretKey = await _deriveSecretKeyForPassword(
+        currentPassword,
       );
-      await writePlain(_passwordRotationInProgressKey, rotation.serialize());
-
+      final newSecretKey = await _deriveSecretKeyForPassword(newPassword);
       try {
-        await _writeRotatedPasswordState(rotation);
-      } catch (error, stackTrace) {
-        await _rollbackPasswordRotation(rotation, currentPassword);
-        Error.throwWithStackTrace(error, stackTrace);
+        final storedValues = await _storage.readAll();
+        final rotatedSecrets = <_PasswordRotationEntry>[];
+
+        for (final entry in storedValues.entries) {
+          if (!entry.key.startsWith(_accountMnemonicKeyPrefix)) continue;
+
+          final payload = _EncryptedPayload.tryParse(entry.value);
+          if (payload == null) continue;
+
+          final clearText = await _decryptPayloadForKey(
+            entry.key,
+            payload,
+            currentSecretKey,
+          );
+          final rotatedValue = await _encryptStringWithKey(
+            clearText,
+            newSecretKey,
+          );
+          rotatedSecrets.add(
+            _PasswordRotationEntry(
+              key: entry.key,
+              originalValue: entry.value,
+              rotatedValue: rotatedValue,
+            ),
+          );
+        }
+
+        final newVerifierSalt = _randomBytes(16);
+        final newVerifier = await _derivePasswordVerifier(
+          newPassword,
+          newVerifierSalt,
+        );
+
+        final rotation = _PasswordRotationRecord(
+          oldVerifierSalt: oldVerifierSalt,
+          oldVerifier: oldVerifier,
+          newVerifierSalt: base64Encode(newVerifierSalt),
+          newVerifier: newVerifier,
+          entries: rotatedSecrets,
+        );
+        await writePlain(_passwordRotationInProgressKey, rotation.serialize());
+
+        try {
+          await _writeRotatedPasswordState(rotation);
+        } catch (error, stackTrace) {
+          await _rollbackPasswordRotation(rotation, currentPassword);
+          Error.throwWithStackTrace(error, stackTrace);
+        }
+
+        setSessionPassword(newPassword);
+        await _deleteRotationRecordBestEffort();
+      } finally {
+        currentSecretKey.destroy();
+        newSecretKey.destroy();
       }
 
-      setSessionPassword(newPassword);
-      await _deleteRotationRecordBestEffort();
-    } finally {
-      currentSecretKey.destroy();
-      newSecretKey.destroy();
-    }
-
-    return true;
+      return true;
+    });
   }
 
   Future<void> recoverInterruptedPasswordRotation() async {
     final raw = await readPlain(_passwordRotationInProgressKey);
     if (raw == null || raw.isEmpty) return;
+    if (_isRollbackFailedRotationRecord(raw)) {
+      throw const PasswordRotationRecoveryFailedException();
+    }
 
     final rotation = _PasswordRotationRecord.tryParse(raw);
     if (rotation == null) {
@@ -433,6 +470,7 @@ class AppSecureStore {
       setSessionPassword(currentPassword);
       await _deleteRotationRecordBestEffort();
     } catch (rollbackError, rollbackStackTrace) {
+      await _markRollbackFailedBestEffort();
       debugPrint(
         'AppSecureStore: rollback failed: $rollbackError\n$rollbackStackTrace',
       );
@@ -445,6 +483,21 @@ class AppSecureStore {
     } catch (error, stackTrace) {
       debugPrint(
         'AppSecureStore: failed to delete rotation record: $error\n$stackTrace',
+      );
+    }
+  }
+
+  Future<void> _markRollbackFailedBestEffort() async {
+    try {
+      // If rollback cannot even replace the forward journal, do not let the
+      // next boot silently roll forward after the UI reported failure.
+      await writePlain(
+        _passwordRotationInProgressKey,
+        jsonEncode({'v': 1, 'kind': _passwordRotationRollbackFailedKind}),
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppSecureStore: failed to mark rollback failure: $error\n$stackTrace',
       );
     }
   }
@@ -472,6 +525,20 @@ class AppSecureStore {
       buffer.write(byte.toRadixString(16).padLeft(2, '0'));
     }
     return buffer.toString();
+  }
+}
+
+class _AsyncLock {
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> run<T>(Future<T> Function() action) {
+    final previous = _tail;
+    final completer = Completer<void>();
+    _tail = completer.future;
+
+    return previous
+        .then((_) => Future<T>.sync(action))
+        .whenComplete(() => completer.complete());
   }
 }
 
@@ -570,6 +637,17 @@ class _PasswordRotationRecord {
           )
           .toList(),
     );
+  }
+}
+
+bool _isRollbackFailedRotationRecord(String raw) {
+  try {
+    final json = jsonDecode(raw);
+    return json is Map<String, dynamic> &&
+        json['v'] == 1 &&
+        json['kind'] == _passwordRotationRollbackFailedKind;
+  } catch (_) {
+    return false;
   }
 }
 

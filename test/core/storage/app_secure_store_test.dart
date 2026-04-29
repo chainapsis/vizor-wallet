@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -180,6 +181,107 @@ void main() {
       expect(await store.readSecretStringWithOptions(_mnemonicKey), _mnemonic);
     },
   );
+
+  test('changePassword waits for concurrent mnemonic writes', () async {
+    const lateMnemonicKey = 'zcash_account_mnemonic_late-account';
+    const lateMnemonic = 'legal winner thank year wave sausage worth useful';
+    final blockingStorage = _BlockingWriteStorage(blockKey: lateMnemonicKey);
+    store = AppSecureStore.testing(storage: blockingStorage);
+    await store.configurePassword(_oldPassword);
+    await store.writeSecretString(_mnemonicKey, _mnemonic);
+
+    blockingStorage.blockNextWrite = true;
+    final lateWrite = store.writeSecretString(lateMnemonicKey, lateMnemonic);
+    await blockingStorage.writeStarted.future;
+
+    final rotation = store.changePassword(
+      currentPassword: _oldPassword,
+      newPassword: _newPassword,
+    );
+    final rotationReachedSnapshot = await Future.any([
+      blockingStorage.readAllFinished.future.then((_) => true),
+      Future<void>.delayed(const Duration(seconds: 6)).then((_) => false),
+    ]);
+
+    if (rotationReachedSnapshot) {
+      await rotation;
+    }
+    blockingStorage.release();
+    await lateWrite;
+    if (!rotationReachedSnapshot) {
+      await rotation;
+    }
+
+    store.clearSessionPassword();
+    expect(await store.verifyPassword(_newPassword), isTrue);
+    expect(
+      await store.readSecretStringWithOptions(lateMnemonicKey),
+      lateMnemonic,
+    );
+  });
+
+  test(
+    'rollback sentinel write failure does not roll forward on recovery',
+    () async {
+      final failingStorage = _CountingFailingWriteStorage();
+      store = AppSecureStore.testing(storage: failingStorage);
+      await store.configurePassword(_oldPassword);
+      await store.writeSecretString(_mnemonicKey, _mnemonic);
+      failingStorage
+        ..failNextWriteFor(_passwordVerifierKey)
+        ..failWriteNumberFor(_rotationInProgressKey, 2);
+
+      await expectLater(
+        () => store.changePassword(
+          currentPassword: _oldPassword,
+          newPassword: _newPassword,
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      final recoveryRecord = await store.readPlain(_rotationInProgressKey);
+      expect(recoveryRecord, contains('rollbackFailed'));
+      await expectLater(
+        () => store.recoverInterruptedPasswordRotation(),
+        throwsA(isA<PasswordRotationRecoveryFailedException>()),
+      );
+      await expectLater(
+        () => store.changePassword(
+          currentPassword: _oldPassword,
+          newPassword: _newPassword,
+        ),
+        throwsA(isA<PasswordRotationRecoveryFailedException>()),
+      );
+    },
+  );
+
+  test(
+    'delete waits for password rotation before deleting mnemonics',
+    () async {
+      final blockingStorage = _BlockingWriteStorage(
+        blockKey: _rotationInProgressKey,
+      );
+      store = AppSecureStore.testing(storage: blockingStorage);
+      await store.configurePassword(_oldPassword);
+      await store.writeSecretString(_mnemonicKey, _mnemonic);
+
+      blockingStorage.blockNextWrite = true;
+      final rotation = store.changePassword(
+        currentPassword: _oldPassword,
+        newPassword: _newPassword,
+      );
+      await blockingStorage.writeStarted.future;
+
+      final delete = store.delete(_mnemonicKey);
+      blockingStorage.release();
+      await rotation;
+      await delete;
+
+      store.clearSessionPassword();
+      expect(await store.verifyPassword(_newPassword), isTrue);
+      expect(await store.readPlain(_mnemonicKey), isNull);
+    },
+  );
 }
 
 class _FailingWriteStorage extends FlutterSecureStorage {
@@ -202,6 +304,118 @@ class _FailingWriteStorage extends FlutterSecureStorage {
     if (failNextMatchingWrite && key == failKey) {
       failNextMatchingWrite = false;
       throw StateError('forced write failure');
+    }
+    return super.write(
+      key: key,
+      value: value,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+}
+
+class _BlockingWriteStorage extends FlutterSecureStorage {
+  _BlockingWriteStorage({required this.blockKey});
+
+  final String blockKey;
+  var blockNextWrite = false;
+  Completer<void> writeStarted = Completer<void>();
+  Completer<void> readAllFinished = Completer<void>();
+  final Completer<void> _release = Completer<void>();
+
+  void release() {
+    if (!_release.isCompleted) {
+      _release.complete();
+    }
+  }
+
+  @override
+  Future<Map<String, String>> readAll({
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    final values = await super.readAll(
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+    if (!readAllFinished.isCompleted) {
+      readAllFinished.complete();
+    }
+    return values;
+  }
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (blockNextWrite && key == blockKey) {
+      blockNextWrite = false;
+      if (!writeStarted.isCompleted) {
+        writeStarted.complete();
+      }
+      await _release.future;
+    }
+    return super.write(
+      key: key,
+      value: value,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+}
+
+class _CountingFailingWriteStorage extends FlutterSecureStorage {
+  final _writeCounts = <String, int>{};
+  final _failNext = <String>{};
+  final _failWriteNumbers = <String, Set<int>>{};
+
+  void failNextWriteFor(String key) {
+    _failNext.add(key);
+  }
+
+  void failWriteNumberFor(String key, int writeNumber) {
+    _failWriteNumbers.putIfAbsent(key, () => <int>{}).add(writeNumber);
+  }
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    final count = (_writeCounts[key] ?? 0) + 1;
+    _writeCounts[key] = count;
+    if (_failNext.remove(key) ||
+        (_failWriteNumbers[key]?.remove(count) ?? false)) {
+      throw StateError('forced write failure for $key');
     }
     return super.write(
       key: key,
