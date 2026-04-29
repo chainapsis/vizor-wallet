@@ -26,6 +26,9 @@ migrate_working_dir/
 # FVM
 .fvm/
 
+# Claude Code
+.claude/
+
 # Rust
 rust/target/
 rust/build/
