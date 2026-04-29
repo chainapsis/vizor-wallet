@@ -34,4 +34,12 @@ void main() {
       expect(displayed.displayPercentage, 0.30);
     },
   );
+
+  test('displayPercentage can be reset below a previous display value', () {
+    final state = SyncState(percentage: 0.30, displayPercentage: 0.50);
+    final reset = state.copyWith(percentage: 0.25, displayPercentage: 0.25);
+
+    expect(reset.percentage, 0.25);
+    expect(reset.displayPercentage, 0.25);
+  });
 }

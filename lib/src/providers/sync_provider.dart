@@ -1096,19 +1096,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final maxDisplayPercentage = event.isComplete
         ? 1.0
         : _maxIncompleteDisplayPercentage;
-    final displayActualPercentage = math.min(
-      actualPercentage,
-      maxDisplayPercentage,
-    );
-    final previousDisplayPercentage = math.min(
-      prev?.displayPercentage ?? displayActualPercentage,
-      maxDisplayPercentage,
-    );
     final displayPercentage = event.isComplete
         ? 1.0
-        : _clampProgress(
-            math.max(displayActualPercentage, previousDisplayPercentage),
-          );
+        : math.min(actualPercentage, maxDisplayPercentage);
 
     state = AsyncData(
       SyncState(
