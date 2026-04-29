@@ -107,9 +107,10 @@ class _ActivityTransactionStatusScreenState
       rust_sync.TransactionDetail? detail;
       if (tx != null) {
         try {
+          final endpoint = ref.read(rpcEndpointProvider);
           detail = rust_sync.getTransactionDetail(
             dbPath: dbPath,
-            network: ZcashNetwork.mainnet.name,
+            network: endpoint.networkName,
             accountUuid: accountUuid,
             txidHex: tx.txidHex,
             txKind: tx.txKind,

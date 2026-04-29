@@ -190,13 +190,14 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 
     try {
       final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
       if (!mounted ||
           accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
         return null;
       }
       return rust_sync.getTransactionDetail(
         dbPath: dbPath,
-        network: ZcashNetwork.mainnet.name,
+        network: endpoint.networkName,
         accountUuid: accountUuid,
         txidHex: transaction.txidHex,
         txKind: transaction.txKind,
