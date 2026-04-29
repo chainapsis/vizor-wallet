@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../app_bootstrap.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -171,6 +172,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final walletAsync = ref.watch(walletProvider);
+    final bootstrap = ref.watch(appBootstrapProvider);
     final syncAsync = ref.watch(syncProvider);
     final sync = syncAsync.value ?? SyncState();
     final shieldedBalance =
@@ -199,6 +201,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             data: (_) => _HomePane(
               sync: sync,
+              passwordRotationRecoveryFailed:
+                  bootstrap.passwordRotationRecoveryFailed,
               canBackgroundSync: _canBackgroundSync,
               isBalanceVisible: _isBalanceVisible,
               shieldedBalanceText: _formatZec(shieldedBalance),
@@ -227,6 +231,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 class _HomePane extends ConsumerStatefulWidget {
   const _HomePane({
     required this.sync,
+    required this.passwordRotationRecoveryFailed,
     required this.canBackgroundSync,
     required this.isBalanceVisible,
     required this.shieldedBalanceText,
@@ -244,6 +249,7 @@ class _HomePane extends ConsumerStatefulWidget {
   });
 
   final SyncState sync;
+  final bool passwordRotationRecoveryFailed;
   final bool canBackgroundSync;
   final bool isBalanceVisible;
   final String shieldedBalanceText;
@@ -385,6 +391,14 @@ class _HomePaneState extends ConsumerState<_HomePane> {
   }
 
   _HomeNoticeData? _noticeData() {
+    if (widget.passwordRotationRecoveryFailed) {
+      return _HomeNoticeData(
+        iconName: AppIcons.warning,
+        message: "We couldn't verify the previous password change.",
+        actionLabel: 'Settings',
+        onTap: () => context.push('/settings'),
+      );
+    }
     if (widget.shieldBalanceError != null) {
       return _HomeNoticeData(
         iconName: AppIcons.warning,

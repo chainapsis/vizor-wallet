@@ -334,11 +334,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
     try {
       final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
       if (!mounted || !_isMaxMode || seq != _maxSeq) return;
 
       final estimate = await rust_sync.estimateSendMax(
         dbPath: dbPath,
-        network: 'main',
+        network: endpoint.networkName,
         accountUuid: accountUuid,
         toAddress: address,
         memo: memo.isNotEmpty ? memo : null,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -35,6 +36,7 @@ class AppBootstrapState {
     required this.themeMode,
     required this.isPasswordConfigured,
     required this.isUnlocked,
+    required this.passwordRotationRecoveryFailed,
   });
 
   final String initialLocation;
@@ -45,6 +47,7 @@ class AppBootstrapState {
   final ThemeMode themeMode;
   final bool isPasswordConfigured;
   final bool isUnlocked;
+  final bool passwordRotationRecoveryFailed;
 
   bool get hasWallet => initialAccountState.hasAccounts;
   bool get requiresUnlock => hasWallet && !isUnlocked;
@@ -58,6 +61,7 @@ class AppBootstrapState {
     themeMode: ThemeMode.system,
     isPasswordConfigured: false,
     isUnlocked: false,
+    passwordRotationRecoveryFailed: false,
   );
 }
 
@@ -121,8 +125,14 @@ Future<AppBootstrapState> loadAppBootstrap() async {
   try {
     log('bootstrap: loading startup snapshot');
     await storage.ensureWalletDbName();
+    var passwordRotationRecoveryFailed = false;
     try {
       await storage.recoverInterruptedPasswordRotation();
+    } on PasswordRotationRecoveryFailedException catch (e) {
+      // Fail open so the user can still try either password, but keep the
+      // sticky journal visible to the UI instead of silently clearing it.
+      passwordRotationRecoveryFailed = true;
+      log('bootstrap: unsafe password rotation recovery state: $e');
     } catch (e) {
       log('bootstrap: failed to recover password rotation: $e');
     }
@@ -151,13 +161,14 @@ Future<AppBootstrapState> loadAppBootstrap() async {
           final (index, account) = entry;
           rustAddressesByUuid[account.uuid] = account.unifiedAddress;
           final stored = storedAccountsByUuid[account.uuid];
-          return AccountInfo(
-            uuid: account.uuid,
-            name: account.name,
+          return mergeBootstrappedAccountInfo(
+            rustAccount: AccountInfo(
+              uuid: account.uuid,
+              name: account.name,
+              order: index,
+            ),
+            storedAccount: stored,
             order: index,
-            isHardware: stored?.isHardware ?? false,
-            profilePictureId:
-                stored?.profilePictureId ?? kDefaultProfilePictureId,
           );
         }).toList();
         log('bootstrap: rust accounts=${rustAccounts.length}');
@@ -212,11 +223,30 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       themeMode: themeMode,
       isPasswordConfigured: isPasswordConfigured,
       isUnlocked: isUnlocked,
+      passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,
     );
   } catch (e) {
     log('bootstrap: failed, falling back to welcome: $e');
     return AppBootstrapState.empty;
   }
+}
+
+@visibleForTesting
+AccountInfo mergeBootstrappedAccountInfo({
+  required AccountInfo rustAccount,
+  required AccountInfo? storedAccount,
+  required int order,
+}) {
+  // Rust is authoritative for account existence/address. Dart secure storage
+  // owns UI metadata that Rust does not update, so preserve it across relaunch.
+  return AccountInfo(
+    uuid: rustAccount.uuid,
+    name: storedAccount?.name ?? rustAccount.name,
+    order: order,
+    isHardware: storedAccount?.isHardware ?? false,
+    profilePictureId:
+        storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
+  );
 }
 
 Future<void> _seedNativeRpcEndpointMirror(RpcEndpointConfig endpoint) async {

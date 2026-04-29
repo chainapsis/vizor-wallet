@@ -6,6 +6,7 @@ import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/security/password_policy.dart';
+import '../../../core/storage/app_secure_store.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
@@ -200,6 +201,14 @@ class _SettingsChangePasswordScreenState
 
       _clearSensitiveState();
       context.go('/settings');
+    } on PasswordRotationRecoveryFailedException {
+      if (!mounted) return;
+      setState(() {
+        _submitError =
+            "We couldn't verify the previous password change. "
+            'Please keep your secret passphrase available before trying again.';
+        _isSubmitting = false;
+      });
     } catch (e, st) {
       log('SettingsChangePasswordScreen._submitNewPassword: ERROR: $e\n$st');
       if (!mounted) return;
