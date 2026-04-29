@@ -120,16 +120,17 @@ class RpcEndpointLatencyNotifier extends Notifier<RpcEndpointLatencyState> {
     required RpcEndpointChainNameGetter getChainName,
     required int generation,
   }) async {
+    final normalizedUrl = normalizeRpcEndpointUrl(
+      preset.url,
+      allowDefaultPort: true,
+    );
     final sample = await measureRpcEndpointLatency(
-      lightwalletdUrl: normalizeRpcEndpointUrl(
-        preset.url,
-        allowDefaultPort: true,
-      ),
+      lightwalletdUrl: normalizedUrl,
       expectedNetworkName: networkName,
       getChainName: getChainName,
     );
     if (generation != _generation) return;
-    state = state.copyWithSample(preset.url, sample);
+    state = state.copyWithSample(normalizedUrl, sample);
   }
 }
 

@@ -62,8 +62,8 @@ class RpcEndpointPreset {
   String get hostPort => rpcEndpointHostPort(url);
 }
 
-// Mirrors the current zodl-android lightwalletd candidate list while keeping
-// this app's existing zec.rocks default unchanged.
+// Additional regional lightwalletd presets while keeping this app's existing
+// zec.rocks default unchanged.
 final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   RpcEndpointPreset(
     id: kDefaultRpcEndpointPresetId,

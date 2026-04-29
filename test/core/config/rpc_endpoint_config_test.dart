@@ -57,7 +57,7 @@ void main() {
   });
 
   group('preset lookup', () {
-    test('mainnet presets include the zodl endpoint list', () {
+    test('mainnet presets include the regional endpoint list', () {
       final urls = kMainnetRpcEndpointPresets
           .map((preset) => preset.url)
           .map((url) => normalizeRpcEndpointUrl(url, allowDefaultPort: true))
