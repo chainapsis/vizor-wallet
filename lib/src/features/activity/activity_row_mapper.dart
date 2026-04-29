@@ -52,7 +52,7 @@ ActivityRowData buildSyncActivityRow({
   }
 
   if (sync.isSyncing) {
-    final pct = (sync.displayPercentage * 100).toStringAsFixed(0);
+    final pct = _formatInProgressSyncPercentage(sync.displayPercentage);
     return ActivityRowData(
       title: 'Wallet Synced',
       leadingIconName: AppIcons.sync,
@@ -79,6 +79,11 @@ ActivityRowData buildSyncActivityRow({
     statusColor: colors.text.secondary,
     timestampText: formatActivityTimestamp(sync.lastSyncCompletedAt),
   );
+}
+
+String _formatInProgressSyncPercentage(double progress) {
+  final pct = (progress.clamp(0.0, 1.0) * 100).toDouble();
+  return pct.clamp(0.0, 99.0).toStringAsFixed(0);
 }
 
 ActivityRowData buildTransactionActivityRow({

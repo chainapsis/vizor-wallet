@@ -164,6 +164,7 @@ class WalletMutationSyncPause {
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
   static const _displayBlockDuration = Duration(milliseconds: 100);
+  static const _maxIncompleteDisplayPercentage = 0.999;
 
   late final BackgroundSyncDelegate _bgDelegate;
   bool _isSyncing = false;
@@ -943,8 +944,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }) {
     _stopDisplayProgressTimer();
 
-    final base = _clampProgress(basePercentage);
-    final target = _clampProgress(targetPercentage);
+    final base = math.min(
+      _clampProgress(basePercentage),
+      _maxIncompleteDisplayPercentage,
+    );
+    final target = math.min(
+      _clampProgress(targetPercentage),
+      _maxIncompleteDisplayPercentage,
+    );
     if (targetBlocks <= 0 || target <= base) {
       return;
     }
@@ -1086,13 +1093,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         ? DateTime.now()
         : prev?.lastSyncCompletedAt;
     final actualPercentage = _clampProgress(event.percentage);
+    final maxDisplayPercentage = event.isComplete
+        ? 1.0
+        : _maxIncompleteDisplayPercentage;
+    final displayActualPercentage = math.min(
+      actualPercentage,
+      maxDisplayPercentage,
+    );
+    final previousDisplayPercentage = math.min(
+      prev?.displayPercentage ?? displayActualPercentage,
+      maxDisplayPercentage,
+    );
     final displayPercentage = event.isComplete
         ? 1.0
         : _clampProgress(
-            math.max(
-              actualPercentage,
-              prev?.displayPercentage ?? actualPercentage,
-            ),
+            math.max(displayActualPercentage, previousDisplayPercentage),
           );
 
     state = AsyncData(
