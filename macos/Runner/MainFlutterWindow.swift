@@ -93,9 +93,7 @@ final class WindowAppearanceChannel {
     visualEffectView?.appearance = appearance
     titleLabel?.appearance = appearance
     titleLabel?.textColor = titlebarTitleColor(for: brightness)
-    // Keep the blur chrome neutral; `.fullScreenUI` can render as a dark
-    // sidebar/titlebar even when Flutter has resolved the app to light mode.
-    visualEffectView?.material = .windowBackground
+    visualEffectView?.material = .fullScreenUI
     visualEffectView?.state = .active
     window?.backgroundColor = .clear
     window?.invalidateShadow()
