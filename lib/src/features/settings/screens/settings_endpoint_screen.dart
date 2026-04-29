@@ -45,7 +45,7 @@ class _SettingsEndpointScreenState
     _selectedPresetId = currentPreset?.id;
     if (currentPreset == null) {
       _activeTab = _EndpointTab.custom;
-      _customController.text = endpoint.hostPort;
+      _customController.text = rpcEndpointInputText(endpoint.lightwalletdUrl);
     }
   }
 
@@ -62,7 +62,8 @@ class _SettingsEndpointScreenState
   void _selectTab(_EndpointTab tab) {
     if (_isSubmitting) return;
     if (tab == _EndpointTab.custom && _customController.text.trim().isEmpty) {
-      _customController.text = ref.read(rpcEndpointProvider).hostPort;
+      final endpoint = ref.read(rpcEndpointProvider);
+      _customController.text = rpcEndpointInputText(endpoint.lightwalletdUrl);
     }
     setState(() {
       _activeTab = tab;
@@ -148,7 +149,7 @@ class _SettingsEndpointScreenState
           networkName: next.networkName,
         )?.id;
         if (_selectedPresetId == null) {
-          _customController.text = next.hostPort;
+          _customController.text = rpcEndpointInputText(next.lightwalletdUrl);
         }
         _isSubmitting = false;
       });

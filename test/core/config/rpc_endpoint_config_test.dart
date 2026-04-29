@@ -76,9 +76,35 @@ void main() {
     });
   });
 
+  group('RpcEndpointConfig', () {
+    test('derives the effective preset from the URL before stored preset id', () {
+      final defaultEndpoint = defaultRpcEndpointConfig('main');
+      final config = RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: defaultEndpoint.lightwalletdUrl,
+        presetId: kCustomRpcEndpointPresetId,
+      );
+
+      expect(config.effectivePresetId, defaultEndpoint.presetId);
+    });
+  });
+
   group('rpcEndpointHostPort', () {
     test('keeps IPv6 brackets so custom endpoint fields can round-trip', () {
       expect(rpcEndpointHostPort('https://[::1]:9067'), '[::1]:9067');
+    });
+  });
+
+  group('rpcEndpointInputText', () {
+    test('preserves local http schemes for custom endpoint editing', () {
+      expect(
+        rpcEndpointInputText('http://127.0.0.1:9067'),
+        'http://127.0.0.1:9067',
+      );
+    });
+
+    test('keeps https endpoints compact for custom endpoint editing', () {
+      expect(rpcEndpointInputText('https://zec.rocks:443'), 'zec.rocks:443');
     });
   });
 }

@@ -24,11 +24,11 @@ class RpcEndpointConfig {
   String get hostPort => rpcEndpointHostPort(lightwalletdUrl);
 
   String get effectivePresetId =>
-      presetId ??
       findRpcEndpointPresetByUrl(
         normalizedLightwalletdUrl,
         networkName: networkName,
       )?.id ??
+      presetId ??
       kCustomRpcEndpointPresetId;
 
   RpcEndpointConfig copyWith({
@@ -233,6 +233,15 @@ bool _hasExplicitPort(String url) {
 String rpcEndpointHostPort(String url) {
   final uri = Uri.parse(normalizeRpcEndpointUrl(url, allowDefaultPort: true));
   return '${_formatRpcHost(uri.host)}:${uri.port}';
+}
+
+String rpcEndpointInputText(String url) {
+  final normalized = normalizeRpcEndpointUrl(url, allowDefaultPort: true);
+  final uri = Uri.parse(normalized);
+  if (uri.scheme == 'https') {
+    return rpcEndpointHostPort(normalized);
+  }
+  return normalized;
 }
 
 int _defaultPortForScheme(String scheme) {
