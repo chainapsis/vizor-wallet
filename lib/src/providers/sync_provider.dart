@@ -163,7 +163,7 @@ class WalletMutationSyncPause {
 }
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
-  static const _displayBlockDuration = Duration(milliseconds: 100);
+  static const _displayBlockDuration = Duration(milliseconds: 20);
   static const _maxIncompleteDisplayPercentage = 0.999;
 
   late final BackgroundSyncDelegate _bgDelegate;
