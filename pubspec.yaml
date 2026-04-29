@@ -47,7 +47,7 @@ dependencies:
   desktop_window_bootstrap:
     git:
       url: https://github.com/chainapsis/desktop_window_bootstrap.git
-      ref: f5cce36be47458e691e170e38cd76eb7fd239331
+      ref: 21dadbf5e7856502d3b8b68910a1b7301b8df824
   crypto: ^3.0.7
   cryptography: ^2.7.0
   flutter_foreground_task: ^9.2.1
