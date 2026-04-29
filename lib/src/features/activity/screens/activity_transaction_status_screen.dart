@@ -7,13 +7,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/network_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../send/widgets/transaction_receipt_view.dart';
@@ -86,9 +86,10 @@ class _ActivityTransactionStatusScreenState
 
     try {
       final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
       final txs = await rust_sync.getTransactionHistory(
         dbPath: dbPath,
-        network: ZcashNetwork.mainnet.name,
+        network: endpoint.networkName,
         accountUuid: accountUuid,
       );
       if (!mounted) return;
@@ -107,7 +108,6 @@ class _ActivityTransactionStatusScreenState
       rust_sync.TransactionDetail? detail;
       if (tx != null) {
         try {
-          final endpoint = ref.read(rpcEndpointProvider);
           detail = rust_sync.getTransactionDetail(
             dbPath: dbPath,
             network: endpoint.networkName,
