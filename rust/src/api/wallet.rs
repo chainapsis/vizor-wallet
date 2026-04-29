@@ -78,11 +78,14 @@ pub fn get_lightwalletd_chain_name(lightwalletd_url: String) -> Result<String, S
             let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
                 .await
                 .map_err(|e| e.to_string())?;
-            let info = client
-                .get_lightd_info(Empty {})
-                .await
-                .map_err(|e| format!("get_lightd_info: {e}"))?
-                .into_inner();
+            let info = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                client.get_lightd_info(Empty {}),
+            )
+            .await
+            .map_err(|_| "get_lightd_info: timed out waiting for response".to_string())?
+            .map_err(|e| format!("get_lightd_info: {e}"))?
+            .into_inner();
 
             Ok(info.chain_name)
         })
