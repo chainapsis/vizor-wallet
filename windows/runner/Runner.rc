@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.keplr" "\0"
-            VALUE "FileDescription", "zcash_wallet" "\0"
+            VALUE "FileDescription", "Vizor" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "zcash_wallet" "\0"
+            VALUE "InternalName", "Vizor" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.keplr. All rights reserved." "\0"
-            VALUE "OriginalFilename", "zcash_wallet.exe" "\0"
-            VALUE "ProductName", "zcash_wallet" "\0"
+            VALUE "OriginalFilename", "Vizor.exe" "\0"
+            VALUE "ProductName", "Vizor" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
