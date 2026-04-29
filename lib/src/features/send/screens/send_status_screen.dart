@@ -265,6 +265,14 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     ).showSnackBar(const SnackBar(content: Text('Transaction hash copied')));
   }
 
+  Future<void> _copyRecipientAddress() async {
+    await Clipboard.setData(ClipboardData(text: widget.args.address.trim()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Address copied')));
+  }
+
   Future<Uint8List> _signWithTransport(
     KeystoneTransport transport,
     Uint8List redactedPczt,
@@ -473,6 +481,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       _SendStatusPhase.succeeded => TransactionReceiptPhase.succeeded,
       _SendStatusPhase.failed => TransactionReceiptPhase.failed,
     };
+    final useFailedReceiptLayout = _phase == _SendStatusPhase.failed;
 
     return PopScope<void>(
       canPop: false,
@@ -487,8 +496,12 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           padding: EdgeInsets.zero,
           child: Stack(
             children: [
-              const Positioned.fill(
-                child: IgnorePointer(child: TransactionReceiptIllustration()),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: TransactionReceiptIllustration(
+                    failed: useFailedReceiptLayout,
+                  ),
+                ),
               ),
               Positioned.fill(
                 child: Padding(
@@ -513,26 +526,36 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                               ),
                               primaryBlock: TransactionReceiptBlockData(
                                 title: 'To',
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    for (final line in addressLines)
-                                      RichText(
-                                        text: TextSpan(
-                                          children: _addressSpans(
-                                            context,
-                                            line,
-                                          ),
-                                        ),
+                                child: useFailedReceiptLayout
+                                    ? TransactionReceiptAddressText(
+                                        address: widget.args.address,
+                                        highlightEdges: widget.args.isShielded,
+                                      )
+                                    : Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          for (final line in addressLines)
+                                            RichText(
+                                              text: TextSpan(
+                                                children: _addressSpans(
+                                                  context,
+                                                  line,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
                                       ),
-                                  ],
-                                ),
+                                onCopy: useFailedReceiptLayout
+                                    ? () => unawaited(_copyRecipientAddress())
+                                    : null,
                               ),
                               feeText:
                                   '${_formatFee(widget.args.feeZatoshi)} ZEC',
                               dateText: _formatDate(_completedAt ?? _startedAt),
                               error: _error,
                               failureFallbackText: 'Send failed',
+                              useFailedReceiptLayout: useFailedReceiptLayout,
                               onCopyTxid: _phase == _SendStatusPhase.succeeded
                                   ? _copyTransactionHash
                                   : null,

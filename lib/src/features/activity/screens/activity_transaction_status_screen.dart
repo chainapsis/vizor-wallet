@@ -211,11 +211,15 @@ class _ActivityTransactionStatusScreenState
   }
 
   Future<void> _copyTransactionHash() async {
-    await Clipboard.setData(ClipboardData(text: widget.args.txidHex));
+    await _copyText(widget.args.txidHex, 'Transaction hash copied');
+  }
+
+  Future<void> _copyText(String text, String message) async {
+    await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Transaction hash copied')));
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   TransactionReceiptPhase _phaseFor(rust_sync.TransactionInfo? tx) {
@@ -310,6 +314,7 @@ class _ActivityTransactionStatusScreenState
     final txidLines = _splitTxid(widget.args.txidHex);
     return TransactionReceiptBlockData(
       title: 'Transaction Hash',
+      onCopy: () => unawaited(_copyTransactionHash()),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -329,23 +334,35 @@ class _ActivityTransactionStatusScreenState
     BuildContext context, {
     required String title,
     required String address,
+    bool useFailedReceiptLayout = false,
   }) {
     final colors = context.colors;
+    final trimmedAddress = address.trim();
     return TransactionReceiptBlockData(
       title: title,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final line in _splitAddress(address))
-            Text(
-              line,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.accent,
-              ),
+      onCopy: () => unawaited(_copyText(trimmedAddress, 'Address copied')),
+      child: useFailedReceiptLayout
+          ? TransactionReceiptAddressText(
+              address: trimmedAddress,
+              highlightEdges: _shouldHighlightAddressEdges(trimmedAddress),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final line in _splitAddress(trimmedAddress))
+                  Text(
+                    line,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+              ],
             ),
-        ],
-      ),
     );
+  }
+
+  bool _shouldHighlightAddressEdges(String address) {
+    return address.startsWith('u1') || address.startsWith('zs');
   }
 
   TransactionReceiptBlockData _primaryBlockFor(
@@ -354,15 +371,26 @@ class _ActivityTransactionStatusScreenState
     rust_sync.TransactionDetail? detail,
   ) {
     final primaryAddress = detail?.primaryAddress?.trim();
+    final useFailedReceiptLayout = tx?.expiredUnmined == true;
     if (tx?.txKind == 'sent' &&
         primaryAddress != null &&
         primaryAddress.isNotEmpty) {
-      return _addressBlock(context, title: 'To', address: primaryAddress);
+      return _addressBlock(
+        context,
+        title: 'To',
+        address: primaryAddress,
+        useFailedReceiptLayout: useFailedReceiptLayout,
+      );
     }
     if (tx?.txKind == 'received' &&
         primaryAddress != null &&
         primaryAddress.isNotEmpty) {
-      return _addressBlock(context, title: 'From', address: primaryAddress);
+      return _addressBlock(
+        context,
+        title: 'From',
+        address: primaryAddress,
+        useFailedReceiptLayout: useFailedReceiptLayout,
+      );
     }
     return _transactionHashBlock(context);
   }
@@ -404,7 +432,8 @@ class _ActivityTransactionStatusScreenState
 
     final tx = _transaction;
     final detail = _matchingDetailFor(tx);
-    final error = tx?.expiredUnmined == true
+    final useFailedReceiptLayout = tx?.expiredUnmined == true;
+    final error = useFailedReceiptLayout
         ? 'Transaction expired before it was mined.'
         : _error;
 
@@ -414,8 +443,12 @@ class _ActivityTransactionStatusScreenState
         padding: EdgeInsets.zero,
         child: Stack(
           children: [
-            const Positioned.fill(
-              child: IgnorePointer(child: TransactionReceiptIllustration()),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: TransactionReceiptIllustration(
+                  failed: useFailedReceiptLayout,
+                ),
+              ),
             ),
             Positioned.fill(
               child: Padding(
@@ -441,6 +474,7 @@ class _ActivityTransactionStatusScreenState
                             dateText: _dateText(tx),
                             feeText: _feeText(tx),
                             error: error,
+                            useFailedReceiptLayout: useFailedReceiptLayout,
                             onCopyTxid: _copyTransactionHash,
                           ),
                         ),
