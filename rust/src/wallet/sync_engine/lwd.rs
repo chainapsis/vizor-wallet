@@ -14,6 +14,8 @@
 //! failures into `SyncError::net` or `SyncError::parse`, so the outer
 //! loop only ever deals with the typed `SyncError` taxonomy.
 
+use std::time::Duration;
+
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use zcash_client_backend::{
     data_api::{
@@ -30,6 +32,8 @@ use crate::wallet::db::with_wallet_db_write_lock;
 
 use super::block_source::MemoryBlockSource;
 use super::{elapsed, SyncError, WalletDatabase};
+
+const LIGHTWALLETD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Opens a tonic gRPC channel to the given lightwalletd URL and
 /// returns a `CompactTxStreamerClient`.
@@ -50,7 +54,8 @@ pub(crate) async fn open_lwd_channel(
     });
 
     let endpoint = Endpoint::from_shared(lightwalletd_url.to_string())
-        .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?;
+        .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
+        .connect_timeout(LIGHTWALLETD_CONNECT_TIMEOUT);
     let channel = if lightwalletd_url.starts_with("https://") {
         endpoint
             .tls_config(ClientTlsConfig::new().with_webpki_roots())
