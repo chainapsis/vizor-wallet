@@ -16,4 +16,22 @@ void main() {
 
     expect(state.pendingBalance, BigInt.from(12));
   });
+
+  test('displayPercentage defaults to actual percentage', () {
+    final state = SyncState(percentage: 0.25);
+
+    expect(state.percentage, 0.25);
+    expect(state.displayPercentage, 0.25);
+  });
+
+  test(
+    'displayPercentage can advance independently from actual percentage',
+    () {
+      final state = SyncState(percentage: 0.25);
+      final displayed = state.copyWith(displayPercentage: 0.30);
+
+      expect(displayed.percentage, 0.25);
+      expect(displayed.displayPercentage, 0.30);
+    },
+  );
 }

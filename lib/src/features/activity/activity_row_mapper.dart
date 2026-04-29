@@ -52,7 +52,7 @@ ActivityRowData buildSyncActivityRow({
   }
 
   if (sync.isSyncing) {
-    final pct = (sync.percentage * 100).toStringAsFixed(0);
+    final pct = (sync.displayPercentage * 100).toStringAsFixed(0);
     return ActivityRowData(
       title: 'Wallet Synced',
       leadingIconName: AppIcons.sync,

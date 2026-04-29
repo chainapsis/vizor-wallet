@@ -502,6 +502,11 @@ class ApiSyncProgressEvent {
   final BigInt scannedHeight;
   final BigInt chainTipHeight;
   final double percentage;
+
+  /// UI-only smoothed progress target. Dart increments toward this
+  /// assuming one virtual block per 500ms, capped at the next batch.
+  final double displayTargetPercentage;
+  final BigInt displayTargetBlocks;
   final bool isSyncing;
   final bool isComplete;
   final bool hasNewTx;
@@ -514,6 +519,8 @@ class ApiSyncProgressEvent {
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
+    required this.displayTargetPercentage,
+    required this.displayTargetBlocks,
     required this.isSyncing,
     required this.isComplete,
     required this.hasNewTx,
@@ -525,6 +532,8 @@ class ApiSyncProgressEvent {
       scannedHeight.hashCode ^
       chainTipHeight.hashCode ^
       percentage.hashCode ^
+      displayTargetPercentage.hashCode ^
+      displayTargetBlocks.hashCode ^
       isSyncing.hashCode ^
       isComplete.hashCode ^
       hasNewTx.hashCode ^
@@ -538,6 +547,8 @@ class ApiSyncProgressEvent {
           scannedHeight == other.scannedHeight &&
           chainTipHeight == other.chainTipHeight &&
           percentage == other.percentage &&
+          displayTargetPercentage == other.displayTargetPercentage &&
+          displayTargetBlocks == other.displayTargetBlocks &&
           isSyncing == other.isSyncing &&
           isComplete == other.isComplete &&
           hasNewTx == other.hasNewTx &&

@@ -31,6 +31,10 @@ pub struct ApiSyncProgressEvent {
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub percentage: f64,
+    /// UI-only smoothed progress target. Dart increments toward this
+    /// assuming one virtual block per 500ms, capped at the next batch.
+    pub display_target_percentage: f64,
+    pub display_target_blocks: u64,
     pub is_syncing: bool,
     pub is_complete: bool,
     pub has_new_tx: bool,
@@ -97,6 +101,8 @@ pub fn start_full_sync(
                 scanned_height: progress.scanned_height,
                 chain_tip_height: progress.chain_tip_height,
                 percentage: progress.percentage,
+                display_target_percentage: progress.display_target_percentage,
+                display_target_blocks: progress.display_target_blocks,
                 is_syncing: progress.is_syncing,
                 is_complete: progress.is_complete,
                 has_new_tx: progress.has_new_tx,

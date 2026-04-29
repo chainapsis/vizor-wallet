@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,6 +18,7 @@ class SyncState {
   final bool isSyncing;
   final bool isBackgroundMode;
   final double percentage;
+  final double displayPercentage;
   final int scannedHeight;
   final int chainTipHeight;
   final BigInt transparentBalance;
@@ -53,6 +55,7 @@ class SyncState {
     this.isSyncing = false,
     this.isBackgroundMode = false,
     this.percentage = 0,
+    double? displayPercentage,
     this.scannedHeight = 0,
     this.chainTipHeight = 0,
     BigInt? transparentBalance,
@@ -72,7 +75,8 @@ class SyncState {
     this.lastSyncCompletedAt,
     this.lastSyncFailedAt,
     this.phase = '',
-  }) : transparentBalance = transparentBalance ?? BigInt.zero,
+  }) : displayPercentage = displayPercentage ?? percentage,
+       transparentBalance = transparentBalance ?? BigInt.zero,
        saplingBalance = saplingBalance ?? BigInt.zero,
        orchardBalance = orchardBalance ?? BigInt.zero,
        transparentPendingBalance = transparentPendingBalance ?? BigInt.zero,
@@ -87,6 +91,7 @@ class SyncState {
     bool? isSyncing,
     bool? isBackgroundMode,
     double? percentage,
+    double? displayPercentage,
     int? scannedHeight,
     int? chainTipHeight,
     BigInt? transparentBalance,
@@ -111,6 +116,7 @@ class SyncState {
       isSyncing: isSyncing ?? this.isSyncing,
       isBackgroundMode: isBackgroundMode ?? this.isBackgroundMode,
       percentage: percentage ?? this.percentage,
+      displayPercentage: displayPercentage ?? this.displayPercentage,
       scannedHeight: scannedHeight ?? this.scannedHeight,
       chainTipHeight: chainTipHeight ?? this.chainTipHeight,
       transparentBalance: transparentBalance ?? this.transparentBalance,
@@ -157,6 +163,8 @@ class WalletMutationSyncPause {
 }
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
+  static const _displayBlockDuration = Duration(milliseconds: 500);
+
   late final BackgroundSyncDelegate _bgDelegate;
   bool _isSyncing = false;
   bool _isInForeground = true;
@@ -164,6 +172,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   int _syncGen = 0; // incremented by stopSync to invalidate pending startSync
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
+  Timer? _displayProgressTimer;
   AppLifecycleListener? _lifecycleListener;
   Timer? _pollTimer;
   bool _pollCheckInFlight = false;
@@ -207,6 +216,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ref.onDispose(() {
       rust_sync.cancelFullSync();
       _syncSub?.cancel();
+      _displayProgressTimer?.cancel();
       _mempoolSub?.cancel();
       // Cancel the Rust-side observer too; cancelling the Dart
       // subscription alone leaves the tonic stream task alive
@@ -327,6 +337,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     _isSyncing = true;
     _lastLoggedHeight = 0;
+    _stopDisplayProgressTimer();
     final gen = ++_syncGen;
     final prev = state.value;
     final startedAt = DateTime.now();
@@ -378,6 +389,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 scannedHeight: event.scannedHeight.toInt(),
                 chainTipHeight: event.chainTipHeight.toInt(),
                 percentage: event.percentage,
+                displayTargetPercentage: event.displayTargetPercentage,
+                displayTargetBlocks: event.displayTargetBlocks.toInt(),
                 isSyncing: event.isSyncing,
                 isComplete: event.isComplete,
                 hasNewTx: event.hasNewTx,
@@ -400,6 +413,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               if (_isSyncing) {
                 log('Sync: stream ended without isComplete, cleaning up');
                 _isSyncing = false;
+                _stopDisplayProgressTimer();
                 _stopMempoolObserver();
               }
             },
@@ -407,6 +421,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               if (gen != _syncGen) return;
               log('Sync: stream error: $e');
               _isSyncing = false;
+              _stopDisplayProgressTimer();
               // Sync died mid-stream: tear the mempool observer down
               // at the same time so a failed sync session can't leak
               // a lightwalletd stream that keeps firing
@@ -442,6 +457,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           if (gen != _syncGen) return;
           log('SyncNotifier: ERROR: $e\n$st');
           _isSyncing = false;
+          _stopDisplayProgressTimer();
           // Sync setup threw before the stream was ever attached.
           // We may have already started the mempool observer
           // (happens on the main success path just before
@@ -537,6 +553,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // budget story expects.
     _stopMempoolObserver();
     _isSyncing = false;
+    _stopDisplayProgressTimer();
     _stopPolling();
     if (_bgDelegate.isActive) {
       _bgDelegate.disable();
@@ -547,6 +564,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isSyncing: false,
         isBackgroundMode: false,
         percentage: prev?.percentage ?? 0.0,
+        displayPercentage: prev?.displayPercentage ?? prev?.percentage ?? 0.0,
         scannedHeight: prev?.scannedHeight ?? 0,
         chainTipHeight: prev?.chainTipHeight ?? 0,
         transparentBalance: prev?.transparentBalance,
@@ -594,6 +612,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     await onStoppingSync?.call();
     log('SyncNotifier: pausing sync for wallet DB mutation');
     _isSyncing = false;
+    _stopDisplayProgressTimer();
     rust_sync.setSyncMode(mode: 0);
     rust_sync.cancelFullSync();
     _stopMempoolObserver();
@@ -650,6 +669,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ++_syncGen;
     ++_sensitiveStateEpoch;
     _isSyncing = false;
+    _stopDisplayProgressTimer();
     _stopPolling();
     _syncSub?.cancel();
     _syncSub = null;
@@ -909,6 +929,66 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _mempoolSub = null;
   }
 
+  double _clampProgress(double value) => value.clamp(0.0, 1.0).toDouble();
+
+  void _stopDisplayProgressTimer() {
+    _displayProgressTimer?.cancel();
+    _displayProgressTimer = null;
+  }
+
+  void _startDisplayProgressSmoothing({
+    required double basePercentage,
+    required double targetPercentage,
+    required int targetBlocks,
+  }) {
+    _stopDisplayProgressTimer();
+
+    final base = _clampProgress(basePercentage);
+    final target = _clampProgress(targetPercentage);
+    if (targetBlocks <= 0 || target <= base) {
+      return;
+    }
+
+    _displayProgressTimer = Timer.periodic(_displayBlockDuration, (timer) {
+      final current = state.value;
+      if (current == null ||
+          (!current.isSyncing && !current.isBackgroundMode)) {
+        _stopDisplayProgressTimer();
+        return;
+      }
+
+      final virtualBlocks = math.min(timer.tick, targetBlocks);
+      final next = _clampProgress(
+        math.min(
+          target,
+          base + ((target - base) * virtualBlocks / targetBlocks),
+        ),
+      );
+      if (next > current.displayPercentage) {
+        state = AsyncData(current.copyWith(displayPercentage: next));
+        if (_bgDelegate.isActive) {
+          _bgDelegate.onProgress(
+            SyncProgressEvent(
+              scannedHeight: current.scannedHeight,
+              chainTipHeight: current.chainTipHeight,
+              percentage: next,
+              displayTargetPercentage: target,
+              displayTargetBlocks: targetBlocks,
+              isSyncing: current.isSyncing,
+              isComplete: false,
+              hasNewTx: false,
+              isBackground: current.isBackgroundMode,
+              phase: current.phase,
+            ),
+          );
+        }
+      }
+      if (virtualBlocks >= targetBlocks || next >= target) {
+        _stopDisplayProgressTimer();
+      }
+    });
+  }
+
   // ======================== Progress Handling ========================
 
   Future<void> _onSyncProgress(SyncProgressEvent event) async {
@@ -1005,12 +1085,22 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final syncCompletedAt = event.isComplete
         ? DateTime.now()
         : prev?.lastSyncCompletedAt;
+    final actualPercentage = _clampProgress(event.percentage);
+    final displayPercentage = event.isComplete
+        ? 1.0
+        : _clampProgress(
+            math.max(
+              actualPercentage,
+              prev?.displayPercentage ?? actualPercentage,
+            ),
+          );
 
     state = AsyncData(
       SyncState(
         isSyncing: event.isSyncing && !event.isComplete,
         isBackgroundMode: event.isBackground || _bgDelegate.isActive,
-        percentage: event.percentage,
+        percentage: actualPercentage,
+        displayPercentage: displayPercentage,
         scannedHeight: event.scannedHeight,
         chainTipHeight: event.chainTipHeight,
         transparentBalance: transparent ?? prev?.transparentBalance,
@@ -1038,6 +1128,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       ),
     );
 
+    if (event.isComplete || !event.isSyncing) {
+      _stopDisplayProgressTimer();
+    } else {
+      _startDisplayProgressSmoothing(
+        basePercentage: displayPercentage,
+        targetPercentage: event.displayTargetPercentage,
+        targetBlocks: event.displayTargetBlocks,
+      );
+    }
+
     // Handle sync completion here (not in onDone) to avoid race with async state update.
     if (event.isComplete) {
       _isSyncing = false;
@@ -1055,6 +1155,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<void> _refreshBalance() async {
     if (_requiresUnlock) {
+      _stopDisplayProgressTimer();
       state = AsyncData(SyncState());
       return;
     }
@@ -1141,6 +1242,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         isSyncing: prev?.isSyncing ?? false,
         isBackgroundMode: _bgDelegate.isActive,
         percentage: prev?.percentage ?? 0.0,
+        displayPercentage: prev?.displayPercentage ?? prev?.percentage ?? 0.0,
         scannedHeight: prev?.scannedHeight ?? 0,
         chainTipHeight: prev?.chainTipHeight ?? 0,
         transparentBalance: transparent ?? prev?.transparentBalance,

@@ -21,6 +21,8 @@ class SyncProgressStreamHandler: NSObject, FlutterStreamHandler {
                 "scannedHeight": progress.scanned_height,
                 "chainTipHeight": progress.chain_tip_height,
                 "percentage": progress.percentage,
+                "displayTargetPercentage": progress.display_target_percentage,
+                "displayTargetBlocks": progress.display_target_blocks,
                 "isSyncing": progress.is_syncing,
                 "isComplete": progress.is_complete,
                 "hasNewTx": progress.has_new_tx,

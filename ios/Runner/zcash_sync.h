@@ -8,6 +8,8 @@ typedef struct {
     uint64_t scanned_height;
     uint64_t chain_tip_height;
     double percentage;
+    double display_target_percentage;
+    uint64_t display_target_blocks;
     bool is_syncing;
     bool is_complete;
     bool has_new_tx;

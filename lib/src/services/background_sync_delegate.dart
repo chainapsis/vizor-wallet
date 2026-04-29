@@ -15,6 +15,8 @@ class SyncProgressEvent {
   final int scannedHeight;
   final int chainTipHeight;
   final double percentage;
+  final double displayTargetPercentage;
+  final int displayTargetBlocks;
   final bool isSyncing;
   final bool isComplete;
   final bool hasNewTx;
@@ -28,6 +30,8 @@ class SyncProgressEvent {
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
+    required this.displayTargetPercentage,
+    required this.displayTargetBlocks,
     required this.isSyncing,
     required this.isComplete,
     required this.hasNewTx,
@@ -182,6 +186,12 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
               scannedHeight: (map['scannedHeight'] as num?)?.toInt() ?? 0,
               chainTipHeight: (map['chainTipHeight'] as num?)?.toInt() ?? 0,
               percentage: (map['percentage'] as num?)?.toDouble() ?? 0.0,
+              displayTargetPercentage:
+                  (map['displayTargetPercentage'] as num?)?.toDouble() ??
+                  (map['percentage'] as num?)?.toDouble() ??
+                  0.0,
+              displayTargetBlocks:
+                  (map['displayTargetBlocks'] as num?)?.toInt() ?? 0,
               isSyncing: map['isSyncing'] as bool? ?? false,
               isComplete: map['isComplete'] as bool? ?? false,
               hasNewTx: map['hasNewTx'] as bool? ?? false,

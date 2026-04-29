@@ -54,6 +54,8 @@ pub struct SyncProgressEvent {
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub percentage: f64,
+    pub display_target_percentage: f64,
+    pub display_target_blocks: u64,
     pub is_syncing: bool,
     pub is_complete: bool,
     pub has_new_tx: bool,
@@ -95,6 +97,26 @@ fn elapsed() -> String {
         .ok()
         .and_then(|g| g.map(|t| format!("{:.1}s", t.elapsed().as_secs_f64())))
         .unwrap_or_default()
+}
+
+fn batch_size_for_range(base_batch_size: u32, start: BlockHeight, range_end: BlockHeight) -> u32 {
+    let start_u32 = u32::from(start);
+    let range_end_u32 = u32::from(range_end);
+    // Overlap check: range [start, range_end) ∩ [SANDBLASTING_START, SANDBLASTING_END)
+    if start_u32 < SANDBLASTING_END && range_end_u32 > SANDBLASTING_START {
+        BATCH_SIZE_SANDBLASTING
+    } else {
+        base_batch_size
+    }
+}
+
+fn target_percentage_after_blocks(initial_total: u64, remaining: u64, blocks: u64) -> f64 {
+    if initial_total == 0 {
+        1.0
+    } else {
+        let target_remaining = remaining.saturating_sub(blocks);
+        (1.0 - (target_remaining as f64 / initial_total as f64)).clamp(0.0, 1.0)
+    }
 }
 
 async fn refresh_utxos(
@@ -565,17 +587,29 @@ async fn run_sync_impl(
         // making scan_cached_blocks much slower per block and
         // using more memory. Matches the SDK's
         // `SANDBLASTING_RANGE` check.
-        let batch_size = {
-            let start_u32 = u32::from(start);
-            let range_end_u32 = u32::from(range.block_range().end);
-            // Overlap check: range [start, range_end) ∩ [SANDBLASTING_START, SANDBLASTING_END)
-            if start_u32 < SANDBLASTING_END && range_end_u32 > SANDBLASTING_START {
-                BATCH_SIZE_SANDBLASTING
-            } else {
-                base_batch_size
-            }
-        };
+        let batch_size = batch_size_for_range(base_batch_size, start, range.block_range().end);
         let end = std::cmp::min(start + batch_size, range.block_range().end);
+        let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
+        let current_pct = if initial_total > 0 {
+            1.0 - (prev_remaining as f64 / initial_total as f64)
+        } else {
+            1.0
+        };
+        progress_fn(SyncProgressEvent {
+            scanned_height: u32::from(start) as u64,
+            chain_tip_height: current_tip_height,
+            percentage: current_pct.clamp(0.0, 1.0),
+            display_target_percentage: target_percentage_after_blocks(
+                initial_total,
+                prev_remaining,
+                batch_blocks,
+            ),
+            display_target_blocks: batch_blocks,
+            is_syncing: true,
+            is_complete: false,
+            has_new_tx: false,
+            phase: "download".into(),
+        });
         log::info!(
             "[{}] sync: scanning {}-{} (priority {:?}{}, batch={})",
             elapsed(),
@@ -960,10 +994,29 @@ async fn run_sync_impl(
         } else {
             1.0
         };
+        let next_display_target_blocks = post_ranges
+            .iter()
+            .find(|r| {
+                r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned
+            })
+            .map(|r| {
+                let next_start = r.block_range().start;
+                let next_batch_size =
+                    batch_size_for_range(base_batch_size, next_start, r.block_range().end);
+                let next_end = std::cmp::min(next_start + next_batch_size, r.block_range().end);
+                u32::from(next_end).saturating_sub(u32::from(next_start)) as u64
+            })
+            .unwrap_or(0);
         let progress = SyncProgressEvent {
             scanned_height: u32::from(end) as u64,
             chain_tip_height: current_tip_height,
             percentage: pct.clamp(0.0, 1.0),
+            display_target_percentage: target_percentage_after_blocks(
+                initial_total,
+                remaining,
+                next_display_target_blocks,
+            ),
+            display_target_blocks: next_display_target_blocks,
             is_syncing: true,
             is_complete: false,
             has_new_tx,
@@ -995,15 +1048,7 @@ async fn run_sync_impl(
             let pf_start = end;
             // Recompute batch_size for the prefetch range in case
             // it crosses a sandblasting boundary differently.
-            let pf_batch = {
-                let s = u32::from(pf_start);
-                let re = u32::from(range.block_range().end);
-                if s < SANDBLASTING_END && re > SANDBLASTING_START {
-                    BATCH_SIZE_SANDBLASTING
-                } else {
-                    base_batch_size
-                }
-            };
+            let pf_batch = batch_size_for_range(base_batch_size, pf_start, range.block_range().end);
             let pf_end = std::cmp::min(pf_start + pf_batch, range.block_range().end);
             let mut pf_client = client.clone();
             prefetch = Some(Prefetch {
@@ -1022,6 +1067,8 @@ async fn run_sync_impl(
         scanned_height: current_tip_height,
         chain_tip_height: current_tip_height,
         percentage: 1.0,
+        display_target_percentage: 1.0,
+        display_target_blocks: 0,
         is_syncing: false,
         is_complete: true,
         has_new_tx: false,
