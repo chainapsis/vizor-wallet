@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:fixnum/fixnum.dart';
 import 'package:grpc/grpc.dart';
 
-import '../../../core/config/network_config.dart';
+import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../generated/compact_formats.pb.dart' as compact;
 import '../../../generated/service.pbgrpc.dart' as service;
 
@@ -29,9 +29,9 @@ class ImportBirthdayEstimator {
   );
 
   static Future<ImportBirthdayMetadata> loadMetadata({
-    required ZcashNetwork network,
+    required RpcEndpointConfig endpoint,
   }) async {
-    return _withClient(network, (client) async {
+    return _withClient(endpoint.normalizedLightwalletdUrl, (client) async {
       final info = await client.getLightdInfo(
         service.Empty(),
         options: _rpcOptions,
@@ -55,10 +55,10 @@ class ImportBirthdayEstimator {
   }
 
   static Future<int> estimateBirthdayHeight({
-    required ZcashNetwork network,
+    required RpcEndpointConfig endpoint,
     required DateTime selectedDate,
   }) async {
-    return _withClient(network, (client) async {
+    return _withClient(endpoint.normalizedLightwalletdUrl, (client) async {
       final info = await client.getLightdInfo(
         service.Empty(),
         options: _rpcOptions,
@@ -117,10 +117,10 @@ class ImportBirthdayEstimator {
   }
 
   static Future<T> _withClient<T>(
-    ZcashNetwork network,
+    String lightwalletdUrl,
     Future<T> Function(service.CompactTxStreamerClient client) action,
   ) async {
-    final uri = Uri.parse(network.lightwalletdUrl);
+    final uri = Uri.parse(lightwalletdUrl);
     final credentials = uri.scheme == 'https'
         ? const ChannelCredentials.secure()
         : const ChannelCredentials.insecure();

@@ -5,13 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
-import '../../../app_bootstrap.dart';
-import '../../../core/config/network_config.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'import_birthday_estimator.dart';
@@ -81,14 +80,12 @@ class _ImportWalletBirthdayScreenState
     super.dispose();
   }
 
-  ZcashNetwork get _network {
-    final network = ref.read(appBootstrapProvider).network;
-    return network == 'main' ? ZcashNetwork.mainnet : ZcashNetwork.testnet;
-  }
-
   void _handleFocusChanged() {
     if (mounted) setState(() {});
   }
+
+  int get _minimumBirthdayHeight =>
+      ref.read(rpcEndpointProvider).network.saplingActivationHeight;
 
   Future<void> _loadMetadata() async {
     setState(() {
@@ -97,8 +94,9 @@ class _ImportWalletBirthdayScreenState
     });
 
     try {
+      final endpoint = ref.read(rpcEndpointProvider);
       final metadata = await ImportBirthdayEstimator.loadMetadata(
-        network: _network,
+        endpoint: endpoint,
       );
       if (!mounted) return;
       setState(() {
@@ -129,9 +127,10 @@ class _ImportWalletBirthdayScreenState
     });
 
     try {
+      final endpoint = ref.read(rpcEndpointProvider);
       final estimatedHeight =
           await ImportBirthdayEstimator.estimateBirthdayHeight(
-            network: _network,
+            endpoint: endpoint,
             selectedDate: date,
           );
       if (!mounted || seq != _estimateSeq) return;
@@ -272,7 +271,7 @@ class _ImportWalletBirthdayScreenState
   int? get _validatedManualHeight {
     final value = int.tryParse(_manualHeightController.text.trim());
     if (value == null) return null;
-    final minimumHeight = _network.saplingActivationHeight;
+    final minimumHeight = _minimumBirthdayHeight;
     if (value < minimumHeight) {
       return null;
     }
@@ -288,7 +287,7 @@ class _ImportWalletBirthdayScreenState
     if (text.isEmpty) return null;
     final parsed = int.tryParse(text);
     if (parsed == null) return 'Doesn’t seem like a legit block height';
-    if (parsed < _network.saplingActivationHeight) {
+    if (parsed < _minimumBirthdayHeight) {
       return 'Doesn’t seem like a legit block height';
     }
     final maximumHeight = _metadata?.tipHeight;
@@ -450,7 +449,7 @@ class _ImportWalletBirthdayScreenState
                             ? null
                             : () => _submit(
                                 birthdayHeightOverride:
-                                    _network.saplingActivationHeight,
+                                    _minimumBirthdayHeight,
                               ),
                         variant: AppButtonVariant.ghost,
                         minWidth: _buttonWidth,
