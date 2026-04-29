@@ -52,7 +52,7 @@ ActivityRowData buildSyncActivityRow({
   }
 
   if (sync.isSyncing) {
-    final pct = (sync.displayPercentage * 100).toStringAsFixed(0);
+    final pct = _formatSyncPercentage(sync.displayPercentage);
     return ActivityRowData(
       title: 'Wallet Synced',
       leadingIconName: AppIcons.sync,
@@ -79,6 +79,16 @@ ActivityRowData buildSyncActivityRow({
     statusColor: colors.text.secondary,
     timestampText: formatActivityTimestamp(sync.lastSyncCompletedAt),
   );
+}
+
+String _formatSyncPercentage(double progress) {
+  final pct = (progress.clamp(0.0, 1.0) * 100).toDouble();
+  if (pct >= 100) return '100';
+
+  // Floor instead of round so the UI does not claim 100% before
+  // Rust sends the completion event.
+  final floored = (pct * 100).floor() / 100;
+  return floored.toStringAsFixed(2);
 }
 
 ActivityRowData buildTransactionActivityRow({
