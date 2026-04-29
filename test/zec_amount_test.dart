@@ -3,6 +3,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 
 void main() {
+  group('ZecAmount.tryParse', () {
+    test('parses canonical period-separated amounts', () {
+      expect(ZecAmount.tryParse('0.01')?.zatoshi, BigInt.from(1000000));
+      expect(ZecAmount.tryParse('.01')?.zatoshi, BigInt.from(1000000));
+      expect(ZecAmount.tryParse('1.')?.zatoshi, BigInt.from(100000000));
+      expect(ZecAmount.tryParse('0.00000001')?.zatoshi, BigInt.one);
+    });
+
+    test('rejects commas and non-canonical decimals', () {
+      expect(ZecAmount.tryParse('0,01'), isNull);
+      expect(ZecAmount.tryParse('1,2.3'), isNull);
+      expect(ZecAmount.tryParse('1.2.3'), isNull);
+      expect(ZecAmount.tryParse('0.000000001'), isNull);
+    });
+  });
+
   group('formatZecAmount', () {
     test('uses a period as the decimal separator', () {
       expect(
@@ -21,19 +37,56 @@ void main() {
     });
   });
 
-  group('parseZecAmount', () {
-    test('parses canonical period-separated amounts', () {
-      expect(parseZecAmount('0.01'), BigInt.from(1000000));
-      expect(parseZecAmount('.01'), BigInt.from(1000000));
-      expect(parseZecAmount('1.'), BigInt.from(100000000));
-      expect(parseZecAmount('0.00000001'), BigInt.one);
+  group('ZecAmountPretty', () {
+    test('formats balance and receipt presets with existing precision', () {
+      expect(
+        ZecAmount.fromZatoshi(BigInt.from(100000000)).balance.amountText,
+        '1.00',
+      );
+      expect(
+        ZecAmount.fromZatoshi(BigInt.from(100000000)).receipt.toString(),
+        '1.00 zec',
+      );
+      expect(
+        ZecAmount.fromZatoshi(BigInt.one).balance.amountText,
+        '0.00000001',
+      );
     });
 
-    test('rejects commas and non-canonical decimals', () {
-      expect(parseZecAmount('0,01'), isNull);
-      expect(parseZecAmount('1,2.3'), isNull);
-      expect(parseZecAmount('1.2.3'), isNull);
-      expect(parseZecAmount('0.000000001'), isNull);
+    test('formats fee preset with upper-case denom', () {
+      expect(
+        ZecAmount.fromZatoshi(BigInt.from(10000)).fee.toString(),
+        '0.0001 ZEC',
+      );
+    });
+
+    test('preserves existing activity precision rules', () {
+      expect(
+        ZecAmount.fromZatoshi(BigInt.from(123450000)).activity.toString(),
+        '1.23 zec',
+      );
+      expect(
+        ZecAmount.fromZatoshi(BigInt.from(10000)).activity.toString(),
+        '0.0001 zec',
+      );
+      expect(
+        ZecAmount.fromZatoshi(BigInt.zero).activity.toString(),
+        '0.00 zec',
+      );
+      expect(
+        ZecAmount.fromZatoshi(-BigInt.from(100000000)).activity.toString(),
+        '1.00 zec',
+      );
+      expect(
+        ZecAmount.fromZatoshi(
+          -BigInt.from(100000000),
+        ).signedActivity.toString(),
+        '-1.00 zec',
+      );
+      expect(
+        ZecAmount.fromZatoshi(BigInt.zero).signedActivity.toString(),
+        '0.00 zec',
+      );
     });
   });
 
@@ -50,7 +103,7 @@ void main() {
       );
 
       expect(value.text, '0.01');
-      expect(parseZecAmount(value.text), BigInt.from(1000000));
+      expect(ZecAmount.tryParse(value.text)?.zatoshi, BigInt.from(1000000));
     });
 
     test('rejects invalid characters and ambiguous separators', () {
