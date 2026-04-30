@@ -295,14 +295,16 @@ platform :mac do
 
     sh("ditto -c -k --sequesterRsrc --keepParent #{shell_escape(metadata[:app_path])} #{shell_escape(metadata[:zip_path])}")
 
-    Dir.mktmpdir("vizor-dmg") do |staging_dir|
-      staged_app_path = File.join(staging_dir, "#{metadata[:app_name]}.app")
-      applications_link = File.join(staging_dir, "Applications")
+    dmg_script_path = File.join(workspace_root, "scripts", "package-macos-release-dmg.sh")
+    UI.user_error!("Missing DMG packaging script at #{dmg_script_path}") unless File.executable?(dmg_script_path)
 
-      sh("ditto #{shell_escape(metadata[:app_path])} #{shell_escape(staged_app_path)}")
-      sh("ln -s /Applications #{shell_escape(applications_link)}")
-      sh("hdiutil create -volname #{shell_escape(metadata[:app_name])} -srcfolder #{shell_escape(staging_dir)} -ov -format UDZO #{shell_escape(metadata[:dmg_path])}")
-    end
+    sh([
+      shell_escape(dmg_script_path),
+      "--app-path", shell_escape(metadata[:app_path]),
+      "--output", shell_escape(metadata[:dmg_path]),
+      "--app-name", shell_escape(metadata[:app_name]),
+      "--volume-name", shell_escape("Install Vizor Wallet")
+    ].join(" "))
   end
 
   desc "Install macOS signing identities and provisioning profiles via match"
