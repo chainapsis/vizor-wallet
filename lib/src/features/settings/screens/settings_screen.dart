@@ -17,6 +17,11 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 
+const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
+  SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+  SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+};
+
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -1066,7 +1071,7 @@ class _SettingsRowDivider extends StatelessWidget {
   }
 }
 
-class _SettingsRow extends StatelessWidget {
+class _SettingsRow extends StatefulWidget {
   const _SettingsRow({
     required this.iconName,
     required this.label,
@@ -1080,55 +1085,142 @@ class _SettingsRow extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
+  State<_SettingsRow> createState() => _SettingsRowState();
+}
+
+class _SettingsRowState extends State<_SettingsRow> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  @override
+  void didUpdateWidget(covariant _SettingsRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.iconName != widget.iconName ||
+        oldWidget.label != widget.label ||
+        oldWidget.value != widget.value ||
+        (oldWidget.onTap == null) != (widget.onTap == null)) {
+      _hovered = false;
+      _focused = false;
+    }
+  }
+
+  void _handleHoverChanged(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
+
+  void _handleFocusChanged(bool value) {
+    if (_focused == value) return;
+    setState(() => _focused = value);
+  }
+
+  void _activate() {
+    _handleHoverChanged(false);
+    widget.onTap?.call();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final row = Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: Row(
-        children: [
-          _SettingsRowIcon(iconName: iconName),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.accent,
+    final isInteractive = widget.onTap != null;
+    final row = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+          decoration: BoxDecoration(
+            color: isInteractive && _hovered
+                ? _settingsRowHoverBackgroundColor(context)
+                : null,
+            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          ),
+          child: Row(
+            children: [
+              _SettingsRowIcon(iconName: widget.iconName),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  widget.label,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 260),
+                child: Text(
+                  widget.value,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              AppIcon(
+                AppIcons.chevronForward,
+                size: 16,
+                color: colors.icon.accent,
+              ),
+            ],
+          ),
+        ),
+        if (isInteractive && _focused)
+          Positioned(
+            left: -1,
+            top: -1,
+            right: -1,
+            bottom: -1,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: colors.state.focusRing, width: 2),
+                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                ),
               ),
             ),
           ),
-          const SizedBox(width: AppSpacing.xs),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 260),
-            child: Text(
-              value,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.xxs),
-          AppIcon(AppIcons.chevronForward, size: 16, color: colors.icon.accent),
-        ],
-      ),
+      ],
     );
 
-    if (onTap == null) return row;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: row,
+    if (!isInteractive) return row;
+    return Semantics(
+      button: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => _handleHoverChanged(true),
+        onExit: (_) => _handleHoverChanged(false),
+        child: FocusableActionDetector(
+          mouseCursor: SystemMouseCursors.click,
+          onShowFocusHighlight: _handleFocusChanged,
+          shortcuts: _settingsRowActivationShortcuts,
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<Intent>(
+              onInvoke: (_) {
+                _activate();
+                return null;
+              },
+            ),
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _activate,
+            child: row,
+          ),
+        ),
       ),
     );
   }
+}
+
+Color _settingsRowHoverBackgroundColor(BuildContext context) {
+  final colors = context.colors;
+  final isDark = AppTheme.of(context) == AppThemeData.dark;
+  return isDark ? colors.background.raised : colors.background.base;
 }
 
 class _SettingsRowIcon extends StatelessWidget {
