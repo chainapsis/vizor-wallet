@@ -5,9 +5,6 @@ PODS:
     - Flutter
     - FlutterMacOS
   - FlutterMacOS (1.0.0)
-  - mobile_scanner (7.0.0):
-    - Flutter
-    - FlutterMacOS
   - rust_lib_zcash_wallet (0.0.1):
     - FlutterMacOS
   - screen_retriever_macos (0.0.1):
@@ -24,7 +21,6 @@ DEPENDENCIES:
   - desktop_window_bootstrap (from `Flutter/ephemeral/.symlinks/plugins/desktop_window_bootstrap/macos`)
   - flutter_secure_storage_darwin (from `Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
   - FlutterMacOS (from `Flutter/ephemeral`)
-  - mobile_scanner (from `Flutter/ephemeral/.symlinks/plugins/mobile_scanner/darwin`)
   - rust_lib_zcash_wallet (from `Flutter/ephemeral/.symlinks/plugins/rust_lib_zcash_wallet/macos`)
   - screen_retriever_macos (from `Flutter/ephemeral/.symlinks/plugins/screen_retriever_macos/macos`)
   - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
@@ -38,8 +34,6 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_darwin/darwin
   FlutterMacOS:
     :path: Flutter/ephemeral
-  mobile_scanner:
-    :path: Flutter/ephemeral/.symlinks/plugins/mobile_scanner/darwin
   rust_lib_zcash_wallet:
     :path: Flutter/ephemeral/.symlinks/plugins/rust_lib_zcash_wallet/macos
   screen_retriever_macos:
@@ -55,7 +49,6 @@ SPEC CHECKSUMS:
   desktop_window_bootstrap: 4dcde2e9c6df76755b31c7b494b047bfb90ed74d
   flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
-  mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
   rust_lib_zcash_wallet: e6239745a9c854f6b4aa85577092ca55b5e78f3b
   screen_retriever_macos: 452e51764a9e1cdb74b3c541238795849f21557f
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb

@@ -151,12 +151,6 @@ class _SettingsSeedPhraseScreenState
         return;
       }
 
-      if (activeAccount.isHardware) {
-        throw const _SeedPhraseUnavailableException(
-          'Secret passphrase is not available for hardware accounts.',
-        );
-      }
-
       final mnemonic = await ref
           .read(accountProvider.notifier)
           .getMnemonicForAccount(activeAccountUuid);

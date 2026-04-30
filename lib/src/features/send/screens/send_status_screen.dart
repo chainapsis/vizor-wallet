@@ -22,7 +22,6 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
-import '../../../services/keystone_transport.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/transaction_receipt_view.dart';
 import 'send_review_screen.dart';
@@ -285,14 +284,6 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     showAppToast(context, 'Address Copied');
   }
 
-  Future<Uint8List> _signWithTransport(
-    KeystoneTransport transport,
-    Uint8List redactedPczt,
-  ) {
-    final signingContext = context;
-    return transport.signPczt(signingContext, redactedPczt);
-  }
-
   Future<bool> _abortIfUnmounted() async {
     if (mounted) return false;
     if (!_proposalConsumed && !_discardScheduled) {
@@ -360,85 +351,29 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       }
 
       final accountNotifier = ref.read(accountProvider.notifier);
-      final isHardware = accountNotifier.isHardwareAccount(
+      final mnemonic = await accountNotifier.getMnemonicForAccount(
         widget.args.proposalAccountUuid,
       );
-
-      late final String txid;
-      if (isHardware) {
-        log(
-          'SendStatus: creating PCZT from proposal ${widget.args.proposalId}',
-        );
-        final pcztBytes = await rust_sync.createPcztFromProposal(
-          dbPath: dbPath,
-          network: endpoint.networkName,
-          proposalId: widget.args.proposalId,
-          sendFlowId: widget.args.sendFlowId,
-        );
-        _proposalConsumed = true;
-
-        final pcztWithProofs = await rust_sync.addProofsToPczt(
-          pcztBytes: pcztBytes,
-          spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
-          outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
-        );
-        final redactedPczt = await rust_sync.redactPcztForSigner(
-          pcztBytes: pcztBytes,
-        );
-
+      if (mnemonic == null) {
         if (await _abortIfUnmounted()) return;
-        final dialogContext = context;
-        // ignore: use_build_context_synchronously
-        final transport = await KeystoneTransport.select(dialogContext);
-        if (transport == null) {
-          if (await _abortIfUnmounted()) return;
-          setState(() {
-            _phase = _SendStatusPhase.failed;
-            _error =
-                'Signing was cancelled before the transaction was broadcast.';
-          });
-          return;
-        }
-
-        if (await _abortIfUnmounted()) return;
-        final pcztWithSignatures = await _signWithTransport(
-          transport,
-          redactedPczt,
-        );
-        txid = await rust_sync.extractAndBroadcastPczt(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
-          pcztWithProofsBytes: pcztWithProofs,
-          pcztWithSignaturesBytes: pcztWithSignatures,
-          spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
-          outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
-        );
-      } else {
-        final mnemonic = await accountNotifier.getMnemonicForAccount(
-          widget.args.proposalAccountUuid,
-        );
-        if (mnemonic == null) {
-          if (await _abortIfUnmounted()) return;
-          setState(() {
-            _phase = _SendStatusPhase.failed;
-            _error = 'Mnemonic not found for the proposal account.';
-          });
-          return;
-        }
-
-        final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
-        txid = await rust_sync.executeProposal(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          proposalId: widget.args.proposalId,
-          sendFlowId: widget.args.sendFlowId,
-          seed: seedBytes,
-          spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
-          outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
-        );
-        _proposalConsumed = true;
+        setState(() {
+          _phase = _SendStatusPhase.failed;
+          _error = 'Mnemonic not found for the proposal account.';
+        });
+        return;
       }
+
+      final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
+      final txid = await rust_sync.executeProposal(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        proposalId: widget.args.proposalId,
+        sendFlowId: widget.args.sendFlowId,
+        seed: seedBytes,
+        spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
+        outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
+      );
+      _proposalConsumed = true;
 
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();
