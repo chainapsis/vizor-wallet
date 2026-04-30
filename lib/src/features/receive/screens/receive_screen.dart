@@ -3,13 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart'
-    show
-        CircularProgressIndicator,
-        Material,
-        MaterialType,
-        ScaffoldMessenger,
-        SnackBar,
-        Theme;
+    show CircularProgressIndicator, ScaffoldMessenger, SnackBar, Theme;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +18,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
@@ -46,6 +41,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
   String? _errorText;
   String? _transparentErrorText;
   String? _transparentLoadingAccountUuid;
+  _ReceiveAddressType? _infoDialogType;
   bool _isLoading = true;
   bool _isLoadingTransparent = false;
   bool _isRenewingShielded = false;
@@ -243,6 +239,15 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     };
   }
 
+  void _showAddressInfo(_ReceiveAddressType type) {
+    setState(() => _infoDialogType = type);
+  }
+
+  void _dismissAddressInfo() {
+    if (_infoDialogType == null) return;
+    setState(() => _infoDialogType = null);
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen(accountProvider, (previous, next) {
@@ -258,53 +263,46 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         ? _isLoading
         : _isLoadingTransparent;
     final selectedErrorText = isShielded ? _errorText : _transparentErrorText;
+    final infoDialogType = _infoDialogType;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: _ReceivePane(
-          selectedType: _selectedType,
-          address: address,
-          errorText: selectedErrorText,
-          isLoading: isLoadingSelectedAddress,
-          isRenewingShielded: _isRenewingShielded,
-          onBack: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/home');
-            }
-          },
-          onTypeChanged: _selectAddressType,
-          onRenewShielded: isShielded ? _renewShieldedAddress : null,
-          onCopy: _copySelectedAddress,
-          onShowHelp: () => _showAddressInfo(context, _selectedType),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _ReceivePane(
+              selectedType: _selectedType,
+              address: address,
+              errorText: selectedErrorText,
+              isLoading: isLoadingSelectedAddress,
+              isRenewingShielded: _isRenewingShielded,
+              onBack: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go('/home');
+                }
+              },
+              onTypeChanged: _selectAddressType,
+              onRenewShielded: isShielded ? _renewShieldedAddress : null,
+              onCopy: _copySelectedAddress,
+              onShowHelp: () => _showAddressInfo(_selectedType),
+            ),
+            if (infoDialogType != null)
+              AppPaneModalOverlay(
+                onDismiss: _dismissAddressInfo,
+                child: _ReceiveInfoDialog(
+                  type: infoDialogType,
+                  onClose: _dismissAddressInfo,
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
-}
-
-Future<void> _showAddressInfo(BuildContext context, _ReceiveAddressType type) {
-  return showGeneralDialog<void>(
-    context: context,
-    barrierDismissible: true,
-    barrierLabel: 'Close',
-    barrierColor: context.colors.background.neutralScrim,
-    transitionDuration: const Duration(milliseconds: 140),
-    pageBuilder: (context, _, _) => _ReceiveInfoDialog(type: type),
-    transitionBuilder: (context, animation, _, child) {
-      final curved = CurvedAnimation(parent: animation, curve: Curves.easeOut);
-      return FadeTransition(
-        opacity: curved,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 0.98, end: 1).animate(curved),
-          child: child,
-        ),
-      );
-    },
-  );
 }
 
 class _ReceivePane extends StatelessWidget {
@@ -776,9 +774,12 @@ class _ReceiveTab extends StatelessWidget {
               children: [
                 AppIcon(iconName, size: AppIconSize.medium, color: color),
                 const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  label,
-                  style: AppTypography.labelLarge.copyWith(color: color),
+                Flexible(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(color: color),
+                  ),
                 ),
               ],
             ),
@@ -1312,9 +1313,10 @@ class _CopyAddressButton extends StatelessWidget {
 }
 
 class _ReceiveInfoDialog extends StatelessWidget {
-  const _ReceiveInfoDialog({required this.type});
+  const _ReceiveInfoDialog({required this.type, required this.onClose});
 
   final _ReceiveAddressType type;
+  final VoidCallback onClose;
 
   bool get _isShielded => type == _ReceiveAddressType.shielded;
 
@@ -1346,84 +1348,80 @@ class _ReceiveInfoDialog extends StatelessWidget {
                   'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
             ),
             _InfoItemData(
-              iconName: AppIcons.transparentBalance,
+              iconName: AppIcons.dragon,
               text:
                   'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
             ),
             _InfoItemData(
-              iconName: AppIcons.shieldKeyholeOutline,
+              iconName: AppIcons.shieldAsset,
               text:
                   'After receiving ZEC to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.',
             ),
           ];
 
-    return Material(
-      type: MaterialType.transparency,
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Center(
-          child: Container(
-            width: 312,
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: colors.background.ground,
-              borderRadius: BorderRadius.circular(AppRadii.large),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
+    return Container(
+      width: 312,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              _InfoHeaderIcon(
+                iconName: _isShielded
+                    ? AppIcons.shieldKeyhole
+                    : AppIcons.transparentBalance,
+                filled: _isShielded,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _InfoHeaderIcon(
-                      iconName: _isShielded
-                          ? AppIcons.shieldKeyhole
-                          : AppIcons.transparentBalance,
-                      filled: _isShielded,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _isShielded
-                              ? 'Shielded Address'
-                              : 'Transparent Address',
-                          style: AppTypography.bodyMediumStrong.copyWith(
-                            color: colors.text.accent,
-                          ),
-                        ),
-                        Text(
-                          _isShielded
-                              ? 'Strong privacy by default.'
-                              : 'Publicly visible',
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.secondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Column(
-                  children: [
-                    for (final item in items)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                        child: _InfoItem(
-                          iconName: item.iconName,
-                          text: item.text,
-                          successIcon: _isShielded,
-                        ),
+                    Text(
+                      _isShielded ? 'Shielded Address' : 'Transparent Address',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.accent,
                       ),
+                    ),
+                    Text(
+                      _isShielded
+                          ? 'Strong privacy by default.'
+                          : 'Publicly visible',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                _DialogCloseButton(onTap: () => Navigator.of(context).pop()),
-              ],
-            ),
+              ),
+            ],
           ),
-        ),
+          const SizedBox(height: AppSpacing.md),
+          Column(
+            children: [
+              for (final item in items)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                  child: _InfoItem(
+                    iconName: item.iconName,
+                    text: item.text,
+                    successIcon: _isShielded,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          _DialogCloseButton(onTap: onClose),
+        ],
       ),
     );
   }

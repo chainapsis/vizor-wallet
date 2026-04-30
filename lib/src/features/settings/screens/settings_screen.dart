@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -13,6 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -109,7 +108,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             if (_activeModal != null)
-              _SettingsModalOverlay(
+              AppPaneModalOverlay(
                 onDismiss: _closeModal,
                 child: switch (_activeModal!) {
                   _SettingsModalType.accountName => _AccountNameModal(
@@ -366,59 +365,6 @@ class _SettingsList extends StatelessWidget {
           ],
         ),
       ],
-    );
-  }
-}
-
-class _SettingsModalOverlay extends StatelessWidget {
-  const _SettingsModalOverlay({required this.child, required this.onDismiss});
-
-  final Widget child;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return Positioned.fill(
-      child: PopScope<void>(
-        canPop: false,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) onDismiss();
-        },
-        child: Focus(
-          autofocus: true,
-          onKeyEvent: (_, event) {
-            if (event is KeyDownEvent &&
-                event.logicalKey == LogicalKeyboardKey.escape) {
-              onDismiss();
-              return KeyEventResult.handled;
-            }
-            return KeyEventResult.ignored;
-          },
-          child: ClipRect(
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onDismiss,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colors.background.neutralScrim,
-                  ),
-                  child: Center(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {},
-                      child: child,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

@@ -1,10 +1,9 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
 
 class ImportBirthdayCalendarOverlay extends StatefulWidget {
   const ImportBirthdayCalendarOverlay({
@@ -165,101 +164,83 @@ class _ImportBirthdayCalendarOverlayState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: widget.onDismiss,
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-              child: ColoredBox(color: colors.background.neutralScrim),
-            ),
-          ),
+    return AppPaneModalOverlay(
+      onDismiss: widget.onDismiss,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.background.ground,
+          borderRadius: BorderRadius.circular(AppRadii.large),
         ),
-        Center(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {},
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: colors.background.ground,
-                borderRadius: BorderRadius.circular(AppRadii.large),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.sm),
-                child: SizedBox(
-                  width: _panelWidth - AppSpacing.sm * 2,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: SizedBox(
+            width: _panelWidth - AppSpacing.sm * 2,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  height: 32,
+                  child: Row(
                     children: [
-                      SizedBox(
-                        height: 32,
-                        child: Row(
-                          children: [
-                            _CalendarTitle(
-                              label: _titleLabel,
-                              onTap: _handleTitleTap,
-                            ),
-                            const Spacer(),
-                            _CalendarNavButton(
-                              iconName: AppIcons.chevronBackward,
-                              enabled: _canGoPrevious,
-                              onTap: _showPreviousPeriod,
-                            ),
-                            _CalendarNavButton(
-                              iconName: AppIcons.chevronForward,
-                              enabled: _canGoNext,
-                              onTap: _showNextPeriod,
-                            ),
-                          ],
-                        ),
+                      _CalendarTitle(
+                        label: _titleLabel,
+                        onTap: _handleTitleTap,
                       ),
-                      const SizedBox(height: AppSpacing.xs),
-                      const AppDecorativeDivider(width: _calendarWidth),
-                      const SizedBox(height: AppSpacing.xs),
-                      ...switch (_selectionMode) {
-                        _CalendarSelectionMode.day => [
-                          _WeekdayRow(weekdays: _weekdays),
-                          _DayGrid(
-                            visibleMonth: _visibleMonth,
-                            selectedDate: widget.selectedDate,
-                            firstDate: widget.firstDate,
-                            lastDate: widget.lastDate,
-                            cellSize: _cellSize,
-                            onDateSelected: widget.onDateSelected,
-                          ),
-                        ],
-                        _CalendarSelectionMode.month => [
-                          _MonthGrid(
-                            visibleYear: _visibleMonth.year,
-                            selectedMonth: widget.selectedDate ?? _visibleMonth,
-                            firstMonth: _firstMonth,
-                            lastMonth: _lastMonth,
-                            width: _calendarWidth,
-                            onMonthSelected: _selectMonth,
-                          ),
-                        ],
-                        _CalendarSelectionMode.year => [
-                          _YearGrid(
-                            pageStartYear: _visibleYearPageStart,
-                            selectedYear:
-                                (widget.selectedDate ?? _visibleMonth).year,
-                            firstYear: _firstMonth.year,
-                            lastYear: _lastMonth.year,
-                            width: _calendarWidth,
-                            onYearSelected: _selectYear,
-                          ),
-                        ],
-                      },
+                      const Spacer(),
+                      _CalendarNavButton(
+                        iconName: AppIcons.chevronBackward,
+                        enabled: _canGoPrevious,
+                        onTap: _showPreviousPeriod,
+                      ),
+                      _CalendarNavButton(
+                        iconName: AppIcons.chevronForward,
+                        enabled: _canGoNext,
+                        onTap: _showNextPeriod,
+                      ),
                     ],
                   ),
                 ),
-              ),
+                const SizedBox(height: AppSpacing.xs),
+                const AppDecorativeDivider(width: _calendarWidth),
+                const SizedBox(height: AppSpacing.xs),
+                ...switch (_selectionMode) {
+                  _CalendarSelectionMode.day => [
+                    _WeekdayRow(weekdays: _weekdays),
+                    _DayGrid(
+                      visibleMonth: _visibleMonth,
+                      selectedDate: widget.selectedDate,
+                      firstDate: widget.firstDate,
+                      lastDate: widget.lastDate,
+                      cellSize: _cellSize,
+                      onDateSelected: widget.onDateSelected,
+                    ),
+                  ],
+                  _CalendarSelectionMode.month => [
+                    _MonthGrid(
+                      visibleYear: _visibleMonth.year,
+                      selectedMonth: widget.selectedDate ?? _visibleMonth,
+                      firstMonth: _firstMonth,
+                      lastMonth: _lastMonth,
+                      width: _calendarWidth,
+                      onMonthSelected: _selectMonth,
+                    ),
+                  ],
+                  _CalendarSelectionMode.year => [
+                    _YearGrid(
+                      pageStartYear: _visibleYearPageStart,
+                      selectedYear: (widget.selectedDate ?? _visibleMonth).year,
+                      firstYear: _firstMonth.year,
+                      lastYear: _lastMonth.year,
+                      width: _calendarWidth,
+                      onYearSelected: _selectYear,
+                    ),
+                  ],
+                },
+              ],
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 }
