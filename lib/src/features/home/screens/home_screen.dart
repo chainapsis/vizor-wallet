@@ -555,13 +555,20 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
     );
   }
 
-  BoxDecoration _shieldBalanceHoverDecoration(AppColors colors) {
+  BoxDecoration _shieldBalanceHoverDecoration({
+    required AppColors colors,
+    required double progress,
+  }) {
+    const minRadius = 0.64;
+    const maxRadius = 1.45;
+    final radius = minRadius + (maxRadius - minRadius) * progress;
+
     return BoxDecoration(
       gradient: RadialGradient(
         center: const Alignment(0.86, 0.80),
-        radius: 1.45,
+        radius: radius,
         colors: [
-          colors.button.primary.bg,
+          colors.button.primary.bg.withValues(alpha: progress),
           colors.button.primary.bg.withValues(alpha: 0),
         ],
         stops: const [0.19, 1.0],
@@ -657,15 +664,20 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
                       children: [
                         Positioned.fill(
                           child: IgnorePointer(
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 120),
-                              curve: Curves.easeOut,
-                              opacity: isShieldBalanceHoverActive ? 1.0 : 0.0,
-                              child: DecoratedBox(
-                                decoration: _shieldBalanceHoverDecoration(
-                                  colors,
-                                ),
+                            child: TweenAnimationBuilder<double>(
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOutCubic,
+                              tween: Tween<double>(
+                                end: isShieldBalanceHoverActive ? 1.0 : 0.0,
                               ),
+                              builder: (context, hoverProgress, _) {
+                                return DecoratedBox(
+                                  decoration: _shieldBalanceHoverDecoration(
+                                    colors: colors,
+                                    progress: hoverProgress,
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ),
