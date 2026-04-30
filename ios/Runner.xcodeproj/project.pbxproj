@@ -20,6 +20,7 @@
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		8108A5A50BC98B3D741F1711 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8FED55156EBDEE425125AD2C /* Pods_Runner.framework */; };
 		8A0F5C512F8B001200A1C001 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 8A0F5C502F8B001200A1C001 /* AppIcon.icon */; };
+		9F6D0C6B2F82A11100ABC001 /* RpcEndpointConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F6D0C6B2F82A11100ABC002 /* RpcEndpointConfigStore.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
@@ -96,6 +97,7 @@
 		249021D5217E4FDB00AE95B9 /* Profile.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Profile.xcconfig; path = Flutter/Profile.xcconfig; sourceTree = "<group>"; };
 		8FED55156EBDEE425125AD2C /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A0F5C502F8B001200A1C001 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		9F6D0C6B2F82A11100ABC002 /* RpcEndpointConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RpcEndpointConfigStore.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
 		97C146EE1CF9000F007C117D /* Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Runner.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -247,6 +249,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				BGSYNC000ED2DC5600515810 /* BackgroundSyncManager.swift */,
 				5736417D0A4E184E8572693A /* WalletPathResolver.swift */,
+				9F6D0C6B2F82A11100ABC002 /* RpcEndpointConfigStore.swift */,
 				SYNCPSH00ED2DC5600515810 /* SyncProgressStreamHandler.swift */,
 				ZSYNC000ED2DC5600515810 /* zcash_sync.h */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
@@ -515,6 +518,7 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				BGSYNC001ED2DC5600515810 /* BackgroundSyncManager.swift in Sources */,
 				5736417E0A4E184E8572693A /* WalletPathResolver.swift in Sources */,
+				9F6D0C6B2F82A11100ABC001 /* RpcEndpointConfigStore.swift in Sources */,
 				SYNCPSH01ED2DC5600515810 /* SyncProgressStreamHandler.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
