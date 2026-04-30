@@ -87,12 +87,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
 
       final accountNotifier = ref.read(accountProvider.notifier);
-      if (accountNotifier.isHardwareAccount(accountUuid)) {
-        throw Exception(
-          'Shielding transparent balance is only available for software accounts.',
-        );
-      }
-
       final sync = ref.read(syncProvider).value ?? SyncState();
       if (!sync.canShieldTransparentBalance) {
         throw Exception(
@@ -143,9 +137,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _friendlyShieldBalanceError(Object error) {
     final message = error.toString();
     final lower = message.toLowerCase();
-    if (lower.contains('hardware')) {
-      return 'Shield balance is only available for software accounts.';
-    }
     if (lower.contains('mnemonic')) {
       return 'Mnemonic not found for the active account.';
     }

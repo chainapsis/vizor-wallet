@@ -44,11 +44,6 @@ dependencies:
   grpc: ^5.1.0
   protobuf: ^6.0.0
   fixnum: ^1.1.1
-  qr_flutter: ^4.1.0
-  mobile_scanner:
-    git:
-      url: https://github.com/chainapsis/mobile_scanner.git
-      ref: 8b4395ce9a9e862ecfd87fba33ff3e022c9e17df
   desktop_window_bootstrap:
     git:
       url: https://github.com/chainapsis/desktop_window_bootstrap.git
