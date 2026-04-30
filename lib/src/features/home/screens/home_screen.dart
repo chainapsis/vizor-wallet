@@ -491,7 +491,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
   }
 }
 
-class _HomeBalanceCard extends StatelessWidget {
+class _HomeBalanceCard extends StatefulWidget {
   const _HomeBalanceCard({
     required this.shieldedBalanceText,
     required this.transparentBalanceText,
@@ -512,6 +512,13 @@ class _HomeBalanceCard extends StatelessWidget {
   final VoidCallback onTogglePrivacyMode;
   final VoidCallback onShieldBalancePressed;
 
+  @override
+  State<_HomeBalanceCard> createState() => _HomeBalanceCardState();
+}
+
+class _HomeBalanceCardState extends State<_HomeBalanceCard> {
+  bool _isShieldBalanceHovered = false;
+
   static const _shieldedCardHeight = 216.0;
   static const _transparentStripHeight = 56.0;
   static const _shieldedCardBorderWidth = 1.5;
@@ -521,25 +528,82 @@ class _HomeBalanceCard extends StatelessWidget {
   static const _actionButtonMinWidth = 196.0;
 
   @override
+  void didUpdateWidget(covariant _HomeBalanceCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_isShieldBalanceHovered &&
+        (!widget.hasTransparentBalance ||
+            !widget.canShieldBalance ||
+            widget.isShieldingBalance)) {
+      _isShieldBalanceHovered = false;
+    }
+  }
+
+  void _handleShieldBalanceHoverChanged(bool hovered) {
+    if (_isShieldBalanceHovered == hovered) return;
+    setState(() {
+      _isShieldBalanceHovered = hovered;
+    });
+  }
+
+  BoxDecoration _homeCardDecoration({
+    required AppColors colors,
+    required BorderRadius borderRadius,
+  }) {
+    return BoxDecoration(
+      color: colors.background.homeCard,
+      borderRadius: borderRadius,
+    );
+  }
+
+  BoxDecoration _shieldBalanceHoverDecoration(AppColors colors) {
+    return BoxDecoration(
+      gradient: RadialGradient(
+        center: const Alignment(0.86, 0.80),
+        radius: 1.45,
+        colors: [
+          colors.button.primary.bg,
+          colors.button.primary.bg.withValues(alpha: 0),
+        ],
+        stops: const [0.19, 1.0],
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final displayedShieldedBalance = hideIfPrivacyMode(
-      '$shieldedBalanceText zec',
-      privacyModeEnabled: privacyModeEnabled,
+      '${widget.shieldedBalanceText} zec',
+      privacyModeEnabled: widget.privacyModeEnabled,
       suffix: ' zec',
     );
     final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final targetStripHeight = hasTransparentBalance
+    final targetStripHeight = widget.hasTransparentBalance
         ? _transparentStripHeight
         : 0.0;
-    final transparentStrip = hasTransparentBalance
+    final isShieldBalanceHoverActive =
+        widget.canShieldBalance &&
+        !widget.isShieldingBalance &&
+        _isShieldBalanceHovered;
+    final shieldBalanceContentColor = isShieldBalanceHoverActive
+        ? colors.button.primary.label
+        : widget.canShieldBalance
+        ? colors.text.homeCard
+        : colors.text.secondary.withValues(alpha: 0.64);
+    final shieldBalanceChevronColor = isShieldBalanceHoverActive
+        ? colors.background.utilitySuccessStrong
+        : shieldBalanceContentColor;
+    final transparentStrip = widget.hasTransparentBalance
         ? _HomeTransparentBalanceStrip(
             key: const ValueKey('transparent-balance-strip'),
-            balanceText: transparentBalanceText,
-            canShieldBalance: canShieldBalance,
-            isShieldingBalance: isShieldingBalance,
-            privacyModeEnabled: privacyModeEnabled,
-            onShieldBalancePressed: onShieldBalancePressed,
+            balanceText: widget.transparentBalanceText,
+            canShieldBalance: widget.canShieldBalance,
+            isShieldingBalance: widget.isShieldingBalance,
+            privacyModeEnabled: widget.privacyModeEnabled,
+            shieldBalanceContentColor: shieldBalanceContentColor,
+            shieldBalanceChevronColor: shieldBalanceChevronColor,
+            onShieldBalancePressed: widget.onShieldBalancePressed,
+            onShieldBalanceHoverChanged: _handleShieldBalanceHoverChanged,
           )
         : const SizedBox.shrink(key: ValueKey('transparent-balance-empty'));
 
@@ -568,18 +632,22 @@ class _HomeBalanceCard extends StatelessWidget {
 
         return ClipRRect(
           borderRadius: outerCardBorderRadius,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: colors.background.homeCard,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOut,
+            decoration: _homeCardDecoration(
+              colors: colors,
               borderRadius: outerCardBorderRadius,
             ),
             child: Padding(
               padding: const EdgeInsets.all(_outerCardPadding),
               child: ClipRRect(
                 borderRadius: innerCardBorderRadius,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colors.background.homeCard,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  curve: Curves.easeOut,
+                  decoration: _homeCardDecoration(
+                    colors: colors,
                     borderRadius: innerCardBorderRadius,
                   ),
                   child: SizedBox(
@@ -587,6 +655,20 @@ class _HomeBalanceCard extends StatelessWidget {
                     child: Stack(
                       clipBehavior: Clip.hardEdge,
                       children: [
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: AnimatedOpacity(
+                              duration: const Duration(milliseconds: 120),
+                              curve: Curves.easeOut,
+                              opacity: isShieldBalanceHoverActive ? 1.0 : 0.0,
+                              child: DecoratedBox(
+                                decoration: _shieldBalanceHoverDecoration(
+                                  colors,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                         Positioned(
                           left: 0,
                           top: 0,
@@ -741,10 +823,12 @@ class _HomeBalanceCard extends StatelessWidget {
                                               ),
                                               const Spacer(),
                                               _IconPillButton(
-                                                iconName: privacyModeEnabled
+                                                iconName:
+                                                    widget.privacyModeEnabled
                                                     ? AppIcons.eyeClosed
                                                     : AppIcons.eye,
-                                                onPressed: onTogglePrivacyMode,
+                                                onPressed:
+                                                    widget.onTogglePrivacyMode,
                                               ),
                                             ],
                                           ),
@@ -858,7 +942,10 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
     required this.canShieldBalance,
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
+    required this.shieldBalanceContentColor,
+    required this.shieldBalanceChevronColor,
     required this.onShieldBalancePressed,
+    required this.onShieldBalanceHoverChanged,
     super.key,
   });
 
@@ -866,7 +953,10 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
   final bool canShieldBalance;
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
+  final Color shieldBalanceContentColor;
+  final Color shieldBalanceChevronColor;
   final VoidCallback onShieldBalancePressed;
+  final ValueChanged<bool> onShieldBalanceHoverChanged;
 
   static const _itemGap = 10.0;
 
@@ -877,51 +967,62 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
       '$balanceText ZEC',
       privacyModeEnabled: privacyModeEnabled,
     );
+    final canHoverShieldBalance = canShieldBalance && !isShieldingBalance;
 
     return SizedBox(
       height: 56,
-      child: ColoredBox(
-        color: colors.background.homeCard,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.s),
-          child: Row(
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.xxs),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AppIcon(
-                        AppIcons.transparentBalance,
-                        size: 16,
-                        color: colors.text.homeCard,
-                      ),
-                      const SizedBox(width: AppSpacing.xxs),
-                      Flexible(
-                        child: Text(
-                          'Transparent balance: $displayedBalance',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.homeCard,
-                          ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.s),
+        child: Row(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.xxs),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppIcon(
+                      AppIcons.transparentBalance,
+                      size: 16,
+                      color: colors.text.homeCard,
+                    ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    Flexible(
+                      child: Text(
+                        'Transparent balance: $displayedBalance',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.homeCard,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-              if (canShieldBalance || isShieldingBalance) ...[
-                const SizedBox(width: _itemGap),
-                _HomeShieldBalanceButton(
+            ),
+            if (canShieldBalance || isShieldingBalance) ...[
+              const SizedBox(width: _itemGap),
+              MouseRegion(
+                cursor: canHoverShieldBalance
+                    ? SystemMouseCursors.click
+                    : SystemMouseCursors.basic,
+                onEnter: canHoverShieldBalance
+                    ? (_) => onShieldBalanceHoverChanged(true)
+                    : null,
+                onExit: canHoverShieldBalance
+                    ? (_) => onShieldBalanceHoverChanged(false)
+                    : null,
+                child: _HomeShieldBalanceButton(
                   enabled: canShieldBalance,
                   isLoading: isShieldingBalance,
+                  contentColor: shieldBalanceContentColor,
+                  chevronColor: shieldBalanceChevronColor,
                   onPressed: onShieldBalancePressed,
                 ),
-              ],
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -932,20 +1033,20 @@ class _HomeShieldBalanceButton extends StatelessWidget {
   const _HomeShieldBalanceButton({
     required this.enabled,
     required this.isLoading,
+    required this.contentColor,
+    required this.chevronColor,
     required this.onPressed,
   });
 
   final bool enabled;
   final bool isLoading;
+  final Color contentColor;
+  final Color chevronColor;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final isInteractive = enabled && !isLoading;
-    final contentColor = enabled
-        ? colors.text.homeCard
-        : colors.text.secondary.withValues(alpha: 0.64);
 
     return Semantics(
       button: true,
@@ -982,7 +1083,7 @@ class _HomeShieldBalanceButton extends StatelessWidget {
                     AppIcon(
                       AppIcons.chevronForward,
                       size: 16,
-                      color: contentColor,
+                      color: chevronColor,
                     ),
                 ],
               ),
