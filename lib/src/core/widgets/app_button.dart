@@ -155,6 +155,7 @@ class AppButton extends StatefulWidget {
     this.leading,
     this.trailing,
     this.minWidth,
+    this.focusRingColor,
     this.focusNode,
     this.autofocus = false,
   });
@@ -181,6 +182,9 @@ class AppButton extends StatefulWidget {
   /// intrinsic — content drives size. Callers opt in to a floor when a
   /// specific screen or layout demands a consistent button width.
   final double? minWidth;
+
+  /// Optional focus ring color override for one-off surface-specific cases.
+  final Color? focusRingColor;
 
   final FocusNode? focusNode;
   final bool autofocus;
@@ -308,6 +312,7 @@ class _AppButtonState extends State<AppButton> {
     );
 
     final focusRingWidth = widget.size == AppButtonSize.small ? 1.5 : 2.0;
+    final focusRingColor = widget.focusRingColor ?? palette.focusRing;
     final focusRingOutset = switch (widget.variant) {
       AppButtonVariant.primary =>
         widget.size == AppButtonSize.large ? 3.5 : 3.0,
@@ -337,7 +342,7 @@ class _AppButtonState extends State<AppButton> {
                 decoration: ShapeDecoration(
                   shape: StadiumBorder(
                     side: BorderSide(
-                      color: palette.focusRing,
+                      color: focusRingColor,
                       width: focusRingWidth,
                       strokeAlign: BorderSide.strokeAlignOutside,
                     ),

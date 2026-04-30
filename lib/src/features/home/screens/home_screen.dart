@@ -780,6 +780,12 @@ class _HomeBalanceCard extends StatelessWidget {
                                                 variant:
                                                     AppButtonVariant.secondary,
                                                 minWidth: _actionButtonMinWidth,
+                                                focusRingColor: isDark
+                                                    ? null
+                                                    : colors
+                                                          .button
+                                                          .secondary
+                                                          .bg,
                                                 leading: const AppIcon(
                                                   AppIcons.arrowDownCircle,
                                                 ),
