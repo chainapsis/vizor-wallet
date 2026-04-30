@@ -12,11 +12,18 @@ class TransactionReceiptBlockData {
     required this.title,
     required this.child,
     this.onCopy,
-  });
+    this.titleTrailing,
+  }) : assert(
+         onCopy == null || titleTrailing == null,
+         'Use either onCopy or titleTrailing, not both.',
+       );
 
   final String title;
   final Widget child;
   final VoidCallback? onCopy;
+
+  /// Optional right-side title action. Mutually exclusive with [onCopy].
+  final Widget? titleTrailing;
 }
 
 class TransactionReceiptView extends StatelessWidget {
@@ -30,6 +37,8 @@ class TransactionReceiptView extends StatelessWidget {
     this.error,
     this.failureFallbackText = 'Transaction failed',
     this.useFailedReceiptLayout = false,
+    this.showPrimaryCopyAction = false,
+    this.pinActionsToBottom = false,
     this.onTransactionHashPressed,
     this.onBackToWallet,
     super.key,
@@ -44,6 +53,11 @@ class TransactionReceiptView extends StatelessWidget {
   final String? error;
   final String failureFallbackText;
   final bool useFailedReceiptLayout;
+  final bool showPrimaryCopyAction;
+
+  /// Expands the receipt to its bounded parent height and pins the action
+  /// stack to the bottom. Do not use inside an unbounded vertical scroll view.
+  final bool pinActionsToBottom;
   final VoidCallback? onTransactionHashPressed;
   final VoidCallback? onBackToWallet;
 
@@ -51,72 +65,170 @@ class TransactionReceiptView extends StatelessWidget {
   Widget build(BuildContext context) {
     final showFailedReceipt =
         useFailedReceiptLayout && phase == TransactionReceiptPhase.failed;
+    final content = SizedBox(
+      width: 328,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _TransactionReceiptHeadline(
+            phase: phase,
+            amountText: amountText,
+            useFailedReceiptLayout: showFailedReceipt,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _TransactionReceiptBlock(
+            title: primaryBlock.title,
+            onCopy: showFailedReceipt || showPrimaryCopyAction
+                ? primaryBlock.onCopy
+                : null,
+            titleTrailing: primaryBlock.titleTrailing,
+            child: primaryBlock.child,
+          ),
+          for (final block in extraBlocks) ...[
+            const SizedBox(height: AppSpacing.md),
+            _TransactionReceiptBlock(
+              title: block.title,
+              onCopy: block.onCopy,
+              titleTrailing: block.titleTrailing,
+              child: block.child,
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: _TransactionReceiptBlock(
+                  title: 'Date',
+                  child: Text(
+                    dateText,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: context.colors.text.accent,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: _TransactionReceiptBlock(
+                  title: 'Tx Fee',
+                  child: Text(
+                    feeText,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: context.colors.text.accent,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    final actions = showFailedReceipt
+        ? null
+        : SizedBox(width: 256, child: _TransactionReceiptActions(view: this));
+
+    if (pinActionsToBottom) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Align(alignment: Alignment.centerLeft, child: content),
+          ),
+          if (actions != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            actions,
+          ],
+        ],
+      );
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 328,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _TransactionReceiptHeadline(
-                phase: phase,
-                amountText: amountText,
-                useFailedReceiptLayout: showFailedReceipt,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _TransactionReceiptBlock(
-                title: primaryBlock.title,
-                onCopy: showFailedReceipt ? primaryBlock.onCopy : null,
-                child: primaryBlock.child,
-              ),
-              for (final block in extraBlocks) ...[
-                const SizedBox(height: AppSpacing.md),
-                _TransactionReceiptBlock(
-                  title: block.title,
-                  child: block.child,
-                ),
-              ],
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: _TransactionReceiptBlock(
-                      title: 'Date',
-                      child: Text(
-                        dateText,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: context.colors.text.accent,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: _TransactionReceiptBlock(
-                      title: 'Tx Fee',
-                      child: Text(
-                        feeText,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: context.colors.text.accent,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        if (!showFailedReceipt) ...[
+        content,
+        if (actions != null) ...[
           const SizedBox(height: AppSpacing.md),
-          SizedBox(width: 256, child: _TransactionReceiptActions(view: this)),
+          actions,
         ],
       ],
+    );
+  }
+}
+
+class TransactionReceiptMessageText extends StatelessWidget {
+  const TransactionReceiptMessageText({
+    required this.memo,
+    required this.expanded,
+    this.expandedMaxHeight = 156,
+    super.key,
+  });
+
+  final String memo;
+  final bool expanded;
+
+  /// Figma's expanded message body height; matches the send preview receipt.
+  final double expandedMaxHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(
+      memo,
+      maxLines: expanded ? null : 3,
+      overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+      style: AppTypography.bodyMedium.copyWith(
+        color: context.colors.text.accent,
+      ),
+    );
+
+    if (!expanded) return text;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: expandedMaxHeight),
+      child: SingleChildScrollView(child: text),
+    );
+  }
+}
+
+class TransactionReceiptMessageToggle extends StatelessWidget {
+  const TransactionReceiptMessageToggle({
+    required this.expanded,
+    required this.onTap,
+    super.key,
+  });
+
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              expanded ? 'Collapse' : 'Expand',
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xxs),
+            AppIcon(
+              expanded ? AppIcons.collapsed : AppIcons.expand,
+              size: AppIconSize.medium,
+              color: colors.icon.regular,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -162,11 +274,23 @@ class TransactionReceiptAddressText extends StatelessWidget {
   const TransactionReceiptAddressText({
     required this.address,
     this.highlightEdges = false,
+    this.compact = false,
+    this.highlightColor,
     super.key,
   });
 
+  static const _prefixHighlightLength = 6;
+  static const _compactLeadingPlainLength = 33;
+  static const _compactTrailingPlainLength = 33;
+  static const _suffixHighlightLength = 5;
+
   final String address;
   final bool highlightEdges;
+
+  /// Shortens long shielded-style addresses to the two-line memo layout.
+  /// Shorter addresses keep the regular full-address rendering.
+  final bool compact;
+  final Color? highlightColor;
 
   @override
   Widget build(BuildContext context) {
@@ -180,25 +304,61 @@ class TransactionReceiptAddressText extends StatelessWidget {
       return Text(trimmed, style: baseStyle);
     }
 
-    const prefixLength = 6;
-    const suffixLength = 5;
-    final middle = trimmed.substring(
-      prefixLength,
-      trimmed.length - suffixLength,
+    final highlightStyle = baseStyle.copyWith(
+      color: highlightColor ?? colors.text.destructive,
     );
-    final highlightStyle = baseStyle.copyWith(color: colors.text.destructive);
+
+    if (compact &&
+        trimmed.length >
+            _prefixHighlightLength +
+                _compactLeadingPlainLength +
+                _compactTrailingPlainLength +
+                _suffixHighlightLength) {
+      final leadingEnd = _prefixHighlightLength + _compactLeadingPlainLength;
+      final trailingStart =
+          trimmed.length - _suffixHighlightLength - _compactTrailingPlainLength;
+      final suffixStart = trimmed.length - _suffixHighlightLength;
+
+      return RichText(
+        softWrap: false,
+        overflow: TextOverflow.clip,
+        text: TextSpan(
+          style: baseStyle,
+          children: [
+            TextSpan(
+              text: trimmed.substring(0, _prefixHighlightLength),
+              style: highlightStyle,
+            ),
+            TextSpan(
+              text: trimmed.substring(_prefixHighlightLength, leadingEnd),
+            ),
+            const TextSpan(text: '\n... '),
+            TextSpan(text: trimmed.substring(trailingStart, suffixStart)),
+            TextSpan(
+              text: trimmed.substring(suffixStart),
+              style: highlightStyle,
+            ),
+          ],
+        ),
+      );
+    }
+
+    final middle = trimmed.substring(
+      _prefixHighlightLength,
+      trimmed.length - _suffixHighlightLength,
+    );
 
     return RichText(
       text: TextSpan(
         style: baseStyle,
         children: [
           TextSpan(
-            text: trimmed.substring(0, prefixLength),
+            text: trimmed.substring(0, _prefixHighlightLength),
             style: highlightStyle,
           ),
           TextSpan(text: middle),
           TextSpan(
-            text: trimmed.substring(trimmed.length - suffixLength),
+            text: trimmed.substring(trimmed.length - _suffixHighlightLength),
             style: highlightStyle,
           ),
         ],
@@ -317,11 +477,7 @@ class _TransactionReceiptHeadline extends StatelessWidget {
         const SizedBox(height: AppSpacing.xs),
         Text(
           amountText,
-          style:
-              (useFailedReceiptLayout
-                      ? AppTypography.displayLarge
-                      : AppTypography.displayMedium)
-                  .copyWith(color: colors.text.accent),
+          style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
         ),
         if (useFailedReceiptLayout) ...[
           const SizedBox(height: AppSpacing.xs),
@@ -362,11 +518,13 @@ class _TransactionReceiptBlock extends StatelessWidget {
     required this.title,
     required this.child,
     this.onCopy,
+    this.titleTrailing,
   });
 
   final String title;
   final Widget child;
   final VoidCallback? onCopy;
+  final Widget? titleTrailing;
 
   @override
   Widget build(BuildContext context) {
@@ -384,7 +542,10 @@ class _TransactionReceiptBlock extends StatelessWidget {
                 ),
               ),
             ),
-            if (onCopy != null) _TransactionReceiptCopyAction(onTap: onCopy!),
+            if (titleTrailing != null)
+              titleTrailing!
+            else if (onCopy != null)
+              _TransactionReceiptCopyAction(onTap: onCopy!),
           ],
         ),
         const SizedBox(height: AppSpacing.xs),

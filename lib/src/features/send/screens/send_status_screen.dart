@@ -158,7 +158,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       return [
         TextSpan(
           text: line,
-          style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+          style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
         ),
       ];
     }
@@ -168,18 +168,18 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     return [
       TextSpan(
         text: prefix,
-        style: AppTypography.labelLarge.copyWith(
+        style: AppTypography.bodyMedium.copyWith(
           color: colors.text.brandCrimson,
         ),
       ),
       TextSpan(
         text: middle,
-        style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+        style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
       ),
       if (suffix.isNotEmpty)
         TextSpan(
           text: suffix,
-          style: AppTypography.labelLarge.copyWith(
+          style: AppTypography.bodyMedium.copyWith(
             color: colors.text.brandCrimson,
           ),
         ),

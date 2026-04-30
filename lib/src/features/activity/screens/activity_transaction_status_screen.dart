@@ -53,6 +53,7 @@ class _ActivityTransactionStatusScreenState
   bool _isLoading = false;
   String? _error;
   String? _activeAccountUuid;
+  bool _messageExpanded = false;
 
   @override
   void initState() {
@@ -227,6 +228,12 @@ class _ActivityTransactionStatusScreenState
     showAppToast(context, message);
   }
 
+  void _toggleMessageExpanded() {
+    setState(() {
+      _messageExpanded = !_messageExpanded;
+    });
+  }
+
   TransactionReceiptPhase _phaseFor(rust_sync.TransactionInfo? tx) {
     if (tx == null) {
       return _isLoading
@@ -300,13 +307,6 @@ class _ActivityTransactionStatusScreenState
     return [txid.substring(0, 32), txid.substring(32)];
   }
 
-  List<String> _splitAddress(String address) {
-    final trimmed = address.trim();
-    if (trimmed.length <= 16) return [trimmed];
-    final midpoint = (trimmed.length / 2).ceil();
-    return [trimmed.substring(0, midpoint), trimmed.substring(midpoint)];
-  }
-
   rust_sync.TransactionDetail? _matchingDetailFor(
     rust_sync.TransactionInfo? tx,
   ) {
@@ -345,29 +345,21 @@ class _ActivityTransactionStatusScreenState
     required String title,
     required String address,
     bool useFailedReceiptLayout = false,
+    bool compactAddress = false,
   }) {
     final colors = context.colors;
     final trimmedAddress = address.trim();
     return TransactionReceiptBlockData(
       title: title,
       onCopy: () => unawaited(_copyText(trimmedAddress, 'Address Copied')),
-      child: useFailedReceiptLayout
-          ? TransactionReceiptAddressText(
-              address: trimmedAddress,
-              highlightEdges: _shouldHighlightAddressEdges(trimmedAddress),
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final line in _splitAddress(trimmedAddress))
-                  Text(
-                    line,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-              ],
-            ),
+      child: TransactionReceiptAddressText(
+        address: trimmedAddress,
+        highlightEdges: _shouldHighlightAddressEdges(trimmedAddress),
+        compact: compactAddress,
+        highlightColor: useFailedReceiptLayout
+            ? colors.text.destructive
+            : colors.text.success,
+      ),
     );
   }
 
@@ -382,6 +374,7 @@ class _ActivityTransactionStatusScreenState
   ) {
     final primaryAddress = detail?.primaryAddress?.trim();
     final useFailedReceiptLayout = tx?.expiredUnmined == true;
+    final compactAddress = detail?.memo?.trim().isNotEmpty == true;
     if (tx?.txKind == 'sent' &&
         primaryAddress != null &&
         primaryAddress.isNotEmpty) {
@@ -390,6 +383,7 @@ class _ActivityTransactionStatusScreenState
         title: 'To',
         address: primaryAddress,
         useFailedReceiptLayout: useFailedReceiptLayout,
+        compactAddress: compactAddress,
       );
     }
     if (tx?.txKind == 'received' &&
@@ -400,13 +394,13 @@ class _ActivityTransactionStatusScreenState
         title: 'From',
         address: primaryAddress,
         useFailedReceiptLayout: useFailedReceiptLayout,
+        compactAddress: compactAddress,
       );
     }
     return _transactionHashBlock(context);
   }
 
   List<TransactionReceiptBlockData> _extraBlocksFor(
-    BuildContext context,
     rust_sync.TransactionDetail? detail,
   ) {
     final memo = detail?.memo?.trim();
@@ -414,11 +408,13 @@ class _ActivityTransactionStatusScreenState
     return [
       TransactionReceiptBlockData(
         title: 'Message',
-        child: Text(
-          memo,
-          style: AppTypography.labelLarge.copyWith(
-            color: context.colors.text.accent,
-          ),
+        titleTrailing: TransactionReceiptMessageToggle(
+          expanded: _messageExpanded,
+          onTap: _toggleMessageExpanded,
+        ),
+        child: TransactionReceiptMessageText(
+          memo: memo,
+          expanded: _messageExpanded,
         ),
       ),
     ];
@@ -475,6 +471,7 @@ class _ActivityTransactionStatusScreenState
                       alignment: Alignment.centerLeft,
                       child: AppRouteBackLink(),
                     ),
+                    const SizedBox(height: AppSpacing.s),
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.only(right: 255),
@@ -487,7 +484,7 @@ class _ActivityTransactionStatusScreenState
                               privacyModeEnabled: privacyModeEnabled,
                             ),
                             primaryBlock: _primaryBlockFor(context, tx, detail),
-                            extraBlocks: _extraBlocksFor(context, detail),
+                            extraBlocks: _extraBlocksFor(detail),
                             dateText: _dateText(tx),
                             feeText: _feeText(
                               tx,
@@ -495,6 +492,8 @@ class _ActivityTransactionStatusScreenState
                             ),
                             error: error,
                             useFailedReceiptLayout: useFailedReceiptLayout,
+                            showPrimaryCopyAction: true,
+                            pinActionsToBottom: true,
                             onTransactionHashPressed: _openTransactionExplorer,
                           ),
                         ),
