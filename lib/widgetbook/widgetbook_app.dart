@@ -14,6 +14,7 @@ import 'icon_use_cases.dart';
 import 'screen_use_cases.dart';
 import 'text_field_use_cases.dart';
 import 'token_use_cases.dart';
+import 'toast_use_cases.dart';
 import 'typography_use_cases.dart';
 
 /// Top-level Widgetbook app for the Zcash design system.
@@ -222,6 +223,12 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Interactive',
                   builder: buildTextFieldInteractiveUseCase,
                 ),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'Toast',
+              useCases: [
+                WidgetbookUseCase(name: 'All', builder: buildToastUseCase),
               ],
             ),
           ],

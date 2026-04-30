@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -13,6 +14,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 
 class SendReviewArgs {
@@ -147,6 +149,12 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     await context.push('/send/status', extra: widget.args);
   }
 
+  Future<void> _copyRecipientAddress() async {
+    await Clipboard.setData(ClipboardData(text: widget.args.address.trim()));
+    if (!mounted) return;
+    showAppToast(context, 'Address Copied');
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -175,6 +183,8 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             addressLines: _splitAddress(),
                             addressSpanBuilder: (line) =>
                                 _addressSpans(context, line),
+                            onCopyAddress: () =>
+                                unawaited(_copyRecipientAddress()),
                           ),
                         ),
                       ),
@@ -252,6 +262,7 @@ class _SendReviewReceiptCard extends StatelessWidget {
     required this.feeText,
     required this.addressLines,
     required this.addressSpanBuilder,
+    required this.onCopyAddress,
   });
 
   final SendReviewArgs args;
@@ -259,6 +270,7 @@ class _SendReviewReceiptCard extends StatelessWidget {
   final String feeText;
   final List<String> addressLines;
   final List<TextSpan> Function(String line) addressSpanBuilder;
+  final VoidCallback onCopyAddress;
 
   @override
   Widget build(BuildContext context) {
@@ -311,7 +323,10 @@ class _SendReviewReceiptCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  const _SendReviewFieldTitle(label: 'To'),
+                  _SendReviewFieldTitle(
+                    label: 'To',
+                    rightLabel: _SendReviewCopyAction(onTap: onCopyAddress),
+                  ),
                   const SizedBox(height: AppSpacing.xs),
                   for (final line in addressLines)
                     RichText(
@@ -419,6 +434,37 @@ class _SendReviewFieldTitle extends StatelessWidget {
         ),
         if (rightLabel != null) ...[rightLabel!],
       ],
+    );
+  }
+}
+
+class _SendReviewCopyAction extends StatelessWidget {
+  const _SendReviewCopyAction({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Copy',
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xxs),
+            AppIcon(AppIcons.copy, size: 16, color: colors.icon.regular),
+          ],
+        ),
+      ),
     );
   }
 }

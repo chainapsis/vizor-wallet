@@ -14,6 +14,7 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -260,17 +261,13 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     if (txid == null) return;
     await Clipboard.setData(ClipboardData(text: txid));
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Transaction hash copied')));
+    showAppToast(context, 'Transaction Hash Copied');
   }
 
   Future<void> _copyRecipientAddress() async {
     await Clipboard.setData(ClipboardData(text: widget.args.address.trim()));
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Address copied')));
+    showAppToast(context, 'Address Copied');
   }
 
   Future<Uint8List> _signWithTransport(

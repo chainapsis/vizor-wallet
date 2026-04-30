@@ -24,6 +24,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -223,9 +224,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     final address = _selectedAddress;
     if (address.isEmpty) return;
     Clipboard.setData(ClipboardData(text: address));
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Address copied')));
+    showAppToast(context, 'Address Copied');
   }
 
   void _selectAddressType(_ReceiveAddressType type) {

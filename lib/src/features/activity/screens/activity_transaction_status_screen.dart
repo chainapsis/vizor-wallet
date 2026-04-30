@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show ScaffoldMessenger, SnackBar;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +13,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -214,15 +214,13 @@ class _ActivityTransactionStatusScreenState
   }
 
   Future<void> _copyTransactionHash() async {
-    await _copyText(widget.args.txidHex, 'Transaction hash copied');
+    await _copyText(widget.args.txidHex, 'Transaction Hash Copied');
   }
 
   Future<void> _copyText(String text, String message) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showAppToast(context, message);
   }
 
   TransactionReceiptPhase _phaseFor(rust_sync.TransactionInfo? tx) {
@@ -348,7 +346,7 @@ class _ActivityTransactionStatusScreenState
     final trimmedAddress = address.trim();
     return TransactionReceiptBlockData(
       title: title,
-      onCopy: () => unawaited(_copyText(trimmedAddress, 'Address copied')),
+      onCopy: () => unawaited(_copyText(trimmedAddress, 'Address Copied')),
       child: useFailedReceiptLayout
           ? TransactionReceiptAddressText(
               address: trimmedAddress,

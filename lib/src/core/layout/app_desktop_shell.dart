@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
+import '../widgets/app_toast.dart';
 
 class AppDesktopShell extends StatelessWidget {
   const AppDesktopShell({
@@ -80,8 +81,9 @@ class AppDesktopPane extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       clipBehavior: Clip.antiAlias,
-      padding: padding,
-      child: child,
+      child: AppToastHost(
+        child: Padding(padding: padding, child: child),
+      ),
     );
   }
 }
