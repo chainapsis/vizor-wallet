@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/config/zcash_explorer.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -206,6 +207,17 @@ class _ActivityTransactionStatusScreenState
   }
 
   Future<void> _copyTransactionHash() async {
+    await _copyText(widget.args.txidHex, 'Transaction Hash Copied');
+  }
+
+  Future<void> _openTransactionExplorer() async {
+    final endpoint = ref.read(rpcEndpointProvider);
+    final launched = await launchZcashExplorerTransaction(
+      networkName: endpoint.networkName,
+      txidHex: widget.args.txidHex,
+      txidOrder: ZcashExplorerTxidOrder.protocol,
+    );
+    if (launched || !mounted) return;
     await _copyText(widget.args.txidHex, 'Transaction Hash Copied');
   }
 
@@ -483,7 +495,7 @@ class _ActivityTransactionStatusScreenState
                             ),
                             error: error,
                             useFailedReceiptLayout: useFailedReceiptLayout,
-                            onCopyTxid: _copyTransactionHash,
+                            onTransactionHashPressed: _openTransactionExplorer,
                           ),
                         ),
                       ),

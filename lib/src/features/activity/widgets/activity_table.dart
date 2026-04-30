@@ -24,6 +24,7 @@ class ActivityTable extends StatelessWidget {
     this.totalPages = 1,
     this.onPageChanged,
     this.showPagination = false,
+    this.pinPaginationToBottom = false,
     super.key,
   });
 
@@ -37,6 +38,7 @@ class ActivityTable extends StatelessWidget {
   final int totalPages;
   final ValueChanged<int>? onPageChanged;
   final bool showPagination;
+  final bool pinPaginationToBottom;
 
   @override
   Widget build(BuildContext context) {
@@ -46,39 +48,49 @@ class ActivityTable extends StatelessWidget {
       effectiveTotalPages,
     );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (title != null) ...[
-          _ActivityTableTitle(title: title!, onTap: onTitleTap),
-          const SizedBox(height: AppSpacing.xs),
-        ],
-        const _ActivityTableHeader(),
-        const SizedBox(height: AppSpacing.s),
-        if (errorText != null && rows.isEmpty)
-          _ActivityTableMessage(text: errorText!, isError: true)
-        else if (isLoading && rows.isEmpty)
-          const _ActivityTableMessage(text: 'Loading activity...')
-        else if (rows.isEmpty)
-          _ActivityTableMessage(text: emptyText)
-        else
-          for (var i = 0; i < rows.length; i++) ...[
-            ActivityTableRow(row: rows[i]),
-            if (i != rows.length - 1) ...[
-              const SizedBox(height: AppSpacing.xs),
-              const _ActivityTableDivider(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final shouldPinPagination =
+            pinPaginationToBottom && constraints.hasBoundedHeight;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (title != null) ...[
+              _ActivityTableTitle(title: title!, onTap: onTitleTap),
               const SizedBox(height: AppSpacing.xs),
             ],
+            const _ActivityTableHeader(),
+            const SizedBox(height: AppSpacing.s),
+            if (errorText != null && rows.isEmpty)
+              _ActivityTableMessage(text: errorText!, isError: true)
+            else if (isLoading && rows.isEmpty)
+              const _ActivityTableMessage(text: 'Loading activity...')
+            else if (rows.isEmpty)
+              _ActivityTableMessage(text: emptyText)
+            else
+              for (var i = 0; i < rows.length; i++) ...[
+                ActivityTableRow(row: rows[i]),
+                if (i != rows.length - 1) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  const _ActivityTableDivider(),
+                  const SizedBox(height: AppSpacing.xs),
+                ],
+              ],
+            if (showPagination && effectiveTotalPages > 1) ...[
+              if (shouldPinPagination) ...[
+                const Spacer(),
+                const SizedBox(height: AppSpacing.xs),
+              ] else
+                const SizedBox(height: AppSpacing.lg),
+              ActivityTablePagination(
+                currentPage: effectiveCurrentPage,
+                totalPages: effectiveTotalPages,
+                onPageChanged: onPageChanged,
+              ),
+            ],
           ],
-        if (showPagination) ...[
-          const SizedBox(height: AppSpacing.lg),
-          ActivityTablePagination(
-            currentPage: effectiveCurrentPage,
-            totalPages: effectiveTotalPages,
-            onPageChanged: onPageChanged,
-          ),
-        ],
-      ],
+        );
+      },
     );
   }
 }
@@ -136,9 +148,6 @@ class _ActivityTableHeader extends StatelessWidget {
     final mutedStyle = AppTypography.labelMedium.copyWith(
       color: colors.text.muted,
     );
-    final accentStyle = AppTypography.labelMedium.copyWith(
-      color: colors.text.accent,
-    );
     return SizedBox(
       height: 32,
       child: Padding(
@@ -147,13 +156,10 @@ class _ActivityTableHeader extends StatelessWidget {
           txType: Text('Tx Type', style: mutedStyle),
           amount: Text('Amount', style: mutedStyle),
           status: Text('Status', style: mutedStyle),
-          timestamp: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Time Stamp', textAlign: TextAlign.end, style: accentStyle),
-              const SizedBox(width: AppSpacing.xxs),
-              AppIcon(AppIcons.arrowDown, size: 16, color: colors.icon.accent),
-            ],
+          timestamp: Text(
+            'Time Stamp',
+            textAlign: TextAlign.end,
+            style: mutedStyle,
           ),
         ),
       ),
@@ -277,7 +283,7 @@ class _StatusLabel extends StatelessWidget {
             row.statusText,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelMedium.copyWith(
+            style: AppTypography.labelLarge.copyWith(
               color: row.statusColor ?? colors.text.secondary,
             ),
           ),
@@ -404,7 +410,7 @@ class _ActivityTableRowState extends State<ActivityTableRow> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.end,
-              style: AppTypography.labelMedium.copyWith(
+              style: AppTypography.labelLarge.copyWith(
                 color: colors.text.secondary,
               ),
             ),
@@ -471,7 +477,7 @@ class _AmountLabel extends StatelessWidget {
       row.amountText,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: AppTypography.labelMedium.copyWith(color: color),
+      style: AppTypography.labelLarge.copyWith(color: color),
     );
 
     final iconName = row.amountIconName;

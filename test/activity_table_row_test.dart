@@ -147,6 +147,28 @@ void main() {
     expect(find.text('+1.23 ZEC'), findsNothing);
     expect(find.text('-1.00 ZEC'), findsNothing);
   });
+
+  testWidgets('activity row value cells use label large typography', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: ActivityTable(rows: [_row(title: 'Wallet Synced')]),
+        ),
+      ),
+    );
+
+    for (final value in ['1.00 ZEC', 'Completed', 'Today, 13:11']) {
+      final text = tester.widget<Text>(find.text(value));
+      expect(text.style?.fontFamily, AppTypography.labelLarge.fontFamily);
+      expect(text.style?.fontWeight, AppTypography.labelLarge.fontWeight);
+      expect(text.style?.fontSize, AppTypography.labelLarge.fontSize);
+      expect(text.style?.height, AppTypography.labelLarge.height);
+      expect(text.style?.letterSpacing, AppTypography.labelLarge.letterSpacing);
+    }
+  });
 }
 
 rust_sync.TransactionInfo _tx({

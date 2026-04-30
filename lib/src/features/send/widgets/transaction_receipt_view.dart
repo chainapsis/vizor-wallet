@@ -30,7 +30,7 @@ class TransactionReceiptView extends StatelessWidget {
     this.error,
     this.failureFallbackText = 'Transaction failed',
     this.useFailedReceiptLayout = false,
-    this.onCopyTxid,
+    this.onTransactionHashPressed,
     this.onBackToWallet,
     super.key,
   });
@@ -44,7 +44,7 @@ class TransactionReceiptView extends StatelessWidget {
   final String? error;
   final String failureFallbackText;
   final bool useFailedReceiptLayout;
-  final VoidCallback? onCopyTxid;
+  final VoidCallback? onTransactionHashPressed;
   final VoidCallback? onBackToWallet;
 
   @override
@@ -214,10 +214,10 @@ class _TransactionReceiptActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final copyButton = view.onCopyTxid == null
+    final transactionHashButton = view.onTransactionHashPressed == null
         ? null
         : AppButton(
-            onPressed: view.onCopyTxid,
+            onPressed: view.onTransactionHashPressed,
             variant: AppButtonVariant.secondary,
             minWidth: 256,
             trailing: AppIcon(
@@ -231,16 +231,16 @@ class _TransactionReceiptActions extends StatelessWidget {
       TransactionReceiptPhase.loading ||
       TransactionReceiptPhase.sending => const SizedBox(height: 40),
       TransactionReceiptPhase.pending || TransactionReceiptPhase.succeeded =>
-        copyButton ?? const SizedBox(height: 40),
+        transactionHashButton ?? const SizedBox(height: 40),
       TransactionReceiptPhase.failed => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _TransactionReceiptFailureMessage(
             message: view.error ?? view.failureFallbackText,
           ),
-          if (copyButton != null) ...[
+          if (transactionHashButton != null) ...[
             const SizedBox(height: AppSpacing.xs),
-            copyButton,
+            transactionHashButton,
           ],
           if (view.onBackToWallet != null) ...[
             const SizedBox(height: AppSpacing.xs),

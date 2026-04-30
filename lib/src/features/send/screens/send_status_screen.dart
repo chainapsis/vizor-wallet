@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/zcash_explorer.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
@@ -263,6 +264,19 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     await Clipboard.setData(ClipboardData(text: txid));
     if (!mounted) return;
     showAppToast(context, 'Transaction Hash Copied');
+  }
+
+  Future<void> _openTransactionExplorer() async {
+    final txid = _txid;
+    if (txid == null) return;
+    final endpoint = ref.read(rpcEndpointProvider);
+    final launched = await launchZcashExplorerTransaction(
+      networkName: endpoint.networkName,
+      txidHex: txid,
+      txidOrder: ZcashExplorerTxidOrder.display,
+    );
+    if (launched || !mounted) return;
+    await _copyTransactionHash();
   }
 
   Future<void> _copyRecipientAddress() async {
@@ -560,8 +574,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                               error: _error,
                               failureFallbackText: 'Send failed',
                               useFailedReceiptLayout: useFailedReceiptLayout,
-                              onCopyTxid: _phase == _SendStatusPhase.succeeded
-                                  ? _copyTransactionHash
+                              onTransactionHashPressed:
+                                  _phase == _SendStatusPhase.succeeded
+                                  ? _openTransactionExplorer
                                   : null,
                               onBackToWallet: _phase == _SendStatusPhase.failed
                                   ? _goHome

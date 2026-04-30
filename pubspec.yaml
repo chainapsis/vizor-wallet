@@ -57,6 +57,7 @@ dependencies:
   cryptography: ^2.7.0
   flutter_foreground_task: ^9.2.1
   window_manager: ^0.5.1
+  url_launcher: ^6.3.2
   # Renders the Figma-exported icon SVGs under `assets/icons/`.
   # Paired with `ColorFilter.mode(color, BlendMode.srcIn)` in
   # `AppIcon` so a single single-fill SVG tints to any theme color

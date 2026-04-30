@@ -34,6 +34,8 @@ class ActivityScreen extends ConsumerStatefulWidget {
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   static const _activityRowsPerPage = 6;
   static const _firstPageTransactionCount = _activityRowsPerPage - 1;
+  // Figma frame keeps a 32px Back row plus a 616px Activity panel.
+  static const double _activityPaneMinHeight = 648;
 
   final ScrollController _scrollController = ScrollController();
   List<rust_sync.TransactionInfo>? _transactions;
@@ -273,9 +275,9 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: const EdgeInsets.fromLTRB(
-          AppSpacing.sm,
-          AppSpacing.sm,
-          AppSpacing.sm,
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md,
           0,
         ),
         child: LayoutBuilder(
@@ -309,9 +311,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                       isDesktopLayoutPlatform && _isHovered && _canScroll,
                   child: SingleChildScrollView(
                     controller: _scrollController,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight,
+                    child: SizedBox(
+                      height: math.max(
+                        constraints.maxHeight,
+                        _activityPaneMinHeight,
                       ),
                       child: _ActivityPane(
                         rows: rows,
@@ -363,31 +366,47 @@ class _ActivityPane extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: AppRouteBackLink(minWidth: 60),
         ),
-        const SizedBox(height: AppSpacing.s),
-        Center(
-          child: Text(
-            'Activity',
-            style: AppTypography.displaySmall.copyWith(
-              color: colors.text.accent,
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(
+              top: AppSpacing.s,
+              bottom: AppSpacing.s,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Text(
+                    'Activity',
+                    style: AppTypography.displaySmall.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                const Center(child: AppDecorativeDivider(width: 256)),
+                const SizedBox(height: AppSpacing.sm),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xs,
+                    ),
+                    child: ActivityTable(
+                      rows: rows,
+                      isLoading: isLoading,
+                      errorText: errorText,
+                      showPagination: true,
+                      pinPaginationToBottom: true,
+                      currentPage: currentPage,
+                      totalPages: totalPages,
+                      onPageChanged: onPageChanged,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        const Center(child: AppDecorativeDivider(width: 256)),
-        const SizedBox(height: AppSpacing.sm),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-          child: ActivityTable(
-            rows: rows,
-            isLoading: isLoading,
-            errorText: errorText,
-            showPagination: true,
-            currentPage: currentPage,
-            totalPages: totalPages,
-            onPageChanged: onPageChanged,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.s),
       ],
     );
   }
