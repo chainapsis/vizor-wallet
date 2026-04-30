@@ -273,16 +273,8 @@ class _TitleBlock extends StatelessWidget {
 
 /// Brand wordmark rendered above the title.
 ///
-/// The SVG ships with a static `#E1E1E1` fill — a snapshot of the
-/// dark-mode accent tone at export time. `BlendMode.srcIn` swaps that
-/// for whatever `text.accent` resolves to at paint, so the logo flips
-/// to near-black in light mode and near-white in dark mode without
-/// maintaining two asset variants.
-///
-/// The Figma Logo component (node 238:3869) is a 74×37 frame with the
-/// wordmark inset to roughly 62 × 20.7 dp; the SizedBox + centered
-/// SvgPicture mirrors that padding so the logo sits with the same
-/// breathing room the spec calls for.
+/// `VizorWordmark` owns the Figma logo frame metrics so the welcome and
+/// unlock screens stay visually consistent.
 class _VizorLogo extends StatelessWidget {
   const _VizorLogo();
 

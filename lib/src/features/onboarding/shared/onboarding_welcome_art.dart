@@ -23,8 +23,18 @@ class OnboardingWelcomeBackdrop extends StatelessWidget {
   }
 }
 
+const _vizorWordmarkFrameWidth = 140.0;
+const _vizorWordmarkFrameHeight = 52.83;
+const _vizorWordmarkArtworkWidth = 127.748;
+const _vizorWordmarkArtworkHeight = 36.758;
+
 class VizorWordmark extends StatelessWidget {
-  const VizorWordmark({super.key, this.width = 74, this.height = 37});
+  /// Figma frame is 140×52.83; the centered SVG artwork is 127.748×36.758.
+  const VizorWordmark({
+    super.key,
+    this.width = _vizorWordmarkFrameWidth,
+    this.height = _vizorWordmarkFrameHeight,
+  });
 
   final double width;
   final double height;
@@ -38,7 +48,9 @@ class VizorWordmark extends StatelessWidget {
       child: Center(
         child: SvgPicture.asset(
           'assets/icons/vizor_logo.svg',
-          width: width * 62 / 74,
+          width: width * _vizorWordmarkArtworkWidth / _vizorWordmarkFrameWidth,
+          height:
+              height * _vizorWordmarkArtworkHeight / _vizorWordmarkFrameHeight,
           colorFilter: ColorFilter.mode(colors.text.accent, BlendMode.srcIn),
         ),
       ),
