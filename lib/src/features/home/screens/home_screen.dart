@@ -594,6 +594,8 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
         _isShieldBalanceHovered;
     final shieldBalanceContentColor = isShieldBalanceHoverActive
         ? colors.button.primary.label
+        : widget.isShieldingBalance
+        ? colors.text.homeCard
         : widget.canShieldBalance
         ? colors.text.homeCard
         : colors.text.secondary.withValues(alpha: 0.64);
@@ -1094,25 +1096,22 @@ class _HomeShieldBalanceButton extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (isLoading)
-                    AppIcon(AppIcons.loader, size: 16, color: contentColor),
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.xxs,
                     ),
                     child: Text(
-                      'Shield Balance',
+                      isLoading ? 'Shielding...' : 'Shield Balance',
                       style: AppTypography.labelLarge.copyWith(
                         color: contentColor,
                       ),
                     ),
                   ),
-                  if (!isLoading)
-                    AppIcon(
-                      AppIcons.chevronForward,
-                      size: 16,
-                      color: chevronColor,
-                    ),
+                  AppIcon(
+                    isLoading ? AppIcons.loader : AppIcons.chevronForward,
+                    size: 16,
+                    color: isLoading ? contentColor : chevronColor,
+                  ),
                 ],
               ),
             ),
