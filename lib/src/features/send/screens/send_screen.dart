@@ -14,6 +14,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -743,15 +744,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
             data: (_) => Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _SendBackRow(
-                  onTap: () {
-                    if (context.canPop()) {
-                      context.pop();
-                    } else {
-                      context.go('/home');
-                    }
-                  },
-                ),
+                const AppRouteBackLink(),
                 const SizedBox(height: AppSpacing.s),
                 Expanded(
                   child: _SendComposeLayout(
@@ -1035,44 +1028,6 @@ class _SendTitle extends StatelessWidget {
         color: context.colors.text.accent,
       ),
       textAlign: TextAlign.center,
-    );
-  }
-}
-
-class _SendBackRow extends StatelessWidget {
-  const _SendBackRow({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          height: 32,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(
-                AppIcons.chevronBackward,
-                size: 16,
-                color: colors.icon.accent,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                'Back',
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

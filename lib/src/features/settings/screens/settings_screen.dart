@@ -8,6 +8,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -99,10 +100,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: _themeLabel(themeMode),
-                onBack: () => _handleBack(context),
-                onSeedPhrase: () => context.go('/settings/secret-passphrase'),
-                onChangePassword: () => context.go('/settings/change-password'),
-                onEndpoint: () => context.go('/settings/endpoint'),
+                onSeedPhrase: () => context.push('/settings/secret-passphrase'),
+                onChangePassword: () =>
+                    context.push('/settings/change-password'),
+                onEndpoint: () => context.push('/settings/endpoint'),
                 onAccountName: hasActiveAccount
                     ? () => _showModal(_SettingsModalType.accountName)
                     : null,
@@ -140,14 +141,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  static void _handleBack(BuildContext context) {
-    if (context.canPop()) {
-      context.pop();
-      return;
-    }
-    context.go('/home');
-  }
-
   static String _themeLabel(ThemeMode mode) {
     return switch (mode) {
       ThemeMode.system => 'System',
@@ -168,7 +161,6 @@ class _SettingsPane extends StatelessWidget {
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
-    required this.onBack,
     required this.onSeedPhrase,
     required this.onChangePassword,
     required this.onEndpoint,
@@ -182,7 +174,6 @@ class _SettingsPane extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
-  final VoidCallback onBack;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
   final VoidCallback onEndpoint;
@@ -198,10 +189,7 @@ class _SettingsPane extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: _SettingsBackButton(onTap: onBack),
-          ),
+          Align(alignment: Alignment.centerLeft, child: AppRouteBackLink()),
           const SizedBox(height: AppSpacing.s),
           Expanded(
             child: Padding(
@@ -242,45 +230,6 @@ class _SettingsPane extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SettingsBackButton extends StatelessWidget {
-  const _SettingsBackButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          height: 32,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(
-                AppIcons.chevronBackward,
-                size: 16,
-                color: colors.icon.accent,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                'Back',
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

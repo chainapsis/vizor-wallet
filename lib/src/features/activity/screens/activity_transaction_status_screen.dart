@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
@@ -13,6 +12,7 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -203,14 +203,6 @@ class _ActivityTransactionStatusScreenState
       }
     }
     return '';
-  }
-
-  void _goBack() {
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/activity');
-    }
   }
 
   Future<void> _copyTransactionHash() async {
@@ -467,7 +459,10 @@ class _ActivityTransactionStatusScreenState
                 ),
                 child: Column(
                   children: [
-                    TransactionReceiptBackRow(onTap: _goBack),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: AppRouteBackLink(),
+                    ),
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.only(right: 255),

@@ -3,13 +3,13 @@ import 'package:flutter/material.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
@@ -60,10 +60,6 @@ class _SettingsEndpointScreenState
   void dispose() {
     _customController.dispose();
     super.dispose();
-  }
-
-  void _handleBack() {
-    context.go('/settings');
   }
 
   void _selectTab(_EndpointTab tab) {
@@ -197,7 +193,6 @@ class _SettingsEndpointScreenState
           submitError: _submitError,
           isSubmitting: _isSubmitting,
           canUpdate: _canUpdate(current),
-          onBack: _handleBack,
           onSelectTab: _selectTab,
           onSelectPreset: _selectPreset,
           onCustomChanged: (_) => setState(() {
@@ -221,7 +216,6 @@ class _SettingsEndpointPane extends StatelessWidget {
     required this.submitError,
     required this.isSubmitting,
     required this.canUpdate,
-    required this.onBack,
     required this.onSelectTab,
     required this.onSelectPreset,
     required this.onCustomChanged,
@@ -237,7 +231,6 @@ class _SettingsEndpointPane extends StatelessWidget {
   final String? submitError;
   final bool isSubmitting;
   final bool canUpdate;
-  final VoidCallback onBack;
   final ValueChanged<_EndpointTab> onSelectTab;
   final ValueChanged<String> onSelectPreset;
   final ValueChanged<String> onCustomChanged;
@@ -254,10 +247,7 @@ class _SettingsEndpointPane extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: _BackButton(onTap: onBack),
-          ),
+          Align(alignment: Alignment.centerLeft, child: AppRouteBackLink()),
           const SizedBox(height: AppSpacing.s),
           Expanded(
             child: Center(
@@ -782,45 +772,6 @@ class _CustomEndpointForm extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  const _BackButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          height: 32,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(
-                AppIcons.chevronBackward,
-                size: 16,
-                color: colors.icon.accent,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                'Back',
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

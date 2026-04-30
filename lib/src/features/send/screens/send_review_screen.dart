@@ -11,6 +11,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -181,12 +182,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     });
   }
 
-  Future<void> _handleBack() async {
-    _scheduleDiscard();
-    if (!mounted) return;
-    context.pop();
-  }
-
   Future<void> _handleSend() async {
     await context.push('/send/status', extra: widget.args);
   }
@@ -207,7 +202,10 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           children: [
-            _SendReviewBackRow(onTap: _handleBack),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: AppRouteBackLink(onBeforeNavigate: _scheduleDiscard),
+            ),
             Expanded(
               child: Center(
                 child: Column(
@@ -243,47 +241,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SendReviewBackRow extends StatelessWidget {
-  const _SendReviewBackRow({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: SizedBox(
-            height: 32,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: 16,
-                  color: colors.icon.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ),
       ),
     );

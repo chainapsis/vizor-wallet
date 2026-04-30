@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:go_router/go_router.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../../main.dart' show log;
@@ -16,6 +15,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
@@ -278,13 +278,6 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
               errorText: selectedErrorText,
               isLoading: isLoadingSelectedAddress,
               isRenewingShielded: _isRenewingShielded,
-              onBack: () {
-                if (context.canPop()) {
-                  context.pop();
-                } else {
-                  context.go('/home');
-                }
-              },
               onTypeChanged: _selectAddressType,
               onRenewShielded: isShielded ? _renewShieldedAddress : null,
               onCopy: _copySelectedAddress,
@@ -312,7 +305,6 @@ class _ReceivePane extends StatelessWidget {
     required this.errorText,
     required this.isLoading,
     required this.isRenewingShielded,
-    required this.onBack,
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
@@ -324,7 +316,6 @@ class _ReceivePane extends StatelessWidget {
   final String? errorText;
   final bool isLoading;
   final bool isRenewingShielded;
-  final VoidCallback onBack;
   final ValueChanged<_ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
@@ -342,10 +333,7 @@ class _ReceivePane extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: _BackButton(onTap: onBack),
-            ),
+            Align(alignment: Alignment.centerLeft, child: AppRouteBackLink()),
             const SizedBox(height: AppSpacing.s),
             Expanded(
               child: Center(
@@ -636,60 +624,6 @@ class _ReceiveQrMetrics {
       renewSize: _baseRenewSize,
       qrPaddingX: _baseQrPaddingX,
       qrPaddingY: _baseQrPaddingY,
-    );
-  }
-}
-
-class _BackButton extends StatefulWidget {
-  const _BackButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  State<_BackButton> createState() => _BackButtonState();
-}
-
-class _BackButtonState extends State<_BackButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 120),
-          opacity: _hovered ? 0.75 : 1,
-          child: SizedBox(
-            height: 32,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Transform.scale(
-                  scaleX: -1,
-                  child: AppIcon(
-                    AppIcons.chevronForward,
-                    size: AppIconSize.medium,
-                    color: colors.icon.accent,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

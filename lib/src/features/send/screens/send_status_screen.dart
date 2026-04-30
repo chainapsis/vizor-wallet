@@ -14,6 +14,7 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -513,7 +514,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                   ),
                   child: Column(
                     children: [
-                      TransactionReceiptBackRow(onTap: _goHome),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: AppRouteBackLink(),
+                      ),
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.only(right: 255),

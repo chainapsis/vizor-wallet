@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/security/password_policy.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_chip.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
@@ -57,11 +57,6 @@ class _SettingsSeedPhraseScreenState
     _clearSensitiveState();
     _passwordController.dispose();
     super.dispose();
-  }
-
-  void _handleBack() {
-    _clearSensitiveState();
-    context.go('/settings');
   }
 
   void _clearSensitiveState({String? passwordError}) {
@@ -238,7 +233,7 @@ class _SettingsSeedPhraseScreenState
       pane: AppDesktopPane(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: _SettingsSeedPhrasePane(
-          onBack: _handleBack,
+          onBeforeNavigateBack: () => _clearSensitiveState(),
           child: switch (_stage) {
             _SettingsSeedPhraseStage.password => _PasswordGateView(
               passwordController: _passwordController,
@@ -262,9 +257,12 @@ class _SettingsSeedPhraseScreenState
 }
 
 class _SettingsSeedPhrasePane extends StatelessWidget {
-  const _SettingsSeedPhrasePane({required this.onBack, required this.child});
+  const _SettingsSeedPhrasePane({
+    required this.onBeforeNavigateBack,
+    required this.child,
+  });
 
-  final VoidCallback onBack;
+  final VoidCallback onBeforeNavigateBack;
   final Widget child;
 
   @override
@@ -275,50 +273,11 @@ class _SettingsSeedPhrasePane extends StatelessWidget {
         children: [
           Align(
             alignment: Alignment.centerLeft,
-            child: _BackButton(onTap: onBack),
+            child: AppRouteBackLink(onBeforeNavigate: onBeforeNavigateBack),
           ),
           const SizedBox(height: AppSpacing.s),
           Expanded(child: child),
         ],
-      ),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  const _BackButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          height: 32,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(
-                AppIcons.chevronBackward,
-                size: 16,
-                color: colors.icon.accent,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                'Back',
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

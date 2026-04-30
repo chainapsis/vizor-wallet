@@ -12,8 +12,8 @@ import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -150,14 +150,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           curve: Curves.easeOutCubic,
         ),
       );
-    }
-  }
-
-  void _goBack() {
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/home');
     }
   }
 
@@ -331,7 +323,6 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                         currentPage: currentPage,
                         totalPages: totalPages,
                         onPageChanged: _setPage,
-                        onBack: _goBack,
                       ),
                     ),
                   ),
@@ -353,7 +344,6 @@ class _ActivityPane extends StatelessWidget {
     required this.currentPage,
     required this.totalPages,
     required this.onPageChanged,
-    required this.onBack,
   });
 
   final List<ActivityRowData> rows;
@@ -362,7 +352,6 @@ class _ActivityPane extends StatelessWidget {
   final int currentPage;
   final int totalPages;
   final ValueChanged<int> onPageChanged;
-  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -370,7 +359,10 @@ class _ActivityPane extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _ActivityBackRow(onTap: onBack),
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: AppRouteBackLink(minWidth: 60),
+        ),
         const SizedBox(height: AppSpacing.s),
         Center(
           child: Text(
@@ -397,50 +389,6 @@ class _ActivityPane extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.s),
       ],
-    );
-  }
-}
-
-class _ActivityBackRow extends StatelessWidget {
-  const _ActivityBackRow({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 60),
-            child: SizedBox(
-              height: 32,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppIcon(
-                    AppIcons.chevronBackward,
-                    size: 16,
-                    color: colors.icon.accent,
-                  ),
-                  const SizedBox(width: AppSpacing.xxs),
-                  Text(
-                    'Back',
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

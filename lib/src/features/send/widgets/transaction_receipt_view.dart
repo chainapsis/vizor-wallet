@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart' show Theme;
 import 'package:flutter/widgets.dart';
 
@@ -19,47 +17,6 @@ class TransactionReceiptBlockData {
   final String title;
   final Widget child;
   final VoidCallback? onCopy;
-}
-
-class TransactionReceiptBackRow extends StatelessWidget {
-  const TransactionReceiptBackRow({required this.onTap, super.key});
-
-  final FutureOr<void> Function() onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => unawaited(Future<void>.value(onTap())),
-          child: SizedBox(
-            height: 32,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.chevronBackward,
-                  size: 16,
-                  color: colors.icon.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Text(
-                  'Back',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class TransactionReceiptView extends StatelessWidget {
