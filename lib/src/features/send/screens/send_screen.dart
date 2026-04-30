@@ -85,6 +85,52 @@ class _MaxQuote {
   final BigInt amountZatoshi;
 }
 
+class _AddressTextEditingController extends TextEditingController {
+  // Emphasize the visible address edges while keeping the middle neutral.
+  static const _highlightPrefixLength = 6;
+  static const _highlightSuffixLength = 5;
+
+  // Updated by the parent build before the TextField paints.
+  Color? edgeHighlightColor;
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    final highlightColor = edgeHighlightColor;
+    if (highlightColor == null) {
+      return super.buildTextSpan(
+        context: context,
+        style: style,
+        withComposing: withComposing,
+      );
+    }
+
+    final text = value.text;
+    final baseStyle = style ?? const TextStyle();
+    final highlightStyle = baseStyle.copyWith(color: highlightColor);
+
+    if (text.length <= _highlightPrefixLength + _highlightSuffixLength) {
+      return TextSpan(text: text, style: highlightStyle);
+    }
+
+    final suffixStart = text.length - _highlightSuffixLength;
+    return TextSpan(
+      style: baseStyle,
+      children: [
+        TextSpan(
+          text: text.substring(0, _highlightPrefixLength),
+          style: highlightStyle,
+        ),
+        TextSpan(text: text.substring(_highlightPrefixLength, suffixStart)),
+        TextSpan(text: text.substring(suffixStart), style: highlightStyle),
+      ],
+    );
+  }
+}
+
 String _newSendFlowId() {
   final random = math.Random.secure();
   return List<int>.generate(
@@ -98,7 +144,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldGap = AppSpacing.xs;
   static const _multilineFieldOverlayReserve = 24.0;
   static const _maxDebounceDuration = Duration(milliseconds: 300);
-  final _addressController = TextEditingController();
+  final _addressController = _AddressTextEditingController();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
   final _addressFocusNode = FocusNode();
@@ -636,8 +682,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     );
     final colors = context.colors;
 
+    _addressController.edgeHighlightColor = _isShieldedAddress
+        ? colors.icon.success
+        : null;
+
     final addressTone = switch (_addressType) {
-      'unified' || 'sapling' => AppTextFieldTone.brandCrimson,
+      'unified' || 'sapling' => AppTextFieldTone.success,
       'invalid' || 'error' => AppTextFieldTone.destructive,
       _ => AppTextFieldTone.neutral,
     };
@@ -652,7 +702,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       'unified' || 'sapling' => AppIcon(
         AppIcons.shieldKeyhole,
         size: 16,
-        color: colors.text.brandCrimson,
+        color: colors.icon.success,
       ),
       'invalid' || 'error' => AppIcon(
         AppIcons.warning,
@@ -660,9 +710,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         color: colors.text.destructive,
       ),
       'transparent' => AppIcon(
-        AppIcons.eye,
+        AppIcons.transparentBalance,
         size: 16,
-        color: colors.text.muted,
+        color: colors.icon.muted,
       ),
       _ => null,
     };
@@ -672,6 +722,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       ),
       _ => null,
     };
+    final messageFieldVisible =
+        _messageExpanded || _memoController.text.isNotEmpty;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -702,308 +754,209 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                 ),
                 const SizedBox(height: AppSpacing.s),
                 Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return Stack(
-                        children: [
-                          Positioned.fill(
-                            child: Center(
-                              child: SingleChildScrollView(
-                                child: ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    minHeight: constraints.maxHeight,
-                                  ),
-                                  child: Center(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: AppSpacing.s,
-                                      ),
-                                      child: SizedBox(
-                                        width: 352,
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            AppTextField(
-                                              label: 'Send to',
-                                              tone: addressTone,
-                                              focusNode: _addressFocusNode,
-                                              controller: _addressController,
-                                              hintText: 'zCash Address',
-                                              leading: AppIcon(
-                                                AppIcons.link,
-                                                size: 20,
-                                                color:
-                                                    _addressController.text
-                                                        .trim()
-                                                        .isNotEmpty
-                                                    ? colors.icon.accent
-                                                    : colors.icon.regular,
-                                              ),
-                                              messageText: addressMessage,
-                                              messageIcon: addressMessageIcon,
-                                              messageStyle: addressMessageStyle,
-                                              onChanged: (_) =>
-                                                  _handleAddressChanged(),
-                                              keyboardType: TextInputType.text,
-                                              showClearButton: true,
-                                              onClear: () {
-                                                _addressSeq++;
-                                                _maxDebounceTimer?.cancel();
-                                                setState(() {
-                                                  _addressType = '';
-                                                  _error = null;
-                                                  if (_isMaxMode) {
-                                                    _validateSeq++;
-                                                    _maxSeq++;
-                                                    _maxQuote = null;
-                                                    _isResolvingMax = false;
-                                                    _amountError = '';
-                                                  }
-                                                });
-                                                if (!_isMaxMode) {
-                                                  _validateAmount();
-                                                }
-                                              },
-                                            ),
-                                            const SizedBox(
-                                              height:
-                                                  _singleLineFieldOverlayReserve,
-                                            ),
-                                            const SizedBox(
-                                              height: _singleLineFieldGap,
-                                            ),
-                                            AppTextField(
-                                              label: 'Amount',
-                                              tone: _showAmountError
-                                                  ? AppTextFieldTone.destructive
-                                                  : AppTextFieldTone.neutral,
-                                              focusNode: _amountFocusNode,
-                                              controller: _amountController,
-                                              hintText: '0.00',
-                                              leading: AppIcon(
-                                                AppIcons.zcash,
-                                                size: 20,
-                                                color:
-                                                    _amountController.text
-                                                        .trim()
-                                                        .isNotEmpty
-                                                    ? colors.icon.accent
-                                                    : colors.icon.regular,
-                                              ),
-                                              rightSlot: MouseRegion(
-                                                cursor: _isResolvingMax
-                                                    ? SystemMouseCursors.basic
-                                                    : SystemMouseCursors.click,
-                                                child: GestureDetector(
-                                                  behavior:
-                                                      HitTestBehavior.opaque,
-                                                  onTap: _isResolvingMax
-                                                      ? null
-                                                      : _activateMaxMode,
-                                                  child: Text(
-                                                    'Max: $spendableText',
-                                                    style: AppTypography
-                                                        .labelMedium
-                                                        .copyWith(
-                                                          color: colors
-                                                              .text
-                                                              .secondary,
-                                                        ),
-                                                  ),
-                                                ),
-                                              ),
-                                              messageText: _showAmountError
-                                                  ? _amountError
-                                                  : null,
-                                              messageIcon: _showAmountError
-                                                  ? AppIcon(
-                                                      AppIcons.warning,
-                                                      size: 16,
-                                                      color: colors
-                                                          .text
-                                                          .destructive,
-                                                    )
-                                                  : null,
-                                              keyboardType:
-                                                  const TextInputType.numberWithOptions(
-                                                    decimal: true,
-                                                  ),
-                                              inputFormatters: [
-                                                const ZecAmountInputFormatter(),
-                                              ],
-                                              onChanged: (_) =>
-                                                  _handleAmountChanged(),
-                                              showClearButton: true,
-                                              onClear: () {
-                                                _maxDebounceTimer?.cancel();
-                                                _validateSeq++;
-                                                _maxSeq++;
-                                                setState(() {
-                                                  _isMaxMode = false;
-                                                  _isResolvingMax = false;
-                                                  _maxQuote = null;
-                                                  _amountError = '';
-                                                  _error = null;
-                                                });
-                                              },
-                                            ),
-                                            const SizedBox(
-                                              height:
-                                                  _singleLineFieldOverlayReserve,
-                                            ),
-                                            const SizedBox(
-                                              height: _singleLineFieldGap,
-                                            ),
-                                            if (!_messageExpanded &&
-                                                _memoController
-                                                    .text
-                                                    .isEmpty) ...[
-                                              Padding(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      vertical: AppSpacing.xs,
-                                                    ),
-                                                child: Column(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    const AppDecorativeDivider(
-                                                      width: 256,
-                                                      middleWidth: 53.553,
-                                                      middleHeight: 14,
-                                                    ),
-                                                    const SizedBox(
-                                                      height: AppSpacing.sm,
-                                                    ),
-                                                    _SendAddMessageCard(
-                                                      onTap: () {
-                                                        setState(() {
-                                                          _messageExpanded =
-                                                              true;
-                                                        });
-                                                        _memoFocusNode
-                                                            .requestFocus();
-                                                      },
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ] else ...[
-                                              AppTextField(
-                                                label: 'Message',
-                                                tone: _memoError != null
-                                                    ? AppTextFieldTone
-                                                          .destructive
-                                                    : AppTextFieldTone.neutral,
-                                                focusNode: _memoFocusNode,
-                                                controller: _memoController,
-                                                hintText: 'Add a message',
-                                                leading: AppIcon(
-                                                  AppIcons.scroll,
-                                                  size: 20,
-                                                  color: colors.icon.regular,
-                                                ),
-                                                rightSlot: Text(
-                                                  '$_memoLength/512',
-                                                  style: AppTypography
-                                                      .labelMedium
-                                                      .copyWith(
-                                                        color: colors
-                                                            .text
-                                                            .secondary,
-                                                      ),
-                                                ),
-                                                messageText: _memoError,
-                                                messageIcon: _memoError != null
-                                                    ? AppIcon(
-                                                        AppIcons.warning,
-                                                        size: 16,
-                                                        color: colors
-                                                            .text
-                                                            .destructive,
-                                                      )
-                                                    : null,
-                                                minLines: 6,
-                                                maxLines: 6,
-                                                scrollController:
-                                                    _memoScrollController,
-                                                textStyle: AppTypography
-                                                    .bodyMedium
-                                                    .copyWith(
-                                                      color: colors.text.accent,
-                                                    ),
-                                                onChanged: (_) => setState(() {
-                                                  _error = null;
-                                                }),
-                                                showClearButton: true,
-                                                onClear: () {
-                                                  setState(() {
-                                                    _messageExpanded = false;
-                                                    _error = null;
-                                                  });
-                                                  if (_isMaxMode) {
-                                                    _scheduleMaxEstimate();
-                                                  } else {
-                                                    _validateAmount();
-                                                  }
-                                                },
-                                              ),
-                                              const SizedBox(
-                                                height:
-                                                    _multilineFieldOverlayReserve,
-                                              ),
-                                            ],
-                                            if (_error != null) ...[
-                                              const SizedBox(
-                                                height: AppSpacing.xs,
-                                              ),
-                                              _SendGlobalError(
-                                                message: _error!,
-                                              ),
-                                            ],
-                                            const SizedBox(
-                                              height: AppSpacing.sm,
-                                            ),
-                                            const SizedBox(height: 40),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                  child: _SendComposeLayout(
+                    messageFieldVisible: messageFieldVisible,
+                    reviewButton: AppButton(
+                      onPressed: _canReview ? _openReview : null,
+                      variant: AppButtonVariant.primary,
+                      minWidth: 256,
+                      trailing: _isSending
+                          ? null
+                          : const AppIcon(AppIcons.chevronForward),
+                      child: _isSending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Review'),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AppTextField(
+                          label: 'Send to',
+                          tone: addressTone,
+                          focusNode: _addressFocusNode,
+                          controller: _addressController,
+                          hintText: 'zCash Address',
+                          leading: AppIcon(
+                            AppIcons.users,
+                            size: 20,
+                            color: _addressController.text.trim().isNotEmpty
+                                ? colors.icon.accent
+                                : colors.icon.regular,
+                          ),
+                          messageText: addressMessage,
+                          messageIcon: addressMessageIcon,
+                          messageStyle: addressMessageStyle,
+                          onChanged: (_) => _handleAddressChanged(),
+                          keyboardType: TextInputType.text,
+                          showClearButton: true,
+                          onClear: () {
+                            _addressSeq++;
+                            _maxDebounceTimer?.cancel();
+                            setState(() {
+                              _addressType = '';
+                              _error = null;
+                              if (_isMaxMode) {
+                                _validateSeq++;
+                                _maxSeq++;
+                                _maxQuote = null;
+                                _isResolvingMax = false;
+                                _amountError = '';
+                              }
+                            });
+                            if (!_isMaxMode) {
+                              _validateAmount();
+                            }
+                          },
+                        ),
+                        const SizedBox(height: _singleLineFieldOverlayReserve),
+                        const SizedBox(height: _singleLineFieldGap),
+                        AppTextField(
+                          label: 'Amount',
+                          tone: _showAmountError
+                              ? AppTextFieldTone.destructive
+                              : AppTextFieldTone.neutral,
+                          focusNode: _amountFocusNode,
+                          controller: _amountController,
+                          hintText: '0.00',
+                          leading: AppIcon(
+                            AppIcons.zcash,
+                            size: 20,
+                            color: _amountController.text.trim().isNotEmpty
+                                ? colors.icon.accent
+                                : colors.icon.regular,
+                          ),
+                          rightSlot: MouseRegion(
+                            cursor: _isResolvingMax
+                                ? SystemMouseCursors.basic
+                                : SystemMouseCursors.click,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: _isResolvingMax ? null : _activateMaxMode,
+                              child: Text(
+                                'Max: $spendableText',
+                                style: AppTypography.labelMedium.copyWith(
+                                  color: colors.text.secondary,
                                 ),
                               ),
                             ),
                           ),
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: AppSpacing.s,
-                            child: Center(
-                              child: SizedBox(
-                                width: 256,
-                                child: AppButton(
-                                  onPressed: _canReview ? _openReview : null,
-                                  variant: AppButtonVariant.primary,
-                                  minWidth: 256,
-                                  trailing: _isSending
-                                      ? null
-                                      : const AppIcon(AppIcons.chevronForward),
-                                  child: _isSending
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Text('Review'),
+                          messageText: _showAmountError ? _amountError : null,
+                          messageIcon: _showAmountError
+                              ? AppIcon(
+                                  AppIcons.warning,
+                                  size: 16,
+                                  color: colors.text.destructive,
+                                )
+                              : null,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          inputFormatters: [const ZecAmountInputFormatter()],
+                          onChanged: (_) => _handleAmountChanged(),
+                          showClearButton: true,
+                          onClear: () {
+                            _maxDebounceTimer?.cancel();
+                            _validateSeq++;
+                            _maxSeq++;
+                            setState(() {
+                              _isMaxMode = false;
+                              _isResolvingMax = false;
+                              _maxQuote = null;
+                              _amountError = '';
+                              _error = null;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: _singleLineFieldOverlayReserve),
+                        const SizedBox(height: _singleLineFieldGap),
+                        if (!_messageExpanded &&
+                            _memoController.text.isEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: AppSpacing.xs,
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const AppDecorativeDivider(
+                                  width: 256,
+                                  middleWidth: 53.553,
+                                  middleHeight: 14,
                                 ),
-                              ),
+                                const SizedBox(height: AppSpacing.sm),
+                                _SendAddMessageCard(
+                                  onTap: () {
+                                    setState(() {
+                                      _messageExpanded = true;
+                                    });
+                                    _memoFocusNode.requestFocus();
+                                  },
+                                ),
+                              ],
                             ),
                           ),
+                        ] else ...[
+                          AppTextField(
+                            label: 'Message',
+                            tone: _memoError != null
+                                ? AppTextFieldTone.destructive
+                                : AppTextFieldTone.neutral,
+                            focusNode: _memoFocusNode,
+                            controller: _memoController,
+                            hintText: 'Add a message',
+                            leading: AppIcon(
+                              AppIcons.scroll,
+                              size: 20,
+                              color: colors.icon.regular,
+                            ),
+                            rightSlot: Text(
+                              '$_memoLength/512',
+                              style: AppTypography.labelMedium.copyWith(
+                                color: colors.text.secondary,
+                              ),
+                            ),
+                            messageText: _memoError,
+                            messageIcon: _memoError != null
+                                ? AppIcon(
+                                    AppIcons.warning,
+                                    size: 16,
+                                    color: colors.text.destructive,
+                                  )
+                                : null,
+                            minLines: 6,
+                            maxLines: 6,
+                            scrollController: _memoScrollController,
+                            textStyle: AppTypography.bodyMedium.copyWith(
+                              color: colors.text.accent,
+                            ),
+                            onChanged: (_) => setState(() {
+                              _error = null;
+                            }),
+                            showClearButton: true,
+                            onClear: () {
+                              setState(() {
+                                _messageExpanded = false;
+                                _error = null;
+                              });
+                              if (_isMaxMode) {
+                                _scheduleMaxEstimate();
+                              } else {
+                                _validateAmount();
+                              }
+                            },
+                          ),
+                          const SizedBox(height: _multilineFieldOverlayReserve),
                         ],
-                      );
-                    },
+                        if (_error != null) ...[
+                          const SizedBox(height: AppSpacing.xs),
+                          _SendGlobalError(message: _error!),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -1011,6 +964,77 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SendComposeLayout extends StatelessWidget {
+  const _SendComposeLayout({
+    required this.messageFieldVisible,
+    required this.child,
+    required this.reviewButton,
+  });
+
+  static const _formWidth = 352.0;
+  static const _reviewButtonWidth = 256.0;
+  static const _contentToButtonGap = AppSpacing.sm;
+  // State-specific gaps keep the collapsed and expanded forms balanced.
+  static const _collapsedTitleToFirstFieldGap = 72.0;
+  static const _expandedTitleToFirstFieldGap = 58.0;
+  static const _collapsedBottomGap = 48.0;
+  static const _expandedBottomGap = 10.0;
+
+  final bool messageFieldVisible;
+  final Widget child;
+  final Widget reviewButton;
+
+  double get _titleToFirstFieldGap => messageFieldVisible
+      ? _expandedTitleToFirstFieldGap
+      : _collapsedTitleToFirstFieldGap;
+
+  double get _bottomGap =>
+      messageFieldVisible ? _expandedBottomGap : _collapsedBottomGap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: Center(
+            child: SingleChildScrollView(
+              child: SizedBox(
+                width: _formWidth,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const _SendTitle(),
+                    SizedBox(height: _titleToFirstFieldGap),
+                    child,
+                    SizedBox(height: _bottomGap),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: _contentToButtonGap),
+        SizedBox(width: _reviewButtonWidth, child: reviewButton),
+      ],
+    );
+  }
+}
+
+class _SendTitle extends StatelessWidget {
+  const _SendTitle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      'Send ZEC',
+      style: AppTypography.displaySmall.copyWith(
+        color: context.colors.text.accent,
+      ),
+      textAlign: TextAlign.center,
     );
   }
 }
