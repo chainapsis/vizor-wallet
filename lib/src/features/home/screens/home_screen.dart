@@ -966,20 +966,7 @@ class _HomeShieldBalanceButton extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   if (isLoading)
-                    SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: contentColor,
-                      ),
-                    )
-                  else
-                    AppIcon(
-                      AppIcons.shieldKeyholeOutline,
-                      size: 16,
-                      color: contentColor,
-                    ),
+                    AppIcon(AppIcons.loader, size: 16, color: contentColor),
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.xxs,
@@ -991,6 +978,12 @@ class _HomeShieldBalanceButton extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (!isLoading)
+                    AppIcon(
+                      AppIcons.chevronForward,
+                      size: 16,
+                      color: contentColor,
+                    ),
                 ],
               ),
             ),
