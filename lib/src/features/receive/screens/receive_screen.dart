@@ -422,10 +422,12 @@ class _ReceiveMainContent extends StatelessWidget {
       builder: (context, constraints) {
         final metrics = _ReceiveQrMetrics.fromConstraints(constraints);
         final contentWidth = math.max(256.0, metrics.blockWidth);
-        final contentHeight =
-            _ReceiveQrMetrics.fixedBeforeQrForLayout + metrics.blockHeight;
+        final contentHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : _ReceiveQrMetrics.baseContentHeight;
 
-        return Center(
+        return Align(
+          alignment: Alignment.topCenter,
           child: SizedBox(
             width: contentWidth,
             height: contentHeight,
@@ -439,52 +441,60 @@ class _ReceiveMainContent extends StatelessWidget {
                         (contentWidth - metrics.blockWidth) / 2 +
                         (metrics.blockWidth - metrics.qrFrameWidth) / 2 +
                         metrics.shieldBgLeft,
-                    top:
-                        _ReceiveQrMetrics.fixedBeforeQrForLayout +
-                        metrics.shieldBgTop,
+                    top: metrics.blockTop + metrics.shieldBgTop,
                     width: metrics.shieldBgWidth,
                     height: metrics.shieldBgHeight,
                     child: IgnorePointer(
                       child: _ShieldQrBackground(color: colors.border.subtle),
                     ),
                   ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Receive ZEC',
-                      style: AppTypography.displaySmall.copyWith(
-                        color: colors.text.accent,
+                Positioned(
+                  top: _ReceiveQrMetrics.contentInsetY,
+                  left: 0,
+                  right: 0,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Receive ZEC',
+                        style: AppTypography.displaySmall.copyWith(
+                          color: colors.text.accent,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    _ReceiveTabs(
-                      selectedType: selectedType,
-                      onChanged: onTypeChanged,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 160),
-                      child: isLoading
-                          ? SizedBox(
-                              key: const ValueKey('loading'),
-                              width: metrics.blockWidth,
-                              height: metrics.blockHeight,
-                              child: const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                            )
-                          : _ReceiveQrBlock(
-                              key: ValueKey(selectedType),
-                              type: selectedType,
-                              address: address,
-                              renewing: isRenewingShielded,
-                              metrics: metrics,
-                              onRenew: onRenewShielded,
-                              onShowHelp: onShowHelp,
+                      const SizedBox(height: AppSpacing.md),
+                      _ReceiveTabs(
+                        selectedType: selectedType,
+                        onChanged: onTypeChanged,
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  left: (contentWidth - metrics.blockWidth) / 2,
+                  top: metrics.blockTop,
+                  width: metrics.blockWidth,
+                  height: metrics.blockHeight,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 160),
+                    child: isLoading
+                        ? SizedBox(
+                            key: const ValueKey('loading'),
+                            width: metrics.blockWidth,
+                            height: metrics.blockHeight,
+                            child: const Center(
+                              child: CircularProgressIndicator(),
                             ),
-                    ),
-                  ],
+                          )
+                        : _ReceiveQrBlock(
+                            key: ValueKey(selectedType),
+                            type: selectedType,
+                            address: address,
+                            renewing: isRenewingShielded,
+                            metrics: metrics,
+                            onRenew: onRenewShielded,
+                            onShowHelp: onShowHelp,
+                          ),
+                  ),
                 ),
               ],
             ),
@@ -499,6 +509,7 @@ class _ReceiveQrMetrics {
   const _ReceiveQrMetrics({
     required this.blockWidth,
     required this.blockHeight,
+    required this.blockTop,
     required this.qrFrameWidth,
     required this.qrFrameHeight,
     required this.qrSurfaceSize,
@@ -515,32 +526,39 @@ class _ReceiveQrMetrics {
   });
 
   static const _baseContentHeight = 520.0;
+  static const _contentInsetY = AppSpacing.md;
   static const _fixedBeforeQr = 44.0 + AppSpacing.md + 36.0 + AppSpacing.md;
   static const _baseBlockWidth = 356.0;
-  static const _baseBlockHeight = 276.5337219238281;
-  static const _baseQrSurfaceSize = 162.53372192382812;
+  static const _baseBlockHeight = 344.0;
+  static const _baseQrSurfaceSize = 230.0;
   static const _baseQrPaddingX = 16.0;
   static const _baseQrPaddingY = 24.0;
   static const _baseAddressGap = 10.0;
   static const _addressLineHeight = 24.0;
-  static const _baseRenewTop = 194.533203125;
+  static const _baseRenewTop = 268.533203125;
   static const _baseRenewSize = 40.0;
   static const _baseRenewOverlap =
       _baseQrSurfaceSize + _baseQrPaddingY * 2 - _baseRenewTop;
-  static const _baseRenewBottomGap = 8.000518798828125;
-  static const _baseEmbeddedImageSize = 36.0;
+  static const _baseRenewBottomGap =
+      _baseBlockHeight -
+      _baseAddressGap -
+      _addressLineHeight -
+      _baseRenewTop -
+      _baseRenewSize;
+  static const _baseEmbeddedImageSize = 48.0;
   static const _baseShieldBgWidth = 636.0;
   static const _baseShieldBgHeight = 555.0;
-  static const _baseShieldBgCenterYOffset = 40.5;
-  static const _minBalancedInset = AppSpacing.md;
+  static const _baseShieldBgCenterYOffset = 40.2333984375;
   static const _minQrSurfaceSize = 112.0;
 
-  static double get fixedBeforeQrForLayout => _fixedBeforeQr;
+  static double get baseContentHeight => _baseContentHeight;
+  static double get contentInsetY => _contentInsetY;
   static double get embeddedImageScale =>
       _baseEmbeddedImageSize / _baseQrSurfaceSize;
 
   final double blockWidth;
   final double blockHeight;
+  final double blockTop;
   final double qrFrameWidth;
   final double qrFrameHeight;
   final double qrSurfaceSize;
@@ -563,11 +581,6 @@ class _ReceiveQrMetrics {
         ? constraints.maxWidth
         : 752.0;
 
-    final maxBlockHeightByHeight = math.max(
-      _minQrSurfaceSize,
-      maxContentHeight - _fixedBeforeQr - _minBalancedInset * 2,
-    );
-
     const frameHeightExtra =
         _baseQrPaddingY * 2 +
         _baseRenewSize -
@@ -575,18 +588,16 @@ class _ReceiveQrMetrics {
         _baseRenewBottomGap;
     const blockHeightExtra =
         frameHeightExtra + _baseAddressGap + _addressLineHeight;
-    final preferredBlockHeight =
-        _baseBlockHeight + math.max(0, maxContentHeight - _baseContentHeight);
-    final preferredSurface = preferredBlockHeight - blockHeightExtra;
-    final maxSurfaceByHeight = maxBlockHeightByHeight - blockHeightExtra;
+    final maxSurfaceByHeight =
+        maxContentHeight -
+        _contentInsetY * 2 -
+        _fixedBeforeQr -
+        blockHeightExtra;
     final maxSurfaceByWidth = maxContentWidth - _baseQrPaddingX * 2;
 
     final qrSurfaceSize = math.max(
       _minQrSurfaceSize,
-      math.min(
-        preferredSurface,
-        math.min(maxSurfaceByHeight, maxSurfaceByWidth),
-      ),
+      math.min(maxSurfaceByHeight, maxSurfaceByWidth),
     );
     final scale = qrSurfaceSize / _baseQrSurfaceSize;
     final qrFrameWidth = qrSurfaceSize + _baseQrPaddingX * 2;
@@ -599,10 +610,16 @@ class _ReceiveQrMetrics {
     final shieldBgWidth = _baseShieldBgWidth * scale;
     final shieldBgHeight = _baseShieldBgHeight * scale;
     final computedBlockWidth = math.max(_baseBlockWidth, qrFrameWidth);
+    final blockHeight = qrFrameHeight + _baseAddressGap + _addressLineHeight;
+    final blockTop = math.max(
+      _contentInsetY + _fixedBeforeQr,
+      maxContentHeight - _contentInsetY - blockHeight,
+    );
 
     return _ReceiveQrMetrics(
       blockWidth: math.min(maxContentWidth, computedBlockWidth),
-      blockHeight: qrFrameHeight + _baseAddressGap + _addressLineHeight,
+      blockHeight: blockHeight,
+      blockTop: blockTop,
       qrFrameWidth: qrFrameWidth,
       qrFrameHeight: qrFrameHeight,
       qrSurfaceSize: qrSurfaceSize,
@@ -863,7 +880,7 @@ class _QrSurface extends StatelessWidget {
     required this.type,
   });
 
-  static const _wrapperRadius = 24.0;
+  static const _wrapperRadius = 32.0;
 
   final String address;
   final double size;
