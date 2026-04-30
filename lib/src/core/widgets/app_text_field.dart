@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
 
-enum AppTextFieldTone { neutral, destructive, brandCrimson }
+enum AppTextFieldTone { neutral, destructive, success, brandCrimson }
 
 class AppTextField extends StatefulWidget {
   const AppTextField({
@@ -256,6 +256,7 @@ class _AppTextFieldState extends State<AppTextField> {
     final leadingIconColor = switch (widget.tone) {
       AppTextFieldTone.neutral => neutralIconColor,
       AppTextFieldTone.destructive => colors.icon.destructive,
+      AppTextFieldTone.success => colors.icon.success,
       AppTextFieldTone.brandCrimson => colors.icon.brandCrimson,
     };
     final gap = _multiline ? AppSpacing.xs : AppSpacing.xxs;
@@ -284,22 +285,30 @@ class _AppTextFieldState extends State<AppTextField> {
       AppTextFieldTone.neutral when _hovered => colors.border.regular,
       AppTextFieldTone.neutral => colors.border.subtle,
       AppTextFieldTone.destructive => colors.border.utilityDestructive,
+      AppTextFieldTone.success => colors.border.utilitySuccess,
       AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
     };
     final focusRingColor = switch (widget.tone) {
       AppTextFieldTone.neutral => colors.state.focusRing,
       AppTextFieldTone.destructive => colors.border.utilityDestructive,
+      AppTextFieldTone.success => colors.border.utilitySuccess,
       AppTextFieldTone.brandCrimson => colors.border.brandCrimsonStrong,
     };
     final messageColor = switch (widget.tone) {
       AppTextFieldTone.neutral => colors.text.secondary,
       AppTextFieldTone.destructive => colors.text.destructive,
+      AppTextFieldTone.success => colors.text.success,
       AppTextFieldTone.brandCrimson => colors.text.brandCrimson,
     };
     final defaultMessageIcon = switch (widget.tone) {
       AppTextFieldTone.neutral => null,
       AppTextFieldTone.destructive => AppIcon(
         AppIcons.warning,
+        size: AppIconSize.medium,
+        color: messageColor,
+      ),
+      AppTextFieldTone.success => AppIcon(
+        AppIcons.checkCircle,
         size: AppIconSize.medium,
         color: messageColor,
       ),
