@@ -205,8 +205,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "2ea5a80a120efe2063e17b98867c52a3db613454"
-      resolved-ref: "2ea5a80a120efe2063e17b98867c52a3db613454"
+      ref: "4b4c6ba9ab23864d5b16694eef110bbbb50d28ab"
+      resolved-ref: "4b4c6ba9ab23864d5b16694eef110bbbb50d28ab"
       url: "https://github.com/chainapsis/desktop_window_bootstrap.git"
     source: git
     version: "0.0.1"
