@@ -243,6 +243,11 @@ pub(crate) struct TransactionDetailOutput {
     pub pool: String,
 }
 
+pub(crate) struct ExportBirthdayAnchor {
+    pub block_height: u64,
+    pub block_time: u64,
+}
+
 #[derive(Clone)]
 struct TxBase {
     txid: Vec<u8>,
@@ -379,6 +384,42 @@ pub fn get_transaction_history(
     }
 
     Ok(visible.into_iter().map(|tx| tx.info).collect())
+}
+
+pub(crate) fn get_oldest_mined_transaction_anchor(
+    db_path: &str,
+    account_uuid: &str,
+) -> Result<Option<ExportBirthdayAnchor>, String> {
+    let account_id = parse_account_uuid(account_uuid)?;
+    let conn = open_readonly_conn(db_path)?;
+    let mut stmt = conn
+        .prepare(
+            r#"
+        SELECT
+            mined_height,
+            COALESCE(block_time, 0) AS block_time
+        FROM v_transactions
+        WHERE account_uuid = ?1
+          AND mined_height IS NOT NULL
+        ORDER BY mined_height ASC, COALESCE(tx_index, -1) ASC
+        LIMIT 1
+        "#,
+        )
+        .map_err(|e| format!("SQL error: {e}"))?;
+
+    stmt.query_row(
+        rusqlite::params![account_id.expose_uuid().as_bytes().as_slice()],
+        |row| {
+            let block_height = row.get::<_, u32>(0)?;
+            let block_time = row.get::<_, i64>(1)?;
+            Ok(ExportBirthdayAnchor {
+                block_height: u64::from(block_height),
+                block_time: block_time.unsigned_abs(),
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| format!("Query error: {e}"))
 }
 
 pub fn get_transaction_detail(
@@ -1369,6 +1410,152 @@ mod tests {
             rusqlite::params![txid],
         )
         .unwrap();
+    }
+
+    fn set_history_block_time(db: &NamedTempFile, txid: &[u8], block_time: i64) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "UPDATE v_transactions SET block_time = ?2 WHERE txid = ?1",
+            rusqlite::params![txid, block_time],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn export_birthday_anchor_uses_oldest_mined_tx_for_account() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let other_account = second_test_account_uuid();
+        let newer = fake_txid(0x71);
+        let older_late_index = fake_txid(0x72);
+        let older_early_index = fake_txid(0x73);
+        let other_older = fake_txid(0x74);
+        let pending = fake_txid(0x75);
+
+        insert_history_tx(
+            &db,
+            account,
+            &newer,
+            Some(300),
+            0,
+            None,
+            1,
+            0,
+            1,
+            false,
+            None,
+        );
+        set_history_block_time(&db, &newer, 333_000);
+
+        insert_history_tx(
+            &db,
+            account,
+            &older_late_index,
+            Some(200),
+            5,
+            None,
+            1,
+            0,
+            1,
+            false,
+            None,
+        );
+        set_history_block_time(&db, &older_late_index, 222_000);
+
+        insert_history_tx(
+            &db,
+            account,
+            &older_early_index,
+            Some(200),
+            1,
+            None,
+            1,
+            0,
+            1,
+            false,
+            None,
+        );
+        set_history_block_time(&db, &older_early_index, 111_000);
+
+        insert_history_tx(
+            &db,
+            other_account,
+            &other_older,
+            Some(100),
+            0,
+            None,
+            1,
+            0,
+            1,
+            false,
+            None,
+        );
+        set_history_block_time(&db, &other_older, 100_000);
+
+        insert_history_tx(
+            &db,
+            account,
+            &pending,
+            None,
+            0,
+            Some(400),
+            1,
+            0,
+            1,
+            false,
+            None,
+        );
+        set_history_block_time(&db, &pending, 99_000);
+
+        let got =
+            get_oldest_mined_transaction_anchor(db.path().to_str().unwrap(), &account.to_string())
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(got.block_height, 200);
+        assert_eq!(got.block_time, 111_000);
+    }
+
+    #[test]
+    fn export_birthday_anchor_returns_none_without_mined_tx() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let other_account = second_test_account_uuid();
+        let pending = fake_txid(0x81);
+        let other_mined = fake_txid(0x82);
+
+        insert_history_tx(
+            &db,
+            account,
+            &pending,
+            None,
+            0,
+            Some(400),
+            1,
+            0,
+            1,
+            false,
+            None,
+        );
+        insert_history_tx(
+            &db,
+            other_account,
+            &other_mined,
+            Some(100),
+            0,
+            None,
+            1,
+            0,
+            1,
+            false,
+            None,
+        );
+
+        let got =
+            get_oldest_mined_transaction_anchor(db.path().to_str().unwrap(), &account.to_string())
+                .unwrap();
+
+        assert!(got.is_none());
     }
 
     #[test]

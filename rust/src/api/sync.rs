@@ -835,6 +835,11 @@ pub struct TransactionDetailOutput {
     pub pool: String,
 }
 
+pub struct ExportBirthdayInfo {
+    pub block_height: u64,
+    pub block_time: u64,
+}
+
 pub fn get_transaction_history(
     db_path: String,
     network: String,
@@ -860,6 +865,63 @@ pub fn get_transaction_history(
                 created_time: t.created_time,
             })
             .collect())
+    })
+}
+
+pub fn get_export_birthday_info(
+    db_path: String,
+    network: String,
+    lightwalletd_url: String,
+    account_uuid: String,
+) -> Result<ExportBirthdayInfo, String> {
+    catch(|| {
+        let _network = keys::parse_network(&network)?;
+        match wallet_sync::get_oldest_mined_transaction_anchor(&db_path, &account_uuid)? {
+            Some(anchor) if anchor.block_time > 0 => Ok(ExportBirthdayInfo {
+                block_height: anchor.block_height,
+                block_time: anchor.block_time,
+            }),
+            Some(anchor) => fetch_block_info(&lightwalletd_url, Some(anchor.block_height)),
+            None => fetch_block_info(&lightwalletd_url, None),
+        }
+    })
+}
+
+fn fetch_block_info(
+    lightwalletd_url: &str,
+    height: Option<u64>,
+) -> Result<ExportBirthdayInfo, String> {
+    use zcash_client_backend::proto::service::{BlockId, ChainSpec};
+
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+    rt.block_on(async {
+        let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
+            .await
+            .map_err(|e| e.to_string())?;
+        let block_height = match height {
+            Some(height) => height,
+            None => {
+                client
+                    .get_latest_block(ChainSpec::default())
+                    .await
+                    .map_err(|e| format!("get_latest_block: {e}"))?
+                    .into_inner()
+                    .height
+            }
+        };
+        let block = client
+            .get_block(BlockId {
+                height: block_height,
+                hash: vec![],
+            })
+            .await
+            .map_err(|e| format!("get_block: {e}"))?
+            .into_inner();
+
+        Ok(ExportBirthdayInfo {
+            block_height,
+            block_time: u64::from(block.time),
+        })
     })
 }
 
