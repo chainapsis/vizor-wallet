@@ -148,6 +148,38 @@ void main() {
     expect(find.text('-1.00 ZEC'), findsNothing);
   });
 
+  testWidgets('shielded activity rows use the shield keyhole outline icon', (
+    tester,
+  ) async {
+    late final List<ActivityRowData> rows;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              rows = buildActivityRows(
+                context: context,
+                sync: SyncState(totalBalance: BigInt.zero),
+                transactions: [
+                  _tx(
+                    txidHex: 'shielded',
+                    kind: 'shielded',
+                    amount: BigInt.from(10000),
+                  ),
+                ],
+              );
+              return ActivityTable(rows: rows);
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(rows[1].leadingIconName, AppIcons.shieldKeyholeOutline);
+  });
+
   testWidgets('activity row value cells use label large typography', (
     tester,
   ) async {

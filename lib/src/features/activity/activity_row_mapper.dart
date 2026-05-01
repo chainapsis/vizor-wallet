@@ -211,7 +211,7 @@ String _txIcon(String kind) {
   return switch (kind) {
     'received' => AppIcons.arrowDownCircle,
     'sent' => AppIcons.plane,
-    'shielded' => AppIcons.shieldAsset,
+    'shielded' => AppIcons.shieldKeyholeOutline,
     _ => AppIcons.history,
   };
 }
