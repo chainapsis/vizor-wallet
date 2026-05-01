@@ -540,21 +540,16 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
       return KeyEventResult.handled;
     }
 
-    if (event.logicalKey != LogicalKeyboardKey.tab) {
-      return KeyEventResult.ignored;
-    }
-
-    if (HardwareKeyboard.instance.isShiftPressed) {
-      widget.onMovePrevious();
+    if (event.logicalKey == LogicalKeyboardKey.tab) {
+      if (HardwareKeyboard.instance.isShiftPressed) {
+        widget.onMovePrevious();
+      } else {
+        widget.onMoveNext();
+      }
       return KeyEventResult.handled;
     }
 
-    if (_hasAutocompleteOptions) {
-      onAutocompleteSubmitted();
-    } else {
-      widget.onMoveNext();
-    }
-    return KeyEventResult.handled;
+    return KeyEventResult.ignored;
   }
 
   void _handleTextSubmitted(VoidCallback onAutocompleteSubmitted) {

@@ -60,7 +60,7 @@ void main() {
     expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
   });
 
-  testWidgets('Tab accepts the highlighted suggestion and moves next', (
+  testWidgets('Tab keeps the typed text and moves focus to the next field', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -71,7 +71,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pump();
 
-    expect(_textField(tester, 0).controller!.text, 'cabbage');
+    expect(_textField(tester, 0).controller!.text, 'cab');
     expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
   });
 
