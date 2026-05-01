@@ -816,19 +816,39 @@ class _MnemonicSuggestionPopoverState
   static const _outerVerticalPadding = 8.0;
 
   final ScrollController _scrollController = ScrollController();
+  bool _canScroll = false;
+
   @override
   void didUpdateWidget(covariant _MnemonicSuggestionPopover oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.highlightedIndex != widget.highlightedIndex ||
         oldWidget.options.length != widget.options.length) {
+      _scheduleCanScrollUpdate();
       _scheduleHighlightedOptionScroll();
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleCanScrollUpdate();
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _scheduleCanScrollUpdate() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final nextCanScroll = _scrollController.position.maxScrollExtent > 0;
+      if (_canScroll == nextCanScroll) return;
+      setState(() {
+        _canScroll = nextCanScroll;
+      });
+    });
   }
 
   void _scheduleHighlightedOptionScroll() {
@@ -870,7 +890,6 @@ class _MnemonicSuggestionPopoverState
     final visibleCount = optionCount < _visibleRows
         ? optionCount
         : _visibleRows;
-    final showScrollbar = optionCount > _visibleRows;
     final gapCount = visibleCount > 0 ? visibleCount - 1 : 0;
     final listHeight =
         _listPadding * 2 + visibleCount * _rowHeight + gapCount * _rowGap;
@@ -916,7 +935,7 @@ class _MnemonicSuggestionPopoverState
             ),
             child: Scrollbar(
               controller: _scrollController,
-              thumbVisibility: showScrollbar,
+              thumbVisibility: _canScroll,
               child: Row(
                 children: [
                   Expanded(
@@ -946,8 +965,7 @@ class _MnemonicSuggestionPopoverState
                       ),
                     ),
                   ),
-                  if (showScrollbar)
-                    const SizedBox(width: _scrollbarTrackWidth),
+                  if (_canScroll) const SizedBox(width: _scrollbarTrackWidth),
                 ],
               ),
             ),

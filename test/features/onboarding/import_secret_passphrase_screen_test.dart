@@ -128,6 +128,7 @@ void main() {
         find.byType(Scrollable).last,
       );
       expect(scrollable.position.viewportDimension, lessThan(152));
+      expect(find.text('cage'), findsNothing);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
