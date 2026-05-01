@@ -814,8 +814,6 @@ class _MnemonicSuggestionPopoverState
   static const _listPadding = 4.0;
   static const _scrollbarTrackWidth = 12.0;
   static const _outerVerticalPadding = 8.0;
-  static const _listViewportHeight =
-      _listPadding * 2 + _rowHeight * _visibleRows + _rowGap * 3;
 
   final ScrollController _scrollController = ScrollController();
   @override
@@ -845,13 +843,14 @@ class _MnemonicSuggestionPopoverState
       final rowTop = _listPadding + index * (_rowHeight + _rowGap);
       final rowBottom = rowTop + _rowHeight;
       final viewportTop = _scrollController.offset;
-      final viewportBottom = viewportTop + _listViewportHeight;
+      final viewportHeight = _scrollController.position.viewportDimension;
+      final viewportBottom = viewportTop + viewportHeight;
 
       double? nextOffset;
       if (rowTop < viewportTop) {
         nextOffset = rowTop;
       } else if (rowBottom > viewportBottom) {
-        nextOffset = rowBottom - _listViewportHeight;
+        nextOffset = rowBottom - viewportHeight;
       }
 
       if (nextOffset == null) return;

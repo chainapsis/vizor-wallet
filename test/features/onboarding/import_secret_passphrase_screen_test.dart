@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show MaterialApp, Scaffold, TextField;
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart' show Widget;
+import 'package:flutter/widgets.dart'
+    show Scrollable, ScrollableState, Size, Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -115,6 +116,35 @@ void main() {
     expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
   });
 
+  testWidgets(
+    'Tab scrolls clipped suggestions when highlight moves below view',
+    (tester) async {
+      await _setDesktopViewport(tester, const Size(1280, 720));
+      await tester.pumpWidget(_importPassphraseScreen());
+      await tester.enterText(_wordField(23), 'ca');
+      await tester.pump();
+
+      final scrollable = tester.state<ScrollableState>(
+        find.byType(Scrollable).last,
+      );
+      expect(scrollable.position.viewportDimension, lessThan(152));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+
+      expect(scrollable.position.pixels, greaterThan(0));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      expect(_textField(tester, 23).controller!.text, 'cactus');
+    },
+  );
+
   testWidgets('keeps existing paste-to-fill behavior', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(_importPassphraseScreen());
@@ -128,8 +158,11 @@ void main() {
   });
 }
 
-Future<void> _setDesktopViewport(WidgetTester tester) async {
-  await tester.binding.setSurfaceSize(const Size(1280, 900));
+Future<void> _setDesktopViewport(
+  WidgetTester tester, [
+  Size size = const Size(1280, 900),
+]) async {
+  await tester.binding.setSurfaceSize(size);
   addTearDown(() async {
     await tester.binding.setSurfaceSize(null);
   });
