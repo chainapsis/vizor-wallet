@@ -1,8 +1,8 @@
 #ifndef RUNNER_VELOPACK_UNINSTALL_H_
 #define RUNNER_VELOPACK_UNINSTALL_H_
 
-// Handles Velopack's uninstall hook if the current process was launched for
-// uninstall cleanup. Returns true when the process should exit immediately.
-bool HandleVelopackUninstallHook();
+// Handles Velopack lifecycle hooks before Flutter starts. Returns true when
+// the process should exit immediately.
+bool HandleVelopackHook();
 
 #endif  // RUNNER_VELOPACK_UNINSTALL_H_

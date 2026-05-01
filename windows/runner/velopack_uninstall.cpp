@@ -17,8 +17,19 @@
 namespace {
 
 constexpr wchar_t kVeloUninstallArg[] = L"--veloapp-uninstall";
+constexpr wchar_t kVeloInstallArg[] = L"--veloapp-install";
+constexpr wchar_t kVeloObsoleteArg[] = L"--veloapp-obsolete";
+constexpr wchar_t kVeloUpdatedArg[] = L"--veloapp-updated";
 constexpr wchar_t kSecureStoragePrefix[] =
     L"Vizor_VGhpcyBpcyB0aGUgcHJlZml4IGZv_";
+
+enum class VelopackHook {
+  kNone,
+  kInstall,
+  kObsolete,
+  kUpdated,
+  kUninstall,
+};
 
 std::wstring ToLower(std::wstring value) {
   std::transform(value.begin(), value.end(), value.begin(),
@@ -30,22 +41,35 @@ void DebugLog(const std::wstring& message) {
   ::OutputDebugStringW((L"[Vizor uninstall] " + message + L"\n").c_str());
 }
 
-bool HasVelopackUninstallArg() {
+VelopackHook DetectVelopackHook() {
   int argc = 0;
   LPWSTR* argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
   if (argv == nullptr) {
-    return false;
+    return VelopackHook::kNone;
   }
 
-  bool found = false;
+  VelopackHook hook = VelopackHook::kNone;
   for (int i = 1; i < argc; ++i) {
-    if (std::wstring(argv[i]) == kVeloUninstallArg) {
-      found = true;
+    const std::wstring arg(argv[i]);
+    if (arg == kVeloInstallArg) {
+      hook = VelopackHook::kInstall;
+      break;
+    }
+    if (arg == kVeloObsoleteArg) {
+      hook = VelopackHook::kObsolete;
+      break;
+    }
+    if (arg == kVeloUpdatedArg) {
+      hook = VelopackHook::kUpdated;
+      break;
+    }
+    if (arg == kVeloUninstallArg) {
+      hook = VelopackHook::kUninstall;
       break;
     }
   }
   ::LocalFree(argv);
-  return found;
+  return hook;
 }
 
 std::wstring SanitizedDirectoryName(const std::wstring& raw) {
@@ -225,11 +249,15 @@ void DeleteUserData() {
 
 }  // namespace
 
-bool HandleVelopackUninstallHook() {
-  if (!HasVelopackUninstallArg()) {
+bool HandleVelopackHook() {
+  const VelopackHook hook = DetectVelopackHook();
+  if (hook == VelopackHook::kNone) {
     return false;
   }
 
-  DeleteUserData();
+  if (hook == VelopackHook::kUninstall) {
+    DeleteUserData();
+  }
+
   return true;
 }
