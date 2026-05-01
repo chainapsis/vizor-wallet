@@ -118,16 +118,16 @@ class _ImportSecretPassphraseScreenState
     _focusNodes[index].requestFocus();
   }
 
-  void _moveToNextWord(int index) {
-    if (index < _wordCount - 1) {
-      _focusIndex(index + 1);
-    }
+  bool _moveToNextWord(int index) {
+    if (index >= _wordCount - 1) return false;
+    _focusIndex(index + 1);
+    return true;
   }
 
-  void _moveToPreviousWord(int index) {
-    if (index > 0) {
-      _focusIndex(index - 1);
-    }
+  bool _moveToPreviousWord(int index) {
+    if (index <= 0) return false;
+    _focusIndex(index - 1);
+    return true;
   }
 
   void _handleSuggestionSelected(int index, String word) {
@@ -393,8 +393,8 @@ class _MnemonicWordCell extends StatefulWidget {
   final List<String> wordList;
   final ValueChanged<String> onChanged;
   final VoidCallback onSubmitted;
-  final VoidCallback onMoveNext;
-  final VoidCallback onMovePrevious;
+  final bool Function() onMoveNext;
+  final bool Function() onMovePrevious;
   final ValueChanged<String> onSuggestionSelected;
   final bool destructive;
   final bool autofocus;
@@ -552,9 +552,22 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
               : const AutocompleteNextOptionIntent(),
         );
       } else if (shiftPressed) {
-        widget.onMovePrevious();
+        if (!widget.onMovePrevious()) {
+          final focusContext = node.context;
+          final moved = focusContext == null
+              ? widget.focusNode.previousFocus()
+              : FocusTraversalGroup.of(focusContext).previous(widget.focusNode);
+          if (!moved || widget.focusNode.hasFocus) {
+            widget.focusNode.unfocus();
+          }
+        }
       } else {
-        widget.onMoveNext();
+        if (!widget.onMoveNext()) {
+          final moved = widget.focusNode.nextFocus();
+          if (!moved) {
+            widget.focusNode.unfocus();
+          }
+        }
       }
       return KeyEventResult.handled;
     }
@@ -617,6 +630,8 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
         : colors.text.secondary;
 
     return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
       onKeyEvent: (node, event) =>
           _handleFieldKeyEvent(node, event, onAutocompleteSubmitted),
       child: MouseRegion(

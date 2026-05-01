@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart' show MaterialApp, Scaffold, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart'
-    show Scrollable, ScrollableState, Size, Widget;
+    show
+        Column,
+        Expanded,
+        Focus,
+        FocusNode,
+        Scrollable,
+        ScrollableState,
+        Size,
+        SizedBox,
+        Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -116,6 +125,57 @@ void main() {
     expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
   });
 
+  testWidgets('Tab leaves the last word when autocomplete is hidden', (
+    tester,
+  ) async {
+    final afterNode = FocusNode();
+    addTearDown(afterNode.dispose);
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen(afterNode: afterNode));
+    await tester.enterText(_wordField(23), 'zzz');
+    _textField(tester, 23).focusNode!.requestFocus();
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+
+    expect(afterNode.hasFocus, isTrue);
+  });
+
+  testWidgets('Tab from the focus cycle end enters the first word', (
+    tester,
+  ) async {
+    final afterNode = FocusNode();
+    addTearDown(afterNode.dispose);
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen(afterNode: afterNode));
+    afterNode.requestFocus();
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+
+    expect(_textField(tester, 0).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('Shift+Tab leaves the first word when autocomplete is hidden', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+    await tester.enterText(_wordField(0), 'zzz');
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+
+    expect(_textField(tester, 0).focusNode!.hasFocus, isFalse);
+  });
+
   testWidgets(
     'Tab scrolls clipped suggestions when highlight moves below view',
     (tester) async {
@@ -169,7 +229,17 @@ Future<void> _setDesktopViewport(
   });
 }
 
-Widget _importPassphraseScreen() {
+Widget _importPassphraseScreen({FocusNode? afterNode}) {
+  Widget body = const ImportSecretPassphraseScreen();
+  if (afterNode != null) {
+    body = Column(
+      children: [
+        Expanded(child: body),
+        Focus(focusNode: afterNode, child: const SizedBox(width: 1, height: 1)),
+      ],
+    );
+  }
+
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
@@ -177,7 +247,7 @@ Widget _importPassphraseScreen() {
     child: MaterialApp(
       home: AppTheme(
         data: AppThemeData.light,
-        child: const Scaffold(body: ImportSecretPassphraseScreen()),
+        child: Scaffold(body: body),
       ),
     ),
   );
