@@ -60,7 +60,7 @@ void main() {
     expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
   });
 
-  testWidgets('Tab keeps the typed text and moves focus to the next field', (
+  testWidgets('Tab moves the highlighted suggestion down without selecting', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -72,6 +72,46 @@ void main() {
     await tester.pump();
 
     expect(_textField(tester, 0).controller!.text, 'cab');
+    expect(_textField(tester, 0).focusNode!.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(_textField(tester, 0).controller!.text, 'cabin');
+    expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('Shift+Tab moves the highlighted suggestion up', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+    await tester.enterText(_wordField(0), 'cab');
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(_textField(tester, 0).controller!.text, 'cabin');
+    expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('Tab moves focus when autocomplete is hidden', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+    await tester.enterText(_wordField(0), 'zzz');
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+
+    expect(_textField(tester, 0).controller!.text, 'zzz');
     expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
   });
 

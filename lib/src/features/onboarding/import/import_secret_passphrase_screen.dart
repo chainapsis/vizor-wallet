@@ -541,7 +541,17 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
     }
 
     if (event.logicalKey == LogicalKeyboardKey.tab) {
-      if (HardwareKeyboard.instance.isShiftPressed) {
+      final shiftPressed = HardwareKeyboard.instance.isShiftPressed;
+      if (_hasAutocompleteOptions) {
+        final actionContext = node.context;
+        if (actionContext == null) return KeyEventResult.handled;
+        Actions.invoke(
+          actionContext,
+          shiftPressed
+              ? const AutocompletePreviousOptionIntent()
+              : const AutocompleteNextOptionIntent(),
+        );
+      } else if (shiftPressed) {
         widget.onMovePrevious();
       } else {
         widget.onMoveNext();
