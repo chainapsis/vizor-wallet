@@ -921,25 +921,30 @@ class _MnemonicSuggestionPopoverState
               child: Row(
                 children: [
                   Expanded(
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.all(_listPadding),
-                      itemCount: optionCount,
-                      itemBuilder: (context, index) {
-                        final option = widget.options[index];
-                        final highlighted = index == widget.highlightedIndex;
-                        return Padding(
-                          padding: EdgeInsets.only(
-                            bottom: index == optionCount - 1 ? 0 : _rowGap,
-                          ),
-                          child: _MnemonicSuggestionRow(
-                            wordIndex: widget.wordIndex,
-                            word: option,
-                            highlighted: highlighted,
-                            onTap: () => widget.onSelected(option),
-                          ),
-                        );
-                      },
+                    child: ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(
+                        context,
+                      ).copyWith(scrollbars: false),
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(_listPadding),
+                        itemCount: optionCount,
+                        itemBuilder: (context, index) {
+                          final option = widget.options[index];
+                          final highlighted = index == widget.highlightedIndex;
+                          return Padding(
+                            padding: EdgeInsets.only(
+                              bottom: index == optionCount - 1 ? 0 : _rowGap,
+                            ),
+                            child: _MnemonicSuggestionRow(
+                              wordIndex: widget.wordIndex,
+                              word: option,
+                              highlighted: highlighted,
+                              onTap: () => widget.onSelected(option),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
                   if (showScrollbar)
