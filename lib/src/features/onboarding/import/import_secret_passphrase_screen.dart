@@ -812,6 +812,7 @@ class _MnemonicSuggestionPopoverState
   static const _rowGap = 4.0;
   static const _visibleRows = 4;
   static const _listPadding = 4.0;
+  static const _scrollbarTrackWidth = 12.0;
   static const _outerVerticalPadding = 8.0;
   static const _listViewportHeight =
       _listPadding * 2 + _rowHeight * _visibleRows + _rowGap * 3;
@@ -870,6 +871,7 @@ class _MnemonicSuggestionPopoverState
     final visibleCount = optionCount < _visibleRows
         ? optionCount
         : _visibleRows;
+    final showScrollbar = optionCount > _visibleRows;
     final gapCount = visibleCount > 0 ? visibleCount - 1 : 0;
     final listHeight =
         _listPadding * 2 + visibleCount * _rowHeight + gapCount * _rowGap;
@@ -902,7 +904,7 @@ class _MnemonicSuggestionPopoverState
                 ],
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 8, 16, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: ScrollbarTheme(
             data: ScrollbarThemeData(
               thumbColor: WidgetStatePropertyAll(
@@ -911,30 +913,38 @@ class _MnemonicSuggestionPopoverState
               radius: const Radius.circular(AppRadii.full),
               thickness: const WidgetStatePropertyAll(6),
               mainAxisMargin: 3,
-              crossAxisMargin: -10,
+              crossAxisMargin: 3,
             ),
             child: Scrollbar(
               controller: _scrollController,
-              thumbVisibility: optionCount > _visibleRows,
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(_listPadding),
-                itemCount: optionCount,
-                itemBuilder: (context, index) {
-                  final option = widget.options[index];
-                  final highlighted = index == widget.highlightedIndex;
-                  return Padding(
-                    padding: EdgeInsets.only(
-                      bottom: index == optionCount - 1 ? 0 : _rowGap,
+              thumbVisibility: showScrollbar,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(_listPadding),
+                      itemCount: optionCount,
+                      itemBuilder: (context, index) {
+                        final option = widget.options[index];
+                        final highlighted = index == widget.highlightedIndex;
+                        return Padding(
+                          padding: EdgeInsets.only(
+                            bottom: index == optionCount - 1 ? 0 : _rowGap,
+                          ),
+                          child: _MnemonicSuggestionRow(
+                            wordIndex: widget.wordIndex,
+                            word: option,
+                            highlighted: highlighted,
+                            onTap: () => widget.onSelected(option),
+                          ),
+                        );
+                      },
                     ),
-                    child: _MnemonicSuggestionRow(
-                      wordIndex: widget.wordIndex,
-                      word: option,
-                      highlighted: highlighted,
-                      onTap: () => widget.onSelected(option),
-                    ),
-                  );
-                },
+                  ),
+                  if (showScrollbar)
+                    const SizedBox(width: _scrollbarTrackWidth),
+                ],
               ),
             ),
           ),
