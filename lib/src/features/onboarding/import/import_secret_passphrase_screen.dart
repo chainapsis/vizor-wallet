@@ -858,6 +858,7 @@ class _MnemonicSuggestionPopoverState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
     final optionCount = widget.options.length;
     if (optionCount == 0) return const SizedBox.shrink();
 
@@ -880,18 +881,20 @@ class _MnemonicSuggestionPopoverState
             color: colors.border.subtle,
             strokeAlign: BorderSide.strokeAlignInside,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: colors.background.neutralScrim,
-              blurRadius: 2,
-              offset: const Offset(0, 2),
-            ),
-            BoxShadow(
-              color: colors.background.neutralScrim,
-              blurRadius: 15,
-              offset: const Offset(0, 10),
-            ),
-          ],
+          boxShadow: isDark
+              ? null
+              : [
+                  BoxShadow(
+                    color: colors.background.overlay,
+                    blurRadius: 2,
+                    offset: const Offset(0, 2),
+                  ),
+                  BoxShadow(
+                    color: colors.background.overlay,
+                    blurRadius: 15,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(4, 8, 16, 8),
