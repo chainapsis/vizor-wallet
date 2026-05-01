@@ -64,7 +64,6 @@ bool get isDesktopLayoutPlatform {
 /// imply [AppLayoutMode.small].
 const double _largeRatioThreshold = (1080.0 / 720.0 + (50.0 * 1.3) / 133.0) / 2;
 const double _macOSWindowedTitlebarInset = 32.0;
-AppLayoutMode _desktopWindowMode = AppLayoutMode.large;
 
 /// Initialize the OS window for desktop at startup.
 ///
@@ -74,24 +73,26 @@ Future<void> initializeDesktopWindow({
   AppLayoutMode initialMode = AppLayoutMode.large,
 }) async {
   if (!isDesktopLayoutPlatform) return;
-  _desktopWindowMode = initialMode;
 
   await windowManager.ensureInitialized();
 
-  final options = WindowOptions(
-    size: initialMode.defaultSize,
-    minimumSize: initialMode.minimumSize,
-    center: true,
-    title: 'Vizor',
-  );
+  final options = Platform.isWindows
+      ? WindowOptions(title: 'Vizor')
+      : WindowOptions(
+          size: initialMode.defaultSize,
+          minimumSize: initialMode.minimumSize,
+          center: true,
+          title: 'Vizor',
+        );
 
-  await windowManager.waitUntilReadyToShow(options, () async {
-    if (!Platform.isWindows) {
-      await windowManager.setMinimumSize(initialMode.minimumSize);
-      await windowManager.setAspectRatio(initialMode.aspectRatio);
-      await windowManager.setSize(initialMode.defaultSize, animate: false);
-    }
-  });
+  await windowManager.waitUntilReadyToShow(options);
+  if (Platform.isWindows) {
+    await _applyWindowsClientAreaLayout(initialMode, center: true);
+  } else {
+    await windowManager.setMinimumSize(initialMode.minimumSize);
+    await windowManager.setAspectRatio(initialMode.aspectRatio);
+    await windowManager.setSize(initialMode.defaultSize, animate: false);
+  }
 }
 
 /// Show and focus the desktop window after all native bootstrap steps finish.
@@ -99,14 +100,6 @@ Future<void> showDesktopWindow() async {
   if (!isDesktopLayoutPlatform) return;
   await windowManager.show();
   await windowManager.focus();
-  if (Platform.isWindows) {
-    await DesktopWindowBootstrap.applyWindowsClientAreaLayout(
-      windowSize: _desktopWindowMode.defaultSize,
-      minimumWindowSize: _desktopWindowMode.minimumSize,
-      contentTopInset: _macOSWindowedTitlebarInset,
-      center: true,
-    );
-  }
 }
 
 /// Re-pin window_manager's per-mode constraints after another layer flips
@@ -130,12 +123,7 @@ Future<void> reapplyDesktopWindowConstraints({
 }) async {
   if (!isDesktopLayoutPlatform) return;
   if (Platform.isWindows) {
-    await DesktopWindowBootstrap.applyWindowsClientAreaLayout(
-      windowSize: mode.defaultSize,
-      minimumWindowSize: mode.minimumSize,
-      contentTopInset: _macOSWindowedTitlebarInset,
-      resize: false,
-    );
+    await _applyWindowsClientAreaLayout(mode, resize: false);
   } else {
     await windowManager.setMinimumSize(mode.minimumSize);
     await windowManager.setAspectRatio(mode.aspectRatio);
@@ -183,11 +171,7 @@ class AppLayoutNotifier extends Notifier<AppLayoutState> with WindowListener {
     state = AppLayoutState(mode);
     try {
       if (Platform.isWindows) {
-        await DesktopWindowBootstrap.applyWindowsClientAreaLayout(
-          windowSize: mode.defaultSize,
-          minimumWindowSize: mode.minimumSize,
-          contentTopInset: _macOSWindowedTitlebarInset,
-        );
+        await _applyWindowsClientAreaLayout(mode);
       } else {
         await windowManager.setMinimumSize(mode.minimumSize);
         await windowManager.setAspectRatio(mode.aspectRatio);
@@ -246,3 +230,17 @@ class AppLayoutNotifier extends Notifier<AppLayoutState> with WindowListener {
 final appLayoutProvider = NotifierProvider<AppLayoutNotifier, AppLayoutState>(
   AppLayoutNotifier.new,
 );
+
+Future<void> _applyWindowsClientAreaLayout(
+  AppLayoutMode mode, {
+  bool resize = true,
+  bool center = false,
+}) async {
+  await DesktopWindowBootstrap.applyWindowsClientAreaLayout(
+    windowSize: mode.defaultSize,
+    minimumWindowSize: mode.minimumSize,
+    contentTopInset: _macOSWindowedTitlebarInset,
+    resize: resize,
+    center: center,
+  );
+}
