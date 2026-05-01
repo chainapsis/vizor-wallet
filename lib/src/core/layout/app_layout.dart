@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -62,6 +63,8 @@ bool get isDesktopLayoutPlatform {
 /// to imply [AppLayoutMode.large]; below it it's "portrait enough" to
 /// imply [AppLayoutMode.small].
 const double _largeRatioThreshold = (1080.0 / 720.0 + (50.0 * 1.3) / 133.0) / 2;
+const double _macOSWindowedTitlebarInset = 32.0;
+AppLayoutMode _desktopWindowMode = AppLayoutMode.large;
 
 /// Initialize the OS window for desktop at startup.
 ///
@@ -71,6 +74,7 @@ Future<void> initializeDesktopWindow({
   AppLayoutMode initialMode = AppLayoutMode.large,
 }) async {
   if (!isDesktopLayoutPlatform) return;
+  _desktopWindowMode = initialMode;
 
   await windowManager.ensureInitialized();
 
@@ -82,9 +86,11 @@ Future<void> initializeDesktopWindow({
   );
 
   await windowManager.waitUntilReadyToShow(options, () async {
-    await windowManager.setMinimumSize(initialMode.minimumSize);
-    await windowManager.setAspectRatio(initialMode.aspectRatio);
-    await windowManager.setSize(initialMode.defaultSize, animate: false);
+    if (!Platform.isWindows) {
+      await windowManager.setMinimumSize(initialMode.minimumSize);
+      await windowManager.setAspectRatio(initialMode.aspectRatio);
+      await windowManager.setSize(initialMode.defaultSize, animate: false);
+    }
   });
 }
 
@@ -93,6 +99,14 @@ Future<void> showDesktopWindow() async {
   if (!isDesktopLayoutPlatform) return;
   await windowManager.show();
   await windowManager.focus();
+  if (Platform.isWindows) {
+    await DesktopWindowBootstrap.applyWindowsClientAreaLayout(
+      windowSize: _desktopWindowMode.defaultSize,
+      minimumWindowSize: _desktopWindowMode.minimumSize,
+      contentTopInset: _macOSWindowedTitlebarInset,
+      center: true,
+    );
+  }
 }
 
 /// Re-pin window_manager's per-mode constraints after another layer flips
@@ -115,8 +129,17 @@ Future<void> reapplyDesktopWindowConstraints({
   AppLayoutMode mode = AppLayoutMode.large,
 }) async {
   if (!isDesktopLayoutPlatform) return;
-  await windowManager.setMinimumSize(mode.minimumSize);
-  await windowManager.setAspectRatio(mode.aspectRatio);
+  if (Platform.isWindows) {
+    await DesktopWindowBootstrap.applyWindowsClientAreaLayout(
+      windowSize: mode.defaultSize,
+      minimumWindowSize: mode.minimumSize,
+      contentTopInset: _macOSWindowedTitlebarInset,
+      resize: false,
+    );
+  } else {
+    await windowManager.setMinimumSize(mode.minimumSize);
+    await windowManager.setAspectRatio(mode.aspectRatio);
+  }
 }
 
 @immutable
@@ -159,9 +182,17 @@ class AppLayoutNotifier extends Notifier<AppLayoutState> with WindowListener {
     if (state.mode == mode) return;
     state = AppLayoutState(mode);
     try {
-      await windowManager.setMinimumSize(mode.minimumSize);
-      await windowManager.setAspectRatio(mode.aspectRatio);
-      await windowManager.setSize(mode.defaultSize, animate: false);
+      if (Platform.isWindows) {
+        await DesktopWindowBootstrap.applyWindowsClientAreaLayout(
+          windowSize: mode.defaultSize,
+          minimumWindowSize: mode.minimumSize,
+          contentTopInset: _macOSWindowedTitlebarInset,
+        );
+      } else {
+        await windowManager.setMinimumSize(mode.minimumSize);
+        await windowManager.setAspectRatio(mode.aspectRatio);
+        await windowManager.setSize(mode.defaultSize, animate: false);
+      }
     } catch (e, st) {
       // On platform-call failure, log and fall back to the assumption
       // that the window is in [large]. The auto-switch listener will
@@ -195,7 +226,9 @@ class AppLayoutNotifier extends Notifier<AppLayoutState> with WindowListener {
 
   Future<void> _reconcileLayoutWithWindow() async {
     try {
-      final size = await windowManager.getSize();
+      final size = Platform.isWindows
+          ? await DesktopWindowBootstrap.getWindowsClientAreaSize()
+          : await windowManager.getSize();
       if (size.height <= 0) return;
       final ratio = size.width / size.height;
       final inferred = ratio >= _largeRatioThreshold
