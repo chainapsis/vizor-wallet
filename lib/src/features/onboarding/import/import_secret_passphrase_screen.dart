@@ -812,8 +812,6 @@ class _MnemonicSuggestionPopoverState
       _listPadding * 2 + _rowHeight * _visibleRows + _rowGap * 3;
 
   final ScrollController _scrollController = ScrollController();
-  int? _hoveredIndex;
-
   @override
   void didUpdateWidget(covariant _MnemonicSuggestionPopover oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -916,6 +914,7 @@ class _MnemonicSuggestionPopoverState
                 itemCount: optionCount,
                 itemBuilder: (context, index) {
                   final option = widget.options[index];
+                  final highlighted = index == widget.highlightedIndex;
                   return Padding(
                     padding: EdgeInsets.only(
                       bottom: index == optionCount - 1 ? 0 : _rowGap,
@@ -923,14 +922,7 @@ class _MnemonicSuggestionPopoverState
                     child: _MnemonicSuggestionRow(
                       wordIndex: widget.wordIndex,
                       word: option,
-                      highlighted:
-                          index == widget.highlightedIndex ||
-                          index == _hoveredIndex,
-                      onHoverChanged: (hovered) {
-                        setState(() {
-                          _hoveredIndex = hovered ? index : null;
-                        });
-                      },
+                      highlighted: highlighted,
                       onTap: () => widget.onSelected(option),
                     ),
                   );
@@ -949,30 +941,30 @@ class _MnemonicSuggestionRow extends StatelessWidget {
     required this.wordIndex,
     required this.word,
     required this.highlighted,
-    required this.onHoverChanged,
     required this.onTap,
   });
 
   final int wordIndex;
   final String word;
   final bool highlighted;
-  final ValueChanged<bool> onHoverChanged;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final selectedBackgroundColor = AppTheme.of(context) == AppThemeData.dark
+        ? colors.background.raised
+        : colors.background.base;
+
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      onEnter: (_) => onHoverChanged(true),
-      onExit: (_) => onHoverChanged(false),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
           height: _MnemonicSuggestionPopoverState._rowHeight,
           decoration: BoxDecoration(
-            color: highlighted ? colors.state.hover : null,
+            color: highlighted ? selectedBackgroundColor : null,
             borderRadius: BorderRadius.circular(AppRadii.xSmall),
           ),
           child: Row(
