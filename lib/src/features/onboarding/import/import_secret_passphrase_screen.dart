@@ -1,4 +1,10 @@
-import 'package:flutter/material.dart' show InputDecoration, TextField;
+import 'package:flutter/material.dart'
+    show
+        InputDecoration,
+        Scrollbar,
+        ScrollbarTheme,
+        ScrollbarThemeData,
+        TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +37,7 @@ class _ImportSecretPassphraseScreenState
 
   late final List<TextEditingController> _controllers;
   late final List<FocusNode> _focusNodes;
+  late final List<String> _mnemonicWordList;
 
   bool _isSubmitting = false;
   bool _showValidationError = false;
@@ -40,6 +47,7 @@ class _ImportSecretPassphraseScreenState
   @override
   void initState() {
     super.initState();
+    _mnemonicWordList = rust_wallet.mnemonicWordList();
     _controllers = List.generate(_wordCount, (_) => TextEditingController());
     _focusNodes = List.generate(_wordCount, (_) => FocusNode());
     _restoreMnemonic();
@@ -108,6 +116,35 @@ class _ImportSecretPassphraseScreenState
   void _focusIndex(int index) {
     if (index < 0 || index >= _focusNodes.length) return;
     _focusNodes[index].requestFocus();
+  }
+
+  void _moveToNextWord(int index) {
+    if (index < _wordCount - 1) {
+      _focusIndex(index + 1);
+    }
+  }
+
+  void _moveToPreviousWord(int index) {
+    if (index > 0) {
+      _focusIndex(index - 1);
+    }
+  }
+
+  void _handleSuggestionSelected(int index, String word) {
+    _isApplyingProgrammaticChange = true;
+    _setControllerText(index, word.toLowerCase());
+    _isApplyingProgrammaticChange = false;
+
+    if (mounted) {
+      setState(() {
+        _submitError = null;
+        if (_showValidationError && _isMnemonicValid) {
+          _showValidationError = false;
+        }
+      });
+    }
+
+    _moveToNextWord(index);
   }
 
   void _handleWordChanged(int index, String rawValue) {
@@ -279,19 +316,25 @@ class _ImportSecretPassphraseScreenState
                                   index: index,
                                   controller: _controllers[index],
                                   focusNode: _focusNodes[index],
+                                  wordList: _mnemonicWordList,
                                   destructive:
                                       _showValidationError &&
                                       _controllers[index].text
                                           .trim()
                                           .isNotEmpty,
                                   autofocus: index == 0,
+                                  onMoveNext: () => _moveToNextWord(index),
+                                  onMovePrevious: () =>
+                                      _moveToPreviousWord(index),
+                                  onSuggestionSelected: (word) =>
+                                      _handleSuggestionSelected(index, word),
                                   onChanged: (value) =>
                                       _handleWordChanged(index, value),
-                                  onSubmitted: (_) {
+                                  onSubmitted: () {
                                     if (index == _wordCount - 1) {
                                       _submit();
                                     } else {
-                                      _focusIndex(index + 1);
+                                      _moveToNextWord(index);
                                     }
                                   },
                                 ),
@@ -334,8 +377,12 @@ class _MnemonicWordCell extends StatefulWidget {
     required this.index,
     required this.controller,
     required this.focusNode,
+    required this.wordList,
     required this.onChanged,
     required this.onSubmitted,
+    required this.onMoveNext,
+    required this.onMovePrevious,
+    required this.onSuggestionSelected,
     this.destructive = false,
     this.autofocus = false,
   });
@@ -343,8 +390,12 @@ class _MnemonicWordCell extends StatefulWidget {
   final int index;
   final TextEditingController controller;
   final FocusNode focusNode;
+  final List<String> wordList;
   final ValueChanged<String> onChanged;
-  final ValueChanged<String> onSubmitted;
+  final VoidCallback onSubmitted;
+  final VoidCallback onMoveNext;
+  final VoidCallback onMovePrevious;
+  final ValueChanged<String> onSuggestionSelected;
   final bool destructive;
   final bool autofocus;
 
@@ -353,6 +404,11 @@ class _MnemonicWordCell extends StatefulWidget {
 }
 
 class _MnemonicWordCellState extends State<_MnemonicWordCell> {
+  static const _fieldWidth = 120.0;
+  static const _fieldHeight = 36.0;
+  static const _suggestionWidth = 172.0;
+  static const _maxSuggestionCount = 64;
+
   final GlobalKey _textFieldRegionKey = GlobalKey();
   bool _hovered = false;
   Offset? _pendingShellTapGlobalPosition;
@@ -444,11 +500,97 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
+  List<String> _optionsForText(String rawValue) {
+    final prefix = rawValue.trim().toLowerCase();
+    if (prefix.isEmpty || prefix.contains(RegExp(r'\s'))) {
+      return const <String>[];
+    }
+
+    final options = <String>[];
+    for (final word in widget.wordList) {
+      if (!word.startsWith(prefix)) continue;
+      options.add(word);
+      if (options.length >= _maxSuggestionCount) break;
+    }
+
+    if (options.length == 1 && options.first == prefix) {
+      return const <String>[];
+    }
+    return options;
+  }
+
+  Iterable<String> _buildOptions(TextEditingValue value) {
+    return _optionsForText(value.text);
+  }
+
+  bool get _hasAutocompleteOptions {
+    return widget.focusNode.hasFocus &&
+        _optionsForText(widget.controller.text).isNotEmpty;
+  }
+
+  KeyEventResult _handleFieldKeyEvent(
+    FocusNode node,
+    KeyEvent event,
+    VoidCallback onAutocompleteSubmitted,
+  ) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      _handleTextSubmitted(onAutocompleteSubmitted);
+      return KeyEventResult.handled;
+    }
+
+    if (event.logicalKey != LogicalKeyboardKey.tab) {
+      return KeyEventResult.ignored;
+    }
+
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      widget.onMovePrevious();
+      return KeyEventResult.handled;
+    }
+
+    if (_hasAutocompleteOptions) {
+      onAutocompleteSubmitted();
+    } else {
+      widget.onMoveNext();
+    }
+    return KeyEventResult.handled;
+  }
+
+  void _handleTextSubmitted(VoidCallback onAutocompleteSubmitted) {
+    if (_hasAutocompleteOptions) {
+      onAutocompleteSubmitted();
+      return;
+    }
+    widget.onSubmitted();
+  }
+
+  Widget _buildOptionsView(
+    BuildContext context,
+    AutocompleteOnSelected<String> onSelected,
+    Iterable<String> options,
+  ) {
+    final highlightedIndex = AutocompleteHighlightedOption.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xs),
+      child: _MnemonicSuggestionPopover(
+        wordIndex: widget.index,
+        options: options.toList(growable: false),
+        highlightedIndex: highlightedIndex,
+        onSelected: onSelected,
+      ),
+    );
+  }
+
+  Widget _buildFieldShell(
+    BuildContext context,
+    TextEditingController controller,
+    FocusNode focusNode,
+    VoidCallback onAutocompleteSubmitted,
+  ) {
     final colors = context.colors;
-    final isFocused = widget.focusNode.hasFocus;
-    final hasText = widget.controller.text.trim().isNotEmpty;
+    final isFocused = focusNode.hasFocus;
+    final hasText = controller.text.trim().isNotEmpty;
     final valueStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.accent,
     );
@@ -469,8 +611,9 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
         ? colors.text.accent
         : colors.text.secondary;
 
-    return SizedBox(
-      width: 120,
+    return Focus(
+      onKeyEvent: (node, event) =>
+          _handleFieldKeyEvent(node, event, onAutocompleteSubmitted),
       child: MouseRegion(
         cursor: SystemMouseCursors.text,
         onEnter: (_) => setState(() => _hovered = true),
@@ -480,7 +623,7 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
           onTapDown: _handleShellTapDown,
           onTap: () => _requestFocusFromShell(valueStyle),
           child: SizedBox(
-            height: 36,
+            height: _fieldHeight,
             child: Stack(
               clipBehavior: Clip.none,
               children: [
@@ -557,8 +700,8 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                           child: Center(
                             child: TextField(
                               key: _textFieldRegionKey,
-                              controller: widget.controller,
-                              focusNode: widget.focusNode,
+                              controller: controller,
+                              focusNode: focusNode,
                               autofocus: widget.autofocus,
                               keyboardType: TextInputType.text,
                               textInputAction: TextInputAction.next,
@@ -579,7 +722,8 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                                 ),
                               ),
                               onChanged: widget.onChanged,
-                              onSubmitted: widget.onSubmitted,
+                              onSubmitted: (_) =>
+                                  _handleTextSubmitted(onAutocompleteSubmitted),
                             ),
                           ),
                         ),
@@ -589,6 +733,275 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: _fieldWidth,
+      height: _fieldHeight,
+      child: OverflowBox(
+        minWidth: _suggestionWidth,
+        maxWidth: _suggestionWidth,
+        minHeight: _fieldHeight,
+        maxHeight: _fieldHeight,
+        alignment: Alignment.topCenter,
+        child: SizedBox(
+          width: _suggestionWidth,
+          height: _fieldHeight,
+          child: RawAutocomplete<String>(
+            textEditingController: widget.controller,
+            focusNode: widget.focusNode,
+            displayStringForOption: (word) => word,
+            optionsBuilder: _buildOptions,
+            optionsViewOpenDirection: OptionsViewOpenDirection.down,
+            optionsViewBuilder: _buildOptionsView,
+            onSelected: widget.onSuggestionSelected,
+            fieldViewBuilder:
+                (context, controller, focusNode, onAutocompleteSubmitted) {
+                  return Center(
+                    child: SizedBox(
+                      width: _fieldWidth,
+                      height: _fieldHeight,
+                      child: _buildFieldShell(
+                        context,
+                        controller,
+                        focusNode,
+                        onAutocompleteSubmitted,
+                      ),
+                    ),
+                  );
+                },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MnemonicSuggestionPopover extends StatefulWidget {
+  const _MnemonicSuggestionPopover({
+    required this.wordIndex,
+    required this.options,
+    required this.highlightedIndex,
+    required this.onSelected,
+  });
+
+  final int wordIndex;
+  final List<String> options;
+  final int highlightedIndex;
+  final ValueChanged<String> onSelected;
+
+  @override
+  State<_MnemonicSuggestionPopover> createState() =>
+      _MnemonicSuggestionPopoverState();
+}
+
+class _MnemonicSuggestionPopoverState
+    extends State<_MnemonicSuggestionPopover> {
+  static const _rowHeight = 32.0;
+  static const _rowGap = 4.0;
+  static const _visibleRows = 4;
+  static const _listPadding = 4.0;
+  static const _outerVerticalPadding = 8.0;
+  static const _listViewportHeight =
+      _listPadding * 2 + _rowHeight * _visibleRows + _rowGap * 3;
+
+  final ScrollController _scrollController = ScrollController();
+  int? _hoveredIndex;
+
+  @override
+  void didUpdateWidget(covariant _MnemonicSuggestionPopover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.highlightedIndex != widget.highlightedIndex ||
+        oldWidget.options.length != widget.options.length) {
+      _scheduleHighlightedOptionScroll();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scheduleHighlightedOptionScroll() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      if (widget.options.isEmpty) return;
+      final index = widget.highlightedIndex
+          .clamp(0, widget.options.length - 1)
+          .toInt();
+      if (index < 0) return;
+
+      final rowTop = _listPadding + index * (_rowHeight + _rowGap);
+      final rowBottom = rowTop + _rowHeight;
+      final viewportTop = _scrollController.offset;
+      final viewportBottom = viewportTop + _listViewportHeight;
+
+      double? nextOffset;
+      if (rowTop < viewportTop) {
+        nextOffset = rowTop;
+      } else if (rowBottom > viewportBottom) {
+        nextOffset = rowBottom - _listViewportHeight;
+      }
+
+      if (nextOffset == null) return;
+      _scrollController.jumpTo(
+        nextOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final optionCount = widget.options.length;
+    if (optionCount == 0) return const SizedBox.shrink();
+
+    final visibleCount = optionCount < _visibleRows
+        ? optionCount
+        : _visibleRows;
+    final gapCount = visibleCount > 0 ? visibleCount - 1 : 0;
+    final listHeight =
+        _listPadding * 2 + visibleCount * _rowHeight + gapCount * _rowGap;
+    final popoverHeight = listHeight + _outerVerticalPadding * 2;
+
+    return SizedBox(
+      width: _MnemonicWordCellState._suggestionWidth,
+      height: popoverHeight,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.background.ground,
+          borderRadius: BorderRadius.circular(AppRadii.medium),
+          border: Border.all(
+            color: colors.border.subtle,
+            strokeAlign: BorderSide.strokeAlignInside,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: colors.background.neutralScrim,
+              blurRadius: 2,
+              offset: const Offset(0, 2),
+            ),
+            BoxShadow(
+              color: colors.background.neutralScrim,
+              blurRadius: 15,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 16, 8),
+          child: ScrollbarTheme(
+            data: ScrollbarThemeData(
+              thumbColor: WidgetStatePropertyAll(
+                colors.background.overlay.withValues(alpha: 0.5),
+              ),
+              radius: const Radius.circular(AppRadii.full),
+              thickness: const WidgetStatePropertyAll(6),
+              mainAxisMargin: 3,
+              crossAxisMargin: -10,
+            ),
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: optionCount > _visibleRows,
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(_listPadding),
+                itemCount: optionCount,
+                itemBuilder: (context, index) {
+                  final option = widget.options[index];
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      bottom: index == optionCount - 1 ? 0 : _rowGap,
+                    ),
+                    child: _MnemonicSuggestionRow(
+                      wordIndex: widget.wordIndex,
+                      word: option,
+                      highlighted:
+                          index == widget.highlightedIndex ||
+                          index == _hoveredIndex,
+                      onHoverChanged: (hovered) {
+                        setState(() {
+                          _hoveredIndex = hovered ? index : null;
+                        });
+                      },
+                      onTap: () => widget.onSelected(option),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MnemonicSuggestionRow extends StatelessWidget {
+  const _MnemonicSuggestionRow({
+    required this.wordIndex,
+    required this.word,
+    required this.highlighted,
+    required this.onHoverChanged,
+    required this.onTap,
+  });
+
+  final int wordIndex;
+  final String word;
+  final bool highlighted;
+  final ValueChanged<bool> onHoverChanged;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => onHoverChanged(true),
+      onExit: (_) => onHoverChanged(false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: _MnemonicSuggestionPopoverState._rowHeight,
+          decoration: BoxDecoration(
+            color: highlighted ? colors.state.hover : null,
+            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    '${wordIndex + 1}'.padLeft(2, '0'),
+                    style: AppTypography.codeMedium.copyWith(
+                      fontSize: 14,
+                      height: 21 / 14,
+                      color: colors.text.muted.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Flexible(
+                child: Text(
+                  word,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

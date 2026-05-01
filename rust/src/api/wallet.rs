@@ -226,6 +226,12 @@ pub fn generate_mnemonic() -> String {
     keys::generate_mnemonic()
 }
 
+/// Get the BIP-39 English word list used for mnemonic validation.
+#[flutter_rust_bridge::frb(sync)]
+pub fn mnemonic_word_list() -> Vec<String> {
+    keys::mnemonic_word_list()
+}
+
 /// Check if a wallet database exists at the given path.
 #[flutter_rust_bridge::frb(sync)]
 pub fn wallet_exists(db_path: String) -> bool {

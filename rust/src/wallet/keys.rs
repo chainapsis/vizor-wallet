@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use bip0039::{Count, English, Mnemonic};
+use bip0039::{Count, English, Language, Mnemonic};
 use secrecy::{ExposeSecret, SecretVec};
 use zcash_client_backend::data_api::{
     chain::ChainState, Account as _, AccountBirthday, AccountPurpose, AccountSource, WalletRead,
@@ -49,6 +49,14 @@ fn open_wallet_db_for_read(
 pub fn generate_mnemonic() -> String {
     let mnemonic = Mnemonic::<English>::generate(Count::Words24);
     mnemonic.phrase().to_string()
+}
+
+/// Return the BIP-39 English word list used for mnemonic validation.
+pub fn mnemonic_word_list() -> Vec<String> {
+    English::WORD_LIST
+        .iter()
+        .map(|word| (*word).to_string())
+        .collect()
 }
 
 /// Convert a mnemonic phrase to a 64-byte seed wrapped in SecretVec.
