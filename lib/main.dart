@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -24,7 +27,9 @@ Future<void> main() async {
   if (isDesktopLayoutPlatform) {
     log('main: initializing desktop window visuals');
     await DesktopWindowBootstrap.initialize();
-    await showDesktopWindow();
+    if (!Platform.isWindows) {
+      await showDesktopWindow();
+    }
   }
   final bootstrap = await loadAppBootstrap();
   log('main: launching app');
@@ -34,4 +39,9 @@ Future<void> main() async {
       child: const ZcashWalletApp(),
     ),
   );
+  if (isDesktopLayoutPlatform && Platform.isWindows) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(showDesktopWindow());
+    });
+  }
 }
