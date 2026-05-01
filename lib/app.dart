@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -66,7 +69,9 @@ Future<void> initializeZcashWalletRuntime() async {
   if (isDesktopLayoutPlatform) {
     log('runtime: initializing desktop window visuals');
     await DesktopWindowBootstrap.initialize();
-    await showDesktopWindow();
+    if (!Platform.isWindows) {
+      await showDesktopWindow();
+    }
   }
 }
 
@@ -96,6 +101,11 @@ Future<void> runZcashWalletApp() async {
   final app = await buildBootstrappedZcashWalletApp();
   log('runtime: launching app');
   runApp(app);
+  if (isDesktopLayoutPlatform && Platform.isWindows) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(showDesktopWindow());
+    });
+  }
 }
 
 final _routerProvider = Provider<GoRouter>((ref) {
