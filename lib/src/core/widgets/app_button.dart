@@ -155,6 +155,7 @@ class AppButton extends StatefulWidget {
     this.leading,
     this.trailing,
     this.minWidth,
+    this.iconGap,
     this.focusRingColor,
     this.focusNode,
     this.autofocus = false,
@@ -182,6 +183,10 @@ class AppButton extends StatefulWidget {
   /// intrinsic — content drives size. Callers opt in to a floor when a
   /// specific screen or layout demands a consistent button width.
   final double? minWidth;
+
+  /// Optional gap between the label and any leading/trailing icon. Defaults
+  /// to the size token's gap.
+  final double? iconGap;
 
   /// Optional focus ring color override for one-off surface-specific cases.
   final Color? focusRingColor;
@@ -236,6 +241,7 @@ class _AppButtonState extends State<AppButton> {
 
     final Color labelColor = _enabled ? palette.label : disabled.label;
     final borderWidth = _enabled ? palette.borderWidth : 0.0;
+    final iconGap = widget.iconGap ?? sizing.gap;
 
     final rowChildren = <Widget>[];
     if (widget.leading != null) {
@@ -247,7 +253,7 @@ class _AppButtonState extends State<AppButton> {
             child: widget.leading,
           ),
         )
-        ..add(SizedBox(width: sizing.gap));
+        ..add(SizedBox(width: iconGap));
     }
     final label = DefaultTextStyle.merge(
       style: sizing.labelStyle.copyWith(color: labelColor),
@@ -263,7 +269,7 @@ class _AppButtonState extends State<AppButton> {
     );
     if (widget.trailing != null) {
       rowChildren
-        ..add(SizedBox(width: sizing.gap))
+        ..add(SizedBox(width: iconGap))
         ..add(
           SizedBox(
             width: sizing.iconSize,
