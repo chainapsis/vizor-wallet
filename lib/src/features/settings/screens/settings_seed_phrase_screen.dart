@@ -34,13 +34,6 @@ enum _SettingsSeedPhraseStage { password, reveal }
 
 enum _SeedPhraseCopyTarget { phrase, birthdayDate, birthdayHeight }
 
-class _SeedBirthdayInfo {
-  const _SeedBirthdayInfo({required this.blockHeight, required this.blockTime});
-
-  final int blockHeight;
-  final int blockTime;
-}
-
 class _SeedPhraseUnavailableException implements Exception {
   const _SeedPhraseUnavailableException(this.message);
 
@@ -54,8 +47,11 @@ class _SettingsSeedPhraseScreenState
   _SettingsSeedPhraseStage _stage = _SettingsSeedPhraseStage.password;
   String? _passwordError;
   String? _mnemonic;
-  _SeedBirthdayInfo? _birthdayInfo;
-  String? _birthdayError;
+  int? _birthdayHeight;
+  int? _birthdayBlockTime;
+  bool _isBirthdayHeightLoading = false;
+  bool _isBirthdayDateLoading = false;
+  int _birthdayLoadGeneration = 0;
   String? _revealError;
   _SeedPhraseCopyTarget? _copiedTarget;
   Timer? _copyResetTimer;
@@ -75,13 +71,16 @@ class _SettingsSeedPhraseScreenState
 
   void _clearSensitiveState({String? passwordError}) {
     _copyResetTimer?.cancel();
+    _birthdayLoadGeneration++;
     _passwordController.clear();
     _isSubmitting = false;
     _stage = _SettingsSeedPhraseStage.password;
     _passwordError = passwordError;
     _mnemonic = null;
-    _birthdayInfo = null;
-    _birthdayError = null;
+    _birthdayHeight = null;
+    _birthdayBlockTime = null;
+    _isBirthdayHeightLoading = false;
+    _isBirthdayDateLoading = false;
     _revealError = null;
     _copiedTarget = null;
   }
@@ -176,15 +175,6 @@ class _SettingsSeedPhraseScreenState
         );
       }
 
-      _SeedBirthdayInfo? birthdayInfo;
-      String? birthdayError;
-      try {
-        birthdayInfo = await _loadBirthdayInfo(activeAccountUuid);
-      } catch (e, st) {
-        log('SettingsSeedPhraseScreen._loadBirthdayInfo: ERROR: $e\n$st');
-        birthdayError = "Couldn't load birthday info.";
-      }
-
       if (!mounted) return;
       if (_activeAccountChanged(activeAccountUuid)) {
         setState(() {
@@ -195,14 +185,21 @@ class _SettingsSeedPhraseScreenState
         return;
       }
 
+      final birthdayLoadGeneration = _birthdayLoadGeneration + 1;
       setState(() {
         _mnemonic = mnemonic;
-        _birthdayInfo = birthdayInfo;
-        _birthdayError = birthdayError;
+        _birthdayHeight = null;
+        _birthdayBlockTime = null;
+        _isBirthdayHeightLoading = true;
+        _isBirthdayDateLoading = true;
+        _birthdayLoadGeneration = birthdayLoadGeneration;
         _stage = _SettingsSeedPhraseStage.reveal;
         _isSubmitting = false;
         _copiedTarget = null;
       });
+      unawaited(
+        _loadBirthdayHeightForReveal(activeAccountUuid, birthdayLoadGeneration),
+      );
     } on _SeedPhraseUnavailableException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -222,19 +219,84 @@ class _SettingsSeedPhraseScreenState
     }
   }
 
-  Future<_SeedBirthdayInfo> _loadBirthdayInfo(String activeAccountUuid) async {
+  bool _canApplyBirthdayLoad(String activeAccountUuid, int generation) {
+    if (!mounted) return false;
+    if (_birthdayLoadGeneration != generation) return false;
+    if (_stage != _SettingsSeedPhraseStage.reveal || _mnemonic == null) {
+      return false;
+    }
+    return !_activeAccountChanged(activeAccountUuid);
+  }
+
+  Future<void> _loadBirthdayHeightForReveal(
+    String activeAccountUuid,
+    int generation,
+  ) async {
+    try {
+      final height = await _loadBirthdayHeight(activeAccountUuid);
+      if (!_canApplyBirthdayLoad(activeAccountUuid, generation)) return;
+      setState(() {
+        _birthdayHeight = height;
+        _isBirthdayHeightLoading = false;
+        _isBirthdayDateLoading = true;
+      });
+      unawaited(
+        _loadBirthdayDateForReveal(activeAccountUuid, generation, height),
+      );
+    } catch (e, st) {
+      log('SettingsSeedPhraseScreen._loadBirthdayHeight: ERROR: $e\n$st');
+      if (!_canApplyBirthdayLoad(activeAccountUuid, generation)) return;
+      setState(() {
+        _birthdayHeight = null;
+        _birthdayBlockTime = null;
+        _isBirthdayHeightLoading = false;
+        _isBirthdayDateLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadBirthdayDateForReveal(
+    String activeAccountUuid,
+    int generation,
+    int height,
+  ) async {
+    try {
+      final blockTime = await _loadBirthdayBlockTime(
+        height,
+      ).timeout(const Duration(seconds: 10));
+      if (!_canApplyBirthdayLoad(activeAccountUuid, generation)) return;
+      setState(() {
+        _birthdayBlockTime = blockTime > 0 ? blockTime : null;
+        _isBirthdayDateLoading = false;
+      });
+    } catch (e, st) {
+      log('SettingsSeedPhraseScreen._loadBirthdayDate: ERROR: $e\n$st');
+      if (!_canApplyBirthdayLoad(activeAccountUuid, generation)) return;
+      setState(() {
+        _birthdayBlockTime = null;
+        _isBirthdayDateLoading = false;
+      });
+    }
+  }
+
+  Future<int> _loadBirthdayHeight(String activeAccountUuid) async {
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointProvider);
-    final info = await rust_sync.getExportBirthdayInfo(
+    final height = await rust_sync.getExportBirthdayHeight(
       dbPath: dbPath,
       network: endpoint.networkName,
-      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       accountUuid: activeAccountUuid,
     );
-    return _SeedBirthdayInfo(
-      blockHeight: info.blockHeight.toInt(),
-      blockTime: info.blockTime.toInt(),
+    return height.toInt();
+  }
+
+  Future<int> _loadBirthdayBlockTime(int height) async {
+    final endpoint = ref.read(rpcEndpointProvider);
+    final blockTime = await rust_sync.getBlockTime(
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      height: BigInt.from(height),
     );
+    return blockTime.toInt();
   }
 
   Future<void> _copyMnemonic() async {
@@ -245,18 +307,18 @@ class _SettingsSeedPhraseScreenState
   }
 
   Future<void> _copyBirthdayDate() async {
-    final info = _birthdayInfo;
-    if (info == null || info.blockTime <= 0) return;
+    final blockTime = _birthdayBlockTime;
+    if (blockTime == null || blockTime <= 0) return;
     await Clipboard.setData(
-      ClipboardData(text: _formatBirthdayDate(info.blockTime)),
+      ClipboardData(text: _formatBirthdayDate(blockTime)),
     );
     _markCopied(_SeedPhraseCopyTarget.birthdayDate);
   }
 
   Future<void> _copyBirthdayHeight() async {
-    final info = _birthdayInfo;
-    if (info == null || info.blockHeight <= 0) return;
-    await Clipboard.setData(ClipboardData(text: info.blockHeight.toString()));
+    final height = _birthdayHeight;
+    if (height == null || height <= 0) return;
+    await Clipboard.setData(ClipboardData(text: height.toString()));
     _markCopied(_SeedPhraseCopyTarget.birthdayHeight);
   }
 
@@ -301,8 +363,10 @@ class _SettingsSeedPhraseScreenState
             ),
             _SettingsSeedPhraseStage.reveal => _SeedPhraseRevealView(
               mnemonic: _mnemonic,
-              birthdayInfo: _birthdayInfo,
-              birthdayError: _birthdayError,
+              birthdayHeight: _birthdayHeight,
+              birthdayBlockTime: _birthdayBlockTime,
+              birthdayHeightLoading: _isBirthdayHeightLoading,
+              birthdayDateLoading: _isBirthdayDateLoading,
               errorText: _revealError,
               phraseCopied: _copiedTarget == _SeedPhraseCopyTarget.phrase,
               birthdayDateCopied:
@@ -447,8 +511,10 @@ class _PasswordGateView extends StatelessWidget {
 class _SeedPhraseRevealView extends StatelessWidget {
   const _SeedPhraseRevealView({
     required this.mnemonic,
-    required this.birthdayInfo,
-    required this.birthdayError,
+    required this.birthdayHeight,
+    required this.birthdayBlockTime,
+    required this.birthdayHeightLoading,
+    required this.birthdayDateLoading,
     required this.errorText,
     required this.phraseCopied,
     required this.birthdayDateCopied,
@@ -459,8 +525,10 @@ class _SeedPhraseRevealView extends StatelessWidget {
   });
 
   final String? mnemonic;
-  final _SeedBirthdayInfo? birthdayInfo;
-  final String? birthdayError;
+  final int? birthdayHeight;
+  final int? birthdayBlockTime;
+  final bool birthdayHeightLoading;
+  final bool birthdayDateLoading;
   final String? errorText;
   final bool phraseCopied;
   final bool birthdayDateCopied;
@@ -490,8 +558,10 @@ class _SeedPhraseRevealView extends StatelessWidget {
           if (errorText == null && mnemonic != null)
             _SeedPhraseCard(
               mnemonic: mnemonic!,
-              birthdayInfo: birthdayInfo,
-              birthdayError: birthdayError,
+              birthdayHeight: birthdayHeight,
+              birthdayBlockTime: birthdayBlockTime,
+              birthdayHeightLoading: birthdayHeightLoading,
+              birthdayDateLoading: birthdayDateLoading,
               phraseCopied: phraseCopied,
               birthdayDateCopied: birthdayDateCopied,
               birthdayHeightCopied: birthdayHeightCopied,
@@ -518,8 +588,10 @@ const _seedPhraseInnerRadius = AppRadii.large;
 class _SeedPhraseCard extends StatelessWidget {
   const _SeedPhraseCard({
     required this.mnemonic,
-    required this.birthdayInfo,
-    required this.birthdayError,
+    required this.birthdayHeight,
+    required this.birthdayBlockTime,
+    required this.birthdayHeightLoading,
+    required this.birthdayDateLoading,
     required this.phraseCopied,
     required this.birthdayDateCopied,
     required this.birthdayHeightCopied,
@@ -529,8 +601,10 @@ class _SeedPhraseCard extends StatelessWidget {
   });
 
   final String mnemonic;
-  final _SeedBirthdayInfo? birthdayInfo;
-  final String? birthdayError;
+  final int? birthdayHeight;
+  final int? birthdayBlockTime;
+  final bool birthdayHeightLoading;
+  final bool birthdayDateLoading;
   final bool phraseCopied;
   final bool birthdayDateCopied;
   final bool birthdayHeightCopied;
@@ -543,12 +617,13 @@ class _SeedPhraseCard extends StatelessWidget {
     final colors = context.colors;
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final words = mnemonic.split(' ');
-    final birthdayDate = birthdayInfo == null
-        ? birthdayError ?? 'Unavailable'
-        : _formatBirthdayDate(birthdayInfo!.blockTime);
-    final birthdayHeight = birthdayInfo == null
-        ? birthdayError ?? 'Unavailable'
-        : birthdayInfo!.blockHeight.toString();
+    final blockTime = birthdayBlockTime;
+    final birthdayDate = blockTime == null || blockTime <= 0
+        ? '-'
+        : _formatBirthdayDate(blockTime);
+    final birthdayHeightText = birthdayHeight == null || birthdayHeight! <= 0
+        ? '-'
+        : birthdayHeight.toString();
 
     return SizedBox(
       width: _seedPhraseCardWidth,
@@ -579,9 +654,13 @@ class _SeedPhraseCard extends StatelessWidget {
                         icon: AppIcons.calendar,
                         label: 'Birthday date',
                         value: birthdayDate,
+                        loading: birthdayDateLoading,
                         copied: birthdayDateCopied,
                         copyLabel: 'Copy date',
-                        onCopyPressed: birthdayInfo == null
+                        onCopyPressed:
+                            birthdayDateLoading ||
+                                blockTime == null ||
+                                blockTime <= 0
                             ? null
                             : () {
                                 onCopyBirthdayDatePressed();
@@ -600,10 +679,14 @@ class _SeedPhraseCard extends StatelessWidget {
                       _SeedBirthdayRow(
                         icon: AppIcons.block,
                         label: 'Birthday block height',
-                        value: birthdayHeight,
+                        value: birthdayHeightText,
+                        loading: birthdayHeightLoading,
                         copied: birthdayHeightCopied,
                         copyLabel: 'Copy height',
-                        onCopyPressed: birthdayInfo == null
+                        onCopyPressed:
+                            birthdayHeightLoading ||
+                                birthdayHeight == null ||
+                                birthdayHeight! <= 0
                             ? null
                             : () {
                                 onCopyBirthdayHeightPressed();
@@ -735,6 +818,7 @@ class _SeedBirthdayRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    required this.loading,
     required this.copied,
     required this.copyLabel,
     required this.onCopyPressed,
@@ -743,6 +827,7 @@ class _SeedBirthdayRow extends StatelessWidget {
   final String icon;
   final String label;
   final String value;
+  final bool loading;
   final bool copied;
   final String copyLabel;
   final VoidCallback? onCopyPressed;
@@ -767,13 +852,15 @@ class _SeedBirthdayRow extends StatelessWidget {
                   ),
                   const SizedBox(width: AppSpacing.xxs),
                   Flexible(
-                    child: Text(
-                      '$label: $value',
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.primary,
-                      ),
-                    ),
+                    child: loading
+                        ? _BirthdayLoadingValue(label: label)
+                        : Text(
+                            '$label: $value',
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.primary,
+                            ),
+                          ),
                   ),
                 ],
               ),
@@ -794,8 +881,45 @@ class _SeedBirthdayRow extends StatelessWidget {
   }
 }
 
+class _BirthdayLoadingValue extends StatelessWidget {
+  const _BirthdayLoadingValue({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final style = AppTypography.labelLarge.copyWith(color: colors.text.primary);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            '$label: ',
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+        SizedBox(
+          width: 16,
+          height: 18,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: AppIcon(
+              AppIcons.loader,
+              size: AppIconSize.medium,
+              color: colors.icon.muted,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 String _formatBirthdayDate(int blockTime) {
-  if (blockTime <= 0) return 'Unavailable';
+  if (blockTime <= 0) return '-';
   final value = DateTime.fromMillisecondsSinceEpoch(
     blockTime * 1000,
     isUtc: true,

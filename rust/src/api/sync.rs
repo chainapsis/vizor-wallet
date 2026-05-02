@@ -835,11 +835,6 @@ pub struct TransactionDetailOutput {
     pub pool: String,
 }
 
-pub struct ExportBirthdayInfo {
-    pub block_height: u64,
-    pub block_time: u64,
-}
-
 pub fn get_transaction_history(
     db_path: String,
     network: String,
@@ -868,30 +863,23 @@ pub fn get_transaction_history(
     })
 }
 
-pub fn get_export_birthday_info(
+pub fn get_export_birthday_height(
     db_path: String,
     network: String,
-    lightwalletd_url: String,
     account_uuid: String,
-) -> Result<ExportBirthdayInfo, String> {
+) -> Result<u64, String> {
     catch(|| {
         let _network = keys::parse_network(&network)?;
         let anchor = wallet_sync::get_export_birthday_anchor(&db_path, &account_uuid)?;
-        if anchor.block_time > 0 {
-            Ok(ExportBirthdayInfo {
-                block_height: anchor.block_height,
-                block_time: anchor.block_time,
-            })
-        } else {
-            fetch_block_info(&lightwalletd_url, anchor.block_height)
-        }
+        Ok(anchor.block_height)
     })
 }
 
-fn fetch_block_info(
-    lightwalletd_url: &str,
-    block_height: u64,
-) -> Result<ExportBirthdayInfo, String> {
+pub fn get_block_time(lightwalletd_url: String, height: u64) -> Result<u64, String> {
+    catch(|| fetch_block_time(&lightwalletd_url, height))
+}
+
+fn fetch_block_time(lightwalletd_url: &str, block_height: u64) -> Result<u64, String> {
     use zcash_client_backend::proto::service::BlockId;
 
     let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
@@ -908,10 +896,7 @@ fn fetch_block_info(
             .map_err(|e| format!("get_block: {e}"))?
             .into_inner();
 
-        Ok(ExportBirthdayInfo {
-            block_height,
-            block_time: u64::from(block.time),
-        })
+        Ok(u64::from(block.time))
     })
 }
 

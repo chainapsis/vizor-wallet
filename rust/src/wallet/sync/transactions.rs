@@ -245,7 +245,6 @@ pub(crate) struct TransactionDetailOutput {
 
 pub(crate) struct ExportBirthdayAnchor {
     pub block_height: u64,
-    pub block_time: u64,
 }
 
 #[derive(Clone)]
@@ -396,8 +395,7 @@ pub(crate) fn get_oldest_mined_transaction_anchor(
         .prepare(
             r#"
         SELECT
-            mined_height,
-            COALESCE(block_time, 0) AS block_time
+            mined_height
         FROM v_transactions
         WHERE account_uuid = ?1
           AND mined_height IS NOT NULL
@@ -411,10 +409,8 @@ pub(crate) fn get_oldest_mined_transaction_anchor(
         rusqlite::params![account_id.expose_uuid().as_bytes().as_slice()],
         |row| {
             let block_height = row.get::<_, u32>(0)?;
-            let block_time = row.get::<_, i64>(1)?;
             Ok(ExportBirthdayAnchor {
                 block_height: u64::from(block_height),
-                block_time: block_time.unsigned_abs(),
             })
         },
     )
@@ -431,10 +427,7 @@ pub(crate) fn get_export_birthday_anchor(
     }
 
     get_account_birthday_height(db_path, account_uuid)?
-        .map(|block_height| ExportBirthdayAnchor {
-            block_height,
-            block_time: 0,
-        })
+        .map(|block_height| ExportBirthdayAnchor { block_height })
         .ok_or_else(|| "Account birthday not found".to_string())
 }
 
@@ -1447,15 +1440,6 @@ mod tests {
         .unwrap();
     }
 
-    fn set_history_block_time(db: &NamedTempFile, txid: &[u8], block_time: i64) {
-        let conn = rusqlite::Connection::open(db.path()).unwrap();
-        conn.execute(
-            "UPDATE v_transactions SET block_time = ?2 WHERE txid = ?1",
-            rusqlite::params![txid, block_time],
-        )
-        .unwrap();
-    }
-
     fn set_account_birthday(db: &NamedTempFile, account: uuid::Uuid, birthday_height: i64) {
         let conn = rusqlite::Connection::open(db.path()).unwrap();
         ensure_account_row(&conn, account);
@@ -1490,7 +1474,6 @@ mod tests {
             false,
             None,
         );
-        set_history_block_time(&db, &newer, 333_000);
 
         insert_history_tx(
             &db,
@@ -1505,7 +1488,6 @@ mod tests {
             false,
             None,
         );
-        set_history_block_time(&db, &older_late_index, 222_000);
 
         insert_history_tx(
             &db,
@@ -1520,7 +1502,6 @@ mod tests {
             false,
             None,
         );
-        set_history_block_time(&db, &older_early_index, 111_000);
 
         insert_history_tx(
             &db,
@@ -1535,7 +1516,6 @@ mod tests {
             false,
             None,
         );
-        set_history_block_time(&db, &other_older, 100_000);
 
         insert_history_tx(
             &db,
@@ -1550,7 +1530,6 @@ mod tests {
             false,
             None,
         );
-        set_history_block_time(&db, &pending, 99_000);
 
         let got =
             get_oldest_mined_transaction_anchor(db.path().to_str().unwrap(), &account.to_string())
@@ -1558,7 +1537,6 @@ mod tests {
                 .unwrap();
 
         assert_eq!(got.block_height, 200);
-        assert_eq!(got.block_time, 111_000);
     }
 
     #[test]
@@ -1644,7 +1622,6 @@ mod tests {
             get_export_birthday_anchor(db.path().to_str().unwrap(), &account.to_string()).unwrap();
 
         assert_eq!(got.block_height, 333_100);
-        assert_eq!(got.block_time, 0);
     }
 
     #[test]

@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_info`, `run_full_sync_internal`
+// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `run_full_sync_internal`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -353,16 +353,22 @@ Future<List<TransactionInfo>> getTransactionHistory({
   accountUuid: accountUuid,
 );
 
-Future<ExportBirthdayInfo> getExportBirthdayInfo({
+Future<BigInt> getExportBirthdayHeight({
   required String dbPath,
   required String network,
-  required String lightwalletdUrl,
   required String accountUuid,
-}) => RustLib.instance.api.crateApiSyncGetExportBirthdayInfo(
+}) => RustLib.instance.api.crateApiSyncGetExportBirthdayHeight(
   dbPath: dbPath,
   network: network,
-  lightwalletdUrl: lightwalletdUrl,
   accountUuid: accountUuid,
+);
+
+Future<BigInt> getBlockTime({
+  required String lightwalletdUrl,
+  required BigInt height,
+}) => RustLib.instance.api.crateApiSyncGetBlockTime(
+  lightwalletdUrl: lightwalletdUrl,
+  height: height,
 );
 
 TransactionDetail getTransactionDetail({
@@ -600,27 +606,6 @@ class BlockMetaInfo {
           time == other.time &&
           saplingOutputsCount == other.saplingOutputsCount &&
           orchardActionsCount == other.orchardActionsCount;
-}
-
-class ExportBirthdayInfo {
-  final BigInt blockHeight;
-  final BigInt blockTime;
-
-  const ExportBirthdayInfo({
-    required this.blockHeight,
-    required this.blockTime,
-  });
-
-  @override
-  int get hashCode => blockHeight.hashCode ^ blockTime.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ExportBirthdayInfo &&
-          runtimeType == other.runtimeType &&
-          blockHeight == other.blockHeight &&
-          blockTime == other.blockTime;
 }
 
 class ProposalResult {
