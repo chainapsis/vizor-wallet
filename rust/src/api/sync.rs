@@ -887,14 +887,17 @@ fn fetch_block_time(lightwalletd_url: &str, block_height: u64) -> Result<u64, St
         let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
             .await
             .map_err(|e| e.to_string())?;
-        let block = client
-            .get_block(BlockId {
+        let block = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            client.get_block(BlockId {
                 height: block_height,
                 hash: vec![],
-            })
-            .await
-            .map_err(|e| format!("get_block: {e}"))?
-            .into_inner();
+            }),
+        )
+        .await
+        .map_err(|_| "get_block: timed out waiting for response".to_string())?
+        .map_err(|e| format!("get_block: {e}"))?
+        .into_inner();
 
         Ok(u64::from(block.time))
     })
