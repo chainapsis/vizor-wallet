@@ -650,12 +650,12 @@ class _SeedWordsCard extends StatelessWidget {
                 ? const []
                 : const [
                     BoxShadow(
-                      color: Color(0x14141818),
+                      color: Color(0xFFE1E1E1),
                       offset: Offset(0, 2),
                       blurRadius: 2,
                     ),
                     BoxShadow(
-                      color: Color(0x1A141818),
+                      color: Color(0xFFE1E1E1),
                       offset: Offset(0, 10),
                       blurRadius: 15,
                     ),
@@ -763,7 +763,7 @@ class _SeedBirthdayRow extends StatelessWidget {
                   AppIcon(
                     icon,
                     size: AppIconSize.medium,
-                    color: colors.icon.regular,
+                    color: colors.icon.muted,
                   ),
                   const SizedBox(width: AppSpacing.xxs),
                   Flexible(
