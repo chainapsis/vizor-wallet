@@ -10,13 +10,19 @@ source_sha="${GITHUB_SHA:?GITHUB_SHA is required}"
 target_owner="${DEPLOYMENT_REPOSITORY_OWNER:?DEPLOYMENT_REPOSITORY_OWNER is required}"
 target_repo="${DEPLOYMENT_REPOSITORY_NAME:?DEPLOYMENT_REPOSITORY_NAME is required}"
 
-if [[ ! "${source_ref_name}" =~ ^release/v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-  echo "Unsupported tag: ${source_ref_name}. Expected release/v<major>.<minor>.<patch>."
+if [[ ! "${source_ref_name}" =~ ^release/v([0-9]+)\.([0-9]+)\.([0-9]+)(-rc\.([0-9]+))?$ ]]; then
+  echo "Unsupported tag: ${source_ref_name}. Expected release/v<major>.<minor>.<patch> or release/v<major>.<minor>.<patch>-rc.<number>."
   exit 1
 fi
 
 version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
-release_name="${RELEASE_NAME:-v${version}}"
+prerelease_suffix="${BASH_REMATCH[4]:-}"
+asset_version="${version}${prerelease_suffix}"
+is_prerelease="false"
+if [[ -n "${prerelease_suffix}" ]]; then
+  is_prerelease="true"
+fi
+release_name="${RELEASE_NAME:-v${asset_version}}"
 
 payload="$(cat <<JSON
 {
@@ -28,6 +34,8 @@ payload="$(cat <<JSON
     "sha": "${source_sha}",
     "target_tag": "${source_ref_name}",
     "version": "${version}",
+    "asset_version": "${asset_version}",
+    "is_prerelease": ${is_prerelease},
     "release_name": "${release_name}"
   }
 }

@@ -21,10 +21,16 @@ def workspace_root
   File.expand_path("../..", __dir__)
 end
 
-def release_version_from_tag(tag)
-  match = /\Arelease\/v(\d+\.\d+\.\d+)\z/.match(tag.to_s)
+def release_tag_info(tag)
+  match = /\Arelease\/v(?<base_version>\d+\.\d+\.\d+)(?<prerelease_suffix>-rc\.\d+)?\z/.match(tag.to_s)
   UI.user_error!("Unsupported release tag format: #{tag}") unless match
-  match[1]
+
+  prerelease_suffix = match[:prerelease_suffix].to_s
+  {
+    base_version: match[:base_version],
+    asset_version: "#{match[:base_version]}#{prerelease_suffix}",
+    is_prerelease: !prerelease_suffix.empty?
+  }
 end
 
 def release_metadata
@@ -39,9 +45,16 @@ def release_metadata
     tag = ENV.fetch("GITHUB_REF_NAME")
   end
 
-  asset_version = release_version_from_tag(tag)
-  UI.user_error!("pubspec version #{version} does not match release tag #{asset_version}") unless version == asset_version
+  tag_info = release_tag_info(tag)
+  asset_version = tag_info.fetch(:asset_version)
+  UI.user_error!("pubspec version #{version} does not match release tag #{tag_info.fetch(:base_version)}") unless version == tag_info.fetch(:base_version)
   UI.user_error!("pubspec build number is required") if build_number.to_s.strip.empty?
+
+  unless ENV["GITHUB_RELEASE_PRERELEASE"].to_s.strip.empty?
+    env_prerelease = release_boolean_env("GITHUB_RELEASE_PRERELEASE")
+    UI.user_error!("GITHUB_RELEASE_PRERELEASE=#{env_prerelease} does not match release tag #{tag}") unless env_prerelease == tag_info.fetch(:is_prerelease)
+  end
+
   app_name = "Vizor"
   dist_dir = File.join(workspace_root, "dist", "macos")
   app_path = File.join(workspace_root, "build", "macos", "Build", "Products", "Release", "#{app_name}.app")
@@ -50,6 +63,8 @@ def release_metadata
     app_name: app_name,
     bundle_id: "com.keplr.vizor",
     version: version,
+    asset_version: asset_version,
+    is_prerelease: tag_info.fetch(:is_prerelease),
     build_number: build_number,
     tag: tag,
     release_name: ENV["RELEASE_NAME"] || tag,
@@ -90,8 +105,8 @@ def match_certificate_password
   ENV.fetch("MATCH_CERTIFICATE_PASSWORD")
 end
 
-def sparkle_enabled_for_release?
-  !release_boolean_env("GITHUB_RELEASE_DRAFT") && !release_boolean_env("GITHUB_RELEASE_PRERELEASE")
+def sparkle_enabled_for_release?(metadata = release_metadata)
+  !metadata.fetch(:is_prerelease)
 end
 
 def sparkle_private_ed_key
@@ -443,8 +458,8 @@ platform :mac do
       tag_name: metadata[:tag],
       name: metadata[:release_name],
       commitish: ENV.fetch("RELEASE_COMMITISH"),
-      is_draft: release_boolean_env("GITHUB_RELEASE_DRAFT"),
-      is_prerelease: release_boolean_env("GITHUB_RELEASE_PRERELEASE"),
+      is_draft: false,
+      is_prerelease: metadata.fetch(:is_prerelease),
       is_generate_release_notes: true,
       upload_assets: [metadata[:zip_path], metadata[:dmg_path], *extra_assets]
     )
@@ -500,13 +515,15 @@ platform :mac do
 
   desc "Build, notarize, package, and upload the macOS release"
   lane :release do
-    validate_sparkle_environment! if sparkle_enabled_for_release?
+    metadata = release_metadata
+
+    validate_sparkle_environment! if sparkle_enabled_for_release?(metadata)
     prepare_signing(readonly: match_readonly?)
     build
     notarize_app_bundle
     package(skip_build: true)
     notarize_dmg
-    lane_context[:SPARKLE_RELEASE_ASSETS] = sparkle_enabled_for_release? ? collect_sparkle_assets!(release_metadata) : []
+    lane_context[:SPARKLE_RELEASE_ASSETS] = sparkle_enabled_for_release?(metadata) ? collect_sparkle_assets!(metadata) : []
     upload_github_release
   end
 end
