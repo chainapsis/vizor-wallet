@@ -9,7 +9,6 @@ require "shellwords"
 require "tempfile"
 require "tmpdir"
 require "uri"
-require "yaml"
 require "open3"
 require_relative "../patches/developer_id_application_certificate_type_patch"
 
@@ -33,10 +32,13 @@ def release_tag_info(tag)
   }
 end
 
+def release_build_number
+  build_number = ENV["RELEASE_BUILD_NUMBER"].to_s.strip
+  UI.user_error!("RELEASE_BUILD_NUMBER must be a positive integer") unless build_number.match?(/\A[1-9]\d*\z/)
+  build_number
+end
+
 def release_metadata
-  pubspec = YAML.safe_load(File.read(File.join(workspace_root, "pubspec.yaml")))
-  version_string = pubspec.fetch("version")
-  version, build_number = version_string.split("+", 2)
   tag = ENV["RELEASE_TAG"]
 
   if tag.to_s.empty?
@@ -46,9 +48,9 @@ def release_metadata
   end
 
   tag_info = release_tag_info(tag)
+  version = tag_info.fetch(:base_version)
   asset_version = tag_info.fetch(:asset_version)
-  UI.user_error!("pubspec version #{version} does not match release tag #{tag_info.fetch(:base_version)}") unless version == tag_info.fetch(:base_version)
-  UI.user_error!("pubspec build number is required") if build_number.to_s.strip.empty?
+  build_number = release_build_number
 
   unless ENV["GITHUB_RELEASE_PRERELEASE"].to_s.strip.empty?
     env_prerelease = release_boolean_env("GITHUB_RELEASE_PRERELEASE")
@@ -109,6 +111,12 @@ def sparkle_enabled_for_release?(metadata = release_metadata)
   !metadata.fetch(:is_prerelease)
 end
 
+def sparkle_public_ed_key
+  public_key = ENV["SPARKLE_PUBLIC_ED_KEY"].to_s.strip
+  UI.user_error!("SPARKLE_PUBLIC_ED_KEY is required for release builds") if public_key.empty?
+  public_key
+end
+
 def sparkle_private_ed_key
   ENV.fetch("SPARKLE_PRIVATE_ED_KEY")
 end
@@ -129,7 +137,7 @@ ensure
 end
 
 def configure_sparkle_info_plist!(plist_path)
-  sh("/usr/bin/plutil -replace SUPublicEDKey -string #{shell_escape(ENV.fetch("SPARKLE_PUBLIC_ED_KEY", "").strip)} #{shell_escape(plist_path)}")
+  sh("/usr/bin/plutil -replace SUPublicEDKey -string #{shell_escape(sparkle_public_ed_key)} #{shell_escape(plist_path)}")
 end
 
 def sparkle_tool_path(tool_name)
@@ -223,9 +231,9 @@ def write_sparkle_release_notes!(notes_path, metadata)
   )
 end
 
-def validate_sparkle_environment!
-  UI.user_error!("SPARKLE_PUBLIC_ED_KEY is required for Sparkle releases") if ENV["SPARKLE_PUBLIC_ED_KEY"].to_s.strip.empty?
-  UI.user_error!("SPARKLE_PRIVATE_ED_KEY is required for Sparkle releases") if ENV["SPARKLE_PRIVATE_ED_KEY"].to_s.strip.empty?
+def validate_sparkle_environment!(metadata)
+  sparkle_public_ed_key
+  UI.user_error!("SPARKLE_PRIVATE_ED_KEY is required for stable Sparkle releases") if sparkle_enabled_for_release?(metadata) && ENV["SPARKLE_PRIVATE_ED_KEY"].to_s.strip.empty?
 end
 
 def generate_sparkle_appcast!(archives_dir, metadata)
@@ -477,7 +485,14 @@ platform :mac do
       configure_sparkle_info_plist!(restored_plist_path)
 
       Bundler.with_unbundled_env do
-        sh("cd #{shell_escape(workspace_root)} && fvm flutter build macos --release --no-pub")
+        sh(
+          [
+            "cd #{shell_escape(workspace_root)} &&",
+            "fvm flutter build macos --release --no-pub",
+            "--build-name", shell_escape(metadata[:version]),
+            "--build-number", shell_escape(metadata[:build_number])
+          ].join(" ")
+        )
       end
     end
 
@@ -517,7 +532,7 @@ platform :mac do
   lane :release do
     metadata = release_metadata
 
-    validate_sparkle_environment! if sparkle_enabled_for_release?(metadata)
+    validate_sparkle_environment!(metadata)
     prepare_signing(readonly: match_readonly?)
     build
     notarize_app_bundle
