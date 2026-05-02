@@ -107,6 +107,10 @@ Future<String> getUnifiedAddress({
 String generateMnemonic() =>
     RustLib.instance.api.crateApiWalletGenerateMnemonic();
 
+/// Get the BIP-39 English word list used for mnemonic validation.
+List<String> mnemonicWordList() =>
+    RustLib.instance.api.crateApiWalletMnemonicWordList();
+
 /// Check if a wallet database exists at the given path.
 bool walletExists({required String dbPath}) =>
     RustLib.instance.api.crateApiWalletWalletExists(dbPath: dbPath);
