@@ -835,6 +835,7 @@ class _SeedBirthdayRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final hideCopyButton = onCopyPressed == null;
 
     return SizedBox(
       height: 32,
@@ -866,14 +867,20 @@ class _SeedBirthdayRow extends StatelessWidget {
               ),
             ),
           ),
-          AppButton(
-            onPressed: onCopyPressed,
-            variant: AppButtonVariant.ghost,
-            size: AppButtonSize.medium,
-            minWidth: 96,
-            iconGap: 0,
-            trailing: AppIcon(copied ? AppIcons.check : AppIcons.copy),
-            child: Text(copied ? 'Copied' : copyLabel),
+          IgnorePointer(
+            ignoring: hideCopyButton,
+            child: Opacity(
+              opacity: hideCopyButton ? 0 : 1,
+              child: AppButton(
+                onPressed: onCopyPressed,
+                variant: AppButtonVariant.ghost,
+                size: AppButtonSize.medium,
+                minWidth: 96,
+                iconGap: 0,
+                trailing: AppIcon(copied ? AppIcons.check : AppIcons.copy),
+                child: Text(copied ? 'Copied' : copyLabel),
+              ),
+            ),
           ),
         ],
       ),
