@@ -718,13 +718,10 @@ class _SeedWordsCard extends StatelessWidget {
               onCopyPressed();
             },
             variant: AppButtonVariant.primary,
-            size: AppButtonSize.small,
-            minWidth: phraseCopied ? 72 : 96,
+            size: AppButtonSize.medium,
+            minWidth: 96,
             trailing: AppIcon(phraseCopied ? AppIcons.check : AppIcons.copy),
-            child: Text(
-              phraseCopied ? 'Copied' : 'Copy Phrase',
-              style: AppTypography.labelLarge,
-            ),
+            child: Text(phraseCopied ? 'Copied' : 'Copy Phrase'),
           ),
         ),
       ],
