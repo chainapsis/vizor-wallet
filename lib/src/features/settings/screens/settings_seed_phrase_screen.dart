@@ -512,7 +512,6 @@ class _SeedPhraseRevealView extends StatelessWidget {
 }
 
 const _seedPhraseCardWidth = 537.0;
-const _seedPhraseInnerWidth = _seedPhraseCardWidth - (AppSpacing.xxs * 2);
 const _seedPhraseOuterRadius = 28.0;
 const _seedPhraseInnerRadius = AppRadii.large;
 
@@ -561,15 +560,13 @@ class _SeedPhraseCard extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(
-                  width: _seedPhraseInnerWidth,
-                  child: _SeedWordsCard(
-                    words: words,
-                    isDark: isDark,
-                    phraseCopied: phraseCopied,
-                    onCopyPressed: onCopyPressed,
-                  ),
+                _SeedWordsCard(
+                  words: words,
+                  isDark: isDark,
+                  phraseCopied: phraseCopied,
+                  onCopyPressed: onCopyPressed,
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(
@@ -642,6 +639,7 @@ class _SeedWordsCard extends StatelessWidget {
     final colors = context.colors;
 
     return Stack(
+      fit: StackFit.passthrough,
       clipBehavior: Clip.none,
       children: [
         DecoratedBox(
