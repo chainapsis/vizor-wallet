@@ -62,8 +62,9 @@ pub use transactions::{
 };
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{
-    get_oldest_mined_transaction_anchor, ExportBirthdayAnchor, PendingTxInfo, TransactionDetail,
-    TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
+    get_export_birthday_anchor, get_oldest_mined_transaction_anchor, ExportBirthdayAnchor,
+    PendingTxInfo, TransactionDetail, TransactionDetailOutput, TransactionInfo, TxDataRequest,
+    WalletBalance,
 };
 
 pub(super) fn open_wallet_db(

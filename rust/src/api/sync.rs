@@ -876,39 +876,29 @@ pub fn get_export_birthday_info(
 ) -> Result<ExportBirthdayInfo, String> {
     catch(|| {
         let _network = keys::parse_network(&network)?;
-        match wallet_sync::get_oldest_mined_transaction_anchor(&db_path, &account_uuid)? {
-            Some(anchor) if anchor.block_time > 0 => Ok(ExportBirthdayInfo {
+        let anchor = wallet_sync::get_export_birthday_anchor(&db_path, &account_uuid)?;
+        if anchor.block_time > 0 {
+            Ok(ExportBirthdayInfo {
                 block_height: anchor.block_height,
                 block_time: anchor.block_time,
-            }),
-            Some(anchor) => fetch_block_info(&lightwalletd_url, Some(anchor.block_height)),
-            None => fetch_block_info(&lightwalletd_url, None),
+            })
+        } else {
+            fetch_block_info(&lightwalletd_url, anchor.block_height)
         }
     })
 }
 
 fn fetch_block_info(
     lightwalletd_url: &str,
-    height: Option<u64>,
+    block_height: u64,
 ) -> Result<ExportBirthdayInfo, String> {
-    use zcash_client_backend::proto::service::{BlockId, ChainSpec};
+    use zcash_client_backend::proto::service::BlockId;
 
     let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
     rt.block_on(async {
         let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
             .await
             .map_err(|e| e.to_string())?;
-        let block_height = match height {
-            Some(height) => height,
-            None => {
-                client
-                    .get_latest_block(ChainSpec::default())
-                    .await
-                    .map_err(|e| format!("get_latest_block: {e}"))?
-                    .into_inner()
-                    .height
-            }
-        };
         let block = client
             .get_block(BlockId {
                 height: block_height,

@@ -422,6 +422,40 @@ pub(crate) fn get_oldest_mined_transaction_anchor(
     .map_err(|e| format!("Query error: {e}"))
 }
 
+pub(crate) fn get_export_birthday_anchor(
+    db_path: &str,
+    account_uuid: &str,
+) -> Result<ExportBirthdayAnchor, String> {
+    if let Some(anchor) = get_oldest_mined_transaction_anchor(db_path, account_uuid)? {
+        return Ok(anchor);
+    }
+
+    get_account_birthday_height(db_path, account_uuid)?
+        .map(|block_height| ExportBirthdayAnchor {
+            block_height,
+            block_time: 0,
+        })
+        .ok_or_else(|| "Account birthday not found".to_string())
+}
+
+fn get_account_birthday_height(db_path: &str, account_uuid: &str) -> Result<Option<u64>, String> {
+    let account_id = parse_account_uuid(account_uuid)?;
+    let conn = open_readonly_conn(db_path)?;
+    let mut stmt = conn
+        .prepare("SELECT birthday_height FROM accounts WHERE uuid = ?1")
+        .map_err(|e| format!("SQL error: {e}"))?;
+
+    stmt.query_row(
+        rusqlite::params![account_id.expose_uuid().as_bytes().as_slice()],
+        |row| {
+            let block_height = row.get::<_, u32>(0)?;
+            Ok(u64::from(block_height))
+        },
+    )
+    .optional()
+    .map_err(|e| format!("Query error: {e}"))
+}
+
 pub fn get_transaction_detail(
     db_path: &str,
     _network: WalletNetwork,
@@ -1187,7 +1221,8 @@ mod tests {
         conn.execute_batch(
             "CREATE TABLE accounts (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 uuid BLOB NOT NULL UNIQUE
+                 uuid BLOB NOT NULL UNIQUE,
+                 birthday_height INTEGER NOT NULL DEFAULT 0
              );
              CREATE TABLE addresses (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1421,6 +1456,16 @@ mod tests {
         .unwrap();
     }
 
+    fn set_account_birthday(db: &NamedTempFile, account: uuid::Uuid, birthday_height: i64) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        ensure_account_row(&conn, account);
+        conn.execute(
+            "UPDATE accounts SET birthday_height = ?2 WHERE uuid = ?1",
+            rusqlite::params![account.as_bytes().as_slice(), birthday_height],
+        )
+        .unwrap();
+    }
+
     #[test]
     fn export_birthday_anchor_uses_oldest_mined_tx_for_account() {
         let db = fresh_history_db();
@@ -1556,6 +1601,50 @@ mod tests {
                 .unwrap();
 
         assert!(got.is_none());
+    }
+
+    #[test]
+    fn export_birthday_anchor_falls_back_to_account_birthday_without_mined_tx() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let other_account = second_test_account_uuid();
+        let pending = fake_txid(0x91);
+        let other_mined = fake_txid(0x92);
+
+        set_account_birthday(&db, account, 333_100);
+        set_account_birthday(&db, other_account, 111_100);
+        insert_history_tx(
+            &db,
+            account,
+            &pending,
+            None,
+            0,
+            Some(400),
+            1,
+            0,
+            1,
+            false,
+            None,
+        );
+        insert_history_tx(
+            &db,
+            other_account,
+            &other_mined,
+            Some(100),
+            0,
+            None,
+            1,
+            0,
+            1,
+            false,
+            None,
+        );
+
+        let got =
+            get_export_birthday_anchor(db.path().to_str().unwrap(), &account.to_string()).unwrap();
+
+        assert_eq!(got.block_height, 333_100);
+        assert_eq!(got.block_time, 0);
     }
 
     #[test]
