@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -23,7 +24,9 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 
 class SettingsSeedPhraseScreen extends ConsumerStatefulWidget {
-  const SettingsSeedPhraseScreen({super.key});
+  const SettingsSeedPhraseScreen({this.privacyOverlayController, super.key});
+
+  final SensitivePrivacyOverlayController? privacyOverlayController;
 
   @override
   ConsumerState<SettingsSeedPhraseScreen> createState() =>
@@ -349,35 +352,43 @@ class _SettingsSeedPhraseScreenState
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: _SettingsSeedPhrasePane(
-          onBeforeNavigateBack: () => _clearSensitiveState(),
-          child: switch (_stage) {
-            _SettingsSeedPhraseStage.password => _PasswordGateView(
-              passwordController: _passwordController,
-              messageText: _passwordError ?? _passwordPolicyMessage,
-              isSubmitting: _isSubmitting,
-              canSubmit: _canSubmit,
-              onChanged: _handlePasswordChanged,
-              onSubmit: _submitPassword,
+        padding: EdgeInsets.zero,
+        child: SensitivePrivacyOverlay(
+          sensitiveContentVisible:
+              _stage == _SettingsSeedPhraseStage.reveal && _mnemonic != null,
+          controller: widget.privacyOverlayController,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: _SettingsSeedPhrasePane(
+              onBeforeNavigateBack: () => _clearSensitiveState(),
+              child: switch (_stage) {
+                _SettingsSeedPhraseStage.password => _PasswordGateView(
+                  passwordController: _passwordController,
+                  messageText: _passwordError ?? _passwordPolicyMessage,
+                  isSubmitting: _isSubmitting,
+                  canSubmit: _canSubmit,
+                  onChanged: _handlePasswordChanged,
+                  onSubmit: _submitPassword,
+                ),
+                _SettingsSeedPhraseStage.reveal => _SeedPhraseRevealView(
+                  mnemonic: _mnemonic,
+                  birthdayHeight: _birthdayHeight,
+                  birthdayBlockTime: _birthdayBlockTime,
+                  birthdayHeightLoading: _isBirthdayHeightLoading,
+                  birthdayDateLoading: _isBirthdayDateLoading,
+                  errorText: _revealError,
+                  phraseCopied: _copiedTarget == _SeedPhraseCopyTarget.phrase,
+                  birthdayDateCopied:
+                      _copiedTarget == _SeedPhraseCopyTarget.birthdayDate,
+                  birthdayHeightCopied:
+                      _copiedTarget == _SeedPhraseCopyTarget.birthdayHeight,
+                  onCopyPressed: _copyMnemonic,
+                  onCopyBirthdayDatePressed: _copyBirthdayDate,
+                  onCopyBirthdayHeightPressed: _copyBirthdayHeight,
+                ),
+              },
             ),
-            _SettingsSeedPhraseStage.reveal => _SeedPhraseRevealView(
-              mnemonic: _mnemonic,
-              birthdayHeight: _birthdayHeight,
-              birthdayBlockTime: _birthdayBlockTime,
-              birthdayHeightLoading: _isBirthdayHeightLoading,
-              birthdayDateLoading: _isBirthdayDateLoading,
-              errorText: _revealError,
-              phraseCopied: _copiedTarget == _SeedPhraseCopyTarget.phrase,
-              birthdayDateCopied:
-                  _copiedTarget == _SeedPhraseCopyTarget.birthdayDate,
-              birthdayHeightCopied:
-                  _copiedTarget == _SeedPhraseCopyTarget.birthdayHeight,
-              onCopyPressed: _copyMnemonic,
-              onCopyBirthdayDatePressed: _copyBirthdayDate,
-              onCopyBirthdayHeightPressed: _copyBirthdayHeight,
-            ),
-          },
+          ),
         ),
       ),
     );

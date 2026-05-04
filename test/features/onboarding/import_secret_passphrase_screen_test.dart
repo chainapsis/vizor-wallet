@@ -14,6 +14,7 @@ import 'package:flutter/widgets.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_secret_passphrase_screen.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -217,6 +218,30 @@ void main() {
     expect(_textField(tester, 2).controller!.text, 'able');
     expect(_textField(tester, 3).focusNode!.hasFocus, isTrue);
   });
+
+  testWidgets('privacy shield covers entered words when focus is unsafe', (
+    tester,
+  ) async {
+    final controller = SensitivePrivacyOverlayController(initiallySafe: false);
+    addTearDown(controller.dispose);
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _importPassphraseScreen(privacyOverlayController: controller),
+    );
+
+    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+
+    await tester.enterText(_wordField(0), 'abandon');
+    await tester.pump();
+
+    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+
+    controller.markSafe();
+    await tester.pump();
+
+    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+  });
 }
 
 Future<void> _setDesktopViewport(
@@ -229,8 +254,13 @@ Future<void> _setDesktopViewport(
   });
 }
 
-Widget _importPassphraseScreen({FocusNode? afterNode}) {
-  Widget body = const ImportSecretPassphraseScreen();
+Widget _importPassphraseScreen({
+  FocusNode? afterNode,
+  SensitivePrivacyOverlayController? privacyOverlayController,
+}) {
+  Widget body = ImportSecretPassphraseScreen(
+    privacyOverlayController: privacyOverlayController,
+  );
   if (afterNode != null) {
     body = Column(
       children: [

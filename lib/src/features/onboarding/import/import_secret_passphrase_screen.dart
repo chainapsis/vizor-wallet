@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -18,9 +19,14 @@ import '../shared/onboarding_flow_args.dart';
 import 'import_split_view.dart';
 
 class ImportSecretPassphraseScreen extends ConsumerStatefulWidget {
-  const ImportSecretPassphraseScreen({this.args, super.key});
+  const ImportSecretPassphraseScreen({
+    this.args,
+    this.privacyOverlayController,
+    super.key,
+  });
 
   final ImportSecretPassphraseArgs? args;
+  final SensitivePrivacyOverlayController? privacyOverlayController;
 
   @override
   ConsumerState<ImportSecretPassphraseScreen> createState() =>
@@ -71,6 +77,9 @@ class _ImportSecretPassphraseScreenState
   String get _mnemonic => _normalizedWords.join(' ');
 
   bool get _hasAllWords => _normalizedWords.every((word) => word.isNotEmpty);
+
+  bool get _hasEnteredMnemonicWords =>
+      _controllers.any((controller) => controller.text.trim().isNotEmpty);
 
   bool get _isMnemonicValid =>
       _hasAllWords && rust_wallet.validateMnemonic(mnemonic: _mnemonic);
@@ -232,6 +241,11 @@ class _ImportSecretPassphraseScreenState
     final colors = context.colors;
 
     return ImportOnboardingTrailingPane(
+      overlay: SensitivePrivacyOverlay(
+        sensitiveContentVisible: _hasEnteredMnemonicWords,
+        controller: widget.privacyOverlayController,
+        child: const SizedBox.expand(),
+      ),
       child: Column(
         children: [
           SizedBox(

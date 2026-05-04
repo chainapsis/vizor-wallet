@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_chip.dart';
@@ -20,9 +22,14 @@ import 'onboarding_split_view.dart';
 import '../shared/onboarding_flow_args.dart';
 
 class SecretPassphraseScreen extends ConsumerStatefulWidget {
-  const SecretPassphraseScreen({this.args, super.key});
+  const SecretPassphraseScreen({
+    this.args,
+    this.privacyOverlayController,
+    super.key,
+  });
 
   final CreateSecretPassphraseArgs? args;
+  final SensitivePrivacyOverlayController? privacyOverlayController;
 
   @override
   ConsumerState<SecretPassphraseScreen> createState() =>
@@ -164,25 +171,33 @@ class _SecretPassphraseScreenState
 
   @override
   Widget build(BuildContext context) {
-    return OnboardingTrailingPane(
-      child: Column(
-        children: [
-          const _BackRow(),
-          const SizedBox(height: AppSpacing.xs),
-          Expanded(
-            child: _HeroLayout(
-              mnemonic: _mnemonic,
-              isPreparing: _isPreparing,
-              submitPhase: _submitPhase,
-              revealed: _revealed,
-              copied: _copied,
-              prepareError: _prepareError,
-              submitError: _submitError,
-              onPrimaryPressed: _handlePrimaryAction,
-              onCopyPressed: _copyMnemonic,
-            ),
+    return AppDesktopPane(
+      padding: EdgeInsets.zero,
+      child: SensitivePrivacyOverlay(
+        sensitiveContentVisible: _revealed && _mnemonic != null,
+        controller: widget.privacyOverlayController,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            children: [
+              const _BackRow(),
+              const SizedBox(height: AppSpacing.xs),
+              Expanded(
+                child: _HeroLayout(
+                  mnemonic: _mnemonic,
+                  isPreparing: _isPreparing,
+                  submitPhase: _submitPhase,
+                  revealed: _revealed,
+                  copied: _copied,
+                  prepareError: _prepareError,
+                  submitError: _submitError,
+                  onPrimaryPressed: _handlePrimaryAction,
+                  onCopyPressed: _copyMnemonic,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
