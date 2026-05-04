@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show MaterialApp, Scaffold, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart'
     show
+        BackdropFilter,
         Column,
         Expanded,
         Focus,
@@ -219,6 +220,28 @@ void main() {
     expect(_textField(tester, 3).focusNode!.hasFocus, isTrue);
   });
 
+  testWidgets(
+    'privacy shield ignores empty focused words when focus is unsafe',
+    (tester) async {
+      final controller = SensitivePrivacyOverlayController(
+        initiallySafe: false,
+      );
+      addTearDown(controller.dispose);
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _importPassphraseScreen(privacyOverlayController: controller),
+      );
+
+      _textField(tester, 0).focusNode!.requestFocus();
+      await tester.pump();
+
+      expect(_textField(tester, 0).focusNode!.hasFocus, isTrue);
+      expect(_textField(tester, 0).controller!.text, isEmpty);
+      expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+    },
+  );
+
   testWidgets('privacy shield covers entered words when focus is unsafe', (
     tester,
   ) async {
@@ -236,6 +259,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+    expect(find.byType(BackdropFilter), findsOneWidget);
 
     controller.markSafe();
     await tester.pump();

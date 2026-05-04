@@ -185,7 +185,7 @@ private final class NativeLockIconView: NSView {
 
 private final class NativePrivacyShieldView: NSView {
   private static let paneCornerRadius = 8.0
-  private static let blurRadius = 15.0
+  private static let blurRadius = 30.0
 
   private let blurView = NSView()
   private let scrimView = NSView()

@@ -394,7 +394,7 @@ class _SensitivePrivacyShield extends StatelessWidget {
     return IgnorePointer(
       child: ClipRect(
         child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          filter: ui.ImageFilter.blur(sigmaX: 30, sigmaY: 30),
           child: DecoratedBox(
             decoration: BoxDecoration(color: isDark ? _darkScrim : _lightScrim),
             child: Center(
