@@ -14,6 +14,8 @@ import 'package:zcash_wallet/src/features/about/screens/about_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 
+const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
+
 void main() {
   testWidgets('About Vizor sidebar item opens the About page', (tester) async {
     await _setDesktopViewport(tester);
@@ -180,6 +182,34 @@ void main() {
     expect(backTopAfterScroll, lessThan(backTopBeforeScroll));
   });
 
+  testWidgets('legal back link reuses shared back link style', (tester) async {
+    await _setDesktopViewport(tester);
+
+    final router = GoRouter(
+      initialLocation: '/terms',
+      routes: [
+        GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
+        GoRoute(path: '/welcome', builder: (_, _) => const Text('welcome')),
+      ],
+    );
+
+    await tester.pumpWidget(_routerHarness(router, _emptyBootstrap('/terms')));
+    await tester.pumpAndSettle();
+
+    final backLink = find.byType(AppBackLink);
+    expect(
+      find.descendant(of: backLink, matching: find.text('Back')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.descendant(of: backLink, matching: find.text('Back')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('welcome'), findsOneWidget);
+  });
+
   testWidgets('Terms and Privacy are public before wallet creation', (
     tester,
   ) async {
@@ -259,7 +289,7 @@ Widget _routerHarness(GoRouter router, AppBootstrapState bootstrap) {
 }
 
 void _expectScrollbarFillsPaneEdge(WidgetTester tester, Size viewport) {
-  final scrollbarRect = tester.getRect(find.byType(Scrollbar).last);
+  final scrollbarRect = tester.getRect(find.byKey(_utilityPageScrollbarKey));
   expect(scrollbarRect.top, moreOrLessEquals(AppSpacing.xs));
   expect(scrollbarRect.right, moreOrLessEquals(viewport.width - AppSpacing.xs));
   expect(
@@ -269,7 +299,7 @@ void _expectScrollbarFillsPaneEdge(WidgetTester tester, Size viewport) {
 }
 
 void _expectUtilityContentCentered(WidgetTester tester, Size viewport) {
-  final scrollbarRect = tester.getRect(find.byType(Scrollbar).last);
+  final scrollbarRect = tester.getRect(find.byKey(_utilityPageScrollbarKey));
   final dividerRect = tester.getRect(find.byType(AppDecorativeDivider).last);
   expect(dividerRect.width, moreOrLessEquals(256));
   expect(dividerRect.center.dx, moreOrLessEquals(scrollbarRect.center.dx));

@@ -11,12 +11,16 @@ class AppBackLink extends StatefulWidget {
     required this.label,
     required this.onTap,
     this.minWidth = 0,
+    this.semanticsLabel,
     super.key,
   });
+
+  static const height = 32.0;
 
   final String label;
   final FutureOr<void> Function() onTap;
   final double minWidth;
+  final String? semanticsLabel;
 
   @override
   State<AppBackLink> createState() => _AppBackLinkState();
@@ -31,7 +35,7 @@ class _AppBackLinkState extends State<AppBackLink> {
 
     return Semantics(
       button: true,
-      label: 'Back to ${widget.label}',
+      label: widget.semanticsLabel ?? 'Back to ${widget.label}',
       child: ExcludeSemantics(
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
@@ -46,7 +50,7 @@ class _AppBackLinkState extends State<AppBackLink> {
               child: ConstrainedBox(
                 constraints: BoxConstraints(minWidth: widget.minWidth),
                 child: SizedBox(
-                  height: 32,
+                  height: AppBackLink.height,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

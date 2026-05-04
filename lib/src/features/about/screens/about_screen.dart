@@ -18,10 +18,12 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../onboarding/shared/onboarding_welcome_art.dart';
 
+const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
+const _backLinkContentGap = AppSpacing.s;
+// TODO(version-metadata): Replace Figma placeholder copy with runtime app metadata.
 const _aboutVersionLabel = 'Version: 0.1.24 Public Beta';
 const _legalUpdatedLabel = 'Last Update:  ';
 const _paragraphWidth = 352.0;
@@ -174,15 +176,15 @@ class _AboutScrollViewState extends State<_AboutScrollView> {
                       alignment: Alignment.centerLeft,
                       child: AppRouteBackLink(),
                     ),
-                    const SizedBox(height: AppSpacing.s),
+                    const SizedBox(height: _backLinkContentGap),
                     ConstrainedBox(
                       constraints: BoxConstraints(
                         minHeight: math.max(
                           0,
                           constraints.maxHeight -
                               (AppSpacing.md * 2) -
-                              32 -
-                              AppSpacing.s,
+                              AppBackLink.height -
+                              _backLinkContentGap,
                         ),
                       ),
                       child: Center(
@@ -243,7 +245,7 @@ class _LegalScrollViewState extends State<_LegalScrollView> {
                       alignment: Alignment.centerLeft,
                       child: _UtilityBackButton(),
                     ),
-                    const SizedBox(height: AppSpacing.s),
+                    const SizedBox(height: _backLinkContentGap),
                     Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -289,7 +291,11 @@ class _UtilityScrollbar extends StatelessWidget {
         crossAxisMargin: 3,
         mainAxisMargin: 3,
       ),
-      child: Scrollbar(controller: controller, child: child),
+      child: Scrollbar(
+        key: _utilityPageScrollbarKey,
+        controller: controller,
+        child: child,
+      ),
     );
   }
 }
@@ -299,39 +305,12 @@ class _UtilityBackButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
+    return AppBackLink(
       label: 'Back',
-      child: ExcludeSemantics(
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _navigateBack(context, ref),
-            child: SizedBox(
-              height: 32,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppIcon(
-                    AppIcons.chevronBackward,
-                    size: 16,
-                    color: colors.icon.accent,
-                  ),
-                  const SizedBox(width: AppSpacing.xxs),
-                  Text(
-                    'Back',
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+      semanticsLabel: context.canPop()
+          ? 'Back'
+          : 'Back to ${_defaultFallbackLabel(ref)}',
+      onTap: () => _navigateBack(context, ref),
     );
   }
 
@@ -344,10 +323,17 @@ class _UtilityBackButton extends ConsumerWidget {
   }
 
   String _defaultFallbackPath(WidgetRef ref) {
+    return _hasWallet(ref) ? '/home' : '/welcome';
+  }
+
+  String _defaultFallbackLabel(WidgetRef ref) {
+    return _hasWallet(ref) ? 'Home' : 'Welcome';
+  }
+
+  bool _hasWallet(WidgetRef ref) {
     final bootstrap = ref.read(appBootstrapProvider);
     final wallet = ref.read(walletProvider).value;
-    final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
-    return hasWallet ? '/home' : '/welcome';
+    return wallet?.hasWallet ?? bootstrap.hasWallet;
   }
 }
 
