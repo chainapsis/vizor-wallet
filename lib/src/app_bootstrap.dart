@@ -71,6 +71,7 @@ class AppBootstrapState {
 class AppSyncSnapshot {
   const AppSyncSnapshot({
     this.accountUuid,
+    this.hasAccountScopedData = false,
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
@@ -89,6 +90,7 @@ class AppSyncSnapshot {
   });
 
   final String? accountUuid;
+  final bool hasAccountScopedData;
   final int scannedHeight;
   final int chainTipHeight;
   final double percentage;
@@ -422,6 +424,7 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
 
     return AppSyncSnapshot(
       accountUuid: accountUuid,
+      hasAccountScopedData: true,
       scannedHeight: scannedHeight,
       chainTipHeight: chainTipHeight,
       percentage: percentage,

@@ -19,6 +19,11 @@ class SyncState {
   /// Account UUID that owns the balance, shield status, and recent transaction
   /// fields below. Sync progress itself is wallet-wide.
   final String? accountUuid;
+
+  /// True only after balance/history data has been loaded for [accountUuid].
+  /// A state can be scoped to an account while this is false during account
+  /// switches or after the first account-scoped refresh fails.
+  final bool hasAccountScopedData;
   final bool isSyncing;
   final bool isBackgroundMode;
   final double percentage;
@@ -57,6 +62,7 @@ class SyncState {
 
   SyncState({
     this.accountUuid,
+    this.hasAccountScopedData = false,
     this.isSyncing = false,
     this.isBackgroundMode = false,
     this.percentage = 0,
@@ -94,6 +100,7 @@ class SyncState {
 
   SyncState copyWith({
     String? accountUuid,
+    bool? hasAccountScopedData,
     bool? isSyncing,
     bool? isBackgroundMode,
     double? percentage,
@@ -120,6 +127,7 @@ class SyncState {
   }) {
     return SyncState(
       accountUuid: accountUuid ?? this.accountUuid,
+      hasAccountScopedData: hasAccountScopedData ?? this.hasAccountScopedData,
       isSyncing: isSyncing ?? this.isSyncing,
       isBackgroundMode: isBackgroundMode ?? this.isBackgroundMode,
       percentage: percentage ?? this.percentage,
@@ -155,6 +163,10 @@ class SyncState {
     return accountUuid != null && this.accountUuid == accountUuid;
   }
 
+  bool hasDataForAccount(String? accountUuid) {
+    return belongsToAccount(accountUuid) && hasAccountScopedData;
+  }
+
   SyncState scopedToAccount(String? accountUuid) {
     if (belongsToAccount(accountUuid)) return this;
     return withoutAccountScopedData(accountUuid: accountUuid);
@@ -163,6 +175,7 @@ class SyncState {
   SyncState withoutAccountScopedData({String? accountUuid}) {
     return SyncState(
       accountUuid: accountUuid,
+      hasAccountScopedData: false,
       isSyncing: isSyncing,
       isBackgroundMode: isBackgroundMode,
       percentage: percentage,
@@ -297,9 +310,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final initialAccountUuid = accountState?.activeAccountUuid;
     final initialBelongsToActiveAccount =
         initial.accountUuid != null &&
-        initial.accountUuid == initialAccountUuid;
+        initial.accountUuid == initialAccountUuid &&
+        initial.hasAccountScopedData;
     return SyncState(
       accountUuid: initialAccountUuid,
+      hasAccountScopedData: initialBelongsToActiveAccount,
       isSyncing: false,
       isBackgroundMode: false,
       percentage: initial.percentage,
@@ -346,7 +361,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   SyncState? _previousScopedState(SyncState? prev, String? accountUuid) {
-    if (accountUuid == null || prev?.accountUuid != accountUuid) return null;
+    if (accountUuid == null ||
+        prev?.accountUuid != accountUuid ||
+        prev?.hasAccountScopedData != true) {
+      return null;
+    }
     return prev;
   }
 
@@ -425,6 +444,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
+        hasAccountScopedData: scopedPrev != null,
         isSyncing: true,
         isBackgroundMode: false,
         percentage: 0.0,
@@ -516,6 +536,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               state = AsyncData(
                 SyncState(
                   accountUuid: accountUuid,
+                  hasAccountScopedData: scopedPrev != null,
                   error: e.toString(),
                   transparentBalance: scopedPrev?.transparentBalance,
                   saplingBalance: scopedPrev?.saplingBalance,
@@ -559,6 +580,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           state = AsyncData(
             SyncState(
               accountUuid: accountUuid,
+              hasAccountScopedData: scopedPrev != null,
               error: e.toString(),
               transparentBalance: scopedPrev?.transparentBalance,
               saplingBalance: scopedPrev?.saplingBalance,
@@ -655,6 +677,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
+        hasAccountScopedData: scopedPrev != null,
         isSyncing: false,
         isBackgroundMode: false,
         percentage: prev?.percentage ?? 0.0,
@@ -1140,6 +1163,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     bool? canShieldTransparentBalance;
     BigInt? shieldTransparentFee;
     BigInt? shieldTransparentAmount;
+    var didFetchBalance = false;
+    var didFetchRecentTxs = false;
     var recentTxs =
         scopedPrev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
     if (event.hasNewTx || event.isComplete) {
@@ -1157,6 +1182,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         orchardPending = balance.orchardPending;
         spendable = balance.spendable;
         total = balance.total;
+        didFetchBalance = true;
       } catch (e) {
         log('SyncNotifier: balance fetch failed: $e');
       }
@@ -1167,6 +1193,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           limit: 10,
           accountUuid: accountUuid,
         );
+        didFetchRecentTxs = true;
       } catch (e) {
         log('SyncNotifier: tx history fetch failed: $e');
       }
@@ -1193,6 +1220,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final stateAccountUuid = _getActiveAccountUuid();
     final useFetchedAccountData = accountUuid == stateAccountUuid;
     final stateScopedPrev = _previousScopedState(state.value, stateAccountUuid);
+    final hasAccountScopedData = useFetchedAccountData
+        ? (didFetchBalance && didFetchRecentTxs) ||
+              (stateScopedPrev?.hasAccountScopedData ?? false)
+        : stateScopedPrev?.hasAccountScopedData ?? false;
     if (!useFetchedAccountData) {
       log(
         'SyncNotifier: discarding account-scoped sync data after account transition',
@@ -1219,6 +1250,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     state = AsyncData(
       SyncState(
         accountUuid: stateAccountUuid,
+        hasAccountScopedData: hasAccountScopedData,
         isSyncing: event.isSyncing && !event.isComplete,
         isBackgroundMode: event.isBackground || _bgDelegate.isActive,
         percentage: actualPercentage,
@@ -1324,6 +1356,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     bool? canShieldTransparentBalance;
     BigInt? shieldTransparentFee;
     BigInt? shieldTransparentAmount;
+    var didFetchBalance = false;
+    var didFetchRecentTxs = false;
     try {
       final balance = await rust_sync.getBalance(
         dbPath: dbPath,
@@ -1338,6 +1372,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       orchardPending = balance.orchardPending;
       spendable = balance.spendable;
       total = balance.total;
+      didFetchBalance = true;
     } catch (e) {
       _logRefreshReadError(
         label: 'balance',
@@ -1355,6 +1390,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         limit: 10,
         accountUuid: accountUuid,
       );
+      didFetchRecentTxs = true;
     } catch (e) {
       _logRefreshReadError(
         label: 'tx history',
@@ -1388,6 +1424,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
+        hasAccountScopedData:
+            (didFetchBalance && didFetchRecentTxs) ||
+            (scopedPrev?.hasAccountScopedData ?? false),
         isSyncing: prev?.isSyncing ?? false,
         isBackgroundMode: _bgDelegate.isActive,
         percentage: prev?.percentage ?? 0.0,

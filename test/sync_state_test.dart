@@ -48,6 +48,7 @@ void main() {
     final tx = _tx('a' * 64);
     final state = SyncState(
       accountUuid: 'account-a',
+      hasAccountScopedData: true,
       percentage: 0.75,
       scannedHeight: 10,
       chainTipHeight: 20,
@@ -59,6 +60,7 @@ void main() {
     final scoped = state.scopedToAccount('account-a');
 
     expect(scoped.accountUuid, 'account-a');
+    expect(scoped.hasDataForAccount('account-a'), isTrue);
     expect(scoped.totalBalance, BigInt.from(123));
     expect(scoped.spendableBalance, BigInt.from(100));
     expect(scoped.recentTransactions, [tx]);
@@ -68,6 +70,7 @@ void main() {
   test('scopedToAccount clears account data for a different account', () {
     final state = SyncState(
       accountUuid: 'account-a',
+      hasAccountScopedData: true,
       isSyncing: true,
       percentage: 0.75,
       displayPercentage: 0.50,
@@ -81,6 +84,8 @@ void main() {
     final scoped = state.scopedToAccount('account-b');
 
     expect(scoped.accountUuid, 'account-b');
+    expect(scoped.belongsToAccount('account-b'), isTrue);
+    expect(scoped.hasDataForAccount('account-b'), isFalse);
     expect(scoped.totalBalance, BigInt.zero);
     expect(scoped.spendableBalance, BigInt.zero);
     expect(scoped.recentTransactions, isEmpty);
@@ -89,6 +94,22 @@ void main() {
     expect(scoped.displayPercentage, 0.50);
     expect(scoped.scannedHeight, 10);
     expect(scoped.chainTipHeight, 20);
+  });
+
+  test('cleared account state is scoped but not renderable account data', () {
+    final state = SyncState(
+      accountUuid: 'account-a',
+      hasAccountScopedData: true,
+      totalBalance: BigInt.from(123),
+      recentTransactions: [_tx('a' * 64)],
+    );
+
+    final cleared = state.withoutAccountScopedData(accountUuid: 'account-b');
+
+    expect(cleared.belongsToAccount('account-b'), isTrue);
+    expect(cleared.hasDataForAccount('account-b'), isFalse);
+    expect(cleared.totalBalance, BigInt.zero);
+    expect(cleared.recentTransactions, isEmpty);
   });
 }
 
