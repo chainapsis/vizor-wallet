@@ -1,19 +1,13 @@
 import 'dart:io';
 
-import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
-import 'package:zcash_wallet/src/app_bootstrap.dart';
-import 'package:zcash_wallet/src/core/layout/app_layout.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
-import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _mnemonic =
     'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
@@ -25,13 +19,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
-    FlutterForegroundTask.initCommunicationPort();
-    await RustLib.init();
-    await initializeDesktopWindow();
-    if (isDesktopLayoutPlatform) {
-      await DesktopWindowBootstrap.initialize();
-      await showDesktopWindow();
-    }
+    await initializeZcashWalletRuntime();
   });
 
   testWidgets(
@@ -44,15 +32,9 @@ void main() {
       });
 
       await _resetWalletState();
-      final bootstrap = await loadAppBootstrap();
 
       _log('pumping app');
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
-          child: const ZcashWalletApp(),
-        ),
-      );
+      await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
 
       _log('opening import flow');
       await _tapButton(tester, const ValueKey('welcome_import_wallet_button'));

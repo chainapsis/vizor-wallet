@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:go_router/go_router.dart';
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 
-import 'main.dart' show log;
 import 'src/app_bootstrap.dart';
+import 'src/core/layout/app_layout.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
@@ -37,6 +38,47 @@ import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
+import 'src/rust/frb_generated.dart';
+
+void log(String message) => debugPrint('[zcash] $message');
+
+Future<void> initializeZcashWalletRuntime() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  FlutterForegroundTask.initCommunicationPort();
+  log('runtime: initializing RustLib');
+  await RustLib.init();
+
+  // Order matters: window_manager creates and shows the NSWindow inside
+  // `initializeDesktopWindow`; the acrylic setup is only effective once
+  // that window exists.
+  log('runtime: initializing desktop window (no-op on mobile/web)');
+  await initializeDesktopWindow();
+  if (isDesktopLayoutPlatform) {
+    log('runtime: initializing desktop window visuals');
+    await DesktopWindowBootstrap.initialize();
+    await showDesktopWindow();
+  }
+}
+
+Future<Widget> buildBootstrappedZcashWalletApp() async {
+  final bootstrap = await loadAppBootstrap();
+  return buildZcashWalletApp(bootstrap: bootstrap);
+}
+
+Widget buildZcashWalletApp({required AppBootstrapState bootstrap}) {
+  return ProviderScope(
+    overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
+    child: const ZcashWalletApp(),
+  );
+}
+
+Future<void> runZcashWalletApp() async {
+  log('runtime: starting');
+  await initializeZcashWalletRuntime();
+  final app = await buildBootstrappedZcashWalletApp();
+  log('runtime: launching app');
+  runApp(app);
+}
 
 final _routerProvider = Provider<GoRouter>((ref) {
   final bootstrap = ref.watch(appBootstrapProvider);
