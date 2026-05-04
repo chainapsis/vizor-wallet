@@ -8,6 +8,8 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
+import 'package:zcash_wallet/src/core/widgets/app_decorative_divider.dart';
 import 'package:zcash_wallet/src/features/about/screens/about_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -54,6 +56,128 @@ void main() {
 
     expect(find.text('About Vizor Wallet'), findsOneWidget);
     expect(find.text('Version: 0.1.24 Public Beta'), findsOneWidget);
+  });
+
+  testWidgets('About sidebar navigation uses the standard Home back target', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    final router = GoRouter(
+      initialLocation: '/send',
+      routes: [
+        GoRoute(
+          path: '/send',
+          builder: (_, _) => AppDesktopShell(
+            sidebar: const AppMainSidebar(),
+            pane: AppDesktopPane(
+              child: Text(
+                'send route',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: AppThemeData.light.colors.text.primary,
+                ),
+              ),
+            ),
+          ),
+        ),
+        GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
+        GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+        GoRoute(
+          path: '/receive',
+          builder: (_, _) => const Text('receive route'),
+        ),
+        GoRoute(
+          path: '/activity',
+          builder: (_, _) => const Text('activity route'),
+        ),
+        GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
+      ],
+    );
+
+    await tester.pumpWidget(_routerHarness(router, _walletBootstrap('/send')));
+
+    await tester.tap(find.text('About Vizor'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('About Vizor Wallet'), findsOneWidget);
+    final backLink = find.byType(AppRouteBackLink);
+    expect(
+      find.descendant(of: backLink, matching: find.text('Home')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.descendant(of: backLink, matching: find.text('Home')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('home route'), findsOneWidget);
+  });
+
+  testWidgets('utility scrollbars fill the pane edge', (tester) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/terms',
+          routes: [
+            GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
+          ],
+        ),
+        _emptyBootstrap('/terms'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    _expectScrollbarFillsPaneEdge(tester, const Size(1280, 900));
+    _expectUtilityContentCentered(tester, const Size(1280, 900));
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/about',
+          routes: [
+            GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
+          ],
+        ),
+        _walletBootstrap('/about'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    _expectScrollbarFillsPaneEdge(tester, const Size(1280, 900));
+    _expectUtilityContentCentered(tester, const Size(1280, 900));
+  });
+
+  testWidgets('legal back row scrolls with the page content', (tester) async {
+    const viewport = Size(1280, 520);
+    await _setViewport(tester, viewport);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/terms',
+          routes: [
+            GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
+          ],
+        ),
+        _emptyBootstrap('/terms'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    _expectScrollbarFillsPaneEdge(tester, viewport);
+
+    final backTopBeforeScroll = tester.getTopLeft(find.text('Back')).dy;
+    await tester.drag(
+      find.byType(SingleChildScrollView),
+      const Offset(0, -160),
+    );
+    await tester.pumpAndSettle();
+    final backTopAfterScroll = tester.getTopLeft(find.text('Back')).dy;
+
+    expect(backTopAfterScroll, lessThan(backTopBeforeScroll));
   });
 
   testWidgets('Terms and Privacy are public before wallet creation', (
@@ -107,7 +231,11 @@ void main() {
 }
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {
-  await tester.binding.setSurfaceSize(const Size(1280, 900));
+  await _setViewport(tester, const Size(1280, 900));
+}
+
+Future<void> _setViewport(WidgetTester tester, Size size) async {
+  await tester.binding.setSurfaceSize(size);
   addTearDown(() async {
     await tester.binding.setSurfaceSize(null);
   });
@@ -128,6 +256,28 @@ Widget _routerHarness(GoRouter router, AppBootstrapState bootstrap) {
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
+}
+
+void _expectScrollbarFillsPaneEdge(WidgetTester tester, Size viewport) {
+  final scrollbarRect = tester.getRect(find.byType(Scrollbar).last);
+  expect(scrollbarRect.top, moreOrLessEquals(AppSpacing.xs));
+  expect(scrollbarRect.right, moreOrLessEquals(viewport.width - AppSpacing.xs));
+  expect(
+    scrollbarRect.bottom,
+    moreOrLessEquals(viewport.height - AppSpacing.xs),
+  );
+}
+
+void _expectUtilityContentCentered(WidgetTester tester, Size viewport) {
+  final scrollbarRect = tester.getRect(find.byType(Scrollbar).last);
+  final dividerRect = tester.getRect(find.byType(AppDecorativeDivider).last);
+  expect(dividerRect.width, moreOrLessEquals(256));
+  expect(dividerRect.center.dx, moreOrLessEquals(scrollbarRect.center.dx));
+
+  final headingRect = tester.getRect(
+    find.text('From the team that brought you Keplr Wallet.').first,
+  );
+  expect(headingRect.left, greaterThan(scrollbarRect.left + 100));
 }
 
 AppBootstrapState _emptyBootstrap(String initialLocation) {

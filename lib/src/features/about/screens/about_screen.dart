@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart'
     show
         Colors,
@@ -14,6 +16,7 @@ import '../../../app_bootstrap.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/wallet_provider.dart';
@@ -49,27 +52,8 @@ class AboutScreen extends StatelessWidget {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: _UtilityBackButton(fallbackPath: '/home'),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: _maxSidebarPaneContentWidth,
-                  ),
-                  child: const _AboutContent(),
-                ),
-              ),
-            ),
-          ],
-        ),
+        padding: EdgeInsets.zero,
+        child: const _AboutScrollView(),
       ),
     );
   }
@@ -131,19 +115,7 @@ class _LegalScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _FullPaneShell(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: _UtilityBackButton(),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          Expanded(
-            child: _LegalScrollView(title: title, paragraphs: paragraphs),
-          ),
-        ],
-      ),
+      child: _LegalScrollView(title: title, paragraphs: paragraphs),
     );
   }
 }
@@ -160,11 +132,74 @@ class _FullPaneShell extends StatelessWidget {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xs),
-          child: AppDesktopPane(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: child,
-          ),
+          child: AppDesktopPane(padding: EdgeInsets.zero, child: child),
         ),
+      ),
+    );
+  }
+}
+
+class _AboutScrollView extends StatefulWidget {
+  const _AboutScrollView();
+
+  @override
+  State<_AboutScrollView> createState() => _AboutScrollViewState();
+}
+
+class _AboutScrollViewState extends State<_AboutScrollView> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _UtilityScrollbar(
+      controller: _scrollController,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            controller: _scrollController,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: AppRouteBackLink(),
+                    ),
+                    const SizedBox(height: AppSpacing.s),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: math.max(
+                          0,
+                          constraints.maxHeight -
+                              (AppSpacing.md * 2) -
+                              32 -
+                              AppSpacing.s,
+                        ),
+                      ),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxWidth: _maxSidebarPaneContentWidth,
+                          ),
+                          child: const _AboutContent(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -191,6 +226,58 @@ class _LegalScrollViewState extends State<_LegalScrollView> {
 
   @override
   Widget build(BuildContext context) {
+    return _UtilityScrollbar(
+      controller: _scrollController,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            controller: _scrollController,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: _UtilityBackButton(),
+                    ),
+                    const SizedBox(height: AppSpacing.s),
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _UtilityPageTitle(
+                            title: widget.title,
+                            subtitle: _legalUpdatedLabel,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          const AppDecorativeDivider(width: 256),
+                          const SizedBox(height: AppSpacing.md),
+                          _UtilityParagraphList(paragraphs: widget.paragraphs),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _UtilityScrollbar extends StatelessWidget {
+  const _UtilityScrollbar({required this.controller, required this.child});
+
+  final ScrollController controller;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.colors;
     return ScrollbarTheme(
       data: ScrollbarThemeData(
@@ -202,35 +289,13 @@ class _LegalScrollViewState extends State<_LegalScrollView> {
         crossAxisMargin: 3,
         mainAxisMargin: 3,
       ),
-      child: Scrollbar(
-        controller: _scrollController,
-        child: SingleChildScrollView(
-          controller: _scrollController,
-          child: Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.s),
-            child: Column(
-              children: [
-                _UtilityPageTitle(
-                  title: widget.title,
-                  subtitle: _legalUpdatedLabel,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                const AppDecorativeDivider(width: 256),
-                const SizedBox(height: AppSpacing.md),
-                _UtilityParagraphList(paragraphs: widget.paragraphs),
-              ],
-            ),
-          ),
-        ),
-      ),
+      child: Scrollbar(controller: controller, child: child),
     );
   }
 }
 
 class _UtilityBackButton extends ConsumerWidget {
-  const _UtilityBackButton({this.fallbackPath});
-
-  final String? fallbackPath;
+  const _UtilityBackButton();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -275,7 +340,7 @@ class _UtilityBackButton extends ConsumerWidget {
       context.pop();
       return;
     }
-    context.go(fallbackPath ?? _defaultFallbackPath(ref));
+    context.go(_defaultFallbackPath(ref));
   }
 
   String _defaultFallbackPath(WidgetRef ref) {
