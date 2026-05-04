@@ -371,6 +371,12 @@ final class PrivacyExposureChannel: NSObject, FlutterStreamHandler {
   }
 
   private func suspendMissionControlPolicy() {
+    // `.transient` keeps the window out of Mission Control, but keeping that
+    // collection behavior through the return transition can leave Vizor behind
+    // another app after Mission Control closes. Once macOS reports an unsafe
+    // transition, restore the original behavior so AppKit can order the window
+    // normally; the Dart privacy overlay remains responsible for the visible
+    // cover during that unsafe interval.
     missionControlPolicySuspended = true
     restoreMissionControlPolicy()
   }
