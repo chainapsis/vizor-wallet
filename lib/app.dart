@@ -11,6 +11,7 @@ import 'src/core/theme/legacy_material_theme.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
+import 'src/features/about/screens/about_screen.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
 import 'src/features/onboarding/create/intro_zcash_screen.dart';
 import 'src/features/onboarding/create/onboarding_split_view.dart';
@@ -67,6 +68,9 @@ final _routerProvider = Provider<GoRouter>((ref) {
           state.matchedLocation == '/add-account' ||
           state.matchedLocation.startsWith('/onboarding/') ||
           state.matchedLocation.startsWith('/import');
+      final isPublicLegal =
+          state.matchedLocation == '/terms' ||
+          state.matchedLocation == '/privacy';
       final isUnlock = state.matchedLocation == '/unlock';
       final isLostPassword = state.matchedLocation == '/lost-password';
       final isUnlockFlow = isUnlock || isLostPassword;
@@ -77,13 +81,13 @@ final _routerProvider = Provider<GoRouter>((ref) {
       );
 
       if (!hasWallet && isUnlockFlow) return '/welcome';
-      if (!hasWallet && !isOnboarding) return '/welcome';
+      if (!hasWallet && !isOnboarding && !isPublicLegal) return '/welcome';
       if (!hasWallet && state.matchedLocation == '/add-account') {
         return '/welcome';
       }
       // `/lost-password` is intentionally part of the unlock flow: a locked
       // wallet must be able to reach its local reset path from `/unlock`.
-      if (requiresUnlock && !isUnlockFlow) return '/unlock';
+      if (requiresUnlock && !isUnlockFlow && !isPublicLegal) return '/unlock';
       if (!requiresUnlock && isUnlockFlow) {
         return hasWallet ? '/home' : '/welcome';
       }
@@ -292,7 +296,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
         path: '/lost-password',
         builder: (_, _) => const LostPasswordScreen(),
       ),
+      GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
+      GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+      GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
       GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),
       GoRoute(
         path: '/activity/tx/:txid',
