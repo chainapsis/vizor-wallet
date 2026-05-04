@@ -51,13 +51,14 @@ class MacOSPrivacyExposureEvent {
 
 abstract final class MacOSPrivacyExposureEvents {
   static const _channel = EventChannel('com.zcash.wallet/privacy_exposure');
+  static final Stream<MacOSPrivacyExposureEvent> _stream =
+      kIsWeb || !Platform.isMacOS
+      ? const Stream.empty()
+      : _channel.receiveBroadcastStream().map(
+          MacOSPrivacyExposureEvent.fromPlatformEvent,
+        );
 
-  static Stream<MacOSPrivacyExposureEvent> get stream {
-    if (kIsWeb || !Platform.isMacOS) return const Stream.empty();
-    return _channel.receiveBroadcastStream().map(
-      MacOSPrivacyExposureEvent.fromPlatformEvent,
-    );
-  }
+  static Stream<MacOSPrivacyExposureEvent> get stream => _stream;
 }
 
 abstract final class MacOSSensitiveContentBridge {

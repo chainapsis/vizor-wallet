@@ -102,6 +102,8 @@ final class WindowAppearanceChannel {
 
 final class PrivacyExposureChannel: NSObject, FlutterStreamHandler {
   private static var shared: PrivacyExposureChannel?
+  // Mission Control and occlusion notifications can arrive before the window is
+  // fully key/visible again; wait briefly before marking sensitive content safe.
   private static let safeConfirmationDelay = DispatchTimeInterval.milliseconds(300)
 
   private struct ObserverRegistration {
@@ -191,6 +193,9 @@ final class PrivacyExposureChannel: NSObject, FlutterStreamHandler {
       if visible {
         publishCurrentState(reason: "sensitiveContentVisible")
       } else {
+        // Dart gates the visual overlay on sensitiveContentVisible as well as
+        // nativeSafe, so clearing sensitive content only needs to restore local
+        // state and Mission Control policy.
         nativeSafe = true
         missionControlPolicySuspended = false
       }

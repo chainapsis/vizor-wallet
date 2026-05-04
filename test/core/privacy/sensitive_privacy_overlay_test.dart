@@ -17,6 +17,13 @@ void main() {
     expect(supportsPlatformPrivacySignals(isWeb: true, isMacOS: true), isFalse);
   });
 
+  test('reuses one native macOS exposure stream instance', () {
+    expect(
+      MacOSPrivacyExposureEvents.stream,
+      same(MacOSPrivacyExposureEvents.stream),
+    );
+  }, skip: !Platform.isMacOS);
+
   testWidgets('shows privacy shield only when sensitive content is unsafe', (
     tester,
   ) async {
@@ -132,69 +139,69 @@ void main() {
     expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
   });
 
-  testWidgets('syncs sensitive visibility to the native macOS policy bridge', (
-    tester,
-  ) async {
-    if (!Platform.isMacOS) return;
-
-    const channel = MethodChannel('com.zcash.wallet/privacy_shield');
-    final calls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          calls.add(call);
-          return null;
-        });
-    MacOSSensitiveContentBridge.resetForTesting();
-    addTearDown(() {
+  testWidgets(
+    'syncs sensitive visibility to the native macOS policy bridge',
+    (tester) async {
+      const channel = MethodChannel('com.zcash.wallet/privacy_shield');
+      final calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return null;
+          });
       MacOSSensitiveContentBridge.resetForTesting();
-    });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+        MacOSSensitiveContentBridge.resetForTesting();
+      });
 
-    await tester.pumpWidget(
-      AppTheme(
-        data: AppThemeData.light,
-        child: const Directionality(
-          textDirection: TextDirection.ltr,
-          child: SensitivePrivacyOverlay(
-            sensitiveContentVisible: false,
-            child: SizedBox(
-              width: 320,
-              height: 240,
-              child: Text('Seed phrase pane'),
+      await tester.pumpWidget(
+        AppTheme(
+          data: AppThemeData.light,
+          child: const Directionality(
+            textDirection: TextDirection.ltr,
+            child: SensitivePrivacyOverlay(
+              sensitiveContentVisible: false,
+              child: SizedBox(
+                width: 320,
+                height: 240,
+                child: Text('Seed phrase pane'),
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(calls, isEmpty);
+      expect(calls, isEmpty);
 
-    await tester.pumpWidget(
-      AppTheme(
-        data: AppThemeData.light,
-        child: const Directionality(
-          textDirection: TextDirection.ltr,
-          child: SensitivePrivacyOverlay(
-            sensitiveContentVisible: true,
-            child: SizedBox(
-              width: 320,
-              height: 240,
-              child: Text('Seed phrase pane'),
+      await tester.pumpWidget(
+        AppTheme(
+          data: AppThemeData.light,
+          child: const Directionality(
+            textDirection: TextDirection.ltr,
+            child: SensitivePrivacyOverlay(
+              sensitiveContentVisible: true,
+              child: SizedBox(
+                width: 320,
+                height: 240,
+                child: Text('Seed phrase pane'),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.idle();
+      );
+      await tester.idle();
 
-    expect(calls.single.method, 'setSensitiveContentVisible');
-    expect(calls.single.arguments, {'visible': true});
+      expect(calls.single.method, 'setSensitiveContentVisible');
+      expect(calls.single.arguments, {'visible': true});
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.idle();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.idle();
 
-    expect(calls.last.method, 'setSensitiveContentVisible');
-    expect(calls.last.arguments, {'visible': false});
-  });
+      expect(calls.last.method, 'setSensitiveContentVisible');
+      expect(calls.last.arguments, {'visible': false});
+    },
+    skip: !Platform.isMacOS,
+  );
 }
