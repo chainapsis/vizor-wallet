@@ -183,9 +183,13 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                               : () => context.go('/settings'),
                         ),
                         const SizedBox(height: AppSpacing.xs),
-                        const AppSidebarItem(
+                        AppSidebarItem(
                           label: 'About Vizor',
                           iconName: AppIcons.vizor,
+                          active: _matches('/about'),
+                          onTap: _matches('/about')
+                              ? null
+                              : () => context.go('/about'),
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         AppSidebarItem(
