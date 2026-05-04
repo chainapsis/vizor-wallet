@@ -25,13 +25,11 @@ void main() {
   testWidgets(
     'imports a funded regtest wallet, syncs, and displays balances',
     (tester) async {
-      addTearDown(() {
-        rust_sync.setSyncMode(mode: 0);
-        rust_sync.cancelFullSync();
-        rust_sync.stopMempoolObserver();
+      addTearDown(() async {
+        await _cleanupE2eWalletState();
       });
 
-      await _resetWalletState();
+      await _cleanupE2eWalletState();
 
       _log('pumping app');
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
@@ -104,27 +102,47 @@ void main() {
   );
 }
 
-Future<void> _resetWalletState() async {
-  _log('resetting wallet state');
-  rust_sync.setSyncMode(mode: 0);
-  rust_sync.cancelFullSync();
-  rust_sync.stopMempoolObserver();
+Future<void> _cleanupE2eWalletState() async {
+  final storage = AppSecureStore.instance;
+  if (!storage.isE2eStorage) {
+    throw StateError(
+      'Refusing to clean wallet state without ZCASH_USE_E2E_STORAGE.',
+    );
+  }
 
-  await AppSecureStore.instance.deleteAll();
+  _log('cleaning E2E wallet state');
+  await _stopRustWorkForCleanup();
+
+  await storage.deleteAll();
 
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
 
-  for (final entity in supportDir.listSync()) {
-    final name = entity.uri.pathSegments.isEmpty
-        ? entity.path
-        : entity.uri.pathSegments.last;
-    if (!name.startsWith('zcash_wallet') || !name.contains('.db')) continue;
-    if (entity is File) {
-      entity.deleteSync();
-    } else if (entity is Directory) {
-      entity.deleteSync(recursive: true);
-    }
+  for (final name in [
+    kE2eWalletDbName,
+    '$kE2eWalletDbName-shm',
+    '$kE2eWalletDbName-wal',
+  ]) {
+    final file = File('${supportDir.path}${Platform.pathSeparator}$name');
+    if (file.existsSync()) file.deleteSync();
+  }
+}
+
+Future<void> _stopRustWorkForCleanup() async {
+  rust_sync.setSyncMode(mode: 0);
+  rust_sync.cancelFullSync();
+  rust_sync.stopMempoolObserver();
+
+  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  while ((rust_sync.isSyncRunning() || rust_sync.isMempoolObserverRunning()) &&
+      DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+
+  if (rust_sync.isSyncRunning() || rust_sync.isMempoolObserverRunning()) {
+    _log(
+      'timed out waiting for Rust work to stop; continuing E2E storage cleanup',
+    );
   }
 }
 

@@ -54,4 +54,5 @@ fvm flutter test \
   integration_test/regtest_import_sync_test.dart \
   -d "$FLUTTER_DEVICE" \
   --dart-define=ZCASH_E2E_NETWORK=regtest \
-  --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL"
+  --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
+  --dart-define=ZCASH_USE_E2E_STORAGE=true

@@ -32,6 +32,22 @@ void main() {
     await store.deleteAll();
   });
 
+  test('E2E storage uses a fixed wallet DB name', () async {
+    final e2eStore = AppSecureStore.testing(
+      storage: const FlutterSecureStorage(),
+      useE2eStorage: true,
+    );
+
+    final dbName = await e2eStore.ensureWalletDbName();
+
+    expect(e2eStore.isE2eStorage, isTrue);
+    expect(dbName, kE2eWalletDbName);
+    expect(
+      await const FlutterSecureStorage().read(key: kWalletDbNameKey),
+      kE2eWalletDbName,
+    );
+  });
+
   test('changePassword rotates mnemonic payloads and verifier', () async {
     await store.configurePassword(_oldPassword);
     await store.writeSecretString(_mnemonicKey, _mnemonic);
