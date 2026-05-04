@@ -354,6 +354,11 @@ class _ReceivePane extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.sm),
                       _CopyAddressButton(
+                        key: ValueKey(
+                          _isShielded
+                              ? 'receive_copy_shielded_address_button'
+                              : 'receive_copy_transparent_address_button',
+                        ),
                         label: _isShielded
                             ? 'Copy Shielded Address'
                             : 'Copy Transparent Address',
@@ -1243,6 +1248,7 @@ class _CopyAddressButton extends StatelessWidget {
     required this.primary,
     required this.enabled,
     required this.onTap,
+    super.key,
   });
 
   final String label;

@@ -473,6 +473,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: TransactionReceiptView(
+                              key: ValueKey('send_status_${receiptPhase.name}'),
                               phase: receiptPhase,
                               amountText: _formatReceiptAmount(
                                 widget.args.amountZatoshi,

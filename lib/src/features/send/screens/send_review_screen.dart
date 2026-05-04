@@ -226,6 +226,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                     SizedBox(
                       width: 256,
                       child: AppButton(
+                        key: const ValueKey('send_confirm_button'),
                         onPressed: _handleSend,
                         variant: AppButtonVariant.primary,
                         minWidth: 256,

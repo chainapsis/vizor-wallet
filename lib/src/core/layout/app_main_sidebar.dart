@@ -132,6 +132,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     child: Column(
                       children: [
                         AppSidebarItem(
+                          key: const ValueKey('sidebar_wallet_button'),
                           label: 'Wallet',
                           iconName: AppIcons.wallet,
                           active: _matches('/home'),
@@ -141,6 +142,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         AppSidebarItem(
+                          key: const ValueKey('sidebar_send_button'),
                           label: 'Send',
                           iconName: AppIcons.plane,
                           active: _matches('/send'),
@@ -150,6 +152,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         AppSidebarItem(
+                          key: const ValueKey('sidebar_receive_button'),
                           label: 'Receive',
                           iconName: AppIcons.arrowDownCircle,
                           active: _matches('/receive'),
@@ -278,6 +281,7 @@ class _SidebarAccountSelectorButton extends StatelessWidget {
       onEnter: (_) => onHoverChanged(true),
       onExit: (_) => onHoverChanged(false),
       child: GestureDetector(
+        key: const ValueKey('sidebar_account_selector_button'),
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: AnimatedContainer(
@@ -457,11 +461,13 @@ class _SidebarAccountRow extends StatelessWidget {
       ),
     );
 
+    final key = ValueKey('sidebar_account_row_${account.order}');
     return onTap == null
-        ? row
+        ? KeyedSubtree(key: key, child: row)
         : MouseRegion(
             cursor: SystemMouseCursors.click,
             child: GestureDetector(
+              key: key,
               behavior: HitTestBehavior.opaque,
               onTap: onTap,
               child: row,
@@ -480,6 +486,7 @@ class _SidebarCreateWalletRow extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) => Center(
         child: AppButton(
+          key: const ValueKey('sidebar_add_account_button'),
           onPressed: onTap,
           variant: AppButtonVariant.ghost,
           minWidth: constraints.maxWidth,

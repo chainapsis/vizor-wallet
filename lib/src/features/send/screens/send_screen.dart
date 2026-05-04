@@ -752,6 +752,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                   child: _SendComposeLayout(
                     messageFieldVisible: messageFieldVisible,
                     reviewButton: AppButton(
+                      key: const ValueKey('send_review_button'),
                       onPressed: _canReview ? _openReview : null,
                       variant: AppButtonVariant.primary,
                       minWidth: 256,
@@ -770,6 +771,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         AppTextField(
+                          key: const ValueKey('send_address_field'),
                           label: 'Send to',
                           tone: addressTone,
                           focusNode: _addressFocusNode,
@@ -810,6 +812,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                         const SizedBox(height: _singleLineFieldOverlayReserve),
                         const SizedBox(height: _singleLineFieldGap),
                         AppTextField(
+                          key: const ValueKey('send_amount_field'),
                           label: 'Amount',
                           tone: _showAmountError
                               ? AppTextFieldTone.destructive
