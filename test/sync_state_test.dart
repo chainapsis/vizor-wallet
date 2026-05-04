@@ -61,6 +61,8 @@ void main() {
 
     expect(scoped.accountUuid, 'account-a');
     expect(scoped.hasDataForAccount('account-a'), isTrue);
+    expect(scoped.hasBalanceData, isTrue);
+    expect(scoped.hasRecentTransactionsData, isTrue);
     expect(scoped.totalBalance, BigInt.from(123));
     expect(scoped.spendableBalance, BigInt.from(100));
     expect(scoped.recentTransactions, [tx]);
@@ -108,8 +110,33 @@ void main() {
 
     expect(cleared.belongsToAccount('account-b'), isTrue);
     expect(cleared.hasDataForAccount('account-b'), isFalse);
+    expect(cleared.hasBalanceData, isFalse);
+    expect(cleared.hasRecentTransactionsData, isFalse);
     expect(cleared.totalBalance, BigInt.zero);
     expect(cleared.recentTransactions, isEmpty);
+  });
+
+  test('partial account state preserves loaded pieces without rendering', () {
+    final state = SyncState(
+      accountUuid: 'account-a',
+      hasBalanceData: true,
+      totalBalance: BigInt.from(123),
+    );
+
+    expect(state.belongsToAccount('account-a'), isTrue);
+    expect(state.hasDataForAccount('account-a'), isFalse);
+    expect(state.hasBalanceData, isTrue);
+    expect(state.hasRecentTransactionsData, isFalse);
+    expect(state.totalBalance, BigInt.from(123));
+
+    final completed = state.copyWith(
+      hasRecentTransactionsData: true,
+      recentTransactions: [_tx('b' * 64)],
+    );
+
+    expect(completed.hasDataForAccount('account-a'), isTrue);
+    expect(completed.totalBalance, BigInt.from(123));
+    expect(completed.recentTransactions, hasLength(1));
   });
 }
 
