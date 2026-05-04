@@ -39,6 +39,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 
   final ScrollController _scrollController = ScrollController();
   List<rust_sync.TransactionInfo>? _transactions;
+  String? _transactionsAccountUuid;
   bool _isLoading = true;
   String? _error;
   int _currentPage = 1;
@@ -80,13 +81,16 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     _activeAccountUuid = accountUuid;
 
-    if (showLoading && mounted) {
+    if ((showLoading || resetPage) && mounted) {
       setState(() {
-        _isLoading = true;
-        _error = null;
+        if (showLoading) {
+          _isLoading = true;
+          _error = null;
+        }
         if (resetPage) {
           _currentPage = 1;
           _transactions = null;
+          _transactionsAccountUuid = accountUuid;
         }
       });
     }
@@ -95,6 +99,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       if (!mounted) return;
       setState(() {
         _transactions = const [];
+        _transactionsAccountUuid = null;
         _isLoading = false;
         _error = null;
         _currentPage = 1;
@@ -116,6 +121,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       }
       setState(() {
         _transactions = txs;
+        _transactionsAccountUuid = accountUuid;
         _isLoading = false;
         _error = null;
         if (resetPage) _currentPage = 1;
@@ -123,7 +129,11 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     } catch (e, st) {
       log('Activity: transaction load failed: $e\n$st');
       if (!mounted) return;
+      if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+        return;
+      }
       setState(() {
+        _transactionsAccountUuid = accountUuid;
         _error = 'Activity could not be loaded.';
         _isLoading = false;
       });
@@ -230,31 +240,47 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       }
     });
 
-    final sync = ref.watch(syncProvider).value ?? SyncState();
+    final syncState = ref.watch(syncProvider).value;
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final sync = (syncState ?? SyncState()).scopedToAccount(accountUuid);
+    final hasSyncForActiveAccount =
+        syncState?.hasDataForAccount(accountUuid) ?? false;
+    final loadedTransactions = _transactionsAccountUuid == accountUuid
+        ? _transactions
+        : null;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
-    final transactions = _transactions ?? sync.recentTransactions;
+    final transactions =
+        loadedTransactions ??
+        (hasSyncForActiveAccount
+            ? sync.recentTransactions
+            : const <rust_sync.TransactionInfo>[]);
+    final firstPageTransactionCount = hasSyncForActiveAccount
+        ? _firstPageTransactionCount
+        : _activityRowsPerPage;
     final transactionsAfterFirstPage = math.max(
       0,
-      transactions.length - _firstPageTransactionCount,
+      transactions.length - firstPageTransactionCount,
     );
     final totalPages =
         1 + (transactionsAfterFirstPage / _activityRowsPerPage).ceil();
     final currentPage = math.min(math.max(_currentPage, 1), totalPages);
     final firstTxIndex = currentPage == 1
         ? 0
-        : _firstPageTransactionCount +
+        : firstPageTransactionCount +
               ((currentPage - 2) * _activityRowsPerPage);
     final transactionCount = currentPage == 1
-        ? _firstPageTransactionCount
+        ? firstPageTransactionCount
         : _activityRowsPerPage;
     final pageTransactions = transactions
         .skip(firstTxIndex)
         .take(transactionCount);
-    final rows = accountUuid == null
+    final canRenderRows =
+        accountUuid != null &&
+        (loadedTransactions != null || hasSyncForActiveAccount);
+    final rows = !canRenderRows
         ? const <ActivityRowData>[]
         : [
-            if (currentPage == 1)
+            if (currentPage == 1 && hasSyncForActiveAccount)
               buildSyncActivityRow(
                 context: context,
                 sync: sync,
@@ -318,11 +344,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                       ),
                       child: _ActivityPane(
                         rows: rows,
-                        isLoading:
-                            _isLoading &&
-                            _transactions == null &&
-                            sync.recentTransactions.isEmpty,
-                        errorText: _transactions == null ? _error : null,
+                        isLoading: _isLoading && !canRenderRows,
+                        errorText: loadedTransactions == null ? _error : null,
                         currentPage: currentPage,
                         totalPages: totalPages,
                         onPageChanged: _setPage,

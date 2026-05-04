@@ -16,6 +16,20 @@ import 'app_security_provider.dart';
 import 'rpc_endpoint_provider.dart';
 
 class SyncState {
+  /// Account UUID that owns the balance, shield status, and recent transaction
+  /// fields below. Sync progress itself is wallet-wide.
+  final String? accountUuid;
+
+  /// True after balance fields have been loaded for [accountUuid].
+  final bool hasBalanceData;
+
+  /// True after recent transaction history has been loaded for [accountUuid].
+  final bool hasRecentTransactionsData;
+
+  /// True only after both balance and history have been loaded for
+  /// [accountUuid]. Activity UIs should use this instead of treating a scoped
+  /// placeholder or partial refresh as renderable account data.
+  bool get hasAccountScopedData => hasBalanceData && hasRecentTransactionsData;
   final bool isSyncing;
   final bool isBackgroundMode;
   final double percentage;
@@ -53,6 +67,10 @@ class SyncState {
       transparentPendingBalance + saplingPendingBalance + orchardPendingBalance;
 
   SyncState({
+    this.accountUuid,
+    bool hasAccountScopedData = false,
+    bool? hasBalanceData,
+    bool? hasRecentTransactionsData,
     this.isSyncing = false,
     this.isBackgroundMode = false,
     this.percentage = 0,
@@ -76,7 +94,10 @@ class SyncState {
     this.lastSyncCompletedAt,
     this.lastSyncFailedAt,
     this.phase = '',
-  }) : displayPercentage = displayPercentage ?? percentage,
+  }) : hasBalanceData = hasBalanceData ?? hasAccountScopedData,
+       hasRecentTransactionsData =
+           hasRecentTransactionsData ?? hasAccountScopedData,
+       displayPercentage = displayPercentage ?? percentage,
        transparentBalance = transparentBalance ?? BigInt.zero,
        saplingBalance = saplingBalance ?? BigInt.zero,
        orchardBalance = orchardBalance ?? BigInt.zero,
@@ -89,6 +110,10 @@ class SyncState {
        totalBalance = totalBalance ?? BigInt.zero;
 
   SyncState copyWith({
+    String? accountUuid,
+    bool? hasAccountScopedData,
+    bool? hasBalanceData,
+    bool? hasRecentTransactionsData,
     bool? isSyncing,
     bool? isBackgroundMode,
     double? percentage,
@@ -114,6 +139,13 @@ class SyncState {
     String? phase,
   }) {
     return SyncState(
+      accountUuid: accountUuid ?? this.accountUuid,
+      hasBalanceData:
+          hasBalanceData ?? hasAccountScopedData ?? this.hasBalanceData,
+      hasRecentTransactionsData:
+          hasRecentTransactionsData ??
+          hasAccountScopedData ??
+          this.hasRecentTransactionsData,
       isSyncing: isSyncing ?? this.isSyncing,
       isBackgroundMode: isBackgroundMode ?? this.isBackgroundMode,
       percentage: percentage ?? this.percentage,
@@ -142,6 +174,38 @@ class SyncState {
       lastSyncCompletedAt: lastSyncCompletedAt ?? this.lastSyncCompletedAt,
       lastSyncFailedAt: lastSyncFailedAt ?? this.lastSyncFailedAt,
       phase: phase ?? this.phase,
+    );
+  }
+
+  bool belongsToAccount(String? accountUuid) {
+    return accountUuid != null && this.accountUuid == accountUuid;
+  }
+
+  bool hasDataForAccount(String? accountUuid) {
+    return belongsToAccount(accountUuid) && hasAccountScopedData;
+  }
+
+  SyncState scopedToAccount(String? accountUuid) {
+    if (belongsToAccount(accountUuid)) return this;
+    return withoutAccountScopedData(accountUuid: accountUuid);
+  }
+
+  SyncState withoutAccountScopedData({String? accountUuid}) {
+    return SyncState(
+      accountUuid: accountUuid,
+      hasBalanceData: false,
+      hasRecentTransactionsData: false,
+      isSyncing: isSyncing,
+      isBackgroundMode: isBackgroundMode,
+      percentage: percentage,
+      displayPercentage: displayPercentage,
+      scannedHeight: scannedHeight,
+      chainTipHeight: chainTipHeight,
+      error: error,
+      lastSyncStartedAt: lastSyncStartedAt,
+      lastSyncCompletedAt: lastSyncCompletedAt,
+      lastSyncFailedAt: lastSyncFailedAt,
+      phase: phase,
     );
   }
 }
@@ -242,6 +306,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ref.listen(accountProvider, (prev, next) {
       final prevCount = prev?.value?.accounts.length ?? 0;
       final nextCount = next.value?.accounts.length ?? 0;
+      final prevAccountUuid = prev?.value?.activeAccountUuid;
+      final nextAccountUuid = next.value?.activeAccountUuid;
+      if (prevAccountUuid != nextAccountUuid) {
+        _clearAccountScopedStateFor(nextAccountUuid);
+      }
       if (nextCount > prevCount) {
         startSync();
         _startPolling();
@@ -257,26 +326,70 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
 
     final initial = bootstrap.initialSyncSnapshot;
+    final initialAccountUuid = accountState?.activeAccountUuid;
+    final initialBelongsToActiveAccount =
+        initial.accountUuid != null &&
+        initial.accountUuid == initialAccountUuid &&
+        initial.hasAccountScopedData;
     return SyncState(
+      accountUuid: initialAccountUuid,
+      hasAccountScopedData: initialBelongsToActiveAccount,
       isSyncing: false,
       isBackgroundMode: false,
       percentage: initial.percentage,
       scannedHeight: initial.scannedHeight,
       chainTipHeight: initial.chainTipHeight,
-      transparentBalance: initial.transparentBalance,
-      saplingBalance: initial.saplingBalance,
-      orchardBalance: initial.orchardBalance,
-      transparentPendingBalance: initial.transparentPendingBalance,
-      saplingPendingBalance: initial.saplingPendingBalance,
-      orchardPendingBalance: initial.orchardPendingBalance,
-      canShieldTransparentBalance: initial.canShieldTransparentBalance,
-      shieldTransparentFee: initial.shieldTransparentFee,
-      shieldTransparentAmount: initial.shieldTransparentAmount,
-      spendableBalance: initial.spendableBalance,
-      totalBalance: initial.totalBalance,
-      recentTransactions: initial.recentTransactions,
+      transparentBalance: initialBelongsToActiveAccount
+          ? initial.transparentBalance
+          : BigInt.zero,
+      saplingBalance: initialBelongsToActiveAccount
+          ? initial.saplingBalance
+          : BigInt.zero,
+      orchardBalance: initialBelongsToActiveAccount
+          ? initial.orchardBalance
+          : BigInt.zero,
+      transparentPendingBalance: initialBelongsToActiveAccount
+          ? initial.transparentPendingBalance
+          : BigInt.zero,
+      saplingPendingBalance: initialBelongsToActiveAccount
+          ? initial.saplingPendingBalance
+          : BigInt.zero,
+      orchardPendingBalance: initialBelongsToActiveAccount
+          ? initial.orchardPendingBalance
+          : BigInt.zero,
+      canShieldTransparentBalance: initialBelongsToActiveAccount
+          ? initial.canShieldTransparentBalance
+          : false,
+      shieldTransparentFee: initialBelongsToActiveAccount
+          ? initial.shieldTransparentFee
+          : BigInt.zero,
+      shieldTransparentAmount: initialBelongsToActiveAccount
+          ? initial.shieldTransparentAmount
+          : BigInt.zero,
+      spendableBalance: initialBelongsToActiveAccount
+          ? initial.spendableBalance
+          : BigInt.zero,
+      totalBalance: initialBelongsToActiveAccount
+          ? initial.totalBalance
+          : BigInt.zero,
+      recentTransactions: initialBelongsToActiveAccount
+          ? initial.recentTransactions
+          : const [],
       phase: '',
     );
+  }
+
+  SyncState? _previousScopedState(SyncState? prev, String? accountUuid) {
+    if (accountUuid == null || prev?.accountUuid != accountUuid) {
+      return null;
+    }
+    return prev;
+  }
+
+  void _clearAccountScopedStateFor(String? accountUuid) {
+    final prev = state.value;
+    if (prev == null) return;
+    state = AsyncData(prev.withoutAccountScopedData(accountUuid: accountUuid));
   }
 
   // ======================== Sync Control ========================
@@ -342,26 +455,33 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopDisplayProgressTimer();
     final gen = ++_syncGen;
     final prev = state.value;
+    final accountUuid = _getActiveAccountUuid();
+    final scopedPrev = _previousScopedState(prev, accountUuid);
     final startedAt = DateTime.now();
     state = AsyncData(
       SyncState(
+        accountUuid: accountUuid,
+        hasBalanceData: scopedPrev?.hasBalanceData ?? false,
+        hasRecentTransactionsData:
+            scopedPrev?.hasRecentTransactionsData ?? false,
         isSyncing: true,
         isBackgroundMode: false,
         percentage: 0.0,
         scannedHeight: prev?.scannedHeight ?? 0,
         chainTipHeight: prev?.chainTipHeight ?? 0,
-        transparentBalance: prev?.transparentBalance,
-        saplingBalance: prev?.saplingBalance,
-        orchardBalance: prev?.orchardBalance,
-        transparentPendingBalance: prev?.transparentPendingBalance,
-        saplingPendingBalance: prev?.saplingPendingBalance,
-        orchardPendingBalance: prev?.orchardPendingBalance,
-        canShieldTransparentBalance: prev?.canShieldTransparentBalance ?? false,
-        shieldTransparentFee: prev?.shieldTransparentFee,
-        shieldTransparentAmount: prev?.shieldTransparentAmount,
-        spendableBalance: prev?.spendableBalance,
-        totalBalance: prev?.totalBalance,
-        recentTransactions: prev?.recentTransactions ?? const [],
+        transparentBalance: scopedPrev?.transparentBalance,
+        saplingBalance: scopedPrev?.saplingBalance,
+        orchardBalance: scopedPrev?.orchardBalance,
+        transparentPendingBalance: scopedPrev?.transparentPendingBalance,
+        saplingPendingBalance: scopedPrev?.saplingPendingBalance,
+        orchardPendingBalance: scopedPrev?.orchardPendingBalance,
+        canShieldTransparentBalance:
+            scopedPrev?.canShieldTransparentBalance ?? false,
+        shieldTransparentFee: scopedPrev?.shieldTransparentFee,
+        shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
+        spendableBalance: scopedPrev?.spendableBalance,
+        totalBalance: scopedPrev?.totalBalance,
+        recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: startedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
@@ -430,22 +550,30 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               // `_refreshBalance()` callbacks with no owning sync.
               _stopMempoolObserver();
               final prev = state.value;
+              final accountUuid = _getActiveAccountUuid();
+              final scopedPrev = _previousScopedState(prev, accountUuid);
               state = AsyncData(
                 SyncState(
+                  accountUuid: accountUuid,
+                  hasBalanceData: scopedPrev?.hasBalanceData ?? false,
+                  hasRecentTransactionsData:
+                      scopedPrev?.hasRecentTransactionsData ?? false,
                   error: e.toString(),
-                  transparentBalance: prev?.transparentBalance,
-                  saplingBalance: prev?.saplingBalance,
-                  orchardBalance: prev?.orchardBalance,
-                  transparentPendingBalance: prev?.transparentPendingBalance,
-                  saplingPendingBalance: prev?.saplingPendingBalance,
-                  orchardPendingBalance: prev?.orchardPendingBalance,
+                  transparentBalance: scopedPrev?.transparentBalance,
+                  saplingBalance: scopedPrev?.saplingBalance,
+                  orchardBalance: scopedPrev?.orchardBalance,
+                  transparentPendingBalance:
+                      scopedPrev?.transparentPendingBalance,
+                  saplingPendingBalance: scopedPrev?.saplingPendingBalance,
+                  orchardPendingBalance: scopedPrev?.orchardPendingBalance,
                   canShieldTransparentBalance:
-                      prev?.canShieldTransparentBalance ?? false,
-                  shieldTransparentFee: prev?.shieldTransparentFee,
-                  shieldTransparentAmount: prev?.shieldTransparentAmount,
-                  spendableBalance: prev?.spendableBalance,
-                  totalBalance: prev?.totalBalance,
-                  recentTransactions: prev?.recentTransactions ?? const [],
+                      scopedPrev?.canShieldTransparentBalance ?? false,
+                  shieldTransparentFee: scopedPrev?.shieldTransparentFee,
+                  shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
+                  spendableBalance: scopedPrev?.spendableBalance,
+                  totalBalance: scopedPrev?.totalBalance,
+                  recentTransactions:
+                      scopedPrev?.recentTransactions ?? const [],
                   lastSyncStartedAt: prev?.lastSyncStartedAt,
                   lastSyncCompletedAt: prev?.lastSyncCompletedAt,
                   lastSyncFailedAt: DateTime.now(),
@@ -468,22 +596,28 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           // nothing is running.
           _stopMempoolObserver();
           final prev = state.value;
+          final accountUuid = _getActiveAccountUuid();
+          final scopedPrev = _previousScopedState(prev, accountUuid);
           state = AsyncData(
             SyncState(
+              accountUuid: accountUuid,
+              hasBalanceData: scopedPrev?.hasBalanceData ?? false,
+              hasRecentTransactionsData:
+                  scopedPrev?.hasRecentTransactionsData ?? false,
               error: e.toString(),
-              transparentBalance: prev?.transparentBalance,
-              saplingBalance: prev?.saplingBalance,
-              orchardBalance: prev?.orchardBalance,
-              transparentPendingBalance: prev?.transparentPendingBalance,
-              saplingPendingBalance: prev?.saplingPendingBalance,
-              orchardPendingBalance: prev?.orchardPendingBalance,
+              transparentBalance: scopedPrev?.transparentBalance,
+              saplingBalance: scopedPrev?.saplingBalance,
+              orchardBalance: scopedPrev?.orchardBalance,
+              transparentPendingBalance: scopedPrev?.transparentPendingBalance,
+              saplingPendingBalance: scopedPrev?.saplingPendingBalance,
+              orchardPendingBalance: scopedPrev?.orchardPendingBalance,
               canShieldTransparentBalance:
-                  prev?.canShieldTransparentBalance ?? false,
-              shieldTransparentFee: prev?.shieldTransparentFee,
-              shieldTransparentAmount: prev?.shieldTransparentAmount,
-              spendableBalance: prev?.spendableBalance,
-              totalBalance: prev?.totalBalance,
-              recentTransactions: prev?.recentTransactions ?? const [],
+                  scopedPrev?.canShieldTransparentBalance ?? false,
+              shieldTransparentFee: scopedPrev?.shieldTransparentFee,
+              shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
+              spendableBalance: scopedPrev?.spendableBalance,
+              totalBalance: scopedPrev?.totalBalance,
+              recentTransactions: scopedPrev?.recentTransactions ?? const [],
               lastSyncStartedAt: prev?.lastSyncStartedAt,
               lastSyncCompletedAt: prev?.lastSyncCompletedAt,
               lastSyncFailedAt: DateTime.now(),
@@ -561,26 +695,33 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       unawaited(_bgDelegate.disable());
     }
     final prev = state.value;
+    final accountUuid = _getActiveAccountUuid();
+    final scopedPrev = _previousScopedState(prev, accountUuid);
     state = AsyncData(
       SyncState(
+        accountUuid: accountUuid,
+        hasBalanceData: scopedPrev?.hasBalanceData ?? false,
+        hasRecentTransactionsData:
+            scopedPrev?.hasRecentTransactionsData ?? false,
         isSyncing: false,
         isBackgroundMode: false,
         percentage: prev?.percentage ?? 0.0,
         displayPercentage: prev?.displayPercentage ?? prev?.percentage ?? 0.0,
         scannedHeight: prev?.scannedHeight ?? 0,
         chainTipHeight: prev?.chainTipHeight ?? 0,
-        transparentBalance: prev?.transparentBalance,
-        saplingBalance: prev?.saplingBalance,
-        orchardBalance: prev?.orchardBalance,
-        transparentPendingBalance: prev?.transparentPendingBalance,
-        saplingPendingBalance: prev?.saplingPendingBalance,
-        orchardPendingBalance: prev?.orchardPendingBalance,
-        canShieldTransparentBalance: prev?.canShieldTransparentBalance ?? false,
-        shieldTransparentFee: prev?.shieldTransparentFee,
-        shieldTransparentAmount: prev?.shieldTransparentAmount,
-        spendableBalance: prev?.spendableBalance,
-        totalBalance: prev?.totalBalance,
-        recentTransactions: prev?.recentTransactions ?? const [],
+        transparentBalance: scopedPrev?.transparentBalance,
+        saplingBalance: scopedPrev?.saplingBalance,
+        orchardBalance: scopedPrev?.orchardBalance,
+        transparentPendingBalance: scopedPrev?.transparentPendingBalance,
+        saplingPendingBalance: scopedPrev?.saplingPendingBalance,
+        orchardPendingBalance: scopedPrev?.orchardPendingBalance,
+        canShieldTransparentBalance:
+            scopedPrev?.canShieldTransparentBalance ?? false,
+        shieldTransparentFee: scopedPrev?.shieldTransparentFee,
+        shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
+        spendableBalance: scopedPrev?.spendableBalance,
+        totalBalance: scopedPrev?.totalBalance,
+        recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: prev?.lastSyncStartedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
@@ -1032,6 +1173,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       log('SyncNotifier: no active account, skipping refresh');
       return;
     }
+    final scopedPrev = _previousScopedState(prev, accountUuid);
 
     // Only fetch balance/history when there are new transactions or sync is complete.
     // Skipping intermediate batches avoids opening a new DB connection per batch.
@@ -1046,8 +1188,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     bool? canShieldTransparentBalance;
     BigInt? shieldTransparentFee;
     BigInt? shieldTransparentAmount;
+    var didFetchBalance = false;
+    var didFetchRecentTxs = false;
     var recentTxs =
-        prev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
+        scopedPrev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
     if (event.hasNewTx || event.isComplete) {
       try {
         final balance = await rust_sync.getBalance(
@@ -1063,6 +1207,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         orchardPending = balance.orchardPending;
         spendable = balance.spendable;
         total = balance.total;
+        didFetchBalance = true;
       } catch (e) {
         log('SyncNotifier: balance fetch failed: $e');
       }
@@ -1073,6 +1218,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           limit: 10,
           accountUuid: accountUuid,
         );
+        didFetchRecentTxs = true;
       } catch (e) {
         log('SyncNotifier: tx history fetch failed: $e');
       }
@@ -1081,7 +1227,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         network: network,
         accountUuid: accountUuid,
         transparentBalance:
-            transparent ?? prev?.transparentBalance ?? BigInt.zero,
+            transparent ?? scopedPrev?.transparentBalance ?? BigInt.zero,
       );
       if (shieldStatus != null) {
         canShieldTransparentBalance = shieldStatus.canShield;
@@ -1095,6 +1241,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         'SyncNotifier: discarding sync progress update after lock transition',
       );
       return;
+    }
+    final stateAccountUuid = _getActiveAccountUuid();
+    final useFetchedAccountData = accountUuid == stateAccountUuid;
+    final stateScopedPrev = _previousScopedState(state.value, stateAccountUuid);
+    final hasBalanceData = useFetchedAccountData
+        ? didFetchBalance || (stateScopedPrev?.hasBalanceData ?? false)
+        : stateScopedPrev?.hasBalanceData ?? false;
+    final hasRecentTransactionsData = useFetchedAccountData
+        ? didFetchRecentTxs ||
+              (stateScopedPrev?.hasRecentTransactionsData ?? false)
+        : stateScopedPrev?.hasRecentTransactionsData ?? false;
+    if (!useFetchedAccountData) {
+      log(
+        'SyncNotifier: discarding account-scoped sync data after account transition',
+      );
     }
 
     // Update delegate BEFORE state so isActive reflects completion
@@ -1116,30 +1277,54 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     state = AsyncData(
       SyncState(
+        accountUuid: stateAccountUuid,
+        hasBalanceData: hasBalanceData,
+        hasRecentTransactionsData: hasRecentTransactionsData,
         isSyncing: event.isSyncing && !event.isComplete,
         isBackgroundMode: event.isBackground || _bgDelegate.isActive,
         percentage: actualPercentage,
         displayPercentage: displayPercentage,
         scannedHeight: event.scannedHeight,
         chainTipHeight: event.chainTipHeight,
-        transparentBalance: transparent ?? prev?.transparentBalance,
-        saplingBalance: sapling ?? prev?.saplingBalance,
-        orchardBalance: orchard ?? prev?.orchardBalance,
-        transparentPendingBalance:
-            transparentPending ?? prev?.transparentPendingBalance,
-        saplingPendingBalance: saplingPending ?? prev?.saplingPendingBalance,
-        orchardPendingBalance: orchardPending ?? prev?.orchardPendingBalance,
-        canShieldTransparentBalance:
-            canShieldTransparentBalance ??
-            prev?.canShieldTransparentBalance ??
-            false,
-        shieldTransparentFee:
-            shieldTransparentFee ?? prev?.shieldTransparentFee,
-        shieldTransparentAmount:
-            shieldTransparentAmount ?? prev?.shieldTransparentAmount,
-        spendableBalance: spendable ?? prev?.spendableBalance,
-        totalBalance: total ?? prev?.totalBalance,
-        recentTransactions: recentTxs,
+        transparentBalance: useFetchedAccountData
+            ? transparent ?? stateScopedPrev?.transparentBalance
+            : stateScopedPrev?.transparentBalance,
+        saplingBalance: useFetchedAccountData
+            ? sapling ?? stateScopedPrev?.saplingBalance
+            : stateScopedPrev?.saplingBalance,
+        orchardBalance: useFetchedAccountData
+            ? orchard ?? stateScopedPrev?.orchardBalance
+            : stateScopedPrev?.orchardBalance,
+        transparentPendingBalance: useFetchedAccountData
+            ? transparentPending ?? stateScopedPrev?.transparentPendingBalance
+            : stateScopedPrev?.transparentPendingBalance,
+        saplingPendingBalance: useFetchedAccountData
+            ? saplingPending ?? stateScopedPrev?.saplingPendingBalance
+            : stateScopedPrev?.saplingPendingBalance,
+        orchardPendingBalance: useFetchedAccountData
+            ? orchardPending ?? stateScopedPrev?.orchardPendingBalance
+            : stateScopedPrev?.orchardPendingBalance,
+        canShieldTransparentBalance: useFetchedAccountData
+            ? canShieldTransparentBalance ??
+                  stateScopedPrev?.canShieldTransparentBalance ??
+                  false
+            : stateScopedPrev?.canShieldTransparentBalance ?? false,
+        shieldTransparentFee: useFetchedAccountData
+            ? shieldTransparentFee ?? stateScopedPrev?.shieldTransparentFee
+            : stateScopedPrev?.shieldTransparentFee,
+        shieldTransparentAmount: useFetchedAccountData
+            ? shieldTransparentAmount ??
+                  stateScopedPrev?.shieldTransparentAmount
+            : stateScopedPrev?.shieldTransparentAmount,
+        spendableBalance: useFetchedAccountData
+            ? spendable ?? stateScopedPrev?.spendableBalance
+            : stateScopedPrev?.spendableBalance,
+        totalBalance: useFetchedAccountData
+            ? total ?? stateScopedPrev?.totalBalance
+            : stateScopedPrev?.totalBalance,
+        recentTransactions: useFetchedAccountData
+            ? recentTxs
+            : stateScopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: syncStartedAt,
         lastSyncCompletedAt: syncCompletedAt,
         lastSyncFailedAt: prev?.lastSyncFailedAt,
@@ -1187,6 +1372,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       log('SyncNotifier: no active account, skipping refresh');
       return;
     }
+    final scopedPrev = _previousScopedState(prev, accountUuid);
 
     BigInt? transparent;
     BigInt? sapling;
@@ -1199,6 +1385,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     bool? canShieldTransparentBalance;
     BigInt? shieldTransparentFee;
     BigInt? shieldTransparentAmount;
+    var didFetchBalance = false;
+    var didFetchRecentTxs = false;
     try {
       final balance = await rust_sync.getBalance(
         dbPath: dbPath,
@@ -1213,6 +1401,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       orchardPending = balance.orchardPending;
       spendable = balance.spendable;
       total = balance.total;
+      didFetchBalance = true;
     } catch (e) {
       _logRefreshReadError(
         label: 'balance',
@@ -1222,7 +1411,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
 
     var recentTxs =
-        prev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
+        scopedPrev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
     try {
       recentTxs = await rust_sync.getTransactionHistory(
         dbPath: dbPath,
@@ -1230,6 +1419,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         limit: 10,
         accountUuid: accountUuid,
       );
+      didFetchRecentTxs = true;
     } catch (e) {
       _logRefreshReadError(
         label: 'tx history',
@@ -1243,7 +1433,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       network: network,
       accountUuid: accountUuid,
       transparentBalance:
-          transparent ?? prev?.transparentBalance ?? BigInt.zero,
+          transparent ?? scopedPrev?.transparentBalance ?? BigInt.zero,
     );
     if (shieldStatus != null) {
       canShieldTransparentBalance = shieldStatus.canShield;
@@ -1251,36 +1441,48 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       shieldTransparentAmount = shieldStatus.amount;
     }
 
-    if (epoch != _sensitiveStateEpoch || _requiresUnlock) {
-      log('SyncNotifier: discarding balance refresh after lock transition');
+    if (epoch != _sensitiveStateEpoch ||
+        _requiresUnlock ||
+        accountUuid != _getActiveAccountUuid()) {
+      log(
+        'SyncNotifier: discarding balance refresh after account or lock transition',
+      );
       return;
     }
 
     state = AsyncData(
       SyncState(
+        accountUuid: accountUuid,
+        hasBalanceData:
+            didFetchBalance || (scopedPrev?.hasBalanceData ?? false),
+        hasRecentTransactionsData:
+            didFetchRecentTxs ||
+            (scopedPrev?.hasRecentTransactionsData ?? false),
         isSyncing: prev?.isSyncing ?? false,
         isBackgroundMode: _bgDelegate.isActive,
         percentage: prev?.percentage ?? 0.0,
         displayPercentage: prev?.displayPercentage ?? prev?.percentage ?? 0.0,
         scannedHeight: prev?.scannedHeight ?? 0,
         chainTipHeight: prev?.chainTipHeight ?? 0,
-        transparentBalance: transparent ?? prev?.transparentBalance,
-        saplingBalance: sapling ?? prev?.saplingBalance,
-        orchardBalance: orchard ?? prev?.orchardBalance,
+        transparentBalance: transparent ?? scopedPrev?.transparentBalance,
+        saplingBalance: sapling ?? scopedPrev?.saplingBalance,
+        orchardBalance: orchard ?? scopedPrev?.orchardBalance,
         transparentPendingBalance:
-            transparentPending ?? prev?.transparentPendingBalance,
-        saplingPendingBalance: saplingPending ?? prev?.saplingPendingBalance,
-        orchardPendingBalance: orchardPending ?? prev?.orchardPendingBalance,
+            transparentPending ?? scopedPrev?.transparentPendingBalance,
+        saplingPendingBalance:
+            saplingPending ?? scopedPrev?.saplingPendingBalance,
+        orchardPendingBalance:
+            orchardPending ?? scopedPrev?.orchardPendingBalance,
         canShieldTransparentBalance:
             canShieldTransparentBalance ??
-            prev?.canShieldTransparentBalance ??
+            scopedPrev?.canShieldTransparentBalance ??
             false,
         shieldTransparentFee:
-            shieldTransparentFee ?? prev?.shieldTransparentFee,
+            shieldTransparentFee ?? scopedPrev?.shieldTransparentFee,
         shieldTransparentAmount:
-            shieldTransparentAmount ?? prev?.shieldTransparentAmount,
-        spendableBalance: spendable ?? prev?.spendableBalance,
-        totalBalance: total ?? prev?.totalBalance,
+            shieldTransparentAmount ?? scopedPrev?.shieldTransparentAmount,
+        spendableBalance: spendable ?? scopedPrev?.spendableBalance,
+        totalBalance: total ?? scopedPrev?.totalBalance,
         recentTransactions: recentTxs,
         lastSyncStartedAt: prev?.lastSyncStartedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
