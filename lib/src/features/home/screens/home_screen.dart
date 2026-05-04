@@ -87,7 +87,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
 
       final accountNotifier = ref.read(accountProvider.notifier);
-      final sync = ref.read(syncProvider).value ?? SyncState();
+      final sync = (ref.read(syncProvider).value ?? SyncState())
+          .scopedToAccount(accountUuid);
       if (!sync.canShieldTransparentBalance) {
         throw Exception(
           'Transparent balance is too small to shield after fees.',
@@ -160,7 +161,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final walletAsync = ref.watch(walletProvider);
     final bootstrap = ref.watch(appBootstrapProvider);
     final syncAsync = ref.watch(syncProvider);
-    final sync = syncAsync.value ?? SyncState();
+    final activeAccountUuid = ref.watch(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+    );
+    final sync = (syncAsync.value ?? SyncState()).scopedToAccount(
+      activeAccountUuid,
+    );
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final shieldedBalance =
         sync.saplingBalance +

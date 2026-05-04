@@ -70,6 +70,7 @@ class AppBootstrapState {
 
 class AppSyncSnapshot {
   const AppSyncSnapshot({
+    this.accountUuid,
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
@@ -87,6 +88,7 @@ class AppSyncSnapshot {
     required this.recentTransactions,
   });
 
+  final String? accountUuid;
   final int scannedHeight;
   final int chainTipHeight;
   final double percentage;
@@ -104,6 +106,25 @@ class AppSyncSnapshot {
   final List<rust_sync.TransactionInfo> recentTransactions;
 
   static final empty = AppSyncSnapshot(
+    scannedHeight: 0,
+    chainTipHeight: 0,
+    percentage: 0,
+    transparentBalance: BigInt.zero,
+    saplingBalance: BigInt.zero,
+    orchardBalance: BigInt.zero,
+    transparentPendingBalance: BigInt.zero,
+    saplingPendingBalance: BigInt.zero,
+    orchardPendingBalance: BigInt.zero,
+    canShieldTransparentBalance: false,
+    shieldTransparentFee: BigInt.zero,
+    shieldTransparentAmount: BigInt.zero,
+    spendableBalance: BigInt.zero,
+    totalBalance: BigInt.zero,
+    recentTransactions: [],
+  );
+
+  static AppSyncSnapshot emptyForAccount(String accountUuid) => AppSyncSnapshot(
+    accountUuid: accountUuid,
     scannedHeight: 0,
     chainTipHeight: 0,
     percentage: 0,
@@ -400,6 +421,7 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
     );
 
     return AppSyncSnapshot(
+      accountUuid: accountUuid,
       scannedHeight: scannedHeight,
       chainTipHeight: chainTipHeight,
       percentage: percentage,
@@ -418,6 +440,6 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
     );
   } catch (e) {
     log('bootstrap: failed to load initial sync snapshot: $e');
-    return AppSyncSnapshot.empty;
+    return AppSyncSnapshot.emptyForAccount(accountUuid);
   }
 }

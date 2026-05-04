@@ -41,11 +41,13 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     final activeAccountUuid = ref.watch(
       accountProvider.select((value) => value.value?.activeAccountUuid),
     );
-    final spendableBalance = ref.watch(
+    final sync = ref.watch(
       syncProvider.select(
-        (value) => value.value?.spendableBalance ?? BigInt.zero,
+        (value) =>
+            (value.value ?? SyncState()).scopedToAccount(activeAccountUuid),
       ),
     );
+    final spendableBalance = sync.spendableBalance;
 
     return _SendComposeBody(
       key: ValueKey(activeAccountUuid),

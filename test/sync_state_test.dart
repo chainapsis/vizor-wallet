@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   test('pendingBalance is the explicit pending pool sum', () {
@@ -42,4 +43,67 @@ void main() {
     expect(reset.percentage, 0.25);
     expect(reset.displayPercentage, 0.25);
   });
+
+  test('scopedToAccount preserves data for the owning account', () {
+    final tx = _tx('a' * 64);
+    final state = SyncState(
+      accountUuid: 'account-a',
+      percentage: 0.75,
+      scannedHeight: 10,
+      chainTipHeight: 20,
+      totalBalance: BigInt.from(123),
+      spendableBalance: BigInt.from(100),
+      recentTransactions: [tx],
+    );
+
+    final scoped = state.scopedToAccount('account-a');
+
+    expect(scoped.accountUuid, 'account-a');
+    expect(scoped.totalBalance, BigInt.from(123));
+    expect(scoped.spendableBalance, BigInt.from(100));
+    expect(scoped.recentTransactions, [tx]);
+    expect(scoped.percentage, 0.75);
+  });
+
+  test('scopedToAccount clears account data for a different account', () {
+    final state = SyncState(
+      accountUuid: 'account-a',
+      isSyncing: true,
+      percentage: 0.75,
+      displayPercentage: 0.50,
+      scannedHeight: 10,
+      chainTipHeight: 20,
+      totalBalance: BigInt.from(123),
+      spendableBalance: BigInt.from(100),
+      recentTransactions: [_tx('a' * 64)],
+    );
+
+    final scoped = state.scopedToAccount('account-b');
+
+    expect(scoped.accountUuid, 'account-b');
+    expect(scoped.totalBalance, BigInt.zero);
+    expect(scoped.spendableBalance, BigInt.zero);
+    expect(scoped.recentTransactions, isEmpty);
+    expect(scoped.isSyncing, isTrue);
+    expect(scoped.percentage, 0.75);
+    expect(scoped.displayPercentage, 0.50);
+    expect(scoped.scannedHeight, 10);
+    expect(scoped.chainTipHeight, 20);
+  });
+}
+
+rust_sync.TransactionInfo _tx(String txidHex) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.one,
+    expiredUnmined: false,
+    accountBalanceDelta: 0,
+    fee: BigInt.zero,
+    blockTime: BigInt.from(1800000000),
+    isTransparent: false,
+    txKind: 'received',
+    displayAmount: BigInt.one,
+    displayPool: 'shielded',
+    createdTime: BigInt.from(1800000000),
+  );
 }
