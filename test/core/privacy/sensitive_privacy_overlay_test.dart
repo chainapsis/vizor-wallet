@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -123,7 +123,7 @@ void main() {
     expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
   });
 
-  testWidgets('syncs sensitive visibility to the native macOS shield', (
+  testWidgets('syncs sensitive visibility to the native macOS policy bridge', (
     tester,
   ) async {
     if (!Platform.isMacOS) return;
@@ -135,11 +135,11 @@ void main() {
           calls.add(call);
           return null;
         });
-    MacOSNativePrivacyShield.resetForTesting();
+    MacOSSensitiveContentBridge.resetForTesting();
     addTearDown(() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null);
-      MacOSNativePrivacyShield.resetForTesting();
+      MacOSSensitiveContentBridge.resetForTesting();
     });
 
     await tester.pumpWidget(
@@ -180,66 +180,12 @@ void main() {
     await tester.idle();
 
     expect(calls.single.method, 'setSensitiveContentVisible');
-    expect((calls.single.arguments as Map<Object?, Object?>)['visible'], true);
+    expect(calls.single.arguments, {'visible': true});
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.idle();
 
     expect(calls.last.method, 'setSensitiveContentVisible');
     expect(calls.last.arguments, {'visible': false});
-  });
-
-  testWidgets('syncs the overlay bounds to the native macOS shield', (
-    tester,
-  ) async {
-    if (!Platform.isMacOS) return;
-
-    const channel = MethodChannel('com.zcash.wallet/privacy_shield');
-    final calls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          calls.add(call);
-          return null;
-        });
-    MacOSNativePrivacyShield.resetForTesting();
-    addTearDown(() {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-      MacOSNativePrivacyShield.resetForTesting();
-    });
-
-    await tester.pumpWidget(
-      AppTheme(
-        data: AppThemeData.light,
-        child: const Directionality(
-          textDirection: TextDirection.ltr,
-          child: Center(
-            child: SizedBox(
-              width: 320,
-              height: 240,
-              child: SensitivePrivacyOverlay(
-                sensitiveContentVisible: true,
-                child: Text('Seed phrase pane'),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.idle();
-
-    final visibleCalls = calls.where((call) {
-      final args = call.arguments as Map<Object?, Object?>;
-      return call.method == 'setSensitiveContentVisible' &&
-          args['visible'] == true;
-    }).toList();
-    expect(visibleCalls, isNotEmpty);
-
-    final args = visibleCalls.last.arguments as Map<Object?, Object?>;
-    final rect = args['rect'] as Map<Object?, Object?>?;
-    expect(rect, isNotNull);
-    expect(rect!['width'], 320.0);
-    expect(rect['height'], 240.0);
   });
 }

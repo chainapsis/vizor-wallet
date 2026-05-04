@@ -50,78 +50,46 @@ abstract final class MacOSPrivacyExposureEvents {
   }
 }
 
-abstract final class MacOSNativePrivacyShield {
+abstract final class MacOSSensitiveContentBridge {
   static const _channel = MethodChannel('com.zcash.wallet/privacy_shield');
 
   static final Set<int> _visibleTokens = <int>{};
-  static final Map<int, ui.Rect> _tokenRects = <int, ui.Rect>{};
   static int _nextToken = 0;
   static bool _lastVisible = false;
-  static ui.Rect? _lastRect;
 
   static int createToken() => _nextToken++;
 
-  static void updateToken(int token, bool visible, {ui.Rect? globalRect}) {
+  static void updateToken(int token, bool visible) {
     if (visible) {
       _visibleTokens.add(token);
-      if (globalRect != null && !globalRect.isEmpty) {
-        _tokenRects[token] = globalRect;
-      }
     } else {
       _visibleTokens.remove(token);
-      _tokenRects.remove(token);
     }
     _syncIfNeeded();
   }
 
   static void clearToken(int token) {
     _visibleTokens.remove(token);
-    _tokenRects.remove(token);
     _syncIfNeeded();
   }
 
   @visibleForTesting
   static void resetForTesting() {
     _visibleTokens.clear();
-    _tokenRects.clear();
     _nextToken = 0;
     _lastVisible = false;
-    _lastRect = null;
   }
 
   static void _syncIfNeeded() {
     if (kIsWeb || !Platform.isMacOS) return;
     final visible = _visibleTokens.isNotEmpty;
-    final rect = _combinedVisibleRect();
-    if (_lastVisible == visible && _lastRect == rect) return;
+    if (_lastVisible == visible) return;
     _lastVisible = visible;
-    _lastRect = rect;
-    unawaited(_setSensitiveContentVisible(visible, rect));
+    unawaited(_setSensitiveContentVisible(visible));
   }
 
-  static ui.Rect? _combinedVisibleRect() {
-    ui.Rect? combined;
-    for (final token in _visibleTokens) {
-      final rect = _tokenRects[token];
-      if (rect == null) continue;
-      combined = combined?.expandToInclude(rect) ?? rect;
-    }
-    return combined;
-  }
-
-  static Future<void> _setSensitiveContentVisible(
-    bool visible,
-    ui.Rect? rect,
-  ) async {
+  static Future<void> _setSensitiveContentVisible(bool visible) async {
     final arguments = <String, Object?>{'visible': visible};
-    if (rect != null) {
-      arguments['rect'] = <String, double>{
-        'left': rect.left,
-        'top': rect.top,
-        'width': rect.width,
-        'height': rect.height,
-      };
-    }
 
     try {
       await _channel.invokeMethod<void>(
@@ -129,8 +97,8 @@ abstract final class MacOSNativePrivacyShield {
         arguments,
       );
     } catch (_) {
-      // The native shield is a macOS-only fast path. The Flutter overlay still
-      // handles privacy if the native channel is unavailable.
+      // This bridge only controls macOS window policy/exposure events. The
+      // Flutter overlay remains the visual privacy layer if the channel fails.
     }
   }
 }
@@ -164,6 +132,8 @@ class SensitivePrivacyEnvironmentController
     _lifecycleListener = AppLifecycleListener(
       onResume: () => _setLifecycleSafe(true),
       onShow: () => _setLifecycleSafe(true),
+      // iOS snapshots during inactive, before pause. Keep sensitive content
+      // covered as soon as the app starts losing foreground interaction.
       onInactive: () => _setLifecycleSafe(false),
       onHide: () => _setLifecycleSafe(false),
       onPause: () => _setLifecycleSafe(false),
@@ -275,20 +245,17 @@ class SensitivePrivacyOverlay extends StatefulWidget {
       _SensitivePrivacyOverlayState();
 }
 
-class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay>
-    with WidgetsBindingObserver {
-  final _overlayKey = GlobalKey();
-  late final int _nativeShieldToken = MacOSNativePrivacyShield.createToken();
+class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay> {
+  late final int _nativeVisibilityToken =
+      MacOSSensitiveContentBridge.createToken();
   late SensitivePrivacyOverlayController _controller;
   late bool _ownsController;
-  bool _nativeShieldSyncScheduled = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _setController(widget.controller);
-    _scheduleNativeShieldSync();
+    _syncNativeVisibility();
   }
 
   @override
@@ -299,7 +266,7 @@ class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay>
       _setController(widget.controller);
     }
     if (oldWidget.sensitiveContentVisible != widget.sensitiveContentVisible) {
-      _scheduleNativeShieldSync();
+      _syncNativeVisibility();
     }
   }
 
@@ -310,57 +277,26 @@ class _SensitivePrivacyOverlayState extends State<SensitivePrivacyOverlay>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    MacOSNativePrivacyShield.clearToken(_nativeShieldToken);
+    MacOSSensitiveContentBridge.clearToken(_nativeVisibilityToken);
     if (_ownsController) _controller.dispose();
     super.dispose();
   }
 
-  @override
-  void didChangeMetrics() {
-    _scheduleNativeShieldSync();
-  }
-
-  void _scheduleNativeShieldSync() {
-    if (!widget.sensitiveContentVisible) {
-      _syncNativeShield();
-      return;
-    }
-    if (_nativeShieldSyncScheduled) return;
-    _nativeShieldSyncScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _nativeShieldSyncScheduled = false;
-      if (!mounted) return;
-      _syncNativeShield();
-    });
-  }
-
-  void _syncNativeShield() {
-    MacOSNativePrivacyShield.updateToken(
-      _nativeShieldToken,
+  void _syncNativeVisibility() {
+    MacOSSensitiveContentBridge.updateToken(
+      _nativeVisibilityToken,
       widget.sensitiveContentVisible,
-      globalRect: _overlayGlobalRect(),
     );
-  }
-
-  ui.Rect? _overlayGlobalRect() {
-    final renderObject = _overlayKey.currentContext?.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
-    final size = renderObject.size;
-    if (size.isEmpty) return null;
-    return renderObject.localToGlobal(Offset.zero) & size;
   }
 
   @override
   Widget build(BuildContext context) {
-    _scheduleNativeShieldSync();
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
         final showShield =
             widget.sensitiveContentVisible && !_controller.isSafe;
         return Stack(
-          key: _overlayKey,
           fit: StackFit.passthrough,
           children: [
             widget.child,
