@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RESET_EACH_TEST="${E2E_RESET_EACH_TEST:-1}"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -17,7 +16,7 @@ run_test() {
 
   echo
   echo "==> ${name}"
-  RESET_REGTEST="$RESET_EACH_TEST" "$ROOT_DIR/$script"
+  RESET_REGTEST=1 "$ROOT_DIR/$script"
 }
 
 require_cmd cargo
