@@ -10,9 +10,19 @@ import 'package:window_manager/window_manager.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
 
-bool get _supportsWindowFocusEvents {
-  if (kIsWeb) return false;
-  return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+bool get _supportsPlatformPrivacySignals => supportsPlatformPrivacySignals(
+  isWeb: kIsWeb,
+  isMacOS: !kIsWeb && Platform.isMacOS,
+);
+
+@visibleForTesting
+bool supportsPlatformPrivacySignals({
+  required bool isWeb,
+  required bool isMacOS,
+}) {
+  // TODO(privacy-layer): Add a Windows implementation before enabling this on
+  // desktop platforms other than macOS.
+  return !isWeb && isMacOS;
 }
 
 class MacOSPrivacyExposureEvent {
@@ -129,17 +139,16 @@ class SensitivePrivacyEnvironmentController
   SensitivePrivacyEnvironmentController({
     Stream<MacOSPrivacyExposureEvent>? macOSExposureEvents,
   }) {
-    _lifecycleListener = AppLifecycleListener(
-      onResume: () => _setLifecycleSafe(true),
-      onShow: () => _setLifecycleSafe(true),
-      // iOS snapshots during inactive, before pause. Keep sensitive content
-      // covered as soon as the app starts losing foreground interaction.
-      onInactive: () => _setLifecycleSafe(false),
-      onHide: () => _setLifecycleSafe(false),
-      onPause: () => _setLifecycleSafe(false),
-    );
-
-    if (_supportsWindowFocusEvents) {
+    if (_supportsPlatformPrivacySignals) {
+      _lifecycleListener = AppLifecycleListener(
+        onResume: () => _setLifecycleSafe(true),
+        onShow: () => _setLifecycleSafe(true),
+        // iOS snapshots during inactive, before pause. Keep sensitive content
+        // covered as soon as the app starts losing foreground interaction.
+        onInactive: () => _setLifecycleSafe(false),
+        onHide: () => _setLifecycleSafe(false),
+        onPause: () => _setLifecycleSafe(false),
+      );
       windowManager.addListener(this);
       windowManager
           .isFocused()
@@ -219,7 +228,7 @@ class SensitivePrivacyEnvironmentController
     _disposed = true;
     _macOSExposureSub?.cancel();
     _lifecycleListener?.dispose();
-    if (_supportsWindowFocusEvents) {
+    if (_supportsPlatformPrivacySignals) {
       windowManager.removeListener(this);
     }
     super.dispose();

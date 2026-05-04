@@ -8,6 +8,15 @@ import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 
 void main() {
+  test('platform privacy signals are macOS-only', () {
+    expect(supportsPlatformPrivacySignals(isWeb: false, isMacOS: true), isTrue);
+    expect(
+      supportsPlatformPrivacySignals(isWeb: false, isMacOS: false),
+      isFalse,
+    );
+    expect(supportsPlatformPrivacySignals(isWeb: true, isMacOS: true), isFalse);
+  });
+
   testWidgets('shows privacy shield only when sensitive content is unsafe', (
     tester,
   ) async {
