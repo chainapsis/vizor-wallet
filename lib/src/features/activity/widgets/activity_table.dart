@@ -17,6 +17,7 @@ class ActivityTable extends StatelessWidget {
     required this.rows,
     this.title,
     this.onTitleTap,
+    this.rowKeyPrefix,
     this.isLoading = false,
     this.errorText,
     this.emptyText = 'No activity yet',
@@ -31,6 +32,7 @@ class ActivityTable extends StatelessWidget {
   final List<ActivityRowData> rows;
   final String? title;
   final VoidCallback? onTitleTap;
+  final String? rowKeyPrefix;
   final bool isLoading;
   final String? errorText;
   final String emptyText;
@@ -69,7 +71,12 @@ class ActivityTable extends StatelessWidget {
               _ActivityTableMessage(text: emptyText)
             else
               for (var i = 0; i < rows.length; i++) ...[
-                ActivityTableRow(row: rows[i]),
+                ActivityTableRow(
+                  key: rowKeyPrefix == null
+                      ? null
+                      : ValueKey('${rowKeyPrefix}_row_$i'),
+                  row: rows[i],
+                ),
                 if (i != rows.length - 1) ...[
                   const SizedBox(height: AppSpacing.xs),
                   const _ActivityTableDivider(),

@@ -376,6 +376,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
                           child: ActivityTable(
                             rows: rows,
                             title: 'Recent Activity',
+                            rowKeyPrefix: 'home_activity',
                             isLoading: widget.isActivityLoading,
                             onTitleTap: () => context.push('/activity'),
                           ),

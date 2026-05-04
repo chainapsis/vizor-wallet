@@ -81,7 +81,41 @@ void main() {
         shielded: '0.25 zec',
         timeout: const Duration(minutes: 4),
       );
+      await _expectActivityRow(
+        tester,
+        const ValueKey('home_activity_row_1'),
+        title: 'Received',
+        amount: '+0.25 ZEC',
+        status: 'Completed',
+      );
+      await _openActivity(tester);
+      await _expectActivityRow(
+        tester,
+        const ValueKey('activity_screen_row_1'),
+        title: 'Received',
+        amount: '+0.25 ZEC',
+        status: 'Completed',
+      );
       _log('second account received shielded funds');
+
+      await _openWallet(tester);
+      await _switchAccount(tester, 0);
+      await _expectActivityRow(
+        tester,
+        const ValueKey('home_activity_row_1'),
+        title: 'Sent',
+        amount: '-0.25 ZEC',
+        status: 'Completed',
+      );
+      await _openActivity(tester);
+      await _expectActivityRow(
+        tester,
+        const ValueKey('activity_screen_row_1'),
+        title: 'Sent',
+        amount: '-0.25 ZEC',
+        status: 'Completed',
+      );
+      _log('first account sent activity matched');
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );
@@ -255,6 +289,16 @@ Future<void> _openWallet(WidgetTester tester) async {
   await _waitForHome(tester);
 }
 
+Future<void> _openActivity(WidgetTester tester) async {
+  await _tapWidget(tester, const ValueKey('sidebar_activity_button'));
+  await _pumpUntil(
+    tester,
+    () => tester.any(find.byKey(const ValueKey('activity_screen_row_0'))),
+    description: 'activity screen rows to render',
+    timeout: const Duration(minutes: 1),
+  );
+}
+
 Future<void> _switchAccount(WidgetTester tester, int accountOrder) async {
   _log('switching to account order $accountOrder');
   await _tapWidget(tester, const ValueKey('sidebar_account_selector_button'));
@@ -303,6 +347,27 @@ Future<void> _waitForBalance(
     );
     _log('transparent balance matched: $transparent');
   }
+}
+
+Future<void> _expectActivityRow(
+  WidgetTester tester,
+  Key key, {
+  required String title,
+  required String amount,
+  required String status,
+}) async {
+  await _pumpUntil(
+    tester,
+    () {
+      final texts = _textSetIn(tester, find.byKey(key));
+      return texts.contains(title) &&
+          texts.contains(amount) &&
+          texts.contains(status);
+    },
+    description: '$key activity row to show $title $amount $status',
+    timeout: const Duration(minutes: 2),
+  );
+  _log('activity row matched: $title $amount $status');
 }
 
 Future<void> _cleanupE2eWalletState() async {
@@ -414,6 +479,16 @@ String? _textForKey(WidgetTester tester, Key key) {
   if (!tester.any(finder)) return null;
   final widget = tester.widget<Text>(finder);
   return widget.data;
+}
+
+Set<String> _textSetIn(WidgetTester tester, Finder finder) {
+  if (!tester.any(finder)) return const {};
+  final texts = find.descendant(of: finder, matching: find.byType(Text));
+  return tester
+      .widgetList<Text>(texts)
+      .map((text) => text.data)
+      .whereType<String>()
+      .toSet();
 }
 
 Future<void> _pumpUntil(

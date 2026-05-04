@@ -416,6 +416,7 @@ class _ActivityPane extends StatelessWidget {
                     ),
                     child: ActivityTable(
                       rows: rows,
+                      rowKeyPrefix: 'activity_screen',
                       isLoading: isLoading,
                       errorText: errorText,
                       showPagination: true,
