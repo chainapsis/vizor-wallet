@@ -48,6 +48,13 @@ void main() {
       );
     });
 
+    test('allows Android emulator host as local http in debug mode', () {
+      expect(
+        normalizeRpcEndpointUrl('http://10.0.2.2:9067'),
+        'http://10.0.2.2:9067',
+      );
+    });
+
     test('preserves bracketed IPv6 host formatting', () {
       expect(
         normalizeRpcEndpointUrl('https://[::1]:9067'),
@@ -116,6 +123,21 @@ void main() {
       );
 
       expect(preset, isNull);
+    });
+
+    test('includes a local regtest default preset', () {
+      final defaultEndpoint = defaultRpcEndpointConfig('regtest');
+
+      expect(defaultEndpoint.networkName, 'regtest');
+      expect(defaultEndpoint.lightwalletdUrl, 'http://127.0.0.1:9067');
+      expect(defaultEndpoint.presetId, 'default-regtest');
+      expect(
+        findRpcEndpointPresetByUrl(
+          'http://127.0.0.1:9067',
+          networkName: 'regtest',
+        )?.id,
+        'default-regtest',
+      );
     });
   });
 

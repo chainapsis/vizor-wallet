@@ -437,6 +437,7 @@ class _ImportWalletBirthdayScreenState
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       AppButton(
+                        key: const ValueKey('import_birthday_submit_button'),
                         onPressed: _isSubmitEnabled ? _submit : null,
                         variant: AppButtonVariant.primary,
                         minWidth: _buttonWidth,
@@ -445,6 +446,7 @@ class _ImportWalletBirthdayScreenState
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       AppButton(
+                        key: const ValueKey('import_birthday_skip_button'),
                         onPressed: _isSubmitting
                             ? null
                             : () => _submit(

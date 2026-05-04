@@ -358,6 +358,7 @@ class _ImportSecretPassphraseScreenState
                 ),
                 const SizedBox(height: AppSpacing.md),
                 AppButton(
+                  key: const ValueKey('import_secret_submit_button'),
                   onPressed: _canSubmit ? _submit : null,
                   minWidth: _buttonWidth,
                   trailing: const AppIcon(AppIcons.chevronForward),
@@ -718,32 +719,40 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                             horizontal: AppSpacing.xs,
                           ),
                           child: Center(
-                            child: TextField(
-                              key: _textFieldRegionKey,
-                              controller: controller,
-                              focusNode: focusNode,
-                              autofocus: widget.autofocus,
-                              keyboardType: TextInputType.text,
-                              textInputAction: TextInputAction.next,
-                              autocorrect: false,
-                              enableSuggestions: false,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'[A-Za-z\s]'),
+                            child: KeyedSubtree(
+                              key: widget.index == 0
+                                  ? const ValueKey(
+                                      'import_mnemonic_first_word_field',
+                                    )
+                                  : null,
+                              child: TextField(
+                                key: _textFieldRegionKey,
+                                controller: controller,
+                                focusNode: focusNode,
+                                autofocus: widget.autofocus,
+                                keyboardType: TextInputType.text,
+                                textInputAction: TextInputAction.next,
+                                autocorrect: false,
+                                enableSuggestions: false,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                    RegExp(r'[A-Za-z\s]'),
+                                  ),
+                                ],
+                                style: valueStyle,
+                                cursorColor: colors.text.accent,
+                                selectAllOnFocus: false,
+                                decoration: InputDecoration.collapsed(
+                                  hintText: 'Word',
+                                  hintStyle: AppTypography.labelLarge.copyWith(
+                                    color: colors.text.muted,
+                                  ),
                                 ),
-                              ],
-                              style: valueStyle,
-                              cursorColor: colors.text.accent,
-                              selectAllOnFocus: false,
-                              decoration: InputDecoration.collapsed(
-                                hintText: 'Word',
-                                hintStyle: AppTypography.labelLarge.copyWith(
-                                  color: colors.text.muted,
+                                onChanged: widget.onChanged,
+                                onSubmitted: (_) => _handleTextSubmitted(
+                                  onAutocompleteSubmitted,
                                 ),
                               ),
-                              onChanged: widget.onChanged,
-                              onSubmitted: (_) =>
-                                  _handleTextSubmitted(onAutocompleteSubmitted),
                             ),
                           ),
                         ),

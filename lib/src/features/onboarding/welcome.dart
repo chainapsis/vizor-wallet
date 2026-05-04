@@ -294,6 +294,7 @@ class _ButtonsStack extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         AppButton(
+          key: const ValueKey('welcome_create_wallet_button'),
           onPressed: () => context.go('/onboarding/intro'),
           variant: AppButtonVariant.primary,
           minWidth: _welcomeActionWidth,
@@ -302,6 +303,7 @@ class _ButtonsStack extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.s),
         AppButton(
+          key: const ValueKey('welcome_import_wallet_button'),
           onPressed: () => context.go('/import'),
           variant: AppButtonVariant.secondary,
           minWidth: _welcomeActionWidth,

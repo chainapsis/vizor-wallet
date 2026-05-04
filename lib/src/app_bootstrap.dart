@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +20,10 @@ const _activeAccountKey = 'zcash_active_account';
 const _networkKey = 'zcash_wallet_network';
 const _backgroundSyncChannel = MethodChannel(
   'com.zcash.wallet/background_sync',
+);
+const _e2eNetworkOverride = String.fromEnvironment('ZCASH_E2E_NETWORK');
+const _e2eLightwalletdUrlOverride = String.fromEnvironment(
+  'ZCASH_E2E_LIGHTWALLETD_URL',
 );
 
 final appBootstrapProvider = Provider<AppBootstrapState>((_) {
@@ -151,6 +155,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
   try {
     log('bootstrap: loading startup snapshot');
     await storage.ensureWalletDbName();
+    await _applyE2eBootstrapOverrides(storage);
     var passwordRotationRecoveryFailed = false;
     try {
       await storage.recoverInterruptedPasswordRotation();
@@ -257,6 +262,30 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     log('bootstrap: failed, falling back to welcome: $e');
     return AppBootstrapState.empty;
   }
+}
+
+Future<void> _applyE2eBootstrapOverrides(AppSecureStore storage) async {
+  final network = _e2eNetworkOverride.trim();
+  final lightwalletdUrl = _e2eLightwalletdUrlOverride.trim();
+  if (network.isEmpty && lightwalletdUrl.isEmpty) return;
+
+  if (!kDebugMode) {
+    log('bootstrap: ignoring E2E overrides outside debug mode');
+    return;
+  }
+
+  if (network.isNotEmpty) {
+    await storage.writeString(_networkKey, network);
+  }
+  if (lightwalletdUrl.isNotEmpty) {
+    await storage.writePlain(kRpcEndpointUrlKey, lightwalletdUrl);
+    await storage.writePlain(kRpcEndpointPresetKey, kCustomRpcEndpointPresetId);
+  }
+  log(
+    'bootstrap: applied E2E overrides '
+    'network=${network.isEmpty ? "(unchanged)" : network}, '
+    'lightwalletd=${lightwalletdUrl.isEmpty ? "(unchanged)" : lightwalletdUrl}',
+  );
 }
 
 @visibleForTesting

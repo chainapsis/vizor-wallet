@@ -18,6 +18,7 @@ Uri zcashExplorerTransactionUri({
   final host = switch (network) {
     ZcashNetwork.mainnet => 'mainnet.zcashexplorer.app',
     ZcashNetwork.testnet => 'testnet.zcashexplorer.app',
+    ZcashNetwork.regtest => 'testnet.zcashexplorer.app',
   };
   return Uri.https(
     host,

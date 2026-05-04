@@ -247,6 +247,9 @@ class _SetPasswordContent extends StatelessWidget {
                                 reserveMessageSpace:
                                     _fieldReservedMessageHeight,
                                 child: PasswordTextField(
+                                  key: const ValueKey(
+                                    'set_password_password_field',
+                                  ),
                                   label: 'Password',
                                   controller: passwordController,
                                   messageText: passwordMessage,
@@ -266,6 +269,9 @@ class _SetPasswordContent extends StatelessWidget {
                                 reserveMessageSpace:
                                     _fieldReservedMessageHeight,
                                 child: PasswordTextField(
+                                  key: const ValueKey(
+                                    'set_password_confirm_field',
+                                  ),
                                   label: 'Confirm Password',
                                   controller: confirmController,
                                   messageText: confirmMessage,
@@ -307,6 +313,7 @@ class _SetPasswordContent extends StatelessWidget {
                       ),
                     ],
                     AppButton(
+                      key: const ValueKey('set_password_submit_button'),
                       onPressed: canSubmit ? onSubmit : null,
                       variant: AppButtonVariant.primary,
                       minWidth: _buttonWidth,
