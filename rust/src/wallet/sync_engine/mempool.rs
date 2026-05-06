@@ -53,11 +53,11 @@ use std::time::{Duration, Instant};
 
 use zcash_client_backend::{data_api::WalletRead, proto::service::RawTransaction};
 use zcash_primitives::transaction::Transaction;
-use zcash_protocol::consensus::BranchId;
+use zcash_protocol::consensus::{BlockHeight, BranchId};
 
 use crate::wallet::network::WalletNetwork;
 
-use super::lwd::start_mempool_stream;
+use super::lwd::{get_latest_block, start_mempool_stream};
 use super::open_lwd_channel;
 
 /// Event emitted by [`run_mempool_observer`] for every wallet-relevant
@@ -454,6 +454,43 @@ where
             }
         };
 
+        // Fetch the current network tip before subscribing. Mempool
+        // decryption treats unmined transactions as being at
+        // chain_tip + 1 for ZIP-212 enforcement, and the store path in
+        // librustzcash independently reads the wallet DB chain height.
+        // Updating the DB here keeps both trial-decrypt and store-decrypt
+        // on the same network tip even while foreground sync is still
+        // catching up from an older birthday.
+        let tip_result = tokio::select! {
+            biased;
+            _ = watch_for_cancel(&cancel) => {
+                log::info!("mempool: observer cancelled during tip refresh");
+                return Ok(());
+            }
+            r = get_latest_block(&mut client) => r,
+        };
+        let tip = match tip_result {
+            Ok(tip) => tip,
+            Err(e) => {
+                log::warn!("mempool: get_latest_block before stream failed: {e}");
+                consecutive_errors += 1;
+                sleep_respecting_cancel(backoff_for(consecutive_errors), &cancel).await;
+                continue;
+            }
+        };
+        let chain_tip_height = match update_mempool_chain_tip(&db_path, network, tip.height) {
+            Ok(height) => height,
+            Err(e) => {
+                log::warn!(
+                    "mempool: update_chain_tip({}) before stream failed: {e}",
+                    tip.height
+                );
+                consecutive_errors += 1;
+                sleep_respecting_cancel(backoff_for(consecutive_errors), &cancel).await;
+                continue;
+            }
+        };
+
         // Start the mempool stream — also cancel-aware.
         let stream_result = tokio::select! {
             biased;
@@ -517,6 +554,7 @@ where
                             handle_mempool_tx(
                                 &db_path,
                                 network,
+                                chain_tip_height,
                                 &mut seen_cache,
                                 &mut unmatched_cache,
                                 &mut stats,
@@ -613,6 +651,17 @@ async fn watch_for_cancel(cancel: &Arc<AtomicBool>) {
     }
 }
 
+fn update_mempool_chain_tip(
+    db_path: &str,
+    network: WalletNetwork,
+    height: u64,
+) -> Result<BlockHeight, String> {
+    let height_u32 =
+        u32::try_from(height).map_err(|_| format!("chain tip height {height} exceeds u32"))?;
+    crate::wallet::sync::update_chain_tip(db_path, network, u64::from(height_u32))?;
+    Ok(BlockHeight::from_u32(height_u32))
+}
+
 /// Parse `raw_tx`, compute the txid, skip duplicate wallet-relevant
 /// observations and very recent unmatched observations, and emit a
 /// [`MempoolTxEvent`] only for wallet-relevant txs.
@@ -629,6 +678,7 @@ async fn watch_for_cancel(cancel: &Arc<AtomicBool>) {
 fn handle_mempool_tx<F>(
     db_path: &str,
     network: WalletNetwork,
+    chain_tip_height: BlockHeight,
     seen_cache: &mut TxidSeenCache,
     unmatched_cache: &mut TxidTtlCache,
     stats: &mut MempoolObserverStats,
@@ -672,17 +722,18 @@ fn handle_mempool_tx<F>(
     if known.matched || !known.account_uuids.is_empty() {
         stats.record_known_pending_hit();
         let decrypt_started_at = Instant::now();
-        let decrypted_account_uuids = match trial_decrypt_account_uuids(db_path, network, &tx) {
-            Ok(accounts) => {
-                stats.record_trial_decrypt(decrypt_started_at.elapsed(), !accounts.is_empty());
-                accounts
-            }
-            Err(e) => {
-                stats.record_trial_decrypt_fail(decrypt_started_at.elapsed());
-                log::debug!("mempool: trial decrypt for known {txid_hex} failed: {e}");
-                Vec::new()
-            }
-        };
+        let decrypted_account_uuids =
+            match trial_decrypt_account_uuids(db_path, network, chain_tip_height, &tx) {
+                Ok(accounts) => {
+                    stats.record_trial_decrypt(decrypt_started_at.elapsed(), !accounts.is_empty());
+                    accounts
+                }
+                Err(e) => {
+                    stats.record_trial_decrypt_fail(decrypt_started_at.elapsed());
+                    log::debug!("mempool: trial decrypt for known {txid_hex} failed: {e}");
+                    Vec::new()
+                }
+            };
         let (account_uuids, has_new_account) =
             merge_account_uuids(&known.account_uuids, &decrypted_account_uuids);
 
@@ -735,7 +786,7 @@ fn handle_mempool_tx<F>(
     }
 
     let decrypt_started_at = Instant::now();
-    let account_uuids = match trial_decrypt_account_uuids(db_path, network, &tx) {
+    let account_uuids = match trial_decrypt_account_uuids(db_path, network, chain_tip_height, &tx) {
         Ok(accounts) => {
             stats.record_trial_decrypt(decrypt_started_at.elapsed(), !accounts.is_empty());
             accounts
@@ -853,6 +904,7 @@ fn lookup_known_pending_tx(db_path: &str, txid_bytes: &[u8]) -> Result<KnownPend
 fn trial_decrypt_account_uuids(
     db_path: &str,
     network: WalletNetwork,
+    chain_tip_height: BlockHeight,
     tx: &Transaction,
 ) -> Result<Vec<String>, String> {
     let db = crate::wallet::sync::open_wallet_db_for_read(db_path, network)
@@ -863,8 +915,7 @@ fn trial_decrypt_account_uuids(
     let decrypted = zcash_client_backend::decrypt_transaction(
         &network,
         None,
-        db.chain_height()
-            .map_err(|e| format!("chain height: {e}"))?,
+        Some(chain_tip_height),
         tx,
         &ufvks,
     );
