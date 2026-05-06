@@ -266,6 +266,53 @@ void main() {
 
     expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
   });
+
+  testWidgets('privacy shield hides active autocomplete suggestions', (
+    tester,
+  ) async {
+    final controller = SensitivePrivacyOverlayController();
+    addTearDown(controller.dispose);
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _importPassphraseScreen(privacyOverlayController: controller),
+    );
+    await tester.enterText(_wordField(0), 'cab');
+    await tester.pump();
+
+    expect(find.text('cabbage'), findsOneWidget);
+
+    controller.markUnsafe();
+    await tester.pump();
+
+    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+    expect(find.text('cabbage'), findsNothing);
+
+    controller.markSafe();
+    await tester.pump();
+
+    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
+    expect(find.text('cabbage'), findsNothing);
+
+    await tester.tap(_wordField(0));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('cabbage'), findsOneWidget);
+
+    controller.markUnsafe();
+    await tester.pump();
+    controller.markSafe();
+    await tester.pump();
+
+    expect(find.text('cabbage'), findsNothing);
+
+    await tester.tap(_wordField(0));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('cabbage'), findsOneWidget);
+  });
 }
 
 Future<void> _setDesktopViewport(

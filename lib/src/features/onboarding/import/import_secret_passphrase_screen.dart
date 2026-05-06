@@ -44,10 +44,13 @@ class _ImportSecretPassphraseScreenState
   late final List<TextEditingController> _controllers;
   late final List<FocusNode> _focusNodes;
   late final List<String> _mnemonicWordList;
+  late SensitivePrivacyOverlayController _privacyOverlayController;
+  late bool _ownsPrivacyOverlayController;
 
   bool _isSubmitting = false;
   bool _showValidationError = false;
   bool _isApplyingProgrammaticChange = false;
+  bool _autocompleteSuppressedForPrivacy = false;
   String? _submitError;
 
   @override
@@ -56,11 +59,28 @@ class _ImportSecretPassphraseScreenState
     _mnemonicWordList = rust_wallet.mnemonicWordList();
     _controllers = List.generate(_wordCount, (_) => TextEditingController());
     _focusNodes = List.generate(_wordCount, (_) => FocusNode());
+    _setPrivacyOverlayController(widget.privacyOverlayController);
     _restoreMnemonic();
   }
 
   @override
+  void didUpdateWidget(covariant ImportSecretPassphraseScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.privacyOverlayController != widget.privacyOverlayController) {
+      _privacyOverlayController.removeListener(_handlePrivacySafetyChanged);
+      if (_ownsPrivacyOverlayController) {
+        _privacyOverlayController.dispose();
+      }
+      _setPrivacyOverlayController(widget.privacyOverlayController);
+    }
+  }
+
+  @override
   void dispose() {
+    _privacyOverlayController.removeListener(_handlePrivacySafetyChanged);
+    if (_ownsPrivacyOverlayController) {
+      _privacyOverlayController.dispose();
+    }
     for (final controller in _controllers) {
       controller.dispose();
     }
@@ -85,6 +105,35 @@ class _ImportSecretPassphraseScreenState
       _hasAllWords && rust_wallet.validateMnemonic(mnemonic: _mnemonic);
 
   bool get _canSubmit => !_isSubmitting && _isMnemonicValid;
+
+  bool get _autocompleteEnabled =>
+      _privacyOverlayController.isSafe && !_autocompleteSuppressedForPrivacy;
+
+  void _setPrivacyOverlayController(
+    SensitivePrivacyOverlayController? controller,
+  ) {
+    _ownsPrivacyOverlayController = controller == null;
+    _privacyOverlayController =
+        controller ?? SensitivePrivacyEnvironmentController();
+    _privacyOverlayController.addListener(_handlePrivacySafetyChanged);
+  }
+
+  void _handlePrivacySafetyChanged() {
+    if (!_privacyOverlayController.isSafe) {
+      _autocompleteSuppressedForPrivacy = true;
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _reactivateAutocomplete() {
+    if (!_privacyOverlayController.isSafe ||
+        !_autocompleteSuppressedForPrivacy) {
+      return;
+    }
+    setState(() {
+      _autocompleteSuppressedForPrivacy = false;
+    });
+  }
 
   void _restoreMnemonic() {
     final mnemonic = widget.args?.mnemonic;
@@ -243,7 +292,7 @@ class _ImportSecretPassphraseScreenState
     return ImportOnboardingTrailingPane(
       overlay: SensitivePrivacyOverlay(
         sensitiveContentVisible: _hasEnteredMnemonicWords,
-        controller: widget.privacyOverlayController,
+        controller: _privacyOverlayController,
         child: const SizedBox.expand(),
       ),
       child: Column(
@@ -331,6 +380,9 @@ class _ImportSecretPassphraseScreenState
                                   controller: _controllers[index],
                                   focusNode: _focusNodes[index],
                                   wordList: _mnemonicWordList,
+                                  autocompleteEnabled: _autocompleteEnabled,
+                                  onAutocompleteReactivationRequested:
+                                      _reactivateAutocomplete,
                                   destructive:
                                       _showValidationError &&
                                       _controllers[index].text
@@ -398,6 +450,8 @@ class _MnemonicWordCell extends StatefulWidget {
     required this.onMoveNext,
     required this.onMovePrevious,
     required this.onSuggestionSelected,
+    required this.autocompleteEnabled,
+    required this.onAutocompleteReactivationRequested,
     this.destructive = false,
     this.autofocus = false,
   });
@@ -411,6 +465,8 @@ class _MnemonicWordCell extends StatefulWidget {
   final bool Function() onMoveNext;
   final bool Function() onMovePrevious;
   final ValueChanged<String> onSuggestionSelected;
+  final bool autocompleteEnabled;
+  final VoidCallback onAutocompleteReactivationRequested;
   final bool destructive;
   final bool autofocus;
 
@@ -495,16 +551,42 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
     _pendingShellTapGlobalPosition = details.globalPosition;
   }
 
+  void _requestAutocompleteReactivation() {
+    widget.onAutocompleteReactivationRequested();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.autocompleteEnabled) return;
+      _refreshAutocompleteOptions();
+    });
+  }
+
+  void _refreshAutocompleteOptions() {
+    final value = widget.controller.value;
+    final text = value.text;
+    if (text.isEmpty || _optionsForText(text).isEmpty) return;
+
+    // RawAutocomplete only recomputes options when the text value changes.
+    widget.controller.value = value.copyWith(
+      text: '$text ',
+      selection: TextSelection.collapsed(offset: text.length + 1),
+      composing: TextRange.empty,
+    );
+    widget.controller.value = value;
+  }
+
   void _requestFocusFromShell(TextStyle valueStyle) {
     final globalPosition = _pendingShellTapGlobalPosition;
     _pendingShellTapGlobalPosition = null;
     if (globalPosition == null) return;
-    if (_positionIsInsideTextFieldRegion(globalPosition)) return;
+    if (_positionIsInsideTextFieldRegion(globalPosition)) {
+      _requestAutocompleteReactivation();
+      return;
+    }
 
     final selection = _selectionForShellPointer(globalPosition, valueStyle);
     if (!widget.focusNode.hasFocus) {
       widget.focusNode.requestFocus();
     }
+    _requestAutocompleteReactivation();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !widget.focusNode.hasFocus) return;
       final offset = selection.baseOffset.clamp(
@@ -516,6 +598,8 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
   }
 
   List<String> _optionsForText(String rawValue) {
+    if (!widget.autocompleteEnabled) return const <String>[];
+
     final prefix = rawValue.trim().toLowerCase();
     if (prefix.isEmpty || prefix.contains(RegExp(r'\s'))) {
       return const <String>[];
@@ -739,32 +823,39 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                                       'import_mnemonic_first_word_field',
                                     )
                                   : null,
-                              child: TextField(
-                                key: _textFieldRegionKey,
-                                controller: controller,
-                                focusNode: focusNode,
-                                autofocus: widget.autofocus,
-                                keyboardType: TextInputType.text,
-                                textInputAction: TextInputAction.next,
-                                autocorrect: false,
-                                enableSuggestions: false,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.allow(
-                                    RegExp(r'[A-Za-z\s]'),
+                              child: Listener(
+                                behavior: HitTestBehavior.translucent,
+                                onPointerDown: (_) =>
+                                    _requestAutocompleteReactivation(),
+                                child: TextField(
+                                  key: _textFieldRegionKey,
+                                  controller: controller,
+                                  focusNode: focusNode,
+                                  autofocus: widget.autofocus,
+                                  keyboardType: TextInputType.text,
+                                  textInputAction: TextInputAction.next,
+                                  autocorrect: false,
+                                  enableSuggestions: false,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[A-Za-z\s]'),
+                                    ),
+                                  ],
+                                  style: valueStyle,
+                                  cursorColor: colors.text.accent,
+                                  selectAllOnFocus: false,
+                                  decoration: InputDecoration.collapsed(
+                                    hintText: 'Word',
+                                    hintStyle: AppTypography.labelLarge
+                                        .copyWith(color: colors.text.muted),
                                   ),
-                                ],
-                                style: valueStyle,
-                                cursorColor: colors.text.accent,
-                                selectAllOnFocus: false,
-                                decoration: InputDecoration.collapsed(
-                                  hintText: 'Word',
-                                  hintStyle: AppTypography.labelLarge.copyWith(
-                                    color: colors.text.muted,
+                                  onChanged: (value) {
+                                    _requestAutocompleteReactivation();
+                                    widget.onChanged(value);
+                                  },
+                                  onSubmitted: (_) => _handleTextSubmitted(
+                                    onAutocompleteSubmitted,
                                   ),
-                                ),
-                                onChanged: widget.onChanged,
-                                onSubmitted: (_) => _handleTextSubmitted(
-                                  onAutocompleteSubmitted,
                                 ),
                               ),
                             ),
@@ -797,6 +888,10 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
           width: _suggestionWidth,
           height: _fieldHeight,
           child: RawAutocomplete<String>(
+            key: ValueKey(
+              'import_mnemonic_autocomplete_${widget.index}_'
+              '${widget.autocompleteEnabled}',
+            ),
             textEditingController: widget.controller,
             focusNode: widget.focusNode,
             displayStringForOption: (word) => word,
