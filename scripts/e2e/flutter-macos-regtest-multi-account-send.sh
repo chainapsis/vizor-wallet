@@ -54,7 +54,6 @@ echo "running Flutter macOS multi-account send integration test"
 fvm flutter test \
   integration_test/regtest_multi_account_send_test.dart \
   -d "$FLUTTER_DEVICE" \
-  --dart-define=ZCASH_E2E_NETWORK=regtest \
+  --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
-  --dart-define=ZCASH_E2E_ZCASHD_RPC_URL="$ZCASHD_RPC_URL" \
-  --dart-define=ZCASH_USE_E2E_STORAGE=true
+  --dart-define=ZCASH_E2E_ZCASHD_RPC_URL="$ZCASHD_RPC_URL"

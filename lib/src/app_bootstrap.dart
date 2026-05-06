@@ -21,7 +21,6 @@ const _networkKey = 'zcash_wallet_network';
 const _backgroundSyncChannel = MethodChannel(
   'com.zcash.wallet/background_sync',
 );
-const _e2eNetworkOverride = String.fromEnvironment('ZCASH_E2E_NETWORK');
 const _e2eLightwalletdUrlOverride = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
 );
@@ -62,8 +61,8 @@ class AppBootstrapState {
     initialLocation: '/welcome',
     initialAccountState: AccountState(),
     initialSyncSnapshot: AppSyncSnapshot.empty,
-    network: 'main',
-    rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+    network: kZcashDefaultNetworkName,
+    rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
     themeMode: ThemeMode.system,
     privacyModeEnabled: false,
     isPasswordConfigured: false,
@@ -167,7 +166,9 @@ Future<AppBootstrapState> loadAppBootstrap() async {
     } catch (e) {
       log('bootstrap: failed to recover password rotation: $e');
     }
-    final network = await storage.readString(_networkKey) ?? 'main';
+    final network = resolveStoredOrDefaultZcashNetworkName(
+      await storage.readString(_networkKey),
+    );
     final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
     await _seedNativeRpcEndpointMirror(rpcEndpointConfig);
     final themeMode = await _readThemeMode(storage);
@@ -265,26 +266,19 @@ Future<AppBootstrapState> loadAppBootstrap() async {
 }
 
 Future<void> _applyE2eBootstrapOverrides(AppSecureStore storage) async {
-  final network = _e2eNetworkOverride.trim();
   final lightwalletdUrl = _e2eLightwalletdUrlOverride.trim();
-  if (network.isEmpty && lightwalletdUrl.isEmpty) return;
+  if (lightwalletdUrl.isEmpty) return;
 
   if (!kDebugMode) {
     log('bootstrap: ignoring E2E overrides outside debug mode');
     return;
   }
 
-  if (network.isNotEmpty) {
-    await storage.writeString(_networkKey, network);
-  }
-  if (lightwalletdUrl.isNotEmpty) {
-    await storage.writePlain(kRpcEndpointUrlKey, lightwalletdUrl);
-    await storage.writePlain(kRpcEndpointPresetKey, kCustomRpcEndpointPresetId);
-  }
+  await storage.writePlain(kRpcEndpointUrlKey, lightwalletdUrl);
+  await storage.writePlain(kRpcEndpointPresetKey, kCustomRpcEndpointPresetId);
   log(
-    'bootstrap: applied E2E overrides '
-    'network=${network.isEmpty ? "(unchanged)" : network}, '
-    'lightwalletd=${lightwalletdUrl.isEmpty ? "(unchanged)" : lightwalletdUrl}',
+    'bootstrap: applied E2E lightwalletd override '
+    'lightwalletd=$lightwalletdUrl',
   );
 }
 

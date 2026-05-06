@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
+import '../core/config/network_config.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/wallet.dart' as rust_wallet;
@@ -102,7 +103,7 @@ class ReceiveAddressService {
 
   String get _network {
     final network = _ref.read(appBootstrapProvider).network;
-    return network.isEmpty ? 'main' : network;
+    return network.isEmpty ? kZcashDefaultNetworkName : network;
   }
 
   Future<T> _withDatabaseLockRetry<T>({

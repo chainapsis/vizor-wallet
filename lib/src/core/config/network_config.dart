@@ -62,3 +62,42 @@ enum ZcashNetwork {
     regtest => 1,
   };
 }
+
+const kZcashDefaultNetworkEnvKey = 'ZCASH_DEFAULT_NETWORK';
+const kZcashDefaultNetworkRaw = String.fromEnvironment(
+  kZcashDefaultNetworkEnvKey,
+  defaultValue: 'main',
+);
+
+final String kZcashDefaultNetworkName = normalizeZcashNetworkName(
+  kZcashDefaultNetworkRaw,
+);
+
+String normalizeZcashNetworkName(String networkName) {
+  return switch (networkName.trim()) {
+    'test' => 'test',
+    'regtest' => 'regtest',
+    _ => 'main',
+  };
+}
+
+String resolveStoredOrDefaultZcashNetworkName(String? storedNetworkName) {
+  final stored = storedNetworkName?.trim();
+  if (stored == null || stored.isEmpty) return kZcashDefaultNetworkName;
+  return normalizeZcashNetworkName(stored);
+}
+
+ZcashNetwork zcashNetworkFromName(String networkName) {
+  return switch (normalizeZcashNetworkName(networkName)) {
+    'test' => ZcashNetwork.testnet,
+    'regtest' => ZcashNetwork.regtest,
+    _ => ZcashNetwork.mainnet,
+  };
+}
+
+String secureStoreServiceForNetwork(String networkName) {
+  final network = normalizeZcashNetworkName(networkName);
+  return network == 'main'
+      ? 'com.keplr.vizor.secure_store'
+      : 'com.keplr.vizor.$network.secure_store';
+}

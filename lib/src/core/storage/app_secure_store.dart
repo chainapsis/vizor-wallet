@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:cryptography/cryptography.dart';
-import 'package:flutter/foundation.dart'
-    show debugPrint, kDebugMode, visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../config/network_config.dart';
 import '../security/password_policy.dart';
 
 const kWalletDbNameKey = 'zcash_wallet_db_name';
@@ -20,12 +20,6 @@ const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
 const _passwordRotationInProgressKey = 'zcash_rotation_in_progress';
 const _passwordRotationRollbackFailedKind = 'rollbackFailed';
 const _accountMnemonicKeyPrefix = 'zcash_account_mnemonic_';
-const _secureStoreService = 'com.keplr.vizor.secure_store';
-const _e2eSecureStoreService = 'com.keplr.vizor.secure_store.e2e';
-const _useE2eStorage = bool.fromEnvironment('ZCASH_USE_E2E_STORAGE');
-
-@visibleForTesting
-const kE2eWalletDbName = 'zcash_wallet_e2e.db';
 
 class PasswordRotationRecoveryFailedException implements Exception {
   const PasswordRotationRecoveryFailedException();
@@ -36,35 +30,25 @@ class PasswordRotationRecoveryFailedException implements Exception {
 }
 
 class AppSecureStore {
-  AppSecureStore._({
-    FlutterSecureStorage? storage,
-    bool useE2eStorage = _useE2eStorage,
-  }) : isE2eStorage = kDebugMode && useE2eStorage,
-       _storage =
-           storage ??
-           _defaultStorage(useE2eStorage: kDebugMode && useE2eStorage);
+  AppSecureStore._({FlutterSecureStorage? storage})
+    : _storage = storage ?? _defaultStorage();
 
   @visibleForTesting
-  AppSecureStore.testing({
-    required FlutterSecureStorage storage,
-    bool useE2eStorage = false,
-  }) : isE2eStorage = useE2eStorage,
-       _storage = storage;
+  AppSecureStore.testing({required FlutterSecureStorage storage})
+    : _storage = storage;
 
   static final AppSecureStore instance = AppSecureStore._();
 
-  static FlutterSecureStorage _defaultStorage({required bool useE2eStorage}) {
-    final service = useE2eStorage
-        ? _e2eSecureStoreService
-        : _secureStoreService;
+  static FlutterSecureStorage _defaultStorage() {
+    final service = secureStoreServiceForNetwork(kZcashDefaultNetworkName);
     return FlutterSecureStorage(
       iOptions: IOSOptions(
         accountName: service,
         accessibility: KeychainAccessibility.first_unlock,
       ),
-      aOptions: useE2eStorage
-          ? AndroidOptions(sharedPreferencesName: service)
-          : AndroidOptions.defaultOptions,
+      aOptions: kZcashDefaultNetworkName == ZcashNetwork.mainnet.name
+          ? AndroidOptions.defaultOptions
+          : AndroidOptions(sharedPreferencesName: service),
       mOptions: MacOsOptions(
         accountName: service,
         accessibility: KeychainAccessibility.first_unlock,
@@ -72,8 +56,6 @@ class AppSecureStore {
       ),
     );
   }
-
-  final bool isE2eStorage;
 
   static final Cipher _cipher = AesGcm.with256bits();
   static final Pbkdf2 _kdf = Pbkdf2(
@@ -90,11 +72,6 @@ class AppSecureStore {
   bool get hasSessionPassword => _sessionPassword != null;
 
   Future<String> ensureWalletDbName() async {
-    if (isE2eStorage) {
-      await writePlain(kWalletDbNameKey, kE2eWalletDbName);
-      return kE2eWalletDbName;
-    }
-
     final existing = await readPlain(kWalletDbNameKey);
     if (existing != null && existing.isNotEmpty) {
       return existing;

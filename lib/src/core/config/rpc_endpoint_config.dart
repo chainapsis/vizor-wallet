@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 import 'network_config.dart';
+export 'network_config.dart';
 
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
@@ -163,14 +164,6 @@ RpcEndpointConfig defaultRpcEndpointConfig(String networkName) {
     lightwalletdUrl: preset.url,
     presetId: preset.id,
   );
-}
-
-ZcashNetwork zcashNetworkFromName(String networkName) {
-  return switch (networkName) {
-    'test' => ZcashNetwork.testnet,
-    'regtest' => ZcashNetwork.regtest,
-    _ => ZcashNetwork.mainnet,
-  };
 }
 
 RpcEndpointPreset? findRpcEndpointPresetById(

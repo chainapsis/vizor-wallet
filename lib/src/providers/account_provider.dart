@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
+import '../core/config/network_config.dart';
 import '../core/profile_pictures.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
@@ -492,7 +493,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   Future<String> _getNetwork() async {
-    return await _storage.readString(_networkKey) ?? 'main';
+    return resolveStoredOrDefaultZcashNetworkName(
+      await _storage.readString(_networkKey),
+    );
   }
 
   Future<void> _deleteExistingDb(String dbPath) async {
