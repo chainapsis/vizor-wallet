@@ -314,6 +314,7 @@ struct ActivitySummary {
 
 struct ClassifiedTx {
     info: TransactionInfo,
+    sort_pending_rank: u8,
     sort_timestamp: u64,
     sort_mined_height: u64,
     tx_index: i64,
@@ -370,8 +371,9 @@ pub fn get_transaction_history(
     });
 
     visible.sort_by(|a, b| {
-        b.sort_timestamp
-            .cmp(&a.sort_timestamp)
+        b.sort_pending_rank
+            .cmp(&a.sort_pending_rank)
+            .then_with(|| b.sort_timestamp.cmp(&a.sort_timestamp))
             .then_with(|| b.sort_mined_height.cmp(&a.sort_mined_height))
             .then_with(|| b.tx_index.cmp(&a.tx_index))
             .then_with(|| b.info.txid_hex.cmp(&a.info.txid_hex))
@@ -791,7 +793,7 @@ fn detail_includes_output(
         "sent" => {
             !base.is_shielding && from_own && (!to_own || is_user_visible_self_output(output))
         }
-        "received" => {
+        "received" | "receiving" => {
             !base.is_shielding && to_own && (!from_own || is_user_visible_self_output(output))
         }
         _ => false,
@@ -901,7 +903,7 @@ fn classify_history_tx(base: &TxBase, summary: &ActivitySummary) -> Vec<Classifi
     if summary.received.amount > 0 {
         rows.push(build_classified_tx(
             base,
-            "received",
+            receiving_tx_kind(base),
             summary.received.amount,
             summary.received.display_pool(),
             summary.received.has_transparent,
@@ -933,7 +935,7 @@ fn classify_history_tx(base: &TxBase, summary: &ActivitySummary) -> Vec<Classifi
         if base.account_balance_delta > 0 {
             rows.push(build_classified_tx(
                 base,
-                "received",
+                receiving_tx_kind(base),
                 base.account_balance_delta as u64,
                 "unknown",
                 false,
@@ -945,6 +947,14 @@ fn classify_history_tx(base: &TxBase, summary: &ActivitySummary) -> Vec<Classifi
     }
 
     rows
+}
+
+fn receiving_tx_kind(base: &TxBase) -> &'static str {
+    if base.mined_height.is_none() && !base.expired_unmined {
+        "receiving"
+    } else {
+        "received"
+    }
 }
 
 fn build_classified_tx(
@@ -970,6 +980,7 @@ fn build_classified_tx(
             display_pool: display_pool.to_string(),
             created_time: base.created_time,
         },
+        sort_pending_rank: u8::from(base.mined_height.is_none() && !base.expired_unmined),
         sort_timestamp,
         sort_mined_height: base.mined_height.unwrap_or(0) as u64,
         tx_index: base.tx_index,
@@ -2102,6 +2113,57 @@ mod tests {
     }
 
     #[test]
+    fn detail_receiving_row_uses_received_outputs() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD6);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            None,
+            1,
+            Some(1_000_100),
+            2_000_000,
+            0,
+            2_000_000,
+            false,
+            None,
+        );
+        insert_output_with_address_and_memo(
+            &db,
+            &txid,
+            3,
+            None,
+            Some(account),
+            2_000_000,
+            false,
+            Some("u-my-pending-receiver"),
+            Some(0),
+            Some(b"pending incoming memo"),
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "receiving",
+        )
+        .unwrap();
+
+        assert_eq!(got.tx_kind, "receiving");
+        assert_eq!(got.primary_address, None);
+        assert_eq!(got.memo.as_deref(), Some("pending incoming memo"));
+        assert_eq!(got.outputs.len(), 1);
+        assert_eq!(
+            got.outputs[0].address.as_deref(),
+            Some("u-my-pending-receiver")
+        );
+    }
+
+    #[test]
     fn detail_separates_same_account_self_send_by_kind() {
         let db = fresh_history_db();
         let account = test_account_uuid();
@@ -2336,6 +2398,58 @@ mod tests {
         assert_eq!(limited.len(), 1);
         assert_eq!(limited[0].txid_hex, hex::encode(newer_self_send));
         assert_eq!(limited[0].tx_kind, "sent");
+    }
+
+    #[test]
+    fn history_prioritizes_unmined_receiving_rows() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let confirmed = fake_txid(0xE1);
+        let pending = fake_txid(0xE2);
+
+        insert_history_tx(
+            &db,
+            account,
+            &confirmed,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            1_000_000,
+            0,
+            1_000_000,
+            false,
+            Some("2026-04-28T16:32:00Z"),
+        );
+        insert_output(&db, &confirmed, 3, None, Some(account), 1_000_000, false);
+
+        insert_history_tx(
+            &db,
+            account,
+            &pending,
+            None,
+            0,
+            Some(1_000_100),
+            2_000_000,
+            0,
+            2_000_000,
+            false,
+            None,
+        );
+        insert_output(&db, &pending, 3, None, Some(account), 2_000_000, false);
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            Some(1),
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(pending));
+        assert_eq!(got[0].tx_kind, "receiving");
+        assert_eq!(got[0].mined_height, 0);
+        assert_eq!(got[0].display_amount, 2_000_000);
     }
 
     #[test]

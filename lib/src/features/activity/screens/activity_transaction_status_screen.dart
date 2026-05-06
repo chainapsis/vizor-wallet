@@ -161,7 +161,8 @@ class _ActivityTransactionStatusScreenState
     final normalized = txidHex.toLowerCase();
     if (txKind != null) {
       for (final tx in transactions) {
-        if (tx.txidHex.toLowerCase() == normalized && tx.txKind == txKind) {
+        if (tx.txidHex.toLowerCase() == normalized &&
+            _txKindMatches(txKind, tx.txKind)) {
           return tx;
         }
       }
@@ -181,7 +182,8 @@ class _ActivityTransactionStatusScreenState
         widget.args.txKind;
     if (txKind != null) {
       for (final tx in sync?.recentTransactions ?? const []) {
-        if (tx.txidHex.toLowerCase() == txid && tx.txKind == txKind) {
+        if (tx.txidHex.toLowerCase() == txid &&
+            _txKindMatches(txKind, tx.txKind)) {
           return [
             tx.txidHex,
             tx.minedHeight,
@@ -205,6 +207,12 @@ class _ActivityTransactionStatusScreenState
       }
     }
     return '';
+  }
+
+  bool _txKindMatches(String expected, String actual) {
+    if (expected == actual) return true;
+    return (expected == 'receiving' && actual == 'received') ||
+        (expected == 'received' && actual == 'receiving');
   }
 
   Future<void> _copyTransactionHash() async {
@@ -315,7 +323,7 @@ class _ActivityTransactionStatusScreenState
     if (detail.txidHex.toLowerCase() != tx.txidHex.toLowerCase()) {
       return null;
     }
-    if (detail.txKind != tx.txKind) return null;
+    if (!_txKindMatches(detail.txKind, tx.txKind)) return null;
     return detail;
   }
 
@@ -386,7 +394,7 @@ class _ActivityTransactionStatusScreenState
         compactAddress: compactAddress,
       );
     }
-    if (tx?.txKind == 'received' &&
+    if ((tx?.txKind == 'received' || tx?.txKind == 'receiving') &&
         primaryAddress != null &&
         primaryAddress.isNotEmpty) {
       return _addressBlock(

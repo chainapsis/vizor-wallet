@@ -112,10 +112,12 @@ ActivityRowData buildTransactionActivityRow({
   final kind = transaction.txKind;
   final amount = transaction.displayAmount;
   final isReceived = kind == 'received';
+  final isReceiving = kind == 'receiving';
   final isSent = kind == 'sent';
   final isShielded = kind == 'shielded';
+  final isInbound = isReceived || isReceiving;
   final signedAmount = isSent ? -amount : amount;
-  final subtitle = isReceived || isSent
+  final subtitle = isInbound || isSent
       ? _poolLabel(transaction.displayPool)
       : null;
 
@@ -142,7 +144,7 @@ ActivityRowData buildTransactionActivityRow({
     amountIconColor: isFailed ? colors.icon.regular : null,
     amountColor: isFailed
         ? colors.text.accent
-        : isReceived
+        : isInbound
         ? colors.text.brandCrimson
         : colors.text.accent,
     statusText: isFailed
@@ -201,6 +203,7 @@ String formatActivityTimestamp(DateTime? timestamp) {
 
 String _txTitle(String kind) {
   return switch (kind) {
+    'receiving' => 'Receiving',
     'received' => 'Received',
     'sent' => 'Sent',
     'shielded' => 'Shielded',
@@ -210,6 +213,7 @@ String _txTitle(String kind) {
 
 String _txIcon(String kind) {
   return switch (kind) {
+    'receiving' => AppIcons.arrowDownCircle,
     'received' => AppIcons.arrowDownCircle,
     'sent' => AppIcons.plane,
     'shielded' => AppIcons.shieldKeyholeOutline,

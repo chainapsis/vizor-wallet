@@ -99,6 +99,44 @@ void main() {
     expect(find.text('-1.00 ZEC'), findsOneWidget);
   });
 
+  testWidgets('pending inbound activity rows render as receiving', (
+    tester,
+  ) async {
+    late final List<ActivityRowData> rows;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              rows = buildActivityRows(
+                context: context,
+                sync: SyncState(totalBalance: BigInt.zero),
+                transactions: [
+                  _tx(
+                    txidHex: 'receiving',
+                    kind: 'receiving',
+                    amount: BigInt.from(123450000),
+                    minedHeight: BigInt.zero,
+                  ),
+                ],
+              );
+              return ActivityTable(rows: rows);
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(rows[1].title, 'Receiving');
+    expect(rows[1].amountText, '+1.23 ZEC');
+    expect(rows[1].statusText, 'In progress');
+    expect(rows[1].leadingIconName, AppIcons.arrowDownCircle);
+    expect(find.text('Receiving'), findsOneWidget);
+    expect(find.text('In progress'), findsOneWidget);
+  });
+
   testWidgets('activity rows hide asset amounts with a fixed mask', (
     tester,
   ) async {
@@ -207,11 +245,13 @@ rust_sync.TransactionInfo _tx({
   required String txidHex,
   required String kind,
   required BigInt amount,
+  BigInt? minedHeight,
+  bool expiredUnmined = false,
 }) {
   return rust_sync.TransactionInfo(
     txidHex: txidHex,
-    minedHeight: BigInt.one,
-    expiredUnmined: false,
+    minedHeight: minedHeight ?? BigInt.one,
+    expiredUnmined: expiredUnmined,
     accountBalanceDelta: 0,
     fee: BigInt.zero,
     blockTime: BigInt.from(1800000000),
