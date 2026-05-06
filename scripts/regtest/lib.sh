@@ -176,6 +176,38 @@ PY
   return 1
 }
 
+wait_for_zaddr_balance() {
+  local address="$1"
+  local amount="$2"
+
+  for _ in $(seq 1 60); do
+    local utxos
+    utxos="$(zcash_cli z_listunspent 1 9999999 false "[\"$address\"]")"
+    if python3 - "$utxos" "$amount" <<'PY'
+from decimal import Decimal
+import json
+import sys
+
+utxos = json.loads(sys.argv[1])
+balance = Decimal("0")
+for utxo in utxos:
+    if "amountZat" in utxo:
+        balance += Decimal(int(utxo["amountZat"])) / Decimal(100_000_000)
+    else:
+        balance += Decimal(str(utxo.get("amount", "0")))
+amount = Decimal(sys.argv[2])
+raise SystemExit(0 if balance >= amount else 1)
+PY
+    then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Timed out waiting for shielded faucet balance at $address" >&2
+  return 1
+}
+
 extract_opid() {
   python3 - "$1" <<'PY'
 import json

@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional
 
 
-def run_command(repo_root: Path, args: List[str], timeout: int) -> str:
+def run_command(
+    repo_root: Path,
+    args: List[str],
+    timeout: int,
+    env: Optional[Dict[str, str]] = None,
+) -> str:
+    command_env = None
+    if env is not None:
+        command_env = os.environ.copy()
+        command_env.update(env)
+
     result = subprocess.run(
         args,
         cwd=repo_root,
@@ -15,6 +26,7 @@ def run_command(repo_root: Path, args: List[str], timeout: int) -> str:
         capture_output=True,
         timeout=timeout,
         check=False,
+        env=command_env,
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -27,6 +39,7 @@ def run_command(repo_root: Path, args: List[str], timeout: int) -> str:
 
 class DriverHandler(BaseHTTPRequestHandler):
     repo_root: Path
+    prepared_faucet_zaddr: str
 
     def do_GET(self) -> None:
         if self.path == "/health":
@@ -44,6 +57,25 @@ class DriverHandler(BaseHTTPRequestHandler):
                     self.repo_root,
                     ["scripts/regtest/fund-wallet-unmined.sh", address, amount],
                     timeout=300,
+                )
+                txid = output.splitlines()[-1].strip() if output else ""
+                if not txid:
+                    raise RuntimeError("fund-wallet-unmined.sh returned no txid")
+                self.respond(200, {"txid": txid})
+                return
+
+            if self.path == "/fund-unmined-prepared":
+                if not self.prepared_faucet_zaddr:
+                    raise RuntimeError("No prepared faucet zaddr was configured")
+                address = str(payload["address"])
+                amount = str(payload.get("amount", "0.25"))
+                output = run_command(
+                    self.repo_root,
+                    ["scripts/regtest/fund-wallet-unmined.sh", address, amount],
+                    timeout=120,
+                    env={
+                        "REGTEST_UNMINED_FAUCET_ZADDR": self.prepared_faucet_zaddr,
+                    },
                 )
                 txid = output.splitlines()[-1].strip() if output else ""
                 if not txid:
@@ -87,10 +119,12 @@ def main() -> None:
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--prepared-faucet-zaddr", default="")
     args = parser.parse_args()
 
     handler = DriverHandler
     handler.repo_root = Path(args.repo_root).resolve()
+    handler.prepared_faucet_zaddr = args.prepared_faucet_zaddr
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(f"[mempool-driver] listening on http://{args.host}:{args.port}")
     server.serve_forever()

@@ -11,48 +11,19 @@ wait_for_wallet_spend_ready
 wait_for_lightwalletd
 ensure_faucet_state
 
-wait_for_zaddr_balance() {
-  local address="$1"
-  local amount="$2"
+faucet_zaddr="${REGTEST_UNMINED_FAUCET_ZADDR:-}"
+if [[ -z "$faucet_zaddr" ]]; then
+  sender_address="$(faucet_transparent_sender)"
+  faucet_zaddr="$(zcash_cli z_getnewaddress sapling)"
 
-  for _ in $(seq 1 60); do
-    local utxos
-    utxos="$(zcash_cli z_listunspent 1 9999999 false "[\"$address\"]")"
-    if python3 - "$utxos" "$amount" <<'PY'
-from decimal import Decimal
-import json
-import sys
+  shield_opid="$(extract_opid "$(zcash_cli z_shieldcoinbase "$sender_address" "$faucet_zaddr" 0.0001 1)")"
+  wait_for_operation "$shield_opid" >/dev/null
 
-utxos = json.loads(sys.argv[1])
-balance = Decimal("0")
-for utxo in utxos:
-    if "amountZat" in utxo:
-        balance += Decimal(int(utxo["amountZat"])) / Decimal(100_000_000)
-    else:
-        balance += Decimal(str(utxo.get("amount", "0")))
-amount = Decimal(sys.argv[2])
-raise SystemExit(0 if balance >= amount else 1)
-PY
-    then
-      return 0
-    fi
-    sleep 1
-  done
-
-  echo "Timed out waiting for shielded faucet balance at $address" >&2
-  return 1
-}
-
-sender_address="$(faucet_transparent_sender)"
-faucet_zaddr="$(zcash_cli z_getnewaddress sapling)"
-
-shield_opid="$(extract_opid "$(zcash_cli z_shieldcoinbase "$sender_address" "$faucet_zaddr" 0.0001 1)")"
-wait_for_operation "$shield_opid" >/dev/null
-
-# Confirm only the faucet shielding transaction. The final z_sendmany below is
-# intentionally left unmined so wallet mempool observers can discover it.
-zcash_cli generate 20 >/dev/null
-wait_for_lightwalletd_tip "$(zcash_cli getblockcount)"
+  # Confirm only the faucet shielding transaction. The final z_sendmany below is
+  # intentionally left unmined so wallet mempool observers can discover it.
+  zcash_cli generate 20 >/dev/null
+  wait_for_lightwalletd_tip "$(zcash_cli getblockcount)"
+fi
 wait_for_zaddr_balance "$faucet_zaddr" "$requested_amount"
 
 recipients="$(python3 - "$destination" "$requested_amount" <<'PY'

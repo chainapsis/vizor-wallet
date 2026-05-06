@@ -113,6 +113,36 @@ fn batch_size_for_range(base_batch_size: u32, start: BlockHeight, range_end: Blo
     }
 }
 
+fn effective_base_batch_size(default_batch_size: u32) -> u32 {
+    #[cfg(debug_assertions)]
+    {
+        if let Ok(raw) = std::env::var("ZCASH_E2E_SYNC_BATCH_SIZE") {
+            if let Ok(parsed) = raw.parse::<u32>() {
+                if parsed > 0 {
+                    return parsed.min(default_batch_size);
+                }
+            }
+        }
+    }
+
+    default_batch_size
+}
+
+#[cfg(debug_assertions)]
+async fn maybe_sleep_for_e2e_sync_batch_delay() {
+    let Ok(raw) = std::env::var("ZCASH_E2E_SYNC_BATCH_DELAY_MS") else {
+        return;
+    };
+    let Ok(parsed) = raw.parse::<u64>() else {
+        return;
+    };
+    if parsed == 0 {
+        return;
+    }
+
+    tokio::time::sleep(std::time::Duration::from_millis(parsed.min(5_000))).await;
+}
+
 fn target_percentage_after_blocks(initial_total: u64, remaining: u64, blocks: u64) -> f64 {
     if initial_total == 0 {
         1.0
@@ -312,11 +342,12 @@ async fn run_sync_impl(
     desired_mode: &AtomicU8,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
-    let base_batch_size = if running_mode == 2 {
+    let default_batch_size = if running_mode == 2 {
         BATCH_SIZE_BACKGROUND
     } else {
         BATCH_SIZE_FOREGROUND
     };
+    let base_batch_size = effective_base_batch_size(default_batch_size);
     log::info!(
         "[{}] sync: starting (mode={}, base_batch={})",
         elapsed(),
@@ -1018,6 +1049,8 @@ async fn run_sync_impl(
             initial_total - remaining
         );
         progress_fn(progress);
+        #[cfg(debug_assertions)]
+        maybe_sleep_for_e2e_sync_batch_delay().await;
 
         // Prefetch: if the current range still has blocks beyond
         // `end`, kick off a background download of the next batch

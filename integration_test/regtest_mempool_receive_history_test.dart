@@ -20,6 +20,10 @@ const _driverUrl = String.fromEnvironment(
   'ZCASH_E2E_DRIVER_URL',
   defaultValue: 'http://127.0.0.1:39067',
 );
+const _testMode = String.fromEnvironment(
+  'ZCASH_E2E_MEMPOOL_TEST_MODE',
+  defaultValue: 'steady',
+);
 const _firstMnemonic =
     'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
     'roast miracle ethics found child scare curve congress renew salute pig '
@@ -33,80 +37,155 @@ void main() {
     await initializeZcashWalletRuntime();
   });
 
-  testWidgets(
-    'shows shielded receives from the mempool before mining',
-    (tester) async {
-      addTearDown(() async {
+  if (_testMode == 'steady') {
+    testWidgets(
+      'shows shielded receives from the mempool before mining',
+      (tester) async {
+        addTearDown(() async {
+          await _cleanupE2eWalletState();
+        });
+
         await _cleanupE2eWalletState();
-      });
 
-      await _cleanupE2eWalletState();
+        _log('pumping app');
+        await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
 
-      _log('pumping app');
-      await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+        await _importFirstWallet(tester);
+        await _waitForMempoolObserver();
 
-      await _importFirstWallet(tester);
-      await _waitForMempoolObserver();
+        _log('copying first account shielded address');
+        final firstAddress = await _copyActiveShieldedAddress(tester);
+        expect(firstAddress, startsWith('uregtest1'));
+        final firstAccountUuid = await _accountUuidAtOrder(0);
+        await _openWallet(tester);
 
-      _log('copying first account shielded address');
-      final firstAddress = await _copyActiveShieldedAddress(tester);
-      expect(firstAddress, startsWith('uregtest1'));
-      final firstAccountUuid = await _accountUuidAtOrder(0);
-      await _openWallet(tester);
+        final txid = await _fundUnmined(firstAddress, '0.25');
+        _log('external unmined funding txid=$txid');
+        await _waitForHistoryTx(
+          tester,
+          accountUuid: firstAccountUuid,
+          txidHex: txid,
+          txKind: 'receiving',
+          displayAmount: BigInt.from(25_000_000),
+        );
+        await _expectActivityRow(
+          tester,
+          const ValueKey('home_activity_row_1'),
+          title: 'Receiving',
+          amount: '+0.25 ZEC',
+          status: 'In progress',
+          timeout: const Duration(minutes: 4),
+        );
 
-      final txid = await _fundUnmined(firstAddress, '0.25');
-      _log('external unmined funding txid=$txid');
-      await _waitForHistoryTx(
-        tester,
-        accountUuid: firstAccountUuid,
-        txidHex: txid,
-        txKind: 'receiving',
-        displayAmount: BigInt.from(25_000_000),
-      );
-      await _expectActivityRow(
-        tester,
-        const ValueKey('home_activity_row_1'),
-        title: 'Receiving',
-        amount: '+0.25 ZEC',
-        status: 'In progress',
-        timeout: const Duration(minutes: 4),
-      );
+        await _mineRegtestBlocks(10);
+        await _expectActivityRow(
+          tester,
+          const ValueKey('home_activity_row_1'),
+          title: 'Received',
+          amount: '+0.25 ZEC',
+          status: 'Completed',
+          timeout: const Duration(minutes: 4),
+        );
+        _expectNoActivityRow(
+          tester,
+          rowKeyPrefix: 'home_activity',
+          title: 'Receiving',
+          amount: '+0.25 ZEC',
+          status: 'In progress',
+        );
+        await _openActivity(tester);
+        await _expectActivityRow(
+          tester,
+          const ValueKey('activity_screen_row_1'),
+          title: 'Received',
+          amount: '+0.25 ZEC',
+          status: 'Completed',
+          timeout: const Duration(minutes: 2),
+        );
+        _expectNoActivityRow(
+          tester,
+          rowKeyPrefix: 'activity_screen',
+          title: 'Receiving',
+          amount: '+0.25 ZEC',
+          status: 'In progress',
+        );
+      },
+      timeout: const Timeout(Duration(minutes: 10)),
+    );
+  }
 
-      await _mineRegtestBlocks(10);
-      await _expectActivityRow(
-        tester,
-        const ValueKey('home_activity_row_1'),
-        title: 'Received',
-        amount: '+0.25 ZEC',
-        status: 'Completed',
-        timeout: const Duration(minutes: 4),
-      );
-      _expectNoActivityRow(
-        tester,
-        rowKeyPrefix: 'home_activity',
-        title: 'Receiving',
-        amount: '+0.25 ZEC',
-        status: 'In progress',
-      );
-      await _openActivity(tester);
-      await _expectActivityRow(
-        tester,
-        const ValueKey('activity_screen_row_1'),
-        title: 'Received',
-        amount: '+0.25 ZEC',
-        status: 'Completed',
-        timeout: const Duration(minutes: 2),
-      );
-      _expectNoActivityRow(
-        tester,
-        rowKeyPrefix: 'activity_screen',
-        title: 'Receiving',
-        amount: '+0.25 ZEC',
-        status: 'In progress',
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+  if (_testMode == 'during-sync') {
+    testWidgets(
+      'shows shielded receives from the mempool while sync is running',
+      (tester) async {
+        addTearDown(() async {
+          await _cleanupE2eWalletState();
+        });
+
+        await _cleanupE2eWalletState();
+
+        _log('pumping app');
+        await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+
+        await _importFirstWallet(tester);
+        final firstAccountUuid = await _accountUuidAtOrder(0);
+        final firstAddress = await _unifiedAddressForAccount(firstAccountUuid);
+        expect(firstAddress, startsWith('uregtest1'));
+
+        await _waitForActiveSyncAndMempool(tester);
+        final beforeFunding = await _syncStatusSummary();
+        _log('sync active before external funding: $beforeFunding');
+
+        final txid = await _fundPreparedUnmined(firstAddress, '0.25');
+        _log('external prepared unmined funding txid=$txid');
+        await _expectForegroundSyncStillRunning();
+
+        await _waitForHistoryTx(
+          tester,
+          accountUuid: firstAccountUuid,
+          txidHex: txid,
+          txKind: 'receiving',
+          displayAmount: BigInt.from(25_000_000),
+        );
+        await _expectActivityRow(
+          tester,
+          const ValueKey('home_activity_row_1'),
+          title: 'Receiving',
+          amount: '+0.25 ZEC',
+          status: 'In progress',
+          timeout: const Duration(minutes: 4),
+        );
+
+        await _waitForForegroundSyncToFinish(tester);
+        await _expectActivityRow(
+          tester,
+          const ValueKey('home_activity_row_1'),
+          title: 'Receiving',
+          amount: '+0.25 ZEC',
+          status: 'In progress',
+          timeout: const Duration(minutes: 1),
+        );
+
+        await _mineRegtestBlocks(10);
+        await _expectActivityRow(
+          tester,
+          const ValueKey('home_activity_row_1'),
+          title: 'Received',
+          amount: '+0.25 ZEC',
+          status: 'Completed',
+          timeout: const Duration(minutes: 4),
+        );
+        _expectNoActivityRow(
+          tester,
+          rowKeyPrefix: 'home_activity',
+          title: 'Receiving',
+          amount: '+0.25 ZEC',
+          status: 'In progress',
+        );
+      },
+      timeout: const Timeout(Duration(minutes: 12)),
+    );
+  }
 }
 
 Future<void> _importFirstWallet(WidgetTester tester) async {
@@ -155,12 +234,34 @@ Future<String> _copyActiveShieldedAddress(WidgetTester tester) async {
   return address;
 }
 
+Future<String> _unifiedAddressForAccount(String accountUuid) async {
+  final dbPath = await getWalletDbPath();
+  return rust_wallet.getUnifiedAddress(
+    dbPath: dbPath,
+    network: _network,
+    accountUuid: accountUuid,
+  );
+}
+
 Future<String> _fundUnmined(String address, String amount) async {
   _log('requesting external unmined funding of $amount ZEC to $address');
   final response = await _postDriver('/fund-unmined', {
     'address': address,
     'amount': amount,
   }, timeout: const Duration(minutes: 5));
+  final txid = response['txid'] as String? ?? '';
+  if (txid.isEmpty) fail('E2E driver did not return a txid.');
+  return txid;
+}
+
+Future<String> _fundPreparedUnmined(String address, String amount) async {
+  _log(
+    'requesting prepared external unmined funding of $amount ZEC to $address',
+  );
+  final response = await _postDriver('/fund-unmined-prepared', {
+    'address': address,
+    'amount': amount,
+  }, timeout: const Duration(minutes: 2));
   final txid = response['txid'] as String? ?? '';
   if (txid.isEmpty) fail('E2E driver did not return a txid.');
   return txid;
@@ -232,6 +333,81 @@ Future<void> _waitForMempoolObserver() async {
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
   fail('Timed out waiting for mempool observer to run.');
+}
+
+Future<void> _waitForActiveSyncAndMempool(WidgetTester tester) async {
+  final deadline = DateTime.now().add(const Duration(minutes: 2));
+  var lastStatus = '<not read>';
+
+  while (DateTime.now().isBefore(deadline)) {
+    try {
+      lastStatus = await _syncStatusSummary();
+      if (rust_sync.isSyncRunning() &&
+          rust_sync.isMempoolObserverRunning() &&
+          await _isBehindChainTip()) {
+        return;
+      }
+    } catch (e) {
+      lastStatus = 'error: $e';
+    }
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+
+  fail(
+    'Timed out waiting for active sync and mempool observer. '
+    'Last status: $lastStatus, syncRunning=${rust_sync.isSyncRunning()}, '
+    'mempoolRunning=${rust_sync.isMempoolObserverRunning()}',
+  );
+}
+
+Future<void> _expectForegroundSyncStillRunning() async {
+  if (rust_sync.isSyncRunning()) return;
+  fail(
+    'Expected foreground sync to still be running when prepared mempool tx '
+    'was submitted. Last status: ${await _syncStatusSummary()}, '
+    'mempoolRunning=${rust_sync.isMempoolObserverRunning()}',
+  );
+}
+
+Future<void> _waitForForegroundSyncToFinish(WidgetTester tester) async {
+  final deadline = DateTime.now().add(const Duration(minutes: 4));
+  var lastStatus = '<not read>';
+
+  while (DateTime.now().isBefore(deadline)) {
+    lastStatus = await _syncStatusSummary();
+    if (!rust_sync.isSyncRunning()) {
+      _log('foreground sync finished: $lastStatus');
+      return;
+    }
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+
+  fail(
+    'Timed out waiting for foreground sync to finish. Last status: $lastStatus',
+  );
+}
+
+Future<bool> _isBehindChainTip() async {
+  final dbPath = await getWalletDbPath();
+  final status = await rust_sync.getSyncStatus(
+    dbPath: dbPath,
+    network: _network,
+  );
+  return status.scannedHeight < status.chainTipHeight;
+}
+
+Future<String> _syncStatusSummary() async {
+  final dbPath = await getWalletDbPath();
+  final status = await rust_sync.getSyncStatus(
+    dbPath: dbPath,
+    network: _network,
+  );
+  return 'scanned=${status.scannedHeight}, tip=${status.chainTipHeight}, '
+      'isSyncing=${status.isSyncing}';
 }
 
 Future<String> _accountUuidAtOrder(int order) async {
