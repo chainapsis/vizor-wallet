@@ -912,7 +912,7 @@ fn classify_history_tx(base: &TxBase, summary: &ActivitySummary) -> Vec<Classifi
     }
 
     if rows.is_empty() {
-        if base.mined_height.is_none() && base.account_balance_delta < 0 {
+        if base.mined_height.is_none() && base.account_balance_delta < 0 && base.total_spent > 0 {
             let sent_amount = base
                 .account_balance_delta
                 .unsigned_abs()

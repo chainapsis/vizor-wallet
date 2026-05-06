@@ -55,8 +55,8 @@ use crate::wallet::network::WalletNetwork;
 use super::lwd::start_mempool_stream;
 use super::open_lwd_channel;
 
-/// Event emitted by [`run_mempool_observer`] for every transaction
-/// arriving on the mempool stream that we can parse.
+/// Event emitted by [`run_mempool_observer`] for every wallet-relevant
+/// transaction arriving on the mempool stream that we can parse.
 ///
 /// `matched` is `true` when the txid is wallet-relevant: either it
 /// was already present in the wallet DB as unmined, or the observer
@@ -540,9 +540,10 @@ async fn watch_for_cancel(cancel: &Arc<AtomicBool>) {
 ///
 /// Unmatched transactions (other people's txs) are silently
 /// dropped on the Rust side without crossing the FRB bridge.
-/// Unknown txs may still pay the cost of trial decryption, but they
-/// never take the wallet DB write lock unless a shielded output
-/// decrypts for one of our accounts.
+/// Unknown txs may still pay the cost of shielded trial decryption,
+/// but they never take the wallet DB write lock unless a Sapling or
+/// Orchard output decrypts for one of our accounts. Transparent
+/// inbound transactions are still discovered by the normal sync path.
 ///
 /// All failures are logged and swallowed — one un-parseable tx
 /// must not break the observer loop.
@@ -590,6 +591,10 @@ fn handle_mempool_tx<F>(
 
     if known.matched || !known.account_uuids.is_empty() {
         stats.record_known_pending_hit();
+        // `matched=true` with no account UUIDs is possible while the
+        // transaction table has an unmined row but the account-scoped view
+        // has not projected it yet. Dart treats empty account scope as the
+        // legacy "refresh active account" fallback.
         emit_wallet_relevant_tx(
             txid_hex,
             txid_bytes,

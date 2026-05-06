@@ -1059,6 +1059,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       (event) {
         if (!event.matched) return;
         final activeAccountUuid = _getActiveAccountUuid();
+        // Empty account scope means Rust knows the tx is wallet-relevant,
+        // but cannot narrow it to an account yet; preserve the legacy
+        // active-account refresh behavior in that case.
         if (event.accountUuids.isNotEmpty &&
             !event.accountUuids.contains(activeAccountUuid)) {
           log(

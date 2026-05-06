@@ -153,14 +153,17 @@ pub(crate) static SYNC_RUNNING: AtomicBool = AtomicBool::new(false);
 
 // ======================== Mempool Observer ========================
 
-/// Event emitted by the mempool observer when a transaction
-/// appears on lightwalletd's mempool stream. Mirrored one-to-one
-/// from `sync_engine::mempool::MempoolTxEvent` for FRB codegen.
+/// Event emitted by the mempool observer when a wallet-relevant
+/// transaction appears on lightwalletd's mempool stream. Mirrored
+/// one-to-one from `sync_engine::mempool::MempoolTxEvent` for FRB
+/// codegen.
 pub struct ApiMempoolTxEvent {
     /// Lower-case hex of the tx id.
     pub txid_hex: String,
-    /// Account UUIDs that this event is known to affect. Empty
-    /// keeps the legacy behavior of refreshing the active account.
+    /// Account UUIDs that this event is known to affect. Empty means the
+    /// tx is wallet-relevant but not account-scoped enough for Rust to
+    /// name the account, so Dart keeps the legacy behavior of refreshing
+    /// the active account.
     pub account_uuids: Vec<String>,
     /// `true` when the tx is wallet-relevant: either the wallet DB
     /// already has this txid as unmined, or the observer decrypted
@@ -213,9 +216,9 @@ pub(crate) static MEMPOOL_OBSERVER_STATE: std::sync::LazyLock<
 /// Start the background mempool observer.
 ///
 /// Blocks until [`stop_mempool_observer`] is called or the
-/// observer returns on an unrecoverable setup error. Every
-/// incoming mempool tx that can be parsed is pushed to `sink` as
-/// an [`ApiMempoolTxEvent`].
+/// observer returns on an unrecoverable setup error. Only parsed
+/// wallet-relevant mempool txs are pushed to `sink` as
+/// [`ApiMempoolTxEvent`]s; unrelated txs are filtered inside Rust.
 ///
 /// The FRB layer runs this on the Rust isolate thread pool, so
 /// Dart can `await` the call while the observer keeps polling
