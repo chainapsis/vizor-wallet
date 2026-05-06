@@ -10,5 +10,10 @@ PRODUCT_NAME = Vizor
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = com.keplr.vizor
 
+// Fastlane writes this ignored file for macOS release flavors. It is included
+// here, instead of passed as global xcodebuild settings, so Pods targets keep
+// their own PRODUCT_NAME and bundle paths.
+#include? "FlavorOverrides.xcconfig"
+
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.zcash. All rights reserved.
