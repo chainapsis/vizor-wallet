@@ -46,7 +46,7 @@ class AppSecureStore {
         accountName: service,
         accessibility: KeychainAccessibility.first_unlock,
       ),
-      aOptions: kZcashDefaultNetworkName == ZcashNetwork.mainnet.name
+      aOptions: kZcashDefaultNetworkName == 'main'
           ? AndroidOptions.defaultOptions
           : AndroidOptions(sharedPreferencesName: service),
       mOptions: MacOsOptions(
