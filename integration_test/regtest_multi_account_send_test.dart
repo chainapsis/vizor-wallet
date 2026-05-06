@@ -13,6 +13,10 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
+const _network = String.fromEnvironment(
+  'ZCASH_E2E_NETWORK',
+  defaultValue: 'regtest',
+);
 const _lightwalletdUrl = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
   defaultValue: 'http://127.0.0.1:9067',
@@ -66,17 +70,44 @@ void main() {
       _log('copying second account shielded address');
       final secondAddress = await _copyActiveShieldedAddress(tester);
       expect(secondAddress, startsWith('uregtest1'));
+      final secondAccountUuid = await _accountUuidAtOrder(1);
       _log('second account shielded address copied');
 
       await _openWallet(tester);
       await _switchAccount(tester, 0);
       await _waitForBalance(tester, shielded: '1.25 zec');
+      await _waitForMempoolObserver();
 
       await _sendToAddress(tester, secondAddress, '0.25');
-      await _mineRegtestBlocks(10);
 
       await _openWallet(tester);
       await _switchAccount(tester, 1);
+      await _waitForHistoryEntry(
+        tester,
+        accountUuid: secondAccountUuid,
+        txKind: 'receiving',
+        displayAmount: BigInt.from(25_000_000),
+        pending: true,
+      );
+      await _expectActivityRow(
+        tester,
+        const ValueKey('home_activity_row_1'),
+        title: 'Receiving',
+        amount: '+0.25 ZEC',
+        status: 'In progress',
+      );
+      await _openActivity(tester);
+      await _expectActivityRow(
+        tester,
+        const ValueKey('activity_screen_row_1'),
+        title: 'Receiving',
+        amount: '+0.25 ZEC',
+        status: 'In progress',
+      );
+
+      await _mineRegtestBlocks(10);
+
+      await _openWallet(tester);
       await _waitForBalance(
         tester,
         shielded: '0.25 zec',
@@ -89,6 +120,13 @@ void main() {
         amount: '+0.25 ZEC',
         status: 'Completed',
       );
+      _expectNoActivityRow(
+        tester,
+        rowKeyPrefix: 'home_activity',
+        title: 'Receiving',
+        amount: '+0.25 ZEC',
+        status: 'In progress',
+      );
       await _openActivity(tester);
       await _expectActivityRow(
         tester,
@@ -96,6 +134,13 @@ void main() {
         title: 'Received',
         amount: '+0.25 ZEC',
         status: 'Completed',
+      );
+      _expectNoActivityRow(
+        tester,
+        rowKeyPrefix: 'activity_screen',
+        title: 'Receiving',
+        amount: '+0.25 ZEC',
+        status: 'In progress',
       );
       _log('second account received shielded funds');
 
@@ -108,6 +153,13 @@ void main() {
         amount: '-0.25 ZEC',
         status: 'Completed',
       );
+      _expectNoActivityRow(
+        tester,
+        rowKeyPrefix: 'home_activity',
+        title: 'Sent',
+        amount: '-0.25 ZEC',
+        status: 'In progress',
+      );
       await _openActivity(tester);
       await _expectActivityRow(
         tester,
@@ -115,6 +167,13 @@ void main() {
         title: 'Sent',
         amount: '-0.25 ZEC',
         status: 'Completed',
+      );
+      _expectNoActivityRow(
+        tester,
+        rowKeyPrefix: 'activity_screen',
+        title: 'Sent',
+        amount: '-0.25 ZEC',
+        status: 'In progress',
       );
       _log('first account sent activity matched');
     },
@@ -316,6 +375,79 @@ Future<void> _waitForHome(WidgetTester tester) async {
   );
 }
 
+Future<void> _waitForMempoolObserver() async {
+  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  while (DateTime.now().isBefore(deadline)) {
+    if (rust_sync.isMempoolObserverRunning()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  fail('Timed out waiting for mempool observer to run.');
+}
+
+Future<String> _accountUuidAtOrder(int order) async {
+  final dbPath = await getWalletDbPath();
+  final accounts = await rust_wallet.listAccounts(
+    dbPath: dbPath,
+    network: _network,
+  );
+  if (order >= accounts.length) {
+    fail('Expected account order $order, got ${accounts.length} accounts.');
+  }
+  return accounts[order].uuid;
+}
+
+Future<void> _waitForHistoryEntry(
+  WidgetTester tester, {
+  required String accountUuid,
+  required String txKind,
+  required BigInt displayAmount,
+  required bool pending,
+}) async {
+  final dbPath = await getWalletDbPath();
+  final deadline = DateTime.now().add(const Duration(minutes: 2));
+  Object? lastError;
+  var lastHistorySummary = '<not read>';
+
+  while (DateTime.now().isBefore(deadline)) {
+    try {
+      final history = await rust_sync.getTransactionHistory(
+        dbPath: dbPath,
+        network: _network,
+        limit: 20,
+        accountUuid: accountUuid,
+      );
+      lastHistorySummary = history
+          .map(
+            (tx) =>
+                '${tx.txidHex}:${tx.txKind}:${tx.displayAmount}:'
+                'mined=${tx.minedHeight}:expired=${tx.expiredUnmined}',
+          )
+          .join(', ');
+      if (history.any(
+        (tx) =>
+            tx.txKind == txKind &&
+            tx.displayAmount == displayAmount &&
+            (tx.minedHeight == BigInt.zero) == pending &&
+            !tx.expiredUnmined,
+      )) {
+        _log('history matched $txKind tx amount=$displayAmount');
+        return;
+      }
+    } catch (e) {
+      lastError = e;
+    }
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+
+  final error = lastError == null ? '' : ' Last error: $lastError';
+  fail(
+    'Timed out waiting for history $txKind amount=$displayAmount '
+    'pending=$pending. Observed history: $lastHistorySummary.$error',
+  );
+}
+
 Future<void> _waitForBalance(
   WidgetTester tester, {
   String? shielded,
@@ -369,6 +501,25 @@ Future<void> _expectActivityRow(
     timeout: const Duration(minutes: 2),
   );
   _log('activity row matched: $title $amount $status');
+}
+
+void _expectNoActivityRow(
+  WidgetTester tester, {
+  required String rowKeyPrefix,
+  required String title,
+  required String amount,
+  required String status,
+}) {
+  for (var i = 0; i < 10; i++) {
+    final key = ValueKey('${rowKeyPrefix}_row_$i');
+    final texts = _textSetIn(tester, find.byKey(key));
+    if (texts.contains(title) &&
+        texts.contains(amount) &&
+        texts.contains(status)) {
+      fail('Unexpected stale activity row $key: $title $amount $status');
+    }
+  }
+  _log('no stale activity row matched: $title $amount $status');
 }
 
 Future<void> _cleanupE2eWalletState() async {
