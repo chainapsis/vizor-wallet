@@ -14,6 +14,7 @@ import '../services/background_sync_delegate.dart';
 import 'account_provider.dart';
 import 'app_security_provider.dart';
 import 'rpc_endpoint_provider.dart';
+import 'sync_failure.dart';
 
 class SyncState {
   /// Account UUID that owns the balance, shield status, and recent transaction
@@ -51,6 +52,11 @@ class SyncState {
 
   /// Sum of spendable + pending balances across all pools. Use for "total holdings".
   final BigInt totalBalance;
+
+  /// Structured sync failure used by UI to choose copy and recovery action.
+  final SyncFailure? failure;
+
+  /// Raw sync error retained for compatibility with existing failure checks.
   final String? error;
   final List<rust_sync.TransactionInfo> recentTransactions;
   final DateTime? lastSyncStartedAt;
@@ -88,6 +94,7 @@ class SyncState {
     BigInt? shieldTransparentAmount,
     BigInt? spendableBalance,
     BigInt? totalBalance,
+    this.failure,
     this.error,
     this.recentTransactions = const [],
     this.lastSyncStartedAt,
@@ -131,7 +138,10 @@ class SyncState {
     BigInt? shieldTransparentAmount,
     BigInt? spendableBalance,
     BigInt? totalBalance,
+    SyncFailure? failure,
+    bool clearFailure = false,
     String? error,
+    bool clearError = false,
     List<rust_sync.TransactionInfo>? recentTransactions,
     DateTime? lastSyncStartedAt,
     DateTime? lastSyncCompletedAt,
@@ -168,7 +178,8 @@ class SyncState {
           shieldTransparentAmount ?? this.shieldTransparentAmount,
       spendableBalance: spendableBalance ?? this.spendableBalance,
       totalBalance: totalBalance ?? this.totalBalance,
-      error: error ?? this.error,
+      failure: clearFailure ? null : failure ?? this.failure,
+      error: clearError ? null : error ?? this.error,
       recentTransactions: recentTransactions ?? this.recentTransactions,
       lastSyncStartedAt: lastSyncStartedAt ?? this.lastSyncStartedAt,
       lastSyncCompletedAt: lastSyncCompletedAt ?? this.lastSyncCompletedAt,
@@ -201,6 +212,7 @@ class SyncState {
       displayPercentage: displayPercentage,
       scannedHeight: scannedHeight,
       chainTipHeight: chainTipHeight,
+      failure: failure,
       error: error,
       lastSyncStartedAt: lastSyncStartedAt,
       lastSyncCompletedAt: lastSyncCompletedAt,
@@ -549,37 +561,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               // a lightwalletd stream that keeps firing
               // `_refreshBalance()` callbacks with no owning sync.
               _stopMempoolObserver();
-              final prev = state.value;
-              final accountUuid = _getActiveAccountUuid();
-              final scopedPrev = _previousScopedState(prev, accountUuid);
-              state = AsyncData(
-                SyncState(
-                  accountUuid: accountUuid,
-                  hasBalanceData: scopedPrev?.hasBalanceData ?? false,
-                  hasRecentTransactionsData:
-                      scopedPrev?.hasRecentTransactionsData ?? false,
-                  error: e.toString(),
-                  transparentBalance: scopedPrev?.transparentBalance,
-                  saplingBalance: scopedPrev?.saplingBalance,
-                  orchardBalance: scopedPrev?.orchardBalance,
-                  transparentPendingBalance:
-                      scopedPrev?.transparentPendingBalance,
-                  saplingPendingBalance: scopedPrev?.saplingPendingBalance,
-                  orchardPendingBalance: scopedPrev?.orchardPendingBalance,
-                  canShieldTransparentBalance:
-                      scopedPrev?.canShieldTransparentBalance ?? false,
-                  shieldTransparentFee: scopedPrev?.shieldTransparentFee,
-                  shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
-                  spendableBalance: scopedPrev?.spendableBalance,
-                  totalBalance: scopedPrev?.totalBalance,
-                  recentTransactions:
-                      scopedPrev?.recentTransactions ?? const [],
-                  lastSyncStartedAt: prev?.lastSyncStartedAt,
-                  lastSyncCompletedAt: prev?.lastSyncCompletedAt,
-                  lastSyncFailedAt: DateTime.now(),
-                ),
-              );
-              _startPolling();
+              _recordSyncFailure(e);
             },
           );
         })
@@ -595,36 +577,46 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           // `_stopMempoolObserver()` here; it is idempotent when
           // nothing is running.
           _stopMempoolObserver();
-          final prev = state.value;
-          final accountUuid = _getActiveAccountUuid();
-          final scopedPrev = _previousScopedState(prev, accountUuid);
-          state = AsyncData(
-            SyncState(
-              accountUuid: accountUuid,
-              hasBalanceData: scopedPrev?.hasBalanceData ?? false,
-              hasRecentTransactionsData:
-                  scopedPrev?.hasRecentTransactionsData ?? false,
-              error: e.toString(),
-              transparentBalance: scopedPrev?.transparentBalance,
-              saplingBalance: scopedPrev?.saplingBalance,
-              orchardBalance: scopedPrev?.orchardBalance,
-              transparentPendingBalance: scopedPrev?.transparentPendingBalance,
-              saplingPendingBalance: scopedPrev?.saplingPendingBalance,
-              orchardPendingBalance: scopedPrev?.orchardPendingBalance,
-              canShieldTransparentBalance:
-                  scopedPrev?.canShieldTransparentBalance ?? false,
-              shieldTransparentFee: scopedPrev?.shieldTransparentFee,
-              shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
-              spendableBalance: scopedPrev?.spendableBalance,
-              totalBalance: scopedPrev?.totalBalance,
-              recentTransactions: scopedPrev?.recentTransactions ?? const [],
-              lastSyncStartedAt: prev?.lastSyncStartedAt,
-              lastSyncCompletedAt: prev?.lastSyncCompletedAt,
-              lastSyncFailedAt: DateTime.now(),
-            ),
-          );
-          _startPolling();
+          _recordSyncFailure(e);
         });
+  }
+
+  void _recordSyncFailure(Object error) {
+    final failure = classifySyncFailure(error);
+    final prev = state.value;
+    final accountUuid = _getActiveAccountUuid();
+    final scopedPrev = _previousScopedState(prev, accountUuid);
+    state = AsyncData(
+      SyncState(
+        accountUuid: accountUuid,
+        hasBalanceData: scopedPrev?.hasBalanceData ?? false,
+        hasRecentTransactionsData:
+            scopedPrev?.hasRecentTransactionsData ?? false,
+        failure: failure,
+        error: failure.rawMessage,
+        transparentBalance: scopedPrev?.transparentBalance,
+        saplingBalance: scopedPrev?.saplingBalance,
+        orchardBalance: scopedPrev?.orchardBalance,
+        transparentPendingBalance: scopedPrev?.transparentPendingBalance,
+        saplingPendingBalance: scopedPrev?.saplingPendingBalance,
+        orchardPendingBalance: scopedPrev?.orchardPendingBalance,
+        canShieldTransparentBalance:
+            scopedPrev?.canShieldTransparentBalance ?? false,
+        shieldTransparentFee: scopedPrev?.shieldTransparentFee,
+        shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
+        spendableBalance: scopedPrev?.spendableBalance,
+        totalBalance: scopedPrev?.totalBalance,
+        recentTransactions: scopedPrev?.recentTransactions ?? const [],
+        lastSyncStartedAt: prev?.lastSyncStartedAt,
+        lastSyncCompletedAt: prev?.lastSyncCompletedAt,
+        lastSyncFailedAt: DateTime.now(),
+      ),
+    );
+    if (failure.isAutoRetrying) {
+      _startPolling();
+    } else {
+      _stopPolling();
+    }
   }
 
   /// Recovery path for cases like unlock-after-sign-out where a previous

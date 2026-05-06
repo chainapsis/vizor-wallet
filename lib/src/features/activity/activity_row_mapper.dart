@@ -44,7 +44,8 @@ ActivityRowData buildSyncActivityRow({
 }) {
   final colors = context.colors;
 
-  if (sync.error != null) {
+  final failure = sync.failure;
+  if (failure != null) {
     return ActivityRowData(
       title: 'Wallet Synced',
       leadingIconName: AppIcons.sync,
@@ -52,9 +53,11 @@ ActivityRowData buildSyncActivityRow({
       leadingIconColor: colors.icon.regular,
       amountText: '--',
       amountColor: colors.text.secondary,
-      statusText: 'Failed',
-      statusIconName: AppIcons.skull,
-      statusColor: colors.text.destructive,
+      statusText: failure.isAutoRetrying ? 'Retrying' : 'Failed',
+      statusIconName: failure.isAutoRetrying ? AppIcons.loader : AppIcons.skull,
+      statusColor: failure.isAutoRetrying
+          ? colors.text.secondary
+          : colors.text.destructive,
       timestampText: formatActivityTimestamp(sync.lastSyncFailedAt),
     );
   }

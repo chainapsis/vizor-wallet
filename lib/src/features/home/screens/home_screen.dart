@@ -169,7 +169,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final hasActivitySyncData =
         syncState?.hasDataForAccount(activeAccountUuid) ?? false;
     final isActivityLoading =
-        activeAccountUuid != null && !hasActivitySyncData && sync.error == null;
+        activeAccountUuid != null &&
+        !hasActivitySyncData &&
+        sync.failure == null;
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final shieldedBalance =
         sync.saplingBalance +
@@ -411,12 +413,15 @@ class _HomePaneState extends ConsumerState<_HomePane> {
         onTap: widget.onDismissShieldBalanceError,
       );
     }
-    if (widget.sync.error != null) {
+    final syncFailure = widget.sync.failure;
+    if (syncFailure != null) {
       return _HomeNoticeData(
         iconName: AppIcons.warning,
-        message: 'Sync error',
-        actionLabel: 'Retry',
-        onTap: widget.onRetrySync,
+        message: syncFailure.userMessage,
+        actionLabel: syncFailure.actionLabel,
+        onTap: syncFailure.showSettingsAction
+            ? () => context.push('/settings/endpoint')
+            : widget.onRetrySync,
       );
     }
     if (widget.sync.isBackgroundMode) {
