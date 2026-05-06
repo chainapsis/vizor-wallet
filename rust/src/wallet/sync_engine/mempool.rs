@@ -26,14 +26,17 @@
 //!     means we inherit the same TLS transport the scan loop uses.
 //!
 //!   * **Write only after a wallet hit.** The hot path parses the
-//!     txid, skips txs already seen in this observer session, and
-//!     checks for existing unmined wallet rows. Unknown txs go
-//!     through read-only trial decryption first; already-known txs
-//!     are also trial-decrypted once so wallet-internal sends can
-//!     discover recipient accounts in the same DB. Only txs that add
-//!     wallet relevance call `decrypt_and_store_transaction`. That
-//!     keeps SQLite write contention proportional to wallet relevance
-//!     instead of global mempool volume.
+//!     txid, skips wallet-relevant txs already emitted in this
+//!     observer session, and checks for existing unmined wallet rows.
+//!     Unknown txs go through read-only trial decryption first; a
+//!     negative match is cached only briefly so a tx first observed
+//!     before local wallet persistence can be re-evaluated soon after.
+//!     Already-known txs are also trial-decrypted once so
+//!     wallet-internal sends can discover recipient accounts in the
+//!     same DB. Only txs that add wallet relevance call
+//!     `decrypt_and_store_transaction`. That keeps SQLite write
+//!     contention proportional to wallet relevance instead of global
+//!     mempool volume.
 //!
 //!   * **Reconnect semantics match the SDK.** lightwalletd closes
 //!     the stream every time a new block is mined — normal EOF,
@@ -43,7 +46,7 @@
 //!     successful connect. Cancel is checked inside the sleep so
 //!     we don't block `stop_mempool_observer()` for 30s.
 
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -112,7 +115,78 @@ impl TxidSeenCache {
     }
 }
 
+struct TxidTtlCache {
+    max_len: usize,
+    ttl: Duration,
+    order: VecDeque<Vec<u8>>,
+    entries: HashMap<Vec<u8>, Instant>,
+}
+
+impl TxidTtlCache {
+    fn new(max_len: usize, ttl: Duration) -> Self {
+        Self {
+            max_len,
+            ttl,
+            order: VecDeque::new(),
+            entries: HashMap::new(),
+        }
+    }
+
+    fn contains_unexpired(&mut self, txid_bytes: &[u8], now: Instant) -> bool {
+        self.prune_expired(now);
+
+        match self.entries.get(txid_bytes).copied() {
+            Some(expires_at) if expires_at > now => true,
+            Some(_) => {
+                self.entries.remove(txid_bytes);
+                false
+            }
+            None => false,
+        }
+    }
+
+    fn insert(&mut self, txid_bytes: Vec<u8>, now: Instant) {
+        if self.max_len == 0 {
+            return;
+        }
+
+        self.prune_expired(now);
+        let expires_at = now + self.ttl;
+        if self
+            .entries
+            .insert(txid_bytes.clone(), expires_at)
+            .is_none()
+        {
+            self.order.push_back(txid_bytes);
+        }
+
+        while self.order.len() > self.max_len {
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+    }
+
+    fn prune_expired(&mut self, now: Instant) {
+        while let Some(txid_bytes) = self.order.front() {
+            let expired = self
+                .entries
+                .get(txid_bytes)
+                .map(|expires_at| *expires_at <= now)
+                .unwrap_or(true);
+            if !expired {
+                break;
+            }
+
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+    }
+}
+
 const STATS_LOG_INTERVAL: Duration = Duration::from_secs(30);
+const UNMATCHED_TXID_TTL: Duration = Duration::from_secs(10);
 
 #[derive(Debug)]
 struct MempoolObserverStats {
@@ -329,6 +403,7 @@ where
 
     let mut consecutive_errors: u32 = 0;
     let mut seen_cache = TxidSeenCache::new(2048);
+    let mut unmatched_cache = TxidTtlCache::new(2048, UNMATCHED_TXID_TTL);
     let mut stats = MempoolObserverStats::new(Instant::now());
 
     /// Pick the backoff delay based on how many consecutive errors
@@ -443,6 +518,7 @@ where
                                 &db_path,
                                 network,
                                 &mut seen_cache,
+                                &mut unmatched_cache,
                                 &mut stats,
                                 &raw_tx,
                                 &emit,
@@ -537,8 +613,9 @@ async fn watch_for_cancel(cancel: &Arc<AtomicBool>) {
     }
 }
 
-/// Parse `raw_tx`, compute the txid, skip duplicate observations,
-/// and emit a [`MempoolTxEvent`] only for wallet-relevant txs.
+/// Parse `raw_tx`, compute the txid, skip duplicate wallet-relevant
+/// observations and very recent unmatched observations, and emit a
+/// [`MempoolTxEvent`] only for wallet-relevant txs.
 ///
 /// Unmatched transactions (other people's txs) are silently
 /// dropped on the Rust side without crossing the FRB bridge.
@@ -553,6 +630,7 @@ fn handle_mempool_tx<F>(
     db_path: &str,
     network: WalletNetwork,
     seen_cache: &mut TxidSeenCache,
+    unmatched_cache: &mut TxidTtlCache,
     stats: &mut MempoolObserverStats,
     raw_tx: &RawTransaction,
     emit: &F,
@@ -650,6 +728,12 @@ fn handle_mempool_tx<F>(
         return;
     }
 
+    let now = Instant::now();
+    if unmatched_cache.contains_unexpired(&txid_bytes, now) {
+        stats.record_seen_skip();
+        return;
+    }
+
     let decrypt_started_at = Instant::now();
     let account_uuids = match trial_decrypt_account_uuids(db_path, network, &tx) {
         Ok(accounts) => {
@@ -664,7 +748,7 @@ fn handle_mempool_tx<F>(
     };
 
     if account_uuids.is_empty() {
-        seen_cache.insert(txid_bytes);
+        unmatched_cache.insert(txid_bytes, Instant::now());
         return;
     }
 
@@ -839,6 +923,9 @@ mod tests {
     //!     in sync with the `transactions` / `v_transactions` table
     //!     shapes and the "unmined" definition (`mined_height IS NULL`).
     //!
+    //!   * The txid caches that bound duplicate work without making
+    //!     unmatched txs permanent false negatives.
+    //!
     //!   * `sleep_respecting_cancel`, which must (a) return early
     //!     when `cancel` flips and (b) at minimum sleep through the
     //!     requested duration when `cancel` stays false. Both
@@ -956,6 +1043,38 @@ mod tests {
         assert!(!cache.contains(&first));
         assert!(cache.contains(&second));
         assert!(cache.contains(&third));
+    }
+
+    #[test]
+    fn ttl_cache_skips_only_until_expiry() {
+        let mut cache = TxidTtlCache::new(2, Duration::from_secs(10));
+        let now = Instant::now();
+        let txid = vec![0x0a; 32];
+
+        assert!(!cache.contains_unexpired(&txid, now));
+        cache.insert(txid.clone(), now);
+        assert!(cache.contains_unexpired(&txid, now + Duration::from_secs(9)));
+        assert!(!cache.contains_unexpired(&txid, now + Duration::from_secs(10)));
+        assert!(!cache.contains_unexpired(&txid, now + Duration::from_secs(11)));
+    }
+
+    #[test]
+    fn ttl_cache_evicts_oldest_txid() {
+        let mut cache = TxidTtlCache::new(2, Duration::from_secs(10));
+        let now = Instant::now();
+        let first = vec![0x01; 32];
+        let second = vec![0x02; 32];
+        let third = vec![0x03; 32];
+
+        cache.insert(first.clone(), now);
+        cache.insert(second.clone(), now);
+        assert!(cache.contains_unexpired(&first, now));
+        assert!(cache.contains_unexpired(&second, now));
+
+        cache.insert(third.clone(), now);
+        assert!(!cache.contains_unexpired(&first, now));
+        assert!(cache.contains_unexpired(&second, now));
+        assert!(cache.contains_unexpired(&third, now));
     }
 
     #[test]
