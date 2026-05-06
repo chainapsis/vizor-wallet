@@ -1097,8 +1097,6 @@ pub fn get_pending_transactions(db_path: &str) -> Result<Vec<PendingTxInfo>, Str
 /// Returns: `0` = still in mempool, `> 0` = mined at that height,
 /// `-1` = error / not found.
 pub async fn check_tx_mined(lightwalletd_url: &str, txid_bytes: &[u8]) -> i64 {
-    use zcash_client_backend::proto::service::TxFilter;
-
     let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
         Ok(pair) => pair,
         Err(e) => {
@@ -1107,15 +1105,9 @@ pub async fn check_tx_mined(lightwalletd_url: &str, txid_bytes: &[u8]) -> i64 {
         }
     };
 
-    let filter = TxFilter {
-        block: None,
-        index: 0,
-        hash: txid_bytes.to_vec(),
-    };
-
-    match client.get_transaction(filter).await {
-        Ok(resp) => {
-            let height = resp.into_inner().height;
+    match crate::wallet::sync_engine::get_transaction(&mut client, txid_bytes.to_vec()).await {
+        Ok(raw) => {
+            let height = raw.height;
             // height 0 = mempool, 0xffffffffffffffff = fork, else = mined
             if height == 0 || height == u64::MAX {
                 0 // still pending

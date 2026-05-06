@@ -14,16 +14,20 @@
 //! failures into `SyncError::net` or `SyncError::parse`, so the outer
 //! loop only ever deals with the typed `SyncError` taxonomy.
 
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+use tonic::{
+    transport::{Channel, ClientTlsConfig, Endpoint},
+    Request, Response, Status,
+};
 use zcash_client_backend::{
     data_api::{
         chain::CommitmentTreeRoot, wallet::ConfirmationsPolicy, WalletCommitmentTrees, WalletRead,
     },
     proto::service::{
-        self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, Empty,
-        GetSubtreeRootsArg, RawTransaction,
+        self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
+        Empty, GetSubtreeRootsArg, RawTransaction, SendResponse, TransparentAddressBlockFilter,
+        TreeState, TxFilter,
     },
 };
 use zcash_protocol::consensus::BlockHeight;
@@ -34,6 +38,54 @@ use super::block_source::MemoryBlockSource;
 use super::{elapsed, SyncError, WalletDatabase};
 
 const LIGHTWALLETD_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const LIGHTWALLETD_UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(20);
+const LIGHTWALLETD_STREAM_START_TIMEOUT: Duration = Duration::from_secs(20);
+const LIGHTWALLETD_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn timed_request<T>(message: T, timeout: Duration) -> Request<T> {
+    let mut request = Request::new(message);
+    request.set_timeout(timeout);
+    request
+}
+
+fn timeout_status(label: &str, timeout: Duration) -> Status {
+    Status::deadline_exceeded(format!("{label}: timed out after {}s", timeout.as_secs()))
+}
+
+fn status_to_network_error(label: &str, status: Status) -> SyncError {
+    SyncError::net(format!("{label}: {status}"))
+}
+
+async fn await_tonic_response<T, F>(label: &str, timeout: Duration, future: F) -> Result<T, Status>
+where
+    F: Future<Output = Result<Response<T>, Status>>,
+{
+    match tokio::time::timeout(timeout, future).await {
+        Ok(Ok(response)) => Ok(response.into_inner()),
+        Ok(Err(status)) => Err(status),
+        Err(_) => Err(timeout_status(label, timeout)),
+    }
+}
+
+async fn await_tonic_stream<T, F>(
+    label: &str,
+    timeout: Duration,
+    future: F,
+) -> Result<tonic::Streaming<T>, Status>
+where
+    F: Future<Output = Result<Response<tonic::Streaming<T>>, Status>>,
+{
+    match tokio::time::timeout(timeout, future).await {
+        Ok(Ok(response)) => Ok(response.into_inner()),
+        Ok(Err(status)) => Err(status),
+        Err(_) => Err(timeout_status(label, timeout)),
+    }
+}
+
+// Server-streaming calls intentionally use plain `Request::new` at
+// their call sites. A `grpc-timeout` header would bound the whole
+// stream lifetime; here we only bound stream start and per-message idle
+// waits locally.
 
 /// Opens a tonic gRPC channel to the given lightwalletd URL and
 /// returns a `CompactTxStreamerClient`.
@@ -72,6 +124,131 @@ pub(crate) async fn open_lwd_channel(
     Ok(CompactTxStreamerClient::new(channel))
 }
 
+/// Return the current chain tip with a bounded response wait.
+pub(crate) async fn get_latest_block(
+    client: &mut CompactTxStreamerClient<Channel>,
+) -> Result<BlockId, SyncError> {
+    await_tonic_response(
+        "get_latest_block",
+        LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        client.get_latest_block(timed_request(
+            ChainSpec::default(),
+            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        )),
+    )
+    .await
+    .map_err(|e| status_to_network_error("get_latest_block", e))
+}
+
+/// Return the note commitment tree state for a block with a bounded
+/// response wait.
+pub(super) async fn get_tree_state(
+    client: &mut CompactTxStreamerClient<Channel>,
+    height: u64,
+) -> Result<TreeState, SyncError> {
+    await_tonic_response(
+        "get_tree_state",
+        LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        client.get_tree_state(timed_request(
+            BlockId {
+                height,
+                hash: vec![],
+            },
+            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        )),
+    )
+    .await
+    .map_err(|e| status_to_network_error("get_tree_state", e))
+}
+
+/// Return a raw transaction response. This keeps the original tonic
+/// `Status` so callers that distinguish `NotFound` from transient
+/// network failures can make that decision after the timeout wrapper.
+pub(crate) async fn get_transaction(
+    client: &mut CompactTxStreamerClient<Channel>,
+    hash: Vec<u8>,
+) -> Result<RawTransaction, Status> {
+    await_tonic_response(
+        "get_transaction",
+        LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        client.get_transaction(timed_request(
+            TxFilter {
+                block: None,
+                index: 0,
+                hash,
+            },
+            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        )),
+    )
+    .await
+}
+
+/// Submit a raw transaction with a bounded response wait.
+pub(crate) async fn send_transaction(
+    client: &mut CompactTxStreamerClient<Channel>,
+    data: &[u8],
+) -> Result<SendResponse, SyncError> {
+    await_tonic_response(
+        "send_transaction",
+        LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        client.send_transaction(timed_request(
+            RawTransaction {
+                data: data.to_vec(),
+                height: 0,
+            },
+            LIGHTWALLETD_UNARY_RPC_TIMEOUT,
+        )),
+    )
+    .await
+    .map_err(|e| status_to_network_error("send_transaction", e))
+}
+
+/// Open the deprecated transparent-address transaction stream with a
+/// bounded wait for response headers. Individual stream messages must
+/// still be read with [`next_stream_message`] to bound an idle stream.
+pub(super) async fn get_taddress_txids(
+    client: &mut CompactTxStreamerClient<Channel>,
+    address: String,
+    start_height: u64,
+    end_height: u64,
+) -> Result<tonic::Streaming<RawTransaction>, SyncError> {
+    await_tonic_stream(
+        "get_taddress_txids",
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_taddress_txids(Request::new(TransparentAddressBlockFilter {
+            address,
+            range: Some(BlockRange {
+                start: Some(BlockId {
+                    height: start_height,
+                    hash: vec![],
+                }),
+                end: Some(BlockId {
+                    height: end_height,
+                    hash: vec![],
+                }),
+            }),
+        })),
+    )
+    .await
+    .map_err(|e| status_to_network_error("get_taddress_txids", e))
+}
+
+/// Read the next server-streaming message with a bounded idle wait.
+/// `Ok(None)` remains the server's normal EOF signal.
+pub(super) async fn next_stream_message<T>(
+    stream: &mut tonic::Streaming<T>,
+    label: &str,
+) -> Result<Option<T>, SyncError> {
+    match tokio::time::timeout(LIGHTWALLETD_STREAM_IDLE_TIMEOUT, stream.message()).await {
+        Ok(Ok(message)) => Ok(message),
+        Ok(Err(status)) => Err(status_to_network_error(label, status)),
+        Err(_) => Err(SyncError::net(format!(
+            "{label}: timed out after {}s waiting for next message",
+            LIGHTWALLETD_STREAM_IDLE_TIMEOUT.as_secs()
+        ))),
+    }
+}
+
 /// Pulls the latest sapling + orchard subtree roots from lightwalletd
 /// and writes them into `db` via `put_*_subtree_roots`. The starting
 /// index for each protocol comes from `db`'s wallet summary, so a
@@ -107,22 +284,20 @@ pub(super) async fn download_subtree_roots(
     );
 
     // Sapling
-    let mut stream = client
-        .get_subtree_roots(GetSubtreeRootsArg {
+    let mut stream = await_tonic_stream(
+        "sapling subtree roots",
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_subtree_roots(Request::new(GetSubtreeRootsArg {
             start_index: sap_start as u32,
             shielded_protocol: service::ShieldedProtocol::Sapling.into(),
             max_entries: 0,
-        })
-        .await
-        .map_err(|e| SyncError::net(format!("sapling subtree roots: {e}")))?
-        .into_inner();
+        })),
+    )
+    .await
+    .map_err(|e| status_to_network_error("sapling subtree roots", e))?;
 
     let mut roots = Vec::new();
-    while let Some(root) = stream
-        .message()
-        .await
-        .map_err(|e| SyncError::net(format!("sapling subtree roots stream: {e}")))?
-    {
+    while let Some(root) = next_stream_message(&mut stream, "sapling subtree roots stream").await? {
         // `SubtreeRoot::root_hash` is `bytes = "vec"` in the proto,
         // not a fixed-length field. A slice expression like
         // `root_hash[..32]` would panic before `try_into()` runs if
@@ -155,22 +330,20 @@ pub(super) async fn download_subtree_roots(
     }
 
     // Orchard
-    let mut stream = client
-        .get_subtree_roots(GetSubtreeRootsArg {
+    let mut stream = await_tonic_stream(
+        "orchard subtree roots",
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_subtree_roots(Request::new(GetSubtreeRootsArg {
             start_index: orch_start as u32,
             shielded_protocol: service::ShieldedProtocol::Orchard.into(),
             max_entries: 0,
-        })
-        .await
-        .map_err(|e| SyncError::net(format!("orchard subtree roots: {e}")))?
-        .into_inner();
+        })),
+    )
+    .await
+    .map_err(|e| status_to_network_error("orchard subtree roots", e))?;
 
     let mut roots = Vec::new();
-    while let Some(root) = stream
-        .message()
-        .await
-        .map_err(|e| SyncError::net(format!("orchard subtree roots stream: {e}")))?
-    {
+    while let Some(root) = next_stream_message(&mut stream, "orchard subtree roots stream").await? {
         let bytes: [u8; 32] = root.root_hash.as_slice().try_into().map_err(|_| {
             SyncError::parse(format!(
                 "orchard subtree root: expected 32 bytes, got {}",
@@ -220,11 +393,13 @@ pub(super) async fn download_subtree_roots(
 pub(crate) async fn start_mempool_stream(
     client: &mut CompactTxStreamerClient<Channel>,
 ) -> Result<tonic::Streaming<RawTransaction>, SyncError> {
-    let response = client
-        .get_mempool_stream(Empty {})
-        .await
-        .map_err(|e| SyncError::net(format!("get_mempool_stream: {e}")))?;
-    Ok(response.into_inner())
+    await_tonic_stream(
+        "get_mempool_stream",
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_mempool_stream(Request::new(Empty {})),
+    )
+    .await
+    .map_err(|e| status_to_network_error("get_mempool_stream", e))
 }
 
 /// Streams compact blocks in `[start, end]` (inclusive) from
@@ -237,8 +412,10 @@ pub(super) async fn download_blocks(
     start: BlockHeight,
     end: BlockHeight,
 ) -> Result<MemoryBlockSource, SyncError> {
-    let mut stream = client
-        .get_block_range(BlockRange {
+    let mut stream = await_tonic_stream(
+        "get_block_range",
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_block_range(Request::new(BlockRange {
             start: Some(BlockId {
                 height: u32::from(start) as u64,
                 hash: vec![],
@@ -247,17 +424,13 @@ pub(super) async fn download_blocks(
                 height: u32::from(end) as u64,
                 hash: vec![],
             }),
-        })
-        .await
-        .map_err(|e| SyncError::net(format!("get_block_range: {e}")))?
-        .into_inner();
+        })),
+    )
+    .await
+    .map_err(|e| status_to_network_error("get_block_range", e))?;
 
     let mut blocks = Vec::new();
-    while let Some(block) = stream
-        .message()
-        .await
-        .map_err(|e| SyncError::net(format!("get_block_range stream: {e}")))?
-    {
+    while let Some(block) = next_stream_message(&mut stream, "get_block_range stream").await? {
         blocks.push(block);
     }
 

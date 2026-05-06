@@ -31,9 +31,7 @@ use zcash_client_backend::{
         wallet::decrypt_and_store_transaction, TransactionDataRequest, TransactionStatus,
         WalletRead, WalletWrite,
     },
-    proto::service::{
-        self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, TxFilter,
-    },
+    proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
@@ -41,7 +39,7 @@ use zcash_protocol::consensus::{BlockHeight, BranchId};
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::network::WalletNetwork;
 
-use super::{SyncError, WalletDatabase};
+use super::{lwd, SyncError, WalletDatabase};
 
 /// Drains `db.transaction_data_requests()` against lightwalletd until
 /// the queue is empty or no request is actionable. Returns
@@ -89,18 +87,8 @@ pub(super) async fn run_enhancement(
                         continue;
                     }
 
-                    let hash = txid.as_ref().to_vec();
-
-                    match client
-                        .get_transaction(TxFilter {
-                            block: None,
-                            index: 0,
-                            hash,
-                        })
-                        .await
-                    {
-                        Ok(response) => {
-                            let raw = response.into_inner();
+                    match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
+                        Ok(raw) => {
                             let mined_height = mined_height_from_raw_height(raw.height)?;
                             if !raw.data.is_empty() {
                                 match Transaction::read(&raw.data[..], BranchId::Sapling) {
@@ -174,34 +162,20 @@ pub(super) async fn run_enhancement(
                     let start = u32::from(req.block_range_start()) as u64;
                     let end = u32::from(end_height) as u64;
 
-                    match client
-                        .get_taddress_txids(service::TransparentAddressBlockFilter {
-                            address: addr_str,
-                            range: Some(BlockRange {
-                                start: Some(BlockId {
-                                    height: start,
-                                    hash: vec![],
-                                }),
-                                end: Some(BlockId {
-                                    height: end.saturating_sub(1),
-                                    hash: vec![],
-                                }),
-                            }),
-                        })
+                    match lwd::get_taddress_txids(client, addr_str, start, end.saturating_sub(1))
                         .await
                     {
-                        Ok(response) => {
-                            let mut stream = response.into_inner();
-                            loop {
-                                match stream.message().await {
-                                    Ok(Some(raw)) => {
-                                        if !raw.data.is_empty() {
-                                            let mined_height =
-                                                mined_height_from_raw_height(raw.height)?;
-                                            match Transaction::read(&raw.data[..], BranchId::Sapling)
-                                            {
-                                                Ok(tx) => {
-                                                    if let Err(e) = with_wallet_db_write_lock(
+                        Ok(mut stream) => loop {
+                            match lwd::next_stream_message(&mut stream, "get_taddress_txids stream")
+                                .await
+                            {
+                                Ok(Some(raw)) => {
+                                    if !raw.data.is_empty() {
+                                        let mined_height =
+                                            mined_height_from_raw_height(raw.height)?;
+                                        match Transaction::read(&raw.data[..], BranchId::Sapling) {
+                                            Ok(tx) => {
+                                                if let Err(e) = with_wallet_db_write_lock(
                                                         "sync_engine.enhance.decrypt_and_store_transaction",
                                                         || {
                                                             decrypt_and_store_transaction(
@@ -216,27 +190,20 @@ pub(super) async fn run_enhancement(
                                                             "sync: decrypt_and_store_transaction (addr) failed: {e}"
                                                         );
                                                     }
-                                                }
-                                                Err(e) => {
-                                                    log::warn!(
-                                                        "sync: Transaction::read (addr) failed: {e}"
-                                                    )
-                                                }
+                                            }
+                                            Err(e) => {
+                                                log::warn!(
+                                                    "sync: Transaction::read (addr) failed: {e}"
+                                                )
                                             }
                                         }
                                     }
-                                    Ok(None) => break,
-                                    Err(e) => {
-                                        return Err(SyncError::net(format!(
-                                            "get_taddress_txids stream failed: {e}"
-                                        )));
-                                    }
                                 }
+                                Ok(None) => break,
+                                Err(e) => return Err(e),
                             }
-                        }
-                        Err(e) => {
-                            return Err(SyncError::net(format!("get_taddress_txids failed: {e}")));
-                        }
+                        },
+                        Err(e) => return Err(e),
                     }
                 }
             }

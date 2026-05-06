@@ -748,16 +748,9 @@ async fn broadcast_raw_transaction(
     client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
     raw_tx: &[u8],
 ) -> Result<(), String> {
-    use zcash_client_backend::proto::service::RawTransaction;
-
-    let resp = client
-        .send_transaction(RawTransaction {
-            data: raw_tx.to_vec(),
-            height: 0,
-        })
+    let resp = crate::wallet::sync_engine::send_transaction(client, raw_tx)
         .await
-        .map_err(|e| format!("SendTransaction gRPC failed: {e}"))?
-        .into_inner();
+        .map_err(|e| format!("SendTransaction gRPC failed: {e}"))?;
 
     if resp.error_code != 0 {
         return Err(format!(

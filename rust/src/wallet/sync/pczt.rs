@@ -295,14 +295,9 @@ pub async fn extract_and_broadcast_pczt(
         .await
         .map_err(|e| e.to_string())?;
 
-    let resp = client
-        .send_transaction(zcash_client_backend::proto::service::RawTransaction {
-            data: tx_bytes,
-            height: 0,
-        })
+    let resp = crate::wallet::sync_engine::send_transaction(&mut client, &tx_bytes)
         .await
-        .map_err(|e| format!("Broadcast: {e}"))?
-        .into_inner();
+        .map_err(|e| format!("Broadcast: {e}"))?;
 
     // zebra-lightwalletd returns the txid in `error_message` on
     // success, so the only reliable signal is `error_code`.

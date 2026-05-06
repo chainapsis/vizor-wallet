@@ -8,7 +8,7 @@ use zcash_client_backend::{
         scanning::ScanPriority,
         WalletRead, WalletWrite,
     },
-    proto::service::{self, BlockId, ChainSpec},
+    proto::service,
 };
 use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::block::BlockHash;
@@ -45,8 +45,8 @@ pub(crate) mod mempool;
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
-pub(crate) use lwd::open_lwd_channel;
-use lwd::{download_blocks, download_subtree_roots};
+use lwd::{download_blocks, download_subtree_roots, get_tree_state};
+pub(crate) use lwd::{get_latest_block, get_transaction, open_lwd_channel, send_transaction};
 
 /// Progress event sent to caller (Dart or Swift).
 #[derive(Clone, Debug)]
@@ -334,11 +334,7 @@ async fn run_sync_impl(
     // one captured at sync start. The initial `tip` response is
     // also kept around for its other fields but `current_tip_height`
     // is the authoritative value for emitted events.
-    let tip = client
-        .get_latest_block(ChainSpec::default())
-        .await
-        .map_err(|e| SyncError::net(format!("get_latest_block: {e}")))?
-        .into_inner();
+    let tip = get_latest_block(&mut client).await?;
     let mut current_tip_height: u64 = tip.height;
     let tip_height = BlockHeight::from_u32(tip.height as u32);
     log::info!("[{}] sync: chain tip = {}", elapsed(), tip.height);
@@ -506,11 +502,7 @@ async fn run_sync_impl(
         // Errors are logged and skipped — we just keep the old
         // tip and try again next period.
         if last_tip_refresh.elapsed() >= TIP_REFRESH_INTERVAL {
-            match client
-                .get_latest_block(ChainSpec::default())
-                .await
-                .map(|resp| resp.into_inner())
-            {
+            match get_latest_block(&mut client).await {
                 Ok(fresh_tip) => {
                     let fresh_height = BlockHeight::from_u32(fresh_tip.height as u32);
                     if let Err(e) =
@@ -666,14 +658,7 @@ async fn run_sync_impl(
         let from_state = if u32::from(start) <= SAPLING_ACTIVATION_HEIGHT {
             chain::ChainState::empty(start - 1, BlockHash([0u8; 32]))
         } else {
-            let ts = client
-                .get_tree_state(BlockId {
-                    height: u32::from(start - 1) as u64,
-                    hash: vec![],
-                })
-                .await
-                .map_err(|e| SyncError::net(format!("get_tree_state: {e}")))?
-                .into_inner();
+            let ts = get_tree_state(&mut client, u32::from(start - 1) as u64).await?;
             ts.to_chain_state()
                 .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))?
         };
@@ -895,10 +880,9 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        match client
-            .get_latest_block(ChainSpec::default())
+        match get_latest_block(&mut client)
             .await
-            .map(|resp| resp.into_inner().height as u32)
+            .map(|tip| tip.height as u32)
         {
             Ok(fresh_tip_height) => {
                 // Promote the fresh tip to the authoritative value

@@ -52,16 +52,12 @@ pub fn get_latest_block_height(lightwalletd_url: String) -> Result<u64, String> 
     catch(|| {
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
-            use zcash_client_backend::proto::service::ChainSpec;
-
             let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
                 .await
                 .map_err(|e| e.to_string())?;
-            let tip = client
-                .get_latest_block(ChainSpec::default())
+            let tip = crate::wallet::sync_engine::get_latest_block(&mut client)
                 .await
-                .map_err(|e| format!("get_latest_block: {e}"))?
-                .into_inner();
+                .map_err(|e| e.to_string())?;
 
             Ok(tip.height)
         })
