@@ -168,7 +168,7 @@ abstract class RustLibApi extends BaseApi {
     String? memo,
   });
 
-  Future<String> crateApiSyncExecuteProposal({
+  Future<ExecuteProposalResult> crateApiSyncExecuteProposal({
     required String dbPath,
     required String lightwalletdUrl,
     required BigInt proposalId,
@@ -1040,7 +1040,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<String> crateApiSyncExecuteProposal({
+  Future<ExecuteProposalResult> crateApiSyncExecuteProposal({
     required String dbPath,
     required String lightwalletdUrl,
     required BigInt proposalId,
@@ -1068,7 +1068,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
+          decodeSuccessData: sse_decode_execute_proposal_result,
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncExecuteProposalConstMeta,
@@ -2922,6 +2922,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ExecuteProposalResult dco_decode_execute_proposal_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return ExecuteProposalResult(
+      txids: dco_decode_String(arr[0]),
+      status: dco_decode_String(arr[1]),
+      broadcastedCount: dco_decode_u_32(arr[2]),
+      totalCount: dco_decode_u_32(arr[3]),
+      message: dco_decode_opt_String(arr[4]),
+    );
+  }
+
+  @protected
   double dco_decode_f_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
@@ -3445,6 +3460,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_u_64(deserializer));
+  }
+
+  @protected
+  ExecuteProposalResult sse_decode_execute_proposal_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_txids = sse_decode_String(deserializer);
+    var var_status = sse_decode_String(deserializer);
+    var var_broadcastedCount = sse_decode_u_32(deserializer);
+    var var_totalCount = sse_decode_u_32(deserializer);
+    var var_message = sse_decode_opt_String(deserializer);
+    return ExecuteProposalResult(
+      txids: var_txids,
+      status: var_status,
+      broadcastedCount: var_broadcastedCount,
+      totalCount: var_totalCount,
+      message: var_message,
+    );
   }
 
   @protected
@@ -4083,6 +4117,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_64(self, serializer);
+  }
+
+  @protected
+  void sse_encode_execute_proposal_result(
+    ExecuteProposalResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.txids, serializer);
+    sse_encode_String(self.status, serializer);
+    sse_encode_u_32(self.broadcastedCount, serializer);
+    sse_encode_u_32(self.totalCount, serializer);
+    sse_encode_opt_String(self.message, serializer);
   }
 
   @protected

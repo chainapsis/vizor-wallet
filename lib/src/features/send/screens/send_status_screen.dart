@@ -30,7 +30,7 @@ const _saplingSpendHash = 'a15ab54c2888880e53c823a3063820c728444126';
 const _saplingOutputHash = '0ebc5a1ef3653948e1c46cf7a16071eac4b7e352';
 const _saplingParamBaseUrl = 'https://download.z.cash/downloads/';
 
-enum _SendStatusPhase { sending, succeeded, failed }
+enum _SendStatusPhase { sending, pendingBroadcast, succeeded, failed }
 
 class SendStatusScreen extends ConsumerStatefulWidget {
   const SendStatusScreen({super.key, required this.args});
@@ -46,6 +46,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   bool _proposalConsumed = false;
   bool _discardScheduled = false;
   String? _error;
+  String? _statusMessage;
   String? _txid;
   late final DateTime _startedAt = DateTime.now();
   DateTime? _completedAt;
@@ -120,6 +121,25 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       return 'Transaction expired before it could be sent.';
     }
     return 'Transaction could not be sent. Please return to your wallet and verify the latest status.';
+  }
+
+  String? _firstTxid(String txids) {
+    for (final part in txids.split(',')) {
+      final trimmed = part.trim();
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    return null;
+  }
+
+  String _broadcastStatusMessage(rust_sync.ExecuteProposalResult result) {
+    if (result.status == 'partial_broadcast') {
+      return 'Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.';
+    }
+    final rawMessage = result.message?.toLowerCase() ?? '';
+    if (rawMessage.contains('broadcast rejected')) {
+      return 'Transaction was created locally, but the network did not accept the first broadcast. It may retry automatically until it expires. Do not send again unless this transaction expires.';
+    }
+    return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
   }
 
   String _formatReceiptAmount(BigInt zatoshi) {
@@ -364,7 +384,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       }
 
       final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
-      final txid = await rust_sync.executeProposal(
+      final result = await rust_sync.executeProposal(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         proposalId: widget.args.proposalId,
@@ -374,6 +394,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
       );
       _proposalConsumed = true;
+      final broadcastComplete = result.status == 'broadcasted';
 
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();
@@ -398,8 +419,13 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
 
       if (await _abortIfUnmounted()) return;
       setState(() {
-        _phase = _SendStatusPhase.succeeded;
-        _txid = txid;
+        _phase = broadcastComplete
+            ? _SendStatusPhase.succeeded
+            : _SendStatusPhase.pendingBroadcast;
+        _txid = _firstTxid(result.txids);
+        _statusMessage = broadcastComplete
+            ? null
+            : _broadcastStatusMessage(result);
         _completedAt = DateTime.now();
       });
     } catch (e) {
@@ -419,6 +445,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       setState(() {
         _phase = _SendStatusPhase.failed;
         _error = message;
+        _statusMessage = null;
       });
     }
   }
@@ -428,10 +455,12 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     final addressLines = _splitAddress();
     final receiptPhase = switch (_phase) {
       _SendStatusPhase.sending => TransactionReceiptPhase.sending,
+      _SendStatusPhase.pendingBroadcast => TransactionReceiptPhase.pending,
       _SendStatusPhase.succeeded => TransactionReceiptPhase.succeeded,
       _SendStatusPhase.failed => TransactionReceiptPhase.failed,
     };
     final useFailedReceiptLayout = _phase == _SendStatusPhase.failed;
+    final statusMessage = _statusMessage;
 
     return PopScope<void>(
       canPop: false,
@@ -506,12 +535,28 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                               ),
                               feeText:
                                   '${_formatFee(widget.args.feeZatoshi)} ZEC',
+                              extraBlocks: [
+                                if (statusMessage != null)
+                                  TransactionReceiptBlockData(
+                                    title: 'Status',
+                                    child: Text(
+                                      statusMessage,
+                                      style: AppTypography.bodyMedium.copyWith(
+                                        color: context.colors.text.accent,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                               dateText: _formatDate(_completedAt ?? _startedAt),
                               error: _error,
                               failureFallbackText: 'Send failed',
                               useFailedReceiptLayout: useFailedReceiptLayout,
                               onTransactionHashPressed:
-                                  _phase == _SendStatusPhase.succeeded
+                                  (_phase == _SendStatusPhase.succeeded ||
+                                          _phase ==
+                                              _SendStatusPhase
+                                                  .pendingBroadcast) &&
+                                      _txid != null
                                   ? _openTransactionExplorer
                                   : null,
                               onBackToWallet: _phase == _SendStatusPhase.failed

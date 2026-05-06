@@ -207,6 +207,7 @@ pub fn execute_send(
         sapling_params.as_ref().map(|p| p.output_path.clone()),
     )
     .expect("execute_proposal")
+    .txids
 }
 
 pub fn positive_history_count(history: &[sync_api::TransactionInfo]) -> usize {

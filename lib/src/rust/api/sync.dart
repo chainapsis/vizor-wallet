@@ -253,7 +253,7 @@ Future<SendMaxEstimateResult> estimateSendMax({
 
 /// Step 2: Execute a previously proposed transfer and broadcast to the network.
 /// spend_params_path and output_params_path are required only if needs_sapling_params was true.
-Future<String> executeProposal({
+Future<ExecuteProposalResult> executeProposal({
   required String dbPath,
   required String lightwalletdUrl,
   required BigInt proposalId,
@@ -606,6 +606,41 @@ class BlockMetaInfo {
           time == other.time &&
           saplingOutputsCount == other.saplingOutputsCount &&
           orchardActionsCount == other.orchardActionsCount;
+}
+
+class ExecuteProposalResult {
+  final String txids;
+  final String status;
+  final int broadcastedCount;
+  final int totalCount;
+  final String? message;
+
+  const ExecuteProposalResult({
+    required this.txids,
+    required this.status,
+    required this.broadcastedCount,
+    required this.totalCount,
+    this.message,
+  });
+
+  @override
+  int get hashCode =>
+      txids.hashCode ^
+      status.hashCode ^
+      broadcastedCount.hashCode ^
+      totalCount.hashCode ^
+      message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExecuteProposalResult &&
+          runtimeType == other.runtimeType &&
+          txids == other.txids &&
+          status == other.status &&
+          broadcastedCount == other.broadcastedCount &&
+          totalCount == other.totalCount &&
+          message == other.message;
 }
 
 class ProposalResult {

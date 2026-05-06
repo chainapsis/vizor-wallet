@@ -16,8 +16,9 @@
 //!   3. [`execute_proposal`] — consume the stored proposal, derive
 //!      the USK from the supplied seed (scoped + dropped before
 //!      network I/O), build + sign the transaction(s), and broadcast
-//!      them via `send_transaction` gRPC. Returns a comma-separated
-//!      txid string on success.
+//!      them via `send_transaction` gRPC. Once transaction creation
+//!      succeeds, broadcast failures are returned as a structured
+//!      pending-broadcast result instead of a fatal send failure.
 //!
 //! The `PROPOSAL_STORE` stays in `sync/mod.rs` because the hardware
 //! PCZT pipeline also consumes from it (see `sync/pczt.rs`) and
@@ -82,6 +83,14 @@ pub(crate) struct ProposalResult {
     pub proposal_id: u64,
     pub needs_sapling_params: bool,
     pub fee_zatoshi: u64,
+}
+
+pub struct ExecuteProposalResult {
+    pub txids: String,
+    pub status: String,
+    pub broadcasted_count: u32,
+    pub total_count: u32,
+    pub message: Option<String>,
 }
 
 pub(crate) struct SendMaxEstimateResult {
@@ -342,7 +351,9 @@ pub(crate) async fn shield_transparent_balance(
     )?;
 
     let txids: Vec<TxId> = txids.iter().cloned().collect();
-    let txids = broadcast_created_transactions(db_path, lightwalletd_url, &txids, "shield").await?;
+    let txids = broadcast_created_transactions(db_path, lightwalletd_url, &txids, "shield")
+        .await
+        .into_legacy_result()?;
     Ok(ShieldTransparentResult {
         txids,
         fee_zatoshi,
@@ -351,7 +362,7 @@ pub(crate) async fn shield_transparent_balance(
 }
 
 /// Execute a previously proposed transfer, then broadcast to the
-/// network. Returns comma-separated txids on success.
+/// network.
 ///
 /// Consume-on-entry: the proposal is removed from `PROPOSAL_STORE`
 /// before any fallible work, mirroring `create_pczt_from_proposal`
@@ -365,7 +376,7 @@ pub async fn execute_proposal(
     seed_bytes: &[u8],
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
-) -> Result<String, String> {
+) -> Result<ExecuteProposalResult, String> {
     let stored = consume_stored_proposal(
         proposal_id,
         send_flow_id,
@@ -424,7 +435,11 @@ pub async fn execute_proposal(
     })?;
 
     let txids: Vec<TxId> = txids.iter().cloned().collect();
-    broadcast_created_transactions(db_path, lightwalletd_url, &txids, "send").await
+    Ok(
+        broadcast_created_transactions(db_path, lightwalletd_url, &txids, "send")
+            .await
+            .into_execute_result(),
+    )
 }
 
 fn shielding_threshold() -> Result<Zatoshis, String> {
@@ -586,31 +601,110 @@ fn proposal_shielded_zatoshi(proposal: &Proposal<StandardFeeRule, Infallible>) -
         .sum()
 }
 
+#[derive(Debug)]
+struct CreatedBroadcastResult {
+    txids: String,
+    status: &'static str,
+    broadcasted_count: u32,
+    total_count: u32,
+    message: Option<String>,
+}
+
+impl CreatedBroadcastResult {
+    const BROADCASTED: &'static str = "broadcasted";
+    const PENDING_BROADCAST: &'static str = "pending_broadcast";
+    const PARTIAL_BROADCAST: &'static str = "partial_broadcast";
+
+    fn into_execute_result(self) -> ExecuteProposalResult {
+        ExecuteProposalResult {
+            txids: self.txids,
+            status: self.status.to_string(),
+            broadcasted_count: self.broadcasted_count,
+            total_count: self.total_count,
+            message: self.message,
+        }
+    }
+
+    fn into_legacy_result(self) -> Result<String, String> {
+        if self.status == Self::BROADCASTED {
+            Ok(self.txids)
+        } else {
+            Err(self
+                .message
+                .unwrap_or_else(|| "Broadcast did not complete".to_string()))
+        }
+    }
+}
+
 async fn broadcast_created_transactions(
     db_path: &str,
     lightwalletd_url: &str,
     txids: &[TxId],
     log_label: &str,
-) -> Result<String, String> {
-    // Connect to lightwalletd once for all broadcasts.
-    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
-        .await
-        .map_err(|e| e.to_string())?;
-
+) -> CreatedBroadcastResult {
     let txid_strings: Vec<String> = txids.iter().map(|id| format!("{id}")).collect();
+    let txids_joined = txid_strings.join(",");
+    let total_count = txids.len() as u32;
 
-    let read_conn =
-        open_readonly_conn(db_path).map_err(|e| format!("Failed to open DB for broadcast: {e}"))?;
+    // Connect to lightwalletd once for all broadcasts.
+    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
+        Ok(client) => client,
+        Err(e) => {
+            let message =
+                format!("Broadcast could not start after local transaction creation. Error: {e}");
+            log::warn!("{log_label}: {message}");
+            return CreatedBroadcastResult {
+                txids: txids_joined,
+                status: CreatedBroadcastResult::PENDING_BROADCAST,
+                broadcasted_count: 0,
+                total_count,
+                message: Some(message),
+            };
+        }
+    };
+
+    let read_conn = match open_readonly_conn(db_path) {
+        Ok(conn) => conn,
+        Err(e) => {
+            let message =
+                format!("Failed to open DB for broadcast after local transaction creation: {e}");
+            log::warn!("{log_label}: {message}");
+            return CreatedBroadcastResult {
+                txids: txids_joined,
+                status: CreatedBroadcastResult::PENDING_BROADCAST,
+                broadcasted_count: 0,
+                total_count,
+                message: Some(message),
+            };
+        }
+    };
 
     let mut broadcast_ok: Vec<String> = Vec::new();
     for txid in txids.iter() {
-        let raw_tx = read_conn
-            .query_row(
-                "SELECT raw FROM transactions WHERE txid = ?1",
-                rusqlite::params![txid.as_ref()],
-                |row| row.get::<_, Vec<u8>>(0),
-            )
-            .map_err(|e| format!("Failed to get raw tx for {txid}: {e}"))?;
+        let raw_tx = match read_conn.query_row(
+            "SELECT raw FROM transactions WHERE txid = ?1",
+            rusqlite::params![txid.as_ref()],
+            |row| row.get::<_, Vec<u8>>(0),
+        ) {
+            Ok(raw_tx) => raw_tx,
+            Err(e) => {
+                let message = format!(
+                    "Failed to get raw tx for {txid} after local transaction creation: {e}"
+                );
+                log::warn!("{log_label}: {message}");
+                return CreatedBroadcastResult {
+                    txids: txids_joined,
+                    status: if broadcast_ok.is_empty() {
+                        CreatedBroadcastResult::PENDING_BROADCAST
+                    } else {
+                        CreatedBroadcastResult::PARTIAL_BROADCAST
+                    },
+                    broadcasted_count: broadcast_ok.len() as u32,
+                    total_count,
+                    message: Some(message),
+                };
+            }
+        };
 
         match broadcast_raw_transaction(&mut client, &raw_tx).await {
             Ok(()) => {
@@ -618,17 +712,35 @@ async fn broadcast_created_transactions(
                 log::info!("{log_label}: broadcast {txid} ({} bytes)", raw_tx.len());
             }
             Err(e) => {
-                return Err(format!(
+                let message = format!(
                     "Broadcast failed after {}/{} txs sent ({}). Error: {e}",
                     broadcast_ok.len(),
                     txids.len(),
                     broadcast_ok.join(",")
-                ));
+                );
+                log::warn!("{log_label}: {message}");
+                return CreatedBroadcastResult {
+                    txids: txids_joined,
+                    status: if broadcast_ok.is_empty() {
+                        CreatedBroadcastResult::PENDING_BROADCAST
+                    } else {
+                        CreatedBroadcastResult::PARTIAL_BROADCAST
+                    },
+                    broadcasted_count: broadcast_ok.len() as u32,
+                    total_count,
+                    message: Some(message),
+                };
             }
         }
     }
 
-    Ok(txid_strings.join(","))
+    CreatedBroadcastResult {
+        txids: txids_joined,
+        status: CreatedBroadcastResult::BROADCASTED,
+        broadcasted_count: total_count,
+        total_count,
+        message: None,
+    }
 }
 
 /// Broadcast a raw transaction using an existing gRPC client.

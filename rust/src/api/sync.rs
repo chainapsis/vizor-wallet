@@ -572,6 +572,14 @@ pub struct ProposalResult {
     pub fee_zatoshi: u64,
 }
 
+pub struct ExecuteProposalResult {
+    pub txids: String,
+    pub status: String,
+    pub broadcasted_count: u32,
+    pub total_count: u32,
+    pub message: Option<String>,
+}
+
 pub struct SendMaxEstimateResult {
     pub amount_zatoshi: u64,
     pub fee_zatoshi: u64,
@@ -677,10 +685,10 @@ pub fn execute_proposal(
     seed: Vec<u8>,
     spend_params_path: Option<String>,
     output_params_path: Option<String>,
-) -> Result<String, String> {
+) -> Result<ExecuteProposalResult, String> {
     catch(|| {
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
-        rt.block_on(wallet_sync::execute_proposal(
+        let r = rt.block_on(wallet_sync::execute_proposal(
             &db_path,
             &lightwalletd_url,
             proposal_id,
@@ -688,7 +696,14 @@ pub fn execute_proposal(
             &seed,
             spend_params_path.as_deref(),
             output_params_path.as_deref(),
-        ))
+        ))?;
+        Ok(ExecuteProposalResult {
+            txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
+        })
     })
 }
 
