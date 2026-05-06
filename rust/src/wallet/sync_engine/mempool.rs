@@ -28,10 +28,12 @@
 //!   * **Write only after a wallet hit.** The hot path parses the
 //!     txid, skips txs already seen in this observer session, and
 //!     checks for existing unmined wallet rows. Unknown txs go
-//!     through read-only trial decryption first; only txs that
-//!     decrypt for one of our UFVKs call `decrypt_and_store_transaction`.
-//!     That keeps SQLite write contention proportional to wallet
-//!     relevance instead of global mempool volume.
+//!     through read-only trial decryption first; already-known txs
+//!     are also trial-decrypted once so wallet-internal sends can
+//!     discover recipient accounts in the same DB. Only txs that add
+//!     wallet relevance call `decrypt_and_store_transaction`. That
+//!     keeps SQLite write contention proportional to wallet relevance
+//!     instead of global mempool volume.
 //!
 //!   * **Reconnect semantics match the SDK.** lightwalletd closes
 //!     the stream every time a new block is mined — normal EOF,
@@ -591,6 +593,48 @@ fn handle_mempool_tx<F>(
 
     if known.matched || !known.account_uuids.is_empty() {
         stats.record_known_pending_hit();
+        let decrypt_started_at = Instant::now();
+        let decrypted_account_uuids = match trial_decrypt_account_uuids(db_path, network, &tx) {
+            Ok(accounts) => {
+                stats.record_trial_decrypt(decrypt_started_at.elapsed(), !accounts.is_empty());
+                accounts
+            }
+            Err(e) => {
+                stats.record_trial_decrypt_fail(decrypt_started_at.elapsed());
+                log::debug!("mempool: trial decrypt for known {txid_hex} failed: {e}");
+                Vec::new()
+            }
+        };
+        let (account_uuids, has_new_account) =
+            merge_account_uuids(&known.account_uuids, &decrypted_account_uuids);
+
+        if has_new_account {
+            let store_started_at = Instant::now();
+            match crate::wallet::sync::decrypt_and_store_transaction(
+                db_path,
+                network,
+                &raw_tx.data,
+                None,
+            ) {
+                Ok(()) => {
+                    stats.record_store(store_started_at.elapsed(), true);
+                    emit_wallet_relevant_tx(
+                        txid_hex,
+                        txid_bytes,
+                        account_uuids,
+                        seen_cache,
+                        emit,
+                        "stored known tx",
+                    );
+                    return;
+                }
+                Err(e) => {
+                    stats.record_store(store_started_at.elapsed(), false);
+                    log::warn!("mempool: failed to store known tx {txid_hex}: {e}");
+                }
+            }
+        }
+
         // `matched=true` with no account UUIDs is possible while the
         // transaction table has an unmined row but the account-scoped view
         // has not projected it yet. Dart treats empty account scope as the
@@ -750,6 +794,21 @@ fn trial_decrypt_account_uuids(
     }
 
     Ok(accounts.into_iter().collect())
+}
+
+fn merge_account_uuids(known: &[String], decrypted: &[String]) -> (Vec<String>, bool) {
+    let known_set = known.iter().cloned().collect::<BTreeSet<_>>();
+    let mut merged = known_set.clone();
+    let mut has_new_account = false;
+
+    for account_uuid in decrypted {
+        if !known_set.contains(account_uuid) {
+            has_new_account = true;
+        }
+        merged.insert(account_uuid.clone());
+    }
+
+    (merged.into_iter().collect(), has_new_account)
 }
 
 /// Cancel-aware sleep. Breaks into 100ms slices so a pending
@@ -950,6 +1009,53 @@ mod tests {
         assert_eq!(
             known.account_uuids,
             vec![first_uuid.to_string(), second_uuid.to_string()]
+        );
+    }
+
+    #[test]
+    fn merge_account_uuids_detects_new_decrypted_accounts() {
+        let known = vec![
+            "67e55044-10b1-426f-9247-bb680e5fe0c8".to_string(),
+            "550e8400-e29b-41d4-a716-446655440000".to_string(),
+        ];
+        let decrypted = vec![
+            "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            "2c2f2a4b-9c64-41f8-9801-fd06553fd4f6".to_string(),
+        ];
+
+        let (merged, has_new_account) = merge_account_uuids(&known, &decrypted);
+
+        assert!(has_new_account);
+        assert_eq!(
+            merged,
+            vec![
+                "2c2f2a4b-9c64-41f8-9801-fd06553fd4f6".to_string(),
+                "550e8400-e29b-41d4-a716-446655440000".to_string(),
+                "67e55044-10b1-426f-9247-bb680e5fe0c8".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn merge_account_uuids_avoids_store_when_decrypted_accounts_are_known() {
+        let known = vec![
+            "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            "67e55044-10b1-426f-9247-bb680e5fe0c8".to_string(),
+        ];
+        let decrypted = vec![
+            "67e55044-10b1-426f-9247-bb680e5fe0c8".to_string(),
+            "550e8400-e29b-41d4-a716-446655440000".to_string(),
+        ];
+
+        let (merged, has_new_account) = merge_account_uuids(&known, &decrypted);
+
+        assert!(!has_new_account);
+        assert_eq!(
+            merged,
+            vec![
+                "550e8400-e29b-41d4-a716-446655440000".to_string(),
+                "67e55044-10b1-426f-9247-bb680e5fe0c8".to_string(),
+            ]
         );
     }
 

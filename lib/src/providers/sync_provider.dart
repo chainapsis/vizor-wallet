@@ -247,6 +247,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _isSyncing = false;
   bool _isInForeground = true;
   int _lastLoggedHeight = 0;
+  SyncProgressEvent? _lastForegroundSyncProgress;
   int _syncGen = 0; // incremented by stopSync to invalidate pending startSync
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
@@ -466,6 +467,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     _isSyncing = true;
     _lastLoggedHeight = 0;
+    _lastForegroundSyncProgress = null;
     _stopDisplayProgressTimer();
     final gen = ++_syncGen;
     final prev = state.value;
@@ -520,8 +522,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             mode: 1,
           );
           _syncSub = stream.listen(
-            (event) => _onSyncProgress(
-              SyncProgressEvent(
+            (event) {
+              final progress = SyncProgressEvent(
                 scannedHeight: event.scannedHeight.toInt(),
                 chainTipHeight: event.chainTipHeight.toInt(),
                 percentage: event.percentage,
@@ -531,8 +533,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                 isComplete: event.isComplete,
                 hasNewTx: event.hasNewTx,
                 phase: event.phase,
-              ),
-            ),
+              );
+              _lastForegroundSyncProgress = progress;
+              unawaited(_onSyncProgress(progress));
+            },
             onDone: () {
               log('Sync: stream ended');
               _syncSub = null;
@@ -548,12 +552,20 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               // already ran, these are no-ops.
               if (_isSyncing) {
                 final current = state.value;
-                final endedAtTip =
+                final lastProgress = _lastForegroundSyncProgress;
+                final endedAtTipFromState =
                     current != null &&
                     current.percentage >= 1.0 &&
                     current.chainTipHeight > 0 &&
-                    current.scannedHeight >= current.chainTipHeight &&
-                    rust_sync.getSyncMode() == 1;
+                    current.scannedHeight >= current.chainTipHeight;
+                final endedAtTipFromProgress =
+                    lastProgress != null &&
+                    lastProgress.percentage >= 1.0 &&
+                    lastProgress.chainTipHeight > 0 &&
+                    lastProgress.scannedHeight >= lastProgress.chainTipHeight;
+                final endedAtTip =
+                    rust_sync.getSyncMode() == 1 &&
+                    (endedAtTipFromState || endedAtTipFromProgress);
                 _isSyncing = false;
                 _stopDisplayProgressTimer();
                 if (endedAtTip) {
