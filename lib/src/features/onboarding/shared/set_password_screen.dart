@@ -16,6 +16,7 @@ import '../../../providers/wallet_mutation_guard.dart';
 import '../create/onboarding_split_view.dart';
 import '../import/import_split_view.dart';
 import 'onboarding_flow_args.dart';
+import 'onboarding_error_messages.dart';
 
 class SetPasswordScreen extends ConsumerStatefulWidget {
   const SetPasswordScreen({super.key, required this.args});
@@ -134,7 +135,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       if (!mounted) return;
       setState(() {
         _submitPhase = _SetPasswordSubmitPhase.idle;
-        _submitError = e.toString();
+        _submitError = onboardingSubmitErrorMessage(e);
       });
       return;
     }
