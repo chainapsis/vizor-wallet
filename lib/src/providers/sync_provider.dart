@@ -1024,16 +1024,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// backoff, so the Dart side only needs to:
   ///
   ///   1. Subscribe to the emitted stream.
-  ///   2. On each `matched=true` event, trigger the same balance
-  ///      refresh path sync uses for `hasNewTx` events. (When an
-  ///      outbound send first lands in lightwalletd's mempool the
-  ///      wallet hasn't seen the tx mined yet, but the relayed
-  ///      bytes are enough for us to flip the UI from "broadcast
-  ///      pending" to "propagating" sooner than the next block
-  ///      scan would.)
-  ///   3. Silently ignore `matched=false` events — they're other
-  ///      people's transactions, used only for future mempool-side
-  ///      inbound discovery (not in scope for v1).
+  ///   2. On each `matched=true` event for the active account, trigger
+  ///      the same balance refresh path sync uses for `hasNewTx`
+  ///      events. Already-known outbound txs refresh as before; new
+  ///      inbound shielded txs are first stored by Rust as unmined
+  ///      wallet transactions.
+  ///   3. Skip refresh for inactive-account events. The wallet-wide
+  ///      observer has already stored the tx, so switching accounts can
+  ///      surface it through the normal account-scoped history read.
   ///
   /// Reuses [_mempoolSub] as the single subscription handle. The
   /// `startMempoolObserver` FRB call is guarded on the Rust side
@@ -1056,6 +1054,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _mempoolSub = stream.listen(
       (event) {
         if (!event.matched) return;
+        final activeAccountUuid = _getActiveAccountUuid();
+        if (event.accountUuids.isNotEmpty &&
+            !event.accountUuids.contains(activeAccountUuid)) {
+          log(
+            'Mempool: matched ${event.txidHex} for inactive account, skipping active refresh',
+          );
+          return;
+        }
         log('Mempool: matched ${event.txidHex}, refreshing balance');
         // Fire-and-forget: _refreshBalance rebuilds state and
         // logs its own errors. We don't await because the

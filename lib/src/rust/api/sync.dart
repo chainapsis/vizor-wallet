@@ -495,16 +495,25 @@ class ApiMempoolTxEvent {
   /// Lower-case hex of the tx id.
   final String txidHex;
 
+  /// Account UUIDs that this event is known to affect. Empty
+  /// keeps the legacy behavior of refreshing the active account.
+  final List<String> accountUuids;
+
   /// `true` when the wallet DB already has this txid in its
   /// `transactions` table with `mined_height IS NULL`. Dart
   /// uses this flag to decide whether to refresh balance +
   /// history immediately.
   final bool matched;
 
-  const ApiMempoolTxEvent({required this.txidHex, required this.matched});
+  const ApiMempoolTxEvent({
+    required this.txidHex,
+    required this.accountUuids,
+    required this.matched,
+  });
 
   @override
-  int get hashCode => txidHex.hashCode ^ matched.hashCode;
+  int get hashCode =>
+      txidHex.hashCode ^ accountUuids.hashCode ^ matched.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -512,6 +521,7 @@ class ApiMempoolTxEvent {
       other is ApiMempoolTxEvent &&
           runtimeType == other.runtimeType &&
           txidHex == other.txidHex &&
+          accountUuids == other.accountUuids &&
           matched == other.matched;
 }
 
