@@ -549,11 +549,11 @@ Seed-relevance rule:
 Desktop window appearance is managed by the external [`desktop_window_bootstrap`](https://github.com/chainapsis/desktop_window_bootstrap) package plus `window_manager`, with a strict responsibility split:
 
 - `desktop_window_bootstrap` owns window appearance and titlebar overlap handling.
-  - On macOS this means the transparent titlebar / full-size content-view shell is applied natively before the window is shown, via [macos/Runner/MainFlutterWindow.swift](/Users/junghwanyun/zcash-wallet/macos/Runner/MainFlutterWindow.swift).
-  - The app calls `DesktopWindowBootstrap.initialize()` in [lib/main.dart](/Users/junghwanyun/zcash-wallet/lib/main.dart) after `initializeDesktopWindow()` has created the OS window but before `showDesktopWindow()` reveals it.
-  - `DesktopWindowTitlebarSafeArea` in [lib/app.dart](/Users/junghwanyun/zcash-wallet/lib/app.dart) pads Flutter content below the macOS traffic-light/titlebar area. Keep it wrapped around the app root.
+  - On macOS this means the transparent titlebar / full-size content-view shell is applied natively before the window is shown, via `macos/Runner/MainFlutterWindow.swift`.
+  - The app calls `DesktopWindowBootstrap.initialize()` in `lib/main.dart` after `initializeDesktopWindow()` has created the OS window but before `showDesktopWindow()` reveals it.
+  - `DesktopWindowTitlebarSafeArea` in `lib/app.dart` pads Flutter content below the macOS traffic-light/titlebar area. Keep it wrapped around the app root.
 - `window_manager` owns sizing/lifecycle only.
-  - [lib/src/core/layout/app_layout.dart](/Users/junghwanyun/zcash-wallet/lib/src/core/layout/app_layout.dart) should remain responsible for initial size, minimum size, aspect ratio, `show()`, `focus()`, and layout-mode reconciliation from window events.
+  - `lib/src/core/layout/app_layout.dart` should remain responsible for initial size, minimum size, aspect ratio, `show()`, `focus()`, and layout-mode reconciliation from window events.
   - Do not reintroduce `TitleBarStyle` ownership or other appearance writes through `window_manager`; that overlaps with `desktop_window_bootstrap`.
 
 Current startup order for desktop platforms:

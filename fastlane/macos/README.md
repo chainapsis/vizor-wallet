@@ -63,4 +63,4 @@ VIZOR_MACOS_FLAVORS=mainnet,testnet bundle exec fastlane mac release
 - CI는 `MATCH_READONLY=true`로 두고, `match` 저장소는 로컬에서 한 번 시드해 둔 상태를 전제로 합니다.
 - `MATCH_READONLY=false`로 돌리면 fastlane은 `match` write 모드로 동작합니다. 이때는 `APP_STORE_CONNECT_API_KEY_JSON`이 준비돼 있어야 하며, git commit identity는 deployment workflow가 설정합니다.
 - `MATCH_READONLY=false`일 때 testnet Bundle ID(`com.keplr.vizor.testnet`)가 없으면 fastlane이 App Store Connect API로 먼저 생성한 뒤 Developer ID provisioning profile을 생성합니다.
-- 산출물은 `/Users/junghwanyun/zcash-wallet/dist/macos` 아래에 생성됩니다.
+- 산출물은 repo root의 `dist/macos` 아래에 생성됩니다.
