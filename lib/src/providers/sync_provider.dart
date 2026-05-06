@@ -1528,43 +1528,56 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
 
+    // Commit against the latest state so a slow balance/history refresh
+    // cannot roll sync progress or completion metadata back to the snapshot
+    // captured before the awaits above.
+    final current = state.value;
+    final currentScoped = _previousScopedState(current, accountUuid);
+    final accountFallback = currentScoped ?? scopedPrev;
+
     state = AsyncData(
       SyncState(
         accountUuid: accountUuid,
         hasBalanceData:
-            didFetchBalance || (scopedPrev?.hasBalanceData ?? false),
+            didFetchBalance || (accountFallback?.hasBalanceData ?? false),
         hasRecentTransactionsData:
             didFetchRecentTxs ||
-            (scopedPrev?.hasRecentTransactionsData ?? false),
-        isSyncing: prev?.isSyncing ?? false,
-        isBackgroundMode: _bgDelegate.isActive,
-        percentage: prev?.percentage ?? 0.0,
-        displayPercentage: prev?.displayPercentage ?? prev?.percentage ?? 0.0,
-        scannedHeight: prev?.scannedHeight ?? 0,
-        chainTipHeight: prev?.chainTipHeight ?? 0,
-        transparentBalance: transparent ?? scopedPrev?.transparentBalance,
-        saplingBalance: sapling ?? scopedPrev?.saplingBalance,
-        orchardBalance: orchard ?? scopedPrev?.orchardBalance,
+            (accountFallback?.hasRecentTransactionsData ?? false),
+        isSyncing: current?.isSyncing ?? false,
+        isBackgroundMode: current?.isBackgroundMode ?? _bgDelegate.isActive,
+        percentage: current?.percentage ?? 0.0,
+        displayPercentage:
+            current?.displayPercentage ?? current?.percentage ?? 0.0,
+        scannedHeight: current?.scannedHeight ?? 0,
+        chainTipHeight: current?.chainTipHeight ?? 0,
+        transparentBalance: transparent ?? accountFallback?.transparentBalance,
+        saplingBalance: sapling ?? accountFallback?.saplingBalance,
+        orchardBalance: orchard ?? accountFallback?.orchardBalance,
         transparentPendingBalance:
-            transparentPending ?? scopedPrev?.transparentPendingBalance,
+            transparentPending ?? accountFallback?.transparentPendingBalance,
         saplingPendingBalance:
-            saplingPending ?? scopedPrev?.saplingPendingBalance,
+            saplingPending ?? accountFallback?.saplingPendingBalance,
         orchardPendingBalance:
-            orchardPending ?? scopedPrev?.orchardPendingBalance,
+            orchardPending ?? accountFallback?.orchardPendingBalance,
         canShieldTransparentBalance:
             canShieldTransparentBalance ??
-            scopedPrev?.canShieldTransparentBalance ??
+            accountFallback?.canShieldTransparentBalance ??
             false,
         shieldTransparentFee:
-            shieldTransparentFee ?? scopedPrev?.shieldTransparentFee,
+            shieldTransparentFee ?? accountFallback?.shieldTransparentFee,
         shieldTransparentAmount:
-            shieldTransparentAmount ?? scopedPrev?.shieldTransparentAmount,
-        spendableBalance: spendable ?? scopedPrev?.spendableBalance,
-        totalBalance: total ?? scopedPrev?.totalBalance,
-        recentTransactions: recentTxs,
-        lastSyncStartedAt: prev?.lastSyncStartedAt,
-        lastSyncCompletedAt: prev?.lastSyncCompletedAt,
-        lastSyncFailedAt: prev?.lastSyncFailedAt,
+            shieldTransparentAmount ?? accountFallback?.shieldTransparentAmount,
+        spendableBalance: spendable ?? accountFallback?.spendableBalance,
+        totalBalance: total ?? accountFallback?.totalBalance,
+        failure: current?.failure,
+        error: current?.error,
+        recentTransactions: didFetchRecentTxs
+            ? recentTxs
+            : accountFallback?.recentTransactions ?? const [],
+        lastSyncStartedAt: current?.lastSyncStartedAt,
+        lastSyncCompletedAt: current?.lastSyncCompletedAt,
+        lastSyncFailedAt: current?.lastSyncFailedAt,
+        phase: current?.phase ?? '',
       ),
     );
   }
