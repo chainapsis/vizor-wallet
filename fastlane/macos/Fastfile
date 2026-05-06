@@ -183,6 +183,14 @@ def with_app_store_connect_api_key_path(required: true)
   end
 end
 
+def with_sigh_certificate_verification_skipped
+  previous = ENV["SIGH_SKIP_CERTIFICATE_VERIFICATION"]
+  ENV["SIGH_SKIP_CERTIFICATE_VERIFICATION"] = "true"
+  yield
+ensure
+  previous.nil? ? ENV.delete("SIGH_SKIP_CERTIFICATE_VERIFICATION") : ENV["SIGH_SKIP_CERTIFICATE_VERIFICATION"] = previous
+end
+
 def find_codesigning_identities(keychain_path)
   stdout, _stderr, _status = Open3.capture3("security", "find-identity", "-v", "-p", "codesigning", keychain_path)
   stdout
@@ -308,7 +316,9 @@ platform :mac do
           output_path: output_dir
         }
         match_options[:api_key_path] = api_key_path if api_key_path
-        match(match_options)
+        with_sigh_certificate_verification_skipped do
+          match(match_options)
+        end
       end
 
       import_match_signing_assets!(output_dir, keychain)
