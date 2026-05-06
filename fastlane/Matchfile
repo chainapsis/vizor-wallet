@@ -4,6 +4,12 @@ def env_or_default(key, default_value = nil)
   value
 end
 
+def env_csv_or_default(key, default_value)
+  value = ENV[key].to_s.strip
+  return default_value if value.empty?
+  value.split(",").map(&:strip).reject(&:empty?)
+end
+
 git_url(ENV.fetch("MATCH_GIT_URL"))
 storage_mode("git")
 git_branch(env_or_default("MATCH_GIT_BRANCH", "main"))
@@ -11,7 +17,7 @@ shallow_clone(true)
 
 type("developer_id")
 platform("macos")
-app_identifier(["com.keplr.vizor"])
+app_identifier(env_csv_or_default("MATCH_APP_IDENTIFIER", ["com.keplr.vizor", "com.keplr.vizor.testnet"]))
 team_id("SZTB68DXM4")
 readonly(ENV["MATCH_READONLY"].to_s.downcase == "true")
 

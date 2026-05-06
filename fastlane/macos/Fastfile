@@ -9,6 +9,7 @@ require "tempfile"
 require "tmpdir"
 require "yaml"
 require "open3"
+require "spaceship"
 require_relative "../patches/developer_id_application_certificate_type_patch"
 
 def shell_escape(value)
@@ -19,13 +20,63 @@ def workspace_root
   File.expand_path("../..", __dir__)
 end
 
+MACOS_RELEASE_FLAVOR_CONFIGS = {
+  "mainnet" => {
+    app_name: "Vizor",
+    artifact_name: "Vizor",
+    bundle_id: "com.keplr.vizor",
+    bundle_id_name: "Vizor",
+    zcash_default_network: "main",
+    volume_name: "Install Vizor Wallet"
+  },
+  "testnet" => {
+    app_name: "Vizor Testnet",
+    artifact_name: "Vizor-Testnet",
+    bundle_id: "com.keplr.vizor.testnet",
+    bundle_id_name: "Vizor Testnet",
+    zcash_default_network: "test",
+    volume_name: "Install Vizor Testnet Wallet"
+  }
+}.freeze
+
+DEFAULT_MACOS_RELEASE_FLAVORS = ["mainnet", "testnet"].freeze
+
+def normalize_macos_release_flavor(flavor)
+  normalized = flavor.to_s.strip.downcase
+  return normalized if MACOS_RELEASE_FLAVOR_CONFIGS.key?(normalized)
+
+  UI.user_error!("Unsupported macOS release flavor: #{flavor}. Expected one of: #{MACOS_RELEASE_FLAVOR_CONFIGS.keys.join(", ")}")
+end
+
+def macos_release_flavors
+  raw = ENV["VIZOR_MACOS_FLAVORS"].to_s.strip
+  if raw.empty?
+    single_flavor = ENV["VIZOR_MACOS_FLAVOR"].to_s.strip
+    return [normalize_macos_release_flavor(single_flavor)] unless single_flavor.empty?
+
+    return DEFAULT_MACOS_RELEASE_FLAVORS
+  end
+
+  flavors = raw.split(",").map(&:strip).reject(&:empty?)
+  UI.user_error!("VIZOR_MACOS_FLAVORS must include at least one flavor") if flavors.empty?
+  flavors.map { |flavor| normalize_macos_release_flavor(flavor) }.uniq
+end
+
+def single_macos_release_flavor(options = {})
+  raw = options[:flavor] || ENV["VIZOR_MACOS_FLAVOR"]
+  raw = raw.to_s.strip
+  raw.empty? ? "mainnet" : normalize_macos_release_flavor(raw)
+end
+
 def release_version_from_tag(tag)
   match = /\Arelease\/v(\d+\.\d+\.\d+)\z/.match(tag.to_s)
   UI.user_error!("Unsupported release tag format: #{tag}") unless match
   match[1]
 end
 
-def release_metadata
+def release_metadata(flavor: "mainnet")
+  flavor = normalize_macos_release_flavor(flavor)
+  flavor_config = MACOS_RELEASE_FLAVOR_CONFIGS.fetch(flavor)
   pubspec = YAML.safe_load(File.read(File.join(workspace_root, "pubspec.yaml")))
   version_string = pubspec.fetch("version")
   version, build_number = version_string.split("+", 2)
@@ -38,21 +89,27 @@ def release_metadata
   end
 
   asset_version = release_version_from_tag(tag)
-  app_name = "Vizor"
+  app_name = flavor_config.fetch(:app_name)
+  artifact_name = flavor_config.fetch(:artifact_name)
   dist_dir = File.join(workspace_root, "dist", "macos")
   app_path = File.join(workspace_root, "build", "macos", "Build", "Products", "Release", "#{app_name}.app")
 
   {
+    flavor: flavor,
     app_name: app_name,
-    bundle_id: "com.keplr.vizor",
+    artifact_name: artifact_name,
+    bundle_id: flavor_config.fetch(:bundle_id),
+    bundle_id_name: flavor_config.fetch(:bundle_id_name),
+    zcash_default_network: flavor_config.fetch(:zcash_default_network),
+    volume_name: flavor_config.fetch(:volume_name),
     version: version,
     build_number: build_number,
     tag: tag,
     release_name: ENV["RELEASE_NAME"] || tag,
     dist_dir: dist_dir,
     app_path: app_path,
-    zip_path: File.join(dist_dir, "#{app_name}-#{asset_version}-macos.zip"),
-    dmg_path: File.join(dist_dir, "#{app_name}-#{asset_version}-macos.dmg")
+    zip_path: File.join(dist_dir, "#{artifact_name}-#{asset_version}-macos.zip"),
+    dmg_path: File.join(dist_dir, "#{artifact_name}-#{asset_version}-macos.dmg")
   }
 end
 
@@ -164,6 +221,46 @@ def import_match_signing_assets!(output_dir, keychain)
   ensure_developer_id_identity!(keychain[:path])
 end
 
+def ensure_bundle_id_exists!(metadata, api_key_path)
+  Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.from(filepath: api_key_path)
+
+  if Spaceship::ConnectAPI::BundleId.find(metadata[:bundle_id])
+    UI.message("Bundle ID #{metadata[:bundle_id]} already exists")
+    return
+  end
+
+  UI.important("Creating macOS Bundle ID #{metadata[:bundle_id]}")
+  Spaceship::ConnectAPI::BundleId.create(
+    name: metadata[:bundle_id_name],
+    platform: Spaceship::ConnectAPI::BundleIdPlatform::MAC_OS,
+    identifier: metadata[:bundle_id]
+  )
+end
+
+def macos_flutter_build_environment(metadata)
+  {
+    "FLUTTER_XCODE_PRODUCT_NAME" => metadata[:app_name],
+    "FLUTTER_XCODE_PRODUCT_BUNDLE_IDENTIFIER" => metadata[:bundle_id]
+  }.map { |key, value| "#{key}=#{shell_escape(value)}" }.join(" ")
+end
+
+def plist_value(path, key)
+  stdout, stderr, status = Open3.capture3("/usr/libexec/PlistBuddy", "-c", "Print :#{key}", path)
+  UI.user_error!("Failed to read #{key} from #{path}: #{stderr}") unless status.success?
+  stdout.strip
+end
+
+def verify_built_app_metadata!(metadata)
+  info_plist = File.join(metadata[:app_path], "Contents", "Info.plist")
+  UI.user_error!("Missing Info.plist at #{info_plist}") unless File.exist?(info_plist)
+
+  actual_bundle_id = plist_value(info_plist, "CFBundleIdentifier")
+  actual_bundle_name = plist_value(info_plist, "CFBundleName")
+
+  UI.user_error!("Expected bundle id #{metadata[:bundle_id]}, got #{actual_bundle_id}") unless actual_bundle_id == metadata[:bundle_id]
+  UI.user_error!("Expected bundle name #{metadata[:app_name]}, got #{actual_bundle_name}") unless actual_bundle_name == metadata[:app_name]
+end
+
 platform :mac do
   private_lane :validate_signing_environment do |options|
     readonly = options.fetch(:readonly, match_readonly?)
@@ -179,13 +276,15 @@ platform :mac do
   end
 
   private_lane :prepare_signing do |options|
-    metadata = release_metadata
+    metadata = release_metadata(flavor: single_macos_release_flavor(options))
     keychain = setup_signing_keychain
     readonly = options.fetch(:readonly, match_readonly?)
     validate_signing_environment(readonly: readonly)
 
     Dir.mktmpdir("match-signing-assets") do |output_dir|
       with_app_store_connect_api_key_path(required: !readonly) do |api_key_path|
+        ensure_bundle_id_exists!(metadata, api_key_path) unless readonly
+
         match_options = {
           type: "developer_id",
           app_identifier: metadata[:bundle_id],
@@ -219,8 +318,8 @@ platform :mac do
     )
   end
 
-  private_lane :notarize_app_bundle do
-    metadata = release_metadata
+  private_lane :notarize_app_bundle do |options|
+    metadata = release_metadata(flavor: single_macos_release_flavor(options))
     UI.user_error!("Missing app bundle at #{metadata[:app_path]}") unless File.directory?(metadata[:app_path])
 
     with_app_store_connect_api_key_path do |api_key_path|
@@ -236,8 +335,8 @@ platform :mac do
     sh("xcrun stapler staple #{shell_escape(metadata[:app_path])}")
   end
 
-  private_lane :notarize_dmg do
-    metadata = release_metadata
+  private_lane :notarize_dmg do |options|
+    metadata = release_metadata(flavor: single_macos_release_flavor(options))
     UI.user_error!("Missing disk image at #{metadata[:dmg_path]}") unless File.exist?(metadata[:dmg_path])
 
     with_app_store_connect_api_key_path do |api_key_path|
@@ -253,8 +352,11 @@ platform :mac do
     sh("xcrun stapler staple #{shell_escape(metadata[:dmg_path])}")
   end
 
-  private_lane :upload_github_release do
-    metadata = release_metadata
+  private_lane :upload_github_release do |options|
+    flavors = options[:flavors] || macos_release_flavors
+    metadata_items = flavors.map { |flavor| release_metadata(flavor: flavor) }
+    metadata = metadata_items.first
+    assets = metadata_items.flat_map { |item| [item[:zip_path], item[:dmg_path]] }
 
     set_github_release(
       repository_name: ENV.fetch("RELEASE_REPOSITORY"),
@@ -265,29 +367,31 @@ platform :mac do
       is_draft: release_boolean_env("GITHUB_RELEASE_DRAFT"),
       is_prerelease: release_boolean_env("GITHUB_RELEASE_PRERELEASE"),
       is_generate_release_notes: true,
-      upload_assets: [metadata[:zip_path], metadata[:dmg_path]]
+      upload_assets: assets
     )
   end
 
   desc "Build the macOS release app bundle"
-  lane :build do
-    metadata = release_metadata
+  lane :build do |options|
+    metadata = release_metadata(flavor: single_macos_release_flavor(options))
 
     FileUtils.mkdir_p(metadata[:dist_dir])
 
     sh("cd #{shell_escape(workspace_root)} && fvm flutter pub get")
     Bundler.with_unbundled_env do
-      sh("cd #{shell_escape(workspace_root)} && fvm flutter build macos --release --no-pub")
+      dart_define = shell_escape("ZCASH_DEFAULT_NETWORK=#{metadata[:zcash_default_network]}")
+      sh("cd #{shell_escape(workspace_root)} && #{macos_flutter_build_environment(metadata)} fvm flutter build macos --release --no-pub --dart-define=#{dart_define}")
     end
 
     UI.user_error!("Expected app bundle at #{metadata[:app_path]}") unless File.directory?(metadata[:app_path])
+    verify_built_app_metadata!(metadata)
   end
 
   desc "Package the macOS release build into ZIP and DMG"
   lane :package do |options|
-    build unless options[:skip_build]
+    build(flavor: single_macos_release_flavor(options)) unless options[:skip_build]
 
-    metadata = release_metadata
+    metadata = release_metadata(flavor: single_macos_release_flavor(options))
     FileUtils.mkdir_p(metadata[:dist_dir])
     FileUtils.rm_f([metadata[:zip_path], metadata[:dmg_path]])
 
@@ -303,22 +407,27 @@ platform :mac do
       "--app-path", shell_escape(metadata[:app_path]),
       "--output", shell_escape(metadata[:dmg_path]),
       "--app-name", shell_escape(metadata[:app_name]),
-      "--volume-name", shell_escape("Install Vizor Wallet")
+      "--volume-name", shell_escape(metadata[:volume_name])
     ].join(" "))
   end
 
   desc "Install macOS signing identities and provisioning profiles via match"
   lane :sync_signing do |options|
-    prepare_signing(readonly: options.fetch(:readonly, match_readonly?))
+    prepare_signing(readonly: options.fetch(:readonly, match_readonly?), flavor: single_macos_release_flavor(options))
   end
 
   desc "Build, notarize, package, and upload the macOS release"
   lane :release do
-    prepare_signing(readonly: match_readonly?)
-    build
-    notarize_app_bundle
-    package(skip_build: true)
-    notarize_dmg
-    upload_github_release
+    flavors = macos_release_flavors
+
+    flavors.each do |flavor|
+      prepare_signing(readonly: match_readonly?, flavor: flavor)
+      build(flavor: flavor)
+      notarize_app_bundle(flavor: flavor)
+      package(skip_build: true, flavor: flavor)
+      notarize_dmg(flavor: flavor)
+    end
+
+    upload_github_release(flavors: flavors)
   end
 end
