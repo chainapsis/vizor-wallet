@@ -2453,6 +2453,58 @@ mod tests {
     }
 
     #[test]
+    fn history_prioritizes_active_unmined_sent_rows() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let confirmed = fake_txid(0xE3);
+        let pending = fake_txid(0xE4);
+
+        insert_history_tx(
+            &db,
+            account,
+            &confirmed,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            1_000_000,
+            0,
+            1_000_000,
+            false,
+            Some("2026-04-28T16:32:00Z"),
+        );
+        insert_output(&db, &confirmed, 3, None, Some(account), 1_000_000, false);
+
+        insert_history_tx(
+            &db,
+            account,
+            &pending,
+            None,
+            0,
+            Some(1_000_100),
+            -1_010_000,
+            1_010_000,
+            0,
+            false,
+            None,
+        );
+        insert_output(&db, &pending, 3, Some(account), None, 1_000_000, false);
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            Some(1),
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(pending));
+        assert_eq!(got[0].tx_kind, "sent");
+        assert_eq!(got[0].mined_height, 0);
+        assert_eq!(got[0].display_amount, 1_000_000);
+    }
+
+    #[test]
     fn history_accepts_unmined_tx_with_null_tx_index() {
         let db = fresh_history_db();
         let account = test_account_uuid();
