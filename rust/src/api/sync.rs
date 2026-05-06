@@ -159,6 +159,9 @@ pub(crate) static SYNC_RUNNING: AtomicBool = AtomicBool::new(false);
 pub struct ApiMempoolTxEvent {
     /// Lower-case hex of the tx id.
     pub txid_hex: String,
+    /// Account UUIDs that this event is known to affect. Empty
+    /// keeps the legacy behavior of refreshing the active account.
+    pub account_uuids: Vec<String>,
     /// `true` when the wallet DB already has this txid in its
     /// `transactions` table with `mined_height IS NULL`. Dart
     /// uses this flag to decide whether to refresh balance +
@@ -258,6 +261,7 @@ pub fn start_mempool_observer(
                     if sink
                         .add(ApiMempoolTxEvent {
                             txid_hex: event.txid_hex,
+                            account_uuids: event.account_uuids,
                             matched: event.matched,
                         })
                         .is_err()

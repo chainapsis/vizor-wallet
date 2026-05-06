@@ -910,6 +910,23 @@ fn classify_history_tx(base: &TxBase, summary: &ActivitySummary) -> Vec<Classifi
     }
 
     if rows.is_empty() {
+        if base.mined_height.is_none() && base.account_balance_delta < 0 {
+            let sent_amount = base
+                .account_balance_delta
+                .unsigned_abs()
+                .saturating_sub(base.fee);
+            if sent_amount > 0 {
+                rows.push(build_classified_tx(
+                    base,
+                    "sent",
+                    sent_amount,
+                    "unknown",
+                    false,
+                    1,
+                ));
+                return rows;
+            }
+        }
         if base.total_spent > 0 && base.total_received > 0 {
             return rows;
         }
@@ -1428,6 +1445,15 @@ mod tests {
         conn.execute(
             "UPDATE v_transactions SET tx_index = NULL WHERE txid = ?1",
             rusqlite::params![txid],
+        )
+        .unwrap();
+    }
+
+    fn set_history_fee(db: &NamedTempFile, txid: &[u8], fee_paid: i64) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "UPDATE v_transactions SET fee_paid = ?2 WHERE txid = ?1",
+            rusqlite::params![txid, fee_paid],
         )
         .unwrap();
     }
@@ -2345,6 +2371,43 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].txid_hex, hex::encode(txid));
         assert_eq!(got[0].tx_kind, "sent");
+    }
+
+    #[test]
+    fn history_shows_unmined_sent_when_output_metadata_missing() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD2);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            None,
+            0,
+            Some(1_000_100),
+            -10_010_000,
+            10_010_000,
+            9_000_000,
+            false,
+            Some("2026-04-28T13:04:00Z"),
+        );
+        set_history_fee(&db, &txid, 10_000);
+        insert_output(&db, &txid, 3, Some(account), Some(account), 9_000_000, true);
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(txid));
+        assert_eq!(got[0].tx_kind, "sent");
+        assert_eq!(got[0].display_amount, 10_000_000);
+        assert_eq!(got[0].mined_height, 0);
     }
 
     #[test]
