@@ -6,16 +6,14 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
-const _network = String.fromEnvironment(
-  'ZCASH_E2E_NETWORK',
-  defaultValue: 'regtest',
-);
+final _network = kZcashDefaultNetworkName;
 const _driverUrl = String.fromEnvironment(
   'ZCASH_E2E_DRIVER_URL',
   defaultValue: 'http://127.0.0.1:39067',
@@ -526,14 +524,16 @@ void _expectNoActivityRow(
 }
 
 Future<void> _cleanupE2eWalletState() async {
-  final storage = AppSecureStore.instance;
-  if (!storage.isE2eStorage) {
+  if (kZcashDefaultNetworkName != ZcashNetwork.regtest.name) {
     throw StateError(
-      'Refusing to clean wallet state without ZCASH_USE_E2E_STORAGE.',
+      'Refusing to clean wallet state without ZCASH_DEFAULT_NETWORK=regtest.',
     );
   }
 
-  _log('cleaning E2E wallet state');
+  final storage = AppSecureStore.instance;
+  final dbName = await getWalletDbName();
+
+  _log('cleaning regtest wallet state');
   await _stopRustWorkForCleanup();
 
   await storage.deleteAll();
@@ -541,11 +541,7 @@ Future<void> _cleanupE2eWalletState() async {
   final supportDir = await getWalletSupportDirectory();
   if (!supportDir.existsSync()) return;
 
-  for (final name in [
-    kE2eWalletDbName,
-    '$kE2eWalletDbName-shm',
-    '$kE2eWalletDbName-wal',
-  ]) {
+  for (final name in [dbName, '$dbName-shm', '$dbName-wal']) {
     final file = File('${supportDir.path}${Platform.pathSeparator}$name');
     if (file.existsSync()) file.deleteSync();
   }

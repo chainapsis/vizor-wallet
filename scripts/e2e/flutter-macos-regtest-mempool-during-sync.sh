@@ -76,11 +76,10 @@ ZCASH_E2E_SYNC_BATCH_DELAY_MS="$SYNC_BATCH_DELAY_MS" \
 fvm flutter test \
   integration_test/regtest_mempool_receive_history_test.dart \
   -d "$FLUTTER_DEVICE" \
-  --dart-define=ZCASH_E2E_NETWORK=regtest \
+  --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
   --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL" \
-  --dart-define=ZCASH_E2E_MEMPOOL_TEST_MODE=during-sync \
-  --dart-define=ZCASH_USE_E2E_STORAGE=true
+  --dart-define=ZCASH_E2E_MEMPOOL_TEST_MODE=during-sync
 status="$?"
 set -e
 
