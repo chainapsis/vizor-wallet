@@ -249,6 +249,22 @@ def macos_flavor_overrides_xcconfig_path
   File.join(workspace_root, "macos", "Runner", "Configs", "FlavorOverrides.xcconfig")
 end
 
+def macos_runner_project_path
+  File.join(workspace_root, "macos", "Runner.xcodeproj")
+end
+
+def macos_runner_pbxproj_path
+  File.join(macos_runner_project_path, "project.pbxproj")
+end
+
+def with_macos_runner_project_restored
+  path = macos_runner_pbxproj_path
+  original = File.binread(path)
+  yield
+ensure
+  File.binwrite(path, original) if original
+end
+
 def write_macos_flavor_overrides!(metadata)
   path = macos_flavor_overrides_xcconfig_path
   FileUtils.mkdir_p(File.dirname(path))
@@ -327,7 +343,7 @@ platform :mac do
     profile_name = lane_context[SharedValues::MATCH_PROVISIONING_PROFILE_MAPPING].fetch(metadata[:bundle_id])
     update_code_signing_settings(
       use_automatic_signing: false,
-      path: File.join(workspace_root, "macos", "Runner.xcodeproj"),
+      path: macos_runner_project_path,
       targets: ["Runner"],
       build_configurations: ["Release"],
       sdk: "macosx*",
@@ -439,7 +455,9 @@ platform :mac do
 
   desc "Install macOS signing identities and provisioning profiles via match"
   lane :sync_signing do |options|
-    prepare_signing(readonly: options.fetch(:readonly, match_readonly?), flavor: single_macos_release_flavor(options))
+    with_macos_runner_project_restored do
+      prepare_signing(readonly: options.fetch(:readonly, match_readonly?), flavor: single_macos_release_flavor(options))
+    end
   end
 
   desc "Build, notarize, package, and upload the macOS release"
@@ -447,11 +465,13 @@ platform :mac do
     flavors = macos_release_flavors
 
     flavors.each do |flavor|
-      prepare_signing(readonly: match_readonly?, flavor: flavor)
-      build(flavor: flavor)
-      notarize_app_bundle(flavor: flavor)
-      package(skip_build: true, flavor: flavor)
-      notarize_dmg(flavor: flavor)
+      with_macos_runner_project_restored do
+        prepare_signing(readonly: match_readonly?, flavor: flavor)
+        build(flavor: flavor)
+        notarize_app_bundle(flavor: flavor)
+        package(skip_build: true, flavor: flavor)
+        notarize_dmg(flavor: flavor)
+      end
     end
 
     upload_github_release(flavors: flavors)
