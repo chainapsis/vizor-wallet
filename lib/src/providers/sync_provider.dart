@@ -547,10 +547,25 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               // calls. Clean up unconditionally here; if isComplete
               // already ran, these are no-ops.
               if (_isSyncing) {
-                log('Sync: stream ended without isComplete, cleaning up');
+                final current = state.value;
+                final endedAtTip =
+                    current != null &&
+                    current.percentage >= 1.0 &&
+                    current.chainTipHeight > 0 &&
+                    current.scannedHeight >= current.chainTipHeight &&
+                    rust_sync.getSyncMode() == 1;
                 _isSyncing = false;
                 _stopDisplayProgressTimer();
-                _stopMempoolObserver();
+                if (endedAtTip) {
+                  log(
+                    'Sync: stream ended at tip without isComplete, treating as complete',
+                  );
+                  _bgDelegate.onSyncDone();
+                  _startPolling();
+                } else {
+                  log('Sync: stream ended without isComplete, cleaning up');
+                  _stopMempoolObserver();
+                }
               }
             },
             onError: (e) {
