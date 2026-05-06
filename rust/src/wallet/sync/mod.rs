@@ -39,7 +39,7 @@ mod transactions;
 // exactly).
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, discard_proposal, extract_and_broadcast_pczt,
-    redact_pczt_for_signer,
+    redact_pczt_for_signer, ExtractAndBroadcastPcztResult,
 };
 pub(crate) use send::estimate_send_max;
 pub use send::{estimate_fee, execute_proposal, propose_send, ExecuteProposalResult};

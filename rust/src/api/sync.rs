@@ -580,6 +580,12 @@ pub struct ExecuteProposalResult {
     pub message: Option<String>,
 }
 
+pub struct ExtractAndBroadcastPcztResult {
+    pub txid: String,
+    pub status: String,
+    pub message: Option<String>,
+}
+
 pub struct SendMaxEstimateResult {
     pub amount_zatoshi: u64,
     pub fee_zatoshi: u64,
@@ -1030,9 +1036,9 @@ pub async fn extract_and_broadcast_pczt(
     pczt_with_signatures_bytes: Vec<u8>,
     spend_params_path: Option<String>,
     output_params_path: Option<String>,
-) -> Result<String, String> {
+) -> Result<ExtractAndBroadcastPcztResult, String> {
     let network = keys::parse_network(&network)?;
-    wallet_sync::extract_and_broadcast_pczt(
+    let result = wallet_sync::extract_and_broadcast_pczt(
         &db_path,
         &lightwalletd_url,
         network,
@@ -1041,5 +1047,10 @@ pub async fn extract_and_broadcast_pczt(
         spend_params_path.as_deref(),
         output_params_path.as_deref(),
     )
-    .await
+    .await?;
+    Ok(ExtractAndBroadcastPcztResult {
+        txid: result.txid,
+        status: result.status,
+        message: result.message,
+    })
 }

@@ -449,7 +449,7 @@ Future<Uint8List> redactPcztForSigner({required List<int> pcztBytes}) =>
 /// `extract_and_store_transaction_from_pczt` after broadcast. Orchard-only
 /// sends can pass `None` for both. Mirrors the `add_proofs_to_pczt`
 /// contract: if you needed to supply params there, you need them here too.
-Future<String> extractAndBroadcastPczt({
+Future<ExtractAndBroadcastPcztResult> extractAndBroadcastPczt({
   required String dbPath,
   required String lightwalletdUrl,
   required String network,
@@ -640,6 +640,30 @@ class ExecuteProposalResult {
           status == other.status &&
           broadcastedCount == other.broadcastedCount &&
           totalCount == other.totalCount &&
+          message == other.message;
+}
+
+class ExtractAndBroadcastPcztResult {
+  final String txid;
+  final String status;
+  final String? message;
+
+  const ExtractAndBroadcastPcztResult({
+    required this.txid,
+    required this.status,
+    this.message,
+  });
+
+  @override
+  int get hashCode => txid.hashCode ^ status.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExtractAndBroadcastPcztResult &&
+          runtimeType == other.runtimeType &&
+          txid == other.txid &&
+          status == other.status &&
           message == other.message;
 }
 
