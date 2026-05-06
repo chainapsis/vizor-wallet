@@ -251,6 +251,10 @@ def write_macos_flavor_overrides!(metadata)
   XCCONFIG
 end
 
+def delete_macos_flavor_overrides!
+  FileUtils.rm_f(macos_flavor_overrides_xcconfig_path)
+end
+
 def plist_value(path, key)
   stdout, stderr, status = Open3.capture3("/usr/libexec/PlistBuddy", "-c", "Print :#{key}", path)
   UI.user_error!("Failed to read #{key} from #{path}: #{stderr}") unless status.success?
@@ -385,14 +389,18 @@ platform :mac do
     FileUtils.mkdir_p(metadata[:dist_dir])
     write_macos_flavor_overrides!(metadata)
 
-    sh("cd #{shell_escape(workspace_root)} && fvm flutter pub get")
-    Bundler.with_unbundled_env do
-      dart_define = shell_escape("ZCASH_DEFAULT_NETWORK=#{metadata[:zcash_default_network]}")
-      sh("cd #{shell_escape(workspace_root)} && fvm flutter build macos --release --no-pub --dart-define=#{dart_define}")
-    end
+    begin
+      sh("cd #{shell_escape(workspace_root)} && fvm flutter pub get")
+      Bundler.with_unbundled_env do
+        dart_define = shell_escape("ZCASH_DEFAULT_NETWORK=#{metadata[:zcash_default_network]}")
+        sh("cd #{shell_escape(workspace_root)} && fvm flutter build macos --release --no-pub --dart-define=#{dart_define}")
+      end
 
-    UI.user_error!("Expected app bundle at #{metadata[:app_path]}") unless File.directory?(metadata[:app_path])
-    verify_built_app_metadata!(metadata)
+      UI.user_error!("Expected app bundle at #{metadata[:app_path]}") unless File.directory?(metadata[:app_path])
+      verify_built_app_metadata!(metadata)
+    ensure
+      delete_macos_flavor_overrides!
+    end
   end
 
   desc "Package the macOS release build into ZIP and DMG"
