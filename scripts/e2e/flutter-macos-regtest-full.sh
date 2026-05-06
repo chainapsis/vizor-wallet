@@ -27,17 +27,20 @@ require_cmd python3
 cd "$ROOT_DIR"
 
 # Keep this ordered from the narrowest smoke test to broader user flows.
-run_test "1/4 import funded wallet and sync balances" \
+run_test "1/5 import funded wallet and sync balances" \
   "scripts/e2e/flutter-macos-regtest-import-sync.sh"
 
-run_test "2/4 import two accounts and send shielded funds" \
+run_test "2/5 import two accounts and send shielded funds" \
   "scripts/e2e/flutter-macos-regtest-multi-account-send.sh"
 
-run_test "3/4 show mempool receives in activity history" \
+run_test "3/5 show mempool receives in activity history" \
   "scripts/e2e/flutter-macos-regtest-mempool-receive-history.sh"
 
-run_test "4/4 show mempool receives while sync is running" \
+run_test "4/5 show mempool receives while sync is running" \
   "scripts/e2e/flutter-macos-regtest-mempool-during-sync.sh"
+
+run_test "5/5 expire unmined mempool receives" \
+  "scripts/e2e/flutter-macos-regtest-mempool-expiry.sh"
 
 echo
 echo "all macOS regtest E2E tests passed"

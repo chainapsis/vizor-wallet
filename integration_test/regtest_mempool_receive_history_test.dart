@@ -27,6 +27,24 @@ const _firstMnemonic =
     'roast miracle ethics found child scare curve congress renew salute pig '
     'better used';
 const _password = 'Vizor123!';
+final _receiveAmountZatoshi = BigInt.from(25_000_000);
+
+class _ExpiringFunding {
+  const _ExpiringFunding({required this.txid, required this.expiryHeight});
+
+  final String txid;
+  final int expiryHeight;
+}
+
+class _ShieldedBalanceSnapshot {
+  const _ShieldedBalanceSnapshot({
+    required this.pending,
+    required this.spendable,
+  });
+
+  final BigInt pending;
+  final BigInt spendable;
+}
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -184,6 +202,108 @@ void main() {
       timeout: const Timeout(Duration(minutes: 12)),
     );
   }
+
+  if (_testMode == 'expiry') {
+    testWidgets(
+      'removes expired shielded mempool receives from pending balance',
+      (tester) async {
+        addTearDown(() async {
+          await _cleanupE2eWalletState();
+        });
+
+        await _cleanupE2eWalletState();
+
+        _log('pumping app');
+        await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
+
+        await _importFirstWallet(tester);
+        await _waitForMempoolObserver();
+
+        _log('copying first account shielded address');
+        final firstAddress = await _copyActiveShieldedAddress(tester);
+        expect(firstAddress, startsWith('uregtest1'));
+        final firstAccountUuid = await _accountUuidAtOrder(0);
+        await _openWallet(tester);
+
+        final before = await _shieldedBalance(firstAccountUuid);
+        final funding = await _fundExpiringUnmined(firstAddress, '0.25');
+        _log(
+          'external expiring unmined funding txid=${funding.txid} '
+          'expiry=${funding.expiryHeight}',
+        );
+
+        await _waitForHistoryTx(
+          tester,
+          accountUuid: firstAccountUuid,
+          txidHex: funding.txid,
+          txKind: 'receiving',
+          displayAmount: _receiveAmountZatoshi,
+        );
+        await _waitForShieldedBalance(
+          tester,
+          accountUuid: firstAccountUuid,
+          pending: before.pending + _receiveAmountZatoshi,
+          spendable: before.spendable,
+        );
+        await _expectActivityRow(
+          tester,
+          const ValueKey('home_activity_row_1'),
+          title: 'Receiving',
+          amount: '+0.25 ZEC',
+          status: 'In progress',
+          timeout: const Duration(minutes: 4),
+        );
+
+        await _mineToExpiry(funding.txid, funding.expiryHeight);
+        await _waitForExpiredHistoryTx(
+          tester,
+          accountUuid: firstAccountUuid,
+          txidHex: funding.txid,
+          displayAmount: _receiveAmountZatoshi,
+        );
+        await _waitForShieldedBalance(
+          tester,
+          accountUuid: firstAccountUuid,
+          pending: before.pending,
+          spendable: before.spendable,
+          timeout: const Duration(minutes: 4),
+        );
+        await _expectAnyActivityRow(
+          tester,
+          rowKeyPrefix: 'home_activity',
+          title: 'Received',
+          amount: '0.25 ZEC',
+          status: 'Failed',
+          timeout: const Duration(minutes: 4),
+        );
+        _expectNoActivityRow(
+          tester,
+          rowKeyPrefix: 'home_activity',
+          title: 'Receiving',
+          amount: '+0.25 ZEC',
+          status: 'In progress',
+        );
+
+        await _openActivity(tester);
+        await _expectAnyActivityRow(
+          tester,
+          rowKeyPrefix: 'activity_screen',
+          title: 'Received',
+          amount: '0.25 ZEC',
+          status: 'Failed',
+          timeout: const Duration(minutes: 2),
+        );
+        _expectNoActivityRow(
+          tester,
+          rowKeyPrefix: 'activity_screen',
+          title: 'Receiving',
+          amount: '+0.25 ZEC',
+          status: 'In progress',
+        );
+      },
+      timeout: const Timeout(Duration(minutes: 12)),
+    );
+  }
 }
 
 Future<void> _importFirstWallet(WidgetTester tester) async {
@@ -265,9 +385,35 @@ Future<String> _fundPreparedUnmined(String address, String amount) async {
   return txid;
 }
 
+Future<_ExpiringFunding> _fundExpiringUnmined(
+  String address,
+  String amount,
+) async {
+  _log(
+    'requesting expiring external unmined funding of $amount ZEC to $address',
+  );
+  final response = await _postDriver('/fund-unmined-expiring', {
+    'address': address,
+    'amount': amount,
+  }, timeout: const Duration(minutes: 2));
+  final txid = response['txid'] as String? ?? '';
+  final expiryHeight = (response['expiryHeight'] as num?)?.toInt() ?? 0;
+  if (txid.isEmpty) fail('E2E driver did not return a txid.');
+  if (expiryHeight <= 0) fail('E2E driver did not return an expiry height.');
+  return _ExpiringFunding(txid: txid, expiryHeight: expiryHeight);
+}
+
 Future<void> _mineRegtestBlocks(int blocks) async {
   _log('requesting external mining of $blocks regtest blocks');
   await _postDriver('/mine', {'blocks': blocks});
+}
+
+Future<void> _mineToExpiry(String txid, int expiryHeight) async {
+  _log('requesting external mining to expiry height $expiryHeight for $txid');
+  await _postDriver('/mine-to-expiry', {
+    'txid': txid,
+    'expiryHeight': expiryHeight,
+  }, timeout: const Duration(minutes: 5));
 }
 
 Future<Map<String, Object?>> _postDriver(
@@ -474,12 +620,113 @@ Future<void> _waitForHistoryTx(
   );
 }
 
+Future<void> _waitForExpiredHistoryTx(
+  WidgetTester tester, {
+  required String accountUuid,
+  required String txidHex,
+  required BigInt displayAmount,
+}) async {
+  final dbPath = await getWalletDbPath();
+  final deadline = DateTime.now().add(const Duration(minutes: 4));
+  Object? lastError;
+  var lastHistorySummary = '<not read>';
+  final acceptedTxids = {txidHex, _reverseTxidHex(txidHex)};
+
+  while (DateTime.now().isBefore(deadline)) {
+    try {
+      final history = await rust_sync.getTransactionHistory(
+        dbPath: dbPath,
+        network: _network,
+        limit: 20,
+        accountUuid: accountUuid,
+      );
+      lastHistorySummary = history
+          .map(
+            (tx) =>
+                '${tx.txidHex}:${tx.txKind}:${tx.displayAmount}:'
+                'mined=${tx.minedHeight}:expired=${tx.expiredUnmined}',
+          )
+          .join(', ');
+      if (history.any(
+        (tx) =>
+            acceptedTxids.contains(tx.txidHex) &&
+            tx.txKind == 'received' &&
+            tx.displayAmount == displayAmount &&
+            tx.minedHeight == BigInt.zero &&
+            tx.expiredUnmined,
+      )) {
+        _log('history matched expired receive tx $txidHex');
+        return;
+      }
+    } catch (e) {
+      lastError = e;
+    }
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+
+  final error = lastError == null ? '' : ' Last error: $lastError';
+  fail(
+    'Timed out waiting for expired history tx $txidHex. '
+    'Observed history: $lastHistorySummary.$error',
+  );
+}
+
 String _reverseTxidHex(String txidHex) {
   final pairs = <String>[];
   for (var i = 0; i + 1 < txidHex.length; i += 2) {
     pairs.add(txidHex.substring(i, i + 2));
   }
   return pairs.reversed.join();
+}
+
+Future<_ShieldedBalanceSnapshot> _shieldedBalance(String accountUuid) async {
+  final dbPath = await getWalletDbPath();
+  final balance = await rust_sync.getBalance(
+    dbPath: dbPath,
+    network: _network,
+    accountUuid: accountUuid,
+  );
+  return _ShieldedBalanceSnapshot(
+    pending: balance.saplingPending + balance.orchardPending,
+    spendable: balance.sapling + balance.orchard,
+  );
+}
+
+Future<void> _waitForShieldedBalance(
+  WidgetTester tester, {
+  required String accountUuid,
+  required BigInt pending,
+  required BigInt spendable,
+  Duration timeout = const Duration(minutes: 2),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  Object? lastError;
+  var lastBalance = '<not read>';
+
+  while (DateTime.now().isBefore(deadline)) {
+    try {
+      final balance = await _shieldedBalance(accountUuid);
+      lastBalance =
+          'pending=${balance.pending}, spendable=${balance.spendable}';
+      if (balance.pending == pending && balance.spendable == spendable) {
+        _log('shielded balance matched: $lastBalance');
+        return;
+      }
+    } catch (e) {
+      lastError = e;
+    }
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+
+  final error = lastError == null ? '' : ' Last error: $lastError';
+  fail(
+    'Timed out waiting for shielded balance pending=$pending '
+    'spendable=$spendable. Last balance: $lastBalance.$error',
+  );
 }
 
 Future<void> _expectActivityRow(
@@ -499,6 +746,36 @@ Future<void> _expectActivityRow(
           texts.contains(status);
     },
     description: '$key activity row to show $title $amount $status',
+    timeout: timeout,
+  );
+  _log('activity row matched: $title $amount $status');
+}
+
+Future<void> _expectAnyActivityRow(
+  WidgetTester tester, {
+  required String rowKeyPrefix,
+  required String title,
+  required String amount,
+  required String status,
+  Duration timeout = const Duration(minutes: 2),
+}) async {
+  await _pumpUntil(
+    tester,
+    () {
+      for (var i = 0; i < 10; i++) {
+        final texts = _textSetIn(
+          tester,
+          find.byKey(ValueKey('${rowKeyPrefix}_row_$i')),
+        );
+        if (texts.contains(title) &&
+            texts.contains(amount) &&
+            texts.contains(status)) {
+          return true;
+        }
+      }
+      return false;
+    },
+    description: '$rowKeyPrefix activity row to show $title $amount $status',
     timeout: timeout,
   );
   _log('activity row matched: $title $amount $status');

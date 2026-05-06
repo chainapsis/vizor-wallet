@@ -1,0 +1,8 @@
+services:
+  zcashd:
+    command:
+      - "-printtoconsole"
+      - "-conf=/etc/zcash/zcash-expiry.conf"
+      - "-datadir=/var/lib/zcash/.zcash"
+    volumes:
+      - ./scripts/regtest/zcash-expiry.conf:/etc/zcash/zcash-expiry.conf:ro

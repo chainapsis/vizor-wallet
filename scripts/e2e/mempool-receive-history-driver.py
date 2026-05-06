@@ -83,6 +83,54 @@ class DriverHandler(BaseHTTPRequestHandler):
                 self.respond(200, {"txid": txid})
                 return
 
+            if self.path == "/fund-unmined-expiring":
+                if not self.prepared_faucet_zaddr:
+                    raise RuntimeError("No prepared faucet zaddr was configured")
+                address = str(payload["address"])
+                amount = str(payload.get("amount", "0.25"))
+                output = run_command(
+                    self.repo_root,
+                    ["scripts/regtest/fund-wallet-unmined.sh", address, amount],
+                    timeout=120,
+                    env={
+                        "REGTEST_UNMINED_FAUCET_ZADDR": self.prepared_faucet_zaddr,
+                    },
+                )
+                txid = output.splitlines()[-1].strip() if output else ""
+                if not txid:
+                    raise RuntimeError("fund-wallet-unmined.sh returned no txid")
+                expiry_height_raw = run_command(
+                    self.repo_root,
+                    ["scripts/regtest/tx-expiry-height.sh", txid],
+                    timeout=60,
+                )
+                self.respond(
+                    200,
+                    {
+                        "txid": txid,
+                        "expiryHeight": int(expiry_height_raw.splitlines()[-1]),
+                    },
+                )
+                return
+
+            if self.path == "/mine-to-expiry":
+                txid = str(payload["txid"])
+                expiry_height = int(payload["expiryHeight"])
+                extra_blocks = int(payload.get("extraBlocks", 0))
+                output = run_command(
+                    self.repo_root,
+                    [
+                        "scripts/regtest/mine-to-expiry.sh",
+                        txid,
+                        str(expiry_height),
+                        str(extra_blocks),
+                    ],
+                    timeout=300,
+                )
+                target_height = output.splitlines()[-1].strip() if output else ""
+                self.respond(200, {"targetHeight": int(target_height)})
+                return
+
             if self.path == "/mine":
                 blocks = int(payload.get("blocks", 1))
                 run_command(
