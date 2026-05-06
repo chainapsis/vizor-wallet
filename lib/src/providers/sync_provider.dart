@@ -807,6 +807,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _syncSub?.cancel();
     _syncSub = null;
     _stopMempoolObserver();
+    _mempoolRefreshInFlight = false;
+    _mempoolRefreshQueued = false;
     state = AsyncData(SyncState());
 
     // Sign-out should cancel the current Rust run immediately.
