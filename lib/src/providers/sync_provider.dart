@@ -612,11 +612,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         lastSyncFailedAt: DateTime.now(),
       ),
     );
-    if (failure.isAutoRetrying) {
-      _startPolling();
-    } else {
-      _stopPolling();
-    }
+    _startPolling();
   }
 
   /// Recovery path for cases like unlock-after-sign-out where a previous

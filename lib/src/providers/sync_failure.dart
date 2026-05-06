@@ -12,16 +12,12 @@ class SyncFailure {
   final SyncFailureKind kind;
   final String rawMessage;
   final String userMessage;
-  final bool isAutoRetrying;
-  final bool canManualRetry;
   final bool showSettingsAction;
 
   const SyncFailure({
     required this.kind,
     required this.rawMessage,
     required this.userMessage,
-    required this.isAutoRetrying,
-    required this.canManualRetry,
     required this.showSettingsAction,
   });
 
@@ -37,8 +33,6 @@ SyncFailure classifySyncFailure(Object error) {
     kind: kind,
     rawMessage: rawMessage,
     userMessage: _syncFailureUserMessage(kind),
-    isAutoRetrying: _syncFailureAutoRetries(kind),
-    canManualRetry: kind != SyncFailureKind.endpoint,
     showSettingsAction: kind == SyncFailureKind.endpoint,
   );
 }
@@ -135,17 +129,5 @@ String _syncFailureUserMessage(SyncFailureKind kind) {
     SyncFailureKind.parseFatal =>
       'Sync data could not be processed. Retry sync or check your endpoint.',
     SyncFailureKind.unknown => 'Sync failed. Retry sync to continue.',
-  };
-}
-
-bool _syncFailureAutoRetries(SyncFailureKind kind) {
-  return switch (kind) {
-    SyncFailureKind.network ||
-    SyncFailureKind.databaseBusy ||
-    SyncFailureKind.chainRecovery ||
-    SyncFailureKind.unknown => true,
-    SyncFailureKind.endpoint ||
-    SyncFailureKind.databaseFatal ||
-    SyncFailureKind.parseFatal => false,
   };
 }

@@ -53,11 +53,9 @@ ActivityRowData buildSyncActivityRow({
       leadingIconColor: colors.icon.regular,
       amountText: '--',
       amountColor: colors.text.secondary,
-      statusText: failure.isAutoRetrying ? 'Retrying' : 'Failed',
-      statusIconName: failure.isAutoRetrying ? AppIcons.loader : AppIcons.skull,
-      statusColor: failure.isAutoRetrying
-          ? colors.text.secondary
-          : colors.text.destructive,
+      statusText: 'Failed',
+      statusIconName: AppIcons.skull,
+      statusColor: colors.text.destructive,
       timestampText: formatActivityTimestamp(sync.lastSyncFailedAt),
     );
   }
