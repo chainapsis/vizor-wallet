@@ -572,6 +572,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   log(
                     'Sync: stream ended at tip without isComplete, treating as complete',
                   );
+                  _finalizeEndedAtTipSyncState(lastProgress);
                   _bgDelegate.onSyncDone();
                   _startPolling();
                 } else {
@@ -978,6 +979,33 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void _stopPolling() {
     _pollTimer?.cancel();
     _pollTimer = null;
+  }
+
+  void _finalizeEndedAtTipSyncState(SyncProgressEvent? lastProgress) {
+    final prev = state.value;
+    final completedAt = DateTime.now();
+    final chainTipHeight = math.max(
+      prev?.chainTipHeight ?? 0,
+      lastProgress?.chainTipHeight ?? 0,
+    );
+    final scannedHeight = chainTipHeight > 0
+        ? chainTipHeight
+        : math.max(prev?.scannedHeight ?? 0, lastProgress?.scannedHeight ?? 0);
+    final base = prev ?? SyncState(accountUuid: _getActiveAccountUuid());
+
+    state = AsyncData(
+      base.copyWith(
+        isSyncing: false,
+        isBackgroundMode: _bgDelegate.isActive,
+        percentage: 1.0,
+        displayPercentage: 1.0,
+        scannedHeight: scannedHeight,
+        chainTipHeight: chainTipHeight,
+        lastSyncStartedAt: prev?.lastSyncStartedAt ?? completedAt,
+        lastSyncCompletedAt: completedAt,
+        phase: '',
+      ),
+    );
   }
 
   Future<void> _checkAndSync() async {
