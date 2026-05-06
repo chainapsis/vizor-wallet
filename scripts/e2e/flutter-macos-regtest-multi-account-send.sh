@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MNEMONIC="${E2E_MNEMONIC:-winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle ethics found child scare curve congress renew salute pig better used}"
-SHIELDED_AMOUNT="${E2E_SHIELDED_ZEC:-1.25}"
-TRANSPARENT_AMOUNT="${E2E_TRANSPARENT_ZEC:-0.75}"
+MNEMONIC="winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle ethics found child scare curve congress renew salute pig better used"
+SHIELDED_AMOUNT="1.25"
+TRANSPARENT_AMOUNT="0.75"
 CONFIRMING_BLOCKS="${E2E_CONFIRMING_BLOCKS:-10}"
 LIGHTWALLETD_URL="${E2E_LIGHTWALLETD_URL:-http://127.0.0.1:9067}"
 ZCASHD_RPC_URL="${E2E_ZCASHD_RPC_URL:-http://127.0.0.1:18232}"
