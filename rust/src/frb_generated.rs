@@ -2652,6 +2652,20 @@ impl SseDecode for crate::api::sync::ExecuteProposalResult {
     }
 }
 
+impl SseDecode for crate::api::sync::ExtractAndBroadcastPcztResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_txid = <String>::sse_decode(deserializer);
+        let mut var_status = <String>::sse_decode(deserializer);
+        let mut var_message = <Option<String>>::sse_decode(deserializer);
+        return crate::api::sync::ExtractAndBroadcastPcztResult {
+            txid: var_txid,
+            status: var_status,
+            message: var_message,
+        };
+    }
+}
+
 impl SseDecode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3508,6 +3522,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ExecuteProposalResult>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::ExtractAndBroadcastPcztResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.txid.into_into_dart().into_dart(),
+            self.status.into_into_dart().into_dart(),
+            self.message.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::ExtractAndBroadcastPcztResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ExtractAndBroadcastPcztResult>
+    for crate::api::sync::ExtractAndBroadcastPcztResult
+{
+    fn into_into_dart(self) -> crate::api::sync::ExtractAndBroadcastPcztResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::wallet::keystone::KeystoneAccountInfo {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -4021,6 +4057,15 @@ impl SseEncode for crate::api::sync::ExecuteProposalResult {
         <String>::sse_encode(self.status, serializer);
         <u32>::sse_encode(self.broadcasted_count, serializer);
         <u32>::sse_encode(self.total_count, serializer);
+        <Option<String>>::sse_encode(self.message, serializer);
+    }
+}
+
+impl SseEncode for crate::api::sync::ExtractAndBroadcastPcztResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.txid, serializer);
+        <String>::sse_encode(self.status, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
     }
 }

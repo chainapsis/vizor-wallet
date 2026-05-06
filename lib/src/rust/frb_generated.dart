@@ -178,7 +178,7 @@ abstract class RustLibApi extends BaseApi {
     String? outputParamsPath,
   });
 
-  Future<String> crateApiSyncExtractAndBroadcastPczt({
+  Future<ExtractAndBroadcastPcztResult> crateApiSyncExtractAndBroadcastPczt({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -1101,7 +1101,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<String> crateApiSyncExtractAndBroadcastPczt({
+  Future<ExtractAndBroadcastPcztResult> crateApiSyncExtractAndBroadcastPczt({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -1129,7 +1129,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_String,
+          decodeSuccessData: sse_decode_extract_and_broadcast_pczt_result,
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncExtractAndBroadcastPcztConstMeta,
@@ -2937,6 +2937,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ExtractAndBroadcastPcztResult dco_decode_extract_and_broadcast_pczt_result(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ExtractAndBroadcastPcztResult(
+      txid: dco_decode_String(arr[0]),
+      status: dco_decode_String(arr[1]),
+      message: dco_decode_opt_String(arr[2]),
+    );
+  }
+
+  @protected
   double dco_decode_f_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
@@ -3477,6 +3492,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       status: var_status,
       broadcastedCount: var_broadcastedCount,
       totalCount: var_totalCount,
+      message: var_message,
+    );
+  }
+
+  @protected
+  ExtractAndBroadcastPcztResult sse_decode_extract_and_broadcast_pczt_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_txid = sse_decode_String(deserializer);
+    var var_status = sse_decode_String(deserializer);
+    var var_message = sse_decode_opt_String(deserializer);
+    return ExtractAndBroadcastPcztResult(
+      txid: var_txid,
+      status: var_status,
       message: var_message,
     );
   }
@@ -4129,6 +4159,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.status, serializer);
     sse_encode_u_32(self.broadcastedCount, serializer);
     sse_encode_u_32(self.totalCount, serializer);
+    sse_encode_opt_String(self.message, serializer);
+  }
+
+  @protected
+  void sse_encode_extract_and_broadcast_pczt_result(
+    ExtractAndBroadcastPcztResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.txid, serializer);
+    sse_encode_String(self.status, serializer);
     sse_encode_opt_String(self.message, serializer);
   }
 

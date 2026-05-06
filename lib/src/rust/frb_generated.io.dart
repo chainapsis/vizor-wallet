@@ -67,6 +67,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ExecuteProposalResult dco_decode_execute_proposal_result(dynamic raw);
 
   @protected
+  ExtractAndBroadcastPcztResult dco_decode_extract_and_broadcast_pczt_result(
+    dynamic raw,
+  );
+
+  @protected
   double dco_decode_f_64(dynamic raw);
 
   @protected
@@ -241,6 +246,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ExecuteProposalResult sse_decode_execute_proposal_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ExtractAndBroadcastPcztResult sse_decode_extract_and_broadcast_pczt_result(
     SseDeserializer deserializer,
   );
 
@@ -456,6 +466,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_execute_proposal_result(
     ExecuteProposalResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_extract_and_broadcast_pczt_result(
+    ExtractAndBroadcastPcztResult self,
     SseSerializer serializer,
   );
 
