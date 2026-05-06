@@ -264,6 +264,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // what actually stops it, and `_mempoolSub` is just the Dart
   // side of the corresponding stream.
   StreamSubscription? _mempoolSub;
+  bool _mempoolRefreshInFlight = false;
+  bool _mempoolRefreshQueued = false;
 
   @override
   Future<SyncState> build() async {
@@ -1063,11 +1065,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           return;
         }
         log('Mempool: matched ${event.txidHex}, refreshing balance');
-        // Fire-and-forget: _refreshBalance rebuilds state and
-        // logs its own errors. We don't await because the
-        // mempool stream callback should stay non-blocking so
-        // the next incoming tx isn't delayed.
-        _refreshBalance();
+        _scheduleMempoolRefresh();
       },
       onDone: () {
         log('Mempool: stream ended');
@@ -1081,6 +1079,32 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         _mempoolSub = null;
       },
     );
+  }
+
+  void _scheduleMempoolRefresh() {
+    if (_mempoolRefreshInFlight) {
+      _mempoolRefreshQueued = true;
+      return;
+    }
+
+    _mempoolRefreshInFlight = true;
+    unawaited(_runMempoolRefreshLoop());
+  }
+
+  Future<void> _runMempoolRefreshLoop() async {
+    try {
+      do {
+        _mempoolRefreshQueued = false;
+        try {
+          await _refreshBalance();
+        } catch (e, st) {
+          log('Mempool: refresh failed: $e\n$st');
+        }
+      } while (_mempoolRefreshQueued && !_requiresUnlock);
+    } finally {
+      _mempoolRefreshInFlight = false;
+      _mempoolRefreshQueued = false;
+    }
   }
 
   /// Cancel the running mempool observer (if any) and tear down

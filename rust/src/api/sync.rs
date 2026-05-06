@@ -162,10 +162,11 @@ pub struct ApiMempoolTxEvent {
     /// Account UUIDs that this event is known to affect. Empty
     /// keeps the legacy behavior of refreshing the active account.
     pub account_uuids: Vec<String>,
-    /// `true` when the wallet DB already has this txid in its
-    /// `transactions` table with `mined_height IS NULL`. Dart
-    /// uses this flag to decide whether to refresh balance +
-    /// history immediately.
+    /// `true` when the tx is wallet-relevant: either the wallet DB
+    /// already has this txid as unmined, or the observer decrypted
+    /// and stored a new inbound transaction from the mempool. Dart
+    /// uses this flag to decide whether to refresh balance + history
+    /// immediately.
     pub matched: bool,
 }
 
