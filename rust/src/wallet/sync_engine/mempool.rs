@@ -71,8 +71,9 @@ pub struct MempoolTxEvent {
     /// refresh. Dart keeps the pre-existing "refresh active account"
     /// behavior in that case.
     pub account_uuids: Vec<String>,
-    /// Whether the txid corresponds to a row in the wallet's
-    /// `transactions` table with `mined_height IS NULL`.
+    /// Whether the tx was wallet-relevant enough to emit. The observer
+    /// currently emits only matched events; the field stays in the API
+    /// as a defensive guard for consumers.
     pub matched: bool,
 }
 
@@ -136,6 +137,10 @@ struct MempoolObserverStats {
 
 #[derive(Debug, Default)]
 struct KnownPendingTx {
+    /// True when `transactions` already has this txid as unmined.
+    /// `account_uuids` can still be empty if `v_transactions` has not
+    /// projected account rows yet; the caller intentionally falls back
+    /// to an active-account refresh in that transient case.
     matched: bool,
     account_uuids: Vec<String>,
 }
