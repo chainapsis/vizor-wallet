@@ -21,6 +21,19 @@ const _accountsKey = 'zcash_accounts';
 const _activeAccountKey = 'zcash_active_account';
 const _networkKey = 'zcash_wallet_network';
 
+const kWalletCreationCurrentBlockHeightErrorMessage =
+    'We need the current Zcash block height to create your wallet. '
+    'Check your network connection and try again.';
+
+class WalletCreationCurrentBlockHeightException implements Exception {
+  const WalletCreationCurrentBlockHeightException(this.cause);
+
+  final Object cause;
+
+  @override
+  String toString() => kWalletCreationCurrentBlockHeightErrorMessage;
+}
+
 class AccountNotifier extends AsyncNotifier<AccountState> {
   static final _storage = AppSecureStore.instance;
 
@@ -40,9 +53,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final endpoint = ref.read(rpcEndpointProvider);
       final network = endpoint.networkName;
 
-      // Fetch chain tip as birthday
-      final birthday = await rust_wallet.getLatestBlockHeight(
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      final birthday = await _fetchCreationBirthdayHeight(
+        endpoint.normalizedLightwalletdUrl,
       );
       log('createAccount: birthday=$birthday');
 
@@ -126,8 +138,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final endpoint = ref.read(rpcEndpointProvider);
       final network = endpoint.networkName;
 
-      final birthday = await rust_wallet.getLatestBlockHeight(
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      final birthday = await _fetchCreationBirthdayHeight(
+        endpoint.normalizedLightwalletdUrl,
       );
       log('createAccountFromMnemonic: birthday=$birthday');
 
@@ -490,6 +502,19 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   Future<String> _getDbPath() async {
     return getWalletDbPath();
+  }
+
+  Future<BigInt> _fetchCreationBirthdayHeight(String lightwalletdUrl) async {
+    try {
+      return await rust_wallet.getLatestBlockHeight(
+        lightwalletdUrl: lightwalletdUrl,
+      );
+    } catch (e, st) {
+      Error.throwWithStackTrace(
+        WalletCreationCurrentBlockHeightException(e),
+        st,
+      );
+    }
   }
 
   Future<String> _getNetwork() async {

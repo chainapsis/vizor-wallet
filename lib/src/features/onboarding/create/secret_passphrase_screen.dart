@@ -18,6 +18,7 @@ import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import 'onboarding_split_view.dart';
 import '../shared/onboarding_flow_args.dart';
+import '../shared/onboarding_error_messages.dart';
 
 class SecretPassphraseScreen extends ConsumerStatefulWidget {
   const SecretPassphraseScreen({this.args, super.key});
@@ -132,7 +133,7 @@ class _SecretPassphraseScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _CreateWalletSubmitPhase.idle;
-        _submitError = e.toString();
+        _submitError = onboardingSubmitErrorMessage(e);
       });
       return;
     }
