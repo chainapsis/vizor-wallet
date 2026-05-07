@@ -219,13 +219,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Terms of Use'), findsOneWidget);
-    expect(find.text('Behind the Vizor.\nYour money, hidden.'), findsNothing);
+    expect(
+      find.text('Behind the Vizor.\nYour money stays private.'),
+      findsNothing,
+    );
 
     await tester.pumpWidget(_appHarness(_emptyBootstrap('/privacy')));
     await tester.pumpAndSettle();
 
     expect(find.text('Privacy Policy'), findsOneWidget);
-    expect(find.text('Behind the Vizor.\nYour money, hidden.'), findsNothing);
+    expect(
+      find.text('Behind the Vizor.\nYour money stays private.'),
+      findsNothing,
+    );
   });
 
   testWidgets('welcome footer links open legal pages', (tester) async {
