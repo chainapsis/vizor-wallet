@@ -306,7 +306,7 @@ fn parse_merkle_path(witness: &WitnessData) -> Result<MerklePath, VotingError> {
 /// - `imt_proofs`: Pre-fetched IMT exclusion proofs (one per real note, from PIR client).
 /// - `extra_imt_proofs`: Additional pre-fetched IMT proofs keyed by nullifier,
 ///   currently used for padded dummy notes.
-/// - `network_id`: 0 = mainnet, 1 = testnet (for UFVK decoding).
+/// - `network_id`: 0 = testnet, 1 = mainnet (for UFVK decoding; matches the SDK / wallet DB).
 /// - `progress`: Progress callback.
 #[allow(clippy::too_many_arguments)]
 pub fn build_and_prove_delegation(
@@ -346,12 +346,12 @@ pub fn build_and_prove_delegation(
     }
 
     let network = match network_id {
-        0 => Network::MainNetwork,
-        1 => Network::TestNetwork,
+        0 => Network::TestNetwork,
+        1 => Network::MainNetwork,
         _ => {
             return Err(VotingError::InvalidInput {
                 message: format!(
-                    "invalid network_id {network_id}, expected 0 (mainnet) or 1 (testnet)"
+                    "invalid network_id {network_id}, expected 0 (testnet) or 1 (mainnet)"
                 ),
             })
         }
@@ -960,7 +960,7 @@ mod tests {
             &merkle_witnesses,
             &imt_proofs,
             &[],
-            0, // mainnet
+            1, // mainnet (SDK convention: 0=testnet, 1=mainnet)
             &reporter,
             None,
         )

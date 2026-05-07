@@ -29,7 +29,7 @@ const VOTE_PROOF_STACK_BYTES: usize = 64 * 1024 * 1024;
 /// # Arguments
 ///
 /// * `hotkey_seed` - Seed bytes for the hotkey SpendingKey (from app secure storage).
-/// * `network_id` - 0=mainnet, 1=testnet.
+/// * `network_id` - 0=testnet, 1=mainnet (matches the mobile SDK / wallet DB convention).
 /// * `address_index` - Diversifier index used for the hotkey address during delegation.
 /// * `total_note_value` - Sum of delegated note values.
 /// * `gov_comm_rand` - 32-byte VAN blinding factor (from DB).
@@ -203,6 +203,8 @@ pub fn build_vote_commitment(
 }
 
 /// Derive an Orchard SpendingKey from hotkey seed bytes using ZIP-32.
+///
+/// `network_id`: 0 = testnet, 1 = mainnet (same encoding as the wallet SDK / `NoteInfo` flow).
 pub fn derive_spending_key(hotkey_seed: &[u8], network_id: u32) -> Result<SpendingKey, VotingError> {
     use zcash_keys::keys::UnifiedSpendingKey;
     use zcash_protocol::consensus::{MAIN_NETWORK, TEST_NETWORK};
@@ -220,12 +222,12 @@ pub fn derive_spending_key(hotkey_seed: &[u8], network_id: u32) -> Result<Spendi
     let account = AccountId::try_from(0u32).expect("account 0 is valid");
 
     let usk = match network_id {
-        0 => UnifiedSpendingKey::from_seed(&MAIN_NETWORK, hotkey_seed, account),
-        1 => UnifiedSpendingKey::from_seed(&TEST_NETWORK, hotkey_seed, account),
+        0 => UnifiedSpendingKey::from_seed(&TEST_NETWORK, hotkey_seed, account),
+        1 => UnifiedSpendingKey::from_seed(&MAIN_NETWORK, hotkey_seed, account),
         _ => {
             return Err(VotingError::InvalidInput {
                 message: format!(
-                    "invalid network_id {}, expected 0 (mainnet) or 1 (testnet)",
+                    "invalid network_id {}, expected 0 (testnet) or 1 (mainnet)",
                     network_id
                 ),
             });

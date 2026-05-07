@@ -113,12 +113,12 @@ fn padded_nullifiers_for_circuit(
         .ufvk_str;
 
     let network = match network_id {
-        0 => Network::MainNetwork,
-        1 => Network::TestNetwork,
+        0 => Network::TestNetwork,
+        1 => Network::MainNetwork,
         _ => {
             return Err(VotingError::InvalidInput {
                 message: format!(
-                    "invalid network_id {network_id}, expected 0 (mainnet) or 1 (testnet)"
+                    "invalid network_id {network_id}, expected 0 (testnet) or 1 (mainnet)"
                 ),
             })
         }
