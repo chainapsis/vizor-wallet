@@ -89,7 +89,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
       log('UnlockScreen._submit: invalid password');
       setState(() {
         _isSubmitting = false;
-        _errorText = 'Incorrect password. Please try again.';
+        _errorText = 'Incorrect password. Try again.';
       });
     }
   }

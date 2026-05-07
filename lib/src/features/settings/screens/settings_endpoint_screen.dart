@@ -753,7 +753,7 @@ class _CustomEndpointForm extends StatelessWidget {
                   TextSpan(
                     text:
                         "If the endpoint is configured wrong, your wallet won't "
-                        'be able to sync with Zcash blockchain.\n',
+                        'be able to sync with the Zcash network.\n',
                     children: [
                       TextSpan(
                         text:

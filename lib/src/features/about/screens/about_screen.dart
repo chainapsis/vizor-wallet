@@ -32,7 +32,8 @@ const _maxSidebarPaneContentWidth = 752.0;
 const _placeholderParagraph = _UtilityParagraphData(
   heading: 'From the team that brought you Keplr Wallet.',
   body:
-      'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the sender, recipient, and amount - verified by cryptography, not trust.',
+      'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the '
+      'sender, recipient, and amount.',
 );
 
 const _aboutParagraphs = [_placeholderParagraph, _placeholderParagraph];

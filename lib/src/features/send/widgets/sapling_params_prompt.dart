@@ -90,16 +90,16 @@ class SaplingParamsPrompt extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'This transaction uses Sapling shielded notes, '
-                          'which require proving parameters (~50MB) to '
-                          'generate zero-knowledge proofs.',
+                          'To create this private transaction, your wallet '
+                          'needs to download about 50MB of cryptographic '
+                          'parameters.',
                           style: AppTypography.bodyMedium.copyWith(
                             color: colors.text.accent,
                           ),
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         Text(
-                          'This is a one-time download.\n'
+                          "This happens once, then it's done.\n"
                           'Network data charges may apply.',
                           style: AppTypography.bodyMedium.copyWith(
                             color: colors.text.secondary,

@@ -262,7 +262,7 @@ class _TitleBlock extends StatelessWidget {
         const _VizorLogo(),
         const SizedBox(height: AppSpacing.md),
         Text(
-          'Private Money.\nFor the New Internet',
+          'Behind the Vizor.\nYour money, hidden.',
           style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
           textAlign: TextAlign.center,
         ),

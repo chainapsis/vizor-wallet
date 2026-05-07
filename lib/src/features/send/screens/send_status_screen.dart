@@ -107,20 +107,22 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         lower.contains('connection refused') ||
         lower.contains('dns error') ||
         lower.contains('tls error')) {
-      return 'Network error. Please check your connection and try again.';
+      return 'Network error. Check your connection and try again.';
     }
     if (lower.contains('broadcast failed after') &&
         lower.contains('txs sent')) {
-      return 'Some transactions were broadcast but not all. Please check history before retrying.';
+      return 'Some parts of this transaction were sent. Open Activity to see '
+          'what went through before you try again.';
     }
     if (lower.contains('broadcast rejected')) {
-      return 'Transaction was rejected by the network. Please try again later.';
+      return 'The network rejected this transaction. Try again later.';
     }
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
       return 'Transaction expired before it could be sent.';
     }
-    return 'Transaction could not be sent. Please return to your wallet and verify the latest status.';
+    return "Transaction couldn't be sent. Go back to your wallet and check "
+        'the latest status.';
   }
 
   String? _firstTxid(String txids) {
@@ -137,7 +139,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     }
     final rawMessage = result.message?.toLowerCase() ?? '';
     if (rawMessage.contains('broadcast rejected')) {
-      return 'Transaction was created locally, but the network did not accept the first broadcast. It may retry automatically until it expires. Do not send again unless this transaction expires.';
+      return "Transaction was created locally but didn't reach the network. "
+          'The wallet will keep retrying until it expires. '
+          "Don't send again unless this one expires.";
     }
     return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
   }

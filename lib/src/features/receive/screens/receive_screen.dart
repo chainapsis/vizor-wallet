@@ -26,6 +26,9 @@ import '../../../providers/wallet_provider.dart';
 
 enum _ReceiveAddressType { shielded, transparent }
 
+const _renewShieldedAddressErrorMessage =
+    "We couldn't refresh your shielded address. Try again, or use your current one.";
+
 class ReceiveScreen extends ConsumerStatefulWidget {
   const ReceiveScreen({super.key});
 
@@ -214,11 +217,11 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       }
       setState(() {
         _isRenewingShielded = false;
-        _errorText = e.toString();
+        _errorText = '$_renewShieldedAddressErrorMessage\nDetails: $e';
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(_renewShieldedAddressErrorMessage)),
+      );
     }
   }
 
@@ -861,7 +864,8 @@ class _QrSurface extends StatelessWidget {
             )
           : Center(
               child: Text(
-                'No address',
+                "We couldn't load your address. Try again in a moment.",
+                textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -1097,7 +1101,7 @@ class _RenewButton extends StatelessWidget {
                         AppIcons.renew,
                         size: 20,
                         color: colors.icon.accent,
-                        semanticLabel: 'Renew shielded address',
+                        semanticLabel: 'Generate new shielded address',
                       ),
               ),
             ),
@@ -1186,7 +1190,7 @@ List<TextSpan> _addressSpans(
   if (address.isEmpty) {
     return [
       TextSpan(
-        text: 'Address unavailable',
+        text: "Address couldn't be loaded. Try again.",
         style: TextStyle(color: context.colors.text.secondary),
       ),
     ];

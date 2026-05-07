@@ -356,7 +356,7 @@ class _HeroBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'The Master Key to your wallet.',
+          'The master key to your wallet.',
           style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           textAlign: TextAlign.center,
         ),

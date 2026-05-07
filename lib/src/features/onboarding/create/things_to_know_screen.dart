@@ -100,7 +100,7 @@ class _HeroBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Useful tips before you started.',
+          'A few tips before you start.',
           style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           textAlign: TextAlign.center,
         ),
@@ -126,10 +126,10 @@ class _InfoColumns extends StatelessWidget {
           const _InfoColumn(
             title: 'Time to sync',
             body:
-                'Your wallet syncs directly with the Zcash network instead '
-                'of relying on a server. This protects your privacy, but '
-                'takes a moment. Your funds are safe while the app catches '
-                'up.',
+                'Your balance may be incomplete until your wallet finishes '
+                'syncing. Syncing directly with the Zcash network protects '
+                'your privacy, but takes time. Your funds are safe in the '
+                'meantime.',
             iconName: AppIcons.time,
           ),
           const SizedBox(width: AppSpacing.lg),
@@ -145,9 +145,9 @@ class _InfoColumns extends StatelessWidget {
           const _InfoColumn(
             title: 'How to keep privacy',
             body:
-                "Some exchanges can't send to shielded addresses. If you're "
-                'withdrawing from an exchange, use your transparent address. '
-                'You can shield your ZEC after it arrives.',
+                "Most exchanges don't let you withdraw to a shielded address. "
+                'Use your transparent address, then shield your ZEC after it '
+                'arrives.',
             iconName: AppIcons.shieldKeyholeOutline,
           ),
         ],

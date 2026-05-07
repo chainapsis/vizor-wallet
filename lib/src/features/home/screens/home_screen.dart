@@ -139,10 +139,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final message = error.toString();
     final lower = message.toLowerCase();
     if (lower.contains('mnemonic')) {
-      return 'Mnemonic not found for the active account.';
+      return "Secret Passphrase isn't available for this account.";
     }
     if (lower.contains('sync')) {
-      return 'Sync the wallet before shielding transparent balance.';
+      return 'Wait for sync to finish, then shield.';
     }
     if (lower.contains('insufficient') ||
         lower.contains('threshold') ||
@@ -151,9 +151,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return 'Transparent balance is too small to shield after fees.';
     }
     if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
-      return 'Shield transaction could not be broadcast.';
+      return "Couldn't broadcast your shielding transaction. Try again.";
     }
-    return 'Shield balance failed. Please try again.';
+    return "Couldn't shield your balance. Try again.";
   }
 
   @override
@@ -191,7 +191,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (err, _) => Center(
               child: Text(
-                'Error: $err',
+                'Something went wrong. Try again in a moment.\n\n'
+                'Details: $err',
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.warning,
                 ),
@@ -400,7 +401,8 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     if (widget.passwordRotationRecoveryFailed) {
       return _HomeNoticeData(
         iconName: AppIcons.warning,
-        message: "We couldn't verify the previous password change.",
+        message:
+            "We couldn't verify the previous password change. Try again or restart Vizor.",
         actionLabel: 'Settings',
         onTap: () => context.push('/settings'),
       );

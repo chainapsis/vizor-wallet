@@ -141,7 +141,7 @@ class _HeroBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Zcash (ZEC) built around financial privacy & self-custody.',
+          'Zcash (ZEC) is built around financial privacy and self-custody.',
           style: subtitleStyle,
           textAlign: TextAlign.center,
         ),
@@ -152,8 +152,7 @@ class _HeroBlock extends StatelessWidget {
             children: [
               Text(
                 'Unlike Bitcoin or Ethereum, shielded Zcash transactions '
-                'hide the sender, recipient, and amount — verified by '
-                'cryptography, not trust.',
+                'hide the sender, recipient, and amount.',
                 style: bodyStyle,
                 textAlign: TextAlign.center,
               ),

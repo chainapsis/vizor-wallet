@@ -229,7 +229,9 @@ class _SetPasswordContent extends StatelessWidget {
                             SizedBox(
                               width: 270,
                               child: Text(
-                                'Minimum 8 symbols including characters.',
+                                'Minimum 8 characters. Add numbers and '
+                                'symbols, or make it longer, for stronger '
+                                'security.',
                                 style: AppTypography.bodyMedium.copyWith(
                                   color: colors.text.accent,
                                 ),

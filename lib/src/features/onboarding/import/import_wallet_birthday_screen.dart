@@ -286,13 +286,13 @@ class _ImportWalletBirthdayScreenState
     final text = _manualHeightController.text.trim();
     if (text.isEmpty) return null;
     final parsed = int.tryParse(text);
-    if (parsed == null) return 'Doesn’t seem like a legit block height';
+    if (parsed == null) return "That doesn't look like a valid block height.";
     if (parsed < _minimumBirthdayHeight) {
-      return 'Doesn’t seem like a legit block height';
+      return "That doesn't look like a valid block height.";
     }
     final maximumHeight = _metadata?.tipHeight;
     if (maximumHeight != null && parsed > maximumHeight) {
-      return 'Doesn’t seem like a legit block height';
+      return "That doesn't look like a valid block height.";
     }
     if (_metadataError != null) return _metadataError;
     return null;
@@ -371,7 +371,7 @@ class _ImportWalletBirthdayScreenState
                           SizedBox(
                             width: _subtitleWidth,
                             child: Text(
-                              'This will help to import your wallet faster.',
+                              'It helps us import your wallet faster.',
                               style: AppTypography.bodyMedium.copyWith(
                                 color: context.colors.text.accent,
                               ),
