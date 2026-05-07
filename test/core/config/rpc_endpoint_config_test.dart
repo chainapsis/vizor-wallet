@@ -162,6 +162,39 @@ void main() {
       );
       expect(defaultEndpoint.presetId, kDefaultRpcEndpointPresetId);
     });
+
+    test('resolves stored default preset to the current default URL', () {
+      final config = resolveStoredRpcEndpointConfig(
+        networkName: 'main',
+        storedUrl: 'https://zec.rocks:443',
+        storedPresetId: kDefaultRpcEndpointPresetId,
+      );
+
+      expect(config.lightwalletdUrl, 'https://us.zec.stardust.rest:443');
+      expect(config.presetId, kDefaultRpcEndpointPresetId);
+    });
+
+    test('resolves stored non-default presets by preset id', () {
+      final config = resolveStoredRpcEndpointConfig(
+        networkName: 'main',
+        storedUrl: 'https://us.zec.stardust.rest:443',
+        storedPresetId: 'zec-rocks',
+      );
+
+      expect(config.lightwalletdUrl, 'https://zec.rocks:443');
+      expect(config.presetId, 'zec-rocks');
+    });
+
+    test('keeps stored custom endpoint URLs literal', () {
+      final config = resolveStoredRpcEndpointConfig(
+        networkName: 'main',
+        storedUrl: 'https://example.com:443',
+        storedPresetId: kCustomRpcEndpointPresetId,
+      );
+
+      expect(config.lightwalletdUrl, 'https://example.com:443');
+      expect(config.presetId, kCustomRpcEndpointPresetId);
+    });
   });
 
   group('RpcEndpointConfig', () {

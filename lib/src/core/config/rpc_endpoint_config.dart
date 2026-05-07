@@ -184,6 +184,40 @@ RpcEndpointConfig defaultRpcEndpointConfig(String networkName) {
   );
 }
 
+RpcEndpointConfig resolveStoredRpcEndpointConfig({
+  required String networkName,
+  required String? storedUrl,
+  required String? storedPresetId,
+}) {
+  final network = zcashNetworkFromName(networkName);
+  final presetId = storedPresetId?.trim();
+  if (presetId != null &&
+      presetId.isNotEmpty &&
+      presetId != kCustomRpcEndpointPresetId) {
+    final preset = findRpcEndpointPresetById(network.name, presetId);
+    if (preset != null) {
+      return RpcEndpointConfig(
+        networkName: network.name,
+        lightwalletdUrl: preset.url,
+        presetId: preset.id,
+      );
+    }
+  }
+
+  final url = storedUrl?.trim();
+  if (url == null || url.isEmpty) {
+    return defaultRpcEndpointConfig(network.name);
+  }
+
+  return RpcEndpointConfig(
+    networkName: network.name,
+    lightwalletdUrl: normalizeRpcEndpointUrl(url, allowDefaultPort: true),
+    presetId: presetId == kCustomRpcEndpointPresetId
+        ? kCustomRpcEndpointPresetId
+        : findRpcEndpointPresetByUrl(url, networkName: network.name)?.id,
+  );
+}
+
 RpcEndpointPreset? findRpcEndpointPresetById(
   String networkName,
   String presetId,

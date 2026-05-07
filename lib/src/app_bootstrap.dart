@@ -323,19 +323,10 @@ Future<RpcEndpointConfig> _readRpcEndpointConfig(
   try {
     final storedUrl = await storage.readString(kRpcEndpointUrlKey);
     final storedPreset = await storage.readString(kRpcEndpointPresetKey);
-    if (storedUrl == null || storedUrl.trim().isEmpty) {
-      return defaultRpcEndpointConfig(network);
-    }
-
-    return RpcEndpointConfig(
+    return resolveStoredRpcEndpointConfig(
       networkName: zcashNetworkFromName(network).name,
-      lightwalletdUrl: normalizeRpcEndpointUrl(
-        storedUrl,
-        allowDefaultPort: true,
-      ),
-      presetId: storedPreset == null || storedPreset.trim().isEmpty
-          ? findRpcEndpointPresetByUrl(storedUrl, networkName: network)?.id
-          : storedPreset,
+      storedUrl: storedUrl,
+      storedPresetId: storedPreset,
     );
   } catch (e) {
     log('bootstrap: failed to read RPC endpoint: $e');
