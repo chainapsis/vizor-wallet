@@ -37,8 +37,17 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
   }
 
   Future<void> _persist(RpcEndpointConfig next) async {
-    await _store.writePlain(kRpcEndpointUrlKey, next.normalizedLightwalletdUrl);
-    await _store.writePlain(kRpcEndpointPresetKey, next.effectivePresetId);
+    final effectivePresetId = next.effectivePresetId;
+    if (effectivePresetId == kDefaultRpcEndpointPresetId) {
+      await _store.delete(kRpcEndpointUrlKey);
+      await _store.writePlain(kRpcEndpointPresetKey, effectivePresetId);
+    } else {
+      await _store.writePlain(
+        kRpcEndpointUrlKey,
+        next.normalizedLightwalletdUrl,
+      );
+      await _store.writePlain(kRpcEndpointPresetKey, effectivePresetId);
+    }
     try {
       await bg_sync.updateBackgroundSyncEndpoint(endpoint: next);
     } catch (e) {
