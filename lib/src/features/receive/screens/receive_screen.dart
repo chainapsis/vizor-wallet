@@ -106,6 +106,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     } catch (e) {
       log('Receive: ERROR loading addresses: $e');
       if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
       setState(() {
         _shieldedAddress ??= walletAddress;
         _isLoading = false;
@@ -206,6 +209,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     } catch (e) {
       log('Receive: ERROR renewing shielded address: $e');
       if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
       setState(() {
         _isRenewingShielded = false;
         _errorText = e.toString();
@@ -922,6 +928,12 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
         oldWidget.color != widget.color ||
         oldWidget.embeddedImageAsset != widget.embeddedImageAsset ||
         oldWidget.embeddedImageScale != widget.embeddedImageScale) {
+      final previous = _image;
+      setState(() {
+        _image = null;
+        _error = null;
+      });
+      _disposeImageAfterFrame(previous);
       unawaited(_renderQr());
     }
   }
