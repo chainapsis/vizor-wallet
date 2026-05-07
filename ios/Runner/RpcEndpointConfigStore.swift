@@ -15,7 +15,7 @@ enum RpcEndpointConfigStore {
         if UserDefaults.standard.string(forKey: presetIdKey) == defaultPresetId {
             return defaultLightwalletdUrl
         }
-        UserDefaults.standard.string(forKey: lightwalletdUrlKey) ?? defaultLightwalletdUrl
+        return UserDefaults.standard.string(forKey: lightwalletdUrlKey) ?? defaultLightwalletdUrl
     }
 
     static var network: String {
