@@ -230,6 +230,7 @@ class AppSecureStore {
       try {
         final storedValues = await _storage.readAll();
         final rotatedSecrets = <_PasswordRotationEntry>[];
+        final rollbackSecrets = <_PasswordRotationRollbackEntry>[];
 
         for (final entry in storedValues.entries) {
           if (!entry.key.startsWith(_accountMnemonicKeyPrefix)) continue;
@@ -251,10 +252,12 @@ class AppSecureStore {
             newSecretKey,
           );
           rotatedSecrets.add(
-            _PasswordRotationEntry(
+            _PasswordRotationEntry(key: entry.key, rotatedValue: rotatedValue),
+          );
+          rollbackSecrets.add(
+            _PasswordRotationRollbackEntry(
               key: entry.key,
               originalValue: entry.value,
-              rotatedValue: rotatedValue,
             ),
           );
         }
@@ -266,18 +269,21 @@ class AppSecureStore {
         );
 
         final rotation = _PasswordRotationRecord(
-          oldVerifierSalt: oldVerifierSalt,
-          oldVerifier: oldVerifier,
           newVerifierSalt: base64Encode(newVerifierSalt),
           newVerifier: newVerifier,
           entries: rotatedSecrets,
+        );
+        final rollbackSnapshot = _PasswordRotationRollbackSnapshot(
+          oldVerifierSalt: oldVerifierSalt,
+          oldVerifier: oldVerifier,
+          entries: rollbackSecrets,
         );
         await writePlain(_passwordRotationInProgressKey, rotation.serialize());
 
         try {
           await _writeRotatedPasswordState(rotation);
         } catch (error, stackTrace) {
-          await _rollbackPasswordRotation(rotation, currentPassword);
+          await _rollbackPasswordRotation(rollbackSnapshot, currentPassword);
           Error.throwWithStackTrace(error, stackTrace);
         }
 
@@ -454,29 +460,22 @@ class AppSecureStore {
   }
 
   Future<void> _rollbackPasswordRotation(
-    _PasswordRotationRecord rotation,
+    _PasswordRotationRollbackSnapshot rollback,
     String currentPassword,
   ) async {
     try {
-      final rollbackRecord = rotation.toRollbackRecord();
-      if (rollbackRecord != null) {
-        await writePlain(
-          _passwordRotationInProgressKey,
-          rollbackRecord.serialize(),
-        );
-      }
-      for (final entry in rotation.entries) {
+      for (final entry in rollback.entries) {
         await writePlain(entry.key, entry.originalValue);
       }
-      if (rotation.oldVerifierSalt == null) {
+      if (rollback.oldVerifierSalt == null) {
         await delete(_passwordVerifierSaltKey);
       } else {
-        await writePlain(_passwordVerifierSaltKey, rotation.oldVerifierSalt!);
+        await writePlain(_passwordVerifierSaltKey, rollback.oldVerifierSalt!);
       }
-      if (rotation.oldVerifier == null) {
+      if (rollback.oldVerifier == null) {
         await delete(_passwordVerifierKey);
       } else {
-        await writePlain(_passwordVerifierKey, rotation.oldVerifier!);
+        await writePlain(_passwordVerifierKey, rollback.oldVerifier!);
       }
       setSessionPassword(currentPassword);
       await _deleteRotationRecordBestEffort();
@@ -554,28 +553,41 @@ class _AsyncLock {
 }
 
 class _PasswordRotationEntry {
-  const _PasswordRotationEntry({
+  const _PasswordRotationEntry({required this.key, required this.rotatedValue});
+
+  final String key;
+  final String rotatedValue;
+}
+
+class _PasswordRotationRollbackEntry {
+  const _PasswordRotationRollbackEntry({
     required this.key,
     required this.originalValue,
-    required this.rotatedValue,
   });
 
   final String key;
   final String originalValue;
-  final String rotatedValue;
 }
 
-class _PasswordRotationRecord {
-  const _PasswordRotationRecord({
+class _PasswordRotationRollbackSnapshot {
+  const _PasswordRotationRollbackSnapshot({
     required this.oldVerifierSalt,
     required this.oldVerifier,
-    required this.newVerifierSalt,
-    required this.newVerifier,
     required this.entries,
   });
 
   final String? oldVerifierSalt;
   final String? oldVerifier;
+  final List<_PasswordRotationRollbackEntry> entries;
+}
+
+class _PasswordRotationRecord {
+  const _PasswordRotationRecord({
+    required this.newVerifierSalt,
+    required this.newVerifier,
+    required this.entries,
+  });
+
   final String newVerifierSalt;
   final String newVerifier;
   final List<_PasswordRotationEntry> entries;
@@ -583,17 +595,11 @@ class _PasswordRotationRecord {
   String serialize() {
     return jsonEncode({
       'v': 1,
-      'oldVerifierSalt': oldVerifierSalt,
-      'oldVerifier': oldVerifier,
       'newVerifierSalt': newVerifierSalt,
       'newVerifier': newVerifier,
       'entries': entries
           .map(
-            (entry) => {
-              'key': entry.key,
-              'originalValue': entry.originalValue,
-              'rotatedValue': entry.rotatedValue,
-            },
+            (entry) => {'key': entry.key, 'rotatedValue': entry.rotatedValue},
           )
           .toList(),
     });
@@ -607,47 +613,24 @@ class _PasswordRotationRecord {
 
       final entriesJson = json['entries'];
       if (entriesJson is! List) return null;
+      final newVerifierSalt = json['newVerifierSalt'];
+      final newVerifier = json['newVerifier'];
+      if (newVerifierSalt is! String || newVerifier is! String) return null;
 
       return _PasswordRotationRecord(
-        oldVerifierSalt: json['oldVerifierSalt'] as String?,
-        oldVerifier: json['oldVerifier'] as String?,
-        newVerifierSalt: json['newVerifierSalt'] as String,
-        newVerifier: json['newVerifier'] as String,
-        entries: entriesJson
-            .map(
-              (entry) => _PasswordRotationEntry(
-                key: (entry as Map<String, dynamic>)['key'] as String,
-                originalValue: entry['originalValue'] as String,
-                rotatedValue: entry['rotatedValue'] as String,
-              ),
-            )
-            .toList(),
+        newVerifierSalt: newVerifierSalt,
+        newVerifier: newVerifier,
+        entries: entriesJson.map((entry) {
+          final entryJson = entry as Map<String, dynamic>;
+          return _PasswordRotationEntry(
+            key: entryJson['key'] as String,
+            rotatedValue: entryJson['rotatedValue'] as String,
+          );
+        }).toList(),
       );
     } catch (_) {
       return null;
     }
-  }
-
-  _PasswordRotationRecord? toRollbackRecord() {
-    final oldSalt = oldVerifierSalt;
-    final oldPasswordVerifier = oldVerifier;
-    if (oldSalt == null || oldPasswordVerifier == null) return null;
-
-    return _PasswordRotationRecord(
-      oldVerifierSalt: newVerifierSalt,
-      oldVerifier: newVerifier,
-      newVerifierSalt: oldSalt,
-      newVerifier: oldPasswordVerifier,
-      entries: entries
-          .map(
-            (entry) => _PasswordRotationEntry(
-              key: entry.key,
-              originalValue: entry.rotatedValue,
-              rotatedValue: entry.originalValue,
-            ),
-          )
-          .toList(),
-    );
   }
 }
 
