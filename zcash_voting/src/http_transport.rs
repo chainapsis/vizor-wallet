@@ -1,3 +1,6 @@
+#[cfg(feature = "client-tree-sync")]
+use std::future::Future;
+
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use http::{Method, Request};
@@ -26,16 +29,13 @@ struct HyperResponse {
 pub struct HyperTransport {
     client: HyperClient,
     #[cfg(feature = "client-tree-sync")]
-    runtime: tokio::runtime::Runtime,
+    runtime: BlockingRuntime,
 }
 
 impl HyperTransport {
     pub fn new() -> Self {
         #[cfg(feature = "client-tree-sync")]
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("create tree-sync HTTP runtime");
+        let runtime = BlockingRuntime::new();
         let mut connector = HttpConnector::new();
         connector.enforce_http(false);
         let https = hyper_rustls::HttpsConnectorBuilder::new()
@@ -99,6 +99,41 @@ impl Default for HyperTransport {
     }
 }
 
+#[cfg(feature = "client-tree-sync")]
+struct BlockingRuntime {
+    inner: Option<tokio::runtime::Runtime>,
+}
+
+#[cfg(feature = "client-tree-sync")]
+impl BlockingRuntime {
+    fn new() -> Self {
+        Self {
+            inner: Some(
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .expect("create tree-sync HTTP runtime"),
+            ),
+        }
+    }
+
+    fn block_on<F: Future>(&self, future: F) -> F::Output {
+        self.inner
+            .as_ref()
+            .expect("tree-sync HTTP runtime is unavailable")
+            .block_on(future)
+    }
+}
+
+#[cfg(feature = "client-tree-sync")]
+impl Drop for BlockingRuntime {
+    fn drop(&mut self) {
+        if let Some(runtime) = self.inner.take() {
+            runtime.shutdown_background();
+        }
+    }
+}
+
 #[cfg(feature = "client-pir")]
 impl pir_client::Transport for HyperTransport {
     fn get<'a>(&'a self, url: &'a str) -> pir_client::TransportFuture<'a> {
@@ -146,5 +181,23 @@ impl vote_commitment_tree_client::transport::Transport for HyperTransport {
             .map_err(|e| {
                 vote_commitment_tree_client::transport::TransportError::Request(e.to_string())
             })
+    }
+}
+
+#[cfg(all(test, feature = "client-tree-sync"))]
+mod tests {
+    use super::BlockingRuntime;
+
+    #[test]
+    fn blocking_runtime_drop_does_not_panic_inside_tokio_context() {
+        let outer = tokio::runtime::Runtime::new().unwrap();
+        let result = std::panic::catch_unwind(|| {
+            outer.block_on(async {
+                let runtime = BlockingRuntime::new();
+                drop(runtime);
+            });
+        });
+
+        assert!(result.is_ok());
     }
 }
