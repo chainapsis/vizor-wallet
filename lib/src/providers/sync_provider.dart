@@ -9,11 +9,10 @@ import '../app_bootstrap.dart';
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
-import '../rust/api/wallet.dart' as rust_wallet;
 import '../services/background_sync_delegate.dart';
 import 'account_provider.dart';
 import 'app_security_provider.dart';
-import 'rpc_endpoint_provider.dart';
+import 'rpc_endpoint_failover_provider.dart';
 import 'sync_failure.dart';
 
 class SyncState {
@@ -506,8 +505,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
 
     _getDbPath()
-        .then((dbPath) {
+        .then((dbPath) async {
           if (gen != _syncGen) return; // stopSync was called, abort
+          try {
+            await ref
+                .read(rpcEndpointFailoverProvider.notifier)
+                .getLatestBlockHeight();
+          } catch (e) {
+            if (gen != _syncGen) return;
+            log('Sync: endpoint preflight failed: $e');
+            _isSyncing = false;
+            _stopDisplayProgressTimer();
+            _recordSyncFailure(e);
+            return;
+          }
+
           final endpoint = _endpointConfig;
           log('Sync: starting foreground sync via ${endpoint.hostPort}');
           // Fire up the mempool observer alongside the scan loop.
@@ -591,7 +603,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               // a lightwalletd stream that keeps firing
               // `_refreshBalance()` callbacks with no owning sync.
               _stopMempoolObserver();
-              _recordSyncFailure(e);
+              unawaited(_recoverSyncOnFallbackOrRecordFailure(e, gen));
             },
           );
         })
@@ -607,8 +619,25 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           // `_stopMempoolObserver()` here; it is idempotent when
           // nothing is running.
           _stopMempoolObserver();
-          _recordSyncFailure(e);
+          unawaited(_recoverSyncOnFallbackOrRecordFailure(e, gen));
         });
+  }
+
+  Future<void> _recoverSyncOnFallbackOrRecordFailure(
+    Object error,
+    int gen,
+  ) async {
+    final switched = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .switchToFallbackFor(error, operation: 'foreground sync');
+    if (gen != _syncGen || _requiresUnlock) return;
+    if (switched) {
+      log('Sync: retrying foreground sync with fallback endpoint');
+      startSync();
+      _startPolling();
+      return;
+    }
+    _recordSyncFailure(error);
   }
 
   void _recordSyncFailure(Object error) {
@@ -1023,9 +1052,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _pollCheckInFlight = true;
     _stopPolling();
     try {
-      final tip = await rust_wallet.getLatestBlockHeight(
-        lightwalletdUrl: _endpointConfig.normalizedLightwalletdUrl,
-      );
+      final tip = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .getLatestBlockHeight();
       final lastSynced = state.value?.chainTipHeight ?? 0;
       final syncComplete = (state.value?.percentage ?? 0) >= 1.0;
       if (gen != _syncGen || epoch != _sensitiveStateEpoch || _requiresUnlock) {
@@ -1649,7 +1678,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     return ref.read(appSecurityProvider).requiresUnlock;
   }
 
-  RpcEndpointConfig get _endpointConfig => ref.read(rpcEndpointProvider);
+  RpcEndpointConfig get _endpointConfig =>
+      ref.read(rpcEndpointFailoverProvider).current;
 }
 
 final syncProvider = AsyncNotifierProvider<SyncNotifier, SyncState>(

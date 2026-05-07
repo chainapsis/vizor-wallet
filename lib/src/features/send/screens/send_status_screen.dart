@@ -18,7 +18,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
@@ -292,7 +292,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   Future<void> _openTransactionExplorer() async {
     final txid = _txid;
     if (txid == null) return;
-    final endpoint = ref.read(rpcEndpointProvider);
+    final endpoint = ref.read(rpcEndpointFailoverProvider).current;
     final launched = await launchZcashExplorerTransaction(
       networkName: endpoint.networkName,
       txidHex: txid,
@@ -330,7 +330,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     try {
       final supportDir = await getWalletSupportDirectory();
       final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
+      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       final paramsDir =
           '${supportDir.path}${Platform.pathSeparator}sapling_params';
       final spendPath =
@@ -399,6 +399,14 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       );
       _proposalConsumed = true;
       final broadcastComplete = result.status == 'broadcasted';
+      if (!broadcastComplete && result.message != null) {
+        final switched = await ref
+            .read(rpcEndpointFailoverProvider.notifier)
+            .switchToFallbackFor(result.message!, operation: 'send broadcast');
+        if (switched) {
+          unawaited(ref.read(syncProvider.notifier).restartSync());
+        }
+      }
 
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();

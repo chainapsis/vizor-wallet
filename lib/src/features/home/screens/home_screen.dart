@@ -20,7 +20,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
-import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -109,7 +109,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
       final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
+      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       final result = await rust_sync.shieldTransparentBalance(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -129,6 +129,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     } catch (e, st) {
       log('HomeScreen: shield transparent balance failed: $e\n$st');
+      final switched = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .switchToFallbackFor(e, operation: 'shield transparent balance');
+      if (switched) {
+        unawaited(ref.read(syncProvider.notifier).restartSync());
+      }
       if (!mounted) return;
       setState(() {
         _shieldBalanceError = _friendlyShieldBalanceError(e);
@@ -507,7 +513,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
 
     try {
       final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
+      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       if (!mounted ||
           accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
         return null;

@@ -232,6 +232,54 @@ void main() {
     );
   });
 
+  group('fallbackRpcEndpointConfigFor', () {
+    test('uses zec.rocks when the mainnet default endpoint is primary', () {
+      final fallback = fallbackRpcEndpointConfigFor(
+        defaultRpcEndpointConfig('main'),
+      );
+
+      expect(fallback?.presetId, kMainnetFallbackRpcEndpointPresetId);
+      expect(fallback?.lightwalletdUrl, 'https://zec.rocks:443');
+    });
+
+    test(
+      'uses the network default when a custom mainnet endpoint is primary',
+      () {
+        final fallback = fallbackRpcEndpointConfigFor(
+          const RpcEndpointConfig(
+            networkName: 'main',
+            lightwalletdUrl: 'https://custom.example:443',
+            presetId: kCustomRpcEndpointPresetId,
+          ),
+        );
+
+        expect(fallback?.presetId, kDefaultRpcEndpointPresetId);
+        expect(fallback?.lightwalletdUrl, 'https://us.zec.stardust.rest:443');
+      },
+    );
+
+    test('uses local regtest default for a custom regtest endpoint', () {
+      final fallback = fallbackRpcEndpointConfigFor(
+        const RpcEndpointConfig(
+          networkName: 'regtest',
+          lightwalletdUrl: 'http://127.0.0.1:19067',
+          presetId: kCustomRpcEndpointPresetId,
+        ),
+      );
+
+      expect(fallback?.presetId, 'default-regtest');
+      expect(fallback?.lightwalletdUrl, 'http://127.0.0.1:9067');
+    });
+
+    test('returns null when no alternate endpoint exists', () {
+      final fallback = fallbackRpcEndpointConfigFor(
+        defaultRpcEndpointConfig('regtest'),
+      );
+
+      expect(fallback, isNull);
+    });
+  });
+
   group('rpcEndpointHostPort', () {
     test('keeps IPv6 brackets so custom endpoint fields can round-trip', () {
       expect(rpcEndpointHostPort('https://[::1]:9067'), '[::1]:9067');

@@ -5,6 +5,7 @@ export 'network_config.dart';
 
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
+const kMainnetFallbackRpcEndpointPresetId = 'zec-rocks';
 
 class RpcEndpointConfig {
   const RpcEndpointConfig({
@@ -187,6 +188,49 @@ RpcEndpointConfig defaultRpcEndpointConfig(String networkName) {
     networkName: network.name,
     lightwalletdUrl: preset.url,
     presetId: preset.id,
+  );
+}
+
+RpcEndpointConfig? fallbackRpcEndpointConfigFor(RpcEndpointConfig primary) {
+  final primaryNormalized = primary.normalizedLightwalletdUrl;
+  final candidates = rpcEndpointPresetsForNetwork(primary.networkName)
+      .where(
+        (preset) =>
+            normalizeRpcEndpointUrl(preset.url, allowDefaultPort: true) !=
+            primaryNormalized,
+      )
+      .toList(growable: false);
+  if (candidates.isEmpty) return null;
+
+  final preferredPresetIds = switch (primary.network) {
+    ZcashNetwork.mainnet => [
+      if (primary.effectivePresetId == kDefaultRpcEndpointPresetId)
+        kMainnetFallbackRpcEndpointPresetId
+      else
+        kDefaultRpcEndpointPresetId,
+      kMainnetFallbackRpcEndpointPresetId,
+    ],
+    ZcashNetwork.testnet => ['default-testnet'],
+    ZcashNetwork.regtest => ['default-regtest'],
+  };
+
+  for (final presetId in preferredPresetIds) {
+    for (final candidate in candidates) {
+      if (candidate.id == presetId) {
+        return RpcEndpointConfig(
+          networkName: primary.networkName,
+          lightwalletdUrl: candidate.url,
+          presetId: candidate.id,
+        );
+      }
+    }
+  }
+
+  final fallback = candidates.first;
+  return RpcEndpointConfig(
+    networkName: primary.networkName,
+    lightwalletdUrl: fallback.url,
+    presetId: fallback.id,
   );
 }
 

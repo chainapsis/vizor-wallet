@@ -13,6 +13,7 @@ import '../core/storage/wallet_paths.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'app_security_provider.dart';
+import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
 
 export 'account_models.dart';
@@ -53,9 +54,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final endpoint = ref.read(rpcEndpointProvider);
       final network = endpoint.networkName;
 
-      final birthday = await _fetchCreationBirthdayHeight(
-        endpoint.normalizedLightwalletdUrl,
-      );
+      final birthday = await _fetchCreationBirthdayHeight();
       log('createAccount: birthday=$birthday');
 
       final accounts = state.value?.accounts ?? [];
@@ -138,9 +137,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final endpoint = ref.read(rpcEndpointProvider);
       final network = endpoint.networkName;
 
-      final birthday = await _fetchCreationBirthdayHeight(
-        endpoint.normalizedLightwalletdUrl,
-      );
+      final birthday = await _fetchCreationBirthdayHeight();
       log('createAccountFromMnemonic: birthday=$birthday');
 
       final accounts = state.value?.accounts ?? [];
@@ -504,11 +501,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     return getWalletDbPath();
   }
 
-  Future<BigInt> _fetchCreationBirthdayHeight(String lightwalletdUrl) async {
+  Future<BigInt> _fetchCreationBirthdayHeight() async {
     try {
-      return await rust_wallet.getLatestBlockHeight(
-        lightwalletdUrl: lightwalletdUrl,
-      );
+      return await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .getLatestBlockHeight();
     } catch (e, st) {
       Error.throwWithStackTrace(
         WalletCreationCurrentBlockHeightException(e),

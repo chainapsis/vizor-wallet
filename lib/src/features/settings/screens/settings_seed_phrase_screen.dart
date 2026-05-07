@@ -20,6 +20,7 @@ import '../../../core/widgets/password_text_field.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 
@@ -294,11 +295,15 @@ class _SettingsSeedPhraseScreenState
   }
 
   Future<int> _loadBirthdayBlockTime(int height) async {
-    final endpoint = ref.read(rpcEndpointProvider);
-    final blockTime = await rust_sync.getBlockTime(
-      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      height: BigInt.from(height),
-    );
+    final blockTime = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .runWithEndpointFallback(
+          operation: 'birthday block time',
+          action: (endpoint) => rust_sync.getBlockTime(
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            height: BigInt.from(height),
+          ),
+        );
     return blockTime.toInt();
   }
 

@@ -10,6 +10,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../shared/onboarding_flow_args.dart';
@@ -94,10 +95,13 @@ class _ImportWalletBirthdayScreenState
     });
 
     try {
-      final endpoint = ref.read(rpcEndpointProvider);
-      final metadata = await ImportBirthdayEstimator.loadMetadata(
-        endpoint: endpoint,
-      );
+      final metadata = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation: 'import birthday metadata',
+            action: (endpoint) =>
+                ImportBirthdayEstimator.loadMetadata(endpoint: endpoint),
+          );
       if (!mounted) return;
       setState(() {
         _metadata = metadata;
@@ -127,11 +131,15 @@ class _ImportWalletBirthdayScreenState
     });
 
     try {
-      final endpoint = ref.read(rpcEndpointProvider);
-      final estimatedHeight =
-          await ImportBirthdayEstimator.estimateBirthdayHeight(
-            endpoint: endpoint,
-            selectedDate: date,
+      final estimatedHeight = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation: 'import birthday estimate',
+            action: (endpoint) =>
+                ImportBirthdayEstimator.estimateBirthdayHeight(
+                  endpoint: endpoint,
+                  selectedDate: date,
+                ),
           );
       if (!mounted || seq != _estimateSeq) return;
       setState(() {

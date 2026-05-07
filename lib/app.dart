@@ -9,6 +9,7 @@ import 'src/core/layout/app_layout.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
+import 'src/core/widgets/app_toast.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
@@ -36,6 +37,7 @@ import 'src/features/settings/screens/settings_endpoint_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
+import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/rust/frb_generated.dart';
@@ -462,25 +464,54 @@ class ZcashWalletApp extends ConsumerWidget {
           // events over empty regions while descendant GestureDetectors
           // (buttons, TextFields) win the gesture arena first, keeping
           // focused buttons focused when re-clicked.
-          child: DesktopWindowTitlebarSafeArea(
-            child: GestureDetector(
-              onTap: () {
-                // Leaf-only: skip when the primary focus is a
-                // `FocusScopeNode` rather than a concrete `FocusNode`.
-                // Unfocusing the scope itself strips the scope's
-                // "most-recently-focused child" memory, which leaves the
-                // next Tab with no deterministic starting point.
-                final primary = FocusManager.instance.primaryFocus;
-                if (primary != null && primary is! FocusScopeNode) {
-                  primary.unfocus();
-                }
-              },
-              behavior: HitTestBehavior.translucent,
-              child: child!,
+          child: AppToastHost(
+            child: _RpcEndpointFailoverToastListener(
+              child: DesktopWindowTitlebarSafeArea(
+                child: GestureDetector(
+                  onTap: () {
+                    // Leaf-only: skip when the primary focus is a
+                    // `FocusScopeNode` rather than a concrete `FocusNode`.
+                    // Unfocusing the scope itself strips the scope's
+                    // "most-recently-focused child" memory, which leaves the
+                    // next Tab with no deterministic starting point.
+                    final primary = FocusManager.instance.primaryFocus;
+                    if (primary != null && primary is! FocusScopeNode) {
+                      primary.unfocus();
+                    }
+                  },
+                  behavior: HitTestBehavior.translucent,
+                  child: child!,
+                ),
+              ),
             ),
           ),
         );
       },
     );
+  }
+}
+
+class _RpcEndpointFailoverToastListener extends ConsumerWidget {
+  const _RpcEndpointFailoverToastListener({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<RpcEndpointFailoverEvent?>(
+      rpcEndpointFailoverProvider.select((state) => state.lastEvent),
+      (previous, next) {
+        if (next == null || next.sequence == previous?.sequence) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          showAppToast(
+            context,
+            next.message,
+            duration: const Duration(seconds: 4),
+          );
+        });
+      },
+    );
+    return child;
   }
 }

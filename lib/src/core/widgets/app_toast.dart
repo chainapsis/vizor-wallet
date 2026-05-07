@@ -20,36 +20,41 @@ class AppToast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.background.inverse,
-        borderRadius: BorderRadius.circular(AppRadii.small),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s,
-          vertical: AppSpacing.xs,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 560),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.background.inverse,
+          borderRadius: BorderRadius.circular(AppRadii.small),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AppIcon(
-              iconName,
-              size: AppIconSize.medium,
-              color: colors.icon.inverse,
-            ),
-            const SizedBox(width: AppSpacing.xxs),
-            Text(
-              message,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.inverse,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s,
+            vertical: AppSpacing.xs,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AppIcon(
+                iconName,
+                size: AppIconSize.medium,
+                color: colors.icon.inverse,
               ),
-            ),
-          ],
+              const SizedBox(width: AppSpacing.xxs),
+              Flexible(
+                child: Text(
+                  message,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.inverse,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
