@@ -759,7 +759,7 @@ class _CustomEndpointForm extends StatelessWidget {
                         text:
                             "The wallet will show the balance from the last "
                             "time it was successfully connected. It won't "
-                            'show any ZEC you recently received.',
+                            'show any $kZcashDefaultCurrencyTicker you recently received.',
                         style: TextStyle(color: colors.text.primary),
                       ),
                     ],

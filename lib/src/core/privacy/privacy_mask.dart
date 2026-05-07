@@ -1,3 +1,5 @@
+import '../config/network_config.dart';
+
 const kDefaultPrivacyMaskLength = 6;
 
 String fixedPrivacyMask({int length = kDefaultPrivacyMaskLength}) {
@@ -18,12 +20,15 @@ String hideAmountIfPrivacyMode(
   String visibleText, {
   required bool privacyModeEnabled,
   int maskLength = kDefaultPrivacyMaskLength,
-  String denomination = 'ZEC',
+  String? denomination,
 }) {
+  final effectiveDenomination = denomination == null
+      ? kZcashDefaultCurrencyTicker
+      : denomination.trim();
   return hideIfPrivacyMode(
     visibleText,
     privacyModeEnabled: privacyModeEnabled,
     maskLength: maskLength,
-    suffix: denomination.isEmpty ? '' : ' $denomination',
+    suffix: effectiveDenomination.isEmpty ? '' : ' $effectiveDenomination',
   );
 }

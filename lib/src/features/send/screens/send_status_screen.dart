@@ -147,7 +147,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   }
 
   String _formatFee(BigInt zatoshi) {
-    return ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
+    return ZecAmount.fromZatoshi(zatoshi).fee.toString();
   }
 
   String _formatDate(DateTime value) {
@@ -535,8 +535,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                                     ? () => unawaited(_copyRecipientAddress())
                                     : null,
                               ),
-                              feeText:
-                                  '${_formatFee(widget.args.feeZatoshi)} ZEC',
+                              feeText: _formatFee(widget.args.feeZatoshi),
                               extraBlocks: [
                                 if (statusMessage != null)
                                   TransactionReceiptBlockData(

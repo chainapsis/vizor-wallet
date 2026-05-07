@@ -29,6 +29,21 @@ void main() {
     });
   });
 
+  group('currencyTicker', () {
+    test('uses ZEC for mainnet and TAZ for test networks', () {
+      expect(ZcashNetwork.mainnet.currencyTicker, 'ZEC');
+      expect(ZcashNetwork.testnet.currencyTicker, 'TAZ');
+      expect(ZcashNetwork.regtest.currencyTicker, 'TAZ');
+    });
+
+    test('derives the default ticker from the build-time default network', () {
+      expect(
+        kZcashDefaultCurrencyTicker,
+        zcashNetworkFromName(kZcashDefaultNetworkName).currencyTicker,
+      );
+    });
+  });
+
   group('secureStoreServiceForNetwork', () {
     test('keeps the existing mainnet service name', () {
       expect(

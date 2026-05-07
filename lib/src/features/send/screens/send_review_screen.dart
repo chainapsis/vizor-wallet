@@ -102,7 +102,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   String _formatFee(BigInt zatoshi) {
-    return ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
+    return ZecAmount.fromZatoshi(zatoshi).fee.toString();
   }
 
   List<TextSpan> _addressSpans(BuildContext context) {
@@ -402,7 +402,7 @@ class _SendReviewReceiptCard extends StatelessWidget {
             width: 320,
             height: 21,
             child: Text(
-              'Tx Fee: $feeText ZEC',
+              'Tx Fee: $feeText',
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
               ),

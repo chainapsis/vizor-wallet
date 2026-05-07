@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import '../config/network_config.dart';
+
 final BigInt zatoshiPerZec = BigInt.from(100000000);
 
 String _formatZecAmount(
@@ -50,19 +52,19 @@ BigInt? _parseZecAmount(String input) {
 
 bool _digitsOnly(String value) => RegExp(r'^\d*$').hasMatch(value);
 
-/// Formats a raw zatoshi value as ZEC text without appending a denomination.
+/// Formats a raw zatoshi value as decimal text without appending a denomination.
 String formatZecAmount(BigInt zatoshi, {int minFractionDigits = 0}) {
   return _formatZecAmount(zatoshi, minFractionDigits: minFractionDigits);
 }
 
-/// Parses user-entered ZEC text into raw zatoshi, returning null when invalid.
+/// Parses user-entered Zcash amount text into raw zatoshi.
 BigInt? parseZecAmount(String input) {
   return ZecAmount.tryParse(input)?.zatoshi;
 }
 
 enum ZecDenomStyle { none, lower, upper }
 
-/// Typed wrapper for amounts stored in zatoshi, with UI-oriented ZEC presets.
+/// Typed wrapper for amounts stored in zatoshi, with UI-oriented presets.
 class ZecAmount {
   const ZecAmount.fromZatoshi(this.zatoshi);
 
@@ -78,6 +80,7 @@ class ZecAmount {
     int minFractionDigits = 0,
     int maxFractionDigits = 8,
     ZecDenomStyle denomStyle = ZecDenomStyle.none,
+    String? denomination,
     bool signed = false,
   }) {
     return ZecAmountPretty._(
@@ -85,6 +88,7 @@ class ZecAmount {
       minFractionDigits: minFractionDigits,
       maxFractionDigits: maxFractionDigits,
       denomStyle: denomStyle,
+      denomination: denomination,
       signed: signed,
       trimTrailingZeros: true,
     );
@@ -92,20 +96,37 @@ class ZecAmount {
 
   ZecAmountPretty get balance => pretty(minFractionDigits: 2);
 
-  ZecAmountPretty get receipt =>
-      pretty(minFractionDigits: 2, denomStyle: ZecDenomStyle.lower);
+  ZecAmountPretty receiptPretty({String? denomination}) => pretty(
+    minFractionDigits: 2,
+    denomStyle: ZecDenomStyle.lower,
+    denomination: denomination,
+  );
 
-  ZecAmountPretty get fee => pretty(denomStyle: ZecDenomStyle.upper);
+  ZecAmountPretty get receipt => receiptPretty();
 
-  ZecAmountPretty get activity => _activity(signed: false);
+  ZecAmountPretty feePretty({String? denomination}) =>
+      pretty(denomStyle: ZecDenomStyle.upper, denomination: denomination);
 
-  ZecAmountPretty get signedActivity => _activity(signed: true);
+  ZecAmountPretty get fee => feePretty();
 
-  ZecAmountPretty _activity({required bool signed}) {
+  ZecAmountPretty activityPretty({String? denomination}) =>
+      _activity(signed: false, denomination: denomination);
+
+  ZecAmountPretty get activity => activityPretty();
+
+  ZecAmountPretty signedActivityPretty({String? denomination}) =>
+      _activity(signed: true, denomination: denomination);
+
+  ZecAmountPretty get signedActivity => signedActivityPretty();
+
+  ZecAmountPretty _activity({
+    required bool signed,
+    required String? denomination,
+  }) {
     final abs = zatoshi.abs();
     final whole = abs ~/ zatoshiPerZec;
     final fraction = abs % zatoshiPerZec;
-    // Activity rows show extra precision for non-zero values below 0.01 ZEC.
+    // Activity rows show extra precision for non-zero values below 0.01.
     final showFullFraction =
         whole == BigInt.zero &&
         fraction > BigInt.zero &&
@@ -116,24 +137,27 @@ class ZecAmount {
       minFractionDigits: showFullFraction ? 0 : 2,
       maxFractionDigits: showFullFraction ? 8 : 2,
       denomStyle: ZecDenomStyle.upper,
+      denomination: denomination,
       signed: signed,
       trimTrailingZeros: showFullFraction,
     );
   }
 }
 
-/// Immutable formatted ZEC amount; call [toString] for amount plus denom.
+/// Immutable formatted Zcash amount; call [toString] for amount plus denom.
 class ZecAmountPretty {
   const ZecAmountPretty._(
     this._zatoshi, {
     required int minFractionDigits,
     required int maxFractionDigits,
     required ZecDenomStyle denomStyle,
+    required String? denomination,
     required bool signed,
     required bool trimTrailingZeros,
   }) : _minFractionDigits = minFractionDigits,
        _maxFractionDigits = maxFractionDigits,
        _denomStyle = denomStyle,
+       _denomination = denomination,
        _signed = signed,
        _trimTrailingZeros = trimTrailingZeros;
 
@@ -141,6 +165,7 @@ class ZecAmountPretty {
   final int _minFractionDigits;
   final int _maxFractionDigits;
   final ZecDenomStyle _denomStyle;
+  final String? _denomination;
   final bool _signed;
   final bool _trimTrailingZeros;
 
@@ -156,10 +181,14 @@ class ZecAmountPretty {
   }
 
   String get denomText {
+    final value = _denomination?.trim();
+    final denomination = value == null || value.isEmpty
+        ? kZcashDefaultCurrencyTicker
+        : value;
     return switch (_denomStyle) {
       ZecDenomStyle.none => '',
-      ZecDenomStyle.lower => 'zec',
-      ZecDenomStyle.upper => 'ZEC',
+      ZecDenomStyle.lower => denomination.toLowerCase(),
+      ZecDenomStyle.upper => denomination.toUpperCase(),
     };
   }
 
