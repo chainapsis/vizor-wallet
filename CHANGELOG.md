@@ -4,6 +4,21 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.5.3
+
+## Fixed
+- **`zcash_voting` `network_id` convention** now matches the wallet SDK everywhere
+  (`zkp1::build_and_prove_delegation`, PIR `precompute_delegation_pir` padded
+  nullifiers, `zkp2::derive_spending_key`, `vote_commitment::sign_cast_vote`, and
+  storage helpers that take `network_id`): **0 = testnet, 1 = mainnet**. The
+  padded-nullifier path had previously used the inverse mapping, so `NoteInfo`
+  from the SDK could disagree with PIR precompute vs proof generation.
+
+## Changed
+- Bumped the `zcash_voting` crate version to `0.5.3`. Direct callers who flipped
+  `network_id` to compensate for the old bug should pass the SDK value unchanged
+  after upgrading.
+
 # 0.5.2
 
 ## Changed

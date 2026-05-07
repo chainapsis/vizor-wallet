@@ -62,6 +62,8 @@ pub fn build_share_payloads(
 /// This is a pure computation — no DB access needed. Takes the fields from
 /// `VoteCommitmentBundle` plus the hotkey seed for signing.
 ///
+/// `network_id`: 0 = testnet, 1 = mainnet (matches the wallet SDK).
+///
 /// The canonical sighash must match Go's `ComputeCastVoteSighash`:
 /// ```text
 /// Blake2b-256(domain || vote_round_id || r_vpk || van_nullifier ||
