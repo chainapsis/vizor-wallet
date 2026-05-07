@@ -6,7 +6,7 @@ enum RpcEndpointConfigStore {
     // with rpc_endpoint_config.dart.
     private static let lightwalletdUrlKey = "zcash_rpc_endpoint_url_ios_mirror"
     private static let networkKey = "zcash_rpc_endpoint_network_ios_mirror"
-    private static let defaultLightwalletdUrl = "https://zec.rocks:443"
+    private static let defaultLightwalletdUrl = "https://us.zec.stardust.rest:443"
     private static let defaultNetwork = "main"
 
     static var lightwalletdUrl: String {

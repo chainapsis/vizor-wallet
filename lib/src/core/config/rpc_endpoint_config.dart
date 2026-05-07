@@ -63,21 +63,15 @@ class RpcEndpointPreset {
   String get hostPort => rpcEndpointHostPort(url);
 }
 
-// Additional regional lightwalletd presets while keeping this app's existing
-// zec.rocks default unchanged.
+// Public lightwalletd presets. Keep the mainnet default aligned with Zodl's
+// default endpoint while preserving zec.rocks as a selectable fallback.
 final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   RpcEndpointPreset(
     id: kDefaultRpcEndpointPresetId,
     region: 'Default',
-    label: 'Zec Rocks',
+    label: 'Stardust US',
     url: ZcashNetwork.mainnet.lightwalletdUrl,
     isDefault: true,
-  ),
-  const RpcEndpointPreset(
-    id: 'us-zec-stardust',
-    region: 'Americas',
-    label: 'Stardust US',
-    url: 'https://us.zec.stardust.rest:443',
   ),
   const RpcEndpointPreset(
     id: 'eu-zec-stardust',
@@ -96,6 +90,12 @@ final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     region: 'Asia Pacific',
     label: 'Stardust Japan',
     url: 'https://jp.zec.stardust.rest:443',
+  ),
+  const RpcEndpointPreset(
+    id: 'zec-rocks',
+    region: 'Global',
+    label: 'Zec Rocks',
+    url: 'https://zec.rocks:443',
   ),
   const RpcEndpointPreset(
     id: 'na-zec-rocks',
@@ -120,6 +120,24 @@ final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     region: 'Asia Pacific',
     label: 'Zec Rocks Asia Pacific',
     url: 'https://ap.zec.rocks:443',
+  ),
+  const RpcEndpointPreset(
+    id: 'z3-deepikaw',
+    region: 'Community',
+    label: 'Deepikaw Z3',
+    url: 'https://z3.deepikaw.xyz:443',
+  ),
+  const RpcEndpointPreset(
+    id: 'zprivacy',
+    region: 'Community',
+    label: 'ZPrivacy',
+    url: 'https://zprivacy.online:443',
+  ),
+  const RpcEndpointPreset(
+    id: 'zcash-explorer',
+    region: 'Community',
+    label: 'Zcash Explorer',
+    url: 'https://lwd.zcashexplorer.app:9067',
   ),
 ]);
 
@@ -220,13 +238,13 @@ String normalizeRpcEndpointUrl(
   final hasExplicitPort = _hasExplicitPort(candidate);
   if (!hasExplicitPort && !allowDefaultPort) {
     throw const FormatException(
-      'Include a valid port, for example zec.rocks:443.',
+      'Include a valid port, for example us.zec.stardust.rest:443.',
     );
   }
   final port = hasExplicitPort ? uri.port : _defaultPortForScheme(uri.scheme);
   if (port <= 0 || port > 65535) {
     throw const FormatException(
-      'Include a valid port, for example zec.rocks:443.',
+      'Include a valid port, for example us.zec.stardust.rest:443.',
     );
   }
 

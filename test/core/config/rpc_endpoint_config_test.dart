@@ -80,16 +80,19 @@ void main() {
         'https://sa.zec.rocks:443',
         'https://eu.zec.rocks:443',
         'https://ap.zec.rocks:443',
+        'https://z3.deepikaw.xyz:443',
+        'https://zprivacy.online:443',
+        'https://lwd.zcashexplorer.app:9067',
       });
     });
 
-    test('mainnet presets are grouped by geography, not provider', () {
+    test('mainnet presets expose expected regions for endpoint selection', () {
       expect(
         findRpcEndpointPresetByUrl(
           'us.zec.stardust.rest:443',
           networkName: 'main',
         )?.region,
-        'Americas',
+        'Default',
       );
       expect(
         findRpcEndpointPresetByUrl(
@@ -109,11 +112,20 @@ void main() {
 
     test('matches normalized URLs within the requested network', () {
       final preset = findRpcEndpointPresetByUrl(
-        'zec.rocks',
+        'us.zec.stardust.rest',
         networkName: 'main',
       );
 
       expect(preset?.id, kDefaultRpcEndpointPresetId);
+    });
+
+    test('keeps the previous zec.rocks default as a selectable fallback', () {
+      final preset = findRpcEndpointPresetByUrl(
+        'zec.rocks',
+        networkName: 'main',
+      );
+
+      expect(preset?.id, 'zec-rocks');
     });
 
     test('does not cross-match testnet URLs when mainnet is requested', () {
@@ -138,6 +150,17 @@ void main() {
         )?.id,
         'default-regtest',
       );
+    });
+
+    test('uses Stardust US as the mainnet default endpoint', () {
+      final defaultEndpoint = defaultRpcEndpointConfig('main');
+
+      expect(defaultEndpoint.networkName, 'main');
+      expect(
+        defaultEndpoint.lightwalletdUrl,
+        'https://us.zec.stardust.rest:443',
+      );
+      expect(defaultEndpoint.presetId, kDefaultRpcEndpointPresetId);
     });
   });
 
