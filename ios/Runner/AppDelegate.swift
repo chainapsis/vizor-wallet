@@ -41,9 +41,11 @@ import UIKit
           let args = call.arguments as? [String: Any]
           let lightwalletdUrl = args?["lightwalletdUrl"] as? String
           let network = args?["network"] as? String
+          let presetId = args?["presetId"] as? String
           let success = BackgroundSyncManager.shared.startBackgroundSync(
             lightwalletdUrl: lightwalletdUrl,
-            network: network
+            network: network,
+            presetId: presetId
           )
           result(success)
         } else {
@@ -60,17 +62,23 @@ import UIKit
         let args = call.arguments as? [String: Any]
         let lightwalletdUrl = args?["lightwalletdUrl"] as? String
         let network = args?["network"] as? String
+        let presetId = args?["presetId"] as? String
         RpcEndpointConfigStore.save(
           lightwalletdUrl: lightwalletdUrl,
-          network: network
+          network: network,
+          presetId: presetId
         )
         result(true)
       case "startTxTracking":
         if #available(iOS 26.0, *) {
           let args = call.arguments as? [String: Any]
           let lightwalletdUrl = args?["lightwalletdUrl"] as? String
+          let network = args?["network"] as? String
+          let presetId = args?["presetId"] as? String
           let success = TxTrackManager.shared.startTxTracking(
-            lightwalletdUrl: lightwalletdUrl
+            lightwalletdUrl: lightwalletdUrl,
+            network: network,
+            presetId: presetId
           )
           result(success)
         } else {

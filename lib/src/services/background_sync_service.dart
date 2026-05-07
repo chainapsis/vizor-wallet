@@ -61,6 +61,7 @@ Future<void> startBackgroundSync({RpcEndpointConfig? endpoint}) async {
             : {
                 'lightwalletdUrl': endpoint.normalizedLightwalletdUrl,
                 'network': endpoint.networkName,
+                'presetId': endpoint.effectivePresetId,
               },
       );
       log('BackgroundSync: iOS BGTask submitted: $success');
@@ -78,6 +79,7 @@ Future<void> updateBackgroundSyncEndpoint({
   final success = await _iosChannel.invokeMethod<bool>('updateEndpoint', {
     'lightwalletdUrl': endpoint.normalizedLightwalletdUrl,
     'network': endpoint.networkName,
+    'presetId': endpoint.effectivePresetId,
   });
   if (success != true) {
     throw StateError('iOS endpoint mirror update failed.');

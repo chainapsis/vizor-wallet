@@ -307,6 +307,7 @@ Future<void> _seedNativeRpcEndpointMirror(RpcEndpointConfig endpoint) async {
         .invokeMethod<bool>('updateEndpoint', {
           'lightwalletdUrl': endpoint.normalizedLightwalletdUrl,
           'network': endpoint.networkName,
+          'presetId': endpoint.effectivePresetId,
         });
     if (success != true) {
       log('bootstrap: iOS RPC endpoint mirror seed returned $success');

@@ -32,8 +32,16 @@ class TxTrackManager {
         print("[TxTrack] registered")
     }
 
-    func startTxTracking(lightwalletdUrl: String? = nil) -> Bool {
-        RpcEndpointConfigStore.save(lightwalletdUrl: lightwalletdUrl)
+    func startTxTracking(
+        lightwalletdUrl: String? = nil,
+        network: String? = nil,
+        presetId: String? = nil
+    ) -> Bool {
+        RpcEndpointConfigStore.save(
+            lightwalletdUrl: lightwalletdUrl,
+            network: network,
+            presetId: presetId
+        )
         print("[TxTrack] submitting task request")
         let request = BGContinuedProcessingTaskRequest(
             identifier: Self.taskIdentifier,

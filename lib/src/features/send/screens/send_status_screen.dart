@@ -410,6 +410,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           if (available) {
             await channel.invokeMethod('startTxTracking', {
               'lightwalletdUrl': endpoint.normalizedLightwalletdUrl,
+              'network': endpoint.networkName,
+              'presetId': endpoint.effectivePresetId,
             });
           }
         } catch (e) {

@@ -175,10 +175,15 @@ class BackgroundSyncManager {
         try resolveWalletDbPath()
     }
 
-    func startBackgroundSync(lightwalletdUrl: String? = nil, network: String? = nil) -> Bool {
+    func startBackgroundSync(
+        lightwalletdUrl: String? = nil,
+        network: String? = nil,
+        presetId: String? = nil
+    ) -> Bool {
         RpcEndpointConfigStore.save(
             lightwalletdUrl: lightwalletdUrl,
-            network: network
+            network: network,
+            presetId: presetId
         )
         print("[BGSync] startBackgroundSync: submitting BGContinuedProcessingTaskRequest")
         let request = BGContinuedProcessingTaskRequest(
