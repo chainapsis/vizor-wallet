@@ -110,6 +110,25 @@ void main() {
       );
     });
 
+    test('testnet presets include the default and community fallback', () {
+      final urls = kTestnetRpcEndpointPresets
+          .map((preset) => preset.url)
+          .map((url) => normalizeRpcEndpointUrl(url, allowDefaultPort: true))
+          .toSet();
+
+      expect(urls, {
+        'https://testnet.zec.rocks:443',
+        'https://zcash.mysideoftheweb.com:19067',
+      });
+      expect(
+        findRpcEndpointPresetByUrl(
+          'zcash.mysideoftheweb.com:19067',
+          networkName: 'test',
+        )?.id,
+        'mysideoftheweb-testnet',
+      );
+    });
+
     test('matches normalized URLs within the requested network', () {
       final preset = findRpcEndpointPresetByUrl(
         'us.zec.stardust.rest',
