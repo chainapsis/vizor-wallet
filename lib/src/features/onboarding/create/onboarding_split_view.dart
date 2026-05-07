@@ -20,6 +20,24 @@ final onboardingSecretPassphraseRevealedProvider =
       OnboardingSecretPassphraseRevealedNotifier.new,
     );
 
+class CreateOnboardingMnemonicNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void setMnemonic(String mnemonic) {
+    state = mnemonic;
+  }
+
+  void clear() {
+    state = null;
+  }
+}
+
+final createOnboardingMnemonicProvider =
+    NotifierProvider<CreateOnboardingMnemonicNotifier, String?>(
+      CreateOnboardingMnemonicNotifier.new,
+    );
+
 enum OnboardingStep {
   intro,
   addressTypes,

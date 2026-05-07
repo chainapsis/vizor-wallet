@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -12,8 +13,25 @@ import 'onboarding_split_view.dart';
 /// split-view shell (sidebar, illustration, acrylic gap) lives in
 /// `onboarding_split_view.dart` so subsequent onboarding steps can reuse
 /// the same left rail while only the right pane cross-fades.
-class IntroZcashScreen extends StatelessWidget {
+class IntroZcashScreen extends ConsumerStatefulWidget {
   const IntroZcashScreen({super.key});
+
+  @override
+  ConsumerState<IntroZcashScreen> createState() => _IntroZcashScreenState();
+}
+
+class _IntroZcashScreenState extends ConsumerState<IntroZcashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(createOnboardingMnemonicProvider.notifier).clear();
+      ref
+          .read(onboardingSecretPassphraseRevealedProvider.notifier)
+          .setRevealed(false);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
