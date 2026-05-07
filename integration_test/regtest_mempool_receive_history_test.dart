@@ -28,6 +28,7 @@ const _firstMnemonic =
     'better used';
 const _password = 'Vizor123!';
 final _receiveAmountZatoshi = BigInt.from(25_000_000);
+final _currencyTicker = kZcashDefaultCurrencyTicker;
 
 class _ExpiringFunding {
   const _ExpiringFunding({required this.txid, required this.expiryHeight});
@@ -88,7 +89,7 @@ void main() {
           tester,
           const ValueKey('home_activity_row_1'),
           title: 'Receiving',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'In progress',
           timeout: const Duration(minutes: 4),
         );
@@ -98,7 +99,7 @@ void main() {
           tester,
           const ValueKey('home_activity_row_1'),
           title: 'Received',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'Completed',
           timeout: const Duration(minutes: 4),
         );
@@ -106,7 +107,7 @@ void main() {
           tester,
           rowKeyPrefix: 'home_activity',
           title: 'Receiving',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'In progress',
         );
         await _openActivity(tester);
@@ -114,7 +115,7 @@ void main() {
           tester,
           const ValueKey('activity_screen_row_1'),
           title: 'Received',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'Completed',
           timeout: const Duration(minutes: 2),
         );
@@ -122,7 +123,7 @@ void main() {
           tester,
           rowKeyPrefix: 'activity_screen',
           title: 'Receiving',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'In progress',
         );
       },
@@ -167,7 +168,7 @@ void main() {
           tester,
           const ValueKey('home_activity_row_1'),
           title: 'Receiving',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'In progress',
           timeout: const Duration(minutes: 4),
         );
@@ -177,7 +178,7 @@ void main() {
           tester,
           const ValueKey('home_activity_row_1'),
           title: 'Receiving',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'In progress',
           timeout: const Duration(minutes: 1),
         );
@@ -187,7 +188,7 @@ void main() {
           tester,
           const ValueKey('home_activity_row_1'),
           title: 'Received',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'Completed',
           timeout: const Duration(minutes: 4),
         );
@@ -195,7 +196,7 @@ void main() {
           tester,
           rowKeyPrefix: 'home_activity',
           title: 'Receiving',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'In progress',
         );
       },
@@ -249,7 +250,7 @@ void main() {
           tester,
           const ValueKey('home_activity_row_1'),
           title: 'Receiving',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'In progress',
           timeout: const Duration(minutes: 4),
         );
@@ -272,7 +273,7 @@ void main() {
           tester,
           rowKeyPrefix: 'home_activity',
           title: 'Received',
-          amount: '0.25 ZEC',
+          amount: '0.25 $_currencyTicker',
           status: 'Failed',
           timeout: const Duration(minutes: 4),
         );
@@ -280,7 +281,7 @@ void main() {
           tester,
           rowKeyPrefix: 'home_activity',
           title: 'Receiving',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'In progress',
         );
 
@@ -289,7 +290,7 @@ void main() {
           tester,
           rowKeyPrefix: 'activity_screen',
           title: 'Received',
-          amount: '0.25 ZEC',
+          amount: '0.25 $_currencyTicker',
           status: 'Failed',
           timeout: const Duration(minutes: 2),
         );
@@ -297,7 +298,7 @@ void main() {
           tester,
           rowKeyPrefix: 'activity_screen',
           title: 'Receiving',
-          amount: '+0.25 ZEC',
+          amount: '+0.25 $_currencyTicker',
           status: 'In progress',
         );
       },
@@ -362,7 +363,9 @@ Future<String> _unifiedAddressForAccount(String accountUuid) async {
 }
 
 Future<String> _fundUnmined(String address, String amount) async {
-  _log('requesting external unmined funding of $amount ZEC to $address');
+  _log(
+    'requesting external unmined funding of $amount $_currencyTicker to $address',
+  );
   final response = await _postDriver('/fund-unmined', {
     'address': address,
     'amount': amount,
@@ -374,7 +377,7 @@ Future<String> _fundUnmined(String address, String amount) async {
 
 Future<String> _fundPreparedUnmined(String address, String amount) async {
   _log(
-    'requesting prepared external unmined funding of $amount ZEC to $address',
+    'requesting prepared external unmined funding of $amount $_currencyTicker to $address',
   );
   final response = await _postDriver('/fund-unmined-prepared', {
     'address': address,
@@ -390,7 +393,7 @@ Future<_ExpiringFunding> _fundExpiringUnmined(
   String amount,
 ) async {
   _log(
-    'requesting expiring external unmined funding of $amount ZEC to $address',
+    'requesting expiring external unmined funding of $amount $_currencyTicker to $address',
   );
   final response = await _postDriver('/fund-unmined-expiring', {
     'address': address,

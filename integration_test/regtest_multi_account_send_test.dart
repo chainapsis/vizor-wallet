@@ -36,6 +36,8 @@ const _secondMnemonic =
     'range neck proof gauge east rifle swim tray twin venue fossil will '
     'version';
 const _password = 'Vizor123!';
+final _currencyTicker = kZcashDefaultCurrencyTicker;
+final _currencyTickerLower = _currencyTicker.toLowerCase();
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -59,8 +61,8 @@ void main() {
       await _importFirstWallet(tester);
       await _waitForBalance(
         tester,
-        shielded: '1.25 zec',
-        transparent: 'Transparent balance: 0.75 ZEC',
+        shielded: '1.25 $_currencyTickerLower',
+        transparent: 'Transparent balance: 0.75 $_currencyTicker',
       );
 
       await _openAddAccountFlow(tester);
@@ -75,7 +77,7 @@ void main() {
 
       await _openWallet(tester);
       await _switchAccount(tester, 0);
-      await _waitForBalance(tester, shielded: '1.25 zec');
+      await _waitForBalance(tester, shielded: '1.25 $_currencyTickerLower');
       await _waitForMempoolObserver();
 
       await _sendToAddress(tester, secondAddress, '0.25');
@@ -93,7 +95,7 @@ void main() {
         tester,
         const ValueKey('home_activity_row_1'),
         title: 'Receiving',
-        amount: '+0.25 ZEC',
+        amount: '+0.25 $_currencyTicker',
         status: 'In progress',
       );
       await _openActivity(tester);
@@ -101,7 +103,7 @@ void main() {
         tester,
         const ValueKey('activity_screen_row_1'),
         title: 'Receiving',
-        amount: '+0.25 ZEC',
+        amount: '+0.25 $_currencyTicker',
         status: 'In progress',
       );
 
@@ -110,21 +112,21 @@ void main() {
       await _openWallet(tester);
       await _waitForBalance(
         tester,
-        shielded: '0.25 zec',
+        shielded: '0.25 $_currencyTickerLower',
         timeout: const Duration(minutes: 4),
       );
       await _expectActivityRow(
         tester,
         const ValueKey('home_activity_row_1'),
         title: 'Received',
-        amount: '+0.25 ZEC',
+        amount: '+0.25 $_currencyTicker',
         status: 'Completed',
       );
       _expectNoActivityRow(
         tester,
         rowKeyPrefix: 'home_activity',
         title: 'Receiving',
-        amount: '+0.25 ZEC',
+        amount: '+0.25 $_currencyTicker',
         status: 'In progress',
       );
       await _openActivity(tester);
@@ -132,14 +134,14 @@ void main() {
         tester,
         const ValueKey('activity_screen_row_1'),
         title: 'Received',
-        amount: '+0.25 ZEC',
+        amount: '+0.25 $_currencyTicker',
         status: 'Completed',
       );
       _expectNoActivityRow(
         tester,
         rowKeyPrefix: 'activity_screen',
         title: 'Receiving',
-        amount: '+0.25 ZEC',
+        amount: '+0.25 $_currencyTicker',
         status: 'In progress',
       );
       _log('second account received shielded funds');
@@ -150,14 +152,14 @@ void main() {
         tester,
         const ValueKey('home_activity_row_1'),
         title: 'Sent',
-        amount: '-0.25 ZEC',
+        amount: '-0.25 $_currencyTicker',
         status: 'Completed',
       );
       _expectNoActivityRow(
         tester,
         rowKeyPrefix: 'home_activity',
         title: 'Sent',
-        amount: '-0.25 ZEC',
+        amount: '-0.25 $_currencyTicker',
         status: 'In progress',
       );
       await _openActivity(tester);
@@ -165,14 +167,14 @@ void main() {
         tester,
         const ValueKey('activity_screen_row_1'),
         title: 'Sent',
-        amount: '-0.25 ZEC',
+        amount: '-0.25 $_currencyTicker',
         status: 'Completed',
       );
       _expectNoActivityRow(
         tester,
         rowKeyPrefix: 'activity_screen',
         title: 'Sent',
-        amount: '-0.25 ZEC',
+        amount: '-0.25 $_currencyTicker',
         status: 'In progress',
       );
       _log('first account sent activity matched');
@@ -258,7 +260,7 @@ Future<void> _sendToAddress(
   String address,
   String amount,
 ) async {
-  _log('sending $amount ZEC to second account');
+  _log('sending $amount $_currencyTicker to second account');
   await _tapWidget(tester, const ValueKey('sidebar_send_button'));
   await _enterText(tester, const ValueKey('send_address_field'), address);
   await _enterText(tester, const ValueKey('send_amount_field'), amount);
