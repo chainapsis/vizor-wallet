@@ -45,10 +45,7 @@ class _SettingsEndpointScreenState
           .read(rpcEndpointLatencyProvider.notifier)
           .refresh(endpoint.networkName);
     });
-    final currentPreset = findRpcEndpointPresetByUrl(
-      endpoint.normalizedLightwalletdUrl,
-      networkName: endpoint.networkName,
-    );
+    final currentPreset = explicitRpcEndpointPresetFor(endpoint);
     _selectedPresetId = currentPreset?.id;
     if (currentPreset == null) {
       _activeTab = _EndpointTab.custom;
@@ -99,11 +96,12 @@ class _SettingsEndpointScreenState
 
   bool _customEndpointChanged(RpcEndpointConfig current) {
     try {
-      return normalizeRpcEndpointUrl(
-            _customController.text,
-            allowDefaultPort: true,
-          ) !=
-          current.normalizedLightwalletdUrl;
+      final normalized = normalizeRpcEndpointUrl(
+        _customController.text,
+        allowDefaultPort: true,
+      );
+      return normalized != current.normalizedLightwalletdUrl ||
+          current.effectivePresetId != kCustomRpcEndpointPresetId;
     } on FormatException {
       return false;
     }
@@ -148,10 +146,7 @@ class _SettingsEndpointScreenState
       final next = ref.read(rpcEndpointProvider);
       ref.read(rpcEndpointLatencyProvider.notifier).refresh(next.networkName);
       setState(() {
-        _selectedPresetId = findRpcEndpointPresetByUrl(
-          next.normalizedLightwalletdUrl,
-          networkName: next.networkName,
-        )?.id;
+        _selectedPresetId = explicitRpcEndpointPresetFor(next)?.id;
         if (_selectedPresetId == null) {
           _customController.text = rpcEndpointInputText(next.lightwalletdUrl);
         }

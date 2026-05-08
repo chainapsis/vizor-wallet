@@ -26,12 +26,7 @@ class RpcEndpointConfig {
   String get hostPort => rpcEndpointHostPort(lightwalletdUrl);
 
   String get effectivePresetId =>
-      findRpcEndpointPresetByUrl(
-        normalizedLightwalletdUrl,
-        networkName: networkName,
-      )?.id ??
-      presetId ??
-      kCustomRpcEndpointPresetId;
+      explicitRpcEndpointPresetFor(this)?.id ?? kCustomRpcEndpointPresetId;
 
   RpcEndpointConfig copyWith({
     String? networkName,
@@ -201,6 +196,17 @@ bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
   return config.presetId == kCustomRpcEndpointPresetId;
 }
 
+RpcEndpointPreset? explicitRpcEndpointPresetFor(RpcEndpointConfig config) {
+  final presetId = config.presetId?.trim();
+  if (presetId == null ||
+      presetId.isEmpty ||
+      presetId == kCustomRpcEndpointPresetId) {
+    return null;
+  }
+
+  return findRpcEndpointPresetById(config.networkName, presetId);
+}
+
 List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(
   RpcEndpointConfig primary,
 ) {
@@ -239,18 +245,7 @@ RpcEndpointConfig? fallbackRpcEndpointConfigFor(RpcEndpointConfig primary) {
 }
 
 RpcEndpointPreset? _selectedFallbackPrimaryPreset(RpcEndpointConfig primary) {
-  if (isCustomRpcEndpointConfig(primary)) return null;
-
-  final presetId = primary.presetId?.trim();
-  if (presetId != null && presetId.isNotEmpty) {
-    final preset = findRpcEndpointPresetById(primary.networkName, presetId);
-    if (preset != null) return preset;
-  }
-
-  return findRpcEndpointPresetByUrl(
-    primary.normalizedLightwalletdUrl,
-    networkName: primary.networkName,
-  );
+  return explicitRpcEndpointPresetFor(primary);
 }
 
 RpcEndpointConfig resolveStoredRpcEndpointConfig({
@@ -281,9 +276,7 @@ RpcEndpointConfig resolveStoredRpcEndpointConfig({
   return RpcEndpointConfig(
     networkName: network.name,
     lightwalletdUrl: normalizeRpcEndpointUrl(url, allowDefaultPort: true),
-    presetId: presetId == kCustomRpcEndpointPresetId
-        ? kCustomRpcEndpointPresetId
-        : findRpcEndpointPresetByUrl(url, networkName: network.name)?.id,
+    presetId: kCustomRpcEndpointPresetId,
   );
 }
 

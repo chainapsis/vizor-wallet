@@ -214,22 +214,43 @@ void main() {
       expect(config.lightwalletdUrl, 'https://example.com:443');
       expect(config.presetId, kCustomRpcEndpointPresetId);
     });
+
+    test('treats stored preset URLs without preset id as custom', () {
+      final config = resolveStoredRpcEndpointConfig(
+        networkName: 'main',
+        storedUrl: defaultRpcEndpointConfig('main').lightwalletdUrl,
+        storedPresetId: null,
+      );
+
+      expect(
+        config.normalizedLightwalletdUrl,
+        'https://us.zec.stardust.rest:443',
+      );
+      expect(config.presetId, kCustomRpcEndpointPresetId);
+    });
   });
 
   group('RpcEndpointConfig', () {
-    test(
-      'derives the effective preset from the URL before stored preset id',
-      () {
-        final defaultEndpoint = defaultRpcEndpointConfig('main');
-        final config = RpcEndpointConfig(
-          networkName: 'main',
-          lightwalletdUrl: defaultEndpoint.lightwalletdUrl,
-          presetId: kCustomRpcEndpointPresetId,
-        );
+    test('preserves custom intent even when the URL matches a preset', () {
+      final defaultEndpoint = defaultRpcEndpointConfig('main');
+      final config = RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: defaultEndpoint.lightwalletdUrl,
+        presetId: kCustomRpcEndpointPresetId,
+      );
 
-        expect(config.effectivePresetId, defaultEndpoint.presetId);
-      },
-    );
+      expect(config.effectivePresetId, kCustomRpcEndpointPresetId);
+    });
+
+    test('uses explicit preset ids as the effective preset', () {
+      final config = const RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://zec.rocks:443',
+        presetId: 'zec-rocks',
+      );
+
+      expect(config.effectivePresetId, 'zec-rocks');
+    });
   });
 
   group('fallbackRpcEndpointCandidatesFor', () {
@@ -290,6 +311,20 @@ void main() {
 
       expect(candidates, isEmpty);
     });
+
+    test(
+      'does not infer fallback intent from a preset URL without preset id',
+      () {
+        final candidates = fallbackRpcEndpointCandidatesFor(
+          RpcEndpointConfig(
+            networkName: 'main',
+            lightwalletdUrl: defaultRpcEndpointConfig('main').lightwalletdUrl,
+          ),
+        );
+
+        expect(candidates, isEmpty);
+      },
+    );
 
     test('removes the selected preset and starts from the order beginning', () {
       final candidates = fallbackRpcEndpointCandidatesFor(
