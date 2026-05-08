@@ -645,6 +645,7 @@ class _ProfilePictureOptionButtonState
             width: outerDimension,
             height: outerDimension,
             child: Stack(
+              clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
                 if (showFocusRing)
@@ -655,7 +656,7 @@ class _ProfilePictureOptionButtonState
                           color: colors.state.focusRing,
                           width: _focusRingWidth,
                         ),
-                        borderRadius: BorderRadius.circular(AppRadii.small),
+                        borderRadius: BorderRadius.circular(widget.size.radius),
                       ),
                     ),
                   ),
