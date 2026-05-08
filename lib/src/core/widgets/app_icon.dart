@@ -53,6 +53,7 @@ abstract final class AppIcons {
   static const logOut = 'log_out';
   static const monitor = 'monitor';
   static const night = 'night';
+  static const options = 'options';
   static const plane = 'plane';
   static const qr = 'qr';
   static const renew = 'renew';
@@ -67,6 +68,8 @@ abstract final class AppIcons {
   static const time = 'time';
   static const transparentBalance = 'transparent_balance';
   static const unlock = 'unlock';
+  static const trash = 'trash';
+  static const user = 'user';
   static const users = 'users';
   static const vizor = 'vizor';
   static const wallet = 'wallet';
