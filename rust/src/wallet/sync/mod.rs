@@ -5,7 +5,6 @@ use zcash_client_backend::{
         wallet::ConfirmationsPolicy,
         WalletCommitmentTrees, WalletRead, WalletWrite,
     },
-    fees::StandardFeeRule,
     proto::service::TreeState,
 };
 use zcash_client_sqlite::{
@@ -363,7 +362,7 @@ use std::sync::Mutex;
 
 pub(super) struct StoredProposal {
     pub proposal: zcash_client_backend::proposal::Proposal<
-        StandardFeeRule,
+        send::WalletFeeRule,
         zcash_client_sqlite::ReceivedNoteId,
     >,
     pub network: WalletNetwork,
@@ -449,7 +448,7 @@ mod tests {
     //!   already been consumed.
     //!
     //! A full insert→consume→replay test would require constructing a real
-    //! `Proposal<StandardFeeRule, ReceivedNoteId>`, which in turn needs a
+    //! `Proposal<WalletFeeRule, ReceivedNoteId>`, which in turn needs a
     //! live wallet DB with spendable notes and a lightwalletd chain tip.
     //! That belongs in an integration test, not a unit test here.
 
