@@ -210,6 +210,34 @@ impl VotingDb {
         queries::get_votes(&conn, round_id, &wallet_id)
     }
 
+    /// Test-fixture helper for inserting a stored vote without running the
+    /// full vote proof builder.
+    ///
+    /// This is intended for downstream FFI tests that need recovery-state rows
+    /// backed by a vote. It is only compiled for this crate's tests or when the
+    /// `test-fixtures` feature is explicitly enabled.
+    #[cfg(any(test, feature = "test-fixtures"))]
+    pub fn insert_vote_fixture(
+        &self,
+        round_id: &str,
+        bundle_index: u32,
+        proposal_id: u32,
+        choice: u32,
+        commitment: &[u8],
+    ) -> Result<(), VotingError> {
+        let conn = self.conn();
+        let wallet_id = self.wallet_id();
+        queries::store_vote(
+            &conn,
+            round_id,
+            &wallet_id,
+            bundle_index,
+            proposal_id,
+            choice,
+            commitment,
+        )
+    }
+
     /// Delete all data for a round.
     pub fn clear_round(&self, round_id: &str) -> Result<(), VotingError> {
         let conn = self.conn();
@@ -1369,8 +1397,40 @@ mod tests {
         )
         .unwrap();
 
-        queries::store_vote(&db.conn(), ROUND_ID, W, 0, 0, 0, &[0xAA; 32]).unwrap();
+        db.insert_vote_fixture(ROUND_ID, 0, 0, 0, &[0xAA; 32])
+            .unwrap();
         db.mark_vote_submitted(ROUND_ID, 0, 0).unwrap();
+    }
+
+    #[test]
+    fn test_insert_vote_fixture() {
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+        db.setup_bundles(
+            ROUND_ID,
+            &[NoteInfo {
+                commitment: vec![0x01; 32],
+                nullifier: vec![0x02; 32],
+                value: 13_000_000,
+                position: 0,
+                diversifier: vec![0; 11],
+                rho: vec![0; 32],
+                rseed: vec![0; 32],
+                scope: 0,
+                ufvk_str: String::new(),
+            }],
+        )
+        .unwrap();
+
+        db.insert_vote_fixture(ROUND_ID, 0, 7, 1, &[0xAA; 32])
+            .unwrap();
+
+        let votes = db.get_votes(ROUND_ID).unwrap();
+        assert_eq!(votes.len(), 1);
+        assert_eq!(votes[0].bundle_index, 0);
+        assert_eq!(votes[0].proposal_id, 7);
+        assert_eq!(votes[0].choice, 1);
+        assert!(!votes[0].submitted);
     }
 
     #[test]

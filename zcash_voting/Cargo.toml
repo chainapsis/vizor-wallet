@@ -1,6 +1,6 @@
 [package]
 name = "zcash_voting"
-version = "0.5.5"
+version = "0.5.6"
 edition = "2021"
 description = "Client-side library for Zcash shielded voting: ZKP delegation and vote-commitment proofs (Halo 2), ElGamal encryption, governance PCZT construction, Merkle witness generation, and SQLite round-state persistence."
 license = "MIT OR Apache-2.0"
@@ -16,6 +16,9 @@ client-pir = ["dep:pir-client", "dep:bytes", "dep:http", "dep:http-body-util", "
 client-tree-sync = ["dep:vote-commitment-tree", "dep:vote-commitment-tree-client", "dep:bytes", "dep:http", "dep:http-body-util", "dep:hyper", "dep:hyper-rustls", "dep:hyper-util", "dep:tokio"]
 # Backwards-compatible aggregate for consumers that already enable `client`.
 client = ["client-pir", "client-tree-sync"]
+# Downstream test-only helpers for setting up persisted voting state without
+# depending on SQLite schema details.
+test-fixtures = []
 
 [dependencies]
 # Curves (same as Orchard/Zcash)
