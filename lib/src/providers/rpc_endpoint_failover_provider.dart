@@ -30,10 +30,18 @@ class RpcEndpointFailoverSettings {
   const RpcEndpointFailoverSettings({
     this.primaryProbeInterval = const Duration(seconds: 60),
     this.primaryFailureThreshold = 1,
+    this.slowHeightWindow = const Duration(minutes: 5),
+    this.minHeightIncreaseInSlowWindow = 2,
+    this.slowFallbackLeadBlocks = 2,
+    this.primaryReturnLagToleranceBlocks = 1,
   });
 
   final Duration primaryProbeInterval;
   final int primaryFailureThreshold;
+  final Duration slowHeightWindow;
+  final int minHeightIncreaseInSlowWindow;
+  final int slowFallbackLeadBlocks;
+  final int primaryReturnLagToleranceBlocks;
 }
 
 class RpcEndpointHealth {
@@ -53,6 +61,10 @@ class RpcEndpointFailoverState {
     this.switchedAt,
     this.lastPrimaryProbeAt,
     this.lastEvent,
+    this.heightWindowStartedAt,
+    this.heightWindowStartHeight,
+    this.lastObservedHeight,
+    this.lastObservedAt,
   });
 
   final RpcEndpointConfig primary;
@@ -63,6 +75,10 @@ class RpcEndpointFailoverState {
   final DateTime? switchedAt;
   final DateTime? lastPrimaryProbeAt;
   final RpcEndpointFailoverEvent? lastEvent;
+  final DateTime? heightWindowStartedAt;
+  final BigInt? heightWindowStartHeight;
+  final BigInt? lastObservedHeight;
+  final DateTime? lastObservedAt;
 
   RpcEndpointConfig? get fallback =>
       fallbackCandidates.isEmpty ? null : fallbackCandidates.first;
@@ -81,6 +97,14 @@ class RpcEndpointFailoverState {
     bool clearSwitchedAt = false,
     DateTime? lastPrimaryProbeAt,
     RpcEndpointFailoverEvent? lastEvent,
+    DateTime? heightWindowStartedAt,
+    bool clearHeightWindowStartedAt = false,
+    BigInt? heightWindowStartHeight,
+    bool clearHeightWindowStartHeight = false,
+    BigInt? lastObservedHeight,
+    bool clearLastObservedHeight = false,
+    DateTime? lastObservedAt,
+    bool clearLastObservedAt = false,
   }) {
     return RpcEndpointFailoverState(
       primary: primary ?? this.primary,
@@ -91,8 +115,27 @@ class RpcEndpointFailoverState {
       switchedAt: clearSwitchedAt ? null : switchedAt ?? this.switchedAt,
       lastPrimaryProbeAt: lastPrimaryProbeAt ?? this.lastPrimaryProbeAt,
       lastEvent: lastEvent ?? this.lastEvent,
+      heightWindowStartedAt: clearHeightWindowStartedAt
+          ? null
+          : heightWindowStartedAt ?? this.heightWindowStartedAt,
+      heightWindowStartHeight: clearHeightWindowStartHeight
+          ? null
+          : heightWindowStartHeight ?? this.heightWindowStartHeight,
+      lastObservedHeight: clearLastObservedHeight
+          ? null
+          : lastObservedHeight ?? this.lastObservedHeight,
+      lastObservedAt: clearLastObservedAt
+          ? null
+          : lastObservedAt ?? this.lastObservedAt,
     );
   }
+}
+
+class _FallbackHealth {
+  const _FallbackHealth({required this.endpoint, required this.health});
+
+  final RpcEndpointConfig endpoint;
+  final RpcEndpointHealth health;
 }
 
 Future<RpcEndpointHealth> checkRpcEndpointHealth({
@@ -182,13 +225,47 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
 
   RpcEndpointConfig get currentEndpoint => state.current;
 
-  Future<BigInt> getLatestBlockHeight() {
-    return runWithEndpointFallback(
-      operation: 'latest block height',
-      action: (endpoint) => ref
-          .read(rpcEndpointFailoverLatestBlockHeightGetterProvider)
-          .call(endpoint.normalizedLightwalletdUrl),
+  Future<BigInt> getLatestBlockHeight() async {
+    const operation = 'latest block height';
+    await maybeProbePrimary();
+    final endpoint = state.current;
+    final getLatestBlockHeight = ref.read(
+      rpcEndpointFailoverLatestBlockHeightGetterProvider,
     );
+
+    try {
+      final height = await getLatestBlockHeight(
+        endpoint.normalizedLightwalletdUrl,
+      );
+      _recordEndpointSuccess(endpoint);
+      final slowFallback = await _maybeSwitchFromSlowHeight(
+        endpoint,
+        height,
+        operation: operation,
+      );
+      return slowFallback?.height ?? height;
+    } catch (e, st) {
+      final switched = await switchToFallbackFor(
+        e,
+        endpoint: endpoint,
+        operation: operation,
+      );
+      if (!switched) {
+        Error.throwWithStackTrace(e, st);
+      }
+
+      final fallbackEndpoint = state.current;
+      try {
+        final fallbackHeight = await getLatestBlockHeight(
+          fallbackEndpoint.normalizedLightwalletdUrl,
+        );
+        _recordEndpointSuccess(fallbackEndpoint);
+        _resetHeightWindow(fallbackEndpoint, fallbackHeight);
+        return fallbackHeight;
+      } catch (fallbackError, fallbackStack) {
+        Error.throwWithStackTrace(fallbackError, fallbackStack);
+      }
+    }
   }
 
   Future<T> runWithEndpointFallback<T>({
@@ -274,11 +351,13 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     }
 
     RpcEndpointConfig? fallback;
+    RpcEndpointHealth? fallbackHealth;
     Object? lastFallbackError;
     for (final candidate in fallbackCandidates) {
       try {
-        await _checkHealth(candidate);
+        final health = await _checkHealth(candidate);
         fallback = candidate;
+        fallbackHealth = health;
         break;
       } catch (fallbackError) {
         lastFallbackError = fallbackError;
@@ -301,6 +380,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       return false;
     }
 
+    final selectedFallbackHealth = fallbackHealth!;
     final now = ref.read(rpcEndpointFailoverClockProvider)();
     final event = RpcEndpointFailoverEvent(
       sequence: ++_eventSequence,
@@ -319,6 +399,10 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       switchedAt: now,
       lastPrimaryProbeAt: failedPrimary ? now : state.lastPrimaryProbeAt,
       lastEvent: event,
+      heightWindowStartedAt: now,
+      heightWindowStartHeight: selectedFallbackHealth.height,
+      lastObservedHeight: selectedFallbackHealth.height,
+      lastObservedAt: now,
     );
     return true;
   }
@@ -336,11 +420,27 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     }
 
     state = state.copyWith(lastPrimaryProbeAt: now);
+    late final RpcEndpointHealth primaryHealth;
     try {
-      await _checkHealth(state.primary);
+      primaryHealth = await _checkHealth(state.primary);
     } catch (e) {
       log(
         'RpcEndpointFailover: primary ${state.primary.hostPort} probe failed: $e',
+      );
+      return false;
+    }
+
+    final currentHeight = state.lastObservedHeight;
+    final tolerance = BigInt.from(
+      ref
+          .read(rpcEndpointFailoverSettingsProvider)
+          .primaryReturnLagToleranceBlocks,
+    );
+    if (currentHeight != null &&
+        primaryHealth.height + tolerance < currentHeight) {
+      log(
+        'RpcEndpointFailover: primary ${state.primary.hostPort} probe lagging '
+        'at height ${primaryHealth.height}; current height is $currentHeight',
       );
       return false;
     }
@@ -362,8 +462,138 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       clearSwitchedAt: true,
       lastPrimaryProbeAt: now,
       lastEvent: event,
+      heightWindowStartedAt: now,
+      heightWindowStartHeight: primaryHealth.height,
+      lastObservedHeight: primaryHealth.height,
+      lastObservedAt: now,
     );
     return true;
+  }
+
+  Future<RpcEndpointHealth?> _maybeSwitchFromSlowHeight(
+    RpcEndpointConfig endpoint,
+    BigInt height, {
+    required String operation,
+  }) async {
+    if (!_isCurrentEndpoint(endpoint)) return null;
+
+    final now = ref.read(rpcEndpointFailoverClockProvider)();
+    final windowStartedAt = state.heightWindowStartedAt;
+    final windowStartHeight = state.heightWindowStartHeight;
+    if (windowStartedAt == null ||
+        windowStartHeight == null ||
+        height < windowStartHeight) {
+      _resetHeightWindow(endpoint, height, now: now);
+      return null;
+    }
+
+    state = state.copyWith(lastObservedHeight: height, lastObservedAt: now);
+
+    final settings = ref.read(rpcEndpointFailoverSettingsProvider);
+    if (now.difference(windowStartedAt) < settings.slowHeightWindow) {
+      return null;
+    }
+
+    final heightIncrease = height - windowStartHeight;
+    if (heightIncrease >= BigInt.from(settings.minHeightIncreaseInSlowWindow)) {
+      _resetHeightWindow(endpoint, height, now: now);
+      return null;
+    }
+
+    final fallback = await _findFallbackAheadOf(
+      endpoint,
+      currentHeight: height,
+      operation: operation,
+    );
+    if (fallback == null) {
+      log(
+        'RpcEndpointFailover: ${endpoint.hostPort} height increased by '
+        '$heightIncrease blocks in ${settings.slowHeightWindow.inSeconds}s, '
+        'but no fallback endpoint is ahead enough; keeping current endpoint',
+      );
+      _resetHeightWindow(endpoint, height, now: now);
+      return null;
+    }
+
+    final primaryUrl = state.primary.normalizedLightwalletdUrl;
+    final failedPrimary = endpoint.normalizedLightwalletdUrl == primaryUrl;
+    final event = RpcEndpointFailoverEvent(
+      sequence: ++_eventSequence,
+      kind: RpcEndpointFailoverEventKind.switchedToFallback,
+      message: 'Selected endpoint is unstable. Switched to fallback endpoint.',
+      endpoint: fallback.endpoint,
+    );
+    log(
+      'RpcEndpointFailover: switched ${endpoint.hostPort} -> '
+      '${fallback.endpoint.hostPort} because height only increased '
+      'by $heightIncrease blocks in ${settings.slowHeightWindow.inSeconds}s '
+      'during $operation and fallback is at height ${fallback.health.height}',
+    );
+    state = state.copyWith(
+      current: fallback.endpoint,
+      lastFailure:
+          'Endpoint height increased by $heightIncrease blocks in '
+          '${settings.slowHeightWindow.inSeconds}s.',
+      switchedAt: now,
+      lastPrimaryProbeAt: failedPrimary ? now : state.lastPrimaryProbeAt,
+      lastEvent: event,
+      heightWindowStartedAt: now,
+      heightWindowStartHeight: fallback.health.height,
+      lastObservedHeight: fallback.health.height,
+      lastObservedAt: now,
+    );
+    return fallback.health;
+  }
+
+  Future<_FallbackHealth?> _findFallbackAheadOf(
+    RpcEndpointConfig attempted, {
+    required BigInt currentHeight,
+    required String operation,
+  }) async {
+    final settings = ref.read(rpcEndpointFailoverSettingsProvider);
+    final requiredHeight =
+        currentHeight + BigInt.from(settings.slowFallbackLeadBlocks);
+    final attemptedUrl = attempted.normalizedLightwalletdUrl;
+    for (final candidate in state.fallbackCandidates) {
+      if (candidate.normalizedLightwalletdUrl == attemptedUrl) continue;
+      try {
+        final health = await _checkHealth(candidate);
+        if (health.height >= requiredHeight) {
+          return _FallbackHealth(endpoint: candidate, health: health);
+        }
+        log(
+          'RpcEndpointFailover: fallback ${candidate.hostPort} is not ahead '
+          'enough for slow $operation; height=${health.height}, '
+          'required>=$requiredHeight',
+        );
+      } catch (fallbackError) {
+        log(
+          'RpcEndpointFailover: fallback ${candidate.hostPort} failed health '
+          'check during slow $operation fallback: $fallbackError',
+        );
+      }
+    }
+    return null;
+  }
+
+  void _resetHeightWindow(
+    RpcEndpointConfig endpoint,
+    BigInt height, {
+    DateTime? now,
+  }) {
+    if (!_isCurrentEndpoint(endpoint)) return;
+    final observedAt = now ?? ref.read(rpcEndpointFailoverClockProvider)();
+    state = state.copyWith(
+      heightWindowStartedAt: observedAt,
+      heightWindowStartHeight: height,
+      lastObservedHeight: height,
+      lastObservedAt: observedAt,
+    );
+  }
+
+  bool _isCurrentEndpoint(RpcEndpointConfig endpoint) {
+    return endpoint.normalizedLightwalletdUrl ==
+        state.current.normalizedLightwalletdUrl;
   }
 
   Future<RpcEndpointHealth> _checkHealth(RpcEndpointConfig endpoint) {

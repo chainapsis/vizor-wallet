@@ -364,6 +364,149 @@ void main() {
       RpcEndpointFailoverEventKind.switchedToPrimary,
     );
   });
+
+  test('switches when current endpoint height progresses too slowly', () async {
+    var now = DateTime(2026);
+    final primary = defaultRpcEndpointConfig('main');
+    final primaryUrl = primary.normalizedLightwalletdUrl;
+    final heightByUrl = <String, BigInt>{
+      primaryUrl: BigInt.from(100),
+      'https://eu.zec.stardust.rest:443': BigInt.from(103),
+    };
+    final container = _container(
+      primary: primary,
+      clock: () => now,
+      chainNameByUrl: {'https://eu.zec.stardust.rest:443': 'main'},
+      heightByUrl: heightByUrl,
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(rpcEndpointFailoverProvider.notifier);
+    expect(await notifier.getLatestBlockHeight(), BigInt.from(100));
+
+    now = now.add(const Duration(minutes: 5));
+    heightByUrl[primaryUrl] = BigInt.from(101);
+
+    expect(await notifier.getLatestBlockHeight(), BigInt.from(103));
+
+    final state = container.read(rpcEndpointFailoverProvider);
+    expect(state.current.presetId, 'eu-zec-stardust');
+    expect(
+      state.lastEvent?.kind,
+      RpcEndpointFailoverEventKind.switchedToFallback,
+    );
+  });
+
+  test(
+    'keeps current slow endpoint when no candidate is far enough ahead',
+    () async {
+      var now = DateTime(2026);
+      final primary = defaultRpcEndpointConfig('main');
+      final primaryUrl = primary.normalizedLightwalletdUrl;
+      final heightByUrl = <String, BigInt>{
+        primaryUrl: BigInt.from(100),
+        'https://eu.zec.stardust.rest:443': BigInt.from(102),
+      };
+      final container = _container(
+        primary: primary,
+        clock: () => now,
+        chainNameByUrl: {'https://eu.zec.stardust.rest:443': 'main'},
+        heightByUrl: heightByUrl,
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(rpcEndpointFailoverProvider.notifier);
+      expect(await notifier.getLatestBlockHeight(), BigInt.from(100));
+
+      now = now.add(const Duration(minutes: 5));
+      heightByUrl[primaryUrl] = BigInt.from(101);
+
+      expect(await notifier.getLatestBlockHeight(), BigInt.from(101));
+
+      final state = container.read(rpcEndpointFailoverProvider);
+      expect(state.isUsingFallback, isFalse);
+      expect(state.lastEvent, isNull);
+      expect(state.heightWindowStartHeight, BigInt.from(101));
+    },
+  );
+
+  test('skips slow fallback candidates and checks the next preset', () async {
+    var now = DateTime(2026);
+    final primary = defaultRpcEndpointConfig('main');
+    final primaryUrl = primary.normalizedLightwalletdUrl;
+    final heightByUrl = <String, BigInt>{
+      primaryUrl: BigInt.from(100),
+      'https://eu.zec.stardust.rest:443': BigInt.from(102),
+      'https://eu2.zec.stardust.rest:443': BigInt.from(104),
+    };
+    final container = _container(
+      primary: primary,
+      clock: () => now,
+      chainNameByUrl: {
+        'https://eu.zec.stardust.rest:443': 'main',
+        'https://eu2.zec.stardust.rest:443': 'main',
+      },
+      heightByUrl: heightByUrl,
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(rpcEndpointFailoverProvider.notifier);
+    expect(await notifier.getLatestBlockHeight(), BigInt.from(100));
+
+    now = now.add(const Duration(minutes: 5));
+    heightByUrl[primaryUrl] = BigInt.from(101);
+
+    expect(await notifier.getLatestBlockHeight(), BigInt.from(104));
+
+    final state = container.read(rpcEndpointFailoverProvider);
+    expect(state.current.presetId, 'eu2-zec-stardust');
+  });
+
+  test(
+    'primary probe waits when primary is still behind current fallback',
+    () async {
+      var now = DateTime(2026);
+      final primary = defaultRpcEndpointConfig('main');
+      final primaryUrl = primary.normalizedLightwalletdUrl;
+      final heightByUrl = <String, BigInt>{
+        'https://eu.zec.stardust.rest:443': BigInt.from(110),
+        primaryUrl: BigInt.from(108),
+      };
+      final container = _container(
+        primary: primary,
+        clock: () => now,
+        chainNameByUrl: {
+          'https://eu.zec.stardust.rest:443': 'main',
+          primaryUrl: 'main',
+        },
+        heightByUrl: heightByUrl,
+        settings: const RpcEndpointFailoverSettings(
+          primaryProbeInterval: Duration(seconds: 5),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(rpcEndpointFailoverProvider.notifier);
+      await notifier.switchToFallbackFor(
+        Exception('DeadlineExceeded'),
+        operation: 'primary sync',
+      );
+
+      now = now.add(const Duration(seconds: 5));
+      expect(await notifier.maybeProbePrimary(), isFalse);
+      expect(
+        container.read(rpcEndpointFailoverProvider).isUsingFallback,
+        isTrue,
+      );
+
+      heightByUrl[primaryUrl] = BigInt.from(109);
+      expect(await notifier.maybeProbePrimary(force: true), isTrue);
+      expect(
+        container.read(rpcEndpointFailoverProvider).isUsingFallback,
+        isFalse,
+      );
+    },
+  );
 }
 
 ProviderContainer _container({
