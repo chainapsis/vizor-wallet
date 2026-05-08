@@ -49,8 +49,8 @@ void main() {
     final primary = defaultRpcEndpointConfig('main');
     final container = _container(
       primary: primary,
-      chainNameByUrl: {'https://zec.rocks:443': 'main'},
-      heightByUrl: {'https://zec.rocks:443': BigInt.from(10)},
+      chainNameByUrl: {'https://eu.zec.stardust.rest:443': 'main'},
+      heightByUrl: {'https://eu.zec.stardust.rest:443': BigInt.from(10)},
     );
     addTearDown(container.dispose);
 
@@ -68,9 +68,12 @@ void main() {
         );
 
     final state = container.read(rpcEndpointFailoverProvider);
-    expect(result, 'zec.rocks:443');
+    expect(result, 'eu.zec.stardust.rest:443');
     expect(state.isUsingFallback, isTrue);
-    expect(state.current.normalizedLightwalletdUrl, 'https://zec.rocks:443');
+    expect(
+      state.current.normalizedLightwalletdUrl,
+      'https://eu.zec.stardust.rest:443',
+    );
     expect(
       state.lastEvent?.kind,
       RpcEndpointFailoverEventKind.switchedToFallback,
@@ -107,8 +110,8 @@ void main() {
     final primary = defaultRpcEndpointConfig('main');
     final container = _container(
       primary: primary,
-      chainNameByUrl: {'https://na.zec.rocks:443': 'main'},
-      heightByUrl: {'https://na.zec.rocks:443': BigInt.from(12)},
+      chainNameByUrl: {'https://eu2.zec.stardust.rest:443': 'main'},
+      heightByUrl: {'https://eu2.zec.stardust.rest:443': BigInt.from(12)},
     );
     addTearDown(container.dispose);
 
@@ -126,8 +129,8 @@ void main() {
         );
 
     final state = container.read(rpcEndpointFailoverProvider);
-    expect(result, 'na.zec.rocks:443');
-    expect(state.current.presetId, 'na-zec-rocks');
+    expect(result, 'eu2.zec.stardust.rest:443');
+    expect(state.current.presetId, 'eu2-zec-stardust');
   });
 
   test('does not fallback when all candidates fail health checks', () async {
@@ -160,8 +163,8 @@ void main() {
     final primary = defaultRpcEndpointConfig('main');
     final container = _container(
       primary: primary,
-      chainNameByUrl: {'https://zec.rocks:443': 'main'},
-      heightByUrl: {'https://zec.rocks:443': BigInt.from(10)},
+      chainNameByUrl: {'https://eu.zec.stardust.rest:443': 'main'},
+      heightByUrl: {'https://eu.zec.stardust.rest:443': BigInt.from(10)},
     );
     addTearDown(container.dispose);
 
@@ -189,9 +192,12 @@ void main() {
     final container = _container(
       primary: primary,
       clock: () => now,
-      chainNameByUrl: {'https://zec.rocks:443': 'main', primaryUrl: 'main'},
+      chainNameByUrl: {
+        'https://eu.zec.stardust.rest:443': 'main',
+        primaryUrl: 'main',
+      },
       heightByUrl: {
-        'https://zec.rocks:443': BigInt.from(10),
+        'https://eu.zec.stardust.rest:443': BigInt.from(10),
         primaryUrl: BigInt.from(11),
       },
       settings: const RpcEndpointFailoverSettings(
