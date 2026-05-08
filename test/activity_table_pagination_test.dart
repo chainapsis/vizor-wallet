@@ -132,7 +132,7 @@ void main() {
       expect(arrowFinder, findsNothing);
 
       final mutedColor = AppThemeData.light.colors.text.muted;
-      for (final label in ['Tx Type', 'Amount', 'Status', 'Time Stamp']) {
+      for (final label in ['Type', 'Amount', 'Status', 'Date & time']) {
         final text = tester.widget<Text>(find.text(label));
         expect(text.style?.color, mutedColor);
       }
