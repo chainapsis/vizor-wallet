@@ -616,7 +616,7 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
   }
 
   void _showMenu() {
-    final overlay = Overlay.of(context, rootOverlay: true);
+    final overlay = Overlay.of(context);
     _menuEntry = OverlayEntry(
       builder: (overlayContext) {
         return Stack(
