@@ -61,9 +61,16 @@ void main() {
 
     expect(find.text('home route'), findsOneWidget);
 
-    await tester.tap(
-      find.byKey(const ValueKey('sidebar_account_selector_button')),
+    final accountsButton = find.byKey(
+      const ValueKey('sidebar_accounts_button'),
     );
+    final walletButton = find.byKey(const ValueKey('sidebar_wallet_button'));
+    expect(
+      tester.getTopLeft(accountsButton).dy,
+      lessThan(tester.getTopLeft(walletButton).dy),
+    );
+
+    await tester.tap(accountsButton);
     await tester.pumpAndSettle();
 
     expect(find.text('Accounts'), findsOneWidget);

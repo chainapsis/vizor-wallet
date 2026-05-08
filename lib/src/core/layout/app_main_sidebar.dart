@@ -19,9 +19,6 @@ class AppMainSidebar extends ConsumerStatefulWidget {
 }
 
 class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
-  static const double _selectorHeight = 40;
-
-  bool _isSelectorHovered = false;
   bool _isSigningOut = false;
 
   String get _matchedLocation => GoRouterState.of(context).matchedLocation;
@@ -85,173 +82,100 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       clipBehavior: Clip.none,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xs),
-        child: Stack(
-          clipBehavior: Clip.none,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: _selectorHeight + AppSpacing.xs),
-                Padding(
-                  padding: const EdgeInsets.all(AppSpacing.xs),
-                  child: Column(
-                    children: [
-                      AppSidebarItem(
-                        key: const ValueKey('sidebar_wallet_button'),
-                        label: 'Wallet',
-                        iconName: AppIcons.wallet,
-                        active: _matches('/home'),
-                        onTap: _matches('/home')
-                            ? null
-                            : () => context.go('/home'),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      AppSidebarItem(
-                        key: const ValueKey('sidebar_send_button'),
-                        label: 'Send',
-                        iconName: AppIcons.plane,
-                        active: _matches('/send'),
-                        onTap: _matches('/send')
-                            ? null
-                            : () => context.go('/send'),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      AppSidebarItem(
-                        key: const ValueKey('sidebar_receive_button'),
-                        label: 'Receive',
-                        iconName: AppIcons.arrowDownCircle,
-                        active: _matches('/receive'),
-                        onTap: _matches('/receive')
-                            ? null
-                            : () => context.go('/receive'),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      AppSidebarItem(
-                        key: const ValueKey('sidebar_activity_button'),
-                        label: 'Activity',
-                        iconName: AppIcons.history,
-                        active: _matches('/activity'),
-                        onTap: _matches('/activity')
-                            ? null
-                            : () => context.go('/activity'),
-                      ),
-                    ],
+            Padding(
+              padding: const EdgeInsets.only(
+                left: AppSpacing.xs,
+                right: AppSpacing.xs,
+                bottom: AppSpacing.xs,
+              ),
+              child: Column(
+                children: [
+                  AppSidebarItem(
+                    key: const ValueKey('sidebar_accounts_button'),
+                    label: accountName,
+                    leading: _SidebarAccountAvatar(
+                      profilePictureId:
+                          activeAccount?.profilePictureId ??
+                          kDefaultProfilePictureId,
+                    ),
+                    leadingGap: AppSpacing.xs,
+                    active: _matches('/accounts'),
+                    onTap: _matches('/accounts') ? null : _openAccounts,
                   ),
-                ),
-                const Spacer(),
-                Padding(
-                  padding: const EdgeInsets.all(AppSpacing.xs),
-                  child: Column(
-                    children: [
-                      AppSidebarItem(
-                        label: 'Settings',
-                        iconName: AppIcons.cog,
-                        active: _matches('/settings'),
-                        onTap: _matches('/settings')
-                            ? null
-                            : () => context.go('/settings'),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      AppSidebarItem(
-                        label: 'About Vizor',
-                        iconName: AppIcons.vizor,
-                        active: _matches('/about'),
-                        onTap: _matches('/about')
-                            ? null
-                            : () => context.go('/about'),
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      AppSidebarItem(
-                        label: 'Sign Out',
-                        iconName: AppIcons.logOut,
-                        onTap: _isSigningOut ? null : _handleSignOut,
-                      ),
-                    ],
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
+                    key: const ValueKey('sidebar_wallet_button'),
+                    label: 'Wallet',
+                    iconName: AppIcons.wallet,
+                    active: _matches('/home'),
+                    onTap: _matches('/home') ? null : () => context.go('/home'),
                   ),
-                ),
-              ],
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
+                    key: const ValueKey('sidebar_send_button'),
+                    label: 'Send',
+                    iconName: AppIcons.plane,
+                    active: _matches('/send'),
+                    onTap: _matches('/send') ? null : () => context.go('/send'),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
+                    key: const ValueKey('sidebar_receive_button'),
+                    label: 'Receive',
+                    iconName: AppIcons.arrowDownCircle,
+                    active: _matches('/receive'),
+                    onTap: _matches('/receive')
+                        ? null
+                        : () => context.go('/receive'),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
+                    key: const ValueKey('sidebar_activity_button'),
+                    label: 'Activity',
+                    iconName: AppIcons.history,
+                    active: _matches('/activity'),
+                    onTap: _matches('/activity')
+                        ? null
+                        : () => context.go('/activity'),
+                  ),
+                ],
+              ),
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: _SidebarAccountSelectorButton(
-                label: accountName,
-                profilePictureId:
-                    activeAccount?.profilePictureId ?? kDefaultProfilePictureId,
-                active: _matches('/accounts'),
-                isHovered: _isSelectorHovered,
-                onHoverChanged: (hovered) {
-                  if (_isSelectorHovered == hovered) return;
-                  setState(() {
-                    _isSelectorHovered = hovered;
-                  });
-                },
-                onTap: _openAccounts,
+            const Spacer(),
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.xs),
+              child: Column(
+                children: [
+                  AppSidebarItem(
+                    label: 'Settings',
+                    iconName: AppIcons.cog,
+                    active: _matches('/settings'),
+                    onTap: _matches('/settings')
+                        ? null
+                        : () => context.go('/settings'),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
+                    label: 'About Vizor',
+                    iconName: AppIcons.vizor,
+                    active: _matches('/about'),
+                    onTap: _matches('/about')
+                        ? null
+                        : () => context.go('/about'),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
+                    label: 'Sign Out',
+                    iconName: AppIcons.logOut,
+                    onTap: _isSigningOut ? null : _handleSignOut,
+                  ),
+                ],
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SidebarAccountSelectorButton extends StatelessWidget {
-  const _SidebarAccountSelectorButton({
-    required this.label,
-    required this.profilePictureId,
-    required this.active,
-    required this.isHovered,
-    required this.onHoverChanged,
-    required this.onTap,
-  });
-
-  final String label;
-  final String profilePictureId;
-  final bool active;
-  final bool isHovered;
-  final ValueChanged<bool> onHoverChanged;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final backgroundColor = (active || isHovered)
-        ? colors.state.selectedOpacity
-        : null;
-    final textColor = colors.text.accent;
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => onHoverChanged(true),
-      onExit: (_) => onHoverChanged(false),
-      child: GestureDetector(
-        key: const ValueKey('sidebar_account_selector_button'),
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(AppRadii.xSmall),
-          ),
-          child: Row(
-            children: [
-              _SidebarAccountAvatar(profilePictureId: profilePictureId),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(color: textColor),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );

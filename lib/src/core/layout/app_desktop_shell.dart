@@ -91,16 +91,20 @@ class AppDesktopPane extends StatelessWidget {
 class AppSidebarItem extends StatelessWidget {
   const AppSidebarItem({
     required this.label,
-    required this.iconName,
+    this.iconName,
+    this.leading,
     this.active = false,
     this.onTap,
+    this.leadingGap = AppSpacing.s,
     super.key,
-  });
+  }) : assert(iconName != null || leading != null);
 
   final String label;
-  final String iconName;
+  final String? iconName;
+  final Widget? leading;
   final bool active;
   final VoidCallback? onTap;
+  final double leadingGap;
 
   @override
   Widget build(BuildContext context) {
@@ -111,7 +115,7 @@ class AppSidebarItem extends StatelessWidget {
     final row = AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
-      height: 40,
+      height: 36,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       decoration: BoxDecoration(
         color: active ? colors.state.selectedOpacity : null,
@@ -119,8 +123,8 @@ class AppSidebarItem extends StatelessWidget {
       ),
       child: Row(
         children: [
-          AppIcon(iconName, size: 20, color: iconColor),
-          const SizedBox(width: AppSpacing.s),
+          leading ?? AppIcon(iconName!, size: 20, color: iconColor),
+          SizedBox(width: leadingGap),
           Expanded(
             child: Text(
               label,
