@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,8 +86,8 @@ void main() {
     late _FakeSyncNotifier syncNotifier;
     await tester.pumpWidget(
       _accountsHarness(
-        accountNotifier: () =>
-            _FakeAccountNotifier(_bootstrap.initialAccountState),
+        accountNotifier:
+            () => _FakeAccountNotifier(_bootstrap.initialAccountState),
         syncNotifier: () => syncNotifier = _FakeSyncNotifier(),
       ),
     );
@@ -104,6 +105,77 @@ void main() {
       findsOneWidget,
     );
     expect(syncNotifier.refreshCount, 1);
+  });
+
+  testWidgets('account row menu opens actions and dismisses', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final syncNotifier = _FakeSyncNotifier();
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier:
+            () => _FakeAccountNotifier(_bootstrap.initialAccountState),
+        syncNotifier: () => syncNotifier,
+      ),
+    );
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('accounts_other_row_account-2'));
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Name'), findsOneWidget);
+    expect(find.text('Change Picture'), findsOneWidget);
+    expect(find.text('Remove Account'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('accounts_active_row_account-1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('accounts_other_row_account-2')),
+      findsOneWidget,
+    );
+    expect(
+      _accountRowBackgroundColor(tester, row),
+      AppThemeData.light.colors.background.base,
+    );
+    expect(syncNotifier.refreshCount, 0);
+
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Name'), findsNothing);
+    expect(find.text('Change Picture'), findsNothing);
+    expect(find.text('Remove Account'), findsNothing);
+  });
+
+  testWidgets('account rows show hover treatment', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_accountsHarness());
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('accounts_other_row_account-2'));
+    expect(_accountRowBackgroundColor(tester, row), isNull);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(row));
+    await tester.pumpAndSettle();
+
+    expect(
+      _accountRowBackgroundColor(tester, row),
+      AppThemeData.light.colors.background.base,
+    );
   });
 }
 
@@ -154,10 +226,11 @@ Widget _sidebarHarness() {
     routes: [
       GoRoute(
         path: '/home',
-        builder: (_, _) => const AppDesktopShell(
-          sidebar: AppMainSidebar(),
-          pane: AppDesktopPane(child: Text('home route')),
-        ),
+        builder:
+            (_, _) => const AppDesktopShell(
+              sidebar: AppMainSidebar(),
+              pane: AppDesktopPane(child: Text('home route')),
+            ),
       ),
       GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
       GoRoute(
@@ -233,4 +306,13 @@ class _FakeSyncNotifier extends SyncNotifier {
   Future<void> refreshAfterSend() async {
     refreshCount += 1;
   }
+}
+
+Color? _accountRowBackgroundColor(WidgetTester tester, Finder row) {
+  final containerFinder = find.descendant(
+    of: row,
+    matching: find.byType(AnimatedContainer),
+  );
+  final container = tester.widget<AnimatedContainer>(containerFinder.first);
+  return (container.decoration as BoxDecoration?)?.color;
 }
