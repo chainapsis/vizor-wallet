@@ -138,6 +138,20 @@ class _FallbackHealth {
   final RpcEndpointHealth health;
 }
 
+class _FailoverContext {
+  const _FailoverContext({
+    required this.generation,
+    required this.primary,
+    required this.current,
+    required this.fallbackCandidates,
+  });
+
+  final int generation;
+  final RpcEndpointConfig primary;
+  final RpcEndpointConfig current;
+  final List<RpcEndpointConfig> fallbackCandidates;
+}
+
 Future<RpcEndpointHealth> checkRpcEndpointHealth({
   required RpcEndpointConfig endpoint,
   required RpcEndpointChainNameGetter getChainName,
@@ -212,9 +226,11 @@ final rpcEndpointFailoverLatestBlockHeightGetterProvider =
 
 class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   int _eventSequence = 0;
+  int _configGeneration = 0;
 
   @override
   RpcEndpointFailoverState build() {
+    _configGeneration += 1;
     final primary = ref.watch(rpcEndpointProvider);
     return RpcEndpointFailoverState(
       primary: primary,
@@ -313,14 +329,14 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         shouldFallbackFromLightwalletdError,
   }) async {
     final attempted = endpoint ?? state.current;
-    final attemptedUrl = attempted.normalizedLightwalletdUrl;
-    final currentUrl = state.current.normalizedLightwalletdUrl;
-    final primaryUrl = state.primary.normalizedLightwalletdUrl;
-    if (attemptedUrl != currentUrl || !shouldFallback(error)) {
+    final context = _captureContext();
+    if (!_sameEndpointIdentity(attempted, context.current) ||
+        !shouldFallback(error)) {
       return false;
     }
 
-    final failedPrimary = attemptedUrl == primaryUrl;
+    final attemptedUrl = attempted.normalizedLightwalletdUrl;
+    final failedPrimary = _sameEndpointIdentity(attempted, context.primary);
     final nextFailureCount = failedPrimary
         ? state.primaryFailureCount + 1
         : state.primaryFailureCount;
@@ -333,7 +349,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       return false;
     }
 
-    final fallbackCandidates = state.fallbackCandidates
+    final fallbackCandidates = context.fallbackCandidates
         .where(
           (candidate) => candidate.normalizedLightwalletdUrl != attemptedUrl,
         )
@@ -369,6 +385,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     }
 
     if (fallback == null) {
+      if (!_isCurrentContext(context)) return false;
       log(
         'RpcEndpointFailover: all fallback endpoints failed health checks '
         'after $operation failure: $lastFallbackError',
@@ -376,6 +393,14 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       state = state.copyWith(
         primaryFailureCount: nextFailureCount,
         lastFailure: error.toString(),
+      );
+      return false;
+    }
+
+    if (!_isCurrentContext(context)) {
+      log(
+        'RpcEndpointFailover: ignored stale fallback result for '
+        '${attempted.hostPort} after endpoint settings changed',
       );
       return false;
     }
@@ -410,6 +435,9 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   Future<bool> maybeProbePrimary({bool force = false}) async {
     if (!state.isUsingFallback) return false;
 
+    final context = _captureContext();
+    final primary = context.primary;
+    final currentEndpoint = context.current;
     final now = ref.read(rpcEndpointFailoverClockProvider)();
     final settings = ref.read(rpcEndpointFailoverSettingsProvider);
     final lastProbe = state.lastPrimaryProbeAt;
@@ -422,24 +450,36 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     state = state.copyWith(lastPrimaryProbeAt: now);
     late final RpcEndpointHealth primaryHealth;
     try {
-      primaryHealth = await _checkHealth(state.primary);
+      primaryHealth = await _checkHealth(primary);
     } catch (e) {
+      log('RpcEndpointFailover: primary ${primary.hostPort} probe failed: $e');
+      return false;
+    }
+    if (!_isCurrentContext(context)) {
       log(
-        'RpcEndpointFailover: primary ${state.primary.hostPort} probe failed: $e',
+        'RpcEndpointFailover: ignored stale primary probe for '
+        '${primary.hostPort} after endpoint settings changed',
       );
       return false;
     }
 
-    final currentEndpoint = state.current;
     var currentHeight = state.lastObservedHeight;
     try {
       final currentHealth = await _checkHealth(currentEndpoint);
+      if (!_isCurrentContext(context)) {
+        log(
+          'RpcEndpointFailover: ignored stale fallback probe for '
+          '${currentEndpoint.hostPort} after endpoint settings changed',
+        );
+        return false;
+      }
       currentHeight = _maxHeight(currentHeight, currentHealth.height);
       state = state.copyWith(
         lastObservedHeight: currentHeight,
         lastObservedAt: now,
       );
     } catch (e) {
+      if (!_isCurrentContext(context)) return false;
       log(
         'RpcEndpointFailover: current fallback ${currentEndpoint.hostPort} '
         'probe failed while checking primary recovery: $e',
@@ -454,24 +494,25 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     if (currentHeight != null &&
         primaryHealth.height + tolerance < currentHeight) {
       log(
-        'RpcEndpointFailover: primary ${state.primary.hostPort} probe lagging '
+        'RpcEndpointFailover: primary ${primary.hostPort} probe lagging '
         'at height ${primaryHealth.height}; current height is $currentHeight',
       );
       return false;
     }
+    if (!_isCurrentContext(context)) return false;
 
     final event = RpcEndpointFailoverEvent(
       sequence: ++_eventSequence,
       kind: RpcEndpointFailoverEventKind.switchedToPrimary,
       message: 'Selected endpoint recovered. Switched back.',
-      endpoint: state.primary,
+      endpoint: primary,
     );
     log(
-      'RpcEndpointFailover: primary ${state.primary.hostPort} recovered; '
-      'leaving fallback ${state.current.hostPort}',
+      'RpcEndpointFailover: primary ${primary.hostPort} recovered; '
+      'leaving fallback ${currentEndpoint.hostPort}',
     );
     state = state.copyWith(
-      current: state.primary,
+      current: primary,
       primaryFailureCount: 0,
       clearLastFailure: true,
       clearSwitchedAt: true,
@@ -492,6 +533,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   }) async {
     if (!_isCurrentEndpoint(endpoint)) return null;
 
+    final context = _captureContext();
     final now = ref.read(rpcEndpointFailoverClockProvider)();
     final windowStartedAt = state.heightWindowStartedAt;
     final windowStartHeight = state.heightWindowStartHeight;
@@ -517,10 +559,12 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
 
     final fallback = await _findFallbackAheadOf(
       endpoint,
+      candidates: context.fallbackCandidates,
       currentHeight: height,
       operation: operation,
     );
     if (fallback == null) {
+      if (!_isCurrentContext(context)) return null;
       log(
         'RpcEndpointFailover: ${endpoint.hostPort} height increased by '
         '$heightIncrease blocks in ${settings.slowHeightWindow.inSeconds}s, '
@@ -530,8 +574,15 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       return null;
     }
 
-    final primaryUrl = state.primary.normalizedLightwalletdUrl;
-    final failedPrimary = endpoint.normalizedLightwalletdUrl == primaryUrl;
+    if (!_isCurrentContext(context)) {
+      log(
+        'RpcEndpointFailover: ignored stale slow-height fallback for '
+        '${endpoint.hostPort} after endpoint settings changed',
+      );
+      return null;
+    }
+
+    final failedPrimary = _sameEndpointIdentity(endpoint, context.primary);
     final event = RpcEndpointFailoverEvent(
       sequence: ++_eventSequence,
       kind: RpcEndpointFailoverEventKind.switchedToFallback,
@@ -562,6 +613,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
 
   Future<_FallbackHealth?> _findFallbackAheadOf(
     RpcEndpointConfig attempted, {
+    required List<RpcEndpointConfig> candidates,
     required BigInt currentHeight,
     required String operation,
   }) async {
@@ -569,7 +621,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     final requiredHeight =
         currentHeight + BigInt.from(settings.slowFallbackLeadBlocks);
     final attemptedUrl = attempted.normalizedLightwalletdUrl;
-    for (final candidate in state.fallbackCandidates) {
+    for (final candidate in candidates) {
       if (candidate.normalizedLightwalletdUrl == attemptedUrl) continue;
       try {
         final health = await _checkHealth(candidate);
@@ -607,8 +659,28 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   }
 
   bool _isCurrentEndpoint(RpcEndpointConfig endpoint) {
-    return endpoint.normalizedLightwalletdUrl ==
-        state.current.normalizedLightwalletdUrl;
+    return _sameEndpointIdentity(endpoint, state.current);
+  }
+
+  _FailoverContext _captureContext() {
+    return _FailoverContext(
+      generation: _configGeneration,
+      primary: state.primary,
+      current: state.current,
+      fallbackCandidates: state.fallbackCandidates,
+    );
+  }
+
+  bool _isCurrentContext(_FailoverContext context) {
+    return _configGeneration == context.generation &&
+        _sameEndpointIdentity(state.primary, context.primary) &&
+        _sameEndpointIdentity(state.current, context.current);
+  }
+
+  bool _sameEndpointIdentity(RpcEndpointConfig a, RpcEndpointConfig b) {
+    return a.networkName == b.networkName &&
+        a.effectivePresetId == b.effectivePresetId &&
+        a.normalizedLightwalletdUrl == b.normalizedLightwalletdUrl;
   }
 
   BigInt _maxHeight(BigInt? a, BigInt b) {

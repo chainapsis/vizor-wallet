@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 
 void main() {
   test('classifies transient endpoint failures only', () {
@@ -550,6 +553,173 @@ void main() {
       expect(state.isUsingFallback, isFalse);
     },
   );
+
+  test(
+    'ignores stale fallback when endpoint changes to custom during health check',
+    () async {
+      final primary = defaultRpcEndpointConfig('main');
+      final customSameUrl = primary.copyWith(
+        presetId: kCustomRpcEndpointPresetId,
+      );
+      final fallbackProbeStarted = Completer<void>();
+      final releaseFallbackProbe = Completer<void>();
+      final harness = _mutableContainer(
+        primary: primary,
+        getChainName: (url) async {
+          if (url == 'https://eu.zec.stardust.rest:443') {
+            if (!fallbackProbeStarted.isCompleted) {
+              fallbackProbeStarted.complete();
+            }
+            await releaseFallbackProbe.future;
+          }
+          return 'main';
+        },
+        getLatestBlockHeight: (_) async => BigInt.from(10),
+      );
+      addTearDown(harness.container.dispose);
+
+      final switchedFuture = harness.container
+          .read(rpcEndpointFailoverProvider.notifier)
+          .switchToFallbackFor(
+            Exception('DeadlineExceeded'),
+            operation: 'primary sync',
+          );
+
+      await fallbackProbeStarted.future;
+      harness.endpointNotifier.setForTest(customSameUrl);
+      harness.container.read(rpcEndpointFailoverProvider);
+      releaseFallbackProbe.complete();
+
+      expect(await switchedFuture, isFalse);
+      final state = harness.container.read(rpcEndpointFailoverProvider);
+      expect(state.current.effectivePresetId, kCustomRpcEndpointPresetId);
+      expect(
+        state.current.normalizedLightwalletdUrl,
+        primary.normalizedLightwalletdUrl,
+      );
+      expect(state.fallbackCandidates, isEmpty);
+      expect(state.lastEvent, isNull);
+    },
+  );
+
+  test(
+    'ignores stale slow-height fallback after endpoint changes to custom',
+    () async {
+      var now = DateTime(2026);
+      final primary = defaultRpcEndpointConfig('main');
+      final primaryUrl = primary.normalizedLightwalletdUrl;
+      final customSameUrl = primary.copyWith(
+        presetId: kCustomRpcEndpointPresetId,
+      );
+      final fallbackProbeStarted = Completer<void>();
+      final releaseFallbackProbe = Completer<void>();
+      final heightByUrl = <String, BigInt>{
+        primaryUrl: BigInt.from(100),
+        'https://eu.zec.stardust.rest:443': BigInt.from(103),
+      };
+      final harness = _mutableContainer(
+        primary: primary,
+        clock: () => now,
+        getChainName: (url) async {
+          if (url == 'https://eu.zec.stardust.rest:443') {
+            if (!fallbackProbeStarted.isCompleted) {
+              fallbackProbeStarted.complete();
+            }
+            await releaseFallbackProbe.future;
+          }
+          return 'main';
+        },
+        getLatestBlockHeight: (url) async =>
+            heightByUrl[url] ?? (throw Exception('no height $url')),
+      );
+      addTearDown(harness.container.dispose);
+
+      final notifier = harness.container.read(
+        rpcEndpointFailoverProvider.notifier,
+      );
+      expect(await notifier.getLatestBlockHeight(), BigInt.from(100));
+
+      now = now.add(const Duration(minutes: 5));
+      heightByUrl[primaryUrl] = BigInt.from(101);
+      final heightFuture = notifier.getLatestBlockHeight();
+
+      await fallbackProbeStarted.future;
+      harness.endpointNotifier.setForTest(customSameUrl);
+      harness.container.read(rpcEndpointFailoverProvider);
+      releaseFallbackProbe.complete();
+
+      expect(await heightFuture, BigInt.from(101));
+      final state = harness.container.read(rpcEndpointFailoverProvider);
+      expect(state.current.effectivePresetId, kCustomRpcEndpointPresetId);
+      expect(state.fallbackCandidates, isEmpty);
+      expect(state.lastEvent, isNull);
+    },
+  );
+
+  test(
+    'ignores stale primary recovery after endpoint changes to custom',
+    () async {
+      var now = DateTime(2026);
+      var blockPrimaryProbe = false;
+      final primary = defaultRpcEndpointConfig('main');
+      final primaryUrl = primary.normalizedLightwalletdUrl;
+      final customSameUrl = primary.copyWith(
+        presetId: kCustomRpcEndpointPresetId,
+      );
+      final primaryProbeStarted = Completer<void>();
+      final releasePrimaryProbe = Completer<void>();
+      final heightByUrl = <String, BigInt>{
+        primaryUrl: BigInt.from(120),
+        'https://eu.zec.stardust.rest:443': BigInt.from(110),
+      };
+      final harness = _mutableContainer(
+        primary: primary,
+        clock: () => now,
+        settings: const RpcEndpointFailoverSettings(
+          primaryProbeInterval: Duration(seconds: 5),
+        ),
+        getChainName: (url) async {
+          if (blockPrimaryProbe && url == primaryUrl) {
+            if (!primaryProbeStarted.isCompleted) {
+              primaryProbeStarted.complete();
+            }
+            await releasePrimaryProbe.future;
+          }
+          return 'main';
+        },
+        getLatestBlockHeight: (url) async =>
+            heightByUrl[url] ?? (throw Exception('no height $url')),
+      );
+      addTearDown(harness.container.dispose);
+
+      final notifier = harness.container.read(
+        rpcEndpointFailoverProvider.notifier,
+      );
+      await notifier.switchToFallbackFor(
+        Exception('DeadlineExceeded'),
+        operation: 'primary sync',
+      );
+      expect(
+        harness.container.read(rpcEndpointFailoverProvider).isUsingFallback,
+        isTrue,
+      );
+
+      blockPrimaryProbe = true;
+      now = now.add(const Duration(seconds: 5));
+      final probeFuture = notifier.maybeProbePrimary();
+
+      await primaryProbeStarted.future;
+      harness.endpointNotifier.setForTest(customSameUrl);
+      harness.container.read(rpcEndpointFailoverProvider);
+      releasePrimaryProbe.complete();
+
+      expect(await probeFuture, isFalse);
+      final state = harness.container.read(rpcEndpointFailoverProvider);
+      expect(state.current.effectivePresetId, kCustomRpcEndpointPresetId);
+      expect(state.fallbackCandidates, isEmpty);
+      expect(state.lastEvent, isNull);
+    },
+  );
 }
 
 ProviderContainer _container({
@@ -574,6 +744,56 @@ ProviderContainer _container({
       ),
     ],
   );
+}
+
+_MutableEndpointHarness _mutableContainer({
+  required RpcEndpointConfig primary,
+  required RpcEndpointChainNameGetter getChainName,
+  required RpcEndpointLatestBlockHeightGetter getLatestBlockHeight,
+  DateTime Function()? clock,
+  RpcEndpointFailoverSettings settings = const RpcEndpointFailoverSettings(),
+}) {
+  late final _MutableRpcEndpointNotifier endpointNotifier;
+  final container = ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap(primary)),
+      rpcEndpointProvider.overrideWith(() {
+        endpointNotifier = _MutableRpcEndpointNotifier(primary);
+        return endpointNotifier;
+      }),
+      rpcEndpointFailoverSettingsProvider.overrideWithValue(settings),
+      if (clock != null)
+        rpcEndpointFailoverClockProvider.overrideWithValue(clock),
+      rpcEndpointFailoverChainNameGetterProvider.overrideWithValue(
+        getChainName,
+      ),
+      rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
+        getLatestBlockHeight,
+      ),
+    ],
+  );
+  container.read(rpcEndpointProvider);
+  return _MutableEndpointHarness(container, endpointNotifier);
+}
+
+class _MutableEndpointHarness {
+  const _MutableEndpointHarness(this.container, this.endpointNotifier);
+
+  final ProviderContainer container;
+  final _MutableRpcEndpointNotifier endpointNotifier;
+}
+
+class _MutableRpcEndpointNotifier extends RpcEndpointNotifier {
+  _MutableRpcEndpointNotifier(this.initial);
+
+  final RpcEndpointConfig initial;
+
+  @override
+  RpcEndpointConfig build() => initial;
+
+  void setForTest(RpcEndpointConfig next) {
+    state = next;
+  }
 }
 
 RpcEndpointConfig _customRegtestPrimary() {
