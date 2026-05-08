@@ -14,10 +14,10 @@ import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
-import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
+import '../../accounts/widgets/account_name_modal.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
@@ -99,15 +99,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 endpointLabel: endpointLabel,
                 themeLabel: _themeLabel(themeMode),
                 onSeedPhrase: () => context.push('/settings/secret-passphrase'),
-                onChangePassword: () =>
-                    context.push('/settings/change-password'),
+                onChangePassword:
+                    () => context.push('/settings/change-password'),
                 onEndpoint: () => context.push('/settings/endpoint'),
-                onAccountName: hasActiveAccount
-                    ? () => _showModal(_SettingsModalType.accountName)
-                    : null,
-                onProfilePicture: hasActiveAccount
-                    ? () => _showModal(_SettingsModalType.profilePicture)
-                    : null,
+                onAccountName:
+                    hasActiveAccount
+                        ? () => _showModal(_SettingsModalType.accountName)
+                        : null,
+                onProfilePicture:
+                    hasActiveAccount
+                        ? () => _showModal(_SettingsModalType.profilePicture)
+                        : null,
                 onTheme: () => _showModal(_SettingsModalType.theme),
               ),
             ),
@@ -115,7 +117,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               AppPaneModalOverlay(
                 onDismiss: _closeModal,
                 child: switch (_activeModal!) {
-                  _SettingsModalType.accountName => _AccountNameModal(
+                  _SettingsModalType.accountName => AccountNameModal(
                     accountName: activeAccountName,
                     profilePictureId: activeProfilePictureId,
                     onCancel: _closeModal,
@@ -341,11 +343,7 @@ class _SettingsModalCard extends StatelessWidget {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          header,
-          SizedBox(height: gap),
-          child,
-        ],
+        children: [header, SizedBox(height: gap), child],
       ),
     );
   }
@@ -374,20 +372,6 @@ class _ModalHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ModalAccountAvatar extends StatelessWidget {
-  const _ModalAccountAvatar({required this.profilePictureId});
-
-  final String profilePictureId;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppProfilePicture(
-      profilePictureId: profilePictureId,
-      size: AppProfilePictureSize.large,
     );
   }
 }
@@ -631,9 +615,8 @@ class _ProfilePictureOptionButtonState
 
     return FocusableActionDetector(
       enabled: widget.enabled,
-      mouseCursor: widget.enabled
-          ? SystemMouseCursors.click
-          : SystemMouseCursors.basic,
+      mouseCursor:
+          widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onShowFocusHighlight: _setFocused,
       child: MouseRegion(
         onEnter: (_) => _setHovered(true),
@@ -703,136 +686,6 @@ class _ProfilePictureOptionButtonState
   }
 }
 
-class _AccountNameModal extends StatefulWidget {
-  const _AccountNameModal({
-    required this.accountName,
-    required this.profilePictureId,
-    required this.onCancel,
-    required this.onUpdate,
-  });
-
-  final String accountName;
-  final String profilePictureId;
-  final VoidCallback onCancel;
-  final Future<void> Function(String name) onUpdate;
-
-  @override
-  State<_AccountNameModal> createState() => _AccountNameModalState();
-}
-
-class _AccountNameModalState extends State<_AccountNameModal> {
-  static const _fieldHeight = 86.0;
-  static const _buttonWidth = 280.0;
-  static const _minNameLength = 5;
-  static const _maxNameLength = 20;
-
-  final _controller = TextEditingController();
-  bool _isSubmitting = false;
-  String? _submitError;
-
-  String get _trimmedName => _controller.text.trim();
-
-  bool get _isLengthValid =>
-      _trimmedName.length >= _minNameLength &&
-      _trimmedName.length <= _maxNameLength;
-
-  bool get _canUpdate =>
-      !_isSubmitting &&
-      _isLengthValid &&
-      _trimmedName != widget.accountName.trim();
-
-  String? get _messageText {
-    if (_submitError != null) return _submitError;
-    if (_controller.text.isEmpty || _isLengthValid) return null;
-    return 'Use 5-20 characters.';
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_canUpdate) return;
-    setState(() {
-      _isSubmitting = true;
-      _submitError = null;
-    });
-
-    try {
-      await widget.onUpdate(_trimmedName);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _submitError = "Couldn't update account name.";
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
-  }
-
-  void _handleChanged() {
-    setState(() {
-      _submitError = null;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _SettingsModalCard(
-      header: _ModalHeader(
-        leading: _ModalAccountAvatar(profilePictureId: widget.profilePictureId),
-        title: widget.accountName,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            height: _fieldHeight,
-            child: AppTextField(
-              label: 'New Account Name',
-              hintText: '5-20 Characters',
-              controller: _controller,
-              autofocus: true,
-              enabled: !_isSubmitting,
-              trailingSlotWidth: 40,
-              inputHorizontalPadding: AppSpacing.s,
-              inputFormatters: [
-                LengthLimitingTextInputFormatter(_maxNameLength),
-              ],
-              messageText: _messageText,
-              tone: _messageText == null
-                  ? AppTextFieldTone.neutral
-                  : AppTextFieldTone.destructive,
-              onChanged: (_) => _handleChanged(),
-              onSubmitted: (_) => _submit(),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppButton(
-            onPressed: _canUpdate ? _submit : null,
-            variant: AppButtonVariant.primary,
-            minWidth: _buttonWidth,
-            child: Text(_isSubmitting ? 'Updating...' : 'Update'),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: _isSubmitting ? null : widget.onCancel,
-            variant: AppButtonVariant.ghost,
-            minWidth: _buttonWidth,
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ThemeModal extends StatefulWidget {
   const _ThemeModal({
     required this.currentMode,
@@ -895,30 +748,33 @@ class _ThemeModalState extends State<_ThemeModal> {
                 iconName: AppIcons.monitor,
                 label: 'System (Auto)',
                 selected: _selectedMode == ThemeMode.system,
-                onTap: () => setState(() {
-                  _submitError = null;
-                  _selectedMode = ThemeMode.system;
-                }),
+                onTap:
+                    () => setState(() {
+                      _submitError = null;
+                      _selectedMode = ThemeMode.system;
+                    }),
               ),
               const SizedBox(height: AppSpacing.xs),
               _ThemeOptionCard(
                 iconName: AppIcons.day,
                 label: 'Light Mode',
                 selected: _selectedMode == ThemeMode.light,
-                onTap: () => setState(() {
-                  _submitError = null;
-                  _selectedMode = ThemeMode.light;
-                }),
+                onTap:
+                    () => setState(() {
+                      _submitError = null;
+                      _selectedMode = ThemeMode.light;
+                    }),
               ),
               const SizedBox(height: AppSpacing.xs),
               _ThemeOptionCard(
                 iconName: AppIcons.night,
                 label: 'Dark Mode',
                 selected: _selectedMode == ThemeMode.dark,
-                onTap: () => setState(() {
-                  _submitError = null;
-                  _selectedMode = ThemeMode.dark;
-                }),
+                onTap:
+                    () => setState(() {
+                      _submitError = null;
+                      _selectedMode = ThemeMode.dark;
+                    }),
               ),
             ],
           ),
@@ -1029,20 +885,22 @@ class _ThemeOptionIndicator extends StatelessWidget {
       width: 16,
       height: 16,
       decoration: BoxDecoration(
-        color: selected
-            ? colors.background.inverse
-            : colors.background.neutralSubtleOpacity,
+        color:
+            selected
+                ? colors.background.inverse
+                : colors.background.neutralSubtleOpacity,
         shape: BoxShape.circle,
       ),
-      child: selected
-          ? Center(
-              child: AppIcon(
-                AppIcons.check,
-                size: 12,
-                color: colors.background.ground,
-              ),
-            )
-          : null,
+      child:
+          selected
+              ? Center(
+                child: AppIcon(
+                  AppIcons.check,
+                  size: 12,
+                  color: colors.background.ground,
+                ),
+              )
+              : null,
     );
   }
 }
@@ -1156,9 +1014,10 @@ class _SettingsRowState extends State<_SettingsRow> {
           height: 40,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           decoration: BoxDecoration(
-            color: isInteractive && _hovered
-                ? _settingsRowHoverBackgroundColor(context)
-                : null,
+            color:
+                isInteractive && _hovered
+                    ? _settingsRowHoverBackgroundColor(context)
+                    : null,
             borderRadius: BorderRadius.circular(AppRadii.xSmall),
           ),
           child: Row(
