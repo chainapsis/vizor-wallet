@@ -397,6 +397,7 @@ class _BottomActions extends StatelessWidget {
     return Column(
       children: [
         AppButton(
+          key: const ValueKey('create_secret_phrase_primary_button'),
           onPressed: !isPreparing && !isSubmitting ? onPrimaryPressed : null,
           variant: AppButtonVariant.primary,
           minWidth: _buttonWidth,

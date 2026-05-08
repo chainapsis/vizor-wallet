@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
@@ -1029,7 +1030,7 @@ class _SendTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      'Send ZEC',
+      'Send $kZcashDefaultCurrencyTicker',
       style: AppTypography.displaySmall.copyWith(
         color: context.colors.text.accent,
       ),

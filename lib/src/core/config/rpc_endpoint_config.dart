@@ -149,6 +149,12 @@ final kTestnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     url: 'https://testnet.zec.rocks:443',
     isDefault: true,
   ),
+  const RpcEndpointPreset(
+    id: 'mysideoftheweb-testnet',
+    region: 'Community',
+    label: 'My Side of the Web Testnet',
+    url: 'https://zcash.mysideoftheweb.com:19067',
+  ),
 ]);
 
 final kRegtestRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([

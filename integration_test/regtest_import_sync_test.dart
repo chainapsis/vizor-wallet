@@ -15,6 +15,8 @@ const _mnemonic =
     'roast miracle ethics found child scare curve congress renew salute pig '
     'better used';
 const _password = 'Vizor123!';
+final _currencyTicker = kZcashDefaultCurrencyTicker;
+final _currencyTickerLower = _currencyTicker.toLowerCase();
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -80,9 +82,9 @@ void main() {
         () => _keyedTextEquals(
           tester,
           const ValueKey('home_shielded_balance_text'),
-          '1.25 zec',
+          '1.25 $_currencyTickerLower',
         ),
-        description: 'shielded balance to show 1.25 zec',
+        description: 'shielded balance to show 1.25 $_currencyTickerLower',
         timeout: const Duration(minutes: 4),
       );
       _log('shielded balance matched');
@@ -92,9 +94,9 @@ void main() {
         () => _keyedTextEquals(
           tester,
           const ValueKey('home_transparent_balance_text'),
-          'Transparent balance: 0.75 ZEC',
+          'Transparent balance: 0.75 $_currencyTicker',
         ),
-        description: 'transparent balance to show 0.75 ZEC',
+        description: 'transparent balance to show 0.75 $_currencyTicker',
         timeout: const Duration(minutes: 1),
       );
       _log('transparent balance matched');

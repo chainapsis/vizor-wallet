@@ -11,6 +11,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/network_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -458,7 +459,7 @@ class _ReceiveMainContent extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Receive ZEC',
+                        'Receive $kZcashDefaultCurrencyTicker',
                         style: AppTypography.displaySmall.copyWith(
                           color: colors.text.accent,
                         ),
@@ -1314,13 +1315,13 @@ class _ReceiveInfoDialog extends StatelessWidget {
                   'Each new address is a diversified address derived from the same key. They all receive to the same wallet.',
             ),
           ]
-        : const [
-            _InfoItemData(
+        : [
+            const _InfoItemData(
               iconName: AppIcons.unlock,
               text:
                   'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
             ),
-            _InfoItemData(
+            const _InfoItemData(
               iconName: AppIcons.dragon,
               text:
                   'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
@@ -1328,7 +1329,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
             _InfoItemData(
               iconName: AppIcons.shieldAsset,
               text:
-                  'After receiving ZEC to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.',
+                  'After receiving $kZcashDefaultCurrencyTicker to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.',
             ),
           ];
 

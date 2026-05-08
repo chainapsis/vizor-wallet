@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../app_bootstrap.dart';
+import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -597,10 +598,11 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final currencyTickerLower = kZcashDefaultCurrencyTicker.toLowerCase();
     final displayedShieldedBalance = hideIfPrivacyMode(
-      '${widget.shieldedBalanceText} zec',
+      '${widget.shieldedBalanceText} $currencyTickerLower',
       privacyModeEnabled: widget.privacyModeEnabled,
-      suffix: ' zec',
+      suffix: ' $currencyTickerLower',
     );
     final isDark = AppTheme.of(context) == AppThemeData.dark;
     final targetStripHeight = widget.hasTransparentBalance
@@ -1015,7 +1017,7 @@ class _HomeTransparentBalanceStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final displayedBalance = hideAmountIfPrivacyMode(
-      '$balanceText ZEC',
+      '$balanceText $kZcashDefaultCurrencyTicker',
       privacyModeEnabled: privacyModeEnabled,
     );
     final canHoverShieldBalance = canShieldBalance && !isShieldingBalance;
@@ -1101,6 +1103,7 @@ class _HomeShieldBalanceButton extends StatelessWidget {
     final isInteractive = enabled && !isLoading;
 
     return Semantics(
+      key: const ValueKey('home_shield_balance_button'),
       button: true,
       enabled: isInteractive,
       child: MouseRegion(

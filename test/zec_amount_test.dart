@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
 
 void main() {
@@ -39,13 +40,15 @@ void main() {
 
   group('ZecAmountPretty', () {
     test('formats balance and receipt presets with existing precision', () {
+      final defaultTickerLower = kZcashDefaultCurrencyTicker.toLowerCase();
+
       expect(
         ZecAmount.fromZatoshi(BigInt.from(100000000)).balance.amountText,
         '1.00',
       );
       expect(
         ZecAmount.fromZatoshi(BigInt.from(100000000)).receipt.toString(),
-        '1.00 zec',
+        '1.00 $defaultTickerLower',
       );
       expect(
         ZecAmount.fromZatoshi(BigInt.one).balance.amountText,
@@ -56,36 +59,53 @@ void main() {
     test('formats fee preset with upper-case denom', () {
       expect(
         ZecAmount.fromZatoshi(BigInt.from(10000)).fee.toString(),
-        '0.0001 ZEC',
+        '0.0001 $kZcashDefaultCurrencyTicker',
       );
     });
 
     test('preserves existing activity precision rules', () {
       expect(
         ZecAmount.fromZatoshi(BigInt.from(123450000)).activity.toString(),
-        '1.23 ZEC',
+        '1.23 $kZcashDefaultCurrencyTicker',
       );
       expect(
         ZecAmount.fromZatoshi(BigInt.from(10000)).activity.toString(),
-        '0.0001 ZEC',
+        '0.0001 $kZcashDefaultCurrencyTicker',
       );
       expect(
         ZecAmount.fromZatoshi(BigInt.zero).activity.toString(),
-        '0.00 ZEC',
+        '0.00 $kZcashDefaultCurrencyTicker',
       );
       expect(
         ZecAmount.fromZatoshi(-BigInt.from(100000000)).activity.toString(),
-        '1.00 ZEC',
+        '1.00 $kZcashDefaultCurrencyTicker',
       );
       expect(
         ZecAmount.fromZatoshi(
           -BigInt.from(100000000),
         ).signedActivity.toString(),
-        '-1.00 ZEC',
+        '-1.00 $kZcashDefaultCurrencyTicker',
       );
       expect(
         ZecAmount.fromZatoshi(BigInt.zero).signedActivity.toString(),
-        '0.00 ZEC',
+        '0.00 $kZcashDefaultCurrencyTicker',
+      );
+    });
+
+    test('can render testnet amounts with TAZ denomination', () {
+      final ticker = ZcashNetwork.testnet.currencyTicker;
+
+      expect(
+        ZecAmount.fromZatoshi(
+          BigInt.from(100000000),
+        ).receiptPretty(denomination: ticker).toString(),
+        '1.00 taz',
+      );
+      expect(
+        ZecAmount.fromZatoshi(
+          BigInt.from(10000),
+        ).feePretty(denomination: ticker).toString(),
+        '0.0001 TAZ',
       );
     });
   });

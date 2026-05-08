@@ -57,7 +57,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('About Vizor Wallet'), findsOneWidget);
-    expect(find.text('Version: 0.1.24 Public Beta'), findsOneWidget);
+    expect(find.text('Version: 0.0.0 Public Beta'), findsOneWidget);
   });
 
   testWidgets('About sidebar navigation uses the standard Home back target', (

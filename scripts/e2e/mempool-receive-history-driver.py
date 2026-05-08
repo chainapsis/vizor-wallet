@@ -50,6 +50,26 @@ class DriverHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         try:
             payload = self.read_json()
+            if self.path == "/fund-confirmed":
+                address = str(payload["address"])
+                amount = str(payload.get("amount", "0.25"))
+                confirmations = str(payload.get("confirmations", 10))
+                output = run_command(
+                    self.repo_root,
+                    [
+                        "scripts/regtest/fund-wallet.sh",
+                        address,
+                        amount,
+                        confirmations,
+                    ],
+                    timeout=600,
+                )
+                txid = output.splitlines()[-1].strip() if output else ""
+                if not txid:
+                    raise RuntimeError("fund-wallet.sh returned no txid")
+                self.respond(200, {"txid": txid})
+                return
+
             if self.path == "/fund-unmined":
                 address = str(payload["address"])
                 amount = str(payload.get("amount", "0.25"))

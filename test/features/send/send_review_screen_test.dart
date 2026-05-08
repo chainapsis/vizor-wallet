@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
@@ -10,6 +11,8 @@ import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 void main() {
+  final tickerLower = kZcashDefaultCurrencyTicker.toLowerCase();
+
   setUpAll(() {
     RustLib.initMock(api: _RustApiFake());
   });
@@ -32,7 +35,7 @@ void main() {
 
     expect(buttonTop - receiptTop, moreOrLessEquals(420));
 
-    final amountText = tester.widget<Text>(find.text('15.12 zec'));
+    final amountText = tester.widget<Text>(find.text('15.12 $tickerLower'));
     expect(amountText.style?.fontFamily, AppTypography.displayLarge.fontFamily);
     expect(amountText.style?.fontSize, AppTypography.displayLarge.fontSize);
     expect(amountText.style?.height, AppTypography.displayLarge.height);
