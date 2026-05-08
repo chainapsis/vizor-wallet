@@ -21,55 +21,58 @@ class AppToast extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isDark = AppTheme.of(context) == AppThemeData.dark;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 560),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.background.ground,
-          borderRadius: BorderRadius.circular(AppRadii.small),
-          border: isDark ? Border.all(color: colors.border.subtle) : null,
-          boxShadow: isDark
-              ? null
-              : const [
-                  BoxShadow(
-                    color: Color(0xFFE1E1E1),
-                    offset: Offset(0, 2),
-                    blurRadius: 2,
-                  ),
-                  BoxShadow(
-                    color: Color(0xFFE1E1E1),
-                    offset: Offset(0, 10),
-                    blurRadius: 15,
-                  ),
-                ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s,
-            vertical: AppSpacing.xs,
+    return DefaultTextStyle.merge(
+      style: const TextStyle(decoration: TextDecoration.none),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.small),
+            border: isDark ? Border.all(color: colors.border.subtle) : null,
+            boxShadow: isDark
+                ? null
+                : const [
+                    BoxShadow(
+                      color: Color(0xFFE1E1E1),
+                      offset: Offset(0, 2),
+                      blurRadius: 2,
+                    ),
+                    BoxShadow(
+                      color: Color(0xFFE1E1E1),
+                      offset: Offset(0, 10),
+                      blurRadius: 15,
+                    ),
+                  ],
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              AppIcon(
-                iconName,
-                size: AppIconSize.medium,
-                color: colors.icon.accent,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Flexible(
-                child: Text(
-                  message,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.accent,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s,
+              vertical: AppSpacing.xs,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AppIcon(
+                  iconName,
+                  size: AppIconSize.medium,
+                  color: colors.icon.accent,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                Flexible(
+                  child: Text(
+                    message,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

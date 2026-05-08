@@ -97,6 +97,27 @@ void main() {
     expect(icon.color, AppThemeData.dark.colors.icon.accent);
   });
 
+  testWidgets('AppToast clears inherited text decoration', (tester) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        theme: AppThemeData.light,
+        child: DefaultTextStyle(
+          style: TextStyle(
+            decoration: TextDecoration.underline,
+            decorationColor: Colors.yellow,
+          ),
+          child: Center(child: AppToast(message: 'Address Copied')),
+        ),
+      ),
+    );
+
+    final textContext = tester.element(find.text('Address Copied'));
+    expect(
+      DefaultTextStyle.of(textContext).style.decoration,
+      TextDecoration.none,
+    );
+  });
+
   testWidgets('showAppToast displays a top-centered transient toast', (
     tester,
   ) async {
