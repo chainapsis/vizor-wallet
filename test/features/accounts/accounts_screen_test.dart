@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
+import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
@@ -223,6 +224,44 @@ void main() {
     expect(find.text('Savings Vault'), findsOneWidget);
     expect(find.text('New Account Name'), findsNothing);
   });
+
+  testWidgets('change picture menu action updates the selected account', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    await tester.pumpWidget(
+      _accountsHarness(accountNotifier: () => accountNotifier),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Change Picture'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select Profile Picture'), findsOneWidget);
+    expect(find.byType(AppPaneModalOverlay), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('profile_picture_option_samurai')),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.updatedProfilePictureUuid, 'account-2');
+    expect(accountNotifier.updatedProfilePictureId, 'samurai');
+    expect(find.text('Select Profile Picture'), findsNothing);
+  });
 }
 
 Widget _accountsHarness({
@@ -311,7 +350,12 @@ final _bootstrap = AppBootstrapState(
   initialAccountState: const AccountState(
     accounts: [
       AccountInfo(uuid: 'account-1', name: 'Primary Vault', order: 0),
-      AccountInfo(uuid: 'account-2', name: 'Shielded Savings', order: 1),
+      AccountInfo(
+        uuid: 'account-2',
+        name: 'Shielded Savings',
+        order: 1,
+        profilePictureId: kDefaultProfilePictureId,
+      ),
       AccountInfo(uuid: 'account-3', name: 'Travel Funds', order: 2),
     ],
     activeAccountUuid: 'account-1',
@@ -333,6 +377,8 @@ class _FakeAccountNotifier extends AccountNotifier {
   final AccountState initialState;
   String? renamedUuid;
   String? renamedName;
+  String? updatedProfilePictureUuid;
+  String? updatedProfilePictureId;
 
   @override
   FutureOr<AccountState> build() => initialState;
@@ -351,6 +397,24 @@ class _FakeAccountNotifier extends AccountNotifier {
     final updated = [
       for (final account in prev.accounts)
         if (account.uuid == uuid) account.copyWith(name: newName) else account,
+    ];
+    state = AsyncData(prev.copyWith(accounts: updated));
+  }
+
+  @override
+  Future<void> updateProfilePicture(
+    String uuid,
+    String profilePictureId,
+  ) async {
+    updatedProfilePictureUuid = uuid;
+    updatedProfilePictureId = profilePictureId;
+    final prev = state.value ?? initialState;
+    final updated = [
+      for (final account in prev.accounts)
+        if (account.uuid == uuid)
+          account.copyWith(profilePictureId: profilePictureId)
+        else
+          account,
     ];
     state = AsyncData(prev.copyWith(accounts: updated));
   }

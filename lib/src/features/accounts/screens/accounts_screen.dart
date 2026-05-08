@@ -16,6 +16,7 @@ import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../widgets/account_name_modal.dart';
+import '../widgets/account_profile_picture_modal.dart';
 
 class AccountsScreen extends ConsumerStatefulWidget {
   const AccountsScreen({super.key});
@@ -24,23 +25,47 @@ class AccountsScreen extends ConsumerStatefulWidget {
   ConsumerState<AccountsScreen> createState() => _AccountsScreenState();
 }
 
+enum _AccountModalType { accountName, profilePicture }
+
 class _AccountsScreenState extends ConsumerState<AccountsScreen> {
-  String? _editingAccountUuid;
+  String? _modalAccountUuid;
+  _AccountModalType? _activeModal;
 
   void _showAccountNameModal(AccountInfo account) {
+    _showModal(_AccountModalType.accountName, account);
+  }
+
+  void _showProfilePictureModal(AccountInfo account) {
+    _showModal(_AccountModalType.profilePicture, account);
+  }
+
+  void _showModal(_AccountModalType modal, AccountInfo account) {
     setState(() {
-      _editingAccountUuid = account.uuid;
+      _modalAccountUuid = account.uuid;
+      _activeModal = modal;
     });
   }
 
   void _closeModal() {
     setState(() {
-      _editingAccountUuid = null;
+      _modalAccountUuid = null;
+      _activeModal = null;
     });
   }
 
   Future<void> _updateAccountName(String uuid, String name) async {
     await ref.read(accountProvider.notifier).renameAccount(uuid, name);
+    if (!mounted) return;
+    _closeModal();
+  }
+
+  Future<void> _updateProfilePicture(
+    String uuid,
+    String profilePictureId,
+  ) async {
+    await ref
+        .read(accountProvider.notifier)
+        .updateProfilePicture(uuid, profilePictureId);
     if (!mounted) return;
     _closeModal();
   }
@@ -59,7 +84,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       for (final account in accounts)
         if (account.uuid != activeAccount?.uuid) account,
     ];
-    final editingAccount = _accountForUuid(accounts, _editingAccountUuid);
+    final modalAccount = _accountForUuid(accounts, _modalAccountUuid);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -74,18 +99,31 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                 otherAccounts: otherAccounts,
                 onSelectAccount: _handleAccountSelected,
                 onEditAccountName: _showAccountNameModal,
+                onChangeProfilePicture: _showProfilePictureModal,
               ),
             ),
-            if (editingAccount != null)
+            if (modalAccount != null && _activeModal != null)
               AppPaneModalOverlay(
                 onDismiss: _closeModal,
-                child: AccountNameModal(
-                  accountName: editingAccount.name,
-                  profilePictureId: editingAccount.profilePictureId,
-                  onCancel: _closeModal,
-                  onUpdate:
-                      (name) => _updateAccountName(editingAccount.uuid, name),
-                ),
+                child: switch (_activeModal!) {
+                  _AccountModalType.accountName => AccountNameModal(
+                    accountName: modalAccount.name,
+                    profilePictureId: modalAccount.profilePictureId,
+                    onCancel: _closeModal,
+                    onUpdate:
+                        (name) => _updateAccountName(modalAccount.uuid, name),
+                  ),
+                  _AccountModalType.profilePicture =>
+                    AccountProfilePictureModal(
+                      currentProfilePictureId: modalAccount.profilePictureId,
+                      onCancel: _closeModal,
+                      onUpdate:
+                          (profilePictureId) => _updateProfilePicture(
+                            modalAccount.uuid,
+                            profilePictureId,
+                          ),
+                    ),
+                },
               ),
           ],
         ),
@@ -130,12 +168,14 @@ class _AccountsPane extends StatelessWidget {
     required this.otherAccounts,
     required this.onSelectAccount,
     required this.onEditAccountName,
+    required this.onChangeProfilePicture,
   });
 
   final AccountInfo? activeAccount;
   final List<AccountInfo> otherAccounts;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onEditAccountName;
+  final ValueChanged<AccountInfo> onChangeProfilePicture;
 
   @override
   Widget build(BuildContext context) {
@@ -169,6 +209,7 @@ class _AccountsPane extends StatelessWidget {
                             otherAccounts: otherAccounts,
                             onSelectAccount: onSelectAccount,
                             onEditAccountName: onEditAccountName,
+                            onChangeProfilePicture: onChangeProfilePicture,
                           ),
                         ),
                       ],
@@ -197,6 +238,7 @@ class _AccountsList extends StatelessWidget {
     required this.otherAccounts,
     required this.onSelectAccount,
     required this.onEditAccountName,
+    required this.onChangeProfilePicture,
   });
 
   static const _width = 352.0;
@@ -205,6 +247,7 @@ class _AccountsList extends StatelessWidget {
   final List<AccountInfo> otherAccounts;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onEditAccountName;
+  final ValueChanged<AccountInfo> onChangeProfilePicture;
 
   @override
   Widget build(BuildContext context) {
@@ -221,6 +264,7 @@ class _AccountsList extends StatelessWidget {
                 account: activeAccount!,
                 onTap: null,
                 onEditName: onEditAccountName,
+                onChangePicture: onChangeProfilePicture,
               ),
             const _AccountsSectionLabel(label: 'Other'),
             if (otherAccounts.isNotEmpty)
@@ -237,6 +281,7 @@ class _AccountsList extends StatelessWidget {
                         onSelectAccount(account.uuid);
                       },
                       onEditName: onEditAccountName,
+                      onChangePicture: onChangeProfilePicture,
                     );
                   },
                   separatorBuilder:
@@ -274,12 +319,14 @@ class _AccountRow extends StatefulWidget {
     required this.account,
     required this.onTap,
     required this.onEditName,
+    required this.onChangePicture,
     super.key,
   });
 
   final AccountInfo account;
   final VoidCallback? onTap;
   final ValueChanged<AccountInfo> onEditName;
+  final ValueChanged<AccountInfo> onChangePicture;
 
   @override
   State<_AccountRow> createState() => _AccountRowState();
@@ -338,6 +385,7 @@ class _AccountRowState extends State<_AccountRow> {
               key: ValueKey('accounts_row_menu_button_${widget.account.uuid}'),
               onOpenChanged: _setMenuOpen,
               onEditName: () => widget.onEditName(widget.account),
+              onChangePicture: () => widget.onChangePicture(widget.account),
             ),
           ],
         ),
@@ -364,11 +412,13 @@ class _AccountRowMenuButton extends StatefulWidget {
   const _AccountRowMenuButton({
     required this.onOpenChanged,
     required this.onEditName,
+    required this.onChangePicture,
     super.key,
   });
 
   final ValueChanged<bool> onOpenChanged;
   final VoidCallback onEditName;
+  final VoidCallback onChangePicture;
 
   @override
   State<_AccountRowMenuButton> createState() => _AccountRowMenuButtonState();
@@ -412,6 +462,7 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
               offset: const Offset(0, 22),
               child: _AccountContextMenu(
                 onEditName: _handleEditName,
+                onChangePicture: _handleChangePicture,
                 onDismiss: () => _hideMenu(),
               ),
             ),
@@ -436,6 +487,11 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
   void _handleEditName() {
     _hideMenu();
     widget.onEditName();
+  }
+
+  void _handleChangePicture() {
+    _hideMenu();
+    widget.onChangePicture();
   }
 
   @override
@@ -474,12 +530,14 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
 class _AccountContextMenu extends StatelessWidget {
   const _AccountContextMenu({
     required this.onEditName,
+    required this.onChangePicture,
     required this.onDismiss,
   });
 
   static const _width = 160.0;
 
   final VoidCallback onEditName;
+  final VoidCallback onChangePicture;
   final VoidCallback onDismiss;
 
   @override
@@ -529,7 +587,7 @@ class _AccountContextMenu extends StatelessWidget {
                 _AccountContextMenuItem(
                   iconName: AppIcons.user,
                   label: 'Change Picture',
-                  onTap: onDismiss,
+                  onTap: onChangePicture,
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(
