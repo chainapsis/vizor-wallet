@@ -227,6 +227,10 @@ mod tests {
         queries::store_vote(&conn, "test-round-1", W, 0, 1, 1, &commitment).unwrap();
 
         queries::mark_vote_submitted(&conn, "test-round-1", W, 0, 0).unwrap();
+        queries::mark_vote_submitted(&conn, "test-round-1", W, 0, 0).unwrap();
+
+        let err = queries::mark_vote_submitted(&conn, "test-round-1", W, 0, 99).unwrap_err();
+        assert!(matches!(err, VotingError::InvalidInput { .. }));
     }
 
     #[test]

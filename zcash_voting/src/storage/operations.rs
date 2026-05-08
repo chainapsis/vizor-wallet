@@ -1400,6 +1400,10 @@ mod tests {
         db.insert_vote_fixture(ROUND_ID, 0, 0, 0, &[0xAA; 32])
             .unwrap();
         db.mark_vote_submitted(ROUND_ID, 0, 0).unwrap();
+        db.mark_vote_submitted(ROUND_ID, 0, 0).unwrap();
+
+        let err = db.mark_vote_submitted(ROUND_ID, 0, 99).unwrap_err();
+        assert!(matches!(err, VotingError::InvalidInput { .. }));
     }
 
     #[test]

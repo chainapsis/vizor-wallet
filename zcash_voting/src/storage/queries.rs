@@ -1280,18 +1280,33 @@ pub fn mark_vote_submitted(
     bundle_index: u32,
     proposal_id: u32,
 ) -> Result<(), VotingError> {
-    conn.execute(
-        "UPDATE votes SET submitted = 1 WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
-        named_params! {
-            ":round_id": round_id,
-            ":wallet_id": wallet_id,
-            ":bundle_index": bundle_index as i64,
-            ":proposal_id": proposal_id as i64,
-        },
-    )
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to mark vote submitted: {}", e),
-    })?;
+    let rows = conn
+        .execute(
+            "UPDATE votes SET submitted = 1 \
+             WHERE round_id = :round_id \
+             AND wallet_id = :wallet_id \
+             AND bundle_index = :bundle_index \
+             AND proposal_id = :proposal_id",
+            named_params! {
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+                ":bundle_index": bundle_index as i64,
+                ":proposal_id": proposal_id as i64,
+            },
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to mark vote submitted: {}", e),
+        })?;
+
+    if rows == 0 {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "no vote found for round={}, wallet={}, bundle={}, proposal={}",
+                round_id, wallet_id, bundle_index, proposal_id
+            ),
+        });
+    }
+
     Ok(())
 }
 
