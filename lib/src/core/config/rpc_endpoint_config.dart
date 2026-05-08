@@ -5,6 +5,7 @@ export 'network_config.dart';
 
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
+const kRegtestSlowRpcEndpointPresetId = 'slow-regtest';
 const kRegtestUnavailableRpcEndpointPresetId = 'unavailable-regtest';
 
 class RpcEndpointConfig {
@@ -160,6 +161,12 @@ final kRegtestRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     label: 'Local Regtest',
     url: ZcashNetwork.regtest.lightwalletdUrl,
     isDefault: true,
+  ),
+  const RpcEndpointPreset(
+    id: kRegtestSlowRpcEndpointPresetId,
+    region: 'Regtest',
+    label: 'Slow Regtest',
+    url: 'http://127.0.0.1:19068',
   ),
   const RpcEndpointPreset(
     id: kRegtestUnavailableRpcEndpointPresetId,

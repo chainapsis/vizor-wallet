@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:go_router/go_router.dart';
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
@@ -62,14 +63,22 @@ Future<void> initializeZcashWalletRuntime() async {
   }
 }
 
-Future<Widget> buildBootstrappedZcashWalletApp() async {
+Future<Widget> buildBootstrappedZcashWalletApp({
+  List<Override> overrides = const [],
+}) async {
   final bootstrap = await loadAppBootstrap();
-  return buildZcashWalletApp(bootstrap: bootstrap);
+  return buildZcashWalletApp(bootstrap: bootstrap, overrides: overrides);
 }
 
-Widget buildZcashWalletApp({required AppBootstrapState bootstrap}) {
+Widget buildZcashWalletApp({
+  required AppBootstrapState bootstrap,
+  List<Override> overrides = const [],
+}) {
   return ProviderScope(
-    overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
+    overrides: [
+      appBootstrapProvider.overrideWithValue(bootstrap),
+      ...overrides,
+    ],
     child: const ZcashWalletApp(),
   );
 }

@@ -356,8 +356,21 @@ void main() {
         ),
       );
 
-      expect(candidates.single.presetId, 'default-regtest');
-      expect(candidates.single.lightwalletdUrl, 'http://127.0.0.1:9067');
+      expect(candidates.first.presetId, 'default-regtest');
+      expect(candidates.first.lightwalletdUrl, 'http://127.0.0.1:9067');
+    });
+
+    test('uses local regtest default for the slow regtest preset', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        const RpcEndpointConfig(
+          networkName: 'regtest',
+          lightwalletdUrl: 'http://127.0.0.1:19068',
+          presetId: kRegtestSlowRpcEndpointPresetId,
+        ),
+      );
+
+      expect(candidates.first.presetId, 'default-regtest');
+      expect(candidates.first.lightwalletdUrl, 'http://127.0.0.1:9067');
     });
   });
 
