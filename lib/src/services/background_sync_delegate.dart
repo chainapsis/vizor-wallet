@@ -10,16 +10,20 @@ import '../rust/api/sync.dart' as rust_sync;
 import 'background_sync_service.dart' as bg_sync;
 
 const _progressChannel = EventChannel('com.zcash.wallet/sync_progress');
+const syncEventKindProgress = 1;
+const syncEventKindCompleted = 2;
+const syncEventKindStopped = 3;
 
-/// Progress event DTO shared between FRB stream and EventChannel paths.
-class SyncProgressEvent {
+/// Native sync event DTO shared between FRB stream and EventChannel paths.
+class NativeSyncEventV2 {
+  final int kind;
+  final BigInt runId;
+  final BigInt sequence;
   final int scannedHeight;
   final int chainTipHeight;
   final double percentage;
   final double displayTargetPercentage;
   final int displayTargetBlocks;
-  final bool isSyncing;
-  final bool isComplete;
   final bool hasNewTx;
   final bool isBackground;
 
@@ -27,18 +31,23 @@ class SyncProgressEvent {
   /// `"enhance"`, or `""` (unspecified / completion).
   final String phase;
 
-  const SyncProgressEvent({
+  const NativeSyncEventV2({
+    required this.kind,
+    required this.runId,
+    required this.sequence,
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
     required this.displayTargetPercentage,
     required this.displayTargetBlocks,
-    required this.isSyncing,
-    required this.isComplete,
     required this.hasNewTx,
     this.isBackground = false,
     this.phase = '',
   });
+
+  bool get isProgress => kind == syncEventKindProgress;
+  bool get isCompleted => kind == syncEventKindCompleted;
+  bool get isStopped => kind == syncEventKindStopped;
 }
 
 /// Abstract delegate for platform-specific background sync behavior.
@@ -52,7 +61,7 @@ abstract class BackgroundSyncDelegate {
 
   void setupListeners({
     required void Function() onStopRequested,
-    required void Function(SyncProgressEvent) onBackgroundProgress,
+    required void Function(NativeSyncEventV2) onBackgroundEvent,
   });
 
   void disposeListeners();
@@ -69,7 +78,7 @@ abstract class BackgroundSyncDelegate {
 
   void onSyncDone();
   void onResume();
-  void onProgress(SyncProgressEvent event);
+  void onEvent(NativeSyncEventV2 event);
 
   static BackgroundSyncDelegate create() {
     if (Platform.isAndroid) return AndroidBackgroundSyncDelegate();
@@ -93,7 +102,7 @@ class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
   @override
   void setupListeners({
     required void Function() onStopRequested,
-    required void Function(SyncProgressEvent) onBackgroundProgress,
+    required void Function(NativeSyncEventV2) onBackgroundEvent,
   }) {
     disposeListeners();
     _taskDataCallback = (data) {
@@ -150,7 +159,7 @@ class AndroidBackgroundSyncDelegate implements BackgroundSyncDelegate {
   void onResume() {}
 
   @override
-  void onProgress(SyncProgressEvent event) {
+  void onEvent(NativeSyncEventV2 event) {
     if (_active) {
       bg_sync.updateBackgroundSyncProgress(
         percentage: event.percentage,
@@ -176,14 +185,17 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
   @override
   void setupListeners({
     required void Function() onStopRequested,
-    required void Function(SyncProgressEvent) onBackgroundProgress,
+    required void Function(NativeSyncEventV2) onBackgroundEvent,
   }) {
     _eventChannelSub = _progressChannel.receiveBroadcastStream().listen(
       (event) {
         try {
           final map = event as Map;
-          onBackgroundProgress(
-            SyncProgressEvent(
+          onBackgroundEvent(
+            NativeSyncEventV2(
+              kind: (map['kind'] as num?)?.toInt() ?? syncEventKindProgress,
+              runId: _bigIntFromEventValue(map['runId']),
+              sequence: _bigIntFromEventValue(map['sequence']),
               scannedHeight: (map['scannedHeight'] as num?)?.toInt() ?? 0,
               chainTipHeight: (map['chainTipHeight'] as num?)?.toInt() ?? 0,
               percentage: (map['percentage'] as num?)?.toDouble() ?? 0.0,
@@ -193,10 +205,9 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
                   0.0,
               displayTargetBlocks:
                   (map['displayTargetBlocks'] as num?)?.toInt() ?? 0,
-              isSyncing: map['isSyncing'] as bool? ?? false,
-              isComplete: map['isComplete'] as bool? ?? false,
               hasNewTx: map['hasNewTx'] as bool? ?? false,
               isBackground: true,
+              phase: map['phase'] as String? ?? '',
             ),
           );
         } catch (e) {
@@ -270,8 +281,8 @@ class IOSBackgroundSyncDelegate implements BackgroundSyncDelegate {
   }
 
   @override
-  void onProgress(SyncProgressEvent event) {
-    if (event.isBackground && event.isComplete && _active) {
+  void onEvent(NativeSyncEventV2 event) {
+    if (event.isBackground && event.isCompleted && _active) {
       log('BackgroundSyncDelegate(iOS): bg sync completed');
       _active = false;
     }
@@ -290,7 +301,7 @@ class NoOpBackgroundSyncDelegate implements BackgroundSyncDelegate {
   @override
   void setupListeners({
     required void Function() onStopRequested,
-    required void Function(SyncProgressEvent) onBackgroundProgress,
+    required void Function(NativeSyncEventV2) onBackgroundEvent,
   }) {}
 
   @override
@@ -315,5 +326,13 @@ class NoOpBackgroundSyncDelegate implements BackgroundSyncDelegate {
   void onResume() {}
 
   @override
-  void onProgress(SyncProgressEvent event) {}
+  void onEvent(NativeSyncEventV2 event) {}
+}
+
+BigInt _bigIntFromEventValue(Object? value) {
+  if (value is BigInt) return value;
+  if (value is int) return BigInt.from(value);
+  if (value is num) return BigInt.from(value.toInt());
+  if (value is String) return BigInt.tryParse(value) ?? BigInt.zero;
+  return BigInt.zero;
 }

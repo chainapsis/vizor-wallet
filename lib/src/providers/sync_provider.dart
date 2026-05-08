@@ -556,13 +556,20 @@ class _SyncStopped extends _SyncEngineEvent {
   bool get shouldRefreshAccountSnapshot => false;
 }
 
-_SyncEngineEvent _syncEngineEventFromProgress(SyncProgressEvent event) {
+_SyncEngineEvent _syncEngineEventFromNative(NativeSyncEventV2 event) {
   final cursor = _SyncCursor(
     scannedHeight: event.scannedHeight,
     chainTipHeight: event.chainTipHeight,
   );
-  if (event.isComplete) {
+  if (event.isCompleted) {
     return _SyncCompleted(cursor: cursor, isBackground: event.isBackground);
+  }
+  if (event.isStopped) {
+    return _SyncStopped(
+      cursor: cursor,
+      reason: _SyncEngineStopReason.streamClosed,
+      isBackground: event.isBackground,
+    );
   }
   return _SyncProgressUpdated(
     cursor: cursor,
@@ -585,7 +592,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _isSyncing = false;
   bool _isInForeground = true;
   int _lastLoggedHeight = 0;
-  SyncProgressEvent? _lastForegroundSyncProgress;
+  NativeSyncEventV2? _lastForegroundSyncEvent;
   int _syncGen = 0; // incremented by stopSync to invalidate pending startSync
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
@@ -612,8 +619,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _bgDelegate = BackgroundSyncDelegate.create();
     _bgDelegate.setupListeners(
       onStopRequested: () => stopSync(),
-      onBackgroundProgress: (event) {
-        _onSyncProgress(event).catchError((e, st) {
+      onBackgroundEvent: (event) {
+        _onNativeSyncEvent(event).catchError((e, st) {
           log('SyncNotifier: background progress handling failed: $e');
         });
       },
@@ -793,7 +800,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   /// Fire-and-forget: sets up FRB stream and returns immediately.
-  /// Stream events update state via _onSyncProgress. Completion handled by _onSyncDone.
+  /// Stream events update state through the sync event reducer.
   void startSync() {
     if (_requiresUnlock) {
       log('Sync: locked, skipping foreground sync start');
@@ -805,7 +812,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
     _isSyncing = true;
     _lastLoggedHeight = 0;
-    _lastForegroundSyncProgress = null;
+    _lastForegroundSyncEvent = null;
     _stopDisplayProgressTimer();
     final gen = ++_syncGen;
     final prev = state.value;
@@ -875,19 +882,20 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           _syncSub = stream.listen(
             (event) {
               if (gen != _syncGen) return;
-              final progress = SyncProgressEvent(
+              final nativeEvent = NativeSyncEventV2(
+                kind: event.kind,
+                runId: event.runId,
+                sequence: event.sequence,
                 scannedHeight: event.scannedHeight.toInt(),
                 chainTipHeight: event.chainTipHeight.toInt(),
                 percentage: event.percentage,
                 displayTargetPercentage: event.displayTargetPercentage,
                 displayTargetBlocks: event.displayTargetBlocks.toInt(),
-                isSyncing: event.isSyncing,
-                isComplete: event.isComplete,
                 hasNewTx: event.hasNewTx,
                 phase: event.phase,
               );
-              _lastForegroundSyncProgress = progress;
-              unawaited(_onSyncProgress(progress, syncGen: gen));
+              _lastForegroundSyncEvent = nativeEvent;
+              unawaited(_onNativeSyncEvent(nativeEvent, syncGen: gen));
             },
             onDone: () {
               if (gen != _syncGen) {
@@ -896,55 +904,49 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               }
               log('Sync: stream ended');
               _syncSub = null;
-              // Normal completion (isComplete=true) is handled inside
-              // _onSyncProgress, which clears _isSyncing and starts
-              // polling. But the stream can also end WITHOUT an
-              // isComplete event — specifically when Rust exits because
-              // DESIRED_SYNC_MODE changed (foreground→background
-              // handoff via enableBackgroundSync). In that case
-              // _isSyncing is still true and the mempool observer is
-              // still running, both of which block future startSync()
-              // calls. Clean up unconditionally here; if isComplete
-              // already ran, these are no-ops.
+              // Normal terminal events are handled inside the reducer,
+              // which clears _isSyncing and starts polling. Keep this
+              // fallback for older/lost terminal events so a stream end
+              // cannot leave the Dart running guard stuck.
               if (_isSyncing) {
                 final current = state.value;
-                final lastProgress = _lastForegroundSyncProgress;
+                final lastEvent = _lastForegroundSyncEvent;
                 final endedAtTipFromState =
                     current != null &&
                     current.percentage >= 1.0 &&
                     current.chainTipHeight > 0 &&
                     current.scannedHeight >= current.chainTipHeight;
                 final endedAtTipFromProgress =
-                    lastProgress != null &&
-                    lastProgress.percentage >= 1.0 &&
-                    lastProgress.chainTipHeight > 0 &&
-                    lastProgress.scannedHeight >= lastProgress.chainTipHeight;
+                    lastEvent != null &&
+                    lastEvent.percentage >= 1.0 &&
+                    lastEvent.chainTipHeight > 0 &&
+                    lastEvent.scannedHeight >= lastEvent.chainTipHeight;
                 final endedAtTip =
                     rust_sync.getSyncMode() == 1 &&
                     (endedAtTipFromState || endedAtTipFromProgress);
                 if (endedAtTip) {
                   log(
-                    'Sync: stream ended at tip without isComplete, treating as complete',
+                    'Sync: stream ended at tip without terminal event, treating as complete',
                   );
                   unawaited(
                     _handleSyncEngineEvent(
                       _SyncCompleted(
-                        cursor: _cursorForEndedAtTip(current, lastProgress),
+                        cursor: _cursorForEndedAtTip(current, lastEvent),
                         isBackground: false,
                       ),
                       syncGen: gen,
                     ),
                   );
                 } else {
-                  log('Sync: stream ended without isComplete, cleaning up');
+                  log('Sync: stream ended without terminal event, cleaning up');
                   unawaited(
                     _handleSyncEngineEvent(
                       _SyncStopped(
-                        cursor: lastProgress == null
+                        cursor: lastEvent == null
                             ? null
                             : _SyncCursor(
-                                scannedHeight: lastProgress.scannedHeight,
-                                chainTipHeight: lastProgress.chainTipHeight,
+                                scannedHeight: lastEvent.scannedHeight,
+                                chainTipHeight: lastEvent.chainTipHeight,
                               ),
                         reason: _SyncEngineStopReason.streamClosed,
                         isBackground: false,
@@ -1385,18 +1387,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   _SyncCursor _cursorForEndedAtTip(
     SyncState? current,
-    SyncProgressEvent? lastProgress,
+    NativeSyncEventV2? lastEvent,
   ) {
     final prev = state.value;
     final chainTipHeight = math.max(
       math.max(prev?.chainTipHeight ?? 0, current?.chainTipHeight ?? 0),
-      lastProgress?.chainTipHeight ?? 0,
+      lastEvent?.chainTipHeight ?? 0,
     );
     final scannedHeight = chainTipHeight > 0
         ? chainTipHeight
         : math.max(
             math.max(prev?.scannedHeight ?? 0, current?.scannedHeight ?? 0),
-            lastProgress?.scannedHeight ?? 0,
+            lastEvent?.scannedHeight ?? 0,
           );
     return _SyncCursor(
       scannedHeight: scannedHeight,
@@ -1627,7 +1629,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   // ======================== Progress Handling ========================
 
-  Future<void> _onSyncProgress(SyncProgressEvent event, {int? syncGen}) async {
+  Future<void> _onNativeSyncEvent(
+    NativeSyncEventV2 event, {
+    int? syncGen,
+  }) async {
     if (_isStaleForegroundUpdate(syncGen) || _requiresUnlock) {
       return;
     }
@@ -1639,9 +1644,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
 
     // Update delegate BEFORE state so isActive reflects completion.
-    _bgDelegate.onProgress(event);
+    _bgDelegate.onEvent(event);
     await _handleSyncEngineEvent(
-      _syncEngineEventFromProgress(event),
+      _syncEngineEventFromNative(event),
       syncGen: syncGen,
     );
   }

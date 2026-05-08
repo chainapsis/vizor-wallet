@@ -132,21 +132,21 @@ class BackgroundSyncManager {
             dbPath,
             lightwalletdUrl,
             network,
-            { progress in
+            { event in
                 if #available(iOS 26.0, *) {
                     let mgr = BackgroundSyncManager.shared
                     // Scale to 10000 for fine-grained NSProgress reporting
-                    let completed = Int64(progress.percentage * 10000)
+                    let completed = Int64(event.percentage * 10000)
                     mgr.taskProgress?.totalUnitCount = 10000
                     mgr.taskProgress?.completedUnitCount = completed
-                    print("[BGSync] batch: \(String(format: "%.1f", progress.percentage * 100))% (\(progress.scanned_height)/\(progress.chain_tip_height))")
+                    print("[BGSync] event kind=\(event.kind) seq=\(event.sequence): \(String(format: "%.1f", event.percentage * 100))% (\(event.scanned_height)/\(event.chain_tip_height))")
 
                     // Update Dynamic Island via DynamicIslandManager
                     DynamicIslandManager.shared.showSyncProgress(
-                        percentage: progress.percentage
+                        percentage: event.percentage
                     )
                 }
-                SyncProgressStreamHandler.shared.sendProgress(progress)
+                SyncProgressStreamHandler.shared.sendEvent(event)
             }
         )
 

@@ -383,7 +383,7 @@ abstract class RustLibApi extends BaseApi {
     required List<int> seed,
   });
 
-  Stream<ApiSyncProgressEvent> crateApiSyncStartFullSync({
+  Stream<ApiSyncEventV2> crateApiSyncStartFullSync({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2503,13 +2503,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Stream<ApiSyncProgressEvent> crateApiSyncStartFullSync({
+  Stream<ApiSyncEventV2> crateApiSyncStartFullSync({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
     required int mode,
   }) {
-    final sink = RustStreamSink<ApiSyncProgressEvent>();
+    final sink = RustStreamSink<ApiSyncEventV2>();
     unawaited(
       handler.executeNormal(
         NormalTask(
@@ -2519,7 +2519,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_String(lightwalletdUrl, serializer);
             sse_encode_String(network, serializer);
             sse_encode_u_8(mode, serializer);
-            sse_encode_StreamSink_api_sync_progress_event_Sse(sink, serializer);
+            sse_encode_StreamSink_api_sync_event_v_2_Sse(sink, serializer);
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
@@ -2808,8 +2808,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  RustStreamSink<ApiSyncProgressEvent>
-  dco_decode_StreamSink_api_sync_progress_event_Sse(dynamic raw) {
+  RustStreamSink<ApiSyncEventV2> dco_decode_StreamSink_api_sync_event_v_2_Sse(
+    dynamic raw,
+  ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     throw UnimplementedError();
   }
@@ -2871,21 +2872,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw) {
+  ApiSyncEventV2 dco_decode_api_sync_event_v_2(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 9)
-      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
-    return ApiSyncProgressEvent(
-      scannedHeight: dco_decode_u_64(arr[0]),
-      chainTipHeight: dco_decode_u_64(arr[1]),
-      percentage: dco_decode_f_64(arr[2]),
-      displayTargetPercentage: dco_decode_f_64(arr[3]),
-      displayTargetBlocks: dco_decode_u_64(arr[4]),
-      isSyncing: dco_decode_bool(arr[5]),
-      isComplete: dco_decode_bool(arr[6]),
-      hasNewTx: dco_decode_bool(arr[7]),
-      phase: dco_decode_String(arr[8]),
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    return ApiSyncEventV2(
+      kind: dco_decode_u_8(arr[0]),
+      runId: dco_decode_u_64(arr[1]),
+      sequence: dco_decode_u_64(arr[2]),
+      scannedHeight: dco_decode_u_64(arr[3]),
+      chainTipHeight: dco_decode_u_64(arr[4]),
+      percentage: dco_decode_f_64(arr[5]),
+      displayTargetPercentage: dco_decode_f_64(arr[6]),
+      displayTargetBlocks: dco_decode_u_64(arr[7]),
+      hasNewTx: dco_decode_bool(arr[8]),
+      phase: dco_decode_String(arr[9]),
     );
   }
 
@@ -3352,8 +3354,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  RustStreamSink<ApiSyncProgressEvent>
-  sse_decode_StreamSink_api_sync_progress_event_Sse(
+  RustStreamSink<ApiSyncEventV2> sse_decode_StreamSink_api_sync_event_v_2_Sse(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -3422,27 +3423,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ApiSyncProgressEvent sse_decode_api_sync_progress_event(
-    SseDeserializer deserializer,
-  ) {
+  ApiSyncEventV2 sse_decode_api_sync_event_v_2(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_u_8(deserializer);
+    var var_runId = sse_decode_u_64(deserializer);
+    var var_sequence = sse_decode_u_64(deserializer);
     var var_scannedHeight = sse_decode_u_64(deserializer);
     var var_chainTipHeight = sse_decode_u_64(deserializer);
     var var_percentage = sse_decode_f_64(deserializer);
     var var_displayTargetPercentage = sse_decode_f_64(deserializer);
     var var_displayTargetBlocks = sse_decode_u_64(deserializer);
-    var var_isSyncing = sse_decode_bool(deserializer);
-    var var_isComplete = sse_decode_bool(deserializer);
     var var_hasNewTx = sse_decode_bool(deserializer);
     var var_phase = sse_decode_String(deserializer);
-    return ApiSyncProgressEvent(
+    return ApiSyncEventV2(
+      kind: var_kind,
+      runId: var_runId,
+      sequence: var_sequence,
       scannedHeight: var_scannedHeight,
       chainTipHeight: var_chainTipHeight,
       percentage: var_percentage,
       displayTargetPercentage: var_displayTargetPercentage,
       displayTargetBlocks: var_displayTargetBlocks,
-      isSyncing: var_isSyncing,
-      isComplete: var_isComplete,
       hasNewTx: var_hasNewTx,
       phase: var_phase,
     );
@@ -4047,15 +4048,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_StreamSink_api_sync_progress_event_Sse(
-    RustStreamSink<ApiSyncProgressEvent> self,
+  void sse_encode_StreamSink_api_sync_event_v_2_Sse(
+    RustStreamSink<ApiSyncEventV2> self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(
       self.setupAndSerialize(
         codec: SseCodec(
-          decodeSuccessData: sse_decode_api_sync_progress_event,
+          decodeSuccessData: sse_decode_api_sync_event_v_2,
           decodeErrorData: sse_decode_AnyhowException,
         ),
       ),
@@ -4109,18 +4110,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_api_sync_progress_event(
-    ApiSyncProgressEvent self,
+  void sse_encode_api_sync_event_v_2(
+    ApiSyncEventV2 self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_8(self.kind, serializer);
+    sse_encode_u_64(self.runId, serializer);
+    sse_encode_u_64(self.sequence, serializer);
     sse_encode_u_64(self.scannedHeight, serializer);
     sse_encode_u_64(self.chainTipHeight, serializer);
     sse_encode_f_64(self.percentage, serializer);
     sse_encode_f_64(self.displayTargetPercentage, serializer);
     sse_encode_u_64(self.displayTargetBlocks, serializer);
-    sse_encode_bool(self.isSyncing, serializer);
-    sse_encode_bool(self.isComplete, serializer);
     sse_encode_bool(self.hasNewTx, serializer);
     sse_encode_String(self.phase, serializer);
   }

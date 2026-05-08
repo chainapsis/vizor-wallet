@@ -32,8 +32,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_StreamSink_api_mempool_tx_event_Sse(dynamic raw);
 
   @protected
-  RustStreamSink<ApiSyncProgressEvent>
-  dco_decode_StreamSink_api_sync_progress_event_Sse(dynamic raw);
+  RustStreamSink<ApiSyncEventV2> dco_decode_StreamSink_api_sync_event_v_2_Sse(
+    dynamic raw,
+  );
 
   @protected
   String dco_decode_String(dynamic raw);
@@ -51,7 +52,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
 
   @protected
-  ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
+  ApiSyncEventV2 dco_decode_api_sync_event_v_2(dynamic raw);
 
   @protected
   BlockMetaInfo dco_decode_block_meta_info(dynamic raw);
@@ -203,8 +204,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_StreamSink_api_mempool_tx_event_Sse(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<ApiSyncProgressEvent>
-  sse_decode_StreamSink_api_sync_progress_event_Sse(
+  RustStreamSink<ApiSyncEventV2> sse_decode_StreamSink_api_sync_event_v_2_Sse(
     SseDeserializer deserializer,
   );
 
@@ -230,9 +230,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ApiSyncProgressEvent sse_decode_api_sync_progress_event(
-    SseDeserializer deserializer,
-  );
+  ApiSyncEventV2 sse_decode_api_sync_event_v_2(SseDeserializer deserializer);
 
   @protected
   BlockMetaInfo sse_decode_block_meta_info(SseDeserializer deserializer);
@@ -418,8 +416,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_StreamSink_api_sync_progress_event_Sse(
-    RustStreamSink<ApiSyncProgressEvent> self,
+  void sse_encode_StreamSink_api_sync_event_v_2_Sse(
+    RustStreamSink<ApiSyncEventV2> self,
     SseSerializer serializer,
   );
 
@@ -448,8 +446,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_api_sync_progress_event(
-    ApiSyncProgressEvent self,
+  void sse_encode_api_sync_event_v_2(
+    ApiSyncEventV2 self,
     SseSerializer serializer,
   );
 

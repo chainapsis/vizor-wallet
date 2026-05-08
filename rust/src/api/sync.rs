@@ -1,5 +1,5 @@
 use std::panic;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use flutter_rust_bridge::frb;
@@ -10,6 +10,11 @@ use crate::wallet::{keys, sync as wallet_sync, sync_engine};
 // ======================== Sync Mode ========================
 // 0 = None, 1 = Foreground, 2 = Background
 pub(crate) static DESIRED_SYNC_MODE: AtomicU8 = AtomicU8::new(0);
+static NEXT_SYNC_RUN_ID: AtomicU64 = AtomicU64::new(1);
+
+pub(crate) fn next_sync_run_id() -> u64 {
+    NEXT_SYNC_RUN_ID.fetch_add(1, Ordering::SeqCst)
+}
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
@@ -26,8 +31,12 @@ pub fn get_sync_mode() -> u8 {
 
 // ======================== Full Sync ========================
 
-/// Progress event streamed to Dart during sync.
-pub struct ApiSyncProgressEvent {
+/// Semantic sync engine event streamed to Dart during sync.
+pub struct ApiSyncEventV2 {
+    /// 1=progress, 2=completed, 3=stopped.
+    pub kind: u8,
+    pub run_id: u64,
+    pub sequence: u64,
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub percentage: f64,
@@ -35,8 +44,6 @@ pub struct ApiSyncProgressEvent {
     /// assuming one virtual block per 500ms, capped at the next batch.
     pub display_target_percentage: f64,
     pub display_target_blocks: u64,
-    pub is_syncing: bool,
-    pub is_complete: bool,
     pub has_new_tx: bool,
     /// Current sync phase: `"download"`, `"scan"`, `"enhance"`, or
     /// `""` (completion / unspecified).
@@ -51,7 +58,7 @@ fn run_full_sync_internal<F>(
     on_progress: F,
 ) -> Result<(), String>
 where
-    F: Fn(&sync_engine::SyncProgressEvent) + Send + Sync,
+    F: Fn(u64, u64, &sync_engine::SyncEventV2) + Send + Sync,
 {
     if SYNC_RUNNING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -67,6 +74,8 @@ where
         let cancel = SYNC_CANCEL.clone();
         cancel.store(false, Ordering::Relaxed);
 
+        let run_id = next_sync_run_id();
+        let sequence = AtomicU64::new(0);
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         rt.block_on(async {
             sync_engine::run_sync_inner(
@@ -76,7 +85,10 @@ where
                 cancel,
                 mode,
                 &DESIRED_SYNC_MODE,
-                |progress| on_progress(&progress),
+                |progress| {
+                    let seq = sequence.fetch_add(1, Ordering::SeqCst) + 1;
+                    on_progress(run_id, seq, &progress)
+                },
             )
             .await
         })
@@ -93,26 +105,33 @@ pub fn start_full_sync(
     lightwalletd_url: String,
     network: String,
     mode: u8,
-    sink: StreamSink<ApiSyncProgressEvent>,
+    sink: StreamSink<ApiSyncEventV2>,
 ) -> Result<(), String> {
-    run_full_sync_internal(db_path, lightwalletd_url, network, mode, |progress| {
-        if sink
-            .add(ApiSyncProgressEvent {
-                scanned_height: progress.scanned_height,
-                chain_tip_height: progress.chain_tip_height,
-                percentage: progress.percentage,
-                display_target_percentage: progress.display_target_percentage,
-                display_target_blocks: progress.display_target_blocks,
-                is_syncing: progress.is_syncing,
-                is_complete: progress.is_complete,
-                has_new_tx: progress.has_new_tx,
-                phase: progress.phase.clone(),
-            })
-            .is_err()
-        {
-            log::warn!("sync: StreamSink closed, progress not delivered");
-        }
-    })
+    run_full_sync_internal(
+        db_path,
+        lightwalletd_url,
+        network,
+        mode,
+        |run_id, sequence, progress| {
+            if sink
+                .add(ApiSyncEventV2 {
+                    kind: progress.kind,
+                    run_id,
+                    sequence,
+                    scanned_height: progress.scanned_height,
+                    chain_tip_height: progress.chain_tip_height,
+                    percentage: progress.percentage,
+                    display_target_percentage: progress.display_target_percentage,
+                    display_target_blocks: progress.display_target_blocks,
+                    has_new_tx: progress.has_new_tx,
+                    phase: progress.phase.clone(),
+                })
+                .is_err()
+            {
+                log::warn!("sync: StreamSink closed, progress not delivered");
+            }
+        },
+    )
 }
 
 /// Blocking sync entrypoint that uses the same API-layer network parsing,
@@ -125,7 +144,7 @@ pub fn run_full_sync_blocking(
     network: String,
     mode: u8,
 ) -> Result<(), String> {
-    run_full_sync_internal(db_path, lightwalletd_url, network, mode, |_| {})
+    run_full_sync_internal(db_path, lightwalletd_url, network, mode, |_, _, _| {})
 }
 
 /// Cancel a running full sync.

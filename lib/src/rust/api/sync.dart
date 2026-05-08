@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `run_full_sync_internal`
+// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `next_sync_run_id`, `run_full_sync_internal`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -19,7 +19,7 @@ int getSyncMode() => RustLib.instance.api.crateApiSyncGetSyncMode();
 
 /// Start a full sync. Streams progress events to Dart via StreamSink.
 /// mode: 1=foreground, 2=background. Sync exits if desired mode changes.
-Stream<ApiSyncProgressEvent> startFullSync({
+Stream<ApiSyncEventV2> startFullSync({
   required String dbPath,
   required String lightwalletdUrl,
   required String network,
@@ -529,8 +529,12 @@ class ApiMempoolTxEvent {
           matched == other.matched;
 }
 
-/// Progress event streamed to Dart during sync.
-class ApiSyncProgressEvent {
+/// Semantic sync engine event streamed to Dart during sync.
+class ApiSyncEventV2 {
+  /// 1=progress, 2=completed, 3=stopped.
+  final int kind;
+  final BigInt runId;
+  final BigInt sequence;
   final BigInt scannedHeight;
   final BigInt chainTipHeight;
   final double percentage;
@@ -539,50 +543,51 @@ class ApiSyncProgressEvent {
   /// assuming one virtual block per 500ms, capped at the next batch.
   final double displayTargetPercentage;
   final BigInt displayTargetBlocks;
-  final bool isSyncing;
-  final bool isComplete;
   final bool hasNewTx;
 
   /// Current sync phase: `"download"`, `"scan"`, `"enhance"`, or
   /// `""` (completion / unspecified).
   final String phase;
 
-  const ApiSyncProgressEvent({
+  const ApiSyncEventV2({
+    required this.kind,
+    required this.runId,
+    required this.sequence,
     required this.scannedHeight,
     required this.chainTipHeight,
     required this.percentage,
     required this.displayTargetPercentage,
     required this.displayTargetBlocks,
-    required this.isSyncing,
-    required this.isComplete,
     required this.hasNewTx,
     required this.phase,
   });
 
   @override
   int get hashCode =>
+      kind.hashCode ^
+      runId.hashCode ^
+      sequence.hashCode ^
       scannedHeight.hashCode ^
       chainTipHeight.hashCode ^
       percentage.hashCode ^
       displayTargetPercentage.hashCode ^
       displayTargetBlocks.hashCode ^
-      isSyncing.hashCode ^
-      isComplete.hashCode ^
       hasNewTx.hashCode ^
       phase.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is ApiSyncProgressEvent &&
+      other is ApiSyncEventV2 &&
           runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          runId == other.runId &&
+          sequence == other.sequence &&
           scannedHeight == other.scannedHeight &&
           chainTipHeight == other.chainTipHeight &&
           percentage == other.percentage &&
           displayTargetPercentage == other.displayTargetPercentage &&
           displayTargetBlocks == other.displayTargetBlocks &&
-          isSyncing == other.isSyncing &&
-          isComplete == other.isComplete &&
           hasNewTx == other.hasNewTx &&
           phase == other.phase;
 }

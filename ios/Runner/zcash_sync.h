@@ -5,17 +5,19 @@
 #include <stdbool.h>
 
 typedef struct {
+    uint8_t kind;
+    uint64_t run_id;
+    uint64_t sequence;
     uint64_t scanned_height;
     uint64_t chain_tip_height;
     double percentage;
     double display_target_percentage;
     uint64_t display_target_blocks;
-    bool is_syncing;
-    bool is_complete;
     bool has_new_tx;
-} CSyncProgress;
+    const char* phase;
+} CSyncEventV2;
 
-typedef void (*SyncProgressCallback)(CSyncProgress);
+typedef void (*SyncEventV2Callback)(CSyncEventV2);
 
 /// Run full sync. Blocks until complete or cancelled.
 /// Returns 0 on success, 1 on error, 2 on panic.
@@ -23,7 +25,7 @@ int32_t zcash_run_full_sync(
     const char* db_path,
     const char* lightwalletd_url,
     const char* network,
-    SyncProgressCallback progress_callback
+    SyncEventV2Callback event_callback
 );
 
 /// Cancel a running sync.

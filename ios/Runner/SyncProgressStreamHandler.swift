@@ -15,17 +15,19 @@ class SyncProgressStreamHandler: NSObject, FlutterStreamHandler {
         return nil
     }
 
-    func sendProgress(_ progress: CSyncProgress) {
+    func sendEvent(_ event: CSyncEventV2) {
         DispatchQueue.main.async { [weak self] in
             self?.eventSink?([
-                "scannedHeight": progress.scanned_height,
-                "chainTipHeight": progress.chain_tip_height,
-                "percentage": progress.percentage,
-                "displayTargetPercentage": progress.display_target_percentage,
-                "displayTargetBlocks": progress.display_target_blocks,
-                "isSyncing": progress.is_syncing,
-                "isComplete": progress.is_complete,
-                "hasNewTx": progress.has_new_tx,
+                "kind": event.kind,
+                "runId": event.run_id,
+                "sequence": event.sequence,
+                "scannedHeight": event.scanned_height,
+                "chainTipHeight": event.chain_tip_height,
+                "percentage": event.percentage,
+                "displayTargetPercentage": event.display_target_percentage,
+                "displayTargetBlocks": event.display_target_blocks,
+                "hasNewTx": event.has_new_tx,
+                "phase": event.phase.map { String(cString: $0) } ?? "",
             ] as [String: Any])
         }
     }

@@ -51,16 +51,15 @@ pub(crate) use lwd::{
     send_transaction_with_status,
 };
 
-/// Progress event sent to caller (Dart or Swift).
+/// Semantic sync event sent to caller (Dart or Swift).
 #[derive(Clone, Debug)]
-pub struct SyncProgressEvent {
+pub struct SyncEventV2 {
+    pub kind: u8,
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub percentage: f64,
     pub display_target_percentage: f64,
     pub display_target_blocks: u64,
-    pub is_syncing: bool,
-    pub is_complete: bool,
     pub has_new_tx: bool,
     /// Current sync phase for UI display. One of:
     /// - `"download"` — downloading compact blocks from lightwalletd
@@ -69,6 +68,10 @@ pub struct SyncProgressEvent {
     /// - `""` — completion event or unspecified
     pub phase: String,
 }
+
+pub const SYNC_EVENT_PROGRESS: u8 = 1;
+pub const SYNC_EVENT_COMPLETED: u8 = 2;
+pub const SYNC_EVENT_STOPPED: u8 = 3;
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const BATCH_SIZE_FOREGROUND: u32 = 2000;
@@ -150,6 +153,19 @@ fn target_percentage_after_blocks(initial_total: u64, remaining: u64, blocks: u6
         let target_remaining = remaining.saturating_sub(blocks);
         (1.0 - (target_remaining as f64 / initial_total as f64)).clamp(0.0, 1.0)
     }
+}
+
+fn emit_stopped(progress_fn: &(impl Fn(SyncEventV2) + Send + Sync), current_tip_height: u64) {
+    progress_fn(SyncEventV2 {
+        kind: SYNC_EVENT_STOPPED,
+        scanned_height: current_tip_height,
+        chain_tip_height: current_tip_height,
+        percentage: 0.0,
+        display_target_percentage: 0.0,
+        display_target_blocks: 0,
+        has_new_tx: false,
+        phase: String::new(),
+    });
 }
 
 async fn refresh_utxos(
@@ -245,7 +261,7 @@ pub async fn run_sync_inner(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
-    progress_fn: impl Fn(SyncProgressEvent) + Send + Sync,
+    progress_fn: impl Fn(SyncEventV2) + Send + Sync,
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
     let mut last_err = String::new();
@@ -340,7 +356,7 @@ async fn run_sync_impl(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
-    progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
+    progress_fn: &(impl Fn(SyncEventV2) + Send + Sync),
 ) -> Result<(), SyncError> {
     let default_batch_size = if running_mode == 2 {
         BATCH_SIZE_BACKGROUND
@@ -387,6 +403,7 @@ async fn run_sync_impl(
             "[{}] sync: cancel/mode observed before transparent UTXO refresh, skipping",
             elapsed(),
         );
+        emit_stopped(progress_fn, current_tip_height);
         return Ok(());
     }
 
@@ -397,6 +414,7 @@ async fn run_sync_impl(
             "[{}] sync: exiting after transparent UTXO refresh",
             elapsed()
         );
+        emit_stopped(progress_fn, current_tip_height);
         return Ok(());
     }
 
@@ -522,10 +540,12 @@ async fn run_sync_impl(
     loop {
         if cancel.load(Ordering::Relaxed) {
             log::info!("[{}] sync: cancelled", elapsed());
+            emit_stopped(progress_fn, current_tip_height);
             return Ok(());
         }
         if desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: mode changed, exiting", elapsed());
+            emit_stopped(progress_fn, current_tip_height);
             return Ok(());
         }
 
@@ -621,7 +641,8 @@ async fn run_sync_impl(
         } else {
             1.0
         };
-        progress_fn(SyncProgressEvent {
+        progress_fn(SyncEventV2 {
+            kind: SYNC_EVENT_PROGRESS,
             scanned_height: u32::from(start) as u64,
             chain_tip_height: current_tip_height,
             percentage: current_pct.clamp(0.0, 1.0),
@@ -631,8 +652,6 @@ async fn run_sync_impl(
                 batch_blocks,
             ),
             display_target_blocks: batch_blocks,
-            is_syncing: true,
-            is_complete: false,
             has_new_tx: false,
             phase: "download".into(),
         });
@@ -685,6 +704,7 @@ async fn run_sync_impl(
 
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: exiting after download", elapsed());
+            emit_stopped(progress_fn, current_tip_height);
             return Ok(());
         }
 
@@ -870,6 +890,7 @@ async fn run_sync_impl(
 
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: exiting after scan", elapsed());
+            emit_stopped(progress_fn, current_tip_height);
             return Ok(());
         }
 
@@ -912,6 +933,7 @@ async fn run_sync_impl(
                 "[{}] sync: cancel/mode observed before post-batch resubmit, exiting",
                 elapsed(),
             );
+            emit_stopped(progress_fn, current_tip_height);
             return Ok(());
         }
         match get_latest_block(&mut client)
@@ -930,7 +952,7 @@ async fn run_sync_impl(
                 // IMPORTANT: update_chain_tip MUST succeed before
                 // we bump current_tip_height. If the DB write fails,
                 // suggest_scan_ranges still operates on the old tip
-                // and the loop may break with isComplete=true —
+                // and the loop may break with a completed event —
                 // bumping current_tip_height prematurely would make
                 // the completion event claim a height the wallet
                 // never actually scanned. (Codex 3rd-round finding.)
@@ -972,6 +994,7 @@ async fn run_sync_impl(
         }
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: exiting after resubmit pass", elapsed());
+            emit_stopped(progress_fn, current_tip_height);
             return Ok(());
         }
 
@@ -1025,7 +1048,8 @@ async fn run_sync_impl(
                 u32::from(next_end).saturating_sub(u32::from(next_start)) as u64
             })
             .unwrap_or(0);
-        let progress = SyncProgressEvent {
+        let progress = SyncEventV2 {
+            kind: SYNC_EVENT_PROGRESS,
             scanned_height: u32::from(end) as u64,
             chain_tip_height: current_tip_height,
             percentage: pct.clamp(0.0, 1.0),
@@ -1035,8 +1059,6 @@ async fn run_sync_impl(
                 next_display_target_blocks,
             ),
             display_target_blocks: next_display_target_blocks,
-            is_syncing: true,
-            is_complete: false,
             has_new_tx,
             phase: "scan".into(),
         };
@@ -1083,14 +1105,13 @@ async fn run_sync_impl(
 
     log::info!("[{}] sync: completed", elapsed());
     // Final progress
-    let final_progress = SyncProgressEvent {
+    let final_progress = SyncEventV2 {
+        kind: SYNC_EVENT_COMPLETED,
         scanned_height: current_tip_height,
         chain_tip_height: current_tip_height,
         percentage: 1.0,
         display_target_percentage: 1.0,
         display_target_blocks: 0,
-        is_syncing: false,
-        is_complete: true,
         has_new_tx: false,
         phase: String::new(),
     };

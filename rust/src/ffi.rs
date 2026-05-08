@@ -2,26 +2,43 @@
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::api::sync::{DESIRED_SYNC_MODE, SYNC_CANCEL, SYNC_RUNNING};
+use crate::api::sync::{next_sync_run_id, DESIRED_SYNC_MODE, SYNC_CANCEL, SYNC_RUNNING};
 use crate::wallet::{keys, sync_engine};
 
-/// Progress data passed to the C callback.
+/// Semantic sync engine event passed to the C callback.
 #[repr(C)]
-pub struct CSyncProgress {
+pub struct CSyncEventV2 {
+    /// 1=progress, 2=completed, 3=stopped.
+    pub kind: u8,
+    pub run_id: u64,
+    pub sequence: u64,
     pub scanned_height: u64,
     pub chain_tip_height: u64,
     pub percentage: f64,
     pub display_target_percentage: f64,
     pub display_target_blocks: u64,
-    pub is_syncing: bool,
-    pub is_complete: bool,
     pub has_new_tx: bool,
+    pub phase: *const c_char,
 }
 
-/// C callback type for progress updates.
-pub type SyncProgressCallback = extern "C" fn(CSyncProgress);
+/// C callback type for sync engine events.
+pub type SyncEventV2Callback = extern "C" fn(CSyncEventV2);
+
+static PHASE_DOWNLOAD: &[u8] = b"download\0";
+static PHASE_SCAN: &[u8] = b"scan\0";
+static PHASE_ENHANCE: &[u8] = b"enhance\0";
+static PHASE_EMPTY: &[u8] = b"\0";
+
+fn phase_c_string(phase: &str) -> *const c_char {
+    match phase {
+        "download" => PHASE_DOWNLOAD.as_ptr().cast(),
+        "scan" => PHASE_SCAN.as_ptr().cast(),
+        "enhance" => PHASE_ENHANCE.as_ptr().cast(),
+        _ => PHASE_EMPTY.as_ptr().cast(),
+    }
+}
 
 /// Safely convert a C string pointer to a `&str`. Returns `None` if
 /// the pointer is null, not valid UTF-8, or empty.
@@ -42,7 +59,7 @@ pub extern "C" fn zcash_run_full_sync(
     db_path: *const c_char,
     lightwalletd_url: *const c_char,
     network: *const c_char,
-    progress_callback: SyncProgressCallback,
+    event_callback: SyncEventV2Callback,
 ) -> i32 {
     if SYNC_RUNNING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -109,6 +126,8 @@ pub extern "C" fn zcash_run_full_sync(
             }
         };
 
+        let run_id = next_sync_run_id();
+        let sequence = AtomicU64::new(0);
         let result = rt.block_on(async {
             sync_engine::run_sync_inner(
                 db_path,
@@ -117,16 +136,19 @@ pub extern "C" fn zcash_run_full_sync(
                 cancel,
                 2, // background mode
                 &DESIRED_SYNC_MODE,
-                |progress| {
-                    progress_callback(CSyncProgress {
-                        scanned_height: progress.scanned_height,
-                        chain_tip_height: progress.chain_tip_height,
-                        percentage: progress.percentage,
-                        display_target_percentage: progress.display_target_percentage,
-                        display_target_blocks: progress.display_target_blocks,
-                        is_syncing: progress.is_syncing,
-                        is_complete: progress.is_complete,
-                        has_new_tx: progress.has_new_tx,
+                |event| {
+                    let seq = sequence.fetch_add(1, Ordering::SeqCst) + 1;
+                    event_callback(CSyncEventV2 {
+                        kind: event.kind,
+                        run_id,
+                        sequence: seq,
+                        scanned_height: event.scanned_height,
+                        chain_tip_height: event.chain_tip_height,
+                        percentage: event.percentage,
+                        display_target_percentage: event.display_target_percentage,
+                        display_target_blocks: event.display_target_blocks,
+                        has_new_tx: event.has_new_tx,
+                        phase: phase_c_string(&event.phase),
                     });
                 },
             )

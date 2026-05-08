@@ -2193,7 +2193,7 @@ fn wire__crate__api__sync__start_full_sync_impl(
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_mode = <u8>::sse_decode(&mut deserializer);
             let api_sink = <StreamSink<
-                crate::api::sync::ApiSyncProgressEvent,
+                crate::api::sync::ApiSyncEventV2,
                 flutter_rust_bridge::for_generated::SseCodec,
             >>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -2513,10 +2513,7 @@ impl SseDecode
 }
 
 impl SseDecode
-    for StreamSink<
-        crate::api::sync::ApiSyncProgressEvent,
-        flutter_rust_bridge::for_generated::SseCodec,
-    >
+    for StreamSink<crate::api::sync::ApiSyncEventV2, flutter_rust_bridge::for_generated::SseCodec>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2585,26 +2582,28 @@ impl SseDecode for crate::api::sync::ApiMempoolTxEvent {
     }
 }
 
-impl SseDecode for crate::api::sync::ApiSyncProgressEvent {
+impl SseDecode for crate::api::sync::ApiSyncEventV2 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <u8>::sse_decode(deserializer);
+        let mut var_runId = <u64>::sse_decode(deserializer);
+        let mut var_sequence = <u64>::sse_decode(deserializer);
         let mut var_scannedHeight = <u64>::sse_decode(deserializer);
         let mut var_chainTipHeight = <u64>::sse_decode(deserializer);
         let mut var_percentage = <f64>::sse_decode(deserializer);
         let mut var_displayTargetPercentage = <f64>::sse_decode(deserializer);
         let mut var_displayTargetBlocks = <u64>::sse_decode(deserializer);
-        let mut var_isSyncing = <bool>::sse_decode(deserializer);
-        let mut var_isComplete = <bool>::sse_decode(deserializer);
         let mut var_hasNewTx = <bool>::sse_decode(deserializer);
         let mut var_phase = <String>::sse_decode(deserializer);
-        return crate::api::sync::ApiSyncProgressEvent {
+        return crate::api::sync::ApiSyncEventV2 {
+            kind: var_kind,
+            run_id: var_runId,
+            sequence: var_sequence,
             scanned_height: var_scannedHeight,
             chain_tip_height: var_chainTipHeight,
             percentage: var_percentage,
             display_target_percentage: var_displayTargetPercentage,
             display_target_blocks: var_displayTargetBlocks,
-            is_syncing: var_isSyncing,
-            is_complete: var_isComplete,
             has_new_tx: var_hasNewTx,
             phase: var_phase,
         };
@@ -3449,16 +3448,17 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ApiMempoolTxEvent>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiSyncProgressEvent {
+impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiSyncEventV2 {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
+            self.kind.into_into_dart().into_dart(),
+            self.run_id.into_into_dart().into_dart(),
+            self.sequence.into_into_dart().into_dart(),
             self.scanned_height.into_into_dart().into_dart(),
             self.chain_tip_height.into_into_dart().into_dart(),
             self.percentage.into_into_dart().into_dart(),
             self.display_target_percentage.into_into_dart().into_dart(),
             self.display_target_blocks.into_into_dart().into_dart(),
-            self.is_syncing.into_into_dart().into_dart(),
-            self.is_complete.into_into_dart().into_dart(),
             self.has_new_tx.into_into_dart().into_dart(),
             self.phase.into_into_dart().into_dart(),
         ]
@@ -3466,13 +3466,13 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ApiSyncProgressEvent {
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::sync::ApiSyncProgressEvent
+    for crate::api::sync::ApiSyncEventV2
 {
 }
-impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ApiSyncProgressEvent>
-    for crate::api::sync::ApiSyncProgressEvent
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::ApiSyncEventV2>
+    for crate::api::sync::ApiSyncEventV2
 {
-    fn into_into_dart(self) -> crate::api::sync::ApiSyncProgressEvent {
+    fn into_into_dart(self) -> crate::api::sync::ApiSyncEventV2 {
         self
     }
 }
@@ -3969,10 +3969,7 @@ impl SseEncode
 }
 
 impl SseEncode
-    for StreamSink<
-        crate::api::sync::ApiSyncProgressEvent,
-        flutter_rust_bridge::for_generated::SseCodec,
-    >
+    for StreamSink<crate::api::sync::ApiSyncEventV2, flutter_rust_bridge::for_generated::SseCodec>
 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4021,16 +4018,17 @@ impl SseEncode for crate::api::sync::ApiMempoolTxEvent {
     }
 }
 
-impl SseEncode for crate::api::sync::ApiSyncProgressEvent {
+impl SseEncode for crate::api::sync::ApiSyncEventV2 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u8>::sse_encode(self.kind, serializer);
+        <u64>::sse_encode(self.run_id, serializer);
+        <u64>::sse_encode(self.sequence, serializer);
         <u64>::sse_encode(self.scanned_height, serializer);
         <u64>::sse_encode(self.chain_tip_height, serializer);
         <f64>::sse_encode(self.percentage, serializer);
         <f64>::sse_encode(self.display_target_percentage, serializer);
         <u64>::sse_encode(self.display_target_blocks, serializer);
-        <bool>::sse_encode(self.is_syncing, serializer);
-        <bool>::sse_encode(self.is_complete, serializer);
         <bool>::sse_encode(self.has_new_tx, serializer);
         <String>::sse_encode(self.phase, serializer);
     }
