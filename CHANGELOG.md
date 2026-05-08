@@ -4,6 +4,13 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.5.6
+
+## Added
+- Added a `test-fixtures` feature exposing `VotingDb::insert_vote_fixture`, so
+  downstream FFI tests can create vote rows through `VotingDb` instead of
+  depending on SQLite schema internals.
+
 # 0.5.5
 
 ## Fixed
