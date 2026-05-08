@@ -20,12 +20,28 @@ class AppToast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 560),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: colors.background.inverse,
+          color: colors.background.ground,
           borderRadius: BorderRadius.circular(AppRadii.small),
+          border: isDark ? Border.all(color: colors.border.subtle) : null,
+          boxShadow: isDark
+              ? null
+              : const [
+                  BoxShadow(
+                    color: Color(0xFFE1E1E1),
+                    offset: Offset(0, 2),
+                    blurRadius: 2,
+                  ),
+                  BoxShadow(
+                    color: Color(0xFFE1E1E1),
+                    offset: Offset(0, 10),
+                    blurRadius: 15,
+                  ),
+                ],
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(
@@ -39,7 +55,7 @@ class AppToast extends StatelessWidget {
               AppIcon(
                 iconName,
                 size: AppIconSize.medium,
-                color: colors.icon.inverse,
+                color: colors.icon.accent,
               ),
               const SizedBox(width: AppSpacing.xxs),
               Flexible(
@@ -49,7 +65,7 @@ class AppToast extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.inverse,
+                    color: colors.text.accent,
                   ),
                 ),
               ),
