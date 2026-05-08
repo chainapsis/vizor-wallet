@@ -92,6 +92,17 @@ Future<List<AccountInfo>> listAccounts({
   network: network,
 );
 
+/// Delete an account from the wallet database.
+Future<void> deleteAccount({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiWalletDeleteAccount(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
 /// Get the Unified Address for a specific account (or first account if uuid is None).
 Future<String> getUnifiedAddress({
   required String dbPath,
