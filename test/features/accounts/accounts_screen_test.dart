@@ -53,6 +53,64 @@ void main() {
     expect(find.text('add account route'), findsOneWidget);
   });
 
+  testWidgets('other accounts list scrolls while add account stays pinned', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountState = AccountState(
+      accounts: [
+        const AccountInfo(uuid: 'account-1', name: 'Primary Vault', order: 0),
+        for (var index = 2; index <= 20; index += 1)
+          AccountInfo(
+            uuid: 'account-$index',
+            name: 'Account $index',
+            order: index - 1,
+          ),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1accountsaddress',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    final addButton = find.text('Add Account');
+    final addButtonTop = tester.getTopLeft(addButton).dy;
+
+    expect(
+      find.byKey(const ValueKey('accounts_list_scrollbar')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('accounts_active_row_account-1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('accounts_other_row_account-20')),
+      findsNothing,
+    );
+
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('accounts_active_row_account-1')),
+      findsOneWidget,
+    );
+    expect(tester.getTopLeft(addButton).dy, moreOrLessEquals(addButtonTop));
+    expect(
+      find.byKey(const ValueKey('accounts_other_row_account-20')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('sidebar account selector opens accounts screen', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
@@ -291,12 +349,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Are you sure you want to remove this account?'),
+      find.textContaining('Are you sure you want to remove this account?'),
       findsOneWidget,
     );
-    expect(find.text("This action can't be reverted."), findsOneWidget);
     expect(
-      find.text('You will have to re-import your account.'),
+      find.textContaining("This action can't be reverted."),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('You will have to re-import your account.'),
       findsOneWidget,
     );
     expect(find.byType(AppPaneModalOverlay), findsOneWidget);
@@ -311,7 +372,7 @@ void main() {
       findsNothing,
     );
     expect(
-      find.text('Are you sure you want to remove this account?'),
+      find.textContaining('Are you sure you want to remove this account?'),
       findsNothing,
     );
   });
@@ -387,16 +448,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Removing this account will completely reset the Vizor app.'),
+      find.textContaining(
+        'Removing this account will completely reset the Vizor app.',
+      ),
       findsOneWidget,
     );
     expect(
-      find.text(
+      find.textContaining(
         'This means deleting all accounts and requiring you to import accounts again.',
       ),
       findsOneWidget,
     );
-    expect(find.text('This cannot be undone.'), findsOneWidget);
+    expect(find.textContaining('This cannot be undone.'), findsOneWidget);
 
     await tester.tap(find.text('Reset Vizor'));
     await tester.pumpAndSettle();

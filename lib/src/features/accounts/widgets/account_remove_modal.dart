@@ -65,13 +65,13 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final line in _bodyLines)
-            Text(
-              line,
-              style: AppTypography.bodyMedium.copyWith(
-                color: context.colors.text.accent,
-              ),
+          Text(
+            _bodyText,
+            textAlign: TextAlign.left,
+            style: AppTypography.bodyMedium.copyWith(
+              color: context.colors.text.accent,
             ),
+          ),
           if (_submitError != null) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
@@ -102,19 +102,16 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     );
   }
 
-  List<String> get _bodyLines {
+  String get _bodyText {
     if (widget.isLastAccount) {
-      return const [
-        'Removing this account will completely reset the Vizor app.',
-        'This means deleting all accounts and requiring you to import accounts again.',
-        'This cannot be undone.',
-      ];
+      return 'Removing this account will completely reset the Vizor app. '
+          'This means deleting all accounts and requiring you to import '
+          'accounts again.\n'
+          'This cannot be undone.';
     }
-    return const [
-      'Are you sure you want to remove this account?',
-      "This action can't be reverted.",
-      'You will have to re-import your account.',
-    ];
+    return "Are you sure you want to remove this account? "
+        "This action can't be reverted.\n"
+        'You will have to re-import your account.';
   }
 
   String get _submitButtonLabel {

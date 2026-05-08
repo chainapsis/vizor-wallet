@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter/material.dart'
+    show Scrollbar, ScrollbarTheme, ScrollbarThemeData, WidgetStatePropertyAll;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,6 +21,9 @@ import '../../../providers/wallet_mutation_guard.dart';
 import '../widgets/account_name_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';
 import '../widgets/account_remove_modal.dart';
+
+const _accountRowHeight = 44.0;
+const _accountsListScrollbarKey = ValueKey('accounts_list_scrollbar');
 
 class AccountsScreen extends ConsumerStatefulWidget {
   const AccountsScreen({super.key});
@@ -287,7 +292,7 @@ class _AccountsPane extends StatelessWidget {
   }
 }
 
-class _AccountsList extends StatelessWidget {
+class _AccountsList extends StatefulWidget {
   const _AccountsList({
     required this.activeAccount,
     required this.otherAccounts,
@@ -307,48 +312,89 @@ class _AccountsList extends StatelessWidget {
   final ValueChanged<AccountInfo> onRemoveAccount;
 
   @override
+  State<_AccountsList> createState() => _AccountsListState();
+}
+
+class _AccountsListState extends State<_AccountsList> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final accountCount = otherAccounts.length + (activeAccount == null ? 0 : 1);
+    final accountCount =
+        widget.otherAccounts.length + (widget.activeAccount == null ? 0 : 1);
 
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(
-        width: _width,
+        width: _AccountsList._width,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (activeAccount != null)
+            if (widget.activeAccount != null)
               _AccountRow(
-                key: ValueKey('accounts_active_row_${activeAccount!.uuid}'),
-                account: activeAccount!,
+                key: ValueKey(
+                  'accounts_active_row_${widget.activeAccount!.uuid}',
+                ),
+                account: widget.activeAccount!,
                 onTap: null,
-                onEditName: onEditAccountName,
-                onChangePicture: onChangeProfilePicture,
-                onRemove: onRemoveAccount,
-                canRemove: _canRemoveAccount(activeAccount!, accountCount),
+                onEditName: widget.onEditAccountName,
+                onChangePicture: widget.onChangeProfilePicture,
+                onRemove: widget.onRemoveAccount,
+                canRemove: _canRemoveAccount(
+                  widget.activeAccount!,
+                  accountCount,
+                ),
               ),
             const _AccountsSectionLabel(label: 'Other'),
-            if (otherAccounts.isNotEmpty)
+            if (widget.otherAccounts.isNotEmpty)
               Expanded(
-                child: ListView.separated(
-                  padding: EdgeInsets.zero,
-                  itemCount: otherAccounts.length,
-                  itemBuilder: (context, index) {
-                    final account = otherAccounts[index];
-                    return _AccountRow(
-                      key: ValueKey('accounts_other_row_${account.uuid}'),
-                      account: account,
-                      onTap: () {
-                        onSelectAccount(account.uuid);
-                      },
-                      onEditName: onEditAccountName,
-                      onChangePicture: onChangeProfilePicture,
-                      onRemove: onRemoveAccount,
-                      canRemove: _canRemoveAccount(account, accountCount),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final canScroll =
+                        _otherAccountsContentHeight(
+                          widget.otherAccounts.length,
+                        ) >
+                        constraints.maxHeight;
+                    final listView = ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(
+                        context,
+                      ).copyWith(scrollbars: false),
+                      child: ListView.separated(
+                        controller: _scrollController,
+                        padding: EdgeInsets.zero,
+                        itemCount: widget.otherAccounts.length,
+                        itemBuilder: (context, index) {
+                          final account = widget.otherAccounts[index];
+                          return _AccountRow(
+                            key: ValueKey('accounts_other_row_${account.uuid}'),
+                            account: account,
+                            onTap: () {
+                              widget.onSelectAccount(account.uuid);
+                            },
+                            onEditName: widget.onEditAccountName,
+                            onChangePicture: widget.onChangeProfilePicture,
+                            onRemove: widget.onRemoveAccount,
+                            canRemove: _canRemoveAccount(account, accountCount),
+                          );
+                        },
+                        separatorBuilder: (_, _) =>
+                            const SizedBox(height: AppSpacing.xs),
+                      ),
+                    );
+
+                    if (!canScroll) return listView;
+
+                    return _AccountsListScrollbar(
+                      controller: _scrollController,
+                      child: listView,
                     );
                   },
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(height: AppSpacing.xs),
                 ),
               ),
           ],
@@ -360,6 +406,55 @@ class _AccountsList extends StatelessWidget {
   static bool _canRemoveAccount(AccountInfo account, int accountCount) {
     if (accountCount == 1) return true;
     return account.order != 0;
+  }
+
+  static double _otherAccountsContentHeight(int count) {
+    if (count <= 0) return 0;
+    return count * _accountRowHeight + (count - 1) * AppSpacing.xs;
+  }
+}
+
+class _AccountsListScrollbar extends StatelessWidget {
+  const _AccountsListScrollbar({required this.controller, required this.child});
+
+  static const _scrollbarGutter = 18.0;
+
+  final ScrollController controller;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return OverflowBox(
+      alignment: Alignment.topLeft,
+      minWidth: _AccountsList._width + _scrollbarGutter,
+      maxWidth: _AccountsList._width + _scrollbarGutter,
+      child: SizedBox(
+        width: _AccountsList._width + _scrollbarGutter,
+        child: ScrollbarTheme(
+          data: ScrollbarThemeData(
+            thumbColor: WidgetStatePropertyAll(
+              context.colors.background.overlay,
+            ),
+            thickness: const WidgetStatePropertyAll(6),
+            radius: const Radius.circular(AppRadii.full),
+            thumbVisibility: const WidgetStatePropertyAll(true),
+            trackVisibility: const WidgetStatePropertyAll(false),
+            crossAxisMargin: 3,
+            mainAxisMargin: 3,
+          ),
+          child: Scrollbar(
+            key: _accountsListScrollbarKey,
+            controller: controller,
+            child: Row(
+              children: [
+                SizedBox(width: _AccountsList._width, child: child),
+                const SizedBox(width: _scrollbarGutter),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -421,7 +516,7 @@ class _AccountRowState extends State<_AccountRow> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
-        height: 44,
+        height: _accountRowHeight,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
         decoration: BoxDecoration(
           color: isHighlighted ? colors.background.base : null,
