@@ -335,6 +335,63 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     log('updateProfilePicture: $uuid → $profilePictureId');
   }
 
+  /// Remove an account from the wallet.
+  Future<void> removeAccount(String uuid) async {
+    final prev = state.value ?? const AccountState();
+    final targetIndex = prev.accounts.indexWhere((a) => a.uuid == uuid);
+    if (targetIndex < 0) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
+    }
+
+    final target = prev.accounts[targetIndex];
+    final remaining = [
+      for (final account in prev.accounts)
+        if (account.uuid != uuid) account,
+    ];
+    if (target.order == 0) {
+      throw StateError(
+        'The first account cannot be removed from the account list.',
+      );
+    }
+
+    final dbPath = await _getDbPath();
+    final network = await _getNetwork();
+    await rust_wallet.deleteAccount(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: uuid,
+    );
+    await _storage.delete('zcash_account_mnemonic_$uuid');
+
+    final updated = [
+      for (var i = 0; i < remaining.length; i++)
+        remaining[i].copyWith(order: i),
+    ];
+    final nextActiveUuid = _nextActiveAccountUuid(prev, target, updated);
+    final nextActiveAddress = await _nextActiveAddress(
+      prev,
+      nextActiveUuid,
+      dbPath,
+      network,
+    );
+
+    await _saveAccounts(updated);
+    if (nextActiveUuid == null) {
+      await _storage.delete(_activeAccountKey);
+    } else {
+      await _storage.writeString(_activeAccountKey, nextActiveUuid);
+    }
+
+    state = AsyncData(
+      AccountState(
+        accounts: updated,
+        activeAccountUuid: nextActiveUuid,
+        activeAddress: nextActiveAddress,
+      ),
+    );
+    log('removeAccount: $uuid');
+  }
+
   /// Delete all wallet data (DB + keychain). Caller must stop sync first.
   Future<void> resetWallet() async {
     final dbPath = await _getDbPath();
@@ -495,6 +552,40 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<void> _saveAccounts(List<AccountInfo> accounts) async {
     final json = jsonEncode(accounts.map((a) => a.toJson()).toList());
     await _storage.writeString(_accountsKey, json);
+  }
+
+  String? _nextActiveAccountUuid(
+    AccountState prev,
+    AccountInfo removed,
+    List<AccountInfo> remaining,
+  ) {
+    if (remaining.isEmpty) return null;
+    if (prev.activeAccountUuid != removed.uuid &&
+        remaining.any((a) => a.uuid == prev.activeAccountUuid)) {
+      return prev.activeAccountUuid;
+    }
+    final nextIndex = removed.order.clamp(0, remaining.length - 1);
+    return remaining[nextIndex].uuid;
+  }
+
+  Future<String?> _nextActiveAddress(
+    AccountState prev,
+    String? nextActiveUuid,
+    String dbPath,
+    String network,
+  ) async {
+    if (nextActiveUuid == null) return null;
+    if (nextActiveUuid == prev.activeAccountUuid) return prev.activeAddress;
+    try {
+      return await rust_wallet.getUnifiedAddress(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: nextActiveUuid,
+      );
+    } catch (e) {
+      log('removeAccount: failed to get next active address: $e');
+      return null;
+    }
   }
 
   Future<String> _getDbPath() async {

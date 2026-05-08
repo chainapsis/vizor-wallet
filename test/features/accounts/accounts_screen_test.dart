@@ -88,8 +88,8 @@ void main() {
     late _FakeSyncNotifier syncNotifier;
     await tester.pumpWidget(
       _accountsHarness(
-        accountNotifier:
-            () => _FakeAccountNotifier(_bootstrap.initialAccountState),
+        accountNotifier: () =>
+            _FakeAccountNotifier(_bootstrap.initialAccountState),
         syncNotifier: () => syncNotifier = _FakeSyncNotifier(),
       ),
     );
@@ -118,8 +118,8 @@ void main() {
     final syncNotifier = _FakeSyncNotifier();
     await tester.pumpWidget(
       _accountsHarness(
-        accountNotifier:
-            () => _FakeAccountNotifier(_bootstrap.initialAccountState),
+        accountNotifier: () =>
+            _FakeAccountNotifier(_bootstrap.initialAccountState),
         syncNotifier: () => syncNotifier,
       ),
     );
@@ -262,6 +262,149 @@ void main() {
     expect(accountNotifier.updatedProfilePictureId, 'samurai');
     expect(find.text('Select Profile Picture'), findsNothing);
   });
+
+  testWidgets('remove account menu action removes the selected account', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    final syncNotifier = _FakeSyncNotifier();
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        syncNotifier: () => syncNotifier,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove Account'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Are you sure you want to remove this account?'),
+      findsOneWidget,
+    );
+    expect(find.text("This action can't be reverted."), findsOneWidget);
+    expect(
+      find.text('You will have to re-import your account.'),
+      findsOneWidget,
+    );
+    expect(find.byType(AppPaneModalOverlay), findsOneWidget);
+
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, 'account-2');
+    expect(syncNotifier.refreshCount, 1);
+    expect(
+      find.byKey(const ValueKey('accounts_other_row_account-2')),
+      findsNothing,
+    );
+    expect(
+      find.text('Are you sure you want to remove this account?'),
+      findsNothing,
+    );
+  });
+
+  testWidgets('remove account pauses sync mutation before deleting', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final events = <String>[];
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+      events: events,
+    );
+    final syncNotifier = _FakeSyncNotifier(events: events);
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        syncNotifier: () => syncNotifier,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove Account'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(events, ['pause', 'remove:account-2', 'resume', 'refresh']);
+  });
+
+  testWidgets('removing the last account resets the wallet and goes welcome', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const singleAccountState = AccountState(
+      accounts: [
+        AccountInfo(uuid: 'account-1', name: 'Primary Vault', order: 0),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1accountsaddress',
+    );
+    final events = <String>[];
+    final accountNotifier = _FakeAccountNotifier(
+      singleAccountState,
+      events: events,
+    );
+    final syncNotifier = _FakeSyncNotifier(events: events);
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        syncNotifier: () => syncNotifier,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove Account'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Removing this account will completely reset the Vizor app.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'This means deleting all accounts and requiring you to import accounts again.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('This cannot be undone.'), findsOneWidget);
+
+    await tester.tap(find.text('Reset Vizor'));
+    await tester.pumpAndSettle();
+
+    expect(events, ['clearSensitiveState', 'resetWallet']);
+    expect(accountNotifier.resetWalletCalled, isTrue);
+    expect(find.text('welcome route'), findsOneWidget);
+  });
 }
 
 Widget _accountsHarness({
@@ -272,6 +415,7 @@ Widget _accountsHarness({
     initialLocation: '/accounts',
     routes: [
       GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
+      GoRoute(path: '/welcome', builder: (_, _) => const Text('welcome route')),
       GoRoute(
         path: '/add-account',
         builder: (_, _) => const Text('add account route'),
@@ -311,11 +455,10 @@ Widget _sidebarHarness() {
     routes: [
       GoRoute(
         path: '/home',
-        builder:
-            (_, _) => const AppDesktopShell(
-              sidebar: AppMainSidebar(),
-              pane: AppDesktopPane(child: Text('home route')),
-            ),
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('home route')),
+        ),
       ),
       GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
       GoRoute(
@@ -372,13 +515,16 @@ final _bootstrap = AppBootstrapState(
 );
 
 class _FakeAccountNotifier extends AccountNotifier {
-  _FakeAccountNotifier(this.initialState);
+  _FakeAccountNotifier(this.initialState, {this.events});
 
   final AccountState initialState;
+  final List<String>? events;
   String? renamedUuid;
   String? renamedName;
   String? updatedProfilePictureUuid;
   String? updatedProfilePictureId;
+  String? removedUuid;
+  bool resetWalletCalled = false;
 
   @override
   FutureOr<AccountState> build() => initialState;
@@ -418,9 +564,31 @@ class _FakeAccountNotifier extends AccountNotifier {
     ];
     state = AsyncData(prev.copyWith(accounts: updated));
   }
+
+  @override
+  Future<void> removeAccount(String uuid) async {
+    events?.add('remove:$uuid');
+    removedUuid = uuid;
+    final prev = state.value ?? initialState;
+    final updated = [
+      for (final account in prev.accounts)
+        if (account.uuid != uuid) account,
+    ];
+    state = AsyncData(prev.copyWith(accounts: updated));
+  }
+
+  @override
+  Future<void> resetWallet() async {
+    events?.add('resetWallet');
+    resetWalletCalled = true;
+    state = const AsyncData(AccountState());
+  }
 }
 
 class _FakeSyncNotifier extends SyncNotifier {
+  _FakeSyncNotifier({this.events});
+
+  final List<String>? events;
   int refreshCount = 0;
 
   @override
@@ -428,7 +596,31 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<void> refreshAfterSend() async {
+    events?.add('refresh');
     refreshCount += 1;
+  }
+
+  @override
+  Future<WalletMutationSyncPause> pauseForWalletMutation({
+    FutureOr<void> Function()? onStoppingSync,
+  }) async {
+    events?.add('pause');
+    return const WalletMutationSyncPause(
+      hadActiveSync: true,
+      hadPolling: false,
+      hadBackgroundSync: false,
+      hadMempoolObserver: false,
+    );
+  }
+
+  @override
+  void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
+    events?.add('resume');
+  }
+
+  @override
+  Future<void> clearSensitiveStateForLock() async {
+    events?.add('clearSensitiveState');
   }
 }
 

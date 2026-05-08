@@ -15,8 +15,10 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/wallet_mutation_guard.dart';
 import '../widgets/account_name_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';
+import '../widgets/account_remove_modal.dart';
 
 class AccountsScreen extends ConsumerStatefulWidget {
   const AccountsScreen({super.key});
@@ -25,7 +27,7 @@ class AccountsScreen extends ConsumerStatefulWidget {
   ConsumerState<AccountsScreen> createState() => _AccountsScreenState();
 }
 
-enum _AccountModalType { accountName, profilePicture }
+enum _AccountModalType { accountName, profilePicture, removeAccount }
 
 class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   String? _modalAccountUuid;
@@ -37,6 +39,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
 
   void _showProfilePictureModal(AccountInfo account) {
     _showModal(_AccountModalType.profilePicture, account);
+  }
+
+  void _showRemoveAccountModal(AccountInfo account) {
+    _showModal(_AccountModalType.removeAccount, account);
   }
 
   void _showModal(_AccountModalType modal, AccountInfo account) {
@@ -70,6 +76,36 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     _closeModal();
   }
 
+  Future<void> _removeAccount(
+    String uuid, {
+    required bool isLastAccount,
+  }) async {
+    if (isLastAccount) {
+      await _resetWalletFromAccountRemoval();
+      return;
+    }
+
+    final accountNotifier = ref.read(accountProvider.notifier);
+    await runWithSyncPausedForAccountMutation(
+      ref,
+      () => accountNotifier.removeAccount(uuid),
+    );
+    if (!mounted) return;
+    _closeModal();
+    await ref.read(syncProvider.notifier).refreshAfterSend();
+  }
+
+  Future<void> _resetWalletFromAccountRemoval() async {
+    final syncNotifier = ref.read(syncProvider.notifier);
+    final accountNotifier = ref.read(accountProvider.notifier);
+
+    await syncNotifier.clearSensitiveStateForLock();
+    await accountNotifier.resetWallet();
+    if (!mounted) return;
+    _closeModal();
+    context.go('/welcome');
+  }
+
   @override
   Widget build(BuildContext context) {
     final accountState =
@@ -85,6 +121,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         if (account.uuid != activeAccount?.uuid) account,
     ];
     final modalAccount = _accountForUuid(accounts, _modalAccountUuid);
+    final isLastModalAccount =
+        modalAccount != null &&
+        accounts.length == 1 &&
+        accounts.first.uuid == modalAccount.uuid;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -100,6 +140,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                 onSelectAccount: _handleAccountSelected,
                 onEditAccountName: _showAccountNameModal,
                 onChangeProfilePicture: _showProfilePictureModal,
+                onRemoveAccount: _showRemoveAccountModal,
               ),
             ),
             if (modalAccount != null && _activeModal != null)
@@ -110,19 +151,28 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     accountName: modalAccount.name,
                     profilePictureId: modalAccount.profilePictureId,
                     onCancel: _closeModal,
-                    onUpdate:
-                        (name) => _updateAccountName(modalAccount.uuid, name),
+                    onUpdate: (name) =>
+                        _updateAccountName(modalAccount.uuid, name),
                   ),
                   _AccountModalType.profilePicture =>
                     AccountProfilePictureModal(
                       currentProfilePictureId: modalAccount.profilePictureId,
                       onCancel: _closeModal,
-                      onUpdate:
-                          (profilePictureId) => _updateProfilePicture(
-                            modalAccount.uuid,
-                            profilePictureId,
-                          ),
+                      onUpdate: (profilePictureId) => _updateProfilePicture(
+                        modalAccount.uuid,
+                        profilePictureId,
+                      ),
                     ),
+                  _AccountModalType.removeAccount => AccountRemoveModal(
+                    accountName: modalAccount.name,
+                    profilePictureId: modalAccount.profilePictureId,
+                    isLastAccount: isLastModalAccount,
+                    onCancel: _closeModal,
+                    onRemove: () => _removeAccount(
+                      modalAccount.uuid,
+                      isLastAccount: isLastModalAccount,
+                    ),
+                  ),
                 },
               ),
           ],
@@ -132,8 +182,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   }
 
   Future<void> _handleAccountSelected(String uuid) async {
-    final activeAccountUuid =
-        ref.read(accountProvider).value?.activeAccountUuid;
+    final activeAccountUuid = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid;
     if (uuid == activeAccountUuid) return;
     await ref.read(accountProvider.notifier).switchAccount(uuid);
     await ref.read(syncProvider.notifier).refreshAfterSend();
@@ -169,6 +221,7 @@ class _AccountsPane extends StatelessWidget {
     required this.onSelectAccount,
     required this.onEditAccountName,
     required this.onChangeProfilePicture,
+    required this.onRemoveAccount,
   });
 
   final AccountInfo? activeAccount;
@@ -176,6 +229,7 @@ class _AccountsPane extends StatelessWidget {
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onEditAccountName;
   final ValueChanged<AccountInfo> onChangeProfilePicture;
+  final ValueChanged<AccountInfo> onRemoveAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -210,6 +264,7 @@ class _AccountsPane extends StatelessWidget {
                             onSelectAccount: onSelectAccount,
                             onEditAccountName: onEditAccountName,
                             onChangeProfilePicture: onChangeProfilePicture,
+                            onRemoveAccount: onRemoveAccount,
                           ),
                         ),
                       ],
@@ -239,6 +294,7 @@ class _AccountsList extends StatelessWidget {
     required this.onSelectAccount,
     required this.onEditAccountName,
     required this.onChangeProfilePicture,
+    required this.onRemoveAccount,
   });
 
   static const _width = 352.0;
@@ -248,9 +304,12 @@ class _AccountsList extends StatelessWidget {
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onEditAccountName;
   final ValueChanged<AccountInfo> onChangeProfilePicture;
+  final ValueChanged<AccountInfo> onRemoveAccount;
 
   @override
   Widget build(BuildContext context) {
+    final accountCount = otherAccounts.length + (activeAccount == null ? 0 : 1);
+
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(
@@ -265,6 +324,8 @@ class _AccountsList extends StatelessWidget {
                 onTap: null,
                 onEditName: onEditAccountName,
                 onChangePicture: onChangeProfilePicture,
+                onRemove: onRemoveAccount,
+                canRemove: _canRemoveAccount(activeAccount!, accountCount),
               ),
             const _AccountsSectionLabel(label: 'Other'),
             if (otherAccounts.isNotEmpty)
@@ -282,16 +343,23 @@ class _AccountsList extends StatelessWidget {
                       },
                       onEditName: onEditAccountName,
                       onChangePicture: onChangeProfilePicture,
+                      onRemove: onRemoveAccount,
+                      canRemove: _canRemoveAccount(account, accountCount),
                     );
                   },
-                  separatorBuilder:
-                      (_, _) => const SizedBox(height: AppSpacing.xs),
+                  separatorBuilder: (_, _) =>
+                      const SizedBox(height: AppSpacing.xs),
                 ),
               ),
           ],
         ),
       ),
     );
+  }
+
+  static bool _canRemoveAccount(AccountInfo account, int accountCount) {
+    if (accountCount == 1) return true;
+    return account.order != 0;
   }
 }
 
@@ -320,6 +388,8 @@ class _AccountRow extends StatefulWidget {
     required this.onTap,
     required this.onEditName,
     required this.onChangePicture,
+    required this.onRemove,
+    required this.canRemove,
     super.key,
   });
 
@@ -327,6 +397,8 @@ class _AccountRow extends StatefulWidget {
   final VoidCallback? onTap;
   final ValueChanged<AccountInfo> onEditName;
   final ValueChanged<AccountInfo> onChangePicture;
+  final ValueChanged<AccountInfo> onRemove;
+  final bool canRemove;
 
   @override
   State<_AccountRow> createState() => _AccountRowState();
@@ -386,6 +458,8 @@ class _AccountRowState extends State<_AccountRow> {
               onOpenChanged: _setMenuOpen,
               onEditName: () => widget.onEditName(widget.account),
               onChangePicture: () => widget.onChangePicture(widget.account),
+              onRemove: () => widget.onRemove(widget.account),
+              canRemove: widget.canRemove,
             ),
           ],
         ),
@@ -413,12 +487,16 @@ class _AccountRowMenuButton extends StatefulWidget {
     required this.onOpenChanged,
     required this.onEditName,
     required this.onChangePicture,
+    required this.onRemove,
+    required this.canRemove,
     super.key,
   });
 
   final ValueChanged<bool> onOpenChanged;
   final VoidCallback onEditName;
   final VoidCallback onChangePicture;
+  final VoidCallback onRemove;
+  final bool canRemove;
 
   @override
   State<_AccountRowMenuButton> createState() => _AccountRowMenuButtonState();
@@ -463,6 +541,8 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
               child: _AccountContextMenu(
                 onEditName: _handleEditName,
                 onChangePicture: _handleChangePicture,
+                onRemove: _handleRemove,
+                canRemove: widget.canRemove,
                 onDismiss: () => _hideMenu(),
               ),
             ),
@@ -492,6 +572,11 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
   void _handleChangePicture() {
     _hideMenu();
     widget.onChangePicture();
+  }
+
+  void _handleRemove() {
+    _hideMenu();
+    widget.onRemove();
   }
 
   @override
@@ -531,6 +616,8 @@ class _AccountContextMenu extends StatelessWidget {
   const _AccountContextMenu({
     required this.onEditName,
     required this.onChangePicture,
+    required this.onRemove,
+    required this.canRemove,
     required this.onDismiss,
   });
 
@@ -538,15 +625,16 @@ class _AccountContextMenu extends StatelessWidget {
 
   final VoidCallback onEditName;
   final VoidCallback onChangePicture;
+  final VoidCallback onRemove;
+  final bool canRemove;
   final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final shadowColor =
-        AppTheme.of(context) == AppThemeData.light
-            ? const Color(0xFFE1E1E1)
-            : const Color(0x66000000);
+    final shadowColor = AppTheme.of(context) == AppThemeData.light
+        ? const Color(0xFFE1E1E1)
+        : const Color(0x66000000);
 
     return DefaultTextStyle.merge(
       style: const TextStyle(decoration: TextDecoration.none),
@@ -589,26 +677,28 @@ class _AccountContextMenu extends StatelessWidget {
                   label: 'Change Picture',
                   onTap: onChangePicture,
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: AppSpacing.xxs / 2,
-                  ),
-                  child: SizedBox(
-                    height: 1,
-                    width: double.infinity,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: _contextMenuDividerColor(context),
+                if (canRemove) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.xxs / 2,
+                    ),
+                    child: SizedBox(
+                      height: 1,
+                      width: double.infinity,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: _contextMenuDividerColor(context),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                _AccountContextMenuItem(
-                  iconName: AppIcons.trash,
-                  label: 'Remove Account',
-                  destructive: true,
-                  onTap: onDismiss,
-                ),
+                  _AccountContextMenuItem(
+                    iconName: AppIcons.trash,
+                    label: 'Remove Account',
+                    destructive: true,
+                    onTap: onRemove,
+                  ),
+                ],
               ],
             ),
           ),
@@ -643,14 +733,12 @@ class _AccountContextMenuItemState extends State<_AccountContextMenuItem> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isLight = AppTheme.of(context) == AppThemeData.light;
-    final itemColor =
-        widget.destructive
-            ? (isLight ? const Color(0xFFB67CC0) : colors.text.destructive)
-            : colors.text.inverse;
-    final iconColor =
-        widget.destructive
-            ? (isLight ? const Color(0xFFAC6CB7) : colors.icon.destructive)
-            : colors.icon.inverse;
+    final itemColor = widget.destructive
+        ? (isLight ? const Color(0xFFB67CC0) : colors.text.destructive)
+        : colors.text.inverse;
+    final iconColor = widget.destructive
+        ? (isLight ? const Color(0xFFAC6CB7) : colors.icon.destructive)
+        : colors.icon.inverse;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
