@@ -57,6 +57,15 @@ class WidgetbookApp extends StatelessWidget {
               name: 'Onboarding',
               children: [
                 WidgetbookComponent(
+                  name: 'Accounts',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Many Accounts',
+                      builder: buildAccountsManyUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
                   name: 'Welcome',
                   useCases: [
                     WidgetbookUseCase(
