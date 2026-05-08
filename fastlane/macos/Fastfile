@@ -649,12 +649,15 @@ platform :mac do
         configure_sparkle_info_plist!(restored_plist_path, metadata) if sparkle_enabled_for_release?(metadata)
 
         Bundler.with_unbundled_env do
-          dart_define = shell_escape("ZCASH_DEFAULT_NETWORK=#{metadata[:zcash_default_network]}")
+          dart_defines = [
+            "ZCASH_DEFAULT_NETWORK=#{metadata[:zcash_default_network]}",
+            "VIZOR_RELEASE_VERSION=#{metadata[:asset_version]}"
+          ]
           sh(
             [
               "cd #{shell_escape(workspace_root)} &&",
               "fvm flutter build macos --release --no-pub",
-              "--dart-define=#{dart_define}",
+              *dart_defines.map { |dart_define| "--dart-define=#{shell_escape(dart_define)}" },
               "--build-name", shell_escape(metadata[:version]),
               "--build-number", shell_escape(metadata[:build_number])
             ].join(" ")

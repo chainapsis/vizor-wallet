@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app_bootstrap.dart';
+import '../../../core/config/app_version_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
@@ -23,8 +24,6 @@ import '../../onboarding/shared/onboarding_welcome_art.dart';
 
 const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
 const _backLinkContentGap = AppSpacing.s;
-// TODO(version-metadata): Replace Figma placeholder copy with runtime app metadata.
-const _aboutVersionLabel = 'Version: 0.1.24 Public Beta';
 const _legalUpdatedLabel = 'Last Update:  ';
 const _paragraphWidth = 352.0;
 const _maxSidebarPaneContentWidth = 752.0;
@@ -95,7 +94,7 @@ class _AboutContent extends StatelessWidget {
       children: [
         _UtilityPageTitle(
           title: 'About Vizor Wallet',
-          subtitle: _aboutVersionLabel,
+          subtitle: kVizorAboutVersionLabel,
         ),
         SizedBox(height: AppSpacing.md),
         AppDecorativeDivider(width: 256),
