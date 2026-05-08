@@ -204,6 +204,18 @@ pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo
     })
 }
 
+/// Delete an account from the wallet database.
+pub fn delete_account(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<(), String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        keys::delete_account(&db_path, network, &account_uuid)
+    })
+}
+
 /// Get the Unified Address for a specific account (or first account if uuid is None).
 pub fn get_unified_address(
     db_path: String,

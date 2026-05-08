@@ -315,6 +315,20 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
     Ok(accounts)
 }
 
+/// Delete an account from the wallet database.
+pub fn delete_account(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<(), String> {
+    let account_id = parse_account_uuid(account_uuid)?;
+    with_wallet_db_write_lock("keys.delete_account", || {
+        let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        db.delete_account(account_id)
+            .map_err(|e| format!("Failed to delete account: {e}"))
+    })
+}
+
 /// Parse an account UUID string into AccountUuid.
 pub fn parse_account_uuid(s: &str) -> Result<AccountUuid, String> {
     let uuid = uuid::Uuid::parse_str(s).map_err(|e| format!("Invalid account UUID: {e}"))?;
@@ -537,6 +551,37 @@ mod tests {
                 .unwrap()
                 .unified_address
         );
+    }
+
+    #[test]
+    fn test_delete_account_removes_account_from_wallet_db() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let first_phrase = generate_mnemonic();
+        let first_seed = mnemonic_to_seed(&first_phrase).unwrap();
+        init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &first_seed,
+            None,
+            "first",
+        )
+        .unwrap();
+
+        let second_phrase = generate_mnemonic();
+        let second_seed = mnemonic_to_seed(&second_phrase).unwrap();
+        let (second_uuid, _) =
+            add_account(db_path_str, WalletNetwork::Main, "second", &second_seed, None).unwrap();
+
+        assert_eq!(list_accounts(db_path_str, WalletNetwork::Main).unwrap().len(), 2);
+
+        delete_account(db_path_str, WalletNetwork::Main, &second_uuid).unwrap();
+
+        let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert!(accounts.iter().all(|account| account.uuid != second_uuid));
     }
 
     #[test]
