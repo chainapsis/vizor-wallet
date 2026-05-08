@@ -752,7 +752,6 @@
 				);
 				OTHER_CODE_SIGN_FLAGS = "--timestamp";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SPARKLE_ENABLED";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;

@@ -177,8 +177,8 @@ def match_certificate_password
   ENV.fetch("MATCH_CERTIFICATE_PASSWORD")
 end
 
-def sparkle_enabled_for_release?(metadata)
-  !metadata.fetch(:is_prerelease)
+def sparkle_enabled_for_release?(_metadata)
+  false
 end
 
 def sparkle_public_ed_key(metadata)
@@ -305,10 +305,12 @@ def write_sparkle_release_notes!(notes_path, metadata)
 end
 
 def validate_sparkle_environment!(metadata)
+  return unless sparkle_enabled_for_release?(metadata)
+
   sparkle_public_ed_key(metadata)
 
   private_key_env = metadata.fetch(:sparkle_private_key_env)
-  UI.user_error!("#{private_key_env} is required for stable #{metadata[:flavor]} Sparkle releases") if sparkle_enabled_for_release?(metadata) && ENV[private_key_env].to_s.strip.empty?
+  UI.user_error!("#{private_key_env} is required for stable #{metadata[:flavor]} Sparkle releases") if ENV[private_key_env].to_s.strip.empty?
 end
 
 def generate_sparkle_appcast!(archives_dir, metadata)
@@ -644,7 +646,7 @@ platform :mac do
     begin
       sh("cd #{shell_escape(workspace_root)} && fvm flutter pub get")
       with_restored_file(plist_path) do |restored_plist_path|
-        configure_sparkle_info_plist!(restored_plist_path, metadata)
+        configure_sparkle_info_plist!(restored_plist_path, metadata) if sparkle_enabled_for_release?(metadata)
 
         Bundler.with_unbundled_env do
           dart_define = shell_escape("ZCASH_DEFAULT_NETWORK=#{metadata[:zcash_default_network]}")
