@@ -202,28 +202,39 @@ pub fn build_vote_commitment(
     })
 }
 
-/// Derive an Orchard SpendingKey from hotkey seed bytes using ZIP-32.
+/// Derive an Orchard SpendingKey from seed bytes using ZIP-32 account 0.
 ///
 /// `network_id`: 0 = testnet, 1 = mainnet (same encoding as the wallet SDK / `NoteInfo` flow).
 pub fn derive_spending_key(hotkey_seed: &[u8], network_id: u32) -> Result<SpendingKey, VotingError> {
+    derive_spending_key_for_account(hotkey_seed, network_id, 0)
+}
+
+/// Derive an Orchard SpendingKey from seed bytes using ZIP-32.
+///
+/// `network_id`: 0 = testnet, 1 = mainnet (same encoding as the wallet SDK / `NoteInfo` flow).
+/// `account_index`: ZIP-32 account index used for the Orchard account.
+pub fn derive_spending_key_for_account(
+    seed: &[u8],
+    network_id: u32,
+    account_index: u32,
+) -> Result<SpendingKey, VotingError> {
     use zcash_keys::keys::UnifiedSpendingKey;
     use zcash_protocol::consensus::{MAIN_NETWORK, TEST_NETWORK};
     use zip32::AccountId;
 
-    if hotkey_seed.len() < 32 {
+    if seed.len() < 32 {
         return Err(VotingError::InvalidInput {
-            message: format!(
-                "hotkey_seed must be at least 32 bytes, got {}",
-                hotkey_seed.len()
-            ),
+            message: format!("seed must be at least 32 bytes, got {}", seed.len()),
         });
     }
 
-    let account = AccountId::try_from(0u32).expect("account 0 is valid");
+    let account = AccountId::try_from(account_index).map_err(|_| VotingError::InvalidInput {
+        message: format!("invalid account_index {}", account_index),
+    })?;
 
     let usk = match network_id {
-        0 => UnifiedSpendingKey::from_seed(&TEST_NETWORK, hotkey_seed, account),
-        1 => UnifiedSpendingKey::from_seed(&MAIN_NETWORK, hotkey_seed, account),
+        0 => UnifiedSpendingKey::from_seed(&TEST_NETWORK, seed, account),
+        1 => UnifiedSpendingKey::from_seed(&MAIN_NETWORK, seed, account),
         _ => {
             return Err(VotingError::InvalidInput {
                 message: format!(
@@ -234,7 +245,7 @@ pub fn derive_spending_key(hotkey_seed: &[u8], network_id: u32) -> Result<Spendi
         }
     }
     .map_err(|e| VotingError::InvalidInput {
-        message: format!("failed to derive UnifiedSpendingKey from hotkey_seed: {}", e),
+        message: format!("failed to derive UnifiedSpendingKey from seed: {}", e),
     })?;
 
     let sk: SpendingKey = *usk.orchard();
@@ -249,6 +260,24 @@ mod tests {
 
     impl ProofProgressReporter for TestReporter {
         fn on_progress(&self, _progress: f64) {}
+    }
+
+    #[test]
+    fn test_derive_spending_key_for_account() {
+        let seed = [0x42; 64];
+
+        let default = derive_spending_key(&seed, 1).unwrap();
+        let account_0 = derive_spending_key_for_account(&seed, 1, 0).unwrap();
+        let account_1 = derive_spending_key_for_account(&seed, 1, 1).unwrap();
+
+        assert_eq!(
+            orchard::keys::FullViewingKey::from(&default).to_bytes(),
+            orchard::keys::FullViewingKey::from(&account_0).to_bytes()
+        );
+        assert_ne!(
+            orchard::keys::FullViewingKey::from(&account_0).to_bytes(),
+            orchard::keys::FullViewingKey::from(&account_1).to_bytes()
+        );
     }
 
     #[test]

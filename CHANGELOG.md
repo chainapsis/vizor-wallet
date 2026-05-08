@@ -4,6 +4,12 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.5.4
+
+## Fixed
+- Delegation submission signing now derives the sender spending key from the
+  caller's ZIP-32 `account_index` instead of always using account 0.
+
 # 0.5.3
 
 ## Fixed
