@@ -883,7 +883,7 @@ impl VotingDb {
         bundle_index: u32,
         sender_seed: &[u8],
         network_id: u32,
-        _account_index: u32,
+        account_index: u32,
     ) -> Result<DelegationSubmissionData, VotingError> {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
@@ -900,8 +900,9 @@ impl VotingDb {
                     message: format!("pczt_sighash must be 32 bytes, got {}", sighash_vec.len()),
                 })?;
 
-        // Derive sender SpendingKey from seed via ZIP-32 (same as delegation)
-        let sk = crate::zkp2::derive_spending_key(sender_seed, network_id)?;
+        // Derive sender SpendingKey from the same ZIP-32 account used to build the PCZT.
+        let sk =
+            crate::zkp2::derive_spending_key_for_account(sender_seed, network_id, account_index)?;
         let ask = orchard::keys::SpendAuthorizingKey::from(&sk);
 
         // Deserialize alpha
@@ -1356,6 +1357,102 @@ mod tests {
 
         queries::store_vote(&db.conn(), ROUND_ID, W, 0, 0, 0, &[0xAA; 32]).unwrap();
         db.mark_vote_submitted(ROUND_ID, 0, 0).unwrap();
+    }
+
+    #[test]
+    fn test_get_delegation_submission_uses_account_index_for_seed_signing() {
+        use orchard::{
+            keys::{SpendAuthorizingKey, SpendingKey},
+            primitives::redpallas::{Signature, SpendAuth, VerificationKey},
+        };
+        use zcash_keys::keys::UnifiedSpendingKey;
+        use zcash_protocol::consensus::TEST_NETWORK;
+        use zip32::AccountId;
+
+        fn randomized_verification_key(
+            seed: &[u8],
+            account_index: u32,
+            alpha: &pallas::Scalar,
+        ) -> VerificationKey<SpendAuth> {
+            let account = AccountId::try_from(account_index).unwrap();
+            let usk = UnifiedSpendingKey::from_seed(&TEST_NETWORK, seed, account).unwrap();
+            let sk: SpendingKey = *usk.orchard();
+            let ask = SpendAuthorizingKey::from(&sk);
+            VerificationKey::from(&ask.randomize(alpha))
+        }
+
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        let sender_seed = [0x42; 64];
+        let alpha = pallas::Scalar::from(7);
+        let alpha_bytes = alpha.to_repr();
+        let sighash = [0x99; 32];
+        let account_1_rk: [u8; 32] =
+            (&randomized_verification_key(&sender_seed, 1, &alpha)).into();
+
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
+            queries::store_delegation_data(
+                &conn,
+                ROUND_ID,
+                W,
+                0,
+                &[0x11; 32],
+                &[],
+                &[0x22; 32],
+                &[],
+                &[0x33; 32],
+                &[0x44; 32],
+                &alpha_bytes,
+                &[0x55; 32],
+                &[0x66; 32],
+                &[0x77; 32],
+                1,
+                0,
+                &[],
+                &sighash,
+            )
+            .unwrap();
+            queries::store_proof_result_fields(
+                &conn,
+                ROUND_ID,
+                W,
+                0,
+                &account_1_rk,
+                &[vec![0x88; 32]],
+                &[0x33; 32],
+                &[0x44; 32],
+            )
+            .unwrap();
+            queries::store_proof(&conn, ROUND_ID, W, 0, &[0xAB; 96]).unwrap();
+        }
+
+        let submission = db
+            .get_delegation_submission(ROUND_ID, 0, &sender_seed, 0, 1)
+            .unwrap();
+
+        assert_eq!(submission.rk, account_1_rk.to_vec());
+        assert_eq!(submission.sighash, sighash.to_vec());
+
+        let sig_bytes: [u8; 64] = submission
+            .spend_auth_sig
+            .as_slice()
+            .try_into()
+            .expect("signature length was checked by signer");
+        let sig = Signature::<SpendAuth>::from(sig_bytes);
+
+        let returned_rk_bytes: [u8; 32] = submission
+            .rk
+            .as_slice()
+            .try_into()
+            .expect("test stores a 32-byte rk");
+        let returned_rk = VerificationKey::<SpendAuth>::try_from(returned_rk_bytes).unwrap();
+        returned_rk.verify(&submission.sighash, &sig).unwrap();
+
+        let account_0_rk = randomized_verification_key(&sender_seed, 0, &alpha);
+        assert!(account_0_rk.verify(&submission.sighash, &sig).is_err());
     }
 
     /// Multi-bundle test: 6 notes → 2 bundles (5+1), independent delegation + vote storage per bundle.
