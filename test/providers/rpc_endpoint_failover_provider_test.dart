@@ -507,6 +507,49 @@ void main() {
       );
     },
   );
+
+  test(
+    'primary probe compares against fresh current fallback height',
+    () async {
+      var now = DateTime(2026);
+      final primary = defaultRpcEndpointConfig('main');
+      final primaryUrl = primary.normalizedLightwalletdUrl;
+      const fallbackUrl = 'https://eu.zec.stardust.rest:443';
+      final heightByUrl = <String, BigInt>{
+        fallbackUrl: BigInt.from(110),
+        primaryUrl: BigInt.from(120),
+      };
+      final container = _container(
+        primary: primary,
+        clock: () => now,
+        chainNameByUrl: {fallbackUrl: 'main', primaryUrl: 'main'},
+        heightByUrl: heightByUrl,
+        settings: const RpcEndpointFailoverSettings(
+          primaryProbeInterval: Duration(seconds: 5),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(rpcEndpointFailoverProvider.notifier);
+      await notifier.switchToFallbackFor(
+        Exception('DeadlineExceeded'),
+        operation: 'primary sync',
+      );
+
+      heightByUrl[fallbackUrl] = BigInt.from(150);
+      now = now.add(const Duration(seconds: 5));
+
+      expect(await notifier.maybeProbePrimary(), isFalse);
+      var state = container.read(rpcEndpointFailoverProvider);
+      expect(state.isUsingFallback, isTrue);
+      expect(state.lastObservedHeight, BigInt.from(150));
+
+      heightByUrl[primaryUrl] = BigInt.from(149);
+      expect(await notifier.maybeProbePrimary(force: true), isTrue);
+      state = container.read(rpcEndpointFailoverProvider);
+      expect(state.isUsingFallback, isFalse);
+    },
+  );
 }
 
 ProviderContainer _container({

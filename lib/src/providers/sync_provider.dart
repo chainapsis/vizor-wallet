@@ -535,6 +535,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           );
           _syncSub = stream.listen(
             (event) {
+              if (gen != _syncGen) return;
               final progress = SyncProgressEvent(
                 scannedHeight: event.scannedHeight.toInt(),
                 chainTipHeight: event.chainTipHeight.toInt(),
@@ -550,6 +551,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               unawaited(_onSyncProgress(progress));
             },
             onDone: () {
+              if (gen != _syncGen) {
+                log('Sync: ignoring stale stream end');
+                return;
+              }
               log('Sync: stream ended');
               _syncSub = null;
               // Normal completion (isComplete=true) is handled inside

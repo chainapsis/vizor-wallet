@@ -430,7 +430,22 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       return false;
     }
 
-    final currentHeight = state.lastObservedHeight;
+    final currentEndpoint = state.current;
+    var currentHeight = state.lastObservedHeight;
+    try {
+      final currentHealth = await _checkHealth(currentEndpoint);
+      currentHeight = _maxHeight(currentHeight, currentHealth.height);
+      state = state.copyWith(
+        lastObservedHeight: currentHeight,
+        lastObservedAt: now,
+      );
+    } catch (e) {
+      log(
+        'RpcEndpointFailover: current fallback ${currentEndpoint.hostPort} '
+        'probe failed while checking primary recovery: $e',
+      );
+    }
+
     final tolerance = BigInt.from(
       ref
           .read(rpcEndpointFailoverSettingsProvider)
@@ -594,6 +609,11 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   bool _isCurrentEndpoint(RpcEndpointConfig endpoint) {
     return endpoint.normalizedLightwalletdUrl ==
         state.current.normalizedLightwalletdUrl;
+  }
+
+  BigInt _maxHeight(BigInt? a, BigInt b) {
+    if (a == null || b > a) return b;
+    return a;
   }
 
   Future<RpcEndpointHealth> _checkHealth(RpcEndpointConfig endpoint) {
