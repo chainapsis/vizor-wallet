@@ -499,12 +499,18 @@ class _SyncDisplayTarget {
 sealed class _SyncEngineEvent {
   const _SyncEngineEvent();
 
+  BigInt? get runId;
+  BigInt? get sequence;
   _SyncCursor? get cursor;
   bool get isBackground;
   bool get shouldRefreshAccountSnapshot;
 }
 
 class _SyncProgressUpdated extends _SyncEngineEvent {
+  @override
+  final BigInt? runId;
+  @override
+  final BigInt? sequence;
   @override
   final _SyncCursor cursor;
   final double percentage;
@@ -515,6 +521,8 @@ class _SyncProgressUpdated extends _SyncEngineEvent {
   final bool isBackground;
 
   const _SyncProgressUpdated({
+    required this.runId,
+    required this.sequence,
     required this.cursor,
     required this.percentage,
     required this.displayTarget,
@@ -529,11 +537,20 @@ class _SyncProgressUpdated extends _SyncEngineEvent {
 
 class _SyncCompleted extends _SyncEngineEvent {
   @override
+  final BigInt? runId;
+  @override
+  final BigInt? sequence;
+  @override
   final _SyncCursor cursor;
   @override
   final bool isBackground;
 
-  const _SyncCompleted({required this.cursor, required this.isBackground});
+  const _SyncCompleted({
+    required this.runId,
+    required this.sequence,
+    required this.cursor,
+    required this.isBackground,
+  });
 
   @override
   bool get shouldRefreshAccountSnapshot => true;
@@ -541,12 +558,18 @@ class _SyncCompleted extends _SyncEngineEvent {
 
 class _SyncStopped extends _SyncEngineEvent {
   @override
+  final BigInt? runId;
+  @override
+  final BigInt? sequence;
+  @override
   final _SyncCursor? cursor;
   final _SyncEngineStopReason reason;
   @override
   final bool isBackground;
 
   const _SyncStopped({
+    required this.runId,
+    required this.sequence,
     required this.cursor,
     required this.reason,
     required this.isBackground,
@@ -562,16 +585,25 @@ _SyncEngineEvent _syncEngineEventFromNative(NativeSyncEventV2 event) {
     chainTipHeight: event.chainTipHeight,
   );
   if (event.isCompleted) {
-    return _SyncCompleted(cursor: cursor, isBackground: event.isBackground);
+    return _SyncCompleted(
+      runId: event.runId,
+      sequence: event.sequence,
+      cursor: cursor,
+      isBackground: event.isBackground,
+    );
   }
   if (event.isStopped) {
     return _SyncStopped(
+      runId: event.runId,
+      sequence: event.sequence,
       cursor: cursor,
       reason: _SyncEngineStopReason.streamClosed,
       isBackground: event.isBackground,
     );
   }
   return _SyncProgressUpdated(
+    runId: event.runId,
+    sequence: event.sequence,
     cursor: cursor,
     percentage: event.percentage,
     displayTarget: _SyncDisplayTarget(
@@ -584,6 +616,18 @@ _SyncEngineEvent _syncEngineEventFromNative(NativeSyncEventV2 event) {
   );
 }
 
+class _AccountSnapshotRead {
+  final rust_sync.WalletBalance? balance;
+  final List<rust_sync.TransactionInfo>? recentTransactions;
+  final ({bool canShield, BigInt fee, BigInt amount})? shieldStatus;
+
+  const _AccountSnapshotRead({
+    required this.balance,
+    required this.recentTransactions,
+    required this.shieldStatus,
+  });
+}
+
 class SyncNotifier extends AsyncNotifier<SyncState> {
   static const _displayBlockDuration = Duration(milliseconds: 20);
   static const _maxIncompleteDisplayPercentage = 0.999;
@@ -593,6 +637,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _isInForeground = true;
   int _lastLoggedHeight = 0;
   NativeSyncEventV2? _lastForegroundSyncEvent;
+  BigInt? _activeNativeRunId;
+  BigInt _lastNativeEventSequence = BigInt.zero;
+  BigInt _retiredNativeRunId = BigInt.zero;
   int _syncGen = 0; // incremented by stopSync to invalidate pending startSync
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
@@ -601,6 +648,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Timer? _pollTimer;
   bool _pollCheckInFlight = false;
   int _sensitiveStateEpoch = 0;
+  int _accountSnapshotRequestId = 0;
+  int _lastCommittedAccountSnapshotRequestId = 0;
   // Mempool observer subscription. Started in `startSync` and
   // cancelled in `stopSync`, so its lifetime matches the
   // foreground-sync lifetime even though the Rust side manages
@@ -813,6 +862,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _isSyncing = true;
     _lastLoggedHeight = 0;
     _lastForegroundSyncEvent = null;
+    _retireCurrentNativeRun();
     _stopDisplayProgressTimer();
     final gen = ++_syncGen;
     final prev = state.value;
@@ -931,6 +981,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   unawaited(
                     _handleSyncEngineEvent(
                       _SyncCompleted(
+                        runId: lastEvent?.runId,
+                        sequence: lastEvent?.sequence,
                         cursor: _cursorForEndedAtTip(current, lastEvent),
                         isBackground: false,
                       ),
@@ -942,6 +994,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   unawaited(
                     _handleSyncEngineEvent(
                       _SyncStopped(
+                        runId: lastEvent?.runId,
+                        sequence: lastEvent?.sequence,
                         cursor: lastEvent == null
                             ? null
                             : _SyncCursor(
@@ -1100,6 +1154,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   void stopSync() {
     ++_syncGen; // invalidate pending startSync callbacks
+    _retireCurrentNativeRun();
     rust_sync.cancelFullSync();
     _syncSub?.cancel();
     _syncSub = null;
@@ -1173,6 +1228,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
 
     ++_syncGen;
+    _retireCurrentNativeRun();
     _stopPolling();
     await onStoppingSync?.call();
     log('SyncNotifier: pausing sync for wallet DB mutation');
@@ -1233,6 +1289,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> clearSensitiveStateForLock() async {
     ++_syncGen;
     ++_sensitiveStateEpoch;
+    _retireCurrentNativeRun();
     _isSyncing = false;
     _stopDisplayProgressTimer();
     _stopPolling();
@@ -1295,6 +1352,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> restartSync() async {
     final hadBackgroundSync = _bgDelegate.isActive;
     ++_syncGen;
+    _retireCurrentNativeRun();
     rust_sync.cancelFullSync();
     await _syncSub?.cancel();
     _syncSub = null;
@@ -1404,6 +1462,57 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       scannedHeight: scannedHeight,
       chainTipHeight: chainTipHeight,
     );
+  }
+
+  void _retireCurrentNativeRun() {
+    _retireNativeRun(_activeNativeRunId);
+  }
+
+  void _retireNativeRun(BigInt? runId) {
+    if (runId == null) return;
+    if (runId > _retiredNativeRunId) {
+      _retiredNativeRunId = runId;
+    }
+    if (_activeNativeRunId == runId) {
+      _activeNativeRunId = null;
+      _lastNativeEventSequence = BigInt.zero;
+    }
+  }
+
+  bool _shouldAcceptNativeSyncEvent(NativeSyncEventV2 event, {int? syncGen}) {
+    if (_isStaleForegroundUpdate(syncGen) || _requiresUnlock) {
+      return false;
+    }
+    if (syncGen == null && event.isBackground && !_bgDelegate.isActive) {
+      log('SyncNotifier: ignoring stale background sync event after handoff');
+      return false;
+    }
+    if (event.runId <= _retiredNativeRunId) {
+      log('SyncNotifier: ignoring retired native sync run ${event.runId}');
+      return false;
+    }
+
+    final activeRunId = _activeNativeRunId;
+    if (activeRunId == null || event.runId > activeRunId) {
+      _activeNativeRunId = event.runId;
+      _lastNativeEventSequence = BigInt.zero;
+    } else if (event.runId < activeRunId) {
+      log(
+        'SyncNotifier: ignoring stale native sync run ${event.runId}; '
+        'active=$_activeNativeRunId',
+      );
+      return false;
+    }
+
+    if (event.sequence <= _lastNativeEventSequence) {
+      log(
+        'SyncNotifier: ignoring duplicate native sync event '
+        'run=${event.runId} sequence=${event.sequence}',
+      );
+      return false;
+    }
+    _lastNativeEventSequence = event.sequence;
+    return true;
   }
 
   Future<void> _checkAndSync() async {
@@ -1633,7 +1742,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     NativeSyncEventV2 event, {
     int? syncGen,
   }) async {
-    if (_isStaleForegroundUpdate(syncGen) || _requiresUnlock) {
+    if (!_shouldAcceptNativeSyncEvent(event, syncGen: syncGen)) {
       return;
     }
     if (event.scannedHeight != _lastLoggedHeight) {
@@ -1695,15 +1804,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _stopDisplayProgressTimer();
     }
 
-    if (!event.shouldRefreshAccountSnapshot || accountUuid == null) {
-      return;
+    if (event.shouldRefreshAccountSnapshot && accountUuid != null) {
+      await _refreshAccountSnapshot(
+        accountUuid: accountUuid,
+        epoch: epoch,
+        syncGen: syncGen,
+        logPrefix: 'SyncNotifier',
+      );
     }
-    await _refreshAccountSnapshot(
-      accountUuid: accountUuid,
-      epoch: epoch,
-      syncGen: syncGen,
-      logPrefix: 'SyncNotifier',
-    );
+    if (event is _SyncCompleted || event is _SyncStopped) {
+      _retireNativeRun(event.runId);
+    }
   }
 
   bool _isStaleForegroundUpdate(int? syncGen) {
@@ -1810,12 +1921,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     int? syncGen,
     required String logPrefix,
   }) async {
-    final prev = state.value;
-    final scopedPrev = _previousScopedState(prev, accountUuid);
-    final snapshot = await _loadAccountSnapshot(
-      accountUuid: accountUuid,
-      fallback: scopedPrev?.account,
-    );
+    final requestId = ++_accountSnapshotRequestId;
+    final snapshot = await _loadAccountSnapshot(accountUuid: accountUuid);
 
     if (_isStaleForegroundUpdate(syncGen) ||
         epoch != _sensitiveStateEpoch ||
@@ -1826,51 +1933,36 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
       return;
     }
+    if (requestId < _lastCommittedAccountSnapshotRequestId) {
+      log('$logPrefix: discarding older account snapshot refresh');
+      return;
+    }
 
     final current = state.value ?? SyncState(accountUuid: accountUuid);
-    state = AsyncData(
-      current.copyWith(
-        account:
-            snapshot ??
-            current.account.withoutAccountScopedData(accountUuid: accountUuid),
-      ),
+    final latestAccount = current.account.belongsToAccount(accountUuid)
+        ? current.account
+        : AccountSyncState(accountUuid: accountUuid);
+    final mergedAccount = _mergeAccountSnapshotRead(
+      accountUuid: accountUuid,
+      latest: latestAccount,
+      snapshot: snapshot,
     );
+    _lastCommittedAccountSnapshotRequestId = requestId;
+    state = AsyncData(current.copyWith(account: mergedAccount));
   }
 
-  Future<AccountSyncState?> _loadAccountSnapshot({
+  Future<_AccountSnapshotRead> _loadAccountSnapshot({
     required String accountUuid,
-    AccountSyncState? fallback,
   }) async {
     final dbPath = await _getDbPath();
     final network = _endpointConfig.networkName;
-    BigInt? transparent;
-    BigInt? sapling;
-    BigInt? orchard;
-    BigInt? transparentPending;
-    BigInt? saplingPending;
-    BigInt? orchardPending;
-    BigInt? spendable;
-    BigInt? total;
-    bool? canShieldTransparentBalance;
-    BigInt? shieldTransparentFee;
-    BigInt? shieldTransparentAmount;
-    var didFetchBalance = false;
-    var didFetchRecentTxs = false;
+    rust_sync.WalletBalance? balance;
     try {
-      final balance = await rust_sync.getBalance(
+      balance = await rust_sync.getBalance(
         dbPath: dbPath,
         network: network,
         accountUuid: accountUuid,
       );
-      transparent = balance.transparent;
-      sapling = balance.sapling;
-      orchard = balance.orchard;
-      transparentPending = balance.transparentPending;
-      saplingPending = balance.saplingPending;
-      orchardPending = balance.orchardPending;
-      spendable = balance.spendable;
-      total = balance.total;
-      didFetchBalance = true;
     } catch (e) {
       _logRefreshReadError(
         label: 'balance',
@@ -1879,8 +1971,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
     }
 
-    var recentTxs =
-        fallback?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
+    List<rust_sync.TransactionInfo>? recentTxs;
     try {
       recentTxs = await rust_sync.getTransactionHistory(
         dbPath: dbPath,
@@ -1888,7 +1979,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         limit: 10,
         accountUuid: accountUuid,
       );
-      didFetchRecentTxs = true;
     } catch (e) {
       _logRefreshReadError(
         label: 'tx history',
@@ -1897,44 +1987,48 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
     }
 
-    final shieldStatus = await _getShieldTransparentStatus(
-      dbPath: dbPath,
-      network: network,
-      accountUuid: accountUuid,
-      transparentBalance:
-          transparent ?? fallback?.transparentBalance ?? BigInt.zero,
-    );
-    if (shieldStatus != null) {
-      canShieldTransparentBalance = shieldStatus.canShield;
-      shieldTransparentFee = shieldStatus.fee;
-      shieldTransparentAmount = shieldStatus.amount;
+    ({bool canShield, BigInt fee, BigInt amount})? shieldStatus;
+    if (balance != null) {
+      shieldStatus = await _getShieldTransparentStatus(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: accountUuid,
+        transparentBalance: balance.transparent,
+      );
     }
 
-    return AccountSyncState(
+    return _AccountSnapshotRead(
+      balance: balance,
+      recentTransactions: recentTxs,
+      shieldStatus: shieldStatus,
+    );
+  }
+
+  AccountSyncState _mergeAccountSnapshotRead({
+    required String accountUuid,
+    required AccountSyncState latest,
+    required _AccountSnapshotRead snapshot,
+  }) {
+    final balance = snapshot.balance;
+    final shieldStatus = snapshot.shieldStatus;
+    return latest.copyWith(
       accountUuid: accountUuid,
-      hasBalanceData: didFetchBalance || (fallback?.hasBalanceData ?? false),
-      hasRecentTransactionsData:
-          didFetchRecentTxs || (fallback?.hasRecentTransactionsData ?? false),
-      transparentBalance: transparent ?? fallback?.transparentBalance,
-      saplingBalance: sapling ?? fallback?.saplingBalance,
-      orchardBalance: orchard ?? fallback?.orchardBalance,
-      transparentPendingBalance:
-          transparentPending ?? fallback?.transparentPendingBalance,
-      saplingPendingBalance: saplingPending ?? fallback?.saplingPendingBalance,
-      orchardPendingBalance: orchardPending ?? fallback?.orchardPendingBalance,
-      canShieldTransparentBalance:
-          canShieldTransparentBalance ??
-          fallback?.canShieldTransparentBalance ??
-          false,
-      shieldTransparentFee:
-          shieldTransparentFee ?? fallback?.shieldTransparentFee,
-      shieldTransparentAmount:
-          shieldTransparentAmount ?? fallback?.shieldTransparentAmount,
-      spendableBalance: spendable ?? fallback?.spendableBalance,
-      totalBalance: total ?? fallback?.totalBalance,
-      recentTransactions: didFetchRecentTxs
-          ? recentTxs
-          : fallback?.recentTransactions ?? const [],
+      hasBalanceData: balance != null ? true : latest.hasBalanceData,
+      hasRecentTransactionsData: snapshot.recentTransactions != null
+          ? true
+          : latest.hasRecentTransactionsData,
+      transparentBalance: balance?.transparent,
+      saplingBalance: balance?.sapling,
+      orchardBalance: balance?.orchard,
+      transparentPendingBalance: balance?.transparentPending,
+      saplingPendingBalance: balance?.saplingPending,
+      orchardPendingBalance: balance?.orchardPending,
+      canShieldTransparentBalance: shieldStatus?.canShield,
+      shieldTransparentFee: shieldStatus?.fee,
+      shieldTransparentAmount: shieldStatus?.amount,
+      spendableBalance: balance?.spendable,
+      totalBalance: balance?.total,
+      recentTransactions: snapshot.recentTransactions,
     );
   }
 
