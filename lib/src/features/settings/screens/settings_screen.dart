@@ -13,6 +13,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -384,27 +385,9 @@ class _ModalAccountAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final option = resolveProfilePictureOption(profilePictureId);
-
-    return _ProfilePictureImage(assetPath: option.assetPath, size: 32);
-  }
-}
-
-class _ProfilePictureImage extends StatelessWidget {
-  const _ProfilePictureImage({required this.assetPath, required this.size});
-
-  final String assetPath;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipOval(
-      child: Image.asset(
-        assetPath,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-      ),
+    return AppProfilePicture(
+      profilePictureId: profilePictureId,
+      size: AppProfilePictureSize.large,
     );
   }
 }
@@ -453,7 +436,7 @@ class _ProfilePictureModal extends StatefulWidget {
 
 class _ProfilePictureModalState extends State<_ProfilePictureModal> {
   static const _buttonWidth = 280.0;
-  static const _optionSize = 32.0;
+  static const _optionSize = AppProfilePictureSize.large;
 
   late String _selectedId = _initialSelectedId();
   bool _isSubmitting = false;
@@ -462,10 +445,14 @@ class _ProfilePictureModalState extends State<_ProfilePictureModal> {
   bool get _canUpdate =>
       !_isSubmitting &&
       isKnownProfilePictureId(_selectedId) &&
-      _selectedId != widget.currentProfilePictureId;
+      _selectedId != _currentResolvedId;
+
+  String get _currentResolvedId {
+    return resolveProfilePictureOption(widget.currentProfilePictureId).id;
+  }
 
   String _initialSelectedId() {
-    return widget.currentProfilePictureId;
+    return _currentResolvedId;
   }
 
   Future<void> _submit() async {
@@ -505,9 +492,9 @@ class _ProfilePictureModalState extends State<_ProfilePictureModal> {
     return _SettingsModalCard(
       gap: AppSpacing.sm,
       header: _ModalHeader(
-        leading: _ProfilePictureImage(
-          assetPath: previewOption.assetPath,
-          size: 56,
+        leading: AppProfilePicture(
+          profilePictureId: previewOption.id,
+          size: AppProfilePictureSize.xLarge,
         ),
         title: 'Select Profile Picture',
       ),
@@ -570,7 +557,7 @@ class _ProfilePictureOptionButton extends StatelessWidget {
   });
 
   final ProfilePictureOption option;
-  final double size;
+  final AppProfilePictureSize size;
   final bool selected;
   final VoidCallback onTap;
 
@@ -584,12 +571,12 @@ class _ProfilePictureOptionButton extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: SizedBox(
-          width: size,
-          height: size,
+          width: size.dimension,
+          height: size.dimension,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              _ProfilePictureImage(assetPath: option.assetPath, size: size),
+              AppProfilePicture(profilePictureId: option.id, size: size),
               if (selected)
                 Positioned(
                   right: -4,

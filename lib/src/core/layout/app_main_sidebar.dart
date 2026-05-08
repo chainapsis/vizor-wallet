@@ -7,8 +7,9 @@ import '../../providers/app_security_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
-import '../widgets/app_icon.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_icon.dart';
+import '../widgets/app_profile_picture.dart';
 import 'app_desktop_shell.dart';
 
 class AppMainSidebar extends ConsumerStatefulWidget {
@@ -506,15 +507,9 @@ class _SidebarAccountAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final option = resolveProfilePictureOption(profilePictureId);
-
-    return ClipOval(
-      child: Image.asset(
-        option.assetPath,
-        width: 24,
-        height: 24,
-        fit: BoxFit.cover,
-      ),
+    return AppProfilePicture(
+      profilePictureId: profilePictureId,
+      size: AppProfilePictureSize.medium,
     );
   }
 }
