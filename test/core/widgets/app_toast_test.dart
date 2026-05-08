@@ -5,7 +5,7 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_toast.dart';
 
 void main() {
-  testWidgets('AppToast uses seed phrase container styling in light mode', (
+  testWidgets('AppToast uses inverse neutral tokens in light mode', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -26,17 +26,8 @@ void main() {
                 )
                 .decoration
             as BoxDecoration;
-    expect(decoration.color, AppThemeData.light.colors.background.ground);
+    expect(decoration.color, AppThemeData.light.colors.background.inverse);
     expect(decoration.borderRadius, BorderRadius.circular(AppRadii.small));
-    expect(decoration.border, isNull);
-    expect(decoration.boxShadow, const [
-      BoxShadow(color: Color(0xFFE1E1E1), offset: Offset(0, 2), blurRadius: 2),
-      BoxShadow(
-        color: Color(0xFFE1E1E1),
-        offset: Offset(0, 10),
-        blurRadius: 15,
-      ),
-    ]);
 
     final padding = tester.widget<Padding>(
       find.descendant(of: toastFinder, matching: find.byType(Padding)),
@@ -50,7 +41,7 @@ void main() {
     );
 
     final text = tester.widget<Text>(find.text('Address Copied'));
-    expect(text.style?.color, AppThemeData.light.colors.text.accent);
+    expect(text.style?.color, AppThemeData.light.colors.text.inverse);
     expect(text.style?.fontFamily, AppTypography.labelLarge.fontFamily);
     expect(text.style?.fontSize, AppTypography.labelLarge.fontSize);
     expect(text.style?.height, AppTypography.labelLarge.height);
@@ -59,63 +50,7 @@ void main() {
     final icon = tester.widget<AppIcon>(find.byType(AppIcon));
     expect(icon.name, AppIcons.checkCircle);
     expect(icon.size, AppIconSize.medium);
-    expect(icon.color, AppThemeData.light.colors.icon.accent);
-  });
-
-  testWidgets('AppToast uses a subtle border without shadow in dark mode', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      const _ThemedHarness(
-        theme: AppThemeData.dark,
-        child: Center(child: AppToast(message: 'Address Copied')),
-      ),
-    );
-
-    final toastFinder = find.byType(AppToast);
-    final decoration =
-        tester
-                .widget<DecoratedBox>(
-                  find.descendant(
-                    of: toastFinder,
-                    matching: find.byType(DecoratedBox),
-                  ),
-                )
-                .decoration
-            as BoxDecoration;
-    final border = decoration.border as Border?;
-
-    expect(decoration.color, AppThemeData.dark.colors.background.ground);
-    expect(decoration.boxShadow, isNull);
-    expect(border?.top.color, AppThemeData.dark.colors.border.subtle);
-    expect(border?.top.width, 1);
-
-    final text = tester.widget<Text>(find.text('Address Copied'));
-    expect(text.style?.color, AppThemeData.dark.colors.text.accent);
-
-    final icon = tester.widget<AppIcon>(find.byType(AppIcon));
-    expect(icon.color, AppThemeData.dark.colors.icon.accent);
-  });
-
-  testWidgets('AppToast clears inherited text decoration', (tester) async {
-    await tester.pumpWidget(
-      const _ThemedHarness(
-        theme: AppThemeData.light,
-        child: DefaultTextStyle(
-          style: TextStyle(
-            decoration: TextDecoration.underline,
-            decorationColor: Colors.yellow,
-          ),
-          child: Center(child: AppToast(message: 'Address Copied')),
-        ),
-      ),
-    );
-
-    final textContext = tester.element(find.text('Address Copied'));
-    expect(
-      DefaultTextStyle.of(textContext).style.decoration,
-      TextDecoration.none,
-    );
+    expect(icon.color, AppThemeData.light.colors.icon.inverse);
   });
 
   testWidgets('showAppToast displays a top-centered transient toast', (
@@ -140,11 +75,6 @@ void main() {
     expect(find.text('Address Copied'), findsOneWidget);
     final hostTopLeft = tester.getTopLeft(find.byType(AppToastHost));
     final hostSize = tester.getSize(find.byType(AppToastHost));
-    final enteringToastTopLeft = tester.getTopLeft(find.byType(AppToast));
-    expect(enteringToastTopLeft.dy, lessThan(hostTopLeft.dy + AppSpacing.base));
-
-    await tester.pump(AppToastHost.animationDuration);
-
     final toastTopLeft = tester.getTopLeft(find.byType(AppToast));
     final toastSize = tester.getSize(find.byType(AppToast));
     expect(toastTopLeft.dy, hostTopLeft.dy + AppSpacing.base);
@@ -154,7 +84,7 @@ void main() {
     );
 
     await tester.pump(AppToast.defaultDuration);
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.text('Address Copied'), findsNothing);
   });

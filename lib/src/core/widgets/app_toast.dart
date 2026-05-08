@@ -20,60 +20,36 @@ class AppToast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
-    return DefaultTextStyle.merge(
-      style: const TextStyle(decoration: TextDecoration.none),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.small),
-            border: isDark ? Border.all(color: colors.border.subtle) : null,
-            boxShadow: isDark
-                ? null
-                : const [
-                    BoxShadow(
-                      color: Color(0xFFE1E1E1),
-                      offset: Offset(0, 2),
-                      blurRadius: 2,
-                    ),
-                    BoxShadow(
-                      color: Color(0xFFE1E1E1),
-                      offset: Offset(0, 10),
-                      blurRadius: 15,
-                    ),
-                  ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s,
-              vertical: AppSpacing.xs,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.inverse,
+        borderRadius: BorderRadius.circular(AppRadii.small),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s,
+          vertical: AppSpacing.xs,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AppIcon(
+              iconName,
+              size: AppIconSize.medium,
+              color: colors.icon.inverse,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AppIcon(
-                  iconName,
-                  size: AppIconSize.medium,
-                  color: colors.icon.accent,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Flexible(
-                  child: Text(
-                    message,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ),
-              ],
+            const SizedBox(width: AppSpacing.xxs),
+            Text(
+              message,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.inverse,
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -82,8 +58,6 @@ class AppToast extends StatelessWidget {
 
 class AppToastHost extends StatefulWidget {
   const AppToastHost({required this.child, super.key});
-
-  static const animationDuration = Duration(milliseconds: 220);
 
   final Widget child;
 
@@ -132,30 +106,15 @@ class _AppToastHostState extends State<AppToastHost> {
         fit: StackFit.expand,
         children: [
           widget.child,
-          Positioned(
-            top: AppSpacing.base,
-            left: 0,
-            right: 0,
-            child: IgnorePointer(
-              child: Center(
-                child: AnimatedSwitcher(
-                  duration: AppToastHost.animationDuration,
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) {
-                    final position = Tween<Offset>(
-                      begin: const Offset(0, -1),
-                      end: Offset.zero,
-                    ).animate(animation);
-                    return SlideTransition(position: position, child: child);
-                  },
-                  child: message == null
-                      ? const SizedBox.shrink(key: ValueKey('empty-toast'))
-                      : AppToast(key: ValueKey(message), message: message),
-                ),
+          if (message != null)
+            Positioned(
+              top: AppSpacing.base,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: Center(child: AppToast(message: message)),
               ),
             ),
-          ),
         ],
       ),
     );
