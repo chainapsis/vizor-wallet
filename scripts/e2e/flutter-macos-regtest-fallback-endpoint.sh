@@ -5,7 +5,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MNEMONIC="winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle ethics found child scare curve congress renew salute pig better used"
 SHIELDED_AMOUNT="1.25"
 CONFIRMING_BLOCKS="${E2E_CONFIRMING_BLOCKS:-10}"
-PRIMARY_LIGHTWALLETD_URL="${E2E_PRIMARY_LIGHTWALLETD_URL:-http://127.0.0.1:19067}"
 FLUTTER_DEVICE="${FLUTTER_DEVICE:-macos}"
 RESET_REGTEST="${RESET_REGTEST:-1}"
 
@@ -48,5 +47,4 @@ echo "running Flutter macOS fallback endpoint integration test"
 fvm flutter test \
   integration_test/regtest_fallback_endpoint_test.dart \
   -d "$FLUTTER_DEVICE" \
-  --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
-  --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$PRIMARY_LIGHTWALLETD_URL"
+  --dart-define=ZCASH_DEFAULT_NETWORK=regtest

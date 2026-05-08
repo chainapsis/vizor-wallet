@@ -47,7 +47,7 @@ class RpcEndpointFailoverState {
   const RpcEndpointFailoverState({
     required this.primary,
     required this.current,
-    required this.fallback,
+    required this.fallbackCandidates,
     this.primaryFailureCount = 0,
     this.lastFailure,
     this.switchedAt,
@@ -57,12 +57,15 @@ class RpcEndpointFailoverState {
 
   final RpcEndpointConfig primary;
   final RpcEndpointConfig current;
-  final RpcEndpointConfig? fallback;
+  final List<RpcEndpointConfig> fallbackCandidates;
   final int primaryFailureCount;
   final String? lastFailure;
   final DateTime? switchedAt;
   final DateTime? lastPrimaryProbeAt;
   final RpcEndpointFailoverEvent? lastEvent;
+
+  RpcEndpointConfig? get fallback =>
+      fallbackCandidates.isEmpty ? null : fallbackCandidates.first;
 
   bool get isUsingFallback =>
       current.normalizedLightwalletdUrl != primary.normalizedLightwalletdUrl;
@@ -70,7 +73,7 @@ class RpcEndpointFailoverState {
   RpcEndpointFailoverState copyWith({
     RpcEndpointConfig? primary,
     RpcEndpointConfig? current,
-    RpcEndpointConfig? fallback,
+    List<RpcEndpointConfig>? fallbackCandidates,
     int? primaryFailureCount,
     String? lastFailure,
     bool clearLastFailure = false,
@@ -82,7 +85,7 @@ class RpcEndpointFailoverState {
     return RpcEndpointFailoverState(
       primary: primary ?? this.primary,
       current: current ?? this.current,
-      fallback: fallback ?? this.fallback,
+      fallbackCandidates: fallbackCandidates ?? this.fallbackCandidates,
       primaryFailureCount: primaryFailureCount ?? this.primaryFailureCount,
       lastFailure: clearLastFailure ? null : lastFailure ?? this.lastFailure,
       switchedAt: clearSwitchedAt ? null : switchedAt ?? this.switchedAt,
@@ -173,7 +176,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
     return RpcEndpointFailoverState(
       primary: primary,
       current: primary,
-      fallback: fallbackRpcEndpointConfigFor(primary),
+      fallbackCandidates: fallbackRpcEndpointCandidatesFor(primary),
     );
   }
 
@@ -250,8 +253,8 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       return false;
     }
 
-    final fallback = state.fallback;
-    if (fallback == null) {
+    final fallbackCandidates = state.fallbackCandidates;
+    if (fallbackCandidates.isEmpty) {
       log(
         'RpcEndpointFailover: no fallback endpoint for '
         '${state.primary.hostPort} after $operation failure: $error',
@@ -263,12 +266,26 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       return false;
     }
 
-    try {
-      await _checkHealth(fallback);
-    } catch (fallbackError) {
+    RpcEndpointConfig? fallback;
+    Object? lastFallbackError;
+    for (final candidate in fallbackCandidates) {
+      try {
+        await _checkHealth(candidate);
+        fallback = candidate;
+        break;
+      } catch (fallbackError) {
+        lastFallbackError = fallbackError;
+        log(
+          'RpcEndpointFailover: fallback ${candidate.hostPort} failed health '
+          'check after $operation failure: $fallbackError',
+        );
+      }
+    }
+
+    if (fallback == null) {
       log(
-        'RpcEndpointFailover: fallback ${fallback.hostPort} failed health '
-        'check after $operation failure: $fallbackError',
+        'RpcEndpointFailover: all fallback endpoints failed health checks '
+        'after $operation failure: $lastFallbackError',
       );
       state = state.copyWith(
         primaryFailureCount: nextFailureCount,

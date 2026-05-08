@@ -6,6 +6,29 @@ export 'network_config.dart';
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
 const kMainnetFallbackRpcEndpointPresetId = 'zec-rocks';
+const kRegtestUnavailableRpcEndpointPresetId = 'unavailable-regtest';
+
+const kMainnetRpcEndpointFallbackPresetOrder = [
+  kDefaultRpcEndpointPresetId,
+  kMainnetFallbackRpcEndpointPresetId,
+  'na-zec-rocks',
+  'sa-zec-rocks',
+  'eu-zec-rocks',
+  'ap-zec-rocks',
+  'eu-zec-stardust',
+  'eu2-zec-stardust',
+  'jp-zec-stardust',
+  'z3-deepikaw',
+  'zprivacy',
+  'zcash-explorer',
+];
+
+const kTestnetRpcEndpointFallbackPresetOrder = ['default-testnet'];
+
+const kRegtestRpcEndpointFallbackPresetOrder = [
+  'default-regtest',
+  kRegtestUnavailableRpcEndpointPresetId,
+];
 
 class RpcEndpointConfig {
   const RpcEndpointConfig({
@@ -166,6 +189,12 @@ final kRegtestRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     url: ZcashNetwork.regtest.lightwalletdUrl,
     isDefault: true,
   ),
+  const RpcEndpointPreset(
+    id: kRegtestUnavailableRpcEndpointPresetId,
+    region: 'Regtest',
+    label: 'Unavailable Regtest',
+    url: 'http://127.0.0.1:19067',
+  ),
 ]);
 
 List<RpcEndpointPreset> rpcEndpointPresetsForNetwork(String networkName) {
@@ -191,46 +220,73 @@ RpcEndpointConfig defaultRpcEndpointConfig(String networkName) {
   );
 }
 
-RpcEndpointConfig? fallbackRpcEndpointConfigFor(RpcEndpointConfig primary) {
-  final primaryNormalized = primary.normalizedLightwalletdUrl;
-  final candidates = rpcEndpointPresetsForNetwork(primary.networkName)
-      .where(
-        (preset) =>
-            normalizeRpcEndpointUrl(preset.url, allowDefaultPort: true) !=
-            primaryNormalized,
-      )
-      .toList(growable: false);
-  if (candidates.isEmpty) return null;
+bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
+  return config.presetId == kCustomRpcEndpointPresetId;
+}
 
-  final preferredPresetIds = switch (primary.network) {
-    ZcashNetwork.mainnet => [
-      if (primary.effectivePresetId == kDefaultRpcEndpointPresetId)
-        kMainnetFallbackRpcEndpointPresetId
-      else
-        kDefaultRpcEndpointPresetId,
-      kMainnetFallbackRpcEndpointPresetId,
-    ],
-    ZcashNetwork.testnet => ['default-testnet'],
-    ZcashNetwork.regtest => ['default-regtest'],
+List<String> rpcEndpointFallbackPresetOrderForNetwork(String networkName) {
+  final network = zcashNetworkFromName(networkName);
+  return switch (network) {
+    ZcashNetwork.mainnet => kMainnetRpcEndpointFallbackPresetOrder,
+    ZcashNetwork.testnet => kTestnetRpcEndpointFallbackPresetOrder,
+    ZcashNetwork.regtest => kRegtestRpcEndpointFallbackPresetOrder,
   };
+}
 
-  for (final presetId in preferredPresetIds) {
-    for (final candidate in candidates) {
-      if (candidate.id == presetId) {
-        return RpcEndpointConfig(
-          networkName: primary.networkName,
-          lightwalletdUrl: candidate.url,
-          presetId: candidate.id,
-        );
-      }
+List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(
+  RpcEndpointConfig primary,
+) {
+  final primaryPreset = _selectedFallbackPrimaryPreset(primary);
+  if (primaryPreset == null) return const [];
+
+  final primaryNormalized = primary.normalizedLightwalletdUrl;
+  final seenUrls = <String>{};
+  final candidates = <RpcEndpointConfig>[];
+
+  for (final presetId in rpcEndpointFallbackPresetOrderForNetwork(
+    primary.networkName,
+  )) {
+    final preset = findRpcEndpointPresetById(primary.networkName, presetId);
+    if (preset == null) continue;
+
+    final normalized = normalizeRpcEndpointUrl(
+      preset.url,
+      allowDefaultPort: true,
+    );
+    if (preset.id == primaryPreset.id || normalized == primaryNormalized) {
+      continue;
     }
+    if (!seenUrls.add(normalized)) continue;
+
+    candidates.add(
+      RpcEndpointConfig(
+        networkName: primary.networkName,
+        lightwalletdUrl: preset.url,
+        presetId: preset.id,
+      ),
+    );
   }
 
-  final fallback = candidates.first;
-  return RpcEndpointConfig(
+  return List.unmodifiable(candidates);
+}
+
+RpcEndpointConfig? fallbackRpcEndpointConfigFor(RpcEndpointConfig primary) {
+  final candidates = fallbackRpcEndpointCandidatesFor(primary);
+  return candidates.isEmpty ? null : candidates.first;
+}
+
+RpcEndpointPreset? _selectedFallbackPrimaryPreset(RpcEndpointConfig primary) {
+  if (isCustomRpcEndpointConfig(primary)) return null;
+
+  final presetId = primary.presetId?.trim();
+  if (presetId != null && presetId.isNotEmpty) {
+    final preset = findRpcEndpointPresetById(primary.networkName, presetId);
+    if (preset != null) return preset;
+  }
+
+  return findRpcEndpointPresetByUrl(
+    primary.normalizedLightwalletdUrl,
     networkName: primary.networkName,
-    lightwalletdUrl: fallback.url,
-    presetId: fallback.id,
   );
 }
 

@@ -46,11 +46,11 @@ void main() {
   });
 
   test('runWithEndpointFallback switches to a healthy fallback', () async {
-    final primary = _customRegtestPrimary();
+    final primary = defaultRpcEndpointConfig('main');
     final container = _container(
       primary: primary,
-      chainNameByUrl: {'http://127.0.0.1:9067': 'regtest'},
-      heightByUrl: {'http://127.0.0.1:9067': BigInt.from(10)},
+      chainNameByUrl: {'https://zec.rocks:443': 'main'},
+      heightByUrl: {'https://zec.rocks:443': BigInt.from(10)},
     );
     addTearDown(container.dispose);
 
@@ -68,21 +68,100 @@ void main() {
         );
 
     final state = container.read(rpcEndpointFailoverProvider);
-    expect(result, '127.0.0.1:9067');
+    expect(result, 'zec.rocks:443');
     expect(state.isUsingFallback, isTrue);
-    expect(state.current.normalizedLightwalletdUrl, 'http://127.0.0.1:9067');
+    expect(state.current.normalizedLightwalletdUrl, 'https://zec.rocks:443');
     expect(
       state.lastEvent?.kind,
       RpcEndpointFailoverEventKind.switchedToFallback,
     );
   });
 
-  test('does not fallback for wallet-state errors', () async {
+  test('does not fallback from custom endpoints', () async {
     final primary = _customRegtestPrimary();
     final container = _container(
       primary: primary,
       chainNameByUrl: {'http://127.0.0.1:9067': 'regtest'},
       heightByUrl: {'http://127.0.0.1:9067': BigInt.from(10)},
+    );
+    addTearDown(container.dispose);
+
+    await expectLater(
+      container
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation: 'test read',
+            action: (_) async =>
+                throw Exception('gRPC connect failed: connection refused'),
+          ),
+      throwsA(isA<Exception>()),
+    );
+
+    final state = container.read(rpcEndpointFailoverProvider);
+    expect(state.fallbackCandidates, isEmpty);
+    expect(state.isUsingFallback, isFalse);
+    expect(state.lastEvent, isNull);
+  });
+
+  test('tries fallback candidates in configured order', () async {
+    final primary = defaultRpcEndpointConfig('main');
+    final container = _container(
+      primary: primary,
+      chainNameByUrl: {'https://na.zec.rocks:443': 'main'},
+      heightByUrl: {'https://na.zec.rocks:443': BigInt.from(12)},
+    );
+    addTearDown(container.dispose);
+
+    final result = await container
+        .read(rpcEndpointFailoverProvider.notifier)
+        .runWithEndpointFallback(
+          operation: 'test read',
+          action: (endpoint) async {
+            if (endpoint.normalizedLightwalletdUrl ==
+                primary.normalizedLightwalletdUrl) {
+              throw Exception('gRPC connect failed: connection refused');
+            }
+            return endpoint.hostPort;
+          },
+        );
+
+    final state = container.read(rpcEndpointFailoverProvider);
+    expect(result, 'na.zec.rocks:443');
+    expect(state.current.presetId, 'na-zec-rocks');
+  });
+
+  test('does not fallback when all candidates fail health checks', () async {
+    final primary = defaultRpcEndpointConfig('main');
+    final container = _container(
+      primary: primary,
+      chainNameByUrl: const {},
+      heightByUrl: const {},
+    );
+    addTearDown(container.dispose);
+
+    await expectLater(
+      container
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation: 'test read',
+            action: (_) async =>
+                throw Exception('gRPC connect failed: connection refused'),
+          ),
+      throwsA(isA<Exception>()),
+    );
+
+    expect(
+      container.read(rpcEndpointFailoverProvider).isUsingFallback,
+      isFalse,
+    );
+  });
+
+  test('does not fallback for wallet-state errors', () async {
+    final primary = defaultRpcEndpointConfig('main');
+    final container = _container(
+      primary: primary,
+      chainNameByUrl: {'https://zec.rocks:443': 'main'},
+      heightByUrl: {'https://zec.rocks:443': BigInt.from(10)},
     );
     addTearDown(container.dispose);
 
@@ -105,17 +184,14 @@ void main() {
 
   test('periodic primary probe switches back after recovery', () async {
     var now = DateTime(2026);
-    final primary = _customRegtestPrimary();
+    final primary = defaultRpcEndpointConfig('main');
     final primaryUrl = primary.normalizedLightwalletdUrl;
     final container = _container(
       primary: primary,
       clock: () => now,
-      chainNameByUrl: {
-        'http://127.0.0.1:9067': 'regtest',
-        primaryUrl: 'regtest',
-      },
+      chainNameByUrl: {'https://zec.rocks:443': 'main', primaryUrl: 'main'},
       heightByUrl: {
-        'http://127.0.0.1:9067': BigInt.from(10),
+        'https://zec.rocks:443': BigInt.from(10),
         primaryUrl: BigInt.from(11),
       },
       settings: const RpcEndpointFailoverSettings(

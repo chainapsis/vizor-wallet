@@ -17,6 +17,11 @@ const _mnemonic =
 const _password = 'Vizor123!';
 const _fallbackToast =
     'Selected endpoint is unstable. Switched to fallback endpoint.';
+const _networkFailure =
+    "Network connection lost. We'll keep trying automatically.";
+const _endpointFailure =
+    'Cannot reach the configured Zcash endpoint. Check your endpoint settings.';
+const _genericFailure = 'Sync failed. Retry sync to continue.';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -26,16 +31,16 @@ void main() {
   });
 
   testWidgets(
-    'falls back from an unavailable primary endpoint during sync',
+    'does not fallback from an unavailable custom endpoint',
     (tester) async {
       addTearDown(() async {
         await _cleanupE2eWalletState();
       });
 
       await _cleanupE2eWalletState();
-      await _configureUnavailablePresetPrimary();
+      await _configureUnavailableCustomPrimary();
 
-      _log('pumping app with intentionally unavailable primary endpoint');
+      _log('pumping app with intentionally unavailable custom endpoint');
       await tester.pumpWidget(await buildBootstrappedZcashWalletApp());
 
       _log('opening import flow');
@@ -67,35 +72,26 @@ void main() {
 
       await _pumpUntil(
         tester,
-        () => tester.any(find.text(_fallbackToast)),
-        description: 'fallback endpoint toast',
+        () =>
+            tester.any(find.text(_networkFailure)) ||
+            tester.any(find.text(_endpointFailure)) ||
+            tester.any(find.text(_genericFailure)),
+        description: 'sync failure notice without fallback',
         timeout: const Duration(seconds: 60),
       );
-      _log('fallback toast appeared');
 
-      await _pumpUntil(
-        tester,
-        () => _keyedTextEquals(
-          tester,
-          const ValueKey('home_shielded_balance_text'),
-          '1.25 zec',
-        ),
-        description: 'shielded balance to sync through fallback',
-        timeout: const Duration(minutes: 4),
-      );
-      _log('shielded balance synced through fallback');
+      await tester.pump(const Duration(seconds: 2));
+      expect(tester.any(find.text(_fallbackToast)), isFalse);
+      _log('custom endpoint failed without fallback toast');
     },
-    timeout: const Timeout(Duration(minutes: 6)),
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 }
 
-Future<void> _configureUnavailablePresetPrimary() async {
+Future<void> _configureUnavailableCustomPrimary() async {
   final storage = AppSecureStore.instance;
   await storage.writePlain(kRpcEndpointUrlKey, 'http://127.0.0.1:19067');
-  await storage.writePlain(
-    kRpcEndpointPresetKey,
-    kRegtestUnavailableRpcEndpointPresetId,
-  );
+  await storage.writePlain(kRpcEndpointPresetKey, kCustomRpcEndpointPresetId);
 }
 
 Future<void> _cleanupE2eWalletState() async {
@@ -172,13 +168,6 @@ Future<void> _enterText(WidgetTester tester, Key key, String text) async {
   _log('entered text into $key');
 }
 
-bool _keyedTextEquals(WidgetTester tester, Key key, String expected) {
-  final finder = find.byKey(key);
-  if (!tester.any(finder)) return false;
-  final widget = tester.widget<Text>(finder);
-  return widget.data == expected;
-}
-
 Future<void> _pumpUntil(
   WidgetTester tester,
   bool Function() condition, {
@@ -207,5 +196,5 @@ Future<void> _pumpUntil(
 }
 
 void _log(String message) {
-  debugPrint('[fallback-e2e] $message');
+  debugPrint('[custom-no-fallback-e2e] $message');
 }

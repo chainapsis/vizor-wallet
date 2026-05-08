@@ -232,34 +232,40 @@ void main() {
     );
   });
 
-  group('fallbackRpcEndpointConfigFor', () {
-    test('uses zec.rocks when the mainnet default endpoint is primary', () {
-      final fallback = fallbackRpcEndpointConfigFor(
+  group('fallbackRpcEndpointCandidatesFor', () {
+    test('uses zec.rocks first when the mainnet default is primary', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
         defaultRpcEndpointConfig('main'),
       );
 
-      expect(fallback?.presetId, kMainnetFallbackRpcEndpointPresetId);
-      expect(fallback?.lightwalletdUrl, 'https://zec.rocks:443');
+      expect(candidates.first.presetId, kMainnetFallbackRpcEndpointPresetId);
+      expect(candidates.first.lightwalletdUrl, 'https://zec.rocks:443');
     });
 
-    test(
-      'uses the network default when a custom mainnet endpoint is primary',
-      () {
-        final fallback = fallbackRpcEndpointConfigFor(
+    test('does not fallback from a custom mainnet endpoint', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        const RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: 'https://custom.example:443',
+          presetId: kCustomRpcEndpointPresetId,
+        ),
+      );
+
+      expect(candidates, isEmpty);
+      expect(
+        fallbackRpcEndpointConfigFor(
           const RpcEndpointConfig(
             networkName: 'main',
             lightwalletdUrl: 'https://custom.example:443',
             presetId: kCustomRpcEndpointPresetId,
           ),
-        );
+        ),
+        isNull,
+      );
+    });
 
-        expect(fallback?.presetId, kDefaultRpcEndpointPresetId);
-        expect(fallback?.lightwalletdUrl, 'https://us.zec.stardust.rest:443');
-      },
-    );
-
-    test('uses local regtest default for a custom regtest endpoint', () {
-      final fallback = fallbackRpcEndpointConfigFor(
+    test('does not fallback from a custom regtest endpoint', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
         const RpcEndpointConfig(
           networkName: 'regtest',
           lightwalletdUrl: 'http://127.0.0.1:19067',
@@ -267,16 +273,53 @@ void main() {
         ),
       );
 
-      expect(fallback?.presetId, 'default-regtest');
-      expect(fallback?.lightwalletdUrl, 'http://127.0.0.1:9067');
+      expect(candidates, isEmpty);
     });
 
-    test('returns null when no alternate endpoint exists', () {
-      final fallback = fallbackRpcEndpointConfigFor(
-        defaultRpcEndpointConfig('regtest'),
+    test('respects custom intent even when the URL matches a preset', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: defaultRpcEndpointConfig('main').lightwalletdUrl,
+          presetId: kCustomRpcEndpointPresetId,
+        ),
       );
 
-      expect(fallback, isNull);
+      expect(candidates, isEmpty);
+    });
+
+    test('removes the selected preset and starts from the order beginning', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        const RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: 'https://eu.zec.rocks:443',
+          presetId: 'eu-zec-rocks',
+        ),
+      );
+
+      expect(candidates.take(4).map((candidate) => candidate.presetId), [
+        kDefaultRpcEndpointPresetId,
+        kMainnetFallbackRpcEndpointPresetId,
+        'na-zec-rocks',
+        'sa-zec-rocks',
+      ]);
+      expect(
+        candidates.map((candidate) => candidate.presetId),
+        isNot(contains('eu-zec-rocks')),
+      );
+    });
+
+    test('uses local regtest default for the unavailable regtest preset', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        const RpcEndpointConfig(
+          networkName: 'regtest',
+          lightwalletdUrl: 'http://127.0.0.1:19067',
+          presetId: kRegtestUnavailableRpcEndpointPresetId,
+        ),
+      );
+
+      expect(candidates.single.presetId, 'default-regtest');
+      expect(candidates.single.lightwalletdUrl, 'http://127.0.0.1:9067');
     });
   });
 
