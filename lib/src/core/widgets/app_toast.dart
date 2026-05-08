@@ -64,6 +64,8 @@ class AppToast extends StatelessWidget {
 class AppToastHost extends StatefulWidget {
   const AppToastHost({required this.child, super.key});
 
+  static const animationDuration = Duration(milliseconds: 220);
+
   final Widget child;
 
   @override
@@ -111,15 +113,30 @@ class _AppToastHostState extends State<AppToastHost> {
         fit: StackFit.expand,
         children: [
           widget.child,
-          if (message != null)
-            Positioned(
-              top: AppSpacing.base,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                child: Center(child: AppToast(message: message)),
+          Positioned(
+            top: AppSpacing.base,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: AppToastHost.animationDuration,
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    final position = Tween<Offset>(
+                      begin: const Offset(0, -1),
+                      end: Offset.zero,
+                    ).animate(animation);
+                    return SlideTransition(position: position, child: child);
+                  },
+                  child: message == null
+                      ? const SizedBox.shrink(key: ValueKey('empty-toast'))
+                      : AppToast(key: ValueKey(message), message: message),
+                ),
               ),
             ),
+          ),
         ],
       ),
     );

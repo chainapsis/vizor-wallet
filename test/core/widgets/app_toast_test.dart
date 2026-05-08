@@ -75,6 +75,11 @@ void main() {
     expect(find.text('Address Copied'), findsOneWidget);
     final hostTopLeft = tester.getTopLeft(find.byType(AppToastHost));
     final hostSize = tester.getSize(find.byType(AppToastHost));
+    final enteringToastTopLeft = tester.getTopLeft(find.byType(AppToast));
+    expect(enteringToastTopLeft.dy, lessThan(hostTopLeft.dy + AppSpacing.base));
+
+    await tester.pump(AppToastHost.animationDuration);
+
     final toastTopLeft = tester.getTopLeft(find.byType(AppToast));
     final toastSize = tester.getSize(find.byType(AppToast));
     expect(toastTopLeft.dy, hostTopLeft.dy + AppSpacing.base);
@@ -84,7 +89,7 @@ void main() {
     );
 
     await tester.pump(AppToast.defaultDuration);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('Address Copied'), findsNothing);
   });
