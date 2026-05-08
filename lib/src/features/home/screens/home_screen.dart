@@ -30,6 +30,9 @@ import '../../activity/models/activity_row_data.dart';
 import '../../activity/screens/activity_transaction_status_screen.dart';
 import '../../activity/widgets/activity_table.dart';
 
+const _shieldErrorTooltipIconSize = 14.0;
+const _shieldErrorTooltipGap = AppSpacing.xxs;
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -1295,10 +1298,11 @@ class _HomeNoticeCard extends StatelessWidget {
                       horizontal: AppSpacing.s,
                       vertical: AppSpacing.xs,
                     ),
-                    margin: const EdgeInsets.all(AppSpacing.md),
+                    margin: EdgeInsets.zero,
                     preferBelow: false,
+                    positionDelegate: _positionShieldErrorTooltip,
                     decoration: BoxDecoration(
-                      color: colors.surface.tooltip,
+                      color: colors.background.inverse,
                       borderRadius: BorderRadius.circular(AppRadii.xSmall),
                     ),
                     textStyle: AppTypography.bodySmall.copyWith(
@@ -1307,8 +1311,8 @@ class _HomeNoticeCard extends StatelessWidget {
                     ),
                     child: AppIcon(
                       AppIcons.help,
-                      size: 14,
-                      color: colors.icon.warning,
+                      size: _shieldErrorTooltipIconSize,
+                      color: colors.text.accent,
                     ),
                   ),
                 ],
@@ -1326,4 +1330,24 @@ class _HomeNoticeCard extends StatelessWidget {
       ),
     );
   }
+}
+
+Offset _positionShieldErrorTooltip(TooltipPositionContext context) {
+  const edgeMargin = AppSpacing.md;
+  final targetTop = context.target.dy - (context.targetSize.height / 2);
+  final y = (targetTop - _shieldErrorTooltipGap - context.tooltipSize.height)
+      .clamp(
+        edgeMargin,
+        context.overlaySize.height - context.tooltipSize.height - edgeMargin,
+      )
+      .toDouble();
+
+  final flexibleSpace = context.overlaySize.width - context.tooltipSize.width;
+  final x = flexibleSpace <= edgeMargin * 2
+      ? flexibleSpace / 2
+      : (context.target.dx - (context.tooltipSize.width / 2))
+            .clamp(edgeMargin, flexibleSpace - edgeMargin)
+            .toDouble();
+
+  return Offset(x, y);
 }
