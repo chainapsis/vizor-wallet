@@ -8,7 +8,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../app_bootstrap.dart';
-import '../../../core/config/network_config.dart';
+import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -86,6 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _shieldBalanceErrorDetail = null;
     });
 
+    RpcEndpointConfig? attemptedEndpoint;
     try {
       final wallet = ref.read(walletProvider).value;
       final accountUuid = wallet?.activeAccountUuid;
@@ -110,6 +111,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
       final dbPath = await getWalletDbPath();
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      attemptedEndpoint = endpoint;
       final result = await rust_sync.shieldTransparentBalance(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -131,7 +133,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       log('HomeScreen: shield transparent balance failed: $e\n$st');
       final switched = await ref
           .read(rpcEndpointFailoverProvider.notifier)
-          .switchToFallbackFor(e, operation: 'shield transparent balance');
+          .switchToFallbackFor(
+            e,
+            endpoint: attemptedEndpoint,
+            operation: 'shield transparent balance',
+          );
       if (switched) {
         unawaited(ref.read(syncProvider.notifier).restartSync());
       }

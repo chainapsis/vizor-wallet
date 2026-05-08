@@ -133,6 +133,137 @@ void main() {
     expect(state.current.presetId, 'eu2-zec-stardust');
   });
 
+  test('rotates from a failed fallback to the next healthy preset', () async {
+    final primary = defaultRpcEndpointConfig('main');
+    final container = _container(
+      primary: primary,
+      chainNameByUrl: {
+        'https://eu.zec.stardust.rest:443': 'main',
+        'https://eu2.zec.stardust.rest:443': 'main',
+      },
+      heightByUrl: {
+        'https://eu.zec.stardust.rest:443': BigInt.from(10),
+        'https://eu2.zec.stardust.rest:443': BigInt.from(11),
+      },
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(rpcEndpointFailoverProvider.notifier)
+        .switchToFallbackFor(
+          Exception('DeadlineExceeded'),
+          operation: 'primary sync',
+        );
+    var state = container.read(rpcEndpointFailoverProvider);
+    expect(state.current.presetId, 'eu-zec-stardust');
+
+    final switched = await container
+        .read(rpcEndpointFailoverProvider.notifier)
+        .switchToFallbackFor(
+          Exception('connection reset'),
+          endpoint: state.current,
+          operation: 'fallback sync',
+        );
+
+    state = container.read(rpcEndpointFailoverProvider);
+    expect(switched, isTrue);
+    expect(state.current.presetId, 'eu2-zec-stardust');
+    expect(
+      state.lastEvent?.kind,
+      RpcEndpointFailoverEventKind.switchedToFallback,
+    );
+  });
+
+  test(
+    'runWithEndpointFallback retries after current fallback fails',
+    () async {
+      final primary = defaultRpcEndpointConfig('main');
+      final container = _container(
+        primary: primary,
+        chainNameByUrl: {
+          'https://eu.zec.stardust.rest:443': 'main',
+          'https://eu2.zec.stardust.rest:443': 'main',
+        },
+        heightByUrl: {
+          'https://eu.zec.stardust.rest:443': BigInt.from(10),
+          'https://eu2.zec.stardust.rest:443': BigInt.from(11),
+        },
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(rpcEndpointFailoverProvider.notifier);
+      await notifier.switchToFallbackFor(
+        Exception('DeadlineExceeded'),
+        operation: 'primary sync',
+      );
+      expect(
+        container.read(rpcEndpointFailoverProvider).current.presetId,
+        'eu-zec-stardust',
+      );
+
+      final result = await notifier.runWithEndpointFallback(
+        operation: 'fallback poll',
+        action: (endpoint) async {
+          if (endpoint.presetId == 'eu-zec-stardust') {
+            throw Exception('connection reset');
+          }
+          return endpoint.presetId;
+        },
+      );
+
+      expect(result, 'eu2-zec-stardust');
+      expect(
+        container.read(rpcEndpointFailoverProvider).current.presetId,
+        'eu2-zec-stardust',
+      );
+    },
+  );
+
+  test('does not rotate from fallback back to primary outside probe', () async {
+    final primary = defaultRpcEndpointConfig('main');
+    final primaryUrl = primary.normalizedLightwalletdUrl;
+    final chainNameByUrl = <String, String>{
+      'https://eu.zec.stardust.rest:443': 'main',
+    };
+    final heightByUrl = <String, BigInt>{
+      'https://eu.zec.stardust.rest:443': BigInt.from(10),
+    };
+    final container = _container(
+      primary: primary,
+      chainNameByUrl: chainNameByUrl,
+      heightByUrl: heightByUrl,
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(rpcEndpointFailoverProvider.notifier)
+        .switchToFallbackFor(
+          Exception('DeadlineExceeded'),
+          operation: 'primary sync',
+        );
+    var state = container.read(rpcEndpointFailoverProvider);
+    expect(state.current.presetId, 'eu-zec-stardust');
+
+    chainNameByUrl
+      ..clear()
+      ..[primaryUrl] = 'main';
+    heightByUrl
+      ..clear()
+      ..[primaryUrl] = BigInt.from(12);
+
+    final switched = await container
+        .read(rpcEndpointFailoverProvider.notifier)
+        .switchToFallbackFor(
+          Exception('connection reset'),
+          endpoint: state.current,
+          operation: 'fallback sync',
+        );
+
+    state = container.read(rpcEndpointFailoverProvider);
+    expect(switched, isFalse);
+    expect(state.current.presetId, 'eu-zec-stardust');
+  });
+
   test('does not fallback when all candidates fail health checks', () async {
     final primary = defaultRpcEndpointConfig('main');
     final container = _container(
