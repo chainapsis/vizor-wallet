@@ -972,6 +972,20 @@ impl VotingDb {
         let wallet_id = self.wallet_id();
         let data =
             queries::load_delegation_submission_data(&conn, round_id, &wallet_id, bundle_index)?;
+        let stored_sighash = queries::load_pczt_sighash(&conn, round_id, &wallet_id, bundle_index)?;
+        if stored_sighash.len() != 32 {
+            return Err(VotingError::Internal {
+                message: format!(
+                    "pczt_sighash must be 32 bytes, got {}",
+                    stored_sighash.len()
+                ),
+            });
+        }
+        if stored_sighash.as_slice() != keystone_sighash {
+            return Err(VotingError::InvalidInput {
+                message: "keystone_sighash does not match stored PCZT sighash".to_string(),
+            });
+        }
 
         Ok(DelegationSubmissionData {
             proof: data.proof,
@@ -983,7 +997,7 @@ impl VotingDb {
             alpha: data.alpha,
             vote_round_id: data.vote_round_id,
             spend_auth_sig: keystone_sig.to_vec(),
-            sighash: keystone_sighash.to_vec(),
+            sighash: stored_sighash,
         })
     }
 
@@ -1453,6 +1467,74 @@ mod tests {
 
         let account_0_rk = randomized_verification_key(&sender_seed, 0, &alpha);
         assert!(account_0_rk.verify(&submission.sighash, &sig).is_err());
+    }
+
+    #[test]
+    fn test_get_delegation_submission_with_keystone_sig_requires_stored_sighash() {
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        let stored_sighash = [0x99; 32];
+        let wrong_sighash = [0x98; 32];
+        let keystone_sig = [0x42; 64];
+        let rk = [0xAB; 32];
+
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
+            queries::store_delegation_data(
+                &conn,
+                ROUND_ID,
+                W,
+                0,
+                &[0x11; 32],
+                &[],
+                &[0x22; 32],
+                &[],
+                &[0x33; 32],
+                &[0x44; 32],
+                &[0x55; 32],
+                &[0x66; 32],
+                &[0x77; 32],
+                &[0x88; 32],
+                1,
+                0,
+                &[],
+                &stored_sighash,
+            )
+            .unwrap();
+            queries::store_proof_result_fields(
+                &conn,
+                ROUND_ID,
+                W,
+                0,
+                &rk,
+                &[vec![0x89; 32]],
+                &[0x33; 32],
+                &[0x44; 32],
+            )
+            .unwrap();
+            queries::store_proof(&conn, ROUND_ID, W, 0, &[0xAC; 96]).unwrap();
+        }
+
+        let err = db
+            .get_delegation_submission_with_keystone_sig(ROUND_ID, 0, &keystone_sig, &wrong_sighash)
+            .expect_err("mismatched sighash must fail");
+        assert!(matches!(err, VotingError::InvalidInput { .. }));
+        assert!(err
+            .to_string()
+            .contains("keystone_sighash does not match stored PCZT sighash"));
+
+        let submission = db
+            .get_delegation_submission_with_keystone_sig(
+                ROUND_ID,
+                0,
+                &keystone_sig,
+                &stored_sighash,
+            )
+            .unwrap();
+        assert_eq!(submission.spend_auth_sig, keystone_sig.to_vec());
+        assert_eq!(submission.sighash, stored_sighash.to_vec());
     }
 
     /// Multi-bundle test: 6 notes → 2 bundles (5+1), independent delegation + vote storage per bundle.
