@@ -233,13 +233,16 @@ void main() {
   });
 
   group('fallbackRpcEndpointCandidatesFor', () {
-    test('uses zec.rocks first when the mainnet default is primary', () {
+    test('uses preset order when the mainnet default is primary', () {
       final candidates = fallbackRpcEndpointCandidatesFor(
         defaultRpcEndpointConfig('main'),
       );
 
-      expect(candidates.first.presetId, kMainnetFallbackRpcEndpointPresetId);
-      expect(candidates.first.lightwalletdUrl, 'https://zec.rocks:443');
+      expect(candidates.first.presetId, 'eu-zec-stardust');
+      expect(
+        candidates.first.lightwalletdUrl,
+        'https://eu.zec.stardust.rest:443',
+      );
     });
 
     test('does not fallback from a custom mainnet endpoint', () {
@@ -299,9 +302,9 @@ void main() {
 
       expect(candidates.take(4).map((candidate) => candidate.presetId), [
         kDefaultRpcEndpointPresetId,
-        kMainnetFallbackRpcEndpointPresetId,
-        'na-zec-rocks',
-        'sa-zec-rocks',
+        'eu-zec-stardust',
+        'eu2-zec-stardust',
+        'jp-zec-stardust',
       ]);
       expect(
         candidates.map((candidate) => candidate.presetId),

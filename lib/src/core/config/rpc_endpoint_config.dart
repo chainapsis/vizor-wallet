@@ -5,30 +5,7 @@ export 'network_config.dart';
 
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
-const kMainnetFallbackRpcEndpointPresetId = 'zec-rocks';
 const kRegtestUnavailableRpcEndpointPresetId = 'unavailable-regtest';
-
-const kMainnetRpcEndpointFallbackPresetOrder = [
-  kDefaultRpcEndpointPresetId,
-  kMainnetFallbackRpcEndpointPresetId,
-  'na-zec-rocks',
-  'sa-zec-rocks',
-  'eu-zec-rocks',
-  'ap-zec-rocks',
-  'eu-zec-stardust',
-  'eu2-zec-stardust',
-  'jp-zec-stardust',
-  'z3-deepikaw',
-  'zprivacy',
-  'zcash-explorer',
-];
-
-const kTestnetRpcEndpointFallbackPresetOrder = ['default-testnet'];
-
-const kRegtestRpcEndpointFallbackPresetOrder = [
-  'default-regtest',
-  kRegtestUnavailableRpcEndpointPresetId,
-];
 
 class RpcEndpointConfig {
   const RpcEndpointConfig({
@@ -224,15 +201,6 @@ bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
   return config.presetId == kCustomRpcEndpointPresetId;
 }
 
-List<String> rpcEndpointFallbackPresetOrderForNetwork(String networkName) {
-  final network = zcashNetworkFromName(networkName);
-  return switch (network) {
-    ZcashNetwork.mainnet => kMainnetRpcEndpointFallbackPresetOrder,
-    ZcashNetwork.testnet => kTestnetRpcEndpointFallbackPresetOrder,
-    ZcashNetwork.regtest => kRegtestRpcEndpointFallbackPresetOrder,
-  };
-}
-
 List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(
   RpcEndpointConfig primary,
 ) {
@@ -243,12 +211,7 @@ List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(
   final seenUrls = <String>{};
   final candidates = <RpcEndpointConfig>[];
 
-  for (final presetId in rpcEndpointFallbackPresetOrderForNetwork(
-    primary.networkName,
-  )) {
-    final preset = findRpcEndpointPresetById(primary.networkName, presetId);
-    if (preset == null) continue;
-
+  for (final preset in rpcEndpointPresetsForNetwork(primary.networkName)) {
     final normalized = normalizeRpcEndpointUrl(
       preset.url,
       allowDefaultPort: true,
