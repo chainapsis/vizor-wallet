@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -177,6 +178,51 @@ void main() {
       AppThemeData.light.colors.background.base,
     );
   });
+
+  testWidgets('edit name menu action renames the selected account', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    await tester.pumpWidget(
+      _accountsHarness(accountNotifier: () => accountNotifier),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit Name'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('New Account Name'), findsOneWidget);
+    expect(find.byType(AppPaneModalOverlay), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byType(BackdropFilter)),
+      tester.getTopLeft(find.byType(AppDesktopPane)),
+    );
+    expect(
+      tester.getSize(find.byType(BackdropFilter)),
+      tester.getSize(find.byType(AppDesktopPane)),
+    );
+
+    await tester.enterText(find.byType(TextField), 'Savings Vault');
+    await tester.pump();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.renamedUuid, 'account-2');
+    expect(accountNotifier.renamedName, 'Savings Vault');
+    expect(find.text('Savings Vault'), findsOneWidget);
+    expect(find.text('New Account Name'), findsNothing);
+  });
 }
 
 Widget _accountsHarness({
@@ -285,6 +331,8 @@ class _FakeAccountNotifier extends AccountNotifier {
   _FakeAccountNotifier(this.initialState);
 
   final AccountState initialState;
+  String? renamedUuid;
+  String? renamedName;
 
   @override
   FutureOr<AccountState> build() => initialState;
@@ -293,6 +341,18 @@ class _FakeAccountNotifier extends AccountNotifier {
   Future<void> switchAccount(String uuid) async {
     final prev = state.value ?? initialState;
     state = AsyncData(prev.copyWith(activeAccountUuid: uuid));
+  }
+
+  @override
+  Future<void> renameAccount(String uuid, String newName) async {
+    renamedUuid = uuid;
+    renamedName = newName;
+    final prev = state.value ?? initialState;
+    final updated = [
+      for (final account in prev.accounts)
+        if (account.uuid == uuid) account.copyWith(name: newName) else account,
+    ];
+    state = AsyncData(prev.copyWith(accounts: updated));
   }
 }
 
