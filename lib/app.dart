@@ -9,7 +9,6 @@ import 'src/core/layout/app_layout.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
-import 'src/core/widgets/app_toast.dart';
 import 'src/core/widgets/network_fallback_toast.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
@@ -465,26 +464,22 @@ class ZcashWalletApp extends ConsumerWidget {
           // events over empty regions while descendant GestureDetectors
           // (buttons, TextFields) win the gesture arena first, keeping
           // focused buttons focused when re-clicked.
-          child: NetworkFallbackToastHost(
-            child: AppToastHost(
-              child: _RpcEndpointFailoverToastListener(
-                child: DesktopWindowTitlebarSafeArea(
-                  child: GestureDetector(
-                    onTap: () {
-                      // Leaf-only: skip when the primary focus is a
-                      // `FocusScopeNode` rather than a concrete `FocusNode`.
-                      // Unfocusing the scope itself strips the scope's
-                      // "most-recently-focused child" memory, which leaves the
-                      // next Tab with no deterministic starting point.
-                      final primary = FocusManager.instance.primaryFocus;
-                      if (primary != null && primary is! FocusScopeNode) {
-                        primary.unfocus();
-                      }
-                    },
-                    behavior: HitTestBehavior.translucent,
-                    child: child!,
-                  ),
-                ),
+          child: _RpcEndpointFailoverToastListener(
+            child: DesktopWindowTitlebarSafeArea(
+              child: GestureDetector(
+                onTap: () {
+                  // Leaf-only: skip when the primary focus is a
+                  // `FocusScopeNode` rather than a concrete `FocusNode`.
+                  // Unfocusing the scope itself strips the scope's
+                  // "most-recently-focused child" memory, which leaves the
+                  // next Tab with no deterministic starting point.
+                  final primary = FocusManager.instance.primaryFocus;
+                  if (primary != null && primary is! FocusScopeNode) {
+                    primary.unfocus();
+                  }
+                },
+                behavior: HitTestBehavior.translucent,
+                child: child!,
               ),
             ),
           ),
@@ -501,20 +496,26 @@ class _RpcEndpointFailoverToastListener extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.listen<RpcEndpointFailoverEvent?>(
-      rpcEndpointFailoverProvider.select((state) => state.lastEvent),
-      (previous, next) {
-        if (next == null || next.sequence == previous?.sequence) return;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!context.mounted) return;
-          showNetworkFallbackToast(
-            context,
-            next.message,
-            duration: const Duration(seconds: 4),
+    return NetworkFallbackToastHost(
+      child: Builder(
+        builder: (toastContext) {
+          ref.listen<RpcEndpointFailoverEvent?>(
+            rpcEndpointFailoverProvider.select((state) => state.lastEvent),
+            (previous, next) {
+              if (next == null || next.sequence == previous?.sequence) return;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!toastContext.mounted) return;
+                showNetworkFallbackToast(
+                  toastContext,
+                  next.message,
+                  duration: const Duration(seconds: 4),
+                );
+              });
+            },
           );
-        });
-      },
+          return child;
+        },
+      ),
     );
-    return child;
   }
 }
