@@ -25,7 +25,7 @@ void main() {
 
     expect(merged.uuid, 'account-1');
     expect(merged.name, 'Stored Name');
-    expect(merged.order, 3);
+    expect(merged.order, 9);
     expect(merged.isHardware, isTrue);
     expect(merged.profilePictureId, 'knight-04');
   });

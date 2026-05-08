@@ -10,6 +10,7 @@ import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
@@ -27,6 +28,7 @@ const _zcashdRpcUrl = String.fromEnvironment(
 );
 const _zcashdRpcUser = 'zcash';
 const _zcashdRpcPassword = 'zcash';
+const _accountsKey = 'zcash_accounts';
 const _firstMnemonic =
     'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
     'roast miracle ethics found child scare curve congress renew salute pig '
@@ -387,11 +389,25 @@ Future<void> _waitForMempoolObserver() async {
 }
 
 Future<String> _accountUuidAtOrder(int order) async {
-  final dbPath = await getWalletDbPath();
-  final accounts = await rust_wallet.listAccounts(
-    dbPath: dbPath,
-    network: _network,
-  );
+  final rawAccounts = await AppSecureStore.instance.readString(_accountsKey);
+  if (rawAccounts == null || rawAccounts.trim().isEmpty) {
+    fail('Expected stored accounts before reading account order $order.');
+  }
+
+  final decoded = jsonDecode(rawAccounts);
+  if (decoded is! List) {
+    fail('Expected stored accounts to be a JSON list.');
+  }
+
+  final accounts = <AccountInfo>[];
+  for (final entry in decoded) {
+    if (entry is! Map) {
+      fail('Expected stored account entry to be a JSON object.');
+    }
+    accounts.add(AccountInfo.fromJson(Map<String, dynamic>.from(entry)));
+  }
+  accounts.sort((a, b) => a.order.compareTo(b.order));
+
   if (order >= accounts.length) {
     fail('Expected account order $order, got ${accounts.length} accounts.');
   }

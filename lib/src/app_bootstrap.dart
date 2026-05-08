@@ -293,7 +293,7 @@ AccountInfo mergeBootstrappedAccountInfo({
   return AccountInfo(
     uuid: rustAccount.uuid,
     name: storedAccount?.name ?? rustAccount.name,
-    order: order,
+    order: storedAccount?.order ?? order,
     isHardware: storedAccount?.isHardware ?? false,
     profilePictureId:
         storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
