@@ -13,6 +13,7 @@ import 'src/core/theme/legacy_material_theme.dart';
 import 'src/core/widgets/network_fallback_toast.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
+import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/about/screens/about_screen.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
@@ -397,6 +398,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
+      GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
       GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
       GoRoute(
         path: '/settings/secret-passphrase',

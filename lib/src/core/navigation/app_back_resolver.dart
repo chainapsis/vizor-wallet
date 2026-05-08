@@ -43,6 +43,7 @@ abstract final class AppBackResolver {
     '/receive': 'Receive',
     '/activity': 'Activity',
     '/activity/tx/:txid': 'Transaction',
+    '/accounts': 'Accounts',
     '/settings': 'Settings',
     '/settings/secret-passphrase': 'Secret Passphrase',
     '/settings/change-password': 'Change Password',
