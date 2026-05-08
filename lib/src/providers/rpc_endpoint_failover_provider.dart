@@ -236,16 +236,19 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
         shouldFallbackFromLightwalletdError,
   }) async {
     final attempted = endpoint ?? state.current;
-    if (state.isUsingFallback ||
-        attempted.normalizedLightwalletdUrl !=
-            state.primary.normalizedLightwalletdUrl ||
-        !shouldFallback(error)) {
+    final attemptedUrl = attempted.normalizedLightwalletdUrl;
+    final currentUrl = state.current.normalizedLightwalletdUrl;
+    final primaryUrl = state.primary.normalizedLightwalletdUrl;
+    if (attemptedUrl != currentUrl || !shouldFallback(error)) {
       return false;
     }
 
-    final nextFailureCount = state.primaryFailureCount + 1;
+    final failedPrimary = attemptedUrl == primaryUrl;
+    final nextFailureCount = failedPrimary
+        ? state.primaryFailureCount + 1
+        : state.primaryFailureCount;
     final settings = ref.read(rpcEndpointFailoverSettingsProvider);
-    if (nextFailureCount < settings.primaryFailureThreshold) {
+    if (failedPrimary && nextFailureCount < settings.primaryFailureThreshold) {
       state = state.copyWith(
         primaryFailureCount: nextFailureCount,
         lastFailure: error.toString(),
@@ -253,11 +256,15 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       return false;
     }
 
-    final fallbackCandidates = state.fallbackCandidates;
+    final fallbackCandidates = state.fallbackCandidates
+        .where(
+          (candidate) => candidate.normalizedLightwalletdUrl != attemptedUrl,
+        )
+        .toList(growable: false);
     if (fallbackCandidates.isEmpty) {
       log(
         'RpcEndpointFailover: no fallback endpoint for '
-        '${state.primary.hostPort} after $operation failure: $error',
+        '${attempted.hostPort} after $operation failure: $error',
       );
       state = state.copyWith(
         primaryFailureCount: nextFailureCount,
@@ -302,7 +309,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       endpoint: fallback,
     );
     log(
-      'RpcEndpointFailover: switched ${state.primary.hostPort} -> '
+      'RpcEndpointFailover: switched ${attempted.hostPort} -> '
       '${fallback.hostPort} after $operation failure: $error',
     );
     state = state.copyWith(
@@ -310,7 +317,7 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
       primaryFailureCount: nextFailureCount,
       lastFailure: error.toString(),
       switchedAt: now,
-      lastPrimaryProbeAt: now,
+      lastPrimaryProbeAt: failedPrimary ? now : state.lastPrimaryProbeAt,
       lastEvent: event,
     );
     return true;

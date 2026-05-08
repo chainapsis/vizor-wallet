@@ -402,7 +402,11 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       if (!broadcastComplete && result.message != null) {
         final switched = await ref
             .read(rpcEndpointFailoverProvider.notifier)
-            .switchToFallbackFor(result.message!, operation: 'send broadcast');
+            .switchToFallbackFor(
+              result.message!,
+              endpoint: endpoint,
+              operation: 'send broadcast',
+            );
         if (switched) {
           unawaited(ref.read(syncProvider.notifier).restartSync());
         }

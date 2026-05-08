@@ -603,7 +603,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               // a lightwalletd stream that keeps firing
               // `_refreshBalance()` callbacks with no owning sync.
               _stopMempoolObserver();
-              unawaited(_recoverSyncOnFallbackOrRecordFailure(e, gen));
+              unawaited(
+                _recoverSyncOnFallbackOrRecordFailure(
+                  e,
+                  gen,
+                  endpoint: endpoint,
+                ),
+              );
             },
           );
         })
@@ -625,11 +631,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<void> _recoverSyncOnFallbackOrRecordFailure(
     Object error,
-    int gen,
-  ) async {
+    int gen, {
+    RpcEndpointConfig? endpoint,
+  }) async {
     final switched = await ref
         .read(rpcEndpointFailoverProvider.notifier)
-        .switchToFallbackFor(error, operation: 'foreground sync');
+        .switchToFallbackFor(
+          error,
+          endpoint: endpoint,
+          operation: 'foreground sync',
+        );
     if (gen != _syncGen || _requiresUnlock) return;
     if (switched) {
       log('Sync: retrying foreground sync with fallback endpoint');
