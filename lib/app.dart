@@ -489,33 +489,40 @@ class ZcashWalletApp extends ConsumerWidget {
   }
 }
 
-class _RpcEndpointFailoverToastListener extends ConsumerWidget {
+class _RpcEndpointFailoverToastListener extends StatelessWidget {
   const _RpcEndpointFailoverToastListener({required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return NetworkFallbackToastHost(
-      child: Builder(
-        builder: (toastContext) {
-          ref.listen<RpcEndpointFailoverEvent?>(
-            rpcEndpointFailoverProvider.select((state) => state.lastEvent),
-            (previous, next) {
-              if (next == null || next.sequence == previous?.sequence) return;
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!toastContext.mounted) return;
-                showNetworkFallbackToast(
-                  toastContext,
-                  next.message,
-                  duration: const Duration(seconds: 4),
-                );
-              });
-            },
-          );
-          return child;
-        },
-      ),
+      child: _RpcEndpointFailoverToastBridge(child: child),
     );
+  }
+}
+
+class _RpcEndpointFailoverToastBridge extends ConsumerWidget {
+  const _RpcEndpointFailoverToastBridge({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<RpcEndpointFailoverEvent?>(
+      rpcEndpointFailoverProvider.select((state) => state.lastEvent),
+      (previous, next) {
+        if (next == null || next.sequence == previous?.sequence) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          showNetworkFallbackToast(
+            context,
+            next.message,
+            duration: const Duration(seconds: 4),
+          );
+        });
+      },
+    );
+    return child;
   }
 }
