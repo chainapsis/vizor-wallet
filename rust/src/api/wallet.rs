@@ -28,6 +28,7 @@ pub struct AccountInfo {
     pub uuid: String,
     pub name: String,
     pub unified_address: String,
+    pub is_seed_anchor: bool,
 }
 
 /// Catches panics and converts them to Result<T, String>.
@@ -199,6 +200,7 @@ pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo
                 uuid: a.uuid,
                 name: a.name,
                 unified_address: a.unified_address,
+                is_seed_anchor: a.is_seed_anchor,
             })
             .collect())
     })

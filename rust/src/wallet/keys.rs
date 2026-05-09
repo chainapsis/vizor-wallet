@@ -283,6 +283,7 @@ pub struct AccountInfo {
     pub uuid: String,
     pub name: String,
     pub unified_address: String,
+    pub is_seed_anchor: bool,
 }
 
 /// List all accounts in the wallet database.
@@ -309,6 +310,7 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
             uuid: id.expose_uuid().to_string(),
             name: account.name().unwrap_or("").to_string(),
             unified_address: address,
+            is_seed_anchor: matches!(account.source(), AccountSource::Derived { .. }),
         });
     }
 
@@ -561,21 +563,33 @@ mod tests {
 
         let first_phrase = generate_mnemonic();
         let first_seed = mnemonic_to_seed(&first_phrase).unwrap();
-        init_db_and_create_account(
-            db_path_str,
-            WalletNetwork::Main,
-            &first_seed,
-            None,
-            "first",
-        )
-        .unwrap();
+        init_db_and_create_account(db_path_str, WalletNetwork::Main, &first_seed, None, "first")
+            .unwrap();
 
         let second_phrase = generate_mnemonic();
         let second_seed = mnemonic_to_seed(&second_phrase).unwrap();
-        let (second_uuid, _) =
-            add_account(db_path_str, WalletNetwork::Main, "second", &second_seed, None).unwrap();
+        let (second_uuid, _) = add_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "second",
+            &second_seed,
+            None,
+        )
+        .unwrap();
 
-        assert_eq!(list_accounts(db_path_str, WalletNetwork::Main).unwrap().len(), 2);
+        assert_eq!(
+            list_accounts(db_path_str, WalletNetwork::Main)
+                .unwrap()
+                .len(),
+            2
+        );
+        let accounts_before_delete = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
+        assert!(accounts_before_delete
+            .iter()
+            .any(|account| account.name == "first" && account.is_seed_anchor));
+        assert!(accounts_before_delete
+            .iter()
+            .any(|account| account.name == "second" && !account.is_seed_anchor));
 
         delete_account(db_path_str, WalletNetwork::Main, &second_uuid).unwrap();
 

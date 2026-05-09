@@ -264,6 +264,7 @@ final _accountsState = AccountState(
       uuid: 'preview-account-1',
       name: 'Primary Vault',
       order: 0,
+      isSeedAnchor: true,
       profilePictureId: kDefaultProfilePictureId,
     ),
     for (var index = 2; index <= 20; index += 1)

@@ -63,7 +63,12 @@ void main() {
 
     final accountState = AccountState(
       accounts: [
-        const AccountInfo(uuid: 'account-1', name: 'Primary Vault', order: 0),
+        const AccountInfo(
+          uuid: 'account-1',
+          name: 'Primary Vault',
+          order: 0,
+          isSeedAnchor: true,
+        ),
         for (var index = 2; index <= 20; index += 1)
           AccountInfo(
             uuid: 'account-$index',
@@ -236,6 +241,52 @@ void main() {
       _accountRowBackgroundColor(tester, row),
       AppThemeData.light.colors.background.base,
     );
+  });
+
+  testWidgets('only the last seed anchor is protected from removal', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(uuid: 'account-1', name: 'Imported First', order: 0),
+        AccountInfo(
+          uuid: 'account-2',
+          name: 'Seed Anchor',
+          order: 1,
+          isSeedAnchor: true,
+        ),
+        AccountInfo(uuid: 'account-3', name: 'Imported Other', order: 2),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1accountsaddress',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-1')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove Account'), findsOneWidget);
+
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove Account'), findsNothing);
   });
 
   testWidgets('edit name menu action renames the selected account', (
@@ -421,7 +472,12 @@ void main() {
 
     const singleAccountState = AccountState(
       accounts: [
-        AccountInfo(uuid: 'account-1', name: 'Primary Vault', order: 0),
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Primary Vault',
+          order: 0,
+          isSeedAnchor: true,
+        ),
       ],
       activeAccountUuid: 'account-1',
       activeAddress: 'u1accountsaddress',
@@ -555,7 +611,12 @@ final _bootstrap = AppBootstrapState(
   initialLocation: '/accounts',
   initialAccountState: const AccountState(
     accounts: [
-      AccountInfo(uuid: 'account-1', name: 'Primary Vault', order: 0),
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Primary Vault',
+        order: 0,
+        isSeedAnchor: true,
+      ),
       AccountInfo(
         uuid: 'account-2',
         name: 'Shielded Savings',

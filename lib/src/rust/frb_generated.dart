@@ -2879,12 +2879,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   AccountInfo dco_decode_account_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return AccountInfo(
       uuid: dco_decode_String(arr[0]),
       name: dco_decode_String(arr[1]),
       unifiedAddress: dco_decode_String(arr[2]),
+      isSeedAnchor: dco_decode_bool(arr[3]),
     );
   }
 
@@ -3429,10 +3430,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_uuid = sse_decode_String(deserializer);
     var var_name = sse_decode_String(deserializer);
     var var_unifiedAddress = sse_decode_String(deserializer);
+    var var_isSeedAnchor = sse_decode_bool(deserializer);
     return AccountInfo(
       uuid: var_uuid,
       name: var_name,
       unifiedAddress: var_unifiedAddress,
+      isSeedAnchor: var_isSeedAnchor,
     );
   }
 
@@ -4128,6 +4131,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.uuid, serializer);
     sse_encode_String(self.name, serializer);
     sse_encode_String(self.unifiedAddress, serializer);
+    sse_encode_bool(self.isSeedAnchor, serializer);
   }
 
   @protected

@@ -102,6 +102,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         uuid: accountUuid,
         name: accountName,
         order: accounts.length,
+        isSeedAnchor: accounts.isEmpty,
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
@@ -179,6 +180,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         uuid: accountUuid,
         name: accountName,
         order: accounts.length,
+        isSeedAnchor: accounts.isEmpty,
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
@@ -253,6 +255,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         uuid: accountUuid,
         name: accountName,
         order: accounts.length,
+        isSeedAnchor: accounts.isEmpty,
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
@@ -348,9 +351,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       for (final account in prev.accounts)
         if (account.uuid != uuid) account,
     ];
-    if (target.order == 0) {
+    final seedAnchorCount = prev.accounts
+        .where((account) => account.isSeedAnchor)
+        .length;
+    if (target.isSeedAnchor && seedAnchorCount <= 1 && remaining.isNotEmpty) {
       throw StateError(
-        'The first account cannot be removed from the account list.',
+        'The last seed anchor account cannot be removed while other accounts remain.',
       );
     }
 

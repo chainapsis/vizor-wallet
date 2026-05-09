@@ -328,6 +328,9 @@ class _AccountsListState extends State<_AccountsList> {
   Widget build(BuildContext context) {
     final accountCount =
         widget.otherAccounts.length + (widget.activeAccount == null ? 0 : 1);
+    final seedAnchorCount =
+        widget.otherAccounts.where((account) => account.isSeedAnchor).length +
+        (widget.activeAccount?.isSeedAnchor == true ? 1 : 0);
 
     return Align(
       alignment: Alignment.topCenter,
@@ -349,6 +352,7 @@ class _AccountsListState extends State<_AccountsList> {
                 canRemove: _canRemoveAccount(
                   widget.activeAccount!,
                   accountCount,
+                  seedAnchorCount,
                 ),
               ),
             const _AccountsSectionLabel(label: 'Other'),
@@ -380,7 +384,11 @@ class _AccountsListState extends State<_AccountsList> {
                             onEditName: widget.onEditAccountName,
                             onChangePicture: widget.onChangeProfilePicture,
                             onRemove: widget.onRemoveAccount,
-                            canRemove: _canRemoveAccount(account, accountCount),
+                            canRemove: _canRemoveAccount(
+                              account,
+                              accountCount,
+                              seedAnchorCount,
+                            ),
                           );
                         },
                         separatorBuilder: (_, _) =>
@@ -403,9 +411,14 @@ class _AccountsListState extends State<_AccountsList> {
     );
   }
 
-  static bool _canRemoveAccount(AccountInfo account, int accountCount) {
+  static bool _canRemoveAccount(
+    AccountInfo account,
+    int accountCount,
+    int seedAnchorCount,
+  ) {
     if (accountCount == 1) return true;
-    return account.order != 0;
+    if (!account.isSeedAnchor) return true;
+    return seedAnchorCount > 1;
   }
 
   static double _otherAccountsContentHeight(int count) {

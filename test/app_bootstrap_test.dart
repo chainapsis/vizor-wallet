@@ -8,12 +8,14 @@ void main() {
       uuid: 'account-1',
       name: 'Rust Name',
       order: 0,
+      isSeedAnchor: true,
     );
     const storedAccount = AccountInfo(
       uuid: 'account-1',
       name: 'Stored Name',
       order: 9,
       isHardware: true,
+      isSeedAnchor: false,
       profilePictureId: 'knight-04',
     );
 
@@ -27,6 +29,7 @@ void main() {
     expect(merged.name, 'Stored Name');
     expect(merged.order, 9);
     expect(merged.isHardware, isTrue);
+    expect(merged.isSeedAnchor, isTrue);
     expect(merged.profilePictureId, 'knight-04');
   });
 
@@ -47,6 +50,7 @@ void main() {
     expect(merged.name, 'Rust Name');
     expect(merged.order, 1);
     expect(merged.isHardware, isFalse);
+    expect(merged.isSeedAnchor, isFalse);
   });
 
   test('empty bootstrap has no password rotation recovery failure', () {

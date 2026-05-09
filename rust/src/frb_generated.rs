@@ -2590,10 +2590,12 @@ impl SseDecode for crate::api::wallet::AccountInfo {
         let mut var_uuid = <String>::sse_decode(deserializer);
         let mut var_name = <String>::sse_decode(deserializer);
         let mut var_unifiedAddress = <String>::sse_decode(deserializer);
+        let mut var_isSeedAnchor = <bool>::sse_decode(deserializer);
         return crate::api::wallet::AccountInfo {
             uuid: var_uuid,
             name: var_name,
             unified_address: var_unifiedAddress,
+            is_seed_anchor: var_isSeedAnchor,
         };
     }
 }
@@ -3430,6 +3432,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::AccountInfo {
             self.uuid.into_into_dart().into_dart(),
             self.name.into_into_dart().into_dart(),
             self.unified_address.into_into_dart().into_dart(),
+            self.is_seed_anchor.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -4041,6 +4044,7 @@ impl SseEncode for crate::api::wallet::AccountInfo {
         <String>::sse_encode(self.uuid, serializer);
         <String>::sse_encode(self.name, serializer);
         <String>::sse_encode(self.unified_address, serializer);
+        <bool>::sse_encode(self.is_seed_anchor, serializer);
     }
 }
 
