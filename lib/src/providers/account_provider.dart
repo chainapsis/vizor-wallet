@@ -406,7 +406,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// Delete all wallet data (DB + keychain). Caller must stop sync first.
   Future<void> resetWallet() async {
     final dbPath = await _getDbPath();
-    _deleteExistingDb(dbPath);
+    await _deleteExistingDb(dbPath);
     await _storage.deleteAll();
     ref.read(appSecurityProvider.notifier).reset();
     state = const AsyncData(AccountState());

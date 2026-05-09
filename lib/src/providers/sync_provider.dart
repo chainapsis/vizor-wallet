@@ -804,6 +804,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool needsPauseForWalletMutation() =>
       _walletMutationSyncPauseSnapshot().hadWorkToPause;
 
+  void clearCachedWalletDbPath() {
+    _cachedDbPath = null;
+  }
+
   Future<WalletMutationSyncPause> pauseForWalletMutation({
     FutureOr<void> Function()? onStoppingSync,
   }) async {

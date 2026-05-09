@@ -664,7 +664,7 @@ void main() {
     await tester.tap(find.text('Reset Vizor'));
     await tester.pumpAndSettle();
 
-    expect(events, ['clearSensitiveState', 'resetWallet']);
+    expect(events, ['pause', 'resetWallet', 'clearCachedWalletDbPath']);
     expect(accountNotifier.resetWalletCalled, isTrue);
     expect(find.text('welcome route'), findsOneWidget);
   });
@@ -888,6 +888,11 @@ class _FakeSyncNotifier extends SyncNotifier {
   @override
   void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
     events?.add('resume');
+  }
+
+  @override
+  void clearCachedWalletDbPath() {
+    events?.add('clearCachedWalletDbPath');
   }
 
   @override

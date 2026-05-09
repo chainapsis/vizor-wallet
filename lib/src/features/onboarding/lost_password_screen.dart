@@ -109,6 +109,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
 
     await syncNotifier.clearSensitiveStateForLock();
     await accountNotifier.resetWallet();
+    syncNotifier.clearCachedWalletDbPath();
   }
 
   @override

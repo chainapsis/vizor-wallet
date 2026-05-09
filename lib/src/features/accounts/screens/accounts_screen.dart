@@ -135,9 +135,15 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     final accountNotifier = ref.read(accountProvider.notifier);
 
     onProgress?.call(AccountRemoveProgress.stoppingSync);
-    await syncNotifier.clearSensitiveStateForLock();
-    onProgress?.call(AccountRemoveProgress.removingAccount);
-    await accountNotifier.resetWallet();
+    await runWithSyncPausedForAccountMutation(
+      ref,
+      () async {
+        onProgress?.call(AccountRemoveProgress.removingAccount);
+        await accountNotifier.resetWallet();
+        syncNotifier.clearCachedWalletDbPath();
+      },
+      resumeAfterMutation: false,
+    );
     if (!mounted) return;
     _closeModal();
     context.go('/welcome');
