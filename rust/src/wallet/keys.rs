@@ -326,6 +326,40 @@ pub fn delete_account(
     let account_id = parse_account_uuid(account_uuid)?;
     with_wallet_db_write_lock("keys.delete_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        let target = db
+            .get_account(account_id)
+            .map_err(|e| format!("Failed to load account: {e}"))?
+            .ok_or_else(|| format!("Account not found: {}", account_id.expose_uuid()))?;
+        let account_ids = db
+            .get_account_ids()
+            .map_err(|e| format!("Failed to list accounts: {e}"))?;
+
+        if matches!(target.source(), AccountSource::Derived { .. }) {
+            let mut has_remaining_accounts = false;
+            let mut has_other_seed_anchor = false;
+            for id in &account_ids {
+                if *id == account_id {
+                    continue;
+                }
+                has_remaining_accounts = true;
+                let account = db
+                    .get_account(*id)
+                    .map_err(|e| format!("Failed to load account: {e}"))?
+                    .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
+                if matches!(account.source(), AccountSource::Derived { .. }) {
+                    has_other_seed_anchor = true;
+                    break;
+                }
+            }
+
+            if has_remaining_accounts && !has_other_seed_anchor {
+                return Err(
+                    "The last seed anchor account cannot be removed while other accounts remain."
+                        .into(),
+                );
+            }
+        }
+
         db.delete_account(account_id)
             .map_err(|e| format!("Failed to delete account: {e}"))
     })
@@ -596,6 +630,37 @@ mod tests {
         let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
         assert_eq!(accounts.len(), 1);
         assert!(accounts.iter().all(|account| account.uuid != second_uuid));
+    }
+
+    #[test]
+    fn test_delete_account_rejects_last_seed_anchor_with_remaining_accounts() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let first_phrase = generate_mnemonic();
+        let first_seed = mnemonic_to_seed(&first_phrase).unwrap();
+        let (first_uuid, _) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &first_seed, None, "first")
+                .unwrap();
+
+        let second_phrase = generate_mnemonic();
+        let second_seed = mnemonic_to_seed(&second_phrase).unwrap();
+        add_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "second",
+            &second_seed,
+            None,
+        )
+        .unwrap();
+
+        let error = delete_account(db_path_str, WalletNetwork::Main, &first_uuid).unwrap_err();
+        assert!(error.contains("last seed anchor account cannot be removed"));
+
+        let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
+        assert_eq!(accounts.len(), 2);
+        assert!(accounts.iter().any(|account| account.uuid == first_uuid));
     }
 
     #[test]
