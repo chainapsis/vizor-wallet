@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../main.dart' show log;
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
@@ -84,27 +85,58 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   Future<void> _removeAccount(
     String uuid, {
     required bool isLastAccount,
+    AccountRemoveProgressCallback? onProgress,
   }) async {
     if (isLastAccount) {
-      await _resetWalletFromAccountRemoval();
+      await _resetWalletFromAccountRemoval(onProgress);
       return;
     }
 
     final accountNotifier = ref.read(accountProvider.notifier);
-    await runWithSyncPausedForAccountMutation(
-      ref,
-      () => accountNotifier.removeAccount(uuid),
-    );
+    onProgress?.call(AccountRemoveProgress.stoppingSync);
+    final flowWatch = Stopwatch()..start();
+    final pauseWatch = Stopwatch()..start();
+    var didLogPause = false;
+    void logPauseComplete() {
+      if (didLogPause) return;
+      didLogPause = true;
+      pauseWatch.stop();
+      onProgress?.call(AccountRemoveProgress.removingAccount);
+      log(
+        'removeAccountFlow: sync pause complete in '
+        '${pauseWatch.elapsedMilliseconds}ms uuid=$uuid',
+      );
+    }
+
+    await runWithSyncPausedForAccountMutation(ref, () async {
+      logPauseComplete();
+      final mutationWatch = Stopwatch()..start();
+      await accountNotifier.removeAccount(uuid);
+      log(
+        'removeAccountFlow: account mutation complete in '
+        '${mutationWatch.elapsedMilliseconds}ms uuid=$uuid',
+      );
+    }, onSyncPaused: logPauseComplete);
     if (!mounted) return;
     _closeModal();
+    final refreshWatch = Stopwatch()..start();
     await ref.read(syncProvider.notifier).refreshAfterSend();
+    log(
+      'removeAccountFlow: refreshAfterSend complete in '
+      '${refreshWatch.elapsedMilliseconds}ms uuid=$uuid '
+      'total=${flowWatch.elapsedMilliseconds}ms',
+    );
   }
 
-  Future<void> _resetWalletFromAccountRemoval() async {
+  Future<void> _resetWalletFromAccountRemoval(
+    AccountRemoveProgressCallback? onProgress,
+  ) async {
     final syncNotifier = ref.read(syncProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
 
+    onProgress?.call(AccountRemoveProgress.stoppingSync);
     await syncNotifier.clearSensitiveStateForLock();
+    onProgress?.call(AccountRemoveProgress.removingAccount);
     await accountNotifier.resetWallet();
     if (!mounted) return;
     _closeModal();
@@ -173,9 +205,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     profilePictureId: modalAccount.profilePictureId,
                     isLastAccount: isLastModalAccount,
                     onCancel: _closeModal,
-                    onRemove: () => _removeAccount(
+                    onRemove: (onProgress) => _removeAccount(
                       modalAccount.uuid,
                       isLastAccount: isLastModalAccount,
+                      onProgress: onProgress,
                     ),
                   ),
                 },
@@ -355,8 +388,8 @@ class _AccountsListState extends State<_AccountsList> {
                   seedAnchorCount,
                 ),
               ),
-            const _AccountsSectionLabel(label: 'Other'),
-            if (widget.otherAccounts.isNotEmpty)
+            if (widget.otherAccounts.isNotEmpty) ...[
+              const _AccountsSectionLabel(label: 'Other'),
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
@@ -405,6 +438,7 @@ class _AccountsListState extends State<_AccountsList> {
                   },
                 ),
               ),
+            ],
           ],
         ),
       ),
@@ -616,7 +650,7 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
 
   @override
   void dispose() {
-    _hideMenu(notify: false);
+    _hideMenu(notify: false, rebuild: false);
     super.dispose();
   }
 
@@ -663,13 +697,13 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
     setState(() {});
   }
 
-  void _hideMenu({bool notify = true}) {
+  void _hideMenu({bool notify = true, bool rebuild = true}) {
     final entry = _menuEntry;
     if (entry == null) return;
     _menuEntry = null;
     entry.remove();
     if (notify) widget.onOpenChanged(false);
-    if (mounted) setState(() {});
+    if (rebuild && mounted) setState(() {});
   }
 
   void _handleEditName() {

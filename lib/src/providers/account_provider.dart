@@ -362,10 +362,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
     final dbPath = await _getDbPath();
     final network = await _getNetwork();
+    final rustDeleteWatch = Stopwatch()..start();
     await rust_wallet.deleteAccount(
       dbPath: dbPath,
       network: network,
       accountUuid: uuid,
+    );
+    log(
+      'removeAccount: rust delete complete in '
+      '${rustDeleteWatch.elapsedMilliseconds}ms uuid=$uuid',
     );
     await _storage.delete('zcash_account_mnemonic_$uuid');
 

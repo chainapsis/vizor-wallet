@@ -53,6 +53,42 @@ void main() {
     expect(find.text('add account route'), findsOneWidget);
   });
 
+  testWidgets(
+    'accounts screen hides other section when there are no other accounts',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      const accountState = AccountState(
+        accounts: [
+          AccountInfo(
+            uuid: 'account-1',
+            name: 'Primary Vault',
+            order: 0,
+            isSeedAnchor: true,
+          ),
+        ],
+        activeAccountUuid: 'account-1',
+        activeAddress: 'u1accountsaddress',
+      );
+      await tester.pumpWidget(
+        _accountsHarness(
+          accountNotifier: () => _FakeAccountNotifier(accountState),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('accounts_active_row_account-1')),
+        findsOneWidget,
+      );
+      expect(find.text('Other'), findsNothing);
+      expect(find.text('Add Account'), findsOneWidget);
+    },
+  );
+
   testWidgets('other accounts list scrolls while add account stays pinned', (
     tester,
   ) async {
@@ -462,6 +498,114 @@ void main() {
     expect(events, ['pause', 'remove:account-2', 'resume', 'refresh']);
   });
 
+  testWidgets('remove modal shows stopping sync before removing account', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final pauseCompleter = Completer<void>();
+    final removeCompleter = Completer<void>();
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+      removeCompleter: removeCompleter,
+    );
+    final syncNotifier = _FakeSyncNotifier(pauseCompleter: pauseCompleter);
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        syncNotifier: () => syncNotifier,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove Account'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pump();
+
+    expect(find.text('Stopping sync...'), findsOneWidget);
+    expect(find.text('Removing account...'), findsNothing);
+
+    pauseCompleter.complete();
+    await tester.pump();
+
+    expect(find.text('Stopping sync...'), findsNothing);
+    expect(find.text('Removing account...'), findsOneWidget);
+
+    removeCompleter.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Removing account...'), findsNothing);
+    expect(accountNotifier.removedUuid, 'account-2');
+  });
+
+  testWidgets('remove account logs timing checkpoints', (tester) async {
+    final messages = <String>[];
+    final previousDebugPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) messages.add(message);
+    };
+    try {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      final events = <String>[];
+      final accountNotifier = _FakeAccountNotifier(
+        _bootstrap.initialAccountState,
+        events: events,
+      );
+      final syncNotifier = _FakeSyncNotifier(events: events);
+      await tester.pumpWidget(
+        _accountsHarness(
+          accountNotifier: () => accountNotifier,
+          syncNotifier: () => syncNotifier,
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(
+        find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove Account'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove'));
+      await tester.pumpAndSettle();
+    } finally {
+      debugPrint = previousDebugPrint;
+    }
+
+    expect(
+      messages.any(
+        (message) => message.contains('removeAccountFlow: sync pause complete'),
+      ),
+      isTrue,
+    );
+    expect(
+      messages.any(
+        (message) =>
+            message.contains('removeAccountFlow: account mutation complete'),
+      ),
+      isTrue,
+    );
+    expect(
+      messages.any(
+        (message) =>
+            message.contains('removeAccountFlow: refreshAfterSend complete'),
+      ),
+      isTrue,
+    );
+  });
+
   testWidgets('removing the last account resets the wallet and goes welcome', (
     tester,
   ) async {
@@ -639,10 +783,11 @@ final _bootstrap = AppBootstrapState(
 );
 
 class _FakeAccountNotifier extends AccountNotifier {
-  _FakeAccountNotifier(this.initialState, {this.events});
+  _FakeAccountNotifier(this.initialState, {this.events, this.removeCompleter});
 
   final AccountState initialState;
   final List<String>? events;
+  final Completer<void>? removeCompleter;
   String? renamedUuid;
   String? renamedName;
   String? updatedProfilePictureUuid;
@@ -693,6 +838,7 @@ class _FakeAccountNotifier extends AccountNotifier {
   Future<void> removeAccount(String uuid) async {
     events?.add('remove:$uuid');
     removedUuid = uuid;
+    await removeCompleter?.future;
     final prev = state.value ?? initialState;
     final updated = [
       for (final account in prev.accounts)
@@ -710,9 +856,10 @@ class _FakeAccountNotifier extends AccountNotifier {
 }
 
 class _FakeSyncNotifier extends SyncNotifier {
-  _FakeSyncNotifier({this.events});
+  _FakeSyncNotifier({this.events, this.pauseCompleter});
 
   final List<String>? events;
+  final Completer<void>? pauseCompleter;
   int refreshCount = 0;
 
   @override
@@ -729,6 +876,7 @@ class _FakeSyncNotifier extends SyncNotifier {
     FutureOr<void> Function()? onStoppingSync,
   }) async {
     events?.add('pause');
+    await pauseCompleter?.future;
     return const WalletMutationSyncPause(
       hadActiveSync: true,
       hadPolling: false,

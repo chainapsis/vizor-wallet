@@ -5,6 +5,11 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 
+enum AccountRemoveProgress { stoppingSync, removingAccount }
+
+typedef AccountRemoveProgressCallback =
+    void Function(AccountRemoveProgress progress);
+
 class AccountRemoveModal extends StatefulWidget {
   const AccountRemoveModal({
     required this.accountName,
@@ -19,7 +24,8 @@ class AccountRemoveModal extends StatefulWidget {
   final String profilePictureId;
   final bool isLastAccount;
   final VoidCallback onCancel;
-  final Future<void> Function() onRemove;
+  final Future<void> Function(AccountRemoveProgressCallback onProgress)
+  onRemove;
 
   @override
   State<AccountRemoveModal> createState() => _AccountRemoveModalState();
@@ -29,17 +35,19 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   static const _buttonWidth = 280.0;
 
   bool _isSubmitting = false;
+  _AccountRemoveSubmitPhase? _submitPhase;
   String? _submitError;
 
   Future<void> _submit() async {
     if (_isSubmitting) return;
     setState(() {
       _isSubmitting = true;
+      _submitPhase = _AccountRemoveSubmitPhase.stoppingSync;
       _submitError = null;
     });
 
     try {
-      await widget.onRemove();
+      await widget.onRemove(_setProgress);
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -49,9 +57,24 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
       if (mounted) {
         setState(() {
           _isSubmitting = false;
+          _submitPhase = null;
         });
       }
     }
+  }
+
+  void _setProgress(AccountRemoveProgress progress) {
+    if (!mounted) return;
+    final next = switch (progress) {
+      AccountRemoveProgress.stoppingSync =>
+        _AccountRemoveSubmitPhase.stoppingSync,
+      AccountRemoveProgress.removingAccount =>
+        _AccountRemoveSubmitPhase.removingAccount,
+    };
+    if (_submitPhase == next) return;
+    setState(() {
+      _submitPhase = next;
+    });
   }
 
   @override
@@ -87,8 +110,8 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
             onPressed: _isSubmitting ? null : _submit,
             variant: AppButtonVariant.destructive,
             minWidth: _buttonWidth,
-            leading: const AppIcon(AppIcons.trash),
-            child: Text(_submitButtonLabel),
+            leading: _isSubmitting ? null : const AppIcon(AppIcons.trash),
+            child: _submitButton,
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -115,12 +138,36 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   }
 
   String get _submitButtonLabel {
-    if (_isSubmitting) {
-      return widget.isLastAccount ? 'Resetting...' : 'Removing...';
+    if (!_isSubmitting) {
+      return widget.isLastAccount ? 'Reset Vizor' : 'Remove';
     }
-    return widget.isLastAccount ? 'Reset Vizor' : 'Remove';
+
+    return switch (_submitPhase) {
+      _AccountRemoveSubmitPhase.stoppingSync => 'Stopping sync...',
+      _AccountRemoveSubmitPhase.removingAccount => widget.isLastAccount
+          ? 'Resetting...'
+          : 'Removing account...',
+      null => widget.isLastAccount ? 'Resetting...' : 'Removing account...',
+    };
+  }
+
+  Widget get _submitButton {
+    final label = _submitButtonLabel;
+    if (!_isSubmitting) return Text(label);
+
+    return SizedBox(
+      width: 220,
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+      ),
+    );
   }
 }
+
+enum _AccountRemoveSubmitPhase { stoppingSync, removingAccount }
 
 class _AccountRemoveModalCard extends StatelessWidget {
   const _AccountRemoveModalCard({required this.header, required this.child});
