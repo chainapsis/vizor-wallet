@@ -51,7 +51,9 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _submitError = "Couldn't remove account.";
+        _submitError = widget.isLastAccount
+            ? "Couldn't reset Vizor."
+            : "Couldn't remove account.";
       });
     } finally {
       if (mounted) {
@@ -144,9 +146,8 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
     return switch (_submitPhase) {
       _AccountRemoveSubmitPhase.stoppingSync => 'Stopping sync...',
-      _AccountRemoveSubmitPhase.removingAccount => widget.isLastAccount
-          ? 'Resetting...'
-          : 'Removing account...',
+      _AccountRemoveSubmitPhase.removingAccount =>
+        widget.isLastAccount ? 'Resetting...' : 'Removing account...',
       null => widget.isLastAccount ? 'Resetting...' : 'Removing account...',
     };
   }

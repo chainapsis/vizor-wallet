@@ -45,6 +45,9 @@ class AccountInfo {
     name: json['name'] as String,
     order: json['order'] as int? ?? 0,
     isHardware: json['isHardware'] as bool? ?? false,
+    // Legacy stored account JSON did not include this field. Runtime account
+    // state is reconciled from Rust during bootstrap; this fallback only keeps
+    // pre-field snapshots conservative until Rust metadata is available.
     isSeedAnchor:
         json['isSeedAnchor'] as bool? ??
         ((json['order'] as int? ?? 0) == 0 &&
