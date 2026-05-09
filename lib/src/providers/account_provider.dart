@@ -372,7 +372,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       'removeAccount: rust delete complete in '
       '${rustDeleteWatch.elapsedMilliseconds}ms uuid=$uuid',
     );
-    await _storage.delete('zcash_account_mnemonic_$uuid');
+    try {
+      await _storage.delete('zcash_account_mnemonic_$uuid');
+    } catch (e, st) {
+      log('removeAccount: failed to delete mnemonic for $uuid: $e\n$st');
+    }
 
     final updated = [
       for (var i = 0; i < remaining.length; i++)

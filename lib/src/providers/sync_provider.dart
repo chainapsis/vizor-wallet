@@ -239,9 +239,13 @@ class WalletMutationSyncPause {
 }
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
+  SyncNotifier({Future<String> Function()? walletDbPathResolver})
+    : _walletDbPathResolver = walletDbPathResolver ?? getWalletDbPath;
+
   static const _displayBlockDuration = Duration(milliseconds: 20);
   static const _maxIncompleteDisplayPercentage = 0.999;
 
+  final Future<String> Function() _walletDbPathResolver;
   late final BackgroundSyncDelegate _bgDelegate;
   bool _isSyncing = false;
   bool _isInForeground = true;
@@ -807,6 +811,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void clearCachedWalletDbPath() {
     _cachedDbPath = null;
   }
+
+  @visibleForTesting
+  Future<String> resolveWalletDbPathForTesting() => _getDbPath();
 
   Future<WalletMutationSyncPause> pauseForWalletMutation({
     FutureOr<void> Function()? onStoppingSync,
@@ -1690,7 +1697,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<String> _getDbPath() async {
     if (_cachedDbPath != null) return _cachedDbPath!;
-    _cachedDbPath = await getWalletDbPath();
+    _cachedDbPath = await _walletDbPathResolver();
     return _cachedDbPath!;
   }
 
@@ -1703,5 +1710,5 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 }
 
 final syncProvider = AsyncNotifierProvider<SyncNotifier, SyncState>(
-  SyncNotifier.new,
+  () => SyncNotifier(),
 );

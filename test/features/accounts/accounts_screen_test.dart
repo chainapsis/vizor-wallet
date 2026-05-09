@@ -668,6 +668,52 @@ void main() {
     expect(accountNotifier.resetWalletCalled, isTrue);
     expect(find.text('welcome route'), findsOneWidget);
   });
+
+  testWidgets('last account reset failure shows reset-specific error', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const singleAccountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Primary Vault',
+          order: 0,
+          isSeedAnchor: true,
+        ),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1accountsaddress',
+    );
+    final accountNotifier = _FakeAccountNotifier(
+      singleAccountState,
+      resetError: Exception('reset failed'),
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        syncNotifier: () => _FakeSyncNotifier(),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove Account'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reset Vizor'));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Couldn't reset Vizor."), findsOneWidget);
+    expect(find.text("Couldn't remove account."), findsNothing);
+    expect(find.text('welcome route'), findsNothing);
+  });
 }
 
 Widget _accountsHarness({
@@ -783,11 +829,17 @@ final _bootstrap = AppBootstrapState(
 );
 
 class _FakeAccountNotifier extends AccountNotifier {
-  _FakeAccountNotifier(this.initialState, {this.events, this.removeCompleter});
+  _FakeAccountNotifier(
+    this.initialState, {
+    this.events,
+    this.removeCompleter,
+    this.resetError,
+  });
 
   final AccountState initialState;
   final List<String>? events;
   final Completer<void>? removeCompleter;
+  final Object? resetError;
   String? renamedUuid;
   String? renamedName;
   String? updatedProfilePictureUuid;
@@ -850,6 +902,10 @@ class _FakeAccountNotifier extends AccountNotifier {
   @override
   Future<void> resetWallet() async {
     events?.add('resetWallet');
+    final error = resetError;
+    if (error != null) {
+      throw error;
+    }
     resetWalletCalled = true;
     state = const AsyncData(AccountState());
   }
