@@ -78,6 +78,15 @@ What this means for our DB shape:
 
 **Production tradeoff** (to revisit before release). Blocking hardware-first bootstrap gives the strongest migration guarantee but is hostile to Keystone-only users (they are forced to create or import a software mnemonic first). Alternatives considered: a hidden throwaway-mnemonic bootstrap (hacky, confuses the account list), or accepting the risk and documenting a re-import recovery flow when a future seed-requiring migration lands (simpler UX but requires users to re-scan from Keystone birthday when it happens). The current branch takes the conservative block. The actual production decision is deferred.
 
+**Account deletion and reset invariants.** Per-account deletion is allowed for
+`Imported` accounts and for a `Derived` account only if another `Derived`
+account remains. Dart enforces this in `AccountNotifier.removeAccount`, and
+Rust `delete_account` repeats the check inside the wallet DB write lock so the
+invariant does not depend on a single UI caller. Deleting the last remaining
+account is not a per-account delete; the Accounts UI treats it as a full wallet
+reset, clearing the wallet DB, secure storage, active account state, and routing
+back to onboarding.
+
 **Account identification**: `AccountUuid` (UUID string like `"550e8400-e29b-41d4-a716-446655440000"`). Passed as `String` between Dart and Rust via `Uuid::parse_str()` / `Uuid::to_string()`.
 
 **Mnemonic storage**: Per-account in Flutter secure storage (`zcash_account_mnemonic_{uuid}`). Account list stored as JSON in `zcash_accounts` key. Active account in `zcash_active_account` key.
@@ -120,6 +129,9 @@ SyncProvider (sync_provider.dart)
   ├── startSync() is fire-and-forget with _syncGen generation counter
   ├── startSync() no-ops while wallet is locked (`appSecurityProvider.requiresUnlock`)
   ├── clearSensitiveStateForLock() — clears in-memory sync state, cancels Rust work, stops polling
+  ├── clearCachedWalletDbPath() — must be called after wallet reset/deleteAll()
+  │   so the next sync resolves the newly generated DB name instead of using the
+  │   deleted wallet's cached path
   ├── startSyncAnyway() — unlock recovery path for cancelled-but-still-unwinding Rust sync
   ├── Polls getLatestBlockHeight every 10s after sync completes
   ├── Re-syncs automatically when new blocks detected or previous sync incomplete
@@ -187,6 +199,7 @@ rust/src/
 │   ├── mod.rs          # pub mod simple, sync, wallet, keystone
 │   ├── simple.rs       # init_app() with setup_default_user_utils() + log level filter
 │   ├── wallet.rs       # FRB: create_wallet, import_wallet, add_account, list_accounts,
+│   │                    # delete_account,
 │   │                    # generate_mnemonic, get_unified_address(account_uuid),
 │   │                    # get_transparent_address(account_uuid), get_latest_block_height,
 │   │                    # import_hardware_account (Keystone UFVK-only)
@@ -217,6 +230,7 @@ rust/src/
 │   ├── mod.rs          # pub mod keys, sync, sync_engine, keystone
 │   ├── keys.rs         # Key derivation, mnemonic, account creation (Derived + Imported),
 │   │                    # list_accounts, ensure_db_initialized, parse_account_uuid,
+│   │                    # delete_account with last-Derived seed-anchor guard,
 │   │                    # init_db_and_create_account (software first-account bootstrap),
 │   │                    # import_hardware_account (Keystone UFVK import with
 │   │                    # Derived-account backstop check)
@@ -623,4 +637,4 @@ Additional crates for multi-account: `uuid` 1.1, `zip32` 0.2, `jubjub` 0.10, `bl
 
 `onboarding/` — Developer onboarding documentation. Do not read or modify during normal development. Only update when explicitly asked.
 
-When updating `AGENTS.md` or `CLAUDE.md`, update the other file with the same content and keep this line as the final line in both files.
+`CLAUDE.md` intentionally contains only `@AGENTS.md`; update this file as the source of truth and keep this line as the final line.
