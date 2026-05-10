@@ -74,14 +74,6 @@ pczt = "0.5"
 ur-registry = { git = "https://github.com/KeystoneHQ/keystone-sdk-rust", package = "ur-registry", default-features = false, features = ["std"] }
 serde_json = "1"
 
-# USB transport is not available on iOS simulator/device (no IOKit /
-# no raw USB syscalls); Keystone over USB is desktop+Android only.
-# The Dart-side `KeystoneTransport.available()` already excludes USB on
-# iOS, so the functions keep their signatures via iOS stubs in
-# `wallet/keystone.rs` — only the actual nusb crate is skipped here.
-[target.'cfg(not(target_os = "ios"))'.dependencies]
-nusb = { version = "0.2", features = ["tokio"] }
-
 [dev-dependencies]
 tempfile = "3"
 hex = "0.4"

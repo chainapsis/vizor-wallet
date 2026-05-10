@@ -13,7 +13,7 @@
 //!         │        the proposal has a non-empty Sapling bundle)
 //!         │
 //!         └── 2b. redact_pczt_for_signer(base)        → redactedPczt     (phone)
-//!                 → Keystone device (animated QR or USB)
+//!                 → Keystone device (animated QR)
 //!                 → device signs Orchard spend_auth_sig
 //!                 → signed PCZT back to phone          → pcztWithSignatures
 //!                                                            │

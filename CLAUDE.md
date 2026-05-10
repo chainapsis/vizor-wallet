@@ -201,8 +201,7 @@ rust/src/
 │   └── keystone.rs     # FRB: encode_pczt_to_ur, decode_ur_to_pczt, encode_pczt_ur_parts,
 │                        # decode_ur_part, reset_ur_session (#[frb(sync)]),
 │                        # decode_accounts_from_cbor, decode_pczt_from_cbor,
-│                        # decode_accounts_ur. Legacy USB helpers exist in Rust
-│                        # bindings but are not exposed by the Dart Keystone UX.
+│                        # decode_accounts_ur. Keystone UX is QR-only.
 │                        # Re-exports KeystoneAccountInfo, UrDecodeResult from
 │                        # crate::wallet::keystone via `pub use`.
 ├── ffi.rs              # C FFI for Swift: zcash_run_full_sync(), zcash_cancel_sync(),
@@ -244,8 +243,7 @@ rust/src/
 │                        #   (ur::Decoder directly, not KeystoneURDecoder, to avoid
 │                        #   URType registry issues with `zcash-accounts`)
 │                        # - Single-part UR helpers retained for compatibility
-│                        # - Legacy USB EAPDU protocol is present in Rust but not
-│                        #   exposed by the Dart Keystone UX; product flow is QR-only
+│                        # - QR-only product flow; USB transport is intentionally absent
 │                        # - Global UR_SESSION: Mutex<Option<UrSession>>, auto-reset
 │                        #   on type change / completion, caller resets via
 │                        #   reset_ur_session() on scan-screen entry
