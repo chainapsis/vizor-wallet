@@ -3,8 +3,8 @@ use std::path::Path;
 use bip0039::{Count, English, Language, Mnemonic};
 use secrecy::{ExposeSecret, SecretVec};
 use zcash_client_backend::data_api::{
-    chain::ChainState, Account as _, AccountBirthday, AccountPurpose, AccountSource, WalletRead,
-    WalletWrite, Zip32Derivation,
+    chain::ChainState, Account as _, AccountBirthday, AccountPurpose, WalletRead, WalletWrite,
+    Zip32Derivation,
 };
 use zcash_client_sqlite::{wallet::init::init_wallet_db, AccountUuid};
 use zcash_keys::{
@@ -160,13 +160,10 @@ pub fn add_account(
 /// The UFVK is obtained from the hardware device. Seed fingerprint and zip32 index
 /// are provided by the device for Zip32Derivation metadata.
 ///
-/// Requires at least one `Derived` (software) account to already exist in the
-/// wallet. A hardware-only wallet cannot be bootstrapped because librustzcash
-/// cannot apply seed-requiring migrations to an Imported-only DB (see
-/// zcash_client_sqlite::wallet::init::init_wallet_db and CLAUDE.md). The first
-/// account in any wallet must be `Derived`, and hardware accounts can only be
-/// added on top. This function enforces the invariant as a Rust-side backstop
-/// for the Dart-side check in AccountNotifier.importKeystoneAccount.
+/// Hardware accounts may be the first account in the wallet. If no `Derived`
+/// account exists yet, this can leave the wallet DB containing only `Imported`
+/// accounts. Callers accept the future seed-requiring migration recovery
+/// tradeoff for Keystone-first onboarding.
 pub fn import_hardware_account(
     db_path: &str,
     network: WalletNetwork,
@@ -200,32 +197,6 @@ pub fn import_hardware_account(
 
     let account_id = with_wallet_db_write_lock("keys.import_hardware_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
-
-        // Invariant: there must be at least one Derived account already. Otherwise
-        // this import would leave the DB in a state where future seed-requiring
-        // migrations cannot be applied. See CLAUDE.md "Hardware-first wallet
-        // constraint" for the full rationale.
-        let account_ids = db
-            .get_account_ids()
-            .map_err(|e| format!("Failed to list accounts: {e}"))?;
-        let mut has_derived = false;
-        for id in &account_ids {
-            let acc = db
-                .get_account(*id)
-                .map_err(|e| format!("Failed to load account: {e}"))?
-                .ok_or_else(|| format!("Account not found: {}", id.expose_uuid()))?;
-            if matches!(acc.source(), AccountSource::Derived { .. }) {
-                has_derived = true;
-                break;
-            }
-        }
-        if !has_derived {
-            return Err("Hardware wallet accounts cannot be the first account. \
-                 Create or import a software wallet first, then add your Keystone \
-                 account. This is a librustzcash constraint: seed-requiring \
-                 database migrations cannot be applied to an Imported-only wallet."
-                .into());
-        }
 
         let account = db
             .import_account_ufvk(name, &ufvk, &birthday, purpose, None)

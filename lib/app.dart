@@ -388,6 +388,24 @@ final _routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
       GoRoute(
+        path: '/import-keystone/set-password',
+        redirect: (_, state) {
+          final args = state.extra;
+          if (args is SetPasswordScreenArgs &&
+              args.flow == SetPasswordFlow.importKeystone) {
+            return null;
+          }
+          return '/import-keystone';
+        },
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
         path: '/import-keystone',
         builder: (_, _) => const ImportKeystoneScreen(),
       ),

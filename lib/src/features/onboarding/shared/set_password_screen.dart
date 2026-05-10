@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -91,15 +92,23 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         await runWithSyncPausedForAccountMutation(
           ref,
           () async {
-            if (args.isImport) {
-              await accountNotifier.importAccount(
-                mnemonic: args.mnemonic,
-                birthdayHeight: args.importBirthdayHeight,
-              );
-            } else {
-              await accountNotifier.createAccountFromMnemonic(
-                mnemonic: args.mnemonic,
-              );
+            switch (args.flow) {
+              case SetPasswordFlow.create:
+                await accountNotifier.createAccountFromMnemonic(
+                  mnemonic: args.requiredMnemonic,
+                );
+              case SetPasswordFlow.importWallet:
+                await accountNotifier.importAccount(
+                  mnemonic: args.requiredMnemonic,
+                  birthdayHeight: args.importBirthdayHeight,
+                );
+              case SetPasswordFlow.importKeystone:
+                await accountNotifier.importKeystoneAccount(
+                  name: args.requiredKeystoneAccountName,
+                  ufvk: args.requiredKeystoneUfvk,
+                  seedFingerprint: args.requiredKeystoneSeedFingerprint,
+                  zip32Index: args.requiredKeystoneZip32Index,
+                );
             }
           },
           onStoppingSync: () {
@@ -160,9 +169,17 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       onSubmit: _submit,
     );
 
-    return args.isImport
-        ? ImportOnboardingTrailingPane(child: content)
-        : OnboardingTrailingPane(child: content);
+    return switch (args.flow) {
+      SetPasswordFlow.create => OnboardingTrailingPane(child: content),
+      SetPasswordFlow.importWallet => ImportOnboardingTrailingPane(
+        child: content,
+      ),
+      SetPasswordFlow.importKeystone => AppDesktopShell(
+        sidebarWidth: 0,
+        sidebar: const SizedBox.shrink(),
+        pane: AppDesktopPane(child: content),
+      ),
+    };
   }
 }
 

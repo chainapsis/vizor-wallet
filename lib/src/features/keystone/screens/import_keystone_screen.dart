@@ -4,10 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/wallet/keystone.dart' show KeystoneAccountInfo;
 import '../../../services/keystone_transport.dart';
 import '../../../services/qr_scanner.dart';
+import '../../onboarding/shared/onboarding_flow_args.dart';
 
 class ImportKeystoneScreen extends ConsumerStatefulWidget {
   const ImportKeystoneScreen({super.key});
@@ -35,7 +37,10 @@ class _ImportKeystoneScreenState extends ConsumerState<ImportKeystoneScreen> {
   Future<void> _connectAndGetAccounts() async {
     if (!QrScanner.isAvailable) {
       setState(() {
-        _error = 'QR scanning not available on this platform';
+        _error =
+            'Keystone import uses camera QR scanning only. Connect a camera and try again. '
+            'If a monitor webcam cannot focus on the QR code, increase the distance, '
+            'improve lighting, or use a mobile device.';
         _loadingPhase = _KeystoneLoadingPhase.idle;
       });
       return;
@@ -72,6 +77,21 @@ class _ImportKeystoneScreenState extends ConsumerState<ImportKeystoneScreen> {
     });
 
     try {
+      final security = ref.read(appSecurityProvider);
+      if (!security.isPasswordConfigured) {
+        if (!mounted) return;
+        context.go(
+          '/import-keystone/set-password',
+          extra: SetPasswordScreenArgs.importKeystone(
+            name: info.name,
+            ufvk: info.ufvk,
+            seedFingerprint: info.seedFingerprint.toList(),
+            zip32Index: info.index,
+          ),
+        );
+        return;
+      }
+
       await runWithSyncPausedForAccountMutation(
         ref,
         () => ref

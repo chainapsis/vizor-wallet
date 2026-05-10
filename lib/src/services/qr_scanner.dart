@@ -7,6 +7,9 @@ import '../../main.dart' show log;
 import '../rust/api/keystone.dart' as rust_keystone;
 import '../rust/wallet/keystone.dart' show UrDecodeResult;
 
+const _qrUnavailableMessage =
+    'Keystone QR scanning requires a camera on this device.';
+
 /// Default camera facing per platform.
 /// Mobile: back camera for QR scanning.
 /// Desktop: external webcam if available (handled by patched mobile_scanner).
@@ -24,7 +27,7 @@ class QrScanner {
 
   static Future<String?> scan(BuildContext context) async {
     if (!isAvailable) {
-      throw UnsupportedError('QR scanning not available on this platform');
+      throw UnsupportedError(_qrUnavailableMessage);
     }
     return Navigator.push<String>(
       context,
@@ -41,7 +44,7 @@ class QrScanner {
     void Function(int progress)? onProgress,
   }) async {
     if (!isAvailable) {
-      throw UnsupportedError('QR scanning not available on this platform');
+      throw UnsupportedError(_qrUnavailableMessage);
     }
     return Navigator.push<ScanResult>(
       context,
@@ -235,6 +238,14 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
                         : 'Point camera at Keystone QR',
                     style: const TextStyle(color: Colors.white, fontSize: 16),
                   ),
+                  if (_progress == 0) ...[
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Use good light and keep enough distance for the camera to focus.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   LinearProgressIndicator(
                     value: _progress / 100.0,
