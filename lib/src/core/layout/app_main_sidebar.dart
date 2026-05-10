@@ -417,7 +417,7 @@ class _SidebarAccountDropdown extends StatelessWidget {
                   _SidebarCreateWalletRow(
                     label: 'Connect Keystone',
                     iconName: AppIcons.qr,
-                    onTap: () => context.go('/import-keystone'),
+                    onTap: () => context.go('/onboarding/keystone'),
                   ),
                 ],
               ),

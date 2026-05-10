@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
@@ -16,6 +15,7 @@ import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../create/onboarding_split_view.dart';
 import '../import/import_split_view.dart';
+import '../keystone/keystone_onboarding_flow.dart';
 import 'onboarding_flow_args.dart';
 import 'onboarding_error_messages.dart';
 
@@ -174,10 +174,8 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       SetPasswordFlow.importWallet => ImportOnboardingTrailingPane(
         child: content,
       ),
-      SetPasswordFlow.importKeystone => AppDesktopShell(
-        sidebarWidth: 0,
-        sidebar: const SizedBox.shrink(),
-        pane: AppDesktopPane(child: content),
+      SetPasswordFlow.importKeystone => KeystoneOnboardingTrailingPane(
+        child: content,
       ),
     };
   }

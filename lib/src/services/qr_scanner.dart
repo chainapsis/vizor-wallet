@@ -64,6 +64,104 @@ class ScanResult {
   const ScanResult({required this.urType, required this.data});
 }
 
+/// Inline animated UR scanner that can be embedded in product screens.
+///
+/// The standalone [QrScanner.scanAnimatedUr] route uses the same widget, so
+/// QR decoding behaviour stays identical between onboarding and send signing.
+class AnimatedUrScannerView extends StatefulWidget {
+  const AnimatedUrScannerView({
+    required this.expectedUrType,
+    required this.onComplete,
+    this.onProgress,
+    this.onDecodeError,
+    this.facing,
+    super.key,
+  });
+
+  final String expectedUrType;
+  final ValueChanged<ScanResult> onComplete;
+  final ValueChanged<int>? onProgress;
+  final ValueChanged<Object>? onDecodeError;
+  final CameraFacing? facing;
+
+  @override
+  State<AnimatedUrScannerView> createState() => _AnimatedUrScannerViewState();
+}
+
+class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
+  late final MobileScannerController _controller;
+  bool _complete = false;
+  final Set<String> _seenParts = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = MobileScannerController(
+      facing: widget.facing ?? _defaultFacing,
+    );
+    // Ensure Rust's UR decoder starts clean. The previous scan may have
+    // left behind a partial multi-part session (cancel / back / mid-stream
+    // error), which would otherwise corrupt this fresh scan with stale
+    // fountain-code state.
+    rust_keystone.resetUrSession();
+  }
+
+  @override
+  void didUpdateWidget(covariant AnimatedUrScannerView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.expectedUrType != widget.expectedUrType) {
+      _complete = false;
+      _seenParts.clear();
+      rust_keystone.resetUrSession();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) async {
+    if (_complete) return;
+    final barcode = capture.barcodes.firstOrNull;
+    final value = barcode?.rawValue;
+    if (value == null || value.isEmpty) return;
+
+    final normalized = value.toLowerCase();
+    if (_seenParts.contains(normalized)) return;
+
+    final UrDecodeResult result;
+    try {
+      result = await rust_keystone.decodeUrPart(
+        part_: value,
+        expectedUrType: widget.expectedUrType,
+      );
+    } catch (e) {
+      widget.onDecodeError?.call(e);
+      log('QrScanner: UR part decode error: $e');
+      return;
+    }
+
+    if (!mounted || _complete) return;
+
+    _seenParts.add(normalized);
+    widget.onProgress?.call(result.progress);
+
+    if (result.complete && result.data != null) {
+      _complete = true;
+      widget.onComplete(
+        ScanResult(urType: result.urType ?? '', data: result.data!),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MobileScanner(controller: _controller, onDetect: _onDetect);
+  }
+}
+
 // ==================== Single QR Scan Screen ====================
 
 class _SingleScanScreen extends StatefulWidget {
@@ -127,85 +225,7 @@ class _AnimatedUrScanScreen extends StatefulWidget {
 }
 
 class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
-  late final MobileScannerController _controller;
   int _progress = 0;
-  bool _complete = false;
-  final Set<String> _seenParts = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = MobileScannerController(facing: _defaultFacing);
-    // Ensure Rust's UR decoder starts clean. The previous scan may have
-    // left behind a partial multi-part session (cancel / back / mid-stream
-    // error), which would otherwise corrupt this fresh scan with stale
-    // fountain-code state.
-    rust_keystone.resetUrSession();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _onDetect(BarcodeCapture capture) async {
-    if (_complete) return;
-    final barcode = capture.barcodes.firstOrNull;
-    final value = barcode?.rawValue;
-    if (value == null || value.isEmpty) return;
-
-    final normalized = value.toLowerCase();
-    if (_seenParts.contains(normalized)) return;
-
-    // Scope the try to just the await. Any post-await state mutation must
-    // happen outside, gated by the mounted/_complete check below, so the
-    // control flow is obvious and a thrown exception can't accidentally
-    // land in the middle of a state update.
-    final UrDecodeResult result;
-    try {
-      result = await rust_keystone.decodeUrPart(
-        part_: value,
-        expectedUrType: widget.expectedUrType,
-      );
-    } catch (e) {
-      // Deliberately do NOT add to _seenParts here — the same fragment will
-      // come back on the next animation cycle and get another chance.
-      log('QrScanner: UR part decode error: $e');
-      return;
-    }
-
-    // Post-await lifecycle guard. Discard any late arrival if:
-    //   - the widget was disposed while we were awaiting (user hit back,
-    //     or another concurrent _onDetect already popped after reaching
-    //     complete), or
-    //   - another detection has already marked the scan complete (fountain
-    //     codes plus concurrent frames mean two awaits can complete
-    //     out-of-order, and we don't want a late-resolving earlier
-    //     fragment to overwrite `_progress` or re-pop).
-    // Without this guard the old code would `setState()` on a disposed
-    // widget (Flutter warns / asserts) or briefly regress the progress bar.
-    if (!mounted || _complete) return;
-
-    // Only mark as seen after the decoder actually accepted this fragment.
-    // Animated URs cycle through fragments repeatedly; if we marked on
-    // entry, any transient failure (wrong-type frame, corrupted capture,
-    // stale session right after init) would permanently dedupe the
-    // fragment and stall the scan below 100%.
-    _seenParts.add(normalized);
-    setState(() {
-      _progress = result.progress;
-    });
-    widget.onProgress?.call(result.progress);
-
-    if (result.complete && result.data != null) {
-      _complete = true;
-      Navigator.pop(
-        context,
-        ScanResult(urType: result.urType ?? '', data: result.data!),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -221,7 +241,17 @@ class _AnimatedUrScanScreenState extends State<_AnimatedUrScanScreen> {
       ),
       body: Stack(
         children: [
-          MobileScanner(controller: _controller, onDetect: _onDetect),
+          AnimatedUrScannerView(
+            expectedUrType: widget.expectedUrType,
+            onProgress: (progress) {
+              if (!mounted) return;
+              setState(() {
+                _progress = progress;
+              });
+              widget.onProgress?.call(progress);
+            },
+            onComplete: (result) => Navigator.pop(context, result),
+          ),
           Positioned(
             left: 0,
             right: 0,

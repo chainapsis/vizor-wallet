@@ -79,7 +79,7 @@ class SetPasswordScreenArgs {
   String get backRoutePath => switch (flow) {
     SetPasswordFlow.create => '/onboarding/secret-passphrase',
     SetPasswordFlow.importWallet => '/import/birthday',
-    SetPasswordFlow.importKeystone => '/import-keystone',
+    SetPasswordFlow.importKeystone => '/onboarding/keystone/select-account',
   };
 
   Object get backRouteExtra => switch (flow) {

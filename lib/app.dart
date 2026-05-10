@@ -21,13 +21,16 @@ import 'src/features/onboarding/create/things_to_know_screen.dart';
 import 'src/features/onboarding/import/import_secret_passphrase_screen.dart';
 import 'src/features/onboarding/import/import_split_view.dart';
 import 'src/features/onboarding/import/import_wallet_birthday_screen.dart';
+import 'src/features/onboarding/keystone/keystone_how_to_connect_screen.dart';
+import 'src/features/onboarding/keystone/keystone_onboarding_flow.dart';
+import 'src/features/onboarding/keystone/keystone_scan_qr_screen.dart';
+import 'src/features/onboarding/keystone/keystone_select_account_screen.dart';
 import 'src/features/onboarding/lost_password_screen.dart';
 import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/receive/screens/receive_screen.dart';
-import 'src/features/keystone/screens/import_keystone_screen.dart';
 import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
@@ -270,6 +273,81 @@ final _routerProvider = Provider<GoRouter>((ref) {
           key: state.pageKey,
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
+          child: KeystoneOnboardingShell(
+            activeStep: keystoneOnboardingStepFromLocation(
+              state.matchedLocation,
+            ),
+            showPasswordStep: !ref
+                .read(appSecurityProvider)
+                .isPasswordConfigured,
+            child: child,
+          ),
+          transitionsBuilder: (_, _, _, child) => child,
+        ),
+        routes: [
+          GoRoute(
+            path: KeystoneOnboardingStep.howToConnect.routePath,
+            pageBuilder: (context, state) => CustomTransitionPage<void>(
+              key: state.pageKey,
+              transitionDuration: kOnboardingForwardDuration,
+              reverseTransitionDuration: kOnboardingReverseDuration,
+              child: const KeystoneHowToConnectScreen(),
+              transitionsBuilder: _onboardingFadeTransition,
+            ),
+          ),
+          GoRoute(
+            path: KeystoneOnboardingStep.scanQrCode.routePath,
+            pageBuilder: (context, state) => CustomTransitionPage<void>(
+              key: state.pageKey,
+              transitionDuration: kOnboardingForwardDuration,
+              reverseTransitionDuration: kOnboardingReverseDuration,
+              child: const KeystoneScanQrScreen(),
+              transitionsBuilder: _onboardingFadeTransition,
+            ),
+          ),
+          GoRoute(
+            path: KeystoneOnboardingStep.selectAccount.routePath,
+            redirect: (_, _) {
+              final accounts = ref.read(keystoneOnboardingProvider).accounts;
+              return accounts.isEmpty
+                  ? KeystoneOnboardingStep.scanQrCode.routePath
+                  : null;
+            },
+            pageBuilder: (context, state) => CustomTransitionPage<void>(
+              key: state.pageKey,
+              transitionDuration: kOnboardingForwardDuration,
+              reverseTransitionDuration: kOnboardingReverseDuration,
+              child: const KeystoneSelectAccountScreen(),
+              transitionsBuilder: _onboardingFadeTransition,
+            ),
+          ),
+          GoRoute(
+            path: KeystoneOnboardingStep.setPassword.routePath,
+            redirect: (_, state) {
+              final args = state.extra;
+              if (args is SetPasswordScreenArgs &&
+                  args.flow == SetPasswordFlow.importKeystone) {
+                return null;
+              }
+              return KeystoneOnboardingStep.selectAccount.routePath;
+            },
+            pageBuilder: (context, state) => CustomTransitionPage<void>(
+              key: state.pageKey,
+              transitionDuration: kOnboardingForwardDuration,
+              reverseTransitionDuration: kOnboardingReverseDuration,
+              child: SetPasswordScreen(
+                args: state.extra as SetPasswordScreenArgs,
+              ),
+              transitionsBuilder: _onboardingFadeTransition,
+            ),
+          ),
+        ],
+      ),
+      ShellRoute(
+        pageBuilder: (context, state, child) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
           child: ImportOnboardingShell(
             activeStep: importOnboardingStepFromLocation(state.matchedLocation),
             showPasswordStep: !ref
@@ -388,26 +466,12 @@ final _routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
       GoRoute(
-        path: '/import-keystone/set-password',
-        redirect: (_, state) {
-          final args = state.extra;
-          if (args is SetPasswordScreenArgs &&
-              args.flow == SetPasswordFlow.importKeystone) {
-            return null;
-          }
-          return '/import-keystone';
-        },
-        pageBuilder: (context, state) => CustomTransitionPage<void>(
-          key: state.pageKey,
-          transitionDuration: kOnboardingForwardDuration,
-          reverseTransitionDuration: kOnboardingReverseDuration,
-          child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
-          transitionsBuilder: _onboardingFadeTransition,
-        ),
+        path: '/import-keystone',
+        redirect: (_, _) => KeystoneOnboardingStep.howToConnect.routePath,
       ),
       GoRoute(
-        path: '/import-keystone',
-        builder: (_, _) => const ImportKeystoneScreen(),
+        path: '/import-keystone/set-password',
+        redirect: (_, _) => KeystoneOnboardingStep.howToConnect.routePath,
       ),
       GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
       GoRoute(

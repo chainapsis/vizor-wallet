@@ -239,9 +239,9 @@ class _Content extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const _TitleBlock(),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.base),
             const _ButtonsStack(),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.base),
             const _LegalFooter(),
           ],
         ),
@@ -262,8 +262,10 @@ class _TitleBlock extends StatelessWidget {
         const _VizorLogo(),
         const SizedBox(height: AppSpacing.md),
         Text(
-          'Private Money.\nFor the New Internet',
-          style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
+          'Behind the Vizor.\nYour money stays private.',
+          style: AppTypography.displayMedium.copyWith(
+            color: colors.text.accent,
+          ),
           textAlign: TextAlign.center,
         ),
       ],
@@ -309,6 +311,22 @@ class _ButtonsStack extends StatelessWidget {
           minWidth: _welcomeActionWidth,
           leading: const AppIcon(AppIcons.importWallet),
           child: const Text('Import a wallet'),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        Text(
+          'or',
+          style: AppTypography.labelLarge.copyWith(
+            color: context.colors.text.secondary,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        AppButton(
+          key: const ValueKey('welcome_connect_keystone_button'),
+          onPressed: () => context.go('/onboarding/keystone'),
+          variant: AppButtonVariant.secondary,
+          minWidth: _welcomeActionWidth,
+          leading: const AppIcon(AppIcons.qr),
+          child: const Text('Connect Keystone'),
         ),
       ],
     );
