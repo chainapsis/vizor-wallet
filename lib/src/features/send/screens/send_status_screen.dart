@@ -22,6 +22,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../../../services/keystone_transport.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/transaction_receipt_view.dart';
 import 'send_review_screen.dart';
@@ -138,6 +139,19 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     final rawMessage = result.message?.toLowerCase() ?? '';
     if (rawMessage.contains('broadcast rejected')) {
       return 'Transaction was created locally, but the network did not accept the first broadcast. It may retry automatically until it expires. Do not send again unless this transaction expires.';
+    }
+    return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
+  }
+
+  String _pcztBroadcastStatusMessage(
+    rust_sync.ExtractAndBroadcastPcztResult result,
+  ) {
+    if (result.status == 'broadcast_unknown') {
+      return 'The transaction may have reached the network, but confirmation timed out. Check activity before sending again.';
+    }
+    final rawMessage = result.message?.toLowerCase() ?? '';
+    if (rawMessage.contains('broadcast rejected')) {
+      return 'Transaction was rejected by the network. Please try again later.';
     }
     return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
   }
@@ -304,6 +318,14 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     showAppToast(context, 'Address Copied');
   }
 
+  Future<Uint8List> _signWithTransport(
+    KeystoneTransport transport,
+    Uint8List redactedPczt,
+  ) {
+    final signingContext = context;
+    return transport.signPczt(signingContext, redactedPczt);
+  }
+
   Future<bool> _abortIfUnmounted() async {
     if (mounted) return false;
     if (!_proposalConsumed && !_discardScheduled) {
@@ -371,30 +393,98 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       }
 
       final accountNotifier = ref.read(accountProvider.notifier);
-      final mnemonic = await accountNotifier.getMnemonicForAccount(
+      final isHardware = accountNotifier.isHardwareAccount(
         widget.args.proposalAccountUuid,
       );
-      if (mnemonic == null) {
-        if (await _abortIfUnmounted()) return;
-        setState(() {
-          _phase = _SendStatusPhase.failed;
-          _error = 'Mnemonic not found for the proposal account.';
-        });
-        return;
-      }
 
-      final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
-      final result = await rust_sync.executeProposal(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        proposalId: widget.args.proposalId,
-        sendFlowId: widget.args.sendFlowId,
-        seed: seedBytes,
-        spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
-        outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
-      );
-      _proposalConsumed = true;
-      final broadcastComplete = result.status == 'broadcasted';
+      late final String txids;
+      late final bool broadcastComplete;
+      late final String? pendingStatusMessage;
+
+      if (isHardware) {
+        log(
+          'SendStatus: creating PCZT from proposal ${widget.args.proposalId}',
+        );
+        final pcztBytes = await rust_sync.createPcztFromProposal(
+          dbPath: dbPath,
+          network: endpoint.networkName,
+          proposalId: widget.args.proposalId,
+          sendFlowId: widget.args.sendFlowId,
+        );
+        _proposalConsumed = true;
+
+        final pcztWithProofs = await rust_sync.addProofsToPczt(
+          pcztBytes: pcztBytes,
+          spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
+          outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
+        );
+        final redactedPczt = await rust_sync.redactPcztForSigner(
+          pcztBytes: pcztBytes,
+        );
+
+        if (await _abortIfUnmounted()) return;
+        final dialogContext = context;
+        // ignore: use_build_context_synchronously
+        final transport = await KeystoneTransport.select(dialogContext);
+        if (transport == null) {
+          if (await _abortIfUnmounted()) return;
+          setState(() {
+            _phase = _SendStatusPhase.failed;
+            _error =
+                'Signing was cancelled before the transaction was broadcast.';
+          });
+          return;
+        }
+
+        if (await _abortIfUnmounted()) return;
+        final pcztWithSignatures = await _signWithTransport(
+          transport,
+          redactedPczt,
+        );
+        final result = await rust_sync.extractAndBroadcastPczt(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          pcztWithProofsBytes: pcztWithProofs,
+          pcztWithSignaturesBytes: pcztWithSignatures,
+          spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
+          outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
+        );
+        txids = result.txid;
+        broadcastComplete = result.status == 'broadcasted';
+        pendingStatusMessage = broadcastComplete
+            ? null
+            : _pcztBroadcastStatusMessage(result);
+      } else {
+        final mnemonic = await accountNotifier.getMnemonicForAccount(
+          widget.args.proposalAccountUuid,
+        );
+        if (mnemonic == null) {
+          if (await _abortIfUnmounted()) return;
+          setState(() {
+            _phase = _SendStatusPhase.failed;
+            _error = 'Mnemonic not found for the proposal account.';
+          });
+          return;
+        }
+
+        final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
+        final result = await rust_sync.executeProposal(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          proposalId: widget.args.proposalId,
+          sendFlowId: widget.args.sendFlowId,
+          seed: seedBytes,
+          spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
+          outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
+        );
+        _proposalConsumed = true;
+        txids = result.txids;
+        broadcastComplete = result.status == 'broadcasted';
+        pendingStatusMessage = broadcastComplete
+            ? null
+            : _broadcastStatusMessage(result);
+      }
 
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();
@@ -424,10 +514,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         _phase = broadcastComplete
             ? _SendStatusPhase.succeeded
             : _SendStatusPhase.pendingBroadcast;
-        _txid = _firstTxid(result.txids);
-        _statusMessage = broadcastComplete
-            ? null
-            : _broadcastStatusMessage(result);
+        _txid = _firstTxid(txids);
+        _statusMessage = pendingStatusMessage;
         _completedAt = DateTime.now();
       });
     } catch (e) {

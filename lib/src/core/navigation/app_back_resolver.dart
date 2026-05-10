@@ -47,6 +47,7 @@ abstract final class AppBackResolver {
     '/settings/secret-passphrase': 'Secret Passphrase',
     '/settings/change-password': 'Change Password',
     '/settings/endpoint': 'Endpoint',
+    '/import-keystone': 'Import Keystone',
   };
 
   static AppBackTarget resolve(BuildContext context) {
