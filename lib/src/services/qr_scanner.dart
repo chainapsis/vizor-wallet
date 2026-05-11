@@ -127,6 +127,9 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
       );
     } catch (e) {
       if (!mounted) return;
+      if (_shouldIgnoreDecodeError(e)) {
+        return;
+      }
       if (_shouldResetScanSessionAfterError(e)) {
         _resetScanSession();
       }
@@ -150,6 +153,12 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
 
   bool _shouldResetScanSessionAfterError(Object error) {
     return error.toString().contains('UR session reset:');
+  }
+
+  bool _shouldIgnoreDecodeError(Object error) {
+    final message = error.toString();
+    return message.contains('Invalid UR: missing type prefix') ||
+        message.contains('Unexpected UR type');
   }
 
   @override
