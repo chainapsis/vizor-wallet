@@ -151,6 +151,19 @@ pub fn load_round_params(
     })
 }
 
+pub fn has_round(conn: &Connection, round_id: &str, wallet_id: &str) -> Result<bool, VotingError> {
+    conn.query_row(
+        "SELECT 1 FROM rounds WHERE round_id = :round_id AND wallet_id = :wallet_id LIMIT 1",
+        named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|row| row.is_some())
+    .map_err(|e| VotingError::Internal {
+        message: format!("failed to check round existence: {}", e),
+    })
+}
+
 pub fn get_round_state(
     conn: &Connection,
     round_id: &str,

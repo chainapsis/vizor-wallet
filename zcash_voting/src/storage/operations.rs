@@ -196,6 +196,13 @@ impl VotingDb {
         queries::get_round_state(&conn, round_id, &wallet_id)
     }
 
+    /// Return whether a voting round exists for the current wallet.
+    pub fn has_round(&self, round_id: &str) -> Result<bool, VotingError> {
+        let conn = self.conn();
+        let wallet_id = self.wallet_id();
+        queries::has_round(&conn, round_id, &wallet_id)
+    }
+
     /// List all rounds.
     pub fn list_rounds(&self) -> Result<Vec<RoundSummary>, VotingError> {
         let conn = self.conn();
@@ -1328,6 +1335,18 @@ mod tests {
         let state = db.get_round_state(ROUND_ID).unwrap();
         assert_eq!(state.phase, RoundPhase::Initialized);
         assert_eq!(state.snapshot_height, 1000);
+    }
+
+    #[test]
+    fn test_has_round_is_scoped_to_wallet() {
+        let db = test_db();
+        assert!(!db.has_round(ROUND_ID).unwrap());
+
+        db.init_round(&test_params(), None).unwrap();
+        assert!(db.has_round(ROUND_ID).unwrap());
+
+        db.set_wallet_id("other-wallet");
+        assert!(!db.has_round(ROUND_ID).unwrap());
     }
 
     #[test]
