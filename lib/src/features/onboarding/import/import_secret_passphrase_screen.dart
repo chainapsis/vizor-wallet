@@ -188,7 +188,7 @@ class _ImportSecretPassphraseScreenState
   String? get _errorText {
     if (_submitError != null) return _submitError;
     if (_showValidationError && !_isMnemonicValid) {
-      return 'Please enter a valid 24-word secret passphrase.';
+      return 'Enter a valid 24-word Secret Passphrase.';
     }
     return null;
   }

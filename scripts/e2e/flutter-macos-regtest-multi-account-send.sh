@@ -44,10 +44,10 @@ addresses_json="$(cd rust && cargo run --quiet --example regtest_wallet_addresse
 unified_address="$(json_field "$addresses_json" unifiedAddress)"
 transparent_address="$(json_field "$addresses_json" transparentAddress)"
 
-echo "funding shielded address with ${SHIELDED_AMOUNT} ZEC"
+echo "funding shielded address with ${SHIELDED_AMOUNT} TAZ"
 scripts/regtest/fund-wallet.sh "$unified_address" "$SHIELDED_AMOUNT" "$CONFIRMING_BLOCKS" >/dev/null
 
-echo "funding transparent address with ${TRANSPARENT_AMOUNT} ZEC"
+echo "funding transparent address with ${TRANSPARENT_AMOUNT} TAZ"
 scripts/regtest/fund-wallet.sh "$transparent_address" "$TRANSPARENT_AMOUNT" "$CONFIRMING_BLOCKS" >/dev/null
 
 echo "running Flutter macOS multi-account send integration test"

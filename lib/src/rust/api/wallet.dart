@@ -92,6 +92,17 @@ Future<List<AccountInfo>> listAccounts({
   network: network,
 );
 
+/// Delete an account from the wallet database.
+Future<void> deleteAccount({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiWalletDeleteAccount(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
 /// Get the Unified Address for a specific account (or first account if uuid is None).
 Future<String> getUnifiedAddress({
   required String dbPath,
@@ -162,15 +173,21 @@ class AccountInfo {
   final String uuid;
   final String name;
   final String unifiedAddress;
+  final bool isSeedAnchor;
 
   const AccountInfo({
     required this.uuid,
     required this.name,
     required this.unifiedAddress,
+    required this.isSeedAnchor,
   });
 
   @override
-  int get hashCode => uuid.hashCode ^ name.hashCode ^ unifiedAddress.hashCode;
+  int get hashCode =>
+      uuid.hashCode ^
+      name.hashCode ^
+      unifiedAddress.hashCode ^
+      isSeedAnchor.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -179,7 +196,8 @@ class AccountInfo {
           runtimeType == other.runtimeType &&
           uuid == other.uuid &&
           name == other.name &&
-          unifiedAddress == other.unifiedAddress;
+          unifiedAddress == other.unifiedAddress &&
+          isSeedAnchor == other.isSeedAnchor;
 }
 
 /// Result of wallet creation, containing the mnemonic, unified address, and account UUID.

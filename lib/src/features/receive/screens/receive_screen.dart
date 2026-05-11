@@ -11,6 +11,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/network_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -25,6 +26,9 @@ import '../../../providers/receive_address_provider.dart';
 import '../../../providers/wallet_provider.dart';
 
 enum _ReceiveAddressType { shielded, transparent }
+
+const _renewShieldedAddressErrorMessage =
+    "We couldn't refresh your shielded address. Try again, or use your current one.";
 
 class ReceiveScreen extends ConsumerStatefulWidget {
   const ReceiveScreen({super.key});
@@ -106,6 +110,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     } catch (e) {
       log('Receive: ERROR loading addresses: $e');
       if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
       setState(() {
         _shieldedAddress ??= walletAddress;
         _isLoading = false;
@@ -206,13 +213,16 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
     } catch (e) {
       log('Receive: ERROR renewing shielded address: $e');
       if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
       setState(() {
         _isRenewingShielded = false;
-        _errorText = e.toString();
+        _errorText = '$_renewShieldedAddressErrorMessage\nDetails: $e';
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(_renewShieldedAddressErrorMessage)),
+      );
     }
   }
 
@@ -449,7 +459,7 @@ class _ReceiveMainContent extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Receive ZEC',
+                        'Receive $kZcashDefaultCurrencyTicker',
                         style: AppTypography.displaySmall.copyWith(
                           color: colors.text.accent,
                         ),
@@ -855,7 +865,8 @@ class _QrSurface extends StatelessWidget {
             )
           : Center(
               child: Text(
-                'No address',
+                "We couldn't load your address. Try again in a moment.",
+                textAlign: TextAlign.center,
                 style: AppTypography.bodySmall.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -922,6 +933,12 @@ class _CachedQrBitmapState extends State<_CachedQrBitmap> {
         oldWidget.color != widget.color ||
         oldWidget.embeddedImageAsset != widget.embeddedImageAsset ||
         oldWidget.embeddedImageScale != widget.embeddedImageScale) {
+      final previous = _image;
+      setState(() {
+        _image = null;
+        _error = null;
+      });
+      _disposeImageAfterFrame(previous);
       unawaited(_renderQr());
     }
   }
@@ -1085,7 +1102,7 @@ class _RenewButton extends StatelessWidget {
                         AppIcons.renew,
                         size: 20,
                         color: colors.icon.accent,
-                        semanticLabel: 'Renew shielded address',
+                        semanticLabel: 'Generate new shielded address',
                       ),
               ),
             ),
@@ -1174,7 +1191,7 @@ List<TextSpan> _addressSpans(
   if (address.isEmpty) {
     return [
       TextSpan(
-        text: 'Address unavailable',
+        text: "Address couldn't be loaded. Try again.",
         style: TextStyle(color: context.colors.text.secondary),
       ),
     ];
@@ -1298,13 +1315,13 @@ class _ReceiveInfoDialog extends StatelessWidget {
                   'Each new address is a diversified address derived from the same key. They all receive to the same wallet.',
             ),
           ]
-        : const [
-            _InfoItemData(
+        : [
+            const _InfoItemData(
               iconName: AppIcons.unlock,
               text:
                   'All tx details - sender, receiver, and amount - are publicly visible on-chain.',
             ),
-            _InfoItemData(
+            const _InfoItemData(
               iconName: AppIcons.dragon,
               text:
                   'Commonly used by exchanges that require transparency or regulatory clarity. Also the default for compatibility across many wallets.',
@@ -1312,7 +1329,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
             _InfoItemData(
               iconName: AppIcons.shieldAsset,
               text:
-                  'After receiving ZEC to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.',
+                  'After receiving $kZcashDefaultCurrencyTicker to your transparent address, Vizor will guide you to shield the balance. Otherwise, you won\'t be able to send it.',
             ),
           ];
 

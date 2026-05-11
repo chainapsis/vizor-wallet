@@ -49,6 +49,73 @@ void main() {
     expect(await store.readSecretStringWithOptions(_mnemonicKey), _mnemonic);
   });
 
+  test('changePassword journal stores only roll-forward data', () async {
+    final blockingStorage = _BlockingDeleteStorage(
+      blockKey: _rotationInProgressKey,
+    );
+    store = AppSecureStore.testing(storage: blockingStorage);
+    await store.configurePassword(_oldPassword);
+    await store.writeSecretString(_mnemonicKey, _mnemonic);
+    final originalPayload = await store.readPlain(_mnemonicKey);
+    final oldVerifier = await store.readPlain(_passwordVerifierKey);
+
+    blockingStorage.blockNextDelete = true;
+    final rotation = store.changePassword(
+      currentPassword: _oldPassword,
+      newPassword: _newPassword,
+    );
+    await blockingStorage.deleteStarted.future;
+
+    final journal = await store.readPlain(_rotationInProgressKey);
+    expect(journal, isNotNull);
+    expect(journal, contains('"v":1'));
+    expect(journal, contains('rotatedValue'));
+    expect(journal, isNot(contains('originalValue')));
+    expect(journal, isNot(contains('oldVerifier')));
+    expect(journal, isNot(contains(originalPayload!)));
+    expect(journal, isNot(contains(oldVerifier!)));
+
+    blockingStorage.release();
+    expect(await rotation, isTrue);
+    expect(await store.readPlain(_rotationInProgressKey), isNull);
+  });
+
+  test(
+    'changePassword keeps old cleanup policy with forward-only journal',
+    () async {
+      final failingStorage = _FailingDeleteStorage(
+        failKey: _rotationInProgressKey,
+      );
+      store = AppSecureStore.testing(storage: failingStorage);
+      await store.configurePassword(_oldPassword);
+      await store.writeSecretString(_mnemonicKey, _mnemonic);
+      final originalPayload = await store.readPlain(_mnemonicKey);
+      final oldVerifier = await store.readPlain(_passwordVerifierKey);
+
+      failingStorage.failNextMatchingDelete = true;
+
+      final didChange = await store.changePassword(
+        currentPassword: _oldPassword,
+        newPassword: _newPassword,
+      );
+
+      expect(didChange, isTrue);
+
+      final retainedJournal = await store.readPlain(_rotationInProgressKey);
+      expect(retainedJournal, isNotNull);
+      expect(retainedJournal, contains('rotatedValue'));
+      expect(retainedJournal, isNot(contains('originalValue')));
+      expect(retainedJournal, isNot(contains('oldVerifier')));
+      expect(retainedJournal, isNot(contains(originalPayload!)));
+      expect(retainedJournal, isNot(contains(oldVerifier!)));
+
+      store.clearSessionPassword();
+      expect(await store.verifyPasswordOnly(_oldPassword), isFalse);
+      expect(await store.verifyPassword(_newPassword), isTrue);
+      expect(await store.readSecretStringWithOptions(_mnemonicKey), _mnemonic);
+    },
+  );
+
   test(
     'changePassword rejects wrong current password without rotating',
     () async {
@@ -152,7 +219,7 @@ void main() {
   });
 
   test(
-    'recoverInterruptedPasswordRotation rolls forward from sentinel',
+    'recoverInterruptedPasswordRotation rolls forward from journal',
     () async {
       await store.configurePassword(_oldPassword);
       await store.writeSecretString(_mnemonicKey, _mnemonic);
@@ -176,16 +243,10 @@ void main() {
         _rotationInProgressKey,
         jsonEncode({
           'v': 1,
-          'oldVerifierSalt': oldVerifierSalt,
-          'oldVerifier': oldVerifier,
           'newVerifierSalt': newVerifierSalt,
           'newVerifier': newVerifier,
           'entries': [
-            {
-              'key': _mnemonicKey,
-              'originalValue': originalPayload,
-              'rotatedValue': rotatedPayload,
-            },
+            {'key': _mnemonicKey, 'rotatedValue': rotatedPayload},
           ],
         }),
       );
@@ -246,8 +307,8 @@ void main() {
       await store.configurePassword(_oldPassword);
       await store.writeSecretString(_mnemonicKey, _mnemonic);
       failingStorage
-        ..failNextWriteFor(_passwordVerifierKey)
-        ..failWriteNumberFor(_rotationInProgressKey, 2);
+        ..failWriteNumberFor(_passwordVerifierKey, 2)
+        ..failWriteNumberFor(_passwordVerifierKey, 3);
 
       await expectLater(
         () => store.changePassword(
@@ -395,6 +456,81 @@ class _BlockingWriteStorage extends FlutterSecureStorage {
     return super.write(
       key: key,
       value: value,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+}
+
+class _BlockingDeleteStorage extends FlutterSecureStorage {
+  _BlockingDeleteStorage({required this.blockKey});
+
+  final String blockKey;
+  var blockNextDelete = false;
+  Completer<void> deleteStarted = Completer<void>();
+  final Completer<void> _release = Completer<void>();
+
+  void release() {
+    if (!_release.isCompleted) {
+      _release.complete();
+    }
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (blockNextDelete && key == blockKey) {
+      blockNextDelete = false;
+      if (!deleteStarted.isCompleted) {
+        deleteStarted.complete();
+      }
+      await _release.future;
+    }
+    return super.delete(
+      key: key,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+}
+
+class _FailingDeleteStorage extends FlutterSecureStorage {
+  _FailingDeleteStorage({required this.failKey});
+
+  final String failKey;
+  bool failNextMatchingDelete = false;
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    if (failNextMatchingDelete && key == failKey) {
+      failNextMatchingDelete = false;
+      throw StateError('forced delete failure');
+    }
+    return super.delete(
+      key: key,
       iOptions: iOptions,
       aOptions: aOptions,
       lOptions: lOptions,

@@ -70,7 +70,7 @@ ActivityRowData buildSyncActivityRow({
       subtitle: sync.phase.isEmpty ? null : _capitalize(sync.phase),
       amountText: '$pct%',
       amountColor: colors.text.secondary,
-      statusText: 'In progress',
+      statusText: 'Pending',
       statusIconName: AppIcons.loader,
       statusColor: colors.text.secondary,
       timestampText: formatActivityTimestamp(sync.lastSyncStartedAt),

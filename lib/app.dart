@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:go_router/go_router.dart';
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
@@ -9,8 +10,10 @@ import 'src/core/layout/app_layout.dart';
 import 'src/core/motion/onboarding_motion.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
+import 'src/core/widgets/network_fallback_toast.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
+import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/home/screens/keystone_shield_confirm_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/about/screens/about_screen.dart';
@@ -44,6 +47,7 @@ import 'src/features/settings/screens/settings_endpoint_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
+import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/rust/frb_generated.dart';
@@ -68,14 +72,22 @@ Future<void> initializeZcashWalletRuntime() async {
   }
 }
 
-Future<Widget> buildBootstrappedZcashWalletApp() async {
+Future<Widget> buildBootstrappedZcashWalletApp({
+  List<Override> overrides = const [],
+}) async {
   final bootstrap = await loadAppBootstrap();
-  return buildZcashWalletApp(bootstrap: bootstrap);
+  return buildZcashWalletApp(bootstrap: bootstrap, overrides: overrides);
 }
 
-Widget buildZcashWalletApp({required AppBootstrapState bootstrap}) {
+Widget buildZcashWalletApp({
+  required AppBootstrapState bootstrap,
+  List<Override> overrides = const [],
+}) {
   return ProviderScope(
-    overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
+    overrides: [
+      appBootstrapProvider.overrideWithValue(bootstrap),
+      ...overrides,
+    ],
     child: const ZcashWalletApp(),
   );
 }
@@ -507,6 +519,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
+      GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
       GoRoute(
         path: '/import-keystone',
         redirect: (_, _) => KeystoneOnboardingStep.howToConnect.routePath,
@@ -591,25 +604,65 @@ class ZcashWalletApp extends ConsumerWidget {
           // events over empty regions while descendant GestureDetectors
           // (buttons, TextFields) win the gesture arena first, keeping
           // focused buttons focused when re-clicked.
-          child: DesktopWindowTitlebarSafeArea(
-            child: GestureDetector(
-              onTap: () {
-                // Leaf-only: skip when the primary focus is a
-                // `FocusScopeNode` rather than a concrete `FocusNode`.
-                // Unfocusing the scope itself strips the scope's
-                // "most-recently-focused child" memory, which leaves the
-                // next Tab with no deterministic starting point.
-                final primary = FocusManager.instance.primaryFocus;
-                if (primary != null && primary is! FocusScopeNode) {
-                  primary.unfocus();
-                }
-              },
-              behavior: HitTestBehavior.translucent,
-              child: child!,
+          child: _RpcEndpointFailoverToastListener(
+            child: DesktopWindowTitlebarSafeArea(
+              child: GestureDetector(
+                onTap: () {
+                  // Leaf-only: skip when the primary focus is a
+                  // `FocusScopeNode` rather than a concrete `FocusNode`.
+                  // Unfocusing the scope itself strips the scope's
+                  // "most-recently-focused child" memory, which leaves the
+                  // next Tab with no deterministic starting point.
+                  final primary = FocusManager.instance.primaryFocus;
+                  if (primary != null && primary is! FocusScopeNode) {
+                    primary.unfocus();
+                  }
+                },
+                behavior: HitTestBehavior.translucent,
+                child: child!,
+              ),
             ),
           ),
         );
       },
     );
+  }
+}
+
+class _RpcEndpointFailoverToastListener extends StatelessWidget {
+  const _RpcEndpointFailoverToastListener({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return NetworkFallbackToastHost(
+      child: _RpcEndpointFailoverToastBridge(child: child),
+    );
+  }
+}
+
+class _RpcEndpointFailoverToastBridge extends ConsumerWidget {
+  const _RpcEndpointFailoverToastBridge({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<RpcEndpointFailoverEvent?>(
+      rpcEndpointFailoverProvider.select((state) => state.lastEvent),
+      (previous, next) {
+        if (next == null || next.sequence == previous?.sequence) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          showNetworkFallbackToast(
+            context,
+            next.message,
+            duration: const Duration(seconds: 4),
+          );
+        });
+      },
+    );
+    return child;
   }
 }

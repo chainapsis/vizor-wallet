@@ -102,6 +102,7 @@ flutter:
 
   assets:
     - assets/illustrations/
+    - assets/profile_pictures/
     - assets/icons/
 
   fonts:

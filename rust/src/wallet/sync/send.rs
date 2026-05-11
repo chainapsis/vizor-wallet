@@ -49,16 +49,25 @@ use zcash_client_backend::{
         },
         Account as _, Balance, InputSource, MaxSpendMode, WalletRead,
     },
-    fees::{zip317::MultiOutputChangeStrategy, DustOutputPolicy, SplitPolicy, StandardFeeRule},
+    fees::{
+        zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
+        DustOutputPolicy, SplitPolicy, StandardFeeRule,
+    },
     proposal::Proposal,
     wallet::OvkPolicy,
     zip321::{Payment, TransactionRequest},
 };
 use zcash_client_sqlite::AccountUuid;
 use zcash_keys::keys::UnifiedSpendingKey;
-use zcash_primitives::transaction::TxId;
+use zcash_primitives::transaction::{
+    fees::{
+        transparent::InputSize as TransparentInputSize, zip317::P2PKH_STANDARD_INPUT_SIZE, FeeRule,
+    },
+    TxId,
+};
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
+    consensus,
     memo::{Memo, MemoBytes},
     value::Zatoshis,
     PoolType, ShieldedProtocol,
@@ -120,6 +129,57 @@ pub(crate) struct ShieldTransparentPcztResult {
 }
 
 const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
+
+/// Wallet-local ZIP-317 rule that preserves standard fee parameters but
+/// prevents exact transparent-input serialization from shrinking below
+/// ZIP-317's P2PKH size bound between proposal and transaction build.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(in crate::wallet) struct ConservativeZip317FeeRule;
+
+pub(in crate::wallet) type WalletFeeRule = ConservativeZip317FeeRule;
+
+impl FeeRule for ConservativeZip317FeeRule {
+    type Error = <StandardFeeRule as FeeRule>::Error;
+
+    #[allow(clippy::too_many_arguments)]
+    fn fee_required<P: consensus::Parameters>(
+        &self,
+        params: &P,
+        target_height: zcash_protocol::consensus::BlockHeight,
+        transparent_input_sizes: impl IntoIterator<Item = TransparentInputSize>,
+        transparent_output_sizes: impl IntoIterator<Item = usize>,
+        sapling_input_count: usize,
+        sapling_output_count: usize,
+        orchard_action_count: usize,
+    ) -> Result<Zatoshis, Self::Error> {
+        let transparent_input_sizes = transparent_input_sizes.into_iter().map(|size| match size {
+            TransparentInputSize::Known(size) => {
+                TransparentInputSize::Known(size.max(P2PKH_STANDARD_INPUT_SIZE))
+            }
+            TransparentInputSize::Unknown(outpoint) => TransparentInputSize::Unknown(outpoint),
+        });
+
+        StandardFeeRule::Zip317.fee_required(
+            params,
+            target_height,
+            transparent_input_sizes,
+            transparent_output_sizes,
+            sapling_input_count,
+            sapling_output_count,
+            orchard_action_count,
+        )
+    }
+}
+
+impl Zip317FeeRule for ConservativeZip317FeeRule {
+    fn marginal_fee(&self) -> Zatoshis {
+        StandardFeeRule::Zip317.marginal_fee()
+    }
+
+    fn grace_actions(&self) -> usize {
+        StandardFeeRule::Zip317.grace_actions()
+    }
+}
 
 pub fn propose_send(
     db_path: &str,
@@ -500,7 +560,7 @@ fn build_shielding_proposal(
     network: WalletNetwork,
     account_id: AccountUuid,
     shielding_threshold: Zatoshis,
-) -> Result<(Proposal<StandardFeeRule, Infallible>, Zatoshis), String> {
+) -> Result<(Proposal<WalletFeeRule, Infallible>, Zatoshis), String> {
     let chain_height = db
         .chain_height()
         .map_err(|e| format!("Failed to read chain height: {e}"))?
@@ -536,7 +596,7 @@ fn build_send_max_proposal(
     account_id: AccountUuid,
     to_address: &str,
     memo_str: Option<&str>,
-) -> Result<Proposal<StandardFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
+) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let to: zcash_address::ZcashAddress = to_address
         .parse()
         .map_err(|e| format!("Bad address: {e}"))?;
@@ -549,7 +609,7 @@ fn build_send_max_proposal(
         }
         None => None,
     };
-    let fee_rule = StandardFeeRule::Zip317;
+    let fee_rule = ConservativeZip317FeeRule;
     propose_send_max_transfer::<_, _, _, Infallible>(
         db,
         &network,
@@ -565,7 +625,7 @@ fn build_send_max_proposal(
 }
 
 fn summarize_send_max_proposal<NoteRef>(
-    proposal: &Proposal<StandardFeeRule, NoteRef>,
+    proposal: &Proposal<WalletFeeRule, NoteRef>,
 ) -> Result<SendMaxEstimateResult, String> {
     let amount_zatoshi = proposal.steps().iter().try_fold(0u64, |acc, step| {
         let step_total = step
@@ -632,7 +692,7 @@ fn select_shielding_sources(
     Ok((addresses, total))
 }
 
-fn proposal_fee_zatoshi<NoteRef>(proposal: &Proposal<StandardFeeRule, NoteRef>) -> u64 {
+fn proposal_fee_zatoshi<NoteRef>(proposal: &Proposal<WalletFeeRule, NoteRef>) -> u64 {
     proposal
         .steps()
         .iter()
@@ -640,7 +700,7 @@ fn proposal_fee_zatoshi<NoteRef>(proposal: &Proposal<StandardFeeRule, NoteRef>) 
         .sum()
 }
 
-fn proposal_shielded_zatoshi(proposal: &Proposal<StandardFeeRule, Infallible>) -> u64 {
+fn proposal_shielded_zatoshi(proposal: &Proposal<WalletFeeRule, Infallible>) -> u64 {
     proposal
         .steps()
         .iter()
@@ -990,12 +1050,12 @@ where
 fn zip317_helper<DbT: InputSource>(
     change_memo: Option<MemoBytes>,
 ) -> (
-    MultiOutputChangeStrategy<StandardFeeRule, DbT>,
+    MultiOutputChangeStrategy<WalletFeeRule, DbT>,
     GreedyInputSelector<DbT>,
 ) {
     (
         MultiOutputChangeStrategy::new(
-            StandardFeeRule::Zip317,
+            ConservativeZip317FeeRule,
             change_memo,
             ShieldedProtocol::Orchard,
             DustOutputPolicy::default(),
@@ -1103,6 +1163,11 @@ impl OutputProver for NoOpOutputProver {
 mod tests {
     use super::*;
 
+    use zcash_client_backend::{data_api::WalletWrite, wallet::WalletTransparentOutput};
+    use zcash_keys::keys::{ReceiverRequirement, UnifiedSpendingKey};
+    use zcash_primitives::transaction::components::transparent::{OutPoint, TxOut};
+    use zcash_protocol::consensus::BlockHeight;
+
     fn taddr(seed: u8) -> TransparentAddress {
         TransparentAddress::PublicKeyHash([seed; 20])
     }
@@ -1117,6 +1182,93 @@ mod tests {
 
     fn receiver(value: u64, scope: TransparentKeyScope) -> (TransparentKeyScope, Balance) {
         (scope, balance(value))
+    }
+
+    #[test]
+    fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let network = WalletNetwork::Regtest;
+        let mnemonic = crate::wallet::keys::generate_mnemonic();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
+        let (account_uuid, _) = crate::wallet::keys::init_db_and_create_account(
+            db_path,
+            network,
+            &seed,
+            Some(1),
+            "repro",
+        )
+        .unwrap();
+        let account_id = parse_account_uuid(&account_uuid).unwrap();
+
+        let mut db = open_wallet_db(db_path, network).unwrap();
+        let tip = BlockHeight::from_u32(1_000);
+        db.update_chain_tip(tip).unwrap();
+
+        let ua_request = zcash_keys::keys::UnifiedAddressRequest::custom(
+            ReceiverRequirement::Require,
+            ReceiverRequirement::Require,
+            ReceiverRequirement::Require,
+        )
+        .unwrap();
+        let (ua, _) = db
+            .get_next_available_address(account_id, ua_request)
+            .unwrap()
+            .unwrap();
+        let taddr = *ua.transparent().unwrap();
+        let value = Zatoshis::const_from_u64(1_000_000);
+
+        for i in 0..322u32 {
+            let mut txid = [0u8; 32];
+            txid[..4].copy_from_slice(&i.to_le_bytes());
+            txid[4..8].copy_from_slice(&0xfeed_beefu32.to_le_bytes());
+            let outpoint = OutPoint::new(txid, 0);
+            let txout = TxOut::new(value, taddr.script().into());
+            let utxo = WalletTransparentOutput::from_parts(outpoint, txout, Some(tip)).unwrap();
+            db.put_received_transparent_utxo(&utxo).unwrap();
+        }
+
+        let shielding_threshold = Zatoshis::const_from_u64(SHIELDING_THRESHOLD_ZATOSHI);
+        let (proposal, selected_value) =
+            build_shielding_proposal(&mut db, network, account_id, shielding_threshold).unwrap();
+        assert_eq!(u64::from(selected_value), 322_000_000);
+
+        let seed = SecretVec::new(seed.expose_secret().to_vec());
+        let usk =
+            UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32::AccountId::ZERO)
+                .unwrap();
+        let spend_prover = NoOpSpendProver;
+        let output_prover = NoOpOutputProver;
+        let txids = create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+            &mut db,
+            &network,
+            &spend_prover,
+            &output_prover,
+            &wallet::SpendingKeys::from_unified_spending_key(usk),
+            OvkPolicy::Sender,
+            &proposal,
+        )
+        .expect("many-UTXO shielding should build without a fee/change mismatch");
+        let change_values = proposal
+            .steps()
+            .iter()
+            .flat_map(|step| step.balance().proposed_change().iter())
+            .map(|change| u64::from(change.value()).to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        eprintln!(
+            "repro fixed: utxos=322 selected={} proposal_fee={} proposed_shielded={} change_values=[{}] txids={:?}",
+            u64::from(selected_value),
+            proposal_fee_zatoshi(&proposal),
+            proposal_shielded_zatoshi(&proposal),
+            change_values,
+            txids,
+        );
+
+        assert_eq!(txids.len(), 1);
+        assert_eq!(proposal_fee_zatoshi(&proposal), 1_630_000);
+        assert_eq!(proposal_shielded_zatoshi(&proposal), 320_370_000);
     }
 
     #[test]

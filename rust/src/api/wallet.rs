@@ -28,6 +28,7 @@ pub struct AccountInfo {
     pub uuid: String,
     pub name: String,
     pub unified_address: String,
+    pub is_seed_anchor: bool,
 }
 
 /// Catches panics and converts them to Result<T, String>.
@@ -199,8 +200,21 @@ pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo
                 uuid: a.uuid,
                 name: a.name,
                 unified_address: a.unified_address,
+                is_seed_anchor: a.is_seed_anchor,
             })
             .collect())
+    })
+}
+
+/// Delete an account from the wallet database.
+pub fn delete_account(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<(), String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        keys::delete_account(&db_path, network, &account_uuid)
     })
 }
 

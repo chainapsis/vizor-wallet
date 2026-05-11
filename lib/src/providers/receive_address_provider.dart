@@ -21,7 +21,7 @@ class ReceiveAddressBusyException implements Exception {
 
   @override
   String toString() {
-    return 'Wallet database is busy. Please try again in a moment.';
+    return 'Wallet is busy. Try again in a moment.';
   }
 }
 

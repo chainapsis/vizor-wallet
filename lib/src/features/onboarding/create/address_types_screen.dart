@@ -126,9 +126,7 @@ class _TitleBlock extends StatelessWidget {
             TextSpan(
               style: bodyStyle,
               children: [
-                const TextSpan(
-                  text: 'Zcash has two addresses types. \nOne for ',
-                ),
+                const TextSpan(text: 'Zcash has two address types: one for '),
                 TextSpan(
                   text: 'Privacy',
                   style: bodyStyle.copyWith(
@@ -330,8 +328,8 @@ class _AddressCardContent extends StatelessWidget {
             child: isShielded
                 ? _ShieldedDescription(colors: colors)
                 : Text(
-                    "Address starts with t, similar to Bitcoin, your address' "
-                    'balance and transaction history are publicly visible.',
+                    'Address starts with t. Balance and transaction history '
+                    'are publicly visible.',
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.primary,
                     ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
@@ -11,6 +12,8 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  final ticker = kZcashDefaultCurrencyTicker;
+
   testWidgets('transaction rows are keyboard activatable but sync row is not', (
     tester,
   ) async {
@@ -90,13 +93,13 @@ void main() {
       ),
     );
 
-    expect(rows[0].amountText, '0.0001 ZEC');
-    expect(rows[1].amountText, '+1.23 ZEC');
-    expect(rows[2].amountText, '-1.00 ZEC');
-    expect(rows[3].amountText, '0.0001 ZEC');
-    expect(find.text('0.0001 ZEC'), findsNWidgets(2));
-    expect(find.text('+1.23 ZEC'), findsOneWidget);
-    expect(find.text('-1.00 ZEC'), findsOneWidget);
+    expect(rows[0].amountText, '0.0001 $ticker');
+    expect(rows[1].amountText, '+1.23 $ticker');
+    expect(rows[2].amountText, '-1.00 $ticker');
+    expect(rows[3].amountText, '0.0001 $ticker');
+    expect(find.text('0.0001 $ticker'), findsNWidgets(2));
+    expect(find.text('+1.23 $ticker'), findsOneWidget);
+    expect(find.text('-1.00 $ticker'), findsOneWidget);
   });
 
   testWidgets('pending inbound activity rows render as receiving', (
@@ -130,7 +133,7 @@ void main() {
     );
 
     expect(rows[1].title, 'Receiving');
-    expect(rows[1].amountText, '+1.23 ZEC');
+    expect(rows[1].amountText, '+1.23 $ticker');
     expect(rows[1].statusText, 'In progress');
     expect(rows[1].leadingIconName, AppIcons.arrowDownCircle);
     expect(find.text('Receiving'), findsOneWidget);
@@ -177,13 +180,13 @@ void main() {
       ),
     );
 
-    expect(rows[0].amountText, '*** ZEC');
-    expect(rows[1].amountText, '*** ZEC');
-    expect(rows[2].amountText, '*** ZEC');
-    expect(rows[3].amountText, '*** ZEC');
-    expect(find.text('*** ZEC'), findsNWidgets(4));
-    expect(find.text('+1.23 ZEC'), findsNothing);
-    expect(find.text('-1.00 ZEC'), findsNothing);
+    expect(rows[0].amountText, '*** $ticker');
+    expect(rows[1].amountText, '*** $ticker');
+    expect(rows[2].amountText, '*** $ticker');
+    expect(rows[3].amountText, '*** $ticker');
+    expect(find.text('*** $ticker'), findsNWidgets(4));
+    expect(find.text('+1.23 $ticker'), findsNothing);
+    expect(find.text('-1.00 $ticker'), findsNothing);
   });
 
   testWidgets('shielded activity rows use the shield keyhole outline icon', (
@@ -230,7 +233,7 @@ void main() {
       ),
     );
 
-    for (final value in ['1.00 ZEC', 'Completed', 'Today, 13:11']) {
+    for (final value in ['1.00 $ticker', 'Completed', 'Today, 13:11']) {
       final text = tester.widget<Text>(find.text(value));
       expect(text.style?.fontFamily, AppTypography.labelLarge.fontFamily);
       expect(text.style?.fontWeight, AppTypography.labelLarge.fontWeight);
@@ -274,7 +277,7 @@ ActivityRowData _row({
     leadingBackgroundColor: const Color(0xFFE1E1E1),
     leadingIconColor: const Color(0xFF4D5252),
     subtitle: subtitle,
-    amountText: '1.00 ZEC',
+    amountText: '1.00 $kZcashDefaultCurrencyTicker',
     statusText: 'Completed',
     timestampText: 'Today, 13:11',
     onTap: onTap,

@@ -86,7 +86,7 @@ class ImportBirthdayEstimator {
         selectedDate.day,
       );
       final searchDate = normalizedSelectedDate.subtract(
-        const Duration(days: 3),
+        const Duration(days: 15),
       );
       final targetEpoch = searchDate.toUtc().millisecondsSinceEpoch ~/ 1000;
 

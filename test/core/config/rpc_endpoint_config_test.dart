@@ -110,6 +110,25 @@ void main() {
       );
     });
 
+    test('testnet presets include the default and community fallback', () {
+      final urls = kTestnetRpcEndpointPresets
+          .map((preset) => preset.url)
+          .map((url) => normalizeRpcEndpointUrl(url, allowDefaultPort: true))
+          .toSet();
+
+      expect(urls, {
+        'https://testnet.zec.rocks:443',
+        'https://zcash.mysideoftheweb.com:19067',
+      });
+      expect(
+        findRpcEndpointPresetByUrl(
+          'zcash.mysideoftheweb.com:19067',
+          networkName: 'test',
+        )?.id,
+        'mysideoftheweb-testnet',
+      );
+    });
+
     test('matches normalized URLs within the requested network', () {
       final preset = findRpcEndpointPresetByUrl(
         'us.zec.stardust.rest',
@@ -195,22 +214,164 @@ void main() {
       expect(config.lightwalletdUrl, 'https://example.com:443');
       expect(config.presetId, kCustomRpcEndpointPresetId);
     });
+
+    test('treats stored preset URLs without preset id as custom', () {
+      final config = resolveStoredRpcEndpointConfig(
+        networkName: 'main',
+        storedUrl: defaultRpcEndpointConfig('main').lightwalletdUrl,
+        storedPresetId: null,
+      );
+
+      expect(
+        config.normalizedLightwalletdUrl,
+        'https://us.zec.stardust.rest:443',
+      );
+      expect(config.presetId, kCustomRpcEndpointPresetId);
+    });
   });
 
   group('RpcEndpointConfig', () {
-    test(
-      'derives the effective preset from the URL before stored preset id',
-      () {
-        final defaultEndpoint = defaultRpcEndpointConfig('main');
-        final config = RpcEndpointConfig(
+    test('preserves custom intent even when the URL matches a preset', () {
+      final defaultEndpoint = defaultRpcEndpointConfig('main');
+      final config = RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: defaultEndpoint.lightwalletdUrl,
+        presetId: kCustomRpcEndpointPresetId,
+      );
+
+      expect(config.effectivePresetId, kCustomRpcEndpointPresetId);
+    });
+
+    test('uses explicit preset ids as the effective preset', () {
+      final config = const RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://zec.rocks:443',
+        presetId: 'zec-rocks',
+      );
+
+      expect(config.effectivePresetId, 'zec-rocks');
+    });
+  });
+
+  group('fallbackRpcEndpointCandidatesFor', () {
+    test('uses preset order when the mainnet default is primary', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        defaultRpcEndpointConfig('main'),
+      );
+
+      expect(candidates.first.presetId, 'eu-zec-stardust');
+      expect(
+        candidates.first.lightwalletdUrl,
+        'https://eu.zec.stardust.rest:443',
+      );
+    });
+
+    test('does not fallback from a custom mainnet endpoint', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        const RpcEndpointConfig(
           networkName: 'main',
-          lightwalletdUrl: defaultEndpoint.lightwalletdUrl,
+          lightwalletdUrl: 'https://custom.example:443',
           presetId: kCustomRpcEndpointPresetId,
+        ),
+      );
+
+      expect(candidates, isEmpty);
+      expect(
+        fallbackRpcEndpointConfigFor(
+          const RpcEndpointConfig(
+            networkName: 'main',
+            lightwalletdUrl: 'https://custom.example:443',
+            presetId: kCustomRpcEndpointPresetId,
+          ),
+        ),
+        isNull,
+      );
+    });
+
+    test('does not fallback from a custom regtest endpoint', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        const RpcEndpointConfig(
+          networkName: 'regtest',
+          lightwalletdUrl: 'http://127.0.0.1:19067',
+          presetId: kCustomRpcEndpointPresetId,
+        ),
+      );
+
+      expect(candidates, isEmpty);
+    });
+
+    test('respects custom intent even when the URL matches a preset', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: defaultRpcEndpointConfig('main').lightwalletdUrl,
+          presetId: kCustomRpcEndpointPresetId,
+        ),
+      );
+
+      expect(candidates, isEmpty);
+    });
+
+    test(
+      'does not infer fallback intent from a preset URL without preset id',
+      () {
+        final candidates = fallbackRpcEndpointCandidatesFor(
+          RpcEndpointConfig(
+            networkName: 'main',
+            lightwalletdUrl: defaultRpcEndpointConfig('main').lightwalletdUrl,
+          ),
         );
 
-        expect(config.effectivePresetId, defaultEndpoint.presetId);
+        expect(candidates, isEmpty);
       },
     );
+
+    test('removes the selected preset and starts from the order beginning', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        const RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: 'https://eu.zec.rocks:443',
+          presetId: 'eu-zec-rocks',
+        ),
+      );
+
+      expect(candidates.take(4).map((candidate) => candidate.presetId), [
+        kDefaultRpcEndpointPresetId,
+        'eu-zec-stardust',
+        'eu2-zec-stardust',
+        'jp-zec-stardust',
+      ]);
+      expect(
+        candidates.map((candidate) => candidate.presetId),
+        isNot(contains('eu-zec-rocks')),
+      );
+    });
+
+    test('uses local regtest default for the unavailable regtest preset', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        const RpcEndpointConfig(
+          networkName: 'regtest',
+          lightwalletdUrl: 'http://127.0.0.1:19067',
+          presetId: kRegtestUnavailableRpcEndpointPresetId,
+        ),
+      );
+
+      expect(candidates.first.presetId, 'default-regtest');
+      expect(candidates.first.lightwalletdUrl, 'http://127.0.0.1:9067');
+    });
+
+    test('uses local regtest default for the slow regtest preset', () {
+      final candidates = fallbackRpcEndpointCandidatesFor(
+        const RpcEndpointConfig(
+          networkName: 'regtest',
+          lightwalletdUrl: 'http://127.0.0.1:19068',
+          presetId: kRegtestSlowRpcEndpointPresetId,
+        ),
+      );
+
+      expect(candidates.first.presetId, 'default-regtest');
+      expect(candidates.first.lightwalletdUrl, 'http://127.0.0.1:9067');
+    });
   });
 
   group('rpcEndpointHostPort', () {

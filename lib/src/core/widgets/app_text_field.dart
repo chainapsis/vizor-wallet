@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -28,6 +29,8 @@ class AppTextField extends StatefulWidget {
     this.messageStyle,
     this.tone = AppTextFieldTone.neutral,
     this.showClearButton = false,
+    this.clearButtonRequiresText = true,
+    this.clearButtonSemanticLabel = 'Clear text',
     this.onClear,
     this.onChanged,
     this.onSubmitted,
@@ -74,6 +77,8 @@ class AppTextField extends StatefulWidget {
   final TextStyle? messageStyle;
   final AppTextFieldTone tone;
   final bool showClearButton;
+  final bool clearButtonRequiresText;
+  final String clearButtonSemanticLabel;
   final VoidCallback? onClear;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
@@ -98,6 +103,16 @@ class AppTextField extends StatefulWidget {
 }
 
 class _AppTextFieldState extends State<AppTextField> {
+  static const _multilineClearButtonKey = ValueKey(
+    'app-text-field-multiline-clear-button',
+  );
+  static const _multilineClearSlotKey = ValueKey(
+    'app-text-field-multiline-clear-slot',
+  );
+  static const _multilineScrollbarKey = ValueKey(
+    'app-text-field-multiline-scrollbar',
+  );
+
   late final TextEditingController _internalController;
   late final FocusNode _internalFocusNode;
   final GlobalKey _textFieldRegionKey = GlobalKey();
@@ -318,18 +333,20 @@ class _AppTextFieldState extends State<AppTextField> {
         color: messageColor,
       ),
     };
-    final trailingWidget =
+    final shouldShowClearButton =
         widget.showClearButton &&
-            _isFocused &&
-            _hasText &&
-            widget.enabled &&
-            !widget.readOnly
-        ? GestureDetector(
-            behavior: HitTestBehavior.opaque,
+        (_isFocused || _hovered) &&
+        (!widget.clearButtonRequiresText || _hasText) &&
+        widget.enabled &&
+        !widget.readOnly;
+    final trailingWidget = shouldShowClearButton ? null : widget.trailing;
+    final clearButton = shouldShowClearButton
+        ? _AppTextFieldClearButton(
             onTap: _clear,
-            child: AppIcon(AppIcons.cross, size: 20, color: neutralIconColor),
+            iconColor: neutralIconColor,
+            semanticLabel: widget.clearButtonSemanticLabel,
           )
-        : widget.trailing;
+        : null;
 
     final textField = TextField(
       controller: _controller,
@@ -362,21 +379,12 @@ class _AppTextFieldState extends State<AppTextField> {
         hintStyle: resolvedHintStyle,
       ),
     );
-    final fieldInput = _multiline && widget.scrollController != null
-        ? ScrollbarTheme(
-            data: ScrollbarThemeData(
-              thumbColor: WidgetStatePropertyAll(
-                colors.background.overlay.withValues(alpha: 0.5),
-              ),
-              radius: const Radius.circular(AppRadii.full),
-              thickness: const WidgetStatePropertyAll(6),
-              thumbVisibility: const WidgetStatePropertyAll(true),
-              trackVisibility: const WidgetStatePropertyAll(false),
+    final fieldInput = _multiline
+        ? ScrollConfiguration(
+            behavior: _AppTextFieldNoScrollbarBehavior(
+              ScrollConfiguration.of(context),
             ),
-            child: Scrollbar(
-              controller: widget.scrollController,
-              child: textField,
-            ),
+            child: textField,
           )
         : textField;
 
@@ -453,6 +461,20 @@ class _AppTextFieldState extends State<AppTextField> {
                   ),
                 ),
               ),
+              if (_multiline && widget.scrollController != null)
+                Positioned(
+                  right: 1.5,
+                  top: -1.5,
+                  width: 12,
+                  height: shellHeight,
+                  child: IgnorePointer(
+                    child: _AppTextFieldScrollbar(
+                      key: _multilineScrollbarKey,
+                      controller: widget.scrollController!,
+                      thumbColor: colors.background.neutralStrongOpacity,
+                    ),
+                  ),
+                ),
               Positioned.fill(
                 child: IconTheme.merge(
                   data: IconThemeData(
@@ -492,14 +514,27 @@ class _AppTextFieldState extends State<AppTextField> {
                                 key: _textFieldRegionKey,
                                 padding: const EdgeInsets.fromLTRB(
                                   AppSpacing.s,
-                                  AppSpacing.s + 6,
+                                  AppSpacing.s,
                                   0,
                                   AppSpacing.s,
                                 ),
                                 child: fieldInput,
                               ),
                             ),
-                            if (trailingWidget != null)
+                            if (widget.showClearButton &&
+                                trailingWidget == null)
+                              SizedBox(
+                                key: _multilineClearSlotKey,
+                                width: 40,
+                                height: 48,
+                                child: clearButton == null
+                                    ? const SizedBox.shrink()
+                                    : SizedBox(
+                                        key: _multilineClearButtonKey,
+                                        child: clearButton,
+                                      ),
+                              )
+                            else if (trailingWidget != null)
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(
                                   AppSpacing.xs,
@@ -554,19 +589,20 @@ class _AppTextFieldState extends State<AppTextField> {
                               ),
                             ),
                             if (widget.trailingSlotWidth != null ||
-                                trailingWidget != null)
+                                trailingWidget != null ||
+                                clearButton != null)
                               SizedBox(
                                 width: widget.trailingSlotWidth ?? 40,
                                 height: shellHeight,
-                                child: Center(
-                                  child: trailingWidget == null
-                                      ? null
-                                      : SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: trailingWidget,
-                                        ),
-                                ),
+                                child:
+                                    clearButton ??
+                                    Center(
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: trailingWidget,
+                                      ),
+                                    ),
                               ),
                           ],
                         )
@@ -598,7 +634,14 @@ class _AppTextFieldState extends State<AppTextField> {
                                   child: fieldInput,
                                 ),
                               ),
-                              if (trailingWidget != null) ...[
+                              if (clearButton != null) ...[
+                                const SizedBox(width: AppSpacing.xs),
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: clearButton,
+                                ),
+                              ] else if (trailingWidget != null) ...[
                                 const SizedBox(width: AppSpacing.xs),
                                 SizedBox(
                                   width: 20,
@@ -660,6 +703,219 @@ class _AppTextFieldState extends State<AppTextField> {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _AppTextFieldClearButton extends StatelessWidget {
+  const _AppTextFieldClearButton({
+    required this.onTap,
+    required this.iconColor,
+    required this.semanticLabel,
+  });
+
+  final VoidCallback onTap;
+  final Color iconColor;
+  final String semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Center(
+            child: AppIcon(AppIcons.cross, size: 20, color: iconColor),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AppTextFieldNoScrollbarBehavior extends ScrollBehavior {
+  const _AppTextFieldNoScrollbarBehavior(this.delegate);
+
+  final ScrollBehavior delegate;
+
+  @override
+  TargetPlatform getPlatform(BuildContext context) =>
+      delegate.getPlatform(context);
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => delegate.dragDevices;
+
+  @override
+  Set<LogicalKeyboardKey> get pointerAxisModifiers =>
+      delegate.pointerAxisModifiers;
+
+  @override
+  MultitouchDragStrategy getMultitouchDragStrategy(BuildContext context) =>
+      delegate.getMultitouchDragStrategy(context);
+
+  @override
+  GestureVelocityTrackerBuilder velocityTrackerBuilder(BuildContext context) =>
+      delegate.velocityTrackerBuilder(context);
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) =>
+      delegate.getScrollPhysics(context);
+
+  @override
+  ScrollViewKeyboardDismissBehavior getKeyboardDismissBehavior(
+    BuildContext context,
+  ) => delegate.getKeyboardDismissBehavior(context);
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => delegate.buildOverscrollIndicator(context, child, details);
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => child;
+
+  @override
+  ScrollBehavior copyWith({
+    bool? scrollbars,
+    bool? overscroll,
+    Set<PointerDeviceKind>? dragDevices,
+    MultitouchDragStrategy? multitouchDragStrategy,
+    Set<LogicalKeyboardKey>? pointerAxisModifiers,
+    ScrollPhysics? physics,
+    TargetPlatform? platform,
+    ScrollViewKeyboardDismissBehavior? keyboardDismissBehavior,
+  }) {
+    return _AppTextFieldNoScrollbarBehavior(
+      delegate.copyWith(
+        scrollbars: false,
+        overscroll: overscroll,
+        dragDevices: dragDevices,
+        multitouchDragStrategy: multitouchDragStrategy,
+        pointerAxisModifiers: pointerAxisModifiers,
+        physics: physics,
+        platform: platform,
+        keyboardDismissBehavior: keyboardDismissBehavior,
+      ),
+    );
+  }
+
+  @override
+  bool shouldNotify(covariant _AppTextFieldNoScrollbarBehavior oldDelegate) =>
+      delegate.shouldNotify(oldDelegate.delegate);
+}
+
+class _AppTextFieldScrollbar extends StatefulWidget {
+  const _AppTextFieldScrollbar({
+    super.key,
+    required this.controller,
+    required this.thumbColor,
+  });
+
+  final ScrollController controller;
+  final Color thumbColor;
+
+  @override
+  State<_AppTextFieldScrollbar> createState() => _AppTextFieldScrollbarState();
+}
+
+class _AppTextFieldScrollbarState extends State<_AppTextFieldScrollbar> {
+  static const _horizontalInset = 3.0;
+  static const _topInset = 8.0;
+  static const _bottomInset = 8.0;
+  static const _minThumbHeight = 24.0;
+  static const _maxThumbHeight = 62.0;
+  static const _thumbWidth = 6.0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_handleScrollChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _AppTextFieldScrollbar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.removeListener(_handleScrollChanged);
+      widget.controller.addListener(_handleScrollChanged);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleScrollChanged);
+    super.dispose();
+  }
+
+  void _handleScrollChanged() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!widget.controller.hasClients) return const SizedBox.shrink();
+        final position = widget.controller.position;
+        if (!position.hasContentDimensions) return const SizedBox.shrink();
+        final maxScrollExtent = position.maxScrollExtent;
+        if (maxScrollExtent <= 0) return const SizedBox.shrink();
+
+        final height = constraints.maxHeight;
+        final viewportExtent = position.viewportDimension;
+        final contentExtent = viewportExtent + maxScrollExtent;
+        if (height <= 0 || viewportExtent <= 0 || contentExtent <= 0) {
+          return const SizedBox.shrink();
+        }
+
+        final rawThumbHeight = height * viewportExtent / contentExtent;
+        final trackHeight = height - _topInset - _bottomInset;
+        final maxThumbHeight = trackHeight < _maxThumbHeight
+            ? trackHeight
+            : _maxThumbHeight;
+        if (maxThumbHeight <= 0) return const SizedBox.shrink();
+        final thumbHeight = rawThumbHeight
+            .clamp(_minThumbHeight, maxThumbHeight)
+            .toDouble();
+        final scrollableTrackHeight =
+            height - _topInset - _bottomInset - thumbHeight;
+        final scrollFraction = (position.pixels / maxScrollExtent)
+            .clamp(0.0, 1.0)
+            .toDouble();
+        final top = _topInset + scrollFraction * scrollableTrackHeight;
+
+        return Stack(
+          children: [
+            Positioned(
+              key: const ValueKey('app-text-field-multiline-scrollbar-thumb'),
+              left: _horizontalInset,
+              top: top,
+              width: _thumbWidth,
+              height: thumbHeight,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: widget.thumbColor,
+                  borderRadius: BorderRadius.circular(AppRadii.full),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

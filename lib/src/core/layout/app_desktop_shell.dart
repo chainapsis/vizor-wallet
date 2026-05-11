@@ -91,16 +91,20 @@ class AppDesktopPane extends StatelessWidget {
 class AppSidebarItem extends StatelessWidget {
   const AppSidebarItem({
     required this.label,
-    required this.iconName,
+    this.iconName,
+    this.leading,
     this.active = false,
     this.onTap,
+    this.leadingGap = AppSpacing.s,
     super.key,
-  });
+  }) : assert(iconName != null || leading != null);
 
   final String label;
-  final String iconName;
+  final String? iconName;
+  final Widget? leading;
   final bool active;
   final VoidCallback? onTap;
+  final double leadingGap;
 
   @override
   Widget build(BuildContext context) {
@@ -111,7 +115,7 @@ class AppSidebarItem extends StatelessWidget {
     final row = AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
-      height: 40,
+      height: 36,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       decoration: BoxDecoration(
         color: active ? colors.state.selectedOpacity : null,
@@ -119,8 +123,8 @@ class AppSidebarItem extends StatelessWidget {
       ),
       child: Row(
         children: [
-          AppIcon(iconName, size: 20, color: iconColor),
-          const SizedBox(width: AppSpacing.s),
+          leading ?? AppIcon(iconName!, size: 20, color: iconColor),
+          SizedBox(width: leadingGap),
           Expanded(
             child: Text(
               label,
@@ -140,74 +144,6 @@ class AppSidebarItem extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: onTap,
               child: row,
-            ),
-          );
-  }
-}
-
-class AppSidebarUserButton extends StatelessWidget {
-  const AppSidebarUserButton({
-    required this.label,
-    this.onTap,
-    this.trailingIconName = AppIcons.expand,
-    this.avatar,
-    super.key,
-  });
-
-  final String label;
-  final VoidCallback? onTap;
-  final String trailingIconName;
-  final Widget? avatar;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final child = Container(
-      height: 40,
-      padding: const EdgeInsets.all(AppSpacing.xs),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                avatar ??
-                    Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: colors.background.overlay.withValues(alpha: 0.5),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                const SizedBox(width: AppSpacing.xs),
-                Flexible(
-                  child: Text(
-                    label,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          AppIcon(trailingIconName, size: 20, color: colors.icon.accent),
-        ],
-      ),
-    );
-
-    return onTap == null
-        ? child
-        : MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onTap,
-              child: child,
             ),
           );
   }

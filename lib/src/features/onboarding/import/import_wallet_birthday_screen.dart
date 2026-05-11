@@ -10,6 +10,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../shared/onboarding_flow_args.dart';
@@ -94,10 +95,13 @@ class _ImportWalletBirthdayScreenState
     });
 
     try {
-      final endpoint = ref.read(rpcEndpointProvider);
-      final metadata = await ImportBirthdayEstimator.loadMetadata(
-        endpoint: endpoint,
-      );
+      final metadata = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation: 'import birthday metadata',
+            action: (endpoint) =>
+                ImportBirthdayEstimator.loadMetadata(endpoint: endpoint),
+          );
       if (!mounted) return;
       setState(() {
         _metadata = metadata;
@@ -127,11 +131,15 @@ class _ImportWalletBirthdayScreenState
     });
 
     try {
-      final endpoint = ref.read(rpcEndpointProvider);
-      final estimatedHeight =
-          await ImportBirthdayEstimator.estimateBirthdayHeight(
-            endpoint: endpoint,
-            selectedDate: date,
+      final estimatedHeight = await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation: 'import birthday estimate',
+            action: (endpoint) =>
+                ImportBirthdayEstimator.estimateBirthdayHeight(
+                  endpoint: endpoint,
+                  selectedDate: date,
+                ),
           );
       if (!mounted || seq != _estimateSeq) return;
       setState(() {
@@ -286,13 +294,13 @@ class _ImportWalletBirthdayScreenState
     final text = _manualHeightController.text.trim();
     if (text.isEmpty) return null;
     final parsed = int.tryParse(text);
-    if (parsed == null) return 'Doesn’t seem like a legit block height';
+    if (parsed == null) return "That doesn't look like a valid block height.";
     if (parsed < _minimumBirthdayHeight) {
-      return 'Doesn’t seem like a legit block height';
+      return "That doesn't look like a valid block height.";
     }
     final maximumHeight = _metadata?.tipHeight;
     if (maximumHeight != null && parsed > maximumHeight) {
-      return 'Doesn’t seem like a legit block height';
+      return "That doesn't look like a valid block height.";
     }
     if (_metadataError != null) return _metadataError;
     return null;
@@ -371,7 +379,7 @@ class _ImportWalletBirthdayScreenState
                           SizedBox(
                             width: _subtitleWidth,
                             child: Text(
-                              'This will help to import your wallet faster.',
+                              'It helps us import your wallet faster.',
                               style: AppTypography.bodyMedium.copyWith(
                                 color: context.colors.text.accent,
                               ),
@@ -562,10 +570,17 @@ class _TabLabel extends StatelessWidget {
     final style = active
         ? AppTypography.bodyMediumStrong.copyWith(color: activeColor)
         : AppTypography.bodyMedium.copyWith(color: inactiveColor);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Text(label, style: style),
+    return Semantics(
+      button: true,
+      selected: active,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Text(label, style: style),
+        ),
+      ),
     );
   }
 }
@@ -589,32 +604,39 @@ class _DatePickerField extends StatelessWidget {
     final valueColor = valueText == null
         ? colors.text.muted
         : colors.text.accent;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: enabled ? onTap : null,
-      child: Container(
-        width: width,
-        height: 46,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
-        decoration: BoxDecoration(
-          color: colors.background.base,
-          borderRadius: BorderRadius.circular(AppRadii.small),
-          border: Border.all(color: colors.border.medium, width: 1.5),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                valueText ?? 'mm/dd/yyyy',
-                style: AppTypography.labelLarge.copyWith(color: valueColor),
-              ),
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? onTap : null,
+          child: Container(
+            width: width,
+            height: 46,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+            decoration: BoxDecoration(
+              color: colors.background.base,
+              borderRadius: BorderRadius.circular(AppRadii.small),
+              border: Border.all(color: colors.border.medium, width: 1.5),
             ),
-            AppIcon(
-              AppIcons.calendar,
-              size: 20,
-              color: enabled ? colors.icon.accent : colors.icon.regular,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    valueText ?? 'mm/dd/yyyy',
+                    style: AppTypography.labelLarge.copyWith(color: valueColor),
+                  ),
+                ),
+                AppIcon(
+                  AppIcons.calendar,
+                  size: 20,
+                  color: enabled ? colors.icon.accent : colors.icon.regular,
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

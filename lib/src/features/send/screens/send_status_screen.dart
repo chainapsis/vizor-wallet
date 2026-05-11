@@ -17,7 +17,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
@@ -106,20 +106,22 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         lower.contains('connection refused') ||
         lower.contains('dns error') ||
         lower.contains('tls error')) {
-      return 'Network error. Please check your connection and try again.';
+      return 'Network error. Check your connection and try again.';
     }
     if (lower.contains('broadcast failed after') &&
         lower.contains('txs sent')) {
-      return 'Some transactions were broadcast but not all. Please check history before retrying.';
+      return 'Some parts of this transaction were sent. Open Activity to see '
+          'what went through before you try again.';
     }
     if (lower.contains('broadcast rejected')) {
-      return 'Transaction was rejected by the network. Please try again later.';
+      return 'The network rejected this transaction. Try again later.';
     }
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
       return 'Transaction expired before it could be sent.';
     }
-    return 'Transaction could not be sent. Please return to your wallet and verify the latest status.';
+    return "Transaction couldn't be sent. Go back to your wallet and check "
+        'the latest status.';
   }
 
   String? _firstTxid(String txids) {
@@ -136,7 +138,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     }
     final rawMessage = result.message?.toLowerCase() ?? '';
     if (rawMessage.contains('broadcast rejected')) {
-      return 'Transaction was created locally, but the network did not accept the first broadcast. It may retry automatically until it expires. Do not send again unless this transaction expires.';
+      return "Transaction was created locally but didn't reach the network. "
+          'The wallet will keep retrying until it expires. '
+          "Don't send again unless this one expires.";
     }
     return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
   }
@@ -164,7 +168,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   }
 
   String _formatFee(BigInt zatoshi) {
-    return ZecAmount.fromZatoshi(zatoshi).pretty().amountText;
+    return ZecAmount.fromZatoshi(zatoshi).fee.toString();
   }
 
   String _formatDate(DateTime value) {
@@ -272,7 +276,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   Future<void> _openTransactionExplorer() async {
     final txid = _txid;
     if (txid == null) return;
-    final endpoint = ref.read(rpcEndpointProvider);
+    final endpoint = ref.read(rpcEndpointFailoverProvider).current;
     final launched = await launchZcashExplorerTransaction(
       networkName: endpoint.networkName,
       txidHex: txid,
@@ -309,8 +313,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   Future<void> _startBroadcast() async {
     try {
       final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      final saplingParams = await loadSaplingParamsStatus();
+      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      var saplingParams = await loadSaplingParamsStatus();
 
       if (widget.args.needsSaplingParams) {
         if (!saplingParams.complete) {
@@ -330,6 +334,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
             saplingParams,
             log: (message) => log('SendStatus: $message'),
           );
+          saplingParams = await loadSaplingParamsStatus();
           if (await _abortIfUnmounted()) return;
         }
       }
@@ -342,6 +347,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       late final String txids;
       late final bool broadcastComplete;
       late final String? pendingStatusMessage;
+      String? broadcastMessageForFallback;
 
       if (isHardware) {
         final keystone = widget.keystone;
@@ -367,6 +373,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         pendingStatusMessage = broadcastComplete
             ? null
             : _pcztBroadcastStatusMessage(result);
+        broadcastMessageForFallback = result.message;
       } else {
         final mnemonic = await accountNotifier.getMnemonicForAccount(
           widget.args.proposalAccountUuid,
@@ -400,6 +407,22 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         pendingStatusMessage = broadcastComplete
             ? null
             : _broadcastStatusMessage(result);
+        broadcastMessageForFallback = result.message;
+      }
+
+      if (!broadcastComplete && broadcastMessageForFallback != null) {
+        final switched = await ref
+            .read(rpcEndpointFailoverProvider.notifier)
+            .switchToFallbackFor(
+              broadcastMessageForFallback,
+              endpoint: endpoint,
+              operation: isHardware
+                  ? 'keystone send broadcast'
+                  : 'send broadcast',
+            );
+        if (switched) {
+          unawaited(ref.read(syncProvider.notifier).restartSync());
+        }
       }
 
       try {
@@ -584,8 +607,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                                             )
                                           : null,
                                     ),
-                                    feeText:
-                                        '${_formatFee(widget.args.feeZatoshi)} ZEC',
+                                    feeText: _formatFee(widget.args.feeZatoshi),
                                     extraBlocks: [
                                       if (statusMessage != null)
                                         TransactionReceiptBlockData(

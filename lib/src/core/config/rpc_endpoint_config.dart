@@ -5,6 +5,8 @@ export 'network_config.dart';
 
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
+const kRegtestSlowRpcEndpointPresetId = 'slow-regtest';
+const kRegtestUnavailableRpcEndpointPresetId = 'unavailable-regtest';
 
 class RpcEndpointConfig {
   const RpcEndpointConfig({
@@ -25,12 +27,7 @@ class RpcEndpointConfig {
   String get hostPort => rpcEndpointHostPort(lightwalletdUrl);
 
   String get effectivePresetId =>
-      findRpcEndpointPresetByUrl(
-        normalizedLightwalletdUrl,
-        networkName: networkName,
-      )?.id ??
-      presetId ??
-      kCustomRpcEndpointPresetId;
+      explicitRpcEndpointPresetFor(this)?.id ?? kCustomRpcEndpointPresetId;
 
   RpcEndpointConfig copyWith({
     String? networkName,
@@ -149,6 +146,12 @@ final kTestnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     url: 'https://testnet.zec.rocks:443',
     isDefault: true,
   ),
+  const RpcEndpointPreset(
+    id: 'mysideoftheweb-testnet',
+    region: 'Community',
+    label: 'My Side of the Web Testnet',
+    url: 'https://zcash.mysideoftheweb.com:19067',
+  ),
 ]);
 
 final kRegtestRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
@@ -158,6 +161,18 @@ final kRegtestRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     label: 'Local Regtest',
     url: ZcashNetwork.regtest.lightwalletdUrl,
     isDefault: true,
+  ),
+  const RpcEndpointPreset(
+    id: kRegtestSlowRpcEndpointPresetId,
+    region: 'Regtest',
+    label: 'Slow Regtest',
+    url: 'http://127.0.0.1:19068',
+  ),
+  const RpcEndpointPreset(
+    id: kRegtestUnavailableRpcEndpointPresetId,
+    region: 'Regtest',
+    label: 'Unavailable Regtest',
+    url: 'http://127.0.0.1:19067',
   ),
 ]);
 
@@ -182,6 +197,62 @@ RpcEndpointConfig defaultRpcEndpointConfig(String networkName) {
     lightwalletdUrl: preset.url,
     presetId: preset.id,
   );
+}
+
+bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
+  return config.presetId == kCustomRpcEndpointPresetId;
+}
+
+RpcEndpointPreset? explicitRpcEndpointPresetFor(RpcEndpointConfig config) {
+  final presetId = config.presetId?.trim();
+  if (presetId == null ||
+      presetId.isEmpty ||
+      presetId == kCustomRpcEndpointPresetId) {
+    return null;
+  }
+
+  return findRpcEndpointPresetById(config.networkName, presetId);
+}
+
+List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(
+  RpcEndpointConfig primary,
+) {
+  final primaryPreset = _selectedFallbackPrimaryPreset(primary);
+  if (primaryPreset == null) return const [];
+
+  final primaryNormalized = primary.normalizedLightwalletdUrl;
+  final seenUrls = <String>{};
+  final candidates = <RpcEndpointConfig>[];
+
+  for (final preset in rpcEndpointPresetsForNetwork(primary.networkName)) {
+    final normalized = normalizeRpcEndpointUrl(
+      preset.url,
+      allowDefaultPort: true,
+    );
+    if (preset.id == primaryPreset.id || normalized == primaryNormalized) {
+      continue;
+    }
+    if (!seenUrls.add(normalized)) continue;
+
+    candidates.add(
+      RpcEndpointConfig(
+        networkName: primary.networkName,
+        lightwalletdUrl: preset.url,
+        presetId: preset.id,
+      ),
+    );
+  }
+
+  return List.unmodifiable(candidates);
+}
+
+RpcEndpointConfig? fallbackRpcEndpointConfigFor(RpcEndpointConfig primary) {
+  final candidates = fallbackRpcEndpointCandidatesFor(primary);
+  return candidates.isEmpty ? null : candidates.first;
+}
+
+RpcEndpointPreset? _selectedFallbackPrimaryPreset(RpcEndpointConfig primary) {
+  return explicitRpcEndpointPresetFor(primary);
 }
 
 RpcEndpointConfig resolveStoredRpcEndpointConfig({
@@ -212,9 +283,7 @@ RpcEndpointConfig resolveStoredRpcEndpointConfig({
   return RpcEndpointConfig(
     networkName: network.name,
     lightwalletdUrl: normalizeRpcEndpointUrl(url, allowDefaultPort: true),
-    presetId: presetId == kCustomRpcEndpointPresetId
-        ? kCustomRpcEndpointPresetId
-        : findRpcEndpointPresetByUrl(url, networkName: network.name)?.id,
+    presetId: kCustomRpcEndpointPresetId,
   );
 }
 

@@ -152,6 +152,52 @@ impl SyncError {
             SyncError::Db(_) | SyncError::Parse(_) => RecoveryStrategy::Fatal,
         }
     }
+
+    /// Whether this error is safe to treat as an endpoint failover
+    /// candidate. Local DB, parser, continuity, and wallet-state errors
+    /// must not cause endpoint switching.
+    #[allow(dead_code)]
+    pub(crate) fn is_endpoint_failover_candidate(&self) -> bool {
+        match self {
+            SyncError::Network(message) => is_endpoint_failover_candidate_message(message),
+            SyncError::Continuity { .. } | SyncError::Db(_) | SyncError::Parse(_) => false,
+            SyncError::Other(message) => is_endpoint_failover_candidate_message(message),
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn is_endpoint_failover_candidate_message(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("wrong network")
+        || lower.contains("endpoint is for")
+        || lower.contains("database is locked")
+        || lower.contains("proposal not found")
+        || lower.contains("send flow mismatch")
+        || lower.contains("insufficient")
+        || lower.contains("invalid amount")
+        || lower.contains("invalid address")
+    {
+        return false;
+    }
+
+    lower.contains("network:")
+        || lower.contains("deadlineexceeded")
+        || lower.contains("deadline exceeded")
+        || lower.contains("unavailable")
+        || lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("grpc connect failed")
+        || lower.contains("connect failed")
+        || lower.contains("connection refused")
+        || lower.contains("connection reset")
+        || lower.contains("connection closed")
+        || lower.contains("dns")
+        || lower.contains("failed to lookup address")
+        || lower.contains("tls error")
+        || lower.contains("transport error")
+        || lower.contains("http2")
+        || lower.contains("socket")
 }
 
 impl fmt::Display for SyncError {
@@ -223,6 +269,31 @@ mod tests {
             SyncError::Other("???".into()).recovery_strategy(),
             RecoveryStrategy::RetryWithBackoff,
         );
+    }
+
+    #[test]
+    fn endpoint_failover_candidate_is_limited_to_transport_failures() {
+        assert!(
+            SyncError::Network("gRPC connect failed: connection refused".into())
+                .is_endpoint_failover_candidate()
+        );
+        assert!(
+            SyncError::Other("DeadlineExceeded while reading stream".into())
+                .is_endpoint_failover_candidate()
+        );
+
+        assert!(!SyncError::Db("database is locked".into()).is_endpoint_failover_candidate());
+        assert!(!SyncError::Continuity {
+            at_height: 123,
+            detail: "PrevHashMismatch".into(),
+        }
+        .is_endpoint_failover_candidate());
+        assert!(!is_endpoint_failover_candidate_message(
+            "Endpoint is for test, but this wallet uses main."
+        ));
+        assert!(!is_endpoint_failover_candidate_message(
+            "Proposal not found (expired or already executed)"
+        ));
     }
 
     #[test]

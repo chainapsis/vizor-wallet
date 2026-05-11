@@ -199,6 +199,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
               uuid: account.uuid,
               name: account.name,
               order: index,
+              isSeedAnchor: account.isSeedAnchor,
             ),
             storedAccount: stored,
             order: index,
@@ -290,8 +291,9 @@ AccountInfo mergeBootstrappedAccountInfo({
   return AccountInfo(
     uuid: rustAccount.uuid,
     name: storedAccount?.name ?? rustAccount.name,
-    order: order,
+    order: storedAccount?.order ?? order,
     isHardware: storedAccount?.isHardware ?? false,
+    isSeedAnchor: rustAccount.isSeedAnchor,
     profilePictureId:
         storedAccount?.profilePictureId ?? kDefaultProfilePictureId,
   );

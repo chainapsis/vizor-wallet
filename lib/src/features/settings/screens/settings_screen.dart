@@ -13,10 +13,11 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
-import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
+import '../../accounts/widgets/account_name_modal.dart';
+import '../../accounts/widgets/account_profile_picture_modal.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
@@ -101,15 +102,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 endpointLabel: endpointLabel,
                 themeLabel: _themeLabel(themeMode),
                 onSeedPhrase: () => context.push('/settings/secret-passphrase'),
-                onChangePassword: () =>
-                    context.push('/settings/change-password'),
+                onChangePassword:
+                    () => context.push('/settings/change-password'),
                 onEndpoint: () => context.push('/settings/endpoint'),
-                onAccountName: hasActiveAccount
-                    ? () => _showModal(_SettingsModalType.accountName)
-                    : null,
-                onProfilePicture: hasActiveAccount
-                    ? () => _showModal(_SettingsModalType.profilePicture)
-                    : null,
+                onAccountName:
+                    hasActiveAccount
+                        ? () => _showModal(_SettingsModalType.accountName)
+                        : null,
+                onProfilePicture:
+                    hasActiveAccount
+                        ? () => _showModal(_SettingsModalType.profilePicture)
+                        : null,
                 onTheme: () => _showModal(_SettingsModalType.theme),
               ),
             ),
@@ -117,17 +120,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               AppPaneModalOverlay(
                 onDismiss: _closeModal,
                 child: switch (_activeModal!) {
-                  _SettingsModalType.accountName => _AccountNameModal(
+                  _SettingsModalType.accountName => AccountNameModal(
                     accountName: activeAccountName,
                     profilePictureId: activeProfilePictureId,
                     onCancel: _closeModal,
                     onUpdate: _updateAccountName,
                   ),
-                  _SettingsModalType.profilePicture => _ProfilePictureModal(
-                    currentProfilePictureId: activeProfilePictureId,
-                    onCancel: _closeModal,
-                    onUpdate: _updateProfilePicture,
-                  ),
+                  _SettingsModalType.profilePicture =>
+                    AccountProfilePictureModal(
+                      currentProfilePictureId: activeProfilePictureId,
+                      onCancel: _closeModal,
+                      onUpdate: _updateProfilePicture,
+                    ),
                   _SettingsModalType.theme => _ThemeModal(
                     currentMode: themeMode,
                     onCancel: _closeModal,
@@ -324,15 +328,10 @@ class _SettingsList extends StatelessWidget {
 }
 
 class _SettingsModalCard extends StatelessWidget {
-  const _SettingsModalCard({
-    required this.header,
-    required this.child,
-    this.gap = AppSpacing.md,
-  });
+  const _SettingsModalCard({required this.header, required this.child});
 
   final Widget header;
   final Widget child;
-  final double gap;
 
   @override
   Widget build(BuildContext context) {
@@ -348,11 +347,7 @@ class _SettingsModalCard extends StatelessWidget {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          header,
-          SizedBox(height: gap),
-          child,
-        ],
+        children: [header, const SizedBox(height: AppSpacing.md), child],
       ),
     );
   }
@@ -385,38 +380,6 @@ class _ModalHeader extends StatelessWidget {
   }
 }
 
-class _ModalAccountAvatar extends StatelessWidget {
-  const _ModalAccountAvatar({required this.profilePictureId});
-
-  final String profilePictureId;
-
-  @override
-  Widget build(BuildContext context) {
-    final option = resolveProfilePictureOption(profilePictureId);
-
-    return _ProfilePictureImage(assetPath: option.assetPath, size: 32);
-  }
-}
-
-class _ProfilePictureImage extends StatelessWidget {
-  const _ProfilePictureImage({required this.assetPath, required this.size});
-
-  final String assetPath;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipOval(
-      child: Image.asset(
-        assetPath,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-      ),
-    );
-  }
-}
-
 class _ModalUtilityIcon extends StatelessWidget {
   const _ModalUtilityIcon({required this.iconName});
 
@@ -439,318 +402,6 @@ class _ModalUtilityIcon extends StatelessWidget {
           size: AppIconSize.medium,
           color: colors.icon.accent,
         ),
-      ),
-    );
-  }
-}
-
-class _ProfilePictureModal extends StatefulWidget {
-  const _ProfilePictureModal({
-    required this.currentProfilePictureId,
-    required this.onCancel,
-    required this.onUpdate,
-  });
-
-  final String currentProfilePictureId;
-  final VoidCallback onCancel;
-  final Future<void> Function(String profilePictureId) onUpdate;
-
-  @override
-  State<_ProfilePictureModal> createState() => _ProfilePictureModalState();
-}
-
-class _ProfilePictureModalState extends State<_ProfilePictureModal> {
-  static const _buttonWidth = 280.0;
-  static const _optionSize = 32.0;
-
-  late String _selectedId = _initialSelectedId();
-  bool _isSubmitting = false;
-  String? _submitError;
-
-  bool get _canUpdate =>
-      !_isSubmitting &&
-      isKnownProfilePictureId(_selectedId) &&
-      _selectedId != widget.currentProfilePictureId;
-
-  String _initialSelectedId() {
-    return widget.currentProfilePictureId;
-  }
-
-  Future<void> _submit() async {
-    if (!_canUpdate) return;
-    setState(() {
-      _isSubmitting = true;
-      _submitError = null;
-    });
-    try {
-      await widget.onUpdate(_selectedId);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _submitError = "Couldn't update profile picture.";
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
-  }
-
-  void _select(String id) {
-    if (_isSubmitting) return;
-    setState(() {
-      _selectedId = id;
-      _submitError = null;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final previewOption = resolveProfilePictureOption(_selectedId);
-
-    return _SettingsModalCard(
-      gap: AppSpacing.sm,
-      header: _ModalHeader(
-        leading: _ProfilePictureImage(
-          assetPath: previewOption.assetPath,
-          size: 56,
-        ),
-        title: 'Select Profile Picture',
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              spacing: AppSpacing.s,
-              runSpacing: AppSpacing.s,
-              children: [
-                for (final option in kProfilePictureOptions)
-                  _ProfilePictureOptionButton(
-                    option: option,
-                    size: _optionSize,
-                    selected: option.id == _selectedId,
-                    onTap: () => _select(option.id),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          if (_submitError != null) ...[
-            Text(
-              _submitError!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: context.colors.text.destructive,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-          ],
-          AppButton(
-            onPressed: _canUpdate ? _submit : null,
-            variant: AppButtonVariant.primary,
-            minWidth: _buttonWidth,
-            child: Text(_isSubmitting ? 'Updating...' : 'Update'),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: _isSubmitting ? null : widget.onCancel,
-            variant: AppButtonVariant.ghost,
-            minWidth: _buttonWidth,
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProfilePictureOptionButton extends StatelessWidget {
-  const _ProfilePictureOptionButton({
-    required this.option,
-    required this.size,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final ProfilePictureOption option;
-  final double size;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              _ProfilePictureImage(assetPath: option.assetPath, size: size),
-              if (selected)
-                Positioned(
-                  right: -4,
-                  bottom: -2,
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: colors.background.inverse,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: AppIcon(
-                        AppIcons.check,
-                        size: 12,
-                        color: colors.background.ground,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AccountNameModal extends StatefulWidget {
-  const _AccountNameModal({
-    required this.accountName,
-    required this.profilePictureId,
-    required this.onCancel,
-    required this.onUpdate,
-  });
-
-  final String accountName;
-  final String profilePictureId;
-  final VoidCallback onCancel;
-  final Future<void> Function(String name) onUpdate;
-
-  @override
-  State<_AccountNameModal> createState() => _AccountNameModalState();
-}
-
-class _AccountNameModalState extends State<_AccountNameModal> {
-  static const _fieldHeight = 86.0;
-  static const _buttonWidth = 280.0;
-  static const _minNameLength = 5;
-  static const _maxNameLength = 20;
-
-  final _controller = TextEditingController();
-  bool _isSubmitting = false;
-  String? _submitError;
-
-  String get _trimmedName => _controller.text.trim();
-
-  bool get _isLengthValid =>
-      _trimmedName.length >= _minNameLength &&
-      _trimmedName.length <= _maxNameLength;
-
-  bool get _canUpdate =>
-      !_isSubmitting &&
-      _isLengthValid &&
-      _trimmedName != widget.accountName.trim();
-
-  String? get _messageText {
-    if (_submitError != null) return _submitError;
-    if (_controller.text.isEmpty || _isLengthValid) return null;
-    return 'Use 5-20 characters.';
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_canUpdate) return;
-    setState(() {
-      _isSubmitting = true;
-      _submitError = null;
-    });
-
-    try {
-      await widget.onUpdate(_trimmedName);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _submitError = "Couldn't update account name.";
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
-  }
-
-  void _handleChanged() {
-    setState(() {
-      _submitError = null;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _SettingsModalCard(
-      header: _ModalHeader(
-        leading: _ModalAccountAvatar(profilePictureId: widget.profilePictureId),
-        title: widget.accountName,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            height: _fieldHeight,
-            child: AppTextField(
-              label: 'New Account Name',
-              hintText: '5-20 Characters',
-              controller: _controller,
-              autofocus: true,
-              enabled: !_isSubmitting,
-              trailingSlotWidth: 40,
-              inputHorizontalPadding: AppSpacing.s,
-              inputFormatters: [
-                LengthLimitingTextInputFormatter(_maxNameLength),
-              ],
-              messageText: _messageText,
-              tone: _messageText == null
-                  ? AppTextFieldTone.neutral
-                  : AppTextFieldTone.destructive,
-              onChanged: (_) => _handleChanged(),
-              onSubmitted: (_) => _submit(),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppButton(
-            onPressed: _canUpdate ? _submit : null,
-            variant: AppButtonVariant.primary,
-            minWidth: _buttonWidth,
-            child: Text(_isSubmitting ? 'Updating...' : 'Update'),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: _isSubmitting ? null : widget.onCancel,
-            variant: AppButtonVariant.ghost,
-            minWidth: _buttonWidth,
-            child: const Text('Cancel'),
-          ),
-        ],
       ),
     );
   }
@@ -818,30 +469,33 @@ class _ThemeModalState extends State<_ThemeModal> {
                 iconName: AppIcons.monitor,
                 label: 'System (Auto)',
                 selected: _selectedMode == ThemeMode.system,
-                onTap: () => setState(() {
-                  _submitError = null;
-                  _selectedMode = ThemeMode.system;
-                }),
+                onTap:
+                    () => setState(() {
+                      _submitError = null;
+                      _selectedMode = ThemeMode.system;
+                    }),
               ),
               const SizedBox(height: AppSpacing.xs),
               _ThemeOptionCard(
                 iconName: AppIcons.day,
                 label: 'Light Mode',
                 selected: _selectedMode == ThemeMode.light,
-                onTap: () => setState(() {
-                  _submitError = null;
-                  _selectedMode = ThemeMode.light;
-                }),
+                onTap:
+                    () => setState(() {
+                      _submitError = null;
+                      _selectedMode = ThemeMode.light;
+                    }),
               ),
               const SizedBox(height: AppSpacing.xs),
               _ThemeOptionCard(
                 iconName: AppIcons.night,
                 label: 'Dark Mode',
                 selected: _selectedMode == ThemeMode.dark,
-                onTap: () => setState(() {
-                  _submitError = null;
-                  _selectedMode = ThemeMode.dark;
-                }),
+                onTap:
+                    () => setState(() {
+                      _submitError = null;
+                      _selectedMode = ThemeMode.dark;
+                    }),
               ),
             ],
           ),
@@ -952,20 +606,22 @@ class _ThemeOptionIndicator extends StatelessWidget {
       width: 16,
       height: 16,
       decoration: BoxDecoration(
-        color: selected
-            ? colors.background.inverse
-            : colors.background.neutralSubtleOpacity,
+        color:
+            selected
+                ? colors.background.inverse
+                : colors.background.neutralSubtleOpacity,
         shape: BoxShape.circle,
       ),
-      child: selected
-          ? Center(
-              child: AppIcon(
-                AppIcons.check,
-                size: 12,
-                color: colors.background.ground,
-              ),
-            )
-          : null,
+      child:
+          selected
+              ? Center(
+                child: AppIcon(
+                  AppIcons.check,
+                  size: 12,
+                  color: colors.background.ground,
+                ),
+              )
+              : null,
     );
   }
 }
@@ -1079,9 +735,10 @@ class _SettingsRowState extends State<_SettingsRow> {
           height: 40,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           decoration: BoxDecoration(
-            color: isInteractive && _hovered
-                ? _settingsRowHoverBackgroundColor(context)
-                : null,
+            color:
+                isInteractive && _hovered
+                    ? _settingsRowHoverBackgroundColor(context)
+                    : null,
             borderRadius: BorderRadius.circular(AppRadii.xSmall),
           ),
           child: Row(

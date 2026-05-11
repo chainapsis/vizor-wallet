@@ -160,11 +160,11 @@ class _ActivityTableHeader extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
         child: _ActivityColumnLayout(
-          txType: Text('Tx Type', style: mutedStyle),
+          txType: Text('Type', style: mutedStyle),
           amount: Text('Amount', style: mutedStyle),
           status: Text('Status', style: mutedStyle),
           timestamp: Text(
-            'Time Stamp',
+            'Date & time',
             textAlign: TextAlign.end,
             style: mutedStyle,
           ),

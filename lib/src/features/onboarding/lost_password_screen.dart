@@ -109,6 +109,7 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
 
     await syncNotifier.clearSensitiveStateForLock();
     await accountNotifier.resetWallet();
+    syncNotifier.clearCachedWalletDbPath();
   }
 
   @override
@@ -302,7 +303,7 @@ class _LostPasswordContent extends StatelessWidget {
                           "If you've lost your password, the only way to recover your account is to ",
                     ),
                     TextSpan(
-                      text: 'completely reset Vizor app',
+                      text: 'completely reset the Vizor app',
                       style: strongStyle,
                     ),
                     const TextSpan(

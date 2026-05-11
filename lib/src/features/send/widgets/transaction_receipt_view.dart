@@ -112,7 +112,7 @@ class TransactionReceiptView extends StatelessWidget {
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: _TransactionReceiptBlock(
-                  title: 'Tx Fee',
+                  title: 'Fee',
                   child: Text(
                     feeText,
                     style: AppTypography.bodyMedium.copyWith(

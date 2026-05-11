@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/network_config.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
@@ -533,22 +534,22 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         lower.contains('connection refused') ||
         lower.contains('dns error') ||
         lower.contains('tls error')) {
-      return 'Network error. Please check your connection and try again.';
+      return 'Network error. Check your connection and try again.';
     }
     // Partial broadcast must be checked before generic "broadcast rejected"
     if (lower.contains('broadcast failed after') &&
         lower.contains('txs sent')) {
-      return 'Some transactions were broadcast but not all. '
-          'Please check your transaction history before retrying.';
+      return 'Some parts of this transaction were sent. Open Activity to see '
+          'what went through before you try again.';
     }
     if (lower.contains('broadcast rejected')) {
-      return 'Transaction was rejected by the network. Please try again.';
+      return 'The network rejected this transaction. Try again.';
     }
     if (lower.contains('proposal not found') ||
         lower.contains('send flow mismatch')) {
-      return 'Transaction expired. Please try again.';
+      return 'Transaction expired before it could be sent. Try again.';
     }
-    return 'Send failed. Please try again.';
+    return 'Send failed. Try again.';
   }
 
   Future<void> _openReview() async {
@@ -737,7 +738,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (err, _) => Center(
               child: Text(
-                'Error: $err',
+                'Something went wrong. Try again in a moment.\n\n'
+                'Details: $err',
                 style: AppTypography.bodyMedium.copyWith(
                   color: context.colors.text.destructive,
                 ),
@@ -935,6 +937,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               _error = null;
                             }),
                             showClearButton: true,
+                            clearButtonRequiresText: false,
+                            clearButtonSemanticLabel: 'Close message',
                             onClear: () {
                               setState(() {
                                 _messageExpanded = false;
@@ -1028,7 +1032,7 @@ class _SendTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      'Send ZEC',
+      'Send $kZcashDefaultCurrencyTicker',
       style: AppTypography.displaySmall.copyWith(
         color: context.colors.text.accent,
       ),
@@ -1062,7 +1066,7 @@ class _SendAddMessageCard extends StatelessWidget {
               AppIcon(AppIcons.scroll, size: 16, color: colors.icon.accent),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                'Add a Message',
+                'Add a message',
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.text.accent,
                 ),

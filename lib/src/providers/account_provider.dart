@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
@@ -13,6 +14,7 @@ import '../core/storage/wallet_paths.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'app_security_provider.dart';
+import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
 
 export 'account_models.dart';
@@ -53,9 +55,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final endpoint = ref.read(rpcEndpointProvider);
       final network = endpoint.networkName;
 
-      final birthday = await _fetchCreationBirthdayHeight(
-        endpoint.normalizedLightwalletdUrl,
-      );
+      final birthday = await _fetchCreationBirthdayHeight();
       log('createAccount: birthday=$birthday');
 
       final accounts = state.value?.accounts ?? [];
@@ -103,6 +103,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         uuid: accountUuid,
         name: accountName,
         order: accounts.length,
+        isSeedAnchor: accounts.isEmpty,
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
@@ -138,9 +139,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final endpoint = ref.read(rpcEndpointProvider);
       final network = endpoint.networkName;
 
-      final birthday = await _fetchCreationBirthdayHeight(
-        endpoint.normalizedLightwalletdUrl,
-      );
+      final birthday = await _fetchCreationBirthdayHeight();
       log('createAccountFromMnemonic: birthday=$birthday');
 
       final accounts = state.value?.accounts ?? [];
@@ -182,6 +181,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         uuid: accountUuid,
         name: accountName,
         order: accounts.length,
+        isSeedAnchor: accounts.isEmpty,
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
@@ -256,6 +256,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         uuid: accountUuid,
         name: accountName,
         order: accounts.length,
+        isSeedAnchor: accounts.isEmpty,
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
@@ -338,10 +339,83 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     log('updateProfilePicture: $uuid → $profilePictureId');
   }
 
+  /// Remove an account from the wallet.
+  Future<void> removeAccount(String uuid) async {
+    final prev = state.value ?? const AccountState();
+    final targetIndex = prev.accounts.indexWhere((a) => a.uuid == uuid);
+    if (targetIndex < 0) {
+      throw ArgumentError.value(uuid, 'uuid', 'Unknown account UUID');
+    }
+
+    final target = prev.accounts[targetIndex];
+    final remaining = [
+      for (final account in prev.accounts)
+        if (account.uuid != uuid) account,
+    ];
+    final seedAnchorCount = prev.accounts
+        .where((account) => account.isSeedAnchor)
+        .length;
+    if (target.isSeedAnchor && seedAnchorCount <= 1 && remaining.isNotEmpty) {
+      throw StateError(
+        'The last seed anchor account cannot be removed while other accounts remain.',
+      );
+    }
+
+    final dbPath = await _getDbPath();
+    final network = await _getNetwork();
+    final rustDeleteWatch = Stopwatch()..start();
+    await rust_wallet.deleteAccount(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: uuid,
+    );
+    log(
+      'removeAccount: rust delete complete in '
+      '${rustDeleteWatch.elapsedMilliseconds}ms uuid=$uuid',
+    );
+    try {
+      await _storage.delete('zcash_account_mnemonic_$uuid');
+    } catch (e, st) {
+      log('removeAccount: failed to delete mnemonic for $uuid: $e\n$st');
+    }
+
+    final updated = [
+      for (var i = 0; i < remaining.length; i++)
+        remaining[i].copyWith(order: i),
+    ];
+    final nextActiveUuid = _nextActiveAccountUuid(
+      previousState: prev,
+      removedAccount: target,
+      remainingAccounts: updated,
+    );
+    final nextActiveAddress = await _nextActiveAddress(
+      prev,
+      nextActiveUuid,
+      dbPath,
+      network,
+    );
+
+    await _saveAccounts(updated);
+    if (nextActiveUuid == null) {
+      await _storage.delete(_activeAccountKey);
+    } else {
+      await _storage.writeString(_activeAccountKey, nextActiveUuid);
+    }
+
+    state = AsyncData(
+      AccountState(
+        accounts: updated,
+        activeAccountUuid: nextActiveUuid,
+        activeAddress: nextActiveAddress,
+      ),
+    );
+    log('removeAccount: $uuid');
+  }
+
   /// Delete all wallet data (DB + keychain). Caller must stop sync first.
   Future<void> resetWallet() async {
     final dbPath = await _getDbPath();
-    _deleteExistingDb(dbPath);
+    await _deleteExistingDb(dbPath);
     await _storage.deleteAll();
     ref.read(appSecurityProvider.notifier).reset();
     state = const AsyncData(AccountState());
@@ -489,15 +563,47 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     await _storage.writeString(_accountsKey, json);
   }
 
+  String? _nextActiveAccountUuid({
+    required AccountState previousState,
+    required AccountInfo removedAccount,
+    required List<AccountInfo> remainingAccounts,
+  }) {
+    return resolveNextActiveAccountUuidAfterRemoval(
+      previousState: previousState,
+      removedAccount: removedAccount,
+      remainingAccounts: remainingAccounts,
+    );
+  }
+
+  Future<String?> _nextActiveAddress(
+    AccountState prev,
+    String? nextActiveUuid,
+    String dbPath,
+    String network,
+  ) async {
+    if (nextActiveUuid == null) return null;
+    if (nextActiveUuid == prev.activeAccountUuid) return prev.activeAddress;
+    try {
+      return await rust_wallet.getUnifiedAddress(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: nextActiveUuid,
+      );
+    } catch (e) {
+      log('removeAccount: failed to get next active address: $e');
+      return null;
+    }
+  }
+
   Future<String> _getDbPath() async {
     return getWalletDbPath();
   }
 
-  Future<BigInt> _fetchCreationBirthdayHeight(String lightwalletdUrl) async {
+  Future<BigInt> _fetchCreationBirthdayHeight() async {
     try {
-      return await rust_wallet.getLatestBlockHeight(
-        lightwalletdUrl: lightwalletdUrl,
-      );
+      return await ref
+          .read(rpcEndpointFailoverProvider.notifier)
+          .getLatestBlockHeight();
     } catch (e, st) {
       Error.throwWithStackTrace(
         WalletCreationCurrentBlockHeightException(e),
@@ -525,3 +631,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 final accountProvider = AsyncNotifierProvider<AccountNotifier, AccountState>(
   AccountNotifier.new,
 );
+
+@visibleForTesting
+String? resolveNextActiveAccountUuidAfterRemoval({
+  required AccountState previousState,
+  required AccountInfo removedAccount,
+  required List<AccountInfo> remainingAccounts,
+}) {
+  if (remainingAccounts.isEmpty) return null;
+  if (previousState.activeAccountUuid != removedAccount.uuid &&
+      remainingAccounts.any((a) => a.uuid == previousState.activeAccountUuid)) {
+    return previousState.activeAccountUuid;
+  }
+  final nextIndex = removedAccount.order
+      .clamp(0, remainingAccounts.length - 1)
+      .toInt();
+  return remainingAccounts[nextIndex].uuid;
+}

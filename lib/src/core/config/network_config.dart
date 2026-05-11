@@ -51,6 +51,12 @@ enum ZcashNetwork {
     regtest => 9067,
   };
 
+  String get currencyTicker => switch (this) {
+    mainnet => 'ZEC',
+    testnet => 'TAZ',
+    regtest => 'TAZ',
+  };
+
   String get lightwalletdUrl => switch (this) {
     regtest => 'http://$lightwalletdHost:$lightwalletdPort',
     _ => 'https://$lightwalletdHost:$lightwalletdPort',
@@ -72,6 +78,10 @@ const kZcashDefaultNetworkRaw = String.fromEnvironment(
 final String kZcashDefaultNetworkName = normalizeZcashNetworkName(
   kZcashDefaultNetworkRaw,
 );
+
+final String kZcashDefaultCurrencyTicker = zcashNetworkFromName(
+  kZcashDefaultNetworkName,
+).currencyTicker;
 
 String normalizeZcashNetworkName(String networkName) {
   return switch (networkName.trim()) {

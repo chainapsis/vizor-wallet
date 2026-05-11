@@ -57,7 +57,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('About Vizor Wallet'), findsOneWidget);
-    expect(find.text('Version: 0.1.24 Public Beta'), findsOneWidget);
+    expect(find.text('Version: 0.0.0 Public Beta'), findsOneWidget);
   });
 
   testWidgets('About sidebar navigation uses the standard Home back target', (
@@ -219,13 +219,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Terms of Use'), findsOneWidget);
-    expect(find.text('Private Money.\nFor the New Internet'), findsNothing);
+    expect(
+      find.text('Behind the Vizor.\nYour money stays private.'),
+      findsNothing,
+    );
 
     await tester.pumpWidget(_appHarness(_emptyBootstrap('/privacy')));
     await tester.pumpAndSettle();
 
     expect(find.text('Privacy Policy'), findsOneWidget);
-    expect(find.text('Private Money.\nFor the New Internet'), findsNothing);
+    expect(
+      find.text('Behind the Vizor.\nYour money stays private.'),
+      findsNothing,
+    );
   });
 
   testWidgets('welcome footer links open legal pages', (tester) async {

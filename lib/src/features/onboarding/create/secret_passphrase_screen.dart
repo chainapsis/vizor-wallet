@@ -57,17 +57,40 @@ class _SecretPassphraseScreenState
     super.initState();
     final args = widget.args;
     if (args == null) {
-      _scheduleSidebarRevealed(false);
-      _prepareMnemonic();
+      final existingMnemonic = ref.read(createOnboardingMnemonicProvider);
+      if (existingMnemonic == null) {
+        _scheduleSidebarRevealed(false);
+        _prepareMnemonic();
+      } else {
+        _useMnemonic(
+          existingMnemonic,
+          revealed: ref.read(onboardingSecretPassphraseRevealedProvider),
+        );
+      }
     } else {
-      _mnemonic = args.mnemonic;
-      _isPreparing = false;
-      _revealed = true;
-      _scheduleSidebarRevealed(true);
+      _useMnemonic(args.mnemonic, revealed: true);
     }
   }
 
+  void _useMnemonic(String mnemonic, {required bool revealed}) {
+    _mnemonic = mnemonic;
+    _isPreparing = false;
+    _revealed = revealed;
+    if (ref.read(createOnboardingMnemonicProvider) != mnemonic) {
+      _scheduleCreateMnemonic(mnemonic);
+    }
+    _scheduleSidebarRevealed(revealed);
+  }
+
+  void _scheduleCreateMnemonic(String mnemonic) {
+    Future<void>(() {
+      if (!mounted) return;
+      ref.read(createOnboardingMnemonicProvider.notifier).setMnemonic(mnemonic);
+    });
+  }
+
   void _scheduleSidebarRevealed(bool value) {
+    if (ref.read(onboardingSecretPassphraseRevealedProvider) == value) return;
     Future<void>(() {
       if (!mounted) return;
       ref
@@ -78,7 +101,9 @@ class _SecretPassphraseScreenState
 
   void _prepareMnemonic() {
     try {
-      _mnemonic = rust_wallet.generateMnemonic();
+      final mnemonic = rust_wallet.generateMnemonic();
+      _mnemonic = mnemonic;
+      _scheduleCreateMnemonic(mnemonic);
       _isPreparing = false;
     } catch (e, st) {
       log('SecretPassphraseScreen._prepareMnemonic: ERROR: $e\n$st');
@@ -143,6 +168,12 @@ class _SecretPassphraseScreenState
         _submitError = onboardingSubmitErrorMessage(e);
       });
       return;
+    }
+    if (mounted) {
+      ref.read(createOnboardingMnemonicProvider.notifier).clear();
+      ref
+          .read(onboardingSecretPassphraseRevealedProvider.notifier)
+          .setRevealed(false);
     }
     router.go('/home');
   }
@@ -325,7 +356,7 @@ class _HeroBlock extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'The Master Key to your wallet.',
+          'The master key to your wallet.',
           style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
           textAlign: TextAlign.center,
         ),
@@ -366,6 +397,7 @@ class _BottomActions extends StatelessWidget {
     return Column(
       children: [
         AppButton(
+          key: const ValueKey('create_secret_phrase_primary_button'),
           onPressed: !isPreparing && !isSubmitting ? onPrimaryPressed : null,
           variant: AppButtonVariant.primary,
           minWidth: _buttonWidth,

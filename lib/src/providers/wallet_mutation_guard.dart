@@ -10,23 +10,27 @@ Future<T> runWithSyncPausedForAccountMutation<T>(
   Future<T> Function() action, {
   FutureOr<void> Function()? onStoppingSync,
   FutureOr<void> Function()? onSyncPaused,
+  bool resumeAfterMutation = true,
 }) async {
   final hasExistingAccounts =
       (ref.read(accountProvider).value?.accounts ?? const <AccountInfo>[])
           .isNotEmpty;
-  if (!hasExistingAccounts) {
+  final syncNotifier = ref.read(syncProvider.notifier);
+  if (!hasExistingAccounts && !syncNotifier.needsPauseForWalletMutation()) {
     return action();
   }
 
-  final pause = await ref
-      .read(syncProvider.notifier)
-      .pauseForWalletMutation(onStoppingSync: onStoppingSync);
+  final pause = await syncNotifier.pauseForWalletMutation(
+    onStoppingSync: onStoppingSync,
+  );
   try {
     if (pause.hadWorkToPause) {
       await onSyncPaused?.call();
     }
     return await action();
   } finally {
-    ref.read(syncProvider.notifier).resumeAfterWalletMutation(pause);
+    if (resumeAfterMutation) {
+      syncNotifier.resumeAfterWalletMutation(pause);
+    }
   }
 }

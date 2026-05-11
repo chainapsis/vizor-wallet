@@ -322,8 +322,7 @@ class _CurrentPasswordView extends StatelessWidget {
                 SizedBox(
                   width: 270,
                   child: Text(
-                    'Enter your current password\n'
-                    'to update your password.',
+                    'Enter your current password to continue.',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.accent,
@@ -422,7 +421,8 @@ class _NewPasswordView extends StatelessWidget {
                   SizedBox(
                     width: 270,
                     child: Text(
-                      'Minimum 8 symbols including characters.',
+                      'Minimum 8 characters. Add numbers and symbols, or make '
+                      'it longer, for stronger security.',
                       textAlign: TextAlign.center,
                       style: AppTypography.bodyMedium.copyWith(
                         color: colors.text.accent,
