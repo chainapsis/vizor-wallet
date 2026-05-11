@@ -2628,8 +2628,8 @@ dependencies = [
  "zcash_protocol",
  "zcash_script",
  "zcash_transparent",
- "zeroize",
  "zcash_voting",
+ "zeroize",
  "zip32",
 ]
 
