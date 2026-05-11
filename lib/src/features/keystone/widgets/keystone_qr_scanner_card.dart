@@ -8,7 +8,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
-import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/qr_scanner.dart';
 import 'keystone_transaction_progress_panel.dart';
 
@@ -50,6 +49,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
   bool _loadingCameras = false;
   bool _cameraPickerOpen = false;
   int _scanProgress = 0;
+  int _scanSessionResetToken = 0;
 
   @override
   void initState() {
@@ -139,10 +139,10 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
       _selectedCameraId = camera.id;
       _cameraPickerOpen = false;
       _scanProgress = 0;
+      _scanSessionResetToken++;
     });
 
     try {
-      rust_keystone.resetUrSession();
       await _controller.switchCamera(SelectCamera(cameraId: camera.id));
     } catch (e, st) {
       log('KeystoneQrScannerCard: camera switch error: $e\n$st');
@@ -212,6 +212,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
                   AnimatedUrScannerView(
                     controller: _controller,
                     expectedUrType: widget.expectedUrType,
+                    scanSessionResetToken: _scanSessionResetToken,
                     onProgress: _handleScanProgress,
                     onDecodeError: widget.onDecodeError,
                     onComplete: _handleScanComplete,

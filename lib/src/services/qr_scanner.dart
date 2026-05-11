@@ -40,6 +40,7 @@ class AnimatedUrScannerView extends StatefulWidget {
     this.onDecodeError,
     this.controller,
     this.facing,
+    this.scanSessionResetToken,
     super.key,
   });
 
@@ -49,6 +50,7 @@ class AnimatedUrScannerView extends StatefulWidget {
   final ValueChanged<Object>? onDecodeError;
   final MobileScannerController? controller;
   final CameraFacing? facing;
+  final Object? scanSessionResetToken;
 
   @override
   State<AnimatedUrScannerView> createState() => _AnimatedUrScannerViewState();
@@ -97,7 +99,8 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
       }
       _setController();
       _resetScanSession();
-    } else if (oldWidget.expectedUrType != widget.expectedUrType) {
+    } else if (oldWidget.expectedUrType != widget.expectedUrType ||
+        oldWidget.scanSessionResetToken != widget.scanSessionResetToken) {
       _resetScanSession();
     }
   }
@@ -157,8 +160,7 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
 
   bool _shouldIgnoreDecodeError(Object error) {
     final message = error.toString();
-    return message.contains('Invalid UR: missing type prefix') ||
-        message.contains('Unexpected UR type');
+    return message.contains('Invalid UR: missing type prefix');
   }
 
   @override
