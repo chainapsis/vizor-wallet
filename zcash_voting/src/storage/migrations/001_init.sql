@@ -16,6 +16,7 @@ CREATE TABLE bundles (
     wallet_id           TEXT NOT NULL DEFAULT '',
     bundle_index        INTEGER NOT NULL,
     note_positions_blob BLOB,
+    note_identity_hashes_blob BLOB,
     van_comm_rand       BLOB,
     dummy_nullifiers    BLOB,
     rho_signed          BLOB,

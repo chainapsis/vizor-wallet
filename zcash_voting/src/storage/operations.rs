@@ -267,8 +267,7 @@ impl VotingDb {
             );
         }
         for (i, chunk) in result.bundles.iter().enumerate() {
-            let positions: Vec<u64> = chunk.iter().map(|n| n.position).collect();
-            queries::insert_bundle(&conn, round_id, &wallet_id, i as u32, &positions)?;
+            queries::insert_bundle_notes(&conn, round_id, &wallet_id, i as u32, chunk)?;
         }
         Ok((result.bundles.len() as u32, result.eligible_weight))
     }
@@ -320,6 +319,7 @@ impl VotingDb {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
         let params = queries::load_round_params(&conn, round_id, &wallet_id)?;
+        queries::require_bundle_notes(&conn, round_id, &wallet_id, bundle_index, notes)?;
         let result = crate::action::build_governance_pczt(
             notes,
             &params,
@@ -615,13 +615,8 @@ impl VotingDb {
 
         // Phase 2: Load/fetch IMT exclusion proofs via PIR.
         let pir_start = std::time::Instant::now();
-        let precompute = self.precompute_delegation_pir(
-            round_id,
-            bundle_index,
-            notes,
-            pir_client,
-            network_id,
-        )?;
+        let precompute =
+            self.precompute_delegation_pir(round_id, bundle_index, notes, pir_client, network_id)?;
 
         let conn = self.conn();
         let real_targets = delegation_nullifier_targets(notes, &[])?;
@@ -1354,6 +1349,59 @@ mod tests {
     }
 
     #[test]
+    fn test_build_governance_pczt_rejects_same_position_note_substitution() {
+        use orchard::keys::{FullViewingKey, SpendingKey};
+        use zip32::Scope;
+
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        let notes = vec![NoteInfo {
+            commitment: vec![0x01; 32],
+            nullifier: vec![0x02; 32],
+            value: 13_000_000,
+            position: 0,
+            diversifier: vec![0; 11],
+            rho: vec![0; 32],
+            rseed: vec![0; 32],
+            scope: 0,
+            ufvk_str: String::new(),
+        }];
+        db.setup_bundles(ROUND_ID, &notes).unwrap();
+
+        let mut substituted_notes = notes.clone();
+        substituted_notes[0].nullifier = vec![0x03; 32];
+
+        let sk = SpendingKey::from_bytes([0x42; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let hotkey_sk = SpendingKey::from_bytes([0x43; 32]).expect("valid spending key");
+        let hotkey_fvk = FullViewingKey::from(&hotkey_sk);
+        let hotkey_raw_address = hotkey_fvk
+            .address_at(0u32, Scope::External)
+            .to_raw_address_bytes()
+            .to_vec();
+        let seed_fingerprint = [0x42u8; 32];
+
+        let err = db
+            .build_governance_pczt(
+                ROUND_ID,
+                0,
+                &substituted_notes,
+                &fvk.to_bytes().to_vec(),
+                &hotkey_raw_address,
+                0xC8E71055,
+                1,
+                &seed_fingerprint,
+                0,
+                "test-round",
+                0,
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("note identity mismatch"));
+    }
+
+    #[test]
     fn test_store_and_load_tree_state() {
         let db = test_db();
         db.init_round(&test_params(), None).unwrap();
@@ -1466,8 +1514,7 @@ mod tests {
         let alpha = pallas::Scalar::from(7);
         let alpha_bytes = alpha.to_repr();
         let sighash = [0x99; 32];
-        let account_1_rk: [u8; 32] =
-            (&randomized_verification_key(&sender_seed, 1, &alpha)).into();
+        let account_1_rk: [u8; 32] = (&randomized_verification_key(&sender_seed, 1, &alpha)).into();
 
         {
             let conn = db.conn();
