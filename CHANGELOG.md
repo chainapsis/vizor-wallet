@@ -4,6 +4,19 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.5.8
+
+## Added
+- `VotingDb::setup_bundles` now persists bundle note identity hashes, and
+  `VotingDb::build_governance_pczt` rejects same-position note substitutions
+  for bundles set up under 0.5.8 or later before constructing a governance
+  PCZT. Bundles persisted by earlier releases retain the prior position-only
+  check until they are re-setup.
+
+## Fixed
+- Avoided dropping the Hyper/Tokio transport runtime from inside an active Tokio
+  context.
+
 # 0.5.7
 
 ## Fixed
