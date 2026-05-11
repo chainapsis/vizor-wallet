@@ -10,6 +10,7 @@ import 'api/keystone.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';
+import 'api/voting.dart';
 import 'api/wallet.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -52,13 +53,29 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
 
   @protected
+  ApiSignedDelegation dco_decode_api_signed_delegation(dynamic raw);
+
+  @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
+
+  @protected
+  ApiVotingBundleSetupResult dco_decode_api_voting_bundle_setup_result(
+    dynamic raw,
+  );
+
+  @protected
+  ApiVotingRoundParams dco_decode_api_voting_round_params(dynamic raw);
 
   @protected
   BlockMetaInfo dco_decode_block_meta_info(dynamic raw);
 
   @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  ApiVotingRoundParams dco_decode_box_autoadd_api_voting_round_params(
+    dynamic raw,
+  );
 
   @protected
   int dco_decode_box_autoadd_u_32(dynamic raw);
@@ -236,7 +253,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiSignedDelegation sse_decode_api_signed_delegation(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiSyncProgressEvent sse_decode_api_sync_progress_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVotingBundleSetupResult sse_decode_api_voting_bundle_setup_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVotingRoundParams sse_decode_api_voting_round_params(
     SseDeserializer deserializer,
   );
 
@@ -245,6 +277,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  ApiVotingRoundParams sse_decode_box_autoadd_api_voting_round_params(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
@@ -459,8 +496,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_signed_delegation(
+    ApiSignedDelegation self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_sync_progress_event(
     ApiSyncProgressEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_voting_bundle_setup_result(
+    ApiVotingBundleSetupResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_voting_round_params(
+    ApiVotingRoundParams self,
     SseSerializer serializer,
   );
 
@@ -469,6 +524,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_api_voting_round_params(
+    ApiVotingRoundParams self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
