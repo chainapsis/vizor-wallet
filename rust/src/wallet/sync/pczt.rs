@@ -20,7 +20,8 @@
 //!   3. extract_and_broadcast_pczt(                             │
 //!        pcztWithProofs, pcztWithSignatures,                   │
 //!        spend_params?, output_params?,                        │
-//!      )                                               → txid ◄┘
+//!      )                                               → finalize transparent spends
+//!                                                        + extract tx + txid ◄┘
 //! ```
 //!
 //! ## Critical invariants (each of these was a real regression at some point)
@@ -255,6 +256,7 @@ pub async fn extract_and_broadcast_pczt(
     output_params_path: Option<&str>,
 ) -> Result<ExtractAndBroadcastPcztResult, String> {
     use pczt::roles::combiner::Combiner;
+    use pczt::roles::spend_finalizer::SpendFinalizer;
     use pczt::roles::tx_extractor::TransactionExtractor;
     use zcash_client_backend::data_api::wallet::{
         decrypt_and_store_transaction, extract_and_store_transaction_from_pczt,
@@ -296,11 +298,14 @@ pub async fn extract_and_broadcast_pczt(
     // keep `tx` around after broadcast so the fallback storage path
     // can use it.
     let tx = {
-        let mut extractor = TransactionExtractor::new(combine_pczts(
+        let finalized_pczt = SpendFinalizer::new(combine_pczts(
             pczt_with_proofs_bytes,
             pczt_with_signatures_bytes,
         )?)
-        .with_orchard(&orchard_vk);
+        .finalize_spends()
+        .map_err(|e| format!("Finalize transparent spends in PCZT: {e:?}"))?;
+
+        let mut extractor = TransactionExtractor::new(finalized_pczt).with_orchard(&orchard_vk);
         if let Some((spend_vk, output_vk)) = sapling_vks.as_ref() {
             extractor = extractor.with_sapling(spend_vk, output_vk);
         }
