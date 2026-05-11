@@ -9,11 +9,13 @@ class AppPaneModalOverlay extends StatelessWidget {
   const AppPaneModalOverlay({
     required this.child,
     required this.onDismiss,
+    this.borderRadius,
     super.key,
   });
 
   final Widget child;
   final VoidCallback onDismiss;
+  final BorderRadius? borderRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +37,8 @@ class AppPaneModalOverlay extends StatelessWidget {
             }
             return KeyEventResult.ignored;
           },
-          child: ClipRect(
+          child: _ModalClip(
+            borderRadius: borderRadius,
             child: BackdropFilter(
               filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
               child: GestureDetector(
@@ -59,5 +62,21 @@ class AppPaneModalOverlay extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _ModalClip extends StatelessWidget {
+  const _ModalClip({required this.child, this.borderRadius});
+
+  final Widget child;
+  final BorderRadius? borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final borderRadius = this.borderRadius;
+    if (borderRadius == null) {
+      return ClipRect(child: child);
+    }
+    return ClipRRect(borderRadius: borderRadius, child: child);
   }
 }

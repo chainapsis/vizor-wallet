@@ -9,6 +9,7 @@ import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/qr_scanner.dart';
 import 'keystone_onboarding_flow.dart';
@@ -148,6 +149,10 @@ class _ScannerCard extends StatefulWidget {
 }
 
 class _ScannerCardState extends State<_ScannerCard> {
+  static const _scannerWidth = 456.0;
+  static const _scannerHeight = 316.0;
+  static const _scannerRadius = 20.0;
+
   late MobileScannerController _controller;
   StreamSubscription<List<MobileScannerCameraInfo>>? _camerasSubscription;
   List<MobileScannerCameraInfo> _cameras = const [];
@@ -278,14 +283,15 @@ class _ScannerCardState extends State<_ScannerCard> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      width: 456,
+      width: _scannerWidth,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            height: 316,
+            height: _scannerHeight,
             decoration: BoxDecoration(
               color: colors.background.overlay.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(_scannerRadius),
             ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
@@ -327,6 +333,18 @@ class _ScannerCardState extends State<_ScannerCard> {
                       ),
                     ),
                   ),
+                if (_cameraPickerOpen)
+                  AppPaneModalOverlay(
+                    onDismiss: _toggleCameraPicker,
+                    borderRadius: BorderRadius.circular(_scannerRadius),
+                    child: _CameraPickerModal(
+                      cameras: _cameras,
+                      selectedCameraId:
+                          _selectedCameraId ?? _controller.value.camera?.id,
+                      onSelect: _selectCamera,
+                      onCancel: _toggleCameraPicker,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -338,54 +356,10 @@ class _ScannerCardState extends State<_ScannerCard> {
                   _cameras.length > 1 &&
                   !widget.decoding &&
                   scannerState.isInitialized;
-              return Column(
-                children: [
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: canChooseCamera ? _toggleCameraPicker : null,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.xxs,
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Camera',
-                            style: AppTypography.labelLarge.copyWith(
-                              color: colors.text.secondary,
-                            ),
-                          ),
-                          const Spacer(),
-                          Flexible(
-                            child: Text(
-                              _cameraLabel(scannerState),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.labelLarge.copyWith(
-                                color: colors.text.accent,
-                              ),
-                            ),
-                          ),
-                          if (canChooseCamera) ...[
-                            const SizedBox(width: AppSpacing.xxs),
-                            AppIcon(
-                              AppIcons.chevronForward,
-                              size: AppIconSize.medium,
-                              color: colors.icon.accent,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (_cameraPickerOpen)
-                    _CameraPicker(
-                      cameras: _cameras,
-                      selectedCameraId:
-                          _selectedCameraId ?? scannerState.camera?.id,
-                      onSelect: _selectCamera,
-                    ),
-                ],
+              return _CameraControlRow(
+                label: _cameraLabel(scannerState),
+                canChooseCamera: canChooseCamera,
+                onTap: _toggleCameraPicker,
               );
             },
           ),
@@ -414,73 +388,323 @@ class _ScannerCardState extends State<_ScannerCard> {
   }
 }
 
-class _CameraPicker extends StatelessWidget {
-  const _CameraPicker({
+class _CameraControlRow extends StatelessWidget {
+  const _CameraControlRow({
+    required this.label,
+    required this.canChooseCamera,
+    required this.onTap,
+  });
+
+  static const _height = 24.0;
+  static const _trailingMaxWidth = 320.0;
+
+  final String label;
+  final bool canChooseCamera;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: canChooseCamera
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: canChooseCamera ? onTap : null,
+        child: SizedBox(
+          height: _height,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Camera',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: _trailingMaxWidth,
+                      ),
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                    ),
+                    if (canChooseCamera) ...[
+                      const SizedBox(width: AppSpacing.xxs),
+                      AppIcon(
+                        AppIcons.chevronForward,
+                        size: AppIconSize.medium,
+                        color: colors.icon.accent,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CameraPickerModal extends StatelessWidget {
+  const _CameraPickerModal({
     required this.cameras,
     required this.selectedCameraId,
     required this.onSelect,
+    required this.onCancel,
   });
+
+  static const _cardWidth = 344.0;
+  static const _buttonWidth = 280.0;
 
   final List<MobileScannerCameraInfo> cameras;
   final String? selectedCameraId;
   final ValueChanged<MobileScannerCameraInfo> onSelect;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      margin: const EdgeInsets.only(top: AppSpacing.xxs),
-      decoration: BoxDecoration(
-        color: colors.background.overlay.withValues(alpha: 0.72),
-        border: Border.all(color: colors.border.subtle),
-        borderRadius: BorderRadius.circular(8),
+      width: _cardWidth,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.sm,
       ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 176),
-        child: ListView.separated(
-          shrinkWrap: true,
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-          itemCount: cameras.length,
-          separatorBuilder: (_, _) =>
-              Container(height: 1, color: colors.border.subtle),
-          itemBuilder: (context, index) {
-            final camera = cameras[index];
-            final selected = camera.id == selectedCameraId;
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => onSelect(camera),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.s,
-                  vertical: AppSpacing.xs,
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const _CameraPickerHeader(),
+          const SizedBox(height: AppSpacing.sm),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 152),
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              itemCount: cameras.length,
+              separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.xs),
+              itemBuilder: (context, index) {
+                final camera = cameras[index];
+                return _CameraOptionCard(
+                  camera: camera,
+                  selected: camera.id == selectedCameraId,
+                  onTap: () => onSelect(camera),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          AppButton(
+            onPressed: onCancel,
+            variant: AppButtonVariant.ghost,
+            minWidth: _buttonWidth,
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CameraPickerHeader extends StatelessWidget {
+  const _CameraPickerHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: colors.background.neutralSubtleOpacity,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: AppIcon(
+              AppIcons.monitor,
+              size: AppIconSize.medium,
+              color: colors.icon.accent,
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: Text(
+            'Select Camera',
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyLarge.copyWith(
+              color: colors.text.accent,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CameraOptionCard extends StatelessWidget {
+  const _CameraOptionCard({
+    required this.camera,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final MobileScannerCameraInfo camera;
+  final bool selected;
+  final VoidCallback onTap;
+
+  String get _detailLabel {
+    final parts = <String>[];
+    if (camera.isDefault) parts.add('Default');
+    if (camera.isExternal) parts.add('External');
+    switch (camera.facing) {
+      case CameraFacing.front:
+        parts.add('Front');
+      case CameraFacing.back:
+        parts.add('Back');
+      case CameraFacing.external:
+        if (!parts.contains('External')) parts.add('External');
+      case CameraFacing.unknown:
+        break;
+    }
+    switch (camera.lensType) {
+      case CameraLensType.normal:
+        parts.add('Normal');
+      case CameraLensType.wide:
+        parts.add('Wide');
+      case CameraLensType.zoom:
+        parts.add('Zoom');
+      case CameraLensType.any:
+        break;
+    }
+    return parts.isEmpty ? 'Camera' : parts.join(' / ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: 56,
+          padding: const EdgeInsets.only(
+            left: AppSpacing.xs,
+            right: AppSpacing.s,
+          ),
+          decoration: BoxDecoration(
+            color: selected
+                ? colors.background.neutralSubtleOpacity
+                : colors.background.ground.withValues(alpha: 0),
+            borderRadius: BorderRadius.circular(AppRadii.medium),
+            border: Border.all(
+              color: selected ? colors.border.strong : colors.border.regular,
+              width: selected ? 2 : 1.5,
+              strokeAlign: BorderSide.strokeAlignInside,
+            ),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: Center(
+                  child: AppIcon(
+                    AppIcons.monitor,
+                    size: 18,
+                    color: colors.icon.accent,
+                  ),
                 ),
-                child: Row(
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        camera.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: selected
-                              ? colors.text.accent
-                              : colors.text.secondary,
-                        ),
+                    Text(
+                      camera.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
                       ),
                     ),
-                    if (selected)
-                      AppIcon(
-                        AppIcons.check,
-                        size: AppIconSize.medium,
-                        color: colors.icon.accent,
+                    const SizedBox(height: 2),
+                    Text(
+                      _detailLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelMedium.copyWith(
+                        color: colors.text.secondary,
                       ),
+                    ),
                   ],
                 ),
               ),
-            );
-          },
+              const SizedBox(width: AppSpacing.xs),
+              _CameraOptionIndicator(selected: selected),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _CameraOptionIndicator extends StatelessWidget {
+  const _CameraOptionIndicator({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: 16,
+      height: 16,
+      decoration: BoxDecoration(
+        color: selected
+            ? colors.background.inverse
+            : colors.background.neutralSubtleOpacity,
+        shape: BoxShape.circle,
+      ),
+      child: selected
+          ? Center(
+              child: AppIcon(
+                AppIcons.check,
+                size: 12,
+                color: colors.background.ground,
+              ),
+            )
+          : null,
     );
   }
 }
