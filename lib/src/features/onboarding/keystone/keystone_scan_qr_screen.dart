@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
@@ -125,7 +128,7 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
   }
 }
 
-class _ScannerCard extends StatelessWidget {
+class _ScannerCard extends StatefulWidget {
   const _ScannerCard({
     required this.decoding,
     required this.error,
@@ -139,6 +142,137 @@ class _ScannerCard extends StatelessWidget {
   final ValueChanged<int> onProgress;
   final ValueChanged<Object> onDecodeError;
   final ValueChanged<ScanResult> onComplete;
+
+  @override
+  State<_ScannerCard> createState() => _ScannerCardState();
+}
+
+class _ScannerCardState extends State<_ScannerCard> {
+  late MobileScannerController _controller;
+  StreamSubscription<List<MobileScannerCameraInfo>>? _camerasSubscription;
+  List<MobileScannerCameraInfo> _cameras = const [];
+  String? _selectedCameraId;
+  bool _loadingCameras = false;
+  bool _cameraPickerOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = _createController();
+    _camerasSubscription = _controller.camerasStream.listen(_applyCameras);
+    _loadCameras();
+  }
+
+  MobileScannerController _createController({String? cameraId}) {
+    return MobileScannerController(
+      cameraId: cameraId,
+      facing: defaultQrScannerFacing,
+    );
+  }
+
+  Future<void> _loadCameras() async {
+    if (!QrScanner.isAvailable) return;
+
+    setState(() {
+      _loadingCameras = true;
+    });
+
+    try {
+      final cameras = await _controller.getAvailableCameras();
+      if (!mounted) return;
+      _applyCameras(cameras);
+    } catch (e, st) {
+      log('KeystoneScanQrScreen: camera list error: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _loadingCameras = false;
+      });
+    }
+  }
+
+  void _applyCameras(List<MobileScannerCameraInfo> cameras) {
+    if (!mounted) return;
+
+    final selectedCameraStillAvailable =
+        _selectedCameraId == null ||
+        cameras.any((camera) => camera.id == _selectedCameraId);
+
+    setState(() {
+      _cameras = cameras;
+      _loadingCameras = false;
+      if (!selectedCameraStillAvailable) {
+        _selectedCameraId = null;
+        _cameraPickerOpen = false;
+      } else if (cameras.length < 2) {
+        _cameraPickerOpen = false;
+      }
+    });
+  }
+
+  MobileScannerCameraInfo? _cameraById(String? id) {
+    if (id == null) return null;
+    for (final camera in _cameras) {
+      if (camera.id == id) return camera;
+    }
+    return null;
+  }
+
+  MobileScannerCameraInfo? get _defaultCamera {
+    for (final camera in _cameras) {
+      if (camera.isDefault) return camera;
+    }
+    return _cameras.isEmpty ? null : _cameras.first;
+  }
+
+  void _toggleCameraPicker() {
+    if (_cameras.length < 2 || widget.decoding) return;
+    setState(() {
+      _cameraPickerOpen = !_cameraPickerOpen;
+    });
+  }
+
+  Future<void> _selectCamera(MobileScannerCameraInfo camera) async {
+    if (_selectedCameraId == camera.id) {
+      setState(() {
+        _cameraPickerOpen = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _selectedCameraId = camera.id;
+      _cameraPickerOpen = false;
+    });
+
+    try {
+      rust_keystone.resetUrSession();
+      await _controller.switchCamera(SelectCamera(cameraId: camera.id));
+    } catch (e, st) {
+      log('KeystoneScanQrScreen: camera switch error: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _selectedCameraId = _controller.value.camera?.id;
+      });
+    }
+  }
+
+  String _cameraLabel(MobileScannerState state) {
+    if (!QrScanner.isAvailable) return 'No camera found';
+    if (_loadingCameras && _cameras.isEmpty) return 'Loading camera...';
+
+    final selectedCamera = _cameraById(_selectedCameraId);
+    return selectedCamera?.name ??
+        state.camera?.name ??
+        _defaultCamera?.name ??
+        'Default camera';
+  }
+
+  @override
+  void dispose() {
+    _camerasSubscription?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -159,10 +293,11 @@ class _ScannerCard extends StatelessWidget {
               children: [
                 if (QrScanner.isAvailable)
                   AnimatedUrScannerView(
+                    controller: _controller,
                     expectedUrType: 'zcash-accounts',
-                    onProgress: onProgress,
-                    onDecodeError: onDecodeError,
-                    onComplete: onComplete,
+                    onProgress: widget.onProgress,
+                    onDecodeError: widget.onDecodeError,
+                    onComplete: widget.onComplete,
                   )
                 else
                   Center(
@@ -178,7 +313,7 @@ class _ScannerCard extends StatelessWidget {
                     ),
                   ),
                 const _ScanFrame(),
-                if (decoding)
+                if (widget.decoding)
                   DecoratedBox(
                     decoration: BoxDecoration(
                       color: colors.background.ground.withValues(alpha: 0.72),
@@ -196,33 +331,68 @@ class _ScannerCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.s),
-          Row(
-            children: [
-              Text(
-                'Camera',
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                QrScanner.isAvailable ? 'Default camera' : 'No camera found',
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              AppIcon(
-                AppIcons.chevronForward,
-                size: AppIconSize.medium,
-                color: colors.icon.accent,
-              ),
-            ],
+          ValueListenableBuilder<MobileScannerState>(
+            valueListenable: _controller,
+            builder: (context, scannerState, _) {
+              final canChooseCamera =
+                  _cameras.length > 1 &&
+                  !widget.decoding &&
+                  scannerState.isInitialized;
+              return Column(
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: canChooseCamera ? _toggleCameraPicker : null,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.xxs,
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Camera',
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.secondary,
+                            ),
+                          ),
+                          const Spacer(),
+                          Flexible(
+                            child: Text(
+                              _cameraLabel(scannerState),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelLarge.copyWith(
+                                color: colors.text.accent,
+                              ),
+                            ),
+                          ),
+                          if (canChooseCamera) ...[
+                            const SizedBox(width: AppSpacing.xxs),
+                            AppIcon(
+                              AppIcons.chevronForward,
+                              size: AppIconSize.medium,
+                              color: colors.icon.accent,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_cameraPickerOpen)
+                    _CameraPicker(
+                      cameras: _cameras,
+                      selectedCameraId:
+                          _selectedCameraId ?? scannerState.camera?.id,
+                      onSelect: _selectCamera,
+                    ),
+                ],
+              );
+            },
           ),
-          if (error != null) ...[
+          if (widget.error != null) ...[
             const SizedBox(height: AppSpacing.s),
             Text(
-              error!,
+              widget.error!,
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.destructive,
               ),
@@ -239,6 +409,77 @@ class _ScannerCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _CameraPicker extends StatelessWidget {
+  const _CameraPicker({
+    required this.cameras,
+    required this.selectedCameraId,
+    required this.onSelect,
+  });
+
+  final List<MobileScannerCameraInfo> cameras;
+  final String? selectedCameraId;
+  final ValueChanged<MobileScannerCameraInfo> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      margin: const EdgeInsets.only(top: AppSpacing.xxs),
+      decoration: BoxDecoration(
+        color: colors.background.overlay.withValues(alpha: 0.72),
+        border: Border.all(color: colors.border.subtle),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 176),
+        child: ListView.separated(
+          shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+          itemCount: cameras.length,
+          separatorBuilder: (_, _) =>
+              Container(height: 1, color: colors.border.subtle),
+          itemBuilder: (context, index) {
+            final camera = cameras[index];
+            final selected = camera.id == selectedCameraId;
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onSelect(camera),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s,
+                  vertical: AppSpacing.xs,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        camera.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: selected
+                              ? colors.text.accent
+                              : colors.text.secondary,
+                        ),
+                      ),
+                    ),
+                    if (selected)
+                      AppIcon(
+                        AppIcons.check,
+                        size: AppIconSize.medium,
+                        color: colors.icon.accent,
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

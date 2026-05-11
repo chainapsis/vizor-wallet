@@ -18,6 +18,8 @@ CameraFacing get _defaultFacing =>
     ? CameraFacing.external
     : CameraFacing.back;
 
+CameraFacing get defaultQrScannerFacing => _defaultFacing;
+
 /// QR scanner abstraction. Uses mobile_scanner on macOS/iOS/Android.
 class QrScanner {
   QrScanner._();
@@ -74,6 +76,7 @@ class AnimatedUrScannerView extends StatefulWidget {
     required this.onComplete,
     this.onProgress,
     this.onDecodeError,
+    this.controller,
     this.facing,
     super.key,
   });
@@ -82,6 +85,7 @@ class AnimatedUrScannerView extends StatefulWidget {
   final ValueChanged<ScanResult> onComplete;
   final ValueChanged<int>? onProgress;
   final ValueChanged<Object>? onDecodeError;
+  final MobileScannerController? controller;
   final CameraFacing? facing;
 
   @override
@@ -89,16 +93,15 @@ class AnimatedUrScannerView extends StatefulWidget {
 }
 
 class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
-  late final MobileScannerController _controller;
+  late MobileScannerController _controller;
+  late bool _ownsController;
   bool _complete = false;
   final Set<String> _seenParts = {};
 
   @override
   void initState() {
     super.initState();
-    _controller = MobileScannerController(
-      facing: widget.facing ?? _defaultFacing,
-    );
+    _setController();
     // Ensure Rust's UR decoder starts clean. The previous scan may have
     // left behind a partial multi-part session (cancel / back / mid-stream
     // error), which would otherwise corrupt this fresh scan with stale
@@ -106,19 +109,42 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
     rust_keystone.resetUrSession();
   }
 
+  void _setController() {
+    final controller = widget.controller;
+    _ownsController = controller == null;
+    _controller =
+        controller ??
+        MobileScannerController(facing: widget.facing ?? _defaultFacing);
+  }
+
+  void _resetScanSession() {
+    _complete = false;
+    _seenParts.clear();
+    rust_keystone.resetUrSession();
+  }
+
   @override
   void didUpdateWidget(covariant AnimatedUrScannerView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.expectedUrType != widget.expectedUrType) {
-      _complete = false;
-      _seenParts.clear();
-      rust_keystone.resetUrSession();
+    final controllerChanged = oldWidget.controller != widget.controller;
+    final ownedFacingChanged =
+        widget.controller == null && oldWidget.facing != widget.facing;
+    if (controllerChanged || ownedFacingChanged) {
+      if (_ownsController) {
+        _controller.dispose();
+      }
+      _setController();
+      _resetScanSession();
+    } else if (oldWidget.expectedUrType != widget.expectedUrType) {
+      _resetScanSession();
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    if (_ownsController) {
+      _controller.dispose();
+    }
     super.dispose();
   }
 
