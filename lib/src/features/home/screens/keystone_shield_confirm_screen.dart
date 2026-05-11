@@ -13,6 +13,7 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
@@ -23,7 +24,13 @@ import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
 import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
 
-enum _KeystoneShieldPhase { preparing, ready, broadcasting, failed }
+enum _KeystoneShieldPhase {
+  preparing,
+  ready,
+  broadcasting,
+  broadcastWarning,
+  failed,
+}
 
 class KeystoneShieldConfirmScreen extends ConsumerStatefulWidget {
   const KeystoneShieldConfirmScreen({super.key});
@@ -39,6 +46,7 @@ class _KeystoneShieldConfirmScreenState
   bool _showSaplingParamsPrompt = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
+  String? _statusMessage;
   List<String> _urParts = const [];
   List<int>? _pcztWithProofs;
   SaplingParamsStatus? _saplingParams;
@@ -187,6 +195,7 @@ class _KeystoneShieldConfirmScreenState
     setState(() {
       _phase = _KeystoneShieldPhase.broadcasting;
       _error = null;
+      _statusMessage = null;
     });
 
     try {
@@ -212,15 +221,51 @@ class _KeystoneShieldConfirmScreenState
         log('KeystoneShieldConfirm: refreshAfterSend failed: $e');
       }
       if (!mounted) return;
+      if (result.status != 'broadcasted') {
+        setState(() {
+          _phase = _KeystoneShieldPhase.broadcastWarning;
+          _statusMessage = _pcztBroadcastStatusMessage(result);
+        });
+        return;
+      }
       context.go('/home');
     } catch (e, st) {
       log('KeystoneShieldConfirm._broadcast: ERROR: $e\n$st');
       if (!mounted) return;
+      final postBroadcastMessage = _postBroadcastErrorMessage(e);
+      if (postBroadcastMessage != null) {
+        setState(() {
+          _phase = _KeystoneShieldPhase.broadcastWarning;
+          _statusMessage = postBroadcastMessage;
+        });
+        return;
+      }
       setState(() {
         _phase = _KeystoneShieldPhase.failed;
         _error = _friendlyError(e);
       });
     }
+  }
+
+  String _pcztBroadcastStatusMessage(
+    rust_sync.ExtractAndBroadcastPcztResult result,
+  ) {
+    if (result.status == 'broadcast_unknown') {
+      return result.message ??
+          'The shield transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
+    }
+    if (result.status == 'broadcasted_storage_failed') {
+      return result.message ??
+          'The shield transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.';
+    }
+    return result.message ??
+        'The shield transaction status is uncertain. Check activity before trying again.';
+  }
+
+  String? _postBroadcastErrorMessage(Object error) {
+    final raw = error.toString();
+    if (!raw.toLowerCase().contains('broadcast succeeded')) return null;
+    return raw.replaceFirst(RegExp(r'^Exception:\s*'), '');
   }
 
   String _friendlyError(Object error) {
@@ -265,6 +310,7 @@ class _KeystoneShieldConfirmScreenState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isBroadcasting = _phase == _KeystoneShieldPhase.broadcasting;
+    final isBroadcastWarning = _phase == _KeystoneShieldPhase.broadcastWarning;
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
@@ -292,6 +338,12 @@ class _KeystoneShieldConfirmScreenState
                         const SizedBox(height: 48),
                         if (isBroadcasting)
                           const KeystoneTransactionProgressPanel()
+                        else if (isBroadcastWarning)
+                          _ShieldBroadcastWarningPanel(
+                            message:
+                                _statusMessage ??
+                                'The shield transaction status is uncertain. Check activity before trying again.',
+                          )
                         else
                           KeystonePcztQrStage(
                             phase: switch (_phase) {
@@ -303,11 +355,23 @@ class _KeystoneShieldConfirmScreenState
                                 KeystonePcztQrStagePhase.failed,
                               _KeystoneShieldPhase.broadcasting =>
                                 KeystonePcztQrStagePhase.preparing,
+                              _KeystoneShieldPhase.broadcastWarning =>
+                                KeystonePcztQrStagePhase.failed,
                             },
                             urParts: _urParts,
                             error: _error,
                           ),
-                        if (!isBroadcasting) ...[
+                        if (isBroadcastWarning) ...[
+                          const SizedBox(height: 32),
+                          SizedBox(
+                            width: 256,
+                            child: AppButton(
+                              onPressed: _cancelToHome,
+                              minWidth: 256,
+                              child: const Text('Back to Wallet'),
+                            ),
+                          ),
+                        ] else if (!isBroadcasting) ...[
                           const SizedBox(height: 48),
                           SizedBox(
                             width: 325,
@@ -372,6 +436,34 @@ class _KeystoneShieldConfirmScreenState
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ShieldBroadcastWarningPanel extends StatelessWidget {
+  const _ShieldBroadcastWarningPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 325,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppIcon(AppIcons.warning, size: 28, color: colors.icon.warning),
+          const SizedBox(height: AppSpacing.s),
+          Text(
+            message,
+            style: AppTypography.bodyMediumStrong.copyWith(
+              color: colors.text.warning,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

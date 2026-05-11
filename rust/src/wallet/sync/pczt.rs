@@ -87,6 +87,7 @@ pub struct ExtractAndBroadcastPcztResult {
 impl ExtractAndBroadcastPcztResult {
     const BROADCASTED: &'static str = "broadcasted";
     const BROADCAST_UNKNOWN: &'static str = "broadcast_unknown";
+    const BROADCASTED_STORAGE_FAILED: &'static str = "broadcasted_storage_failed";
 
     fn broadcasted(txid: String) -> Self {
         Self {
@@ -100,6 +101,14 @@ impl ExtractAndBroadcastPcztResult {
         Self {
             txid,
             status: Self::BROADCAST_UNKNOWN.to_string(),
+            message: Some(message),
+        }
+    }
+
+    fn broadcasted_storage_failed(txid: String, message: String) -> Self {
+        Self {
+            txid,
+            status: Self::BROADCASTED_STORAGE_FAILED.to_string(),
             message: Some(message),
         }
     }
@@ -424,13 +433,20 @@ pub async fn extract_and_broadcast_pczt(
     // Step 3: broadcast was accepted. Persist locally so the UI
     // sees the tx immediately and the spent notes stop showing up
     // as spendable.
-    store_locally().map_err(|storage_err| {
-        format!(
-            "Broadcast succeeded (txid={txid}) but local storage failed. {storage_err}. \
-             The transaction is on the network; check an explorer to confirm, and do not \
-             attempt to send again until the next sync reconciles your balance."
-        )
-    })?;
+    if let Err(storage_err) = store_locally() {
+        log::error!(
+            "keystone: broadcast succeeded but local storage failed \
+             (txid={txid}): {storage_err}"
+        );
+        return Ok(ExtractAndBroadcastPcztResult::broadcasted_storage_failed(
+            txid.to_string(),
+            format!(
+                "Broadcast succeeded (txid={txid}) but local storage failed. {storage_err}. \
+                 The transaction is on the network; check an explorer to confirm, and do not \
+                 attempt to send again until the next sync reconciles your balance."
+            ),
+        ));
+    }
 
     Ok(ExtractAndBroadcastPcztResult::broadcasted(txid.to_string()))
 }

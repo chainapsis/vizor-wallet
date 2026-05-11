@@ -145,7 +145,12 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     rust_sync.ExtractAndBroadcastPcztResult result,
   ) {
     if (result.status == 'broadcast_unknown') {
-      return 'The transaction may have reached the network, but confirmation timed out. Check activity before sending again.';
+      return result.message ??
+          'The transaction may have reached the network, but confirmation timed out. Check activity before sending again.';
+    }
+    if (result.status == 'broadcasted_storage_failed') {
+      return result.message ??
+          'The transaction reached the network, but Vizor could not store it locally. Do not send again until sync or an explorer confirms the latest status.';
     }
     final rawMessage = result.message?.toLowerCase() ?? '';
     if (rawMessage.contains('broadcast rejected')) {
