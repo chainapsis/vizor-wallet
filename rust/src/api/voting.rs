@@ -6,7 +6,7 @@ use crate::wallet::{
     voting::{
         bundle::{self, SelectedNotes},
         delegation::{self, BundleSetupResult, ProofEvent, SignedDelegation},
-        state, tree_sync, vote,
+        recovery, state, tree_sync, vote,
     },
 };
 
@@ -167,6 +167,57 @@ pub struct ApiVoteRecord {
     pub bundle_index: u32,
     pub choice: u32,
     pub submitted: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Stored commitment bundle recovery data for one `(bundle_index, proposal_id)`.
+pub struct ApiCommitmentBundleRecovery {
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    pub commitment_bundle_json: String,
+    pub vc_tree_position: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Stored delegation transaction hash for one bundle.
+pub struct ApiDelegationTxRecovery {
+    pub bundle_index: u32,
+    pub tx_hash: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Stored vote transaction hash for one `(bundle_index, proposal_id)`.
+pub struct ApiVoteTxRecovery {
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    pub tx_hash: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Helper-server share delegation state used for retry/resume.
+pub struct ApiShareDelegationRecord {
+    pub round_id: String,
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    pub share_index: u32,
+    pub sent_to_urls: Vec<String>,
+    pub nullifier: Vec<u8>,
+    pub confirmed: bool,
+    pub submit_at: u64,
+    pub created_at: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Recovery summary for resuming one voting round after app restart.
+pub struct ApiRoundRecoveryState {
+    pub round_id: String,
+    pub bundle_count: u32,
+    pub delegation_tx_hashes: Vec<ApiDelegationTxRecovery>,
+    pub votes: Vec<ApiVoteRecord>,
+    pub vote_tx_hashes: Vec<ApiVoteTxRecovery>,
+    pub commitment_bundles: Vec<ApiCommitmentBundleRecovery>,
+    pub share_delegations: Vec<ApiShareDelegationRecord>,
+    pub unconfirmed_share_delegations: Vec<ApiShareDelegationRecord>,
 }
 
 impl From<ApiVotingRoundParams> for zcash_voting::VotingRoundParams {
@@ -406,6 +457,83 @@ impl From<vote::VoteRecord> for ApiVoteRecord {
             bundle_index: record.bundle_index,
             choice: record.choice,
             submitted: record.submitted,
+        }
+    }
+}
+
+impl From<recovery::CommitmentBundleRecovery> for ApiCommitmentBundleRecovery {
+    fn from(record: recovery::CommitmentBundleRecovery) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            proposal_id: record.proposal_id,
+            commitment_bundle_json: record.commitment_bundle_json,
+            vc_tree_position: record.vc_tree_position,
+        }
+    }
+}
+
+impl From<recovery::DelegationTxRecovery> for ApiDelegationTxRecovery {
+    fn from(record: recovery::DelegationTxRecovery) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            tx_hash: record.tx_hash,
+        }
+    }
+}
+
+impl From<recovery::VoteTxRecovery> for ApiVoteTxRecovery {
+    fn from(record: recovery::VoteTxRecovery) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            proposal_id: record.proposal_id,
+            tx_hash: record.tx_hash,
+        }
+    }
+}
+
+impl From<recovery::ShareDelegationRecord> for ApiShareDelegationRecord {
+    fn from(record: recovery::ShareDelegationRecord) -> Self {
+        Self {
+            round_id: record.round_id,
+            bundle_index: record.bundle_index,
+            proposal_id: record.proposal_id,
+            share_index: record.share_index,
+            sent_to_urls: record.sent_to_urls,
+            nullifier: record.nullifier,
+            confirmed: record.confirmed,
+            submit_at: record.submit_at,
+            created_at: record.created_at,
+        }
+    }
+}
+
+impl From<recovery::RoundRecoveryState> for ApiRoundRecoveryState {
+    fn from(state: recovery::RoundRecoveryState) -> Self {
+        Self {
+            round_id: state.round_id,
+            bundle_count: state.bundle_count,
+            delegation_tx_hashes: state
+                .delegation_tx_hashes
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            votes: state.votes.into_iter().map(Into::into).collect(),
+            vote_tx_hashes: state.vote_tx_hashes.into_iter().map(Into::into).collect(),
+            commitment_bundles: state
+                .commitment_bundles
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            share_delegations: state
+                .share_delegations
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            unconfirmed_share_delegations: state
+                .unconfirmed_share_delegations
+                .into_iter()
+                .map(Into::into)
+                .collect(),
         }
     }
 }
@@ -807,6 +935,172 @@ pub fn compute_share_nullifier_hex(
     primary_blind: Vec<u8>,
 ) -> Result<String, String> {
     catch(|| vote::compute_share_nullifier_hex(&vote_commitment, share_index, &primary_blind))
+}
+
+/// Load the full recovery/share-tracking summary for one voting round.
+pub fn get_round_recovery_state(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+) -> Result<ApiRoundRecoveryState, String> {
+    catch(|| recovery::get_round_recovery_state(&db_path, &wallet_id, &round_id).map(Into::into))
+}
+
+/// Store the broadcast transaction hash for one vote.
+///
+/// Keyed by `(round_id, wallet_id, bundle_index, proposal_id)` so multi-bundle
+/// and multi-proposal rounds can resume without ambiguous "current vote" state.
+pub fn store_vote_tx_hash(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    bundle_index: u32,
+    proposal_id: u32,
+    tx_hash: String,
+) -> Result<(), String> {
+    catch(|| {
+        recovery::store_vote_tx_hash(
+            &db_path,
+            &wallet_id,
+            &round_id,
+            bundle_index,
+            proposal_id,
+            &tx_hash,
+        )
+    })
+}
+
+/// Load the broadcast transaction hash for one vote, if present.
+pub fn get_vote_tx_hash(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> Result<Option<String>, String> {
+    catch(|| recovery::get_vote_tx_hash(&db_path, &wallet_id, &round_id, bundle_index, proposal_id))
+}
+
+/// Load commitment bundle recovery JSON and vote-tree position for one vote.
+pub fn get_commitment_bundle(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> Result<Option<ApiCommitmentBundleRecovery>, String> {
+    catch(|| {
+        recovery::get_commitment_bundle(&db_path, &wallet_id, &round_id, bundle_index, proposal_id)
+            .map(|bundle| bundle.map(Into::into))
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Record helper-server submission state for one encrypted vote share.
+pub fn record_share_delegation(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+    sent_to_urls: Vec<String>,
+    nullifier: Vec<u8>,
+    submit_at: u64,
+) -> Result<(), String> {
+    catch(|| {
+        recovery::record_share_delegation(
+            &db_path,
+            &wallet_id,
+            &round_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            &sent_to_urls,
+            &nullifier,
+            submit_at,
+        )
+    })
+}
+
+/// Load all helper-server share delegation records for a round.
+pub fn get_share_delegations(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+) -> Result<Vec<ApiShareDelegationRecord>, String> {
+    catch(|| {
+        recovery::get_share_delegations(&db_path, &wallet_id, &round_id)
+            .map(|records| records.into_iter().map(Into::into).collect())
+    })
+}
+
+/// Load only unconfirmed helper-server share delegation records for retry.
+pub fn get_unconfirmed_share_delegations(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+) -> Result<Vec<ApiShareDelegationRecord>, String> {
+    catch(|| {
+        recovery::get_unconfirmed_share_delegations(&db_path, &wallet_id, &round_id)
+            .map(|records| records.into_iter().map(Into::into).collect())
+    })
+}
+
+/// Mark one delegated share as confirmed on-chain.
+pub fn mark_share_confirmed(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+) -> Result<(), String> {
+    catch(|| {
+        recovery::mark_share_confirmed(
+            &db_path,
+            &wallet_id,
+            &round_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+        )
+    })
+}
+
+/// Merge additional helper-server URLs into one share delegation record.
+pub fn add_sent_servers(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    bundle_index: u32,
+    proposal_id: u32,
+    share_index: u32,
+    new_urls: Vec<String>,
+) -> Result<(), String> {
+    catch(|| {
+        recovery::add_sent_servers(
+            &db_path,
+            &wallet_id,
+            &round_id,
+            bundle_index,
+            proposal_id,
+            share_index,
+            &new_urls,
+        )
+    })
+}
+
+/// Clear vote/delegation recovery columns and share-tracking rows for a round.
+///
+/// This is an explicit reset for finalized or abandoned rounds, not a normal
+/// retry step.
+pub fn clear_recovery_state(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+) -> Result<(), String> {
+    catch(|| recovery::clear_recovery_state(&db_path, &wallet_id, &round_id))
 }
 
 #[cfg(test)]
@@ -1292,6 +1586,92 @@ mod tests {
         assert!(votes
             .iter()
             .any(|vote| vote.bundle_index == 1 && vote.proposal_id == 2 && vote.choice == 1));
+    }
+
+    #[test]
+    fn recovery_api_preserves_round_summary_and_share_records() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let wallet_id = "wallet-api-recovery";
+        let db = state::open_voting_db(db_path.to_str().unwrap(), wallet_id).unwrap();
+        state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
+        let notes: Vec<_> = (0..6).map(test_note_info).collect();
+        db.setup_bundles(ROUND_ID, &notes).unwrap();
+        db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx-0")
+            .unwrap();
+        let conn = db.conn();
+        zcash_voting::storage::queries::store_vote(&conn, ROUND_ID, wallet_id, 1, 2, 1, b"vote-1")
+            .unwrap();
+        drop(conn);
+        store_vote_tx_hash(
+            db_path.to_str().unwrap().to_string(),
+            wallet_id.to_string(),
+            ROUND_ID.to_string(),
+            1,
+            2,
+            "vote-tx-1-2".to_string(),
+        )
+        .unwrap();
+        db.store_commitment_bundle(ROUND_ID, 1, 2, r#"{"bundle":"two"}"#, 99)
+            .unwrap();
+        record_share_delegation(
+            db_path.to_str().unwrap().to_string(),
+            wallet_id.to_string(),
+            ROUND_ID.to_string(),
+            1,
+            2,
+            0,
+            vec!["https://helper.example".to_string()],
+            vec![7; 32],
+            123,
+        )
+        .unwrap();
+
+        let state = get_round_recovery_state(
+            db_path.to_str().unwrap().to_string(),
+            wallet_id.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(state.bundle_count, 2);
+        assert_eq!(state.delegation_tx_hashes[0].tx_hash, "delegation-tx-0");
+        assert_eq!(state.votes[0].proposal_id, 2);
+        assert_eq!(state.vote_tx_hashes[0].tx_hash, "vote-tx-1-2");
+        assert_eq!(state.commitment_bundles[0].vc_tree_position, 99);
+        assert_eq!(state.share_delegations[0].sent_to_urls.len(), 1);
+        assert_eq!(state.unconfirmed_share_delegations.len(), 1);
+
+        mark_share_confirmed(
+            db_path.to_str().unwrap().to_string(),
+            wallet_id.to_string(),
+            ROUND_ID.to_string(),
+            1,
+            2,
+            0,
+        )
+        .unwrap();
+        assert!(get_unconfirmed_share_delegations(
+            db_path.to_str().unwrap().to_string(),
+            wallet_id.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap()
+        .is_empty());
+
+        clear_recovery_state(
+            db_path.to_str().unwrap().to_string(),
+            wallet_id.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap();
+        assert!(get_share_delegations(
+            db_path.to_str().unwrap().to_string(),
+            wallet_id.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap()
+        .is_empty());
     }
 
     #[test]

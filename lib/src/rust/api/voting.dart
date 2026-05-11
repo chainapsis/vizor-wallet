@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `catch`, `selection_result`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Initialize or load a voting round in the local voting database.
 ///
@@ -302,6 +302,194 @@ Future<String> computeShareNullifierHex({
   primaryBlind: primaryBlind,
 );
 
+/// Load the full recovery/share-tracking summary for one voting round.
+Future<ApiRoundRecoveryState> getRoundRecoveryState({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+}) => RustLib.instance.api.crateApiVotingGetRoundRecoveryState(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+);
+
+/// Store the broadcast transaction hash for one vote.
+///
+/// Keyed by `(round_id, wallet_id, bundle_index, proposal_id)` so multi-bundle
+/// and multi-proposal rounds can resume without ambiguous "current vote" state.
+Future<void> storeVoteTxHash({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+  required String txHash,
+}) => RustLib.instance.api.crateApiVotingStoreVoteTxHash(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  txHash: txHash,
+);
+
+/// Load the broadcast transaction hash for one vote, if present.
+Future<String?> getVoteTxHash({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+}) => RustLib.instance.api.crateApiVotingGetVoteTxHash(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+);
+
+/// Load commitment bundle recovery JSON and vote-tree position for one vote.
+Future<ApiCommitmentBundleRecovery?> getCommitmentBundle({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+}) => RustLib.instance.api.crateApiVotingGetCommitmentBundle(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+);
+
+/// Record helper-server submission state for one encrypted vote share.
+Future<void> recordShareDelegation({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+  required int shareIndex,
+  required List<String> sentToUrls,
+  required List<int> nullifier,
+  required BigInt submitAt,
+}) => RustLib.instance.api.crateApiVotingRecordShareDelegation(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  shareIndex: shareIndex,
+  sentToUrls: sentToUrls,
+  nullifier: nullifier,
+  submitAt: submitAt,
+);
+
+/// Load all helper-server share delegation records for a round.
+Future<List<ApiShareDelegationRecord>> getShareDelegations({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+}) => RustLib.instance.api.crateApiVotingGetShareDelegations(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+);
+
+/// Load only unconfirmed helper-server share delegation records for retry.
+Future<List<ApiShareDelegationRecord>> getUnconfirmedShareDelegations({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+}) => RustLib.instance.api.crateApiVotingGetUnconfirmedShareDelegations(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+);
+
+/// Mark one delegated share as confirmed on-chain.
+Future<void> markShareConfirmed({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+  required int shareIndex,
+}) => RustLib.instance.api.crateApiVotingMarkShareConfirmed(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  shareIndex: shareIndex,
+);
+
+/// Merge additional helper-server URLs into one share delegation record.
+Future<void> addSentServers({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+  required int shareIndex,
+  required List<String> newUrls,
+}) => RustLib.instance.api.crateApiVotingAddSentServers(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  shareIndex: shareIndex,
+  newUrls: newUrls,
+);
+
+/// Clear vote/delegation recovery columns and share-tracking rows for a round.
+///
+/// This is an explicit reset for finalized or abandoned rounds, not a normal
+/// retry step.
+Future<void> clearRecoveryState({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+}) => RustLib.instance.api.crateApiVotingClearRecoveryState(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+);
+
+/// Stored commitment bundle recovery data for one `(bundle_index, proposal_id)`.
+class ApiCommitmentBundleRecovery {
+  final int bundleIndex;
+  final int proposalId;
+  final String commitmentBundleJson;
+  final BigInt vcTreePosition;
+
+  const ApiCommitmentBundleRecovery({
+    required this.bundleIndex,
+    required this.proposalId,
+    required this.commitmentBundleJson,
+    required this.vcTreePosition,
+  });
+
+  @override
+  int get hashCode =>
+      bundleIndex.hashCode ^
+      proposalId.hashCode ^
+      commitmentBundleJson.hashCode ^
+      vcTreePosition.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiCommitmentBundleRecovery &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId &&
+          commitmentBundleJson == other.commitmentBundleJson &&
+          vcTreePosition == other.vcTreePosition;
+}
+
 /// Progress event emitted while building, proving, signing, and broadcasting delegation PCZT.
 ///
 /// A terminal `"result"` event carries `signed_delegation`; earlier phase events
@@ -329,6 +517,28 @@ class ApiDelegationProofEvent {
           phase == other.phase &&
           txidHex == other.txidHex &&
           signedDelegation == other.signedDelegation;
+}
+
+/// Stored delegation transaction hash for one bundle.
+class ApiDelegationTxRecovery {
+  final int bundleIndex;
+  final String txHash;
+
+  const ApiDelegationTxRecovery({
+    required this.bundleIndex,
+    required this.txHash,
+  });
+
+  @override
+  int get hashCode => bundleIndex.hashCode ^ txHash.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDelegationTxRecovery &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          txHash == other.txHash;
 }
 
 /// One requested vote for a proposal in a bundle.
@@ -368,6 +578,106 @@ class ApiDraftVote {
           numOptions == other.numOptions &&
           vcTreePosition == other.vcTreePosition &&
           singleShare == other.singleShare;
+}
+
+/// Recovery summary for resuming one voting round after app restart.
+class ApiRoundRecoveryState {
+  final String roundId;
+  final int bundleCount;
+  final List<ApiDelegationTxRecovery> delegationTxHashes;
+  final List<ApiVoteRecord> votes;
+  final List<ApiVoteTxRecovery> voteTxHashes;
+  final List<ApiCommitmentBundleRecovery> commitmentBundles;
+  final List<ApiShareDelegationRecord> shareDelegations;
+  final List<ApiShareDelegationRecord> unconfirmedShareDelegations;
+
+  const ApiRoundRecoveryState({
+    required this.roundId,
+    required this.bundleCount,
+    required this.delegationTxHashes,
+    required this.votes,
+    required this.voteTxHashes,
+    required this.commitmentBundles,
+    required this.shareDelegations,
+    required this.unconfirmedShareDelegations,
+  });
+
+  @override
+  int get hashCode =>
+      roundId.hashCode ^
+      bundleCount.hashCode ^
+      delegationTxHashes.hashCode ^
+      votes.hashCode ^
+      voteTxHashes.hashCode ^
+      commitmentBundles.hashCode ^
+      shareDelegations.hashCode ^
+      unconfirmedShareDelegations.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiRoundRecoveryState &&
+          runtimeType == other.runtimeType &&
+          roundId == other.roundId &&
+          bundleCount == other.bundleCount &&
+          delegationTxHashes == other.delegationTxHashes &&
+          votes == other.votes &&
+          voteTxHashes == other.voteTxHashes &&
+          commitmentBundles == other.commitmentBundles &&
+          shareDelegations == other.shareDelegations &&
+          unconfirmedShareDelegations == other.unconfirmedShareDelegations;
+}
+
+/// Helper-server share delegation state used for retry/resume.
+class ApiShareDelegationRecord {
+  final String roundId;
+  final int bundleIndex;
+  final int proposalId;
+  final int shareIndex;
+  final List<String> sentToUrls;
+  final Uint8List nullifier;
+  final bool confirmed;
+  final BigInt submitAt;
+  final BigInt createdAt;
+
+  const ApiShareDelegationRecord({
+    required this.roundId,
+    required this.bundleIndex,
+    required this.proposalId,
+    required this.shareIndex,
+    required this.sentToUrls,
+    required this.nullifier,
+    required this.confirmed,
+    required this.submitAt,
+    required this.createdAt,
+  });
+
+  @override
+  int get hashCode =>
+      roundId.hashCode ^
+      bundleIndex.hashCode ^
+      proposalId.hashCode ^
+      shareIndex.hashCode ^
+      sentToUrls.hashCode ^
+      nullifier.hashCode ^
+      confirmed.hashCode ^
+      submitAt.hashCode ^
+      createdAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiShareDelegationRecord &&
+          runtimeType == other.runtimeType &&
+          roundId == other.roundId &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId &&
+          shareIndex == other.shareIndex &&
+          sentToUrls == other.sentToUrls &&
+          nullifier == other.nullifier &&
+          confirmed == other.confirmed &&
+          submitAt == other.submitAt &&
+          createdAt == other.createdAt;
 }
 
 /// Signed delegation bundle result plus broadcast/storage status.
@@ -654,6 +964,32 @@ class ApiVoteSharePayload {
           allEncryptedShares == other.allEncryptedShares &&
           shareComms == other.shareComms &&
           primaryBlind == other.primaryBlind;
+}
+
+/// Stored vote transaction hash for one `(bundle_index, proposal_id)`.
+class ApiVoteTxRecovery {
+  final int bundleIndex;
+  final int proposalId;
+  final String txHash;
+
+  const ApiVoteTxRecovery({
+    required this.bundleIndex,
+    required this.proposalId,
+    required this.txHash,
+  });
+
+  @override
+  int get hashCode =>
+      bundleIndex.hashCode ^ proposalId.hashCode ^ txHash.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVoteTxRecovery &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId &&
+          txHash == other.txHash;
 }
 
 /// Summary of bundle setup keyed by `(round_id, wallet_id)`.
