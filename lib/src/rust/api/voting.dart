@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `catch`, `selection_result`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`
 
 Future<void> prepareVotingRound({
   required String dbPath,
@@ -125,6 +125,55 @@ Future<int> deleteSkippedBundles({
   keepCount: keepCount,
 );
 
+/// Sync vote commitment tree state for a voting round.
+///
+/// Returns the latest synced tree height. The underlying tree client is cached
+/// per `(db_path, wallet_id)` so later VAN witness calls can reuse the synced
+/// in-memory tree state.
+Future<int> syncVoteTree({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required String nodeUrl,
+}) => RustLib.instance.api.crateApiVotingSyncVoteTree(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  nodeUrl: nodeUrl,
+);
+
+/// Generate a Vote Authority Note Merkle witness for a delegation bundle.
+///
+/// `anchor_height` is the vote-tree height where the witness should be anchored;
+/// callers must sync the same round before requesting the witness.
+Future<ApiVanWitness> generateVanWitness({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required int anchorHeight,
+}) => RustLib.instance.api.crateApiVotingGenerateVanWitness(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  anchorHeight: anchorHeight,
+);
+
+/// Reset cached vote-tree client state for one round or all rounds.
+///
+/// `None` and `Some("")` both clear every round for the `(db_path, wallet_id)`
+/// session; a non-empty round ID clears only that round.
+Future<void> resetTreeClient({
+  required String dbPath,
+  required String walletId,
+  String? roundId,
+}) => RustLib.instance.api.crateApiVotingResetTreeClient(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+);
+
 class ApiSignedDelegation {
   final Uint8List pcztBytes;
   final String txidHex;
@@ -170,6 +219,36 @@ class ApiSignedDelegation {
           delegatedWeightZatoshi == other.delegatedWeightZatoshi &&
           bundleCount == other.bundleCount &&
           bundleIndex == other.bundleIndex;
+}
+
+class ApiVanWitness {
+  /// 24 sibling hashes from the VAN leaf to the vote-tree root.
+  final List<Uint8List> authPath;
+
+  /// VAN leaf position in the vote commitment tree.
+  final int position;
+
+  /// Vote-tree height at which this witness is valid.
+  final int anchorHeight;
+
+  const ApiVanWitness({
+    required this.authPath,
+    required this.position,
+    required this.anchorHeight,
+  });
+
+  @override
+  int get hashCode =>
+      authPath.hashCode ^ position.hashCode ^ anchorHeight.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVanWitness &&
+          runtimeType == other.runtimeType &&
+          authPath == other.authPath &&
+          position == other.position &&
+          anchorHeight == other.anchorHeight;
 }
 
 class ApiVotingBundleSetupResult {

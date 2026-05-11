@@ -5,7 +5,7 @@ use crate::wallet::{
     voting::{
         bundle::{self, SelectedNotes},
         delegation::{self, BundleSetupResult, SignedDelegation},
-        state,
+        state, tree_sync,
     },
 };
 
@@ -57,6 +57,16 @@ pub struct ApiSignedDelegation {
     pub bundle_index: u32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVanWitness {
+    /// 24 sibling hashes from the VAN leaf to the vote-tree root.
+    pub auth_path: Vec<Vec<u8>>,
+    /// VAN leaf position in the vote commitment tree.
+    pub position: u32,
+    /// Vote-tree height at which this witness is valid.
+    pub anchor_height: u32,
+}
+
 impl From<ApiVotingRoundParams> for zcash_voting::VotingRoundParams {
     fn from(params: ApiVotingRoundParams) -> Self {
         Self {
@@ -104,6 +114,16 @@ impl From<SignedDelegation> for ApiSignedDelegation {
             delegated_weight_zatoshi: result.delegated_weight_zatoshi,
             bundle_count: result.bundle_count,
             bundle_index: result.bundle_index,
+        }
+    }
+}
+
+impl From<tree_sync::VanWitness> for ApiVanWitness {
+    fn from(witness: tree_sync::VanWitness) -> Self {
+        Self {
+            auth_path: witness.auth_path,
+            position: witness.position,
+            anchor_height: witness.anchor_height,
         }
     }
 }
@@ -274,9 +294,63 @@ pub fn delete_skipped_bundles(
     catch(|| delegation::delete_skipped_bundles(&db_path, &wallet_id, &round_id, keep_count))
 }
 
+/// Sync vote commitment tree state for a voting round.
+///
+/// Returns the latest synced tree height. The underlying tree client is cached
+/// per `(db_path, wallet_id)` so later VAN witness calls can reuse the synced
+/// in-memory tree state.
+pub fn sync_vote_tree(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    node_url: String,
+) -> Result<u32, String> {
+    catch(|| tree_sync::sync_commitment_tree(&db_path, &wallet_id, &round_id, &node_url))
+}
+
+/// Generate a Vote Authority Note Merkle witness for a delegation bundle.
+///
+/// `anchor_height` is the vote-tree height where the witness should be anchored;
+/// callers must sync the same round before requesting the witness.
+pub fn generate_van_witness(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    bundle_index: u32,
+    anchor_height: u32,
+) -> Result<ApiVanWitness, String> {
+    catch(|| {
+        tree_sync::generate_van_witness(
+            &db_path,
+            &wallet_id,
+            &round_id,
+            bundle_index,
+            anchor_height,
+        )
+        .map(Into::into)
+    })
+}
+
+/// Reset cached vote-tree client state for one round or all rounds.
+///
+/// `None` and `Some("")` both clear every round for the `(db_path, wallet_id)`
+/// session; a non-empty round ID clears only that round.
+pub fn reset_tree_client(
+    db_path: String,
+    wallet_id: String,
+    round_id: Option<String>,
+) -> Result<(), String> {
+    catch(|| tree_sync::reset_tree_client(&db_path, &wallet_id, round_id.as_deref()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
     use zcash_client_backend::proto::service::TreeState;
 
     const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
@@ -326,6 +400,19 @@ mod tests {
         assert_eq!(api.delegated_weight_zatoshi, 10);
         assert_eq!(api.bundle_count, 2);
         assert_eq!(api.bundle_index, 1);
+    }
+
+    #[test]
+    fn api_van_witness_preserves_core_fields() {
+        let api = ApiVanWitness::from(tree_sync::VanWitness {
+            auth_path: vec![vec![1; 32], vec![2; 32]],
+            position: 7,
+            anchor_height: 123,
+        });
+
+        assert_eq!(api.auth_path, vec![vec![1; 32], vec![2; 32]]);
+        assert_eq!(api.position, 7);
+        assert_eq!(api.anchor_height, 123);
     }
 
     #[test]
@@ -386,6 +473,74 @@ mod tests {
         .unwrap_err();
 
         assert!(err.contains("Invalid voting round params"));
+    }
+
+    #[test]
+    fn sync_vote_tree_api_happy_path_accepts_empty_tree() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let server = start_tree_server(0, vec![], 1);
+
+        let height = sync_vote_tree(
+            db_path.to_str().unwrap().to_string(),
+            "wallet-api-empty-sync".to_string(),
+            ROUND_ID.to_string(),
+            server,
+        )
+        .unwrap();
+
+        assert_eq!(height, 0);
+    }
+
+    #[test]
+    fn generate_van_witness_api_happy_path_after_sync() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-api-witness").unwrap();
+        state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
+        db.setup_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        db.store_van_position(ROUND_ID, 0, 0).unwrap();
+        let server = start_tree_server(1, vec![fp_one_base64()], 3);
+
+        let height = sync_vote_tree(
+            db_path.to_str().unwrap().to_string(),
+            "wallet-api-witness".to_string(),
+            ROUND_ID.to_string(),
+            server,
+        )
+        .unwrap();
+        let witness = generate_van_witness(
+            db_path.to_str().unwrap().to_string(),
+            "wallet-api-witness".to_string(),
+            ROUND_ID.to_string(),
+            0,
+            height,
+        )
+        .unwrap();
+
+        assert_eq!(witness.position, 0);
+        assert_eq!(witness.anchor_height, 1);
+        assert_eq!(witness.auth_path.len(), 24);
+        assert!(witness.auth_path.iter().all(|hash| hash.len() == 32));
+    }
+
+    #[test]
+    fn reset_tree_client_api_happy_path_accepts_round_and_all_rounds() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+
+        reset_tree_client(
+            db_path.to_str().unwrap().to_string(),
+            "wallet-api-reset".to_string(),
+            Some(ROUND_ID.to_string()),
+        )
+        .unwrap();
+        reset_tree_client(
+            db_path.to_str().unwrap().to_string(),
+            "wallet-api-reset".to_string(),
+            None,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -491,6 +646,75 @@ mod tests {
             commitment_tree_position,
             mined_height: 1,
             anchor_height: 100,
+        }
+    }
+
+    fn start_tree_server(height: u32, leaves: Vec<String>, expected_requests: usize) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        thread::spawn(move || {
+            for _ in 0..expected_requests {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 2048];
+                let len = stream.read(&mut request).unwrap();
+                let request = String::from_utf8_lossy(&request[..len]);
+                let path = request
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .unwrap_or("/");
+                let body = tree_response_body(path, height, &leaves);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        url
+    }
+
+    fn tree_response_body(path: &str, height: u32, leaves: &[String]) -> String {
+        if path.ends_with("/latest") {
+            format!(
+                r#"{{"tree":{{"next_index":{},"height":{}}}}}"#,
+                leaves.len(),
+                height
+            )
+        } else if path.contains("/leaves?") {
+            if height == 0 {
+                r#"{"blocks":[]}"#.to_string()
+            } else {
+                let leaves_json = leaves
+                    .iter()
+                    .map(|leaf| format!(r#""{leaf}""#))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!(
+                    r#"{{"blocks":[{{"height":{height},"start_index":0,"leaves":[{leaves_json}]}}]}}"#
+                )
+            }
+        } else {
+            r#"{"tree":null}"#.to_string()
+        }
+    }
+
+    fn fp_one_base64() -> String {
+        "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string()
+    }
+
+    fn test_note_info(position: u64) -> zcash_voting::NoteInfo {
+        zcash_voting::NoteInfo {
+            commitment: vec![1; 32],
+            nullifier: vec![2; 32],
+            value: zcash_voting::governance::BALLOT_DIVISOR,
+            position,
+            diversifier: vec![3; 11],
+            rho: vec![4; 32],
+            rseed: vec![5; 32],
+            scope: 0,
+            ufvk_str: "uviewtest".to_string(),
         }
     }
 }

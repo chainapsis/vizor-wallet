@@ -59,6 +59,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
 
   @protected
+  ApiVanWitness dco_decode_api_van_witness(dynamic raw);
+
+  @protected
   ApiVotingBundleSetupResult dco_decode_api_voting_bundle_setup_result(
     dynamic raw,
   );
@@ -122,6 +125,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<KeystoneAccountInfo> dco_decode_list_keystone_account_info(dynamic raw);
+
+  @protected
+  List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -274,6 +280,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiVanWitness sse_decode_api_van_witness(SseDeserializer deserializer);
+
+  @protected
   ApiVotingBundleSetupResult sse_decode_api_voting_bundle_setup_result(
     SseDeserializer deserializer,
   );
@@ -347,6 +356,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<KeystoneAccountInfo> sse_decode_list_keystone_account_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<Uint8List> sse_decode_list_list_prim_u_8_strict(
     SseDeserializer deserializer,
   );
 
@@ -532,6 +546,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_van_witness(ApiVanWitness self, SseSerializer serializer);
+
+  @protected
   void sse_encode_api_voting_bundle_setup_result(
     ApiVotingBundleSetupResult self,
     SseSerializer serializer,
@@ -621,6 +638,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_keystone_account_info(
     List<KeystoneAccountInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_list_prim_u_8_strict(
+    List<Uint8List> self,
     SseSerializer serializer,
   );
 
