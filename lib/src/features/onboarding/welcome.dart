@@ -239,9 +239,9 @@ class _Content extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const _TitleBlock(),
-            const SizedBox(height: AppSpacing.base),
+            const SizedBox(height: AppSpacing.lg),
             const _ButtonsStack(),
-            const SizedBox(height: AppSpacing.base),
+            const SizedBox(height: AppSpacing.lg),
             const _LegalFooter(),
           ],
         ),
@@ -263,7 +263,7 @@ class _TitleBlock extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         Text(
           'Behind the Vizor.\nYour money stays private.',
-          style: AppTypography.displayMedium.copyWith(
+          style: AppTypography.displayLarge.copyWith(
             color: colors.text.accent,
           ),
           textAlign: TextAlign.center,
@@ -312,23 +312,65 @@ class _ButtonsStack extends StatelessWidget {
           leading: const AppIcon(AppIcons.importWallet),
           child: const Text('Import a wallet'),
         ),
-        const SizedBox(height: AppSpacing.s),
-        Text(
-          'or',
-          style: AppTypography.labelLarge.copyWith(
-            color: context.colors.text.secondary,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.s),
+        const SizedBox(height: AppSpacing.sm),
+        const _OrDivider(),
+        const SizedBox(height: AppSpacing.sm),
         AppButton(
           key: const ValueKey('welcome_connect_keystone_button'),
           onPressed: () => context.go('/onboarding/keystone'),
-          variant: AppButtonVariant.secondary,
+          variant: AppButtonVariant.ghost,
           minWidth: _welcomeActionWidth,
-          leading: const AppIcon(AppIcons.qr),
+          leading: const AppIcon(AppIcons.qrCodeFill, size: 18),
           child: const Text('Connect Keystone'),
         ),
       ],
+    );
+  }
+}
+
+class _OrDivider extends StatelessWidget {
+  const _OrDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Opacity(
+      opacity: 0.4,
+      child: SizedBox(
+        width: _welcomeActionWidth,
+        height: 18,
+        child: Row(
+          children: [
+            Expanded(child: _OrDividerLine(color: colors.text.secondary)),
+            const SizedBox(width: 20),
+            Text(
+              'or',
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(width: 20),
+            Expanded(child: _OrDividerLine(color: colors.text.secondary)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OrDividerLine extends StatelessWidget {
+  const _OrDividerLine({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+      child: const SizedBox(height: 1),
     );
   }
 }
