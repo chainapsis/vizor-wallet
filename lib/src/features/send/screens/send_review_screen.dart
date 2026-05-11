@@ -16,6 +16,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
+import '../../../providers/account_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 
 class SendReviewArgs {
@@ -44,6 +45,18 @@ class SendReviewArgs {
   bool get isShielded => addressType == 'unified' || addressType == 'sapling';
 }
 
+class KeystoneBroadcastArgs {
+  const KeystoneBroadcastArgs({
+    required this.reviewArgs,
+    required this.pcztWithProofsBytes,
+    required this.pcztWithSignaturesBytes,
+  });
+
+  final SendReviewArgs reviewArgs;
+  final List<int> pcztWithProofsBytes;
+  final List<int> pcztWithSignaturesBytes;
+}
+
 class SendReviewScreen extends ConsumerStatefulWidget {
   const SendReviewScreen({super.key, required this.args});
 
@@ -60,6 +73,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   static const _addressSuffixHighlightLength = 8;
 
   bool _discardScheduled = false;
+  bool _handoffToKeystone = false;
   bool _messageExpanded = false;
 
   @override
@@ -73,7 +87,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
 
   @override
   void dispose() {
-    _scheduleDiscard();
+    if (!_handoffToKeystone) {
+      _scheduleDiscard();
+    }
     super.dispose();
   }
 
@@ -183,6 +199,15 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   Future<void> _handleSend() async {
+    final isHardware = ref
+        .read(accountProvider.notifier)
+        .isHardwareAccount(widget.args.proposalAccountUuid);
+    if (isHardware) {
+      _handoffToKeystone = true;
+      context.go('/send/keystone/confirm', extra: widget.args);
+      return;
+    }
+
     await context.push('/send/status', extra: widget.args);
   }
 
@@ -195,6 +220,9 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isHardware = ref
+        .read(accountProvider.notifier)
+        .isHardwareAccount(widget.args.proposalAccountUuid);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -231,10 +259,12 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                         variant: AppButtonVariant.primary,
                         minWidth: 256,
                         trailing: AppIcon(
-                          AppIcons.plane,
+                          isHardware ? AppIcons.qr : AppIcons.plane,
                           color: colors.button.primary.label,
                         ),
-                        child: const Text('Send'),
+                        child: Text(
+                          isHardware ? 'Confirm with Keystone' : 'Send',
+                        ),
                       ),
                     ),
                   ],

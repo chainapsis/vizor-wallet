@@ -39,6 +39,8 @@ abstract final class AppBackResolver {
     '/home': 'Home',
     '/send': 'Send',
     '/send/review': 'Review',
+    '/send/keystone/confirm': 'Keystone',
+    '/send/keystone/scan': 'Keystone',
     '/send/status': 'Status',
     '/receive': 'Receive',
     '/activity': 'Activity',

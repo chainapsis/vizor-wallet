@@ -41,10 +41,10 @@ Future<List<String>> encodePcztUrParts({
 /// scan ended (cancel, back button, mid-stream error).
 ///
 /// Marked `#[frb(sync)]` so the Dart caller does not race with the camera:
-/// `_AnimatedUrScanScreenState.initState` needs the Rust `UR_SESSION` to be
-/// clean **before** the first `onDetect` callback fires, and a fire-and-forget
-/// `Future` provides no such ordering guarantee. The Rust body is a single
-/// mutex lock + `None` assignment, so it's trivially non-blocking.
+/// QR scan screen entry needs the Rust `UR_SESSION` to be clean **before** the
+/// first `onDetect` callback fires, and a fire-and-forget `Future` provides no
+/// such ordering guarantee. The Rust body is a single mutex lock + `None`
+/// assignment, so it's trivially non-blocking.
 void resetUrSession() => RustLib.instance.api.crateApiKeystoneResetUrSession();
 
 /// Decode ZcashAccounts from raw CBOR bytes (from animated QR scan result).

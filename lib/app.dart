@@ -32,6 +32,8 @@ import 'src/features/onboarding/shared/set_password_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/receive/screens/receive_screen.dart';
+import 'src/features/send/screens/keystone_send_confirm_screen.dart';
+import 'src/features/send/screens/keystone_send_scan_screen.dart';
 import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
@@ -477,9 +479,24 @@ final _routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: '/send/keystone/confirm',
+        builder: (_, state) {
+          final args = state.extra;
+          if (args is! SendReviewArgs) return const SendScreen();
+          return KeystoneSendConfirmScreen(args: args);
+        },
+      ),
+      GoRoute(
+        path: '/send/keystone/scan',
+        builder: (_, _) => const KeystoneSendScanScreen(),
+      ),
+      GoRoute(
         path: '/send/status',
         builder: (_, state) {
           final args = state.extra;
+          if (args is KeystoneBroadcastArgs) {
+            return SendStatusScreen(args: args.reviewArgs, keystone: args);
+          }
           if (args is! SendReviewArgs) return const SendScreen();
           return SendStatusScreen(args: args);
         },

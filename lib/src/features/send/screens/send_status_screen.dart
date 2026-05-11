@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,21 +21,18 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
-import '../../../services/keystone_transport.dart';
+import '../services/sapling_params.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/transaction_receipt_view.dart';
 import 'send_review_screen.dart';
 
-const _saplingSpendHash = 'a15ab54c2888880e53c823a3063820c728444126';
-const _saplingOutputHash = '0ebc5a1ef3653948e1c46cf7a16071eac4b7e352';
-const _saplingParamBaseUrl = 'https://download.z.cash/downloads/';
-
 enum _SendStatusPhase { sending, pendingBroadcast, succeeded, failed }
 
 class SendStatusScreen extends ConsumerStatefulWidget {
-  const SendStatusScreen({super.key, required this.args});
+  const SendStatusScreen({super.key, required this.args, this.keystone});
 
   final SendReviewArgs args;
+  final KeystoneBroadcastArgs? keystone;
 
   @override
   ConsumerState<SendStatusScreen> createState() => _SendStatusScreenState();
@@ -57,6 +53,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   @override
   void initState() {
     super.initState();
+    _proposalConsumed = widget.keystone != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
@@ -253,39 +250,6 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     completer.complete(confirmed);
   }
 
-  Future<void> _downloadAndVerify(
-    String url,
-    String destPath,
-    String expectedSha1,
-  ) async {
-    final client = HttpClient();
-    try {
-      final request = await client.getUrl(Uri.parse(url));
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        throw Exception(
-          'Download failed: HTTP ${response.statusCode} for $url',
-        );
-      }
-      final tempPath = '${destPath}_tmp';
-      final file = File(tempPath);
-      final sink = file.openWrite();
-      await response.pipe(sink);
-
-      final bytes = await File(tempPath).readAsBytes();
-      final digest = sha1.convert(bytes);
-      if (digest.toString() != expectedSha1) {
-        await File(tempPath).delete();
-        throw Exception('SHA-1 mismatch: expected $expectedSha1, got $digest');
-      }
-
-      await File(tempPath).rename(destPath);
-      log('SendStatus: downloaded and verified $destPath');
-    } finally {
-      client.close();
-    }
-  }
-
   Future<void> _goHome() async {
     if (!mounted) return;
     context.go('/home');
@@ -318,14 +282,6 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     showAppToast(context, 'Address Copied');
   }
 
-  Future<Uint8List> _signWithTransport(
-    KeystoneTransport transport,
-    Uint8List redactedPczt,
-  ) {
-    final signingContext = context;
-    return transport.signPczt(signingContext, redactedPczt);
-  }
-
   Future<bool> _abortIfUnmounted() async {
     if (mounted) return false;
     if (!_proposalConsumed && !_discardScheduled) {
@@ -346,21 +302,12 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
 
   Future<void> _startBroadcast() async {
     try {
-      final supportDir = await getWalletSupportDirectory();
       final dbPath = await getWalletDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
-      final paramsDir =
-          '${supportDir.path}${Platform.pathSeparator}sapling_params';
-      final spendPath =
-          '$paramsDir${Platform.pathSeparator}sapling-spend.params';
-      final outputPath =
-          '$paramsDir${Platform.pathSeparator}sapling-output.params';
+      final saplingParams = await loadSaplingParamsStatus();
 
       if (widget.args.needsSaplingParams) {
-        final spendExists = File(spendPath).existsSync();
-        final outputExists = File(outputPath).existsSync();
-
-        if (!spendExists || !outputExists) {
+        if (!saplingParams.complete) {
           if (await _abortIfUnmounted()) return;
           final downloadConfirmed = await _showSaplingParamsDialog();
           if (!downloadConfirmed) {
@@ -373,21 +320,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
             return;
           }
 
-          await Directory(paramsDir).create(recursive: true);
-          if (!spendExists) {
-            await _downloadAndVerify(
-              '${_saplingParamBaseUrl}sapling-spend.params',
-              spendPath,
-              _saplingSpendHash,
-            );
-          }
-          if (!outputExists) {
-            await _downloadAndVerify(
-              '${_saplingParamBaseUrl}sapling-output.params',
-              outputPath,
-              _saplingOutputHash,
-            );
-          }
+          await downloadMissingSaplingParams(
+            saplingParams,
+            log: (message) => log('SendStatus: $message'),
+          );
           if (await _abortIfUnmounted()) return;
         }
       }
@@ -402,53 +338,23 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
       late final String? pendingStatusMessage;
 
       if (isHardware) {
-        log(
-          'SendStatus: creating PCZT from proposal ${widget.args.proposalId}',
-        );
-        final pcztBytes = await rust_sync.createPcztFromProposal(
-          dbPath: dbPath,
-          network: endpoint.networkName,
-          proposalId: widget.args.proposalId,
-          sendFlowId: widget.args.sendFlowId,
-        );
-        _proposalConsumed = true;
-
-        final pcztWithProofs = await rust_sync.addProofsToPczt(
-          pcztBytes: pcztBytes,
-          spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
-          outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
-        );
-        final redactedPczt = await rust_sync.redactPcztForSigner(
-          pcztBytes: pcztBytes,
-        );
-
-        if (await _abortIfUnmounted()) return;
-        final dialogContext = context;
-        // ignore: use_build_context_synchronously
-        final transport = await KeystoneTransport.select(dialogContext);
-        if (transport == null) {
-          if (await _abortIfUnmounted()) return;
-          setState(() {
-            _phase = _SendStatusPhase.failed;
-            _error =
-                'Signing was cancelled before the transaction was broadcast.';
-          });
-          return;
+        final keystone = widget.keystone;
+        if (keystone == null) {
+          throw Exception('Missing Keystone transaction signature.');
         }
-
-        if (await _abortIfUnmounted()) return;
-        final pcztWithSignatures = await _signWithTransport(
-          transport,
-          redactedPczt,
-        );
+        _proposalConsumed = true;
         final result = await rust_sync.extractAndBroadcastPczt(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           network: endpoint.networkName,
-          pcztWithProofsBytes: pcztWithProofs,
-          pcztWithSignaturesBytes: pcztWithSignatures,
-          spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
-          outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
+          pcztWithProofsBytes: keystone.pcztWithProofsBytes,
+          pcztWithSignaturesBytes: keystone.pcztWithSignaturesBytes,
+          spendParamsPath: widget.args.needsSaplingParams
+              ? saplingParams.spendPath
+              : null,
+          outputParamsPath: widget.args.needsSaplingParams
+              ? saplingParams.outputPath
+              : null,
         );
         txids = result.txid;
         broadcastComplete = result.status == 'broadcasted';
@@ -475,8 +381,12 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           proposalId: widget.args.proposalId,
           sendFlowId: widget.args.sendFlowId,
           seed: seedBytes,
-          spendParamsPath: widget.args.needsSaplingParams ? spendPath : null,
-          outputParamsPath: widget.args.needsSaplingParams ? outputPath : null,
+          spendParamsPath: widget.args.needsSaplingParams
+              ? saplingParams.spendPath
+              : null,
+          outputParamsPath: widget.args.needsSaplingParams
+              ? saplingParams.outputPath
+              : null,
         );
         _proposalConsumed = true;
         txids = result.txids;
