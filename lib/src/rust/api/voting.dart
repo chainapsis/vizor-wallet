@@ -6,8 +6,8 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `catch`, `selection_result`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 Future<void> prepareVotingRound({
   required String dbPath,
@@ -29,6 +29,20 @@ Future<int> getBundleCount({
   dbPath: dbPath,
   walletId: walletId,
   roundId: roundId,
+);
+
+Future<ApiVotingNoteSelectionResult> selectVotingNotes({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required BigInt snapshotHeight,
+}) => RustLib.instance.api.crateApiVotingSelectVotingNotes(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  snapshotHeight: snapshotHeight,
 );
 
 Future<ApiVotingBundleSetupResult> setupDelegationBundles({
@@ -177,6 +191,88 @@ class ApiVotingBundleSetupResult {
           runtimeType == other.runtimeType &&
           bundleCount == other.bundleCount &&
           eligibleWeightZatoshi == other.eligibleWeightZatoshi;
+}
+
+class ApiVotingNoteRef {
+  final String pool;
+  final String txidHex;
+  final int outputIndex;
+  final BigInt valueZatoshi;
+  final BigInt votingWeightZatoshi;
+  final BigInt commitmentTreePosition;
+  final BigInt minedHeight;
+  final BigInt anchorHeight;
+
+  const ApiVotingNoteRef({
+    required this.pool,
+    required this.txidHex,
+    required this.outputIndex,
+    required this.valueZatoshi,
+    required this.votingWeightZatoshi,
+    required this.commitmentTreePosition,
+    required this.minedHeight,
+    required this.anchorHeight,
+  });
+
+  @override
+  int get hashCode =>
+      pool.hashCode ^
+      txidHex.hashCode ^
+      outputIndex.hashCode ^
+      valueZatoshi.hashCode ^
+      votingWeightZatoshi.hashCode ^
+      commitmentTreePosition.hashCode ^
+      minedHeight.hashCode ^
+      anchorHeight.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVotingNoteRef &&
+          runtimeType == other.runtimeType &&
+          pool == other.pool &&
+          txidHex == other.txidHex &&
+          outputIndex == other.outputIndex &&
+          valueZatoshi == other.valueZatoshi &&
+          votingWeightZatoshi == other.votingWeightZatoshi &&
+          commitmentTreePosition == other.commitmentTreePosition &&
+          minedHeight == other.minedHeight &&
+          anchorHeight == other.anchorHeight;
+}
+
+class ApiVotingNoteSelectionResult {
+  final int noteCount;
+  final BigInt eligibleWeightZatoshi;
+  final BigInt snapshotHeight;
+  final BigInt anchorHeight;
+  final List<ApiVotingNoteRef> notes;
+
+  const ApiVotingNoteSelectionResult({
+    required this.noteCount,
+    required this.eligibleWeightZatoshi,
+    required this.snapshotHeight,
+    required this.anchorHeight,
+    required this.notes,
+  });
+
+  @override
+  int get hashCode =>
+      noteCount.hashCode ^
+      eligibleWeightZatoshi.hashCode ^
+      snapshotHeight.hashCode ^
+      anchorHeight.hashCode ^
+      notes.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVotingNoteSelectionResult &&
+          runtimeType == other.runtimeType &&
+          noteCount == other.noteCount &&
+          eligibleWeightZatoshi == other.eligibleWeightZatoshi &&
+          snapshotHeight == other.snapshotHeight &&
+          anchorHeight == other.anchorHeight &&
+          notes == other.notes;
 }
 
 class ApiVotingRoundParams {

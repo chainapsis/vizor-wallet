@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -518499282;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1606969007;
 
 // Section: executor
 
@@ -2404,6 +2404,53 @@ fn wire__crate__api__sync__scan_blocks_impl(
         },
     )
 }
+fn wire__crate__api__voting__select_voting_notes_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "select_voting_notes",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_network = <String>::sse_decode(&mut deserializer);
+            let api_account_uuid = <String>::sse_decode(&mut deserializer);
+            let api_snapshot_height = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::voting::select_voting_notes(
+                            api_db_path,
+                            api_lightwalletd_url,
+                            api_network,
+                            api_account_uuid,
+                            api_snapshot_height,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__sync__set_sync_mode_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -3142,6 +3189,48 @@ impl SseDecode for crate::api::voting::ApiVotingBundleSetupResult {
     }
 }
 
+impl SseDecode for crate::api::voting::ApiVotingNoteRef {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_pool = <String>::sse_decode(deserializer);
+        let mut var_txidHex = <String>::sse_decode(deserializer);
+        let mut var_outputIndex = <u32>::sse_decode(deserializer);
+        let mut var_valueZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_votingWeightZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_commitmentTreePosition = <u64>::sse_decode(deserializer);
+        let mut var_minedHeight = <u64>::sse_decode(deserializer);
+        let mut var_anchorHeight = <u64>::sse_decode(deserializer);
+        return crate::api::voting::ApiVotingNoteRef {
+            pool: var_pool,
+            txid_hex: var_txidHex,
+            output_index: var_outputIndex,
+            value_zatoshi: var_valueZatoshi,
+            voting_weight_zatoshi: var_votingWeightZatoshi,
+            commitment_tree_position: var_commitmentTreePosition,
+            mined_height: var_minedHeight,
+            anchor_height: var_anchorHeight,
+        };
+    }
+}
+
+impl SseDecode for crate::api::voting::ApiVotingNoteSelectionResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_noteCount = <u32>::sse_decode(deserializer);
+        let mut var_eligibleWeightZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_snapshotHeight = <u64>::sse_decode(deserializer);
+        let mut var_anchorHeight = <u64>::sse_decode(deserializer);
+        let mut var_notes = <Vec<crate::api::voting::ApiVotingNoteRef>>::sse_decode(deserializer);
+        return crate::api::voting::ApiVotingNoteSelectionResult {
+            note_count: var_noteCount,
+            eligible_weight_zatoshi: var_eligibleWeightZatoshi,
+            snapshot_height: var_snapshotHeight,
+            anchor_height: var_anchorHeight,
+            notes: var_notes,
+        };
+    }
+}
+
 impl SseDecode for crate::api::voting::ApiVotingRoundParams {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -3266,6 +3355,20 @@ impl SseDecode for Vec<crate::api::wallet::AccountInfo> {
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
             ans_.push(<crate::api::wallet::AccountInfo>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::voting::ApiVotingNoteRef> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::voting::ApiVotingNoteRef>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -3905,41 +4008,42 @@ fn pde_ffi_dispatcher_primary_impl(
             wire__crate__api__sync__run_full_sync_blocking_impl(port, ptr, rust_vec_len, data_len)
         }
         62 => wire__crate__api__sync__scan_blocks_impl(port, ptr, rust_vec_len, data_len),
-        64 => {
+        63 => wire__crate__api__voting__select_voting_notes_impl(port, ptr, rust_vec_len, data_len),
+        65 => {
             wire__crate__api__sync__set_transaction_status_impl(port, ptr, rust_vec_len, data_len)
         }
-        65 => wire__crate__api__voting__setup_delegation_bundles_impl(
+        66 => wire__crate__api__voting__setup_delegation_bundles_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        66 => wire__crate__api__sync__shield_transparent_balance_impl(
+        67 => wire__crate__api__sync__shield_transparent_balance_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        67 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(
+        68 => wire__crate__api__sync__shield_transparent_balance_with_macos_stored_mnemonic_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        68 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
-        69 => {
+        69 => wire__crate__api__sync__start_full_sync_impl(port, ptr, rust_vec_len, data_len),
+        70 => {
             wire__crate__api__sync__start_mempool_observer_impl(port, ptr, rust_vec_len, data_len)
         }
-        71 => wire__crate__api__voting__store_delegation_tx_hash_impl(
+        72 => wire__crate__api__voting__store_delegation_tx_hash_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        72 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
-        77 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__sync__suggest_scan_ranges_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__sync__update_chain_tip_impl(port, ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__sync__validate_address_impl(port, ptr, rust_vec_len, data_len),
+        78 => wire__crate__api__sync__write_block_metadata_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -3963,10 +4067,10 @@ fn pde_ffi_dispatcher_sync_impl(
         52 => wire__crate__api__sync__is_sync_running_impl(ptr, rust_vec_len, data_len),
         54 => wire__crate__api__wallet__mnemonic_word_list_impl(ptr, rust_vec_len, data_len),
         59 => wire__crate__api__keystone__reset_ur_session_impl(ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__sync__set_sync_mode_impl(ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__sync__stop_mempool_observer_impl(ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__wallet__validate_mnemonic_impl(ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__wallet__wallet_exists_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4133,6 +4237,57 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVotingBundleSetupR
     for crate::api::voting::ApiVotingBundleSetupResult
 {
     fn into_into_dart(self) -> crate::api::voting::ApiVotingBundleSetupResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVotingNoteRef {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.pool.into_into_dart().into_dart(),
+            self.txid_hex.into_into_dart().into_dart(),
+            self.output_index.into_into_dart().into_dart(),
+            self.value_zatoshi.into_into_dart().into_dart(),
+            self.voting_weight_zatoshi.into_into_dart().into_dart(),
+            self.commitment_tree_position.into_into_dart().into_dart(),
+            self.mined_height.into_into_dart().into_dart(),
+            self.anchor_height.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::voting::ApiVotingNoteRef
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVotingNoteRef>
+    for crate::api::voting::ApiVotingNoteRef
+{
+    fn into_into_dart(self) -> crate::api::voting::ApiVotingNoteRef {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVotingNoteSelectionResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.note_count.into_into_dart().into_dart(),
+            self.eligible_weight_zatoshi.into_into_dart().into_dart(),
+            self.snapshot_height.into_into_dart().into_dart(),
+            self.anchor_height.into_into_dart().into_dart(),
+            self.notes.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::voting::ApiVotingNoteSelectionResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVotingNoteSelectionResult>
+    for crate::api::voting::ApiVotingNoteSelectionResult
+{
+    fn into_into_dart(self) -> crate::api::voting::ApiVotingNoteSelectionResult {
         self
     }
 }
@@ -4766,6 +4921,31 @@ impl SseEncode for crate::api::voting::ApiVotingBundleSetupResult {
     }
 }
 
+impl SseEncode for crate::api::voting::ApiVotingNoteRef {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.pool, serializer);
+        <String>::sse_encode(self.txid_hex, serializer);
+        <u32>::sse_encode(self.output_index, serializer);
+        <u64>::sse_encode(self.value_zatoshi, serializer);
+        <u64>::sse_encode(self.voting_weight_zatoshi, serializer);
+        <u64>::sse_encode(self.commitment_tree_position, serializer);
+        <u64>::sse_encode(self.mined_height, serializer);
+        <u64>::sse_encode(self.anchor_height, serializer);
+    }
+}
+
+impl SseEncode for crate::api::voting::ApiVotingNoteSelectionResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.note_count, serializer);
+        <u64>::sse_encode(self.eligible_weight_zatoshi, serializer);
+        <u64>::sse_encode(self.snapshot_height, serializer);
+        <u64>::sse_encode(self.anchor_height, serializer);
+        <Vec<crate::api::voting::ApiVotingNoteRef>>::sse_encode(self.notes, serializer);
+    }
+}
+
 impl SseEncode for crate::api::voting::ApiVotingRoundParams {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4855,6 +5035,16 @@ impl SseEncode for Vec<crate::api::wallet::AccountInfo> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::wallet::AccountInfo>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::voting::ApiVotingNoteRef> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::voting::ApiVotingNoteRef>::sse_encode(item, serializer);
         }
     }
 }

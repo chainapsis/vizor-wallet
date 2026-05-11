@@ -15,7 +15,11 @@ use crate::wallet::{
 
 const POOL_ORCHARD: &str = "orchard";
 
-/// A snapshot-eligible shielded note selected for voting.
+/// A snapshot-eligible Orchard note selected for voting.
+///
+/// `zcash_voting::NoteInfo` 0.5.x is Orchard-shaped: it carries Orchard
+/// commitment/nullifier material plus `rho` and `rseed`. Sapling values are
+/// therefore not included in the executable ZCA-384 `NoteInfo` input.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NoteRef {
     pub pool: String,
@@ -61,7 +65,7 @@ pub struct SelectedNotes {
 }
 
 impl SelectedNotes {
-    /// Returns notes in the shape expected by `zcash_voting` bundling APIs.
+    /// Returns deterministic notes in the shape expected by `zcash_voting`.
     pub fn voting_note_infos(&self) -> Vec<zcash_voting::NoteInfo> {
         self.notes
             .iter()
@@ -70,11 +74,7 @@ impl SelectedNotes {
     }
 }
 
-pub fn build_bundle(_voting_db: &zcash_voting::storage::VotingDb) -> ! {
-    unimplemented!()
-}
-
-/// Selects voting-eligible shielded notes using a placeholder anchor state.
+/// Selects voting-eligible Orchard notes using a placeholder anchor state.
 ///
 /// The Linear prototype signature does not include a lightwalletd URL, so callers
 /// that need a real anchor should use [`select_notes_with_lwd`] instead.
@@ -94,7 +94,7 @@ pub fn select_notes(
     )
 }
 
-/// Selects voting-eligible shielded notes and fetches the real snapshot anchor.
+/// Selects voting-eligible Orchard notes and fetches the real snapshot anchor.
 pub async fn select_notes_with_lwd(
     db_path: &str,
     lightwalletd_url: &str,
@@ -117,7 +117,7 @@ pub async fn select_notes_with_lwd(
     )
 }
 
-/// Selects voting-eligible shielded notes with a caller-supplied anchor state.
+/// Selects voting-eligible Orchard notes with a caller-supplied anchor state.
 pub fn select_notes_with_anchor_tree_state(
     db_path: &str,
     network: WalletNetwork,
@@ -281,7 +281,7 @@ mod tests {
         let divisor = zcash_voting::governance::BALLOT_DIVISOR;
         let selected = SelectedNotes {
             notes: vec![
-                test_note_ref("sapling", divisor, divisor),
+                test_note_ref(POOL_ORCHARD, divisor, divisor),
                 test_note_ref(POOL_ORCHARD, divisor * 2 + 1, divisor * 2),
             ],
             snapshot_height: 100,
@@ -372,6 +372,66 @@ mod tests {
     }
 
     #[test]
+    fn select_notes_returns_structured_error_when_no_snapshot_notes() {
+        let network = WalletNetwork::Regtest;
+        let snapshot_height = 12;
+        let mut conn = Connection::open_in_memory().unwrap();
+        let (account_uuid, _) = setup_test_account(&mut conn, network);
+
+        let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
+        let err = select_notes_from_db(
+            &db,
+            network,
+            &account_uuid.expose_uuid().to_string(),
+            snapshot_height,
+            placeholder_tree_state(network, snapshot_height),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err,
+            format!("No spendable voting notes at snapshot height {snapshot_height}")
+        );
+    }
+
+    #[test]
+    fn select_notes_sorts_deterministically_by_position_pool_and_output() {
+        let selected = SelectedNotes {
+            notes: vec![
+                test_note_ref(POOL_ORCHARD, 10, 10)
+                    .with_position(10)
+                    .with_output_index(2),
+                test_note_ref("sapling", 10, 10)
+                    .with_position(10)
+                    .with_output_index(9),
+                test_note_ref(POOL_ORCHARD, 10, 10)
+                    .with_position(10)
+                    .with_output_index(1),
+                test_note_ref(POOL_ORCHARD, 10, 10)
+                    .with_position(11)
+                    .with_output_index(0),
+            ],
+            snapshot_height: 100,
+            anchor_tree_state: placeholder_tree_state(WalletNetwork::Regtest, 100),
+        };
+
+        let mut notes = selected.notes;
+        notes.sort_by(|a, b| {
+            a.commitment_tree_position
+                .cmp(&b.commitment_tree_position)
+                .then_with(|| a.pool.cmp(&b.pool))
+                .then_with(|| a.output_index.cmp(&b.output_index))
+        });
+
+        assert_eq!(notes[0].pool, POOL_ORCHARD);
+        assert_eq!(notes[0].output_index, 1);
+        assert_eq!(notes[1].pool, POOL_ORCHARD);
+        assert_eq!(notes[1].output_index, 2);
+        assert_eq!(notes[2].pool, "sapling");
+        assert_eq!(notes[3].commitment_tree_position, 11);
+    }
+
+    #[test]
     fn selected_notes_convert_to_voting_note_info() {
         let selected = SelectedNotes {
             notes: vec![NoteRef {
@@ -420,16 +480,6 @@ mod tests {
         );
 
         assert!(result.unwrap_err().contains("Snapshot height out of range"));
-    }
-
-    #[test]
-    #[should_panic(expected = "not implemented")]
-    fn build_bundle_is_explicit_placeholder() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("zcash_wallet.db");
-        let db = zcash_voting::storage::VotingDb::open(db_path.to_str().unwrap()).unwrap();
-
-        build_bundle(&db);
     }
 
     fn account_internal_id(
@@ -490,6 +540,34 @@ mod tests {
         conn.last_insert_rowid()
     }
 
+    fn setup_test_account(
+        conn: &mut Connection,
+        network: WalletNetwork,
+    ) -> (
+        zcash_client_sqlite::AccountUuid,
+        orchard::keys::FullViewingKey,
+    ) {
+        let seed = SecretVec::new(vec![7u8; 32]);
+        let mut db = WalletDb::from_connection(conn, network, SystemClock, rand::rngs::OsRng);
+        init_wallet_db(&mut db, Some(SecretVec::new(seed.expose_secret().to_vec()))).unwrap();
+
+        let sapling_height = network
+            .activation_height(NetworkUpgrade::Sapling)
+            .expect("regtest has Sapling activation");
+        let birthday = AccountBirthday::from_parts(
+            ChainState::empty(sapling_height - 1, BlockHash([0; 32])),
+            None,
+        );
+        let (account_uuid, usk) = db.create_account("voter", &seed, &birthday, None).unwrap();
+        let orchard_fvk = usk
+            .to_unified_full_viewing_key()
+            .orchard()
+            .expect("test account has Orchard viewing key")
+            .clone();
+
+        (account_uuid, orchard_fvk)
+    }
+
     fn test_orchard_note(
         orchard_fvk: &orchard::keys::FullViewingKey,
         note_tag: u8,
@@ -540,6 +618,23 @@ mod tests {
             commitment_tree_position: 0,
             mined_height: 1,
             anchor_height: 1,
+        }
+    }
+
+    trait TestNoteRefExt {
+        fn with_output_index(self, output_index: u32) -> Self;
+        fn with_position(self, commitment_tree_position: u64) -> Self;
+    }
+
+    impl TestNoteRefExt for NoteRef {
+        fn with_output_index(mut self, output_index: u32) -> Self {
+            self.output_index = output_index;
+            self
+        }
+
+        fn with_position(mut self, commitment_tree_position: u64) -> Self {
+            self.commitment_tree_position = commitment_tree_position;
+            self
         }
     }
 }

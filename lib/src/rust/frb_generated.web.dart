@@ -64,6 +64,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiVotingNoteRef dco_decode_api_voting_note_ref(dynamic raw);
+
+  @protected
+  ApiVotingNoteSelectionResult dco_decode_api_voting_note_selection_result(
+    dynamic raw,
+  );
+
+  @protected
   ApiVotingRoundParams dco_decode_api_voting_round_params(dynamic raw);
 
   @protected
@@ -105,6 +113,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> dco_decode_list_account_info(dynamic raw);
+
+  @protected
+  List<ApiVotingNoteRef> dco_decode_list_api_voting_note_ref(dynamic raw);
 
   @protected
   List<BlockMetaInfo> dco_decode_list_block_meta_info(dynamic raw);
@@ -268,6 +279,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiVotingNoteRef sse_decode_api_voting_note_ref(SseDeserializer deserializer);
+
+  @protected
+  ApiVotingNoteSelectionResult sse_decode_api_voting_note_selection_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiVotingRoundParams sse_decode_api_voting_round_params(
     SseDeserializer deserializer,
   );
@@ -315,6 +334,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
+
+  @protected
+  List<ApiVotingNoteRef> sse_decode_list_api_voting_note_ref(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<BlockMetaInfo> sse_decode_list_block_meta_info(
@@ -514,6 +538,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_voting_note_ref(
+    ApiVotingNoteRef self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_voting_note_selection_result(
+    ApiVotingNoteSelectionResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_voting_round_params(
     ApiVotingRoundParams self,
     SseSerializer serializer,
@@ -567,6 +603,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_account_info(
     List<AccountInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_voting_note_ref(
+    List<ApiVotingNoteRef> self,
     SseSerializer serializer,
   );
 

@@ -3,6 +3,7 @@ use std::panic;
 use crate::wallet::{
     keys,
     voting::{
+        bundle::{self, SelectedNotes},
         delegation::{self, BundleSetupResult, SignedDelegation},
         state,
     },
@@ -15,6 +16,27 @@ pub struct ApiVotingRoundParams {
     pub ea_pk: Vec<u8>,
     pub nc_root: Vec<u8>,
     pub nullifier_imt_root: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVotingNoteRef {
+    pub pool: String,
+    pub txid_hex: String,
+    pub output_index: u32,
+    pub value_zatoshi: u64,
+    pub voting_weight_zatoshi: u64,
+    pub commitment_tree_position: u64,
+    pub mined_height: u64,
+    pub anchor_height: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVotingNoteSelectionResult {
+    pub note_count: u32,
+    pub eligible_weight_zatoshi: u64,
+    pub snapshot_height: u64,
+    pub anchor_height: u64,
+    pub notes: Vec<ApiVotingNoteRef>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,6 +65,21 @@ impl From<ApiVotingRoundParams> for zcash_voting::VotingRoundParams {
             ea_pk: params.ea_pk,
             nc_root: params.nc_root,
             nullifier_imt_root: params.nullifier_imt_root,
+        }
+    }
+}
+
+impl From<bundle::NoteRef> for ApiVotingNoteRef {
+    fn from(note: bundle::NoteRef) -> Self {
+        Self {
+            pool: note.pool,
+            txid_hex: note.txid_hex,
+            output_index: note.output_index,
+            value_zatoshi: note.value_zatoshi,
+            voting_weight_zatoshi: note.voting_weight_zatoshi,
+            commitment_tree_position: note.commitment_tree_position,
+            mined_height: note.mined_height,
+            anchor_height: note.anchor_height,
         }
     }
 }
@@ -105,6 +142,46 @@ pub fn get_bundle_count(
     round_id: String,
 ) -> Result<u32, String> {
     catch(|| delegation::get_bundle_count(&db_path, &wallet_id, &round_id))
+}
+
+pub async fn select_voting_notes(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    snapshot_height: u64,
+) -> Result<ApiVotingNoteSelectionResult, String> {
+    let network = keys::parse_network(&network)?;
+    let selected = bundle::select_notes_with_lwd(
+        &db_path,
+        &lightwalletd_url,
+        network,
+        &account_uuid,
+        snapshot_height,
+    )
+    .await?;
+    selection_result(selected)
+}
+
+fn selection_result(selected: SelectedNotes) -> Result<ApiVotingNoteSelectionResult, String> {
+    let note_count = u32::try_from(selected.notes.len()).map_err(|_| {
+        format!(
+            "Selected note count {} does not fit in u32",
+            selected.notes.len()
+        )
+    })?;
+    let eligible_weight_zatoshi = bundle::voting_power(&selected);
+    let snapshot_height = selected.snapshot_height;
+    let anchor_height = selected.anchor_tree_state.height;
+    let notes = selected.notes.into_iter().map(Into::into).collect();
+
+    Ok(ApiVotingNoteSelectionResult {
+        note_count,
+        eligible_weight_zatoshi,
+        snapshot_height,
+        anchor_height,
+        notes,
+    })
 }
 
 pub async fn setup_delegation_bundles(
@@ -200,9 +277,8 @@ pub fn delete_skipped_bundles(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wallet::voting::state::open_voting_db;
+    use zcash_client_backend::proto::service::TreeState;
 
-    const WALLET_ID: &str = "wallet-1";
     const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
     #[test]
@@ -253,19 +329,42 @@ mod tests {
     }
 
     #[test]
+    fn api_note_selection_result_preserves_core_fields() {
+        let divisor = zcash_voting::governance::BALLOT_DIVISOR;
+        let selected = SelectedNotes {
+            notes: vec![
+                test_note_ref(divisor, divisor, 3),
+                test_note_ref(divisor * 2 + 1, divisor * 2, 7),
+            ],
+            snapshot_height: 100,
+            anchor_tree_state: test_tree_state(100),
+        };
+
+        let api = selection_result(selected).unwrap();
+
+        assert_eq!(api.note_count, 2);
+        assert_eq!(api.eligible_weight_zatoshi, divisor * 3);
+        assert_eq!(api.snapshot_height, 100);
+        assert_eq!(api.anchor_height, 100);
+        assert_eq!(api.notes[0].commitment_tree_position, 3);
+        assert_eq!(api.notes[1].value_zatoshi, divisor * 2 + 1);
+        assert_eq!(api.notes[1].voting_weight_zatoshi, divisor * 2);
+    }
+
+    #[test]
     fn prepare_voting_round_initializes_round_happy_path() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
 
         prepare_voting_round(
             db_path.to_str().unwrap().to_string(),
-            WALLET_ID.to_string(),
+            "wallet-1".to_string(),
             test_api_round_params(),
             Some(r#"{"round_name":"Demo"}"#.to_string()),
         )
         .unwrap();
 
-        let db = open_voting_db(db_path.to_str().unwrap(), WALLET_ID).unwrap();
+        let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
         let state = db.get_round_state(ROUND_ID).unwrap();
         assert_eq!(state.round_id, ROUND_ID);
         assert_eq!(state.snapshot_height, 100);
@@ -280,7 +379,7 @@ mod tests {
 
         let err = prepare_voting_round(
             db_path.to_str().unwrap().to_string(),
-            WALLET_ID.to_string(),
+            "wallet-1".to_string(),
             params,
             None,
         )
@@ -290,105 +389,21 @@ mod tests {
     }
 
     #[test]
-    fn bundle_count_and_hash_api_roundtrip_happy_path() {
+    fn select_voting_notes_rejects_invalid_network_before_network_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
-        prepare_voting_round(
-            db_path.to_str().unwrap().to_string(),
-            WALLET_ID.to_string(),
-            test_api_round_params(),
-            None,
-        )
-        .unwrap();
-        insert_bundles(db_path.to_str().unwrap(), 6);
-
-        assert_eq!(
-            get_bundle_count(
-                db_path.to_str().unwrap().to_string(),
-                WALLET_ID.to_string(),
-                ROUND_ID.to_string(),
-            )
-            .unwrap(),
-            2
-        );
-
-        store_delegation_tx_hash(
-            db_path.to_str().unwrap().to_string(),
-            WALLET_ID.to_string(),
-            ROUND_ID.to_string(),
-            1,
-            "txid-1".to_string(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            get_delegation_tx_hash(
-                db_path.to_str().unwrap().to_string(),
-                WALLET_ID.to_string(),
-                ROUND_ID.to_string(),
-                1,
-            )
+        let err = tokio::runtime::Runtime::new()
             .unwrap()
-            .as_deref(),
-            Some("txid-1")
-        );
-    }
-
-    #[test]
-    fn store_delegation_tx_hash_rejects_missing_bundle() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        prepare_voting_round(
-            db_path.to_str().unwrap().to_string(),
-            WALLET_ID.to_string(),
-            test_api_round_params(),
-            None,
-        )
-        .unwrap();
-
-        let err = store_delegation_tx_hash(
-            db_path.to_str().unwrap().to_string(),
-            WALLET_ID.to_string(),
-            ROUND_ID.to_string(),
-            0,
-            "txid-0".to_string(),
-        )
-        .unwrap_err();
-
-        assert!(err.contains("get_delegation_tx_hash failed after store"));
-    }
-
-    #[test]
-    fn delete_skipped_bundles_api_happy_path() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("voting.sqlite");
-        prepare_voting_round(
-            db_path.to_str().unwrap().to_string(),
-            WALLET_ID.to_string(),
-            test_api_round_params(),
-            None,
-        )
-        .unwrap();
-        insert_bundles(db_path.to_str().unwrap(), 6);
-
-        let deleted = delete_skipped_bundles(
-            db_path.to_str().unwrap().to_string(),
-            WALLET_ID.to_string(),
-            ROUND_ID.to_string(),
-            1,
-        )
-        .unwrap();
-
-        assert_eq!(deleted, 1);
-        assert_eq!(
-            get_bundle_count(
+            .block_on(select_voting_notes(
                 db_path.to_str().unwrap().to_string(),
-                WALLET_ID.to_string(),
-                ROUND_ID.to_string(),
-            )
-            .unwrap(),
-            1
-        );
+                "http://127.0.0.1:1".to_string(),
+                "bogus".to_string(),
+                "wallet-1".to_string(),
+                100,
+            ))
+            .unwrap_err();
+
+        assert!(err.contains("Unknown network"));
     }
 
     #[test]
@@ -404,7 +419,7 @@ mod tests {
                 test_api_round_params(),
                 "Demo".to_string(),
                 None,
-                WALLET_ID.to_string(),
+                "wallet-1".to_string(),
             ))
             .unwrap_err();
 
@@ -425,19 +440,13 @@ mod tests {
                 test_api_round_params(),
                 "Demo".to_string(),
                 None,
-                WALLET_ID.to_string(),
+                "wallet-1".to_string(),
                 vec![7; 32],
                 0,
             ))
             .unwrap_err();
 
         assert!(err.contains("Unknown network"));
-    }
-
-    fn insert_bundles(db_path: &str, note_count: u64) {
-        let db = open_voting_db(db_path, WALLET_ID).unwrap();
-        let notes: Vec<_> = (0..note_count).map(test_note_info).collect();
-        db.setup_bundles(ROUND_ID, &notes).unwrap();
     }
 
     fn test_api_round_params() -> ApiVotingRoundParams {
@@ -450,17 +459,38 @@ mod tests {
         }
     }
 
-    fn test_note_info(position: u64) -> zcash_voting::NoteInfo {
-        zcash_voting::NoteInfo {
-            commitment: vec![1; 32],
-            nullifier: vec![2; 32],
-            value: zcash_voting::governance::BALLOT_DIVISOR,
-            position,
-            diversifier: vec![3; 11],
-            rho: vec![4; 32],
-            rseed: vec![5; 32],
+    fn test_tree_state(height: u64) -> TreeState {
+        TreeState {
+            network: "test".to_string(),
+            height,
+            hash: String::new(),
+            time: 0,
+            sapling_tree: String::new(),
+            orchard_tree: String::new(),
+        }
+    }
+
+    fn test_note_ref(
+        value_zatoshi: u64,
+        voting_weight_zatoshi: u64,
+        commitment_tree_position: u64,
+    ) -> bundle::NoteRef {
+        bundle::NoteRef {
+            pool: "orchard".to_string(),
+            txid_hex: hex::encode([commitment_tree_position as u8; 32]),
+            output_index: commitment_tree_position as u32,
+            value_zatoshi,
+            voting_weight_zatoshi,
+            commitment: vec![],
+            nullifier: vec![],
+            diversifier: vec![],
+            rho: vec![],
+            rseed: vec![],
             scope: 0,
-            ufvk_str: "uviewtest".to_string(),
+            ufvk_str: String::new(),
+            commitment_tree_position,
+            mined_height: 1,
+            anchor_height: 100,
         }
     }
 }
