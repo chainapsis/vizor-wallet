@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use bip0039::{Count, English, Language, Mnemonic};
+use rusqlite::named_params;
 use secrecy::{ExposeSecret, SecretVec};
 use zcash_client_backend::data_api::{
     chain::ChainState, Account as _, AccountBirthday, AccountPurpose, AccountSource, WalletRead,
@@ -325,7 +326,7 @@ pub fn delete_account(
 ) -> Result<(), String> {
     let account_id = parse_account_uuid(account_uuid)?;
     with_wallet_db_write_lock("keys.delete_account", || {
-        let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        let db = open_wallet_db_for_mutation(db_path, network)?;
         let target = db
             .get_account(account_id)
             .map_err(|e| format!("Failed to load account: {e}"))?
@@ -360,9 +361,122 @@ pub fn delete_account(
             }
         }
 
-        db.delete_account(account_id)
-            .map_err(|e| format!("Failed to delete account: {e}"))
+        // zcash_client_sqlite 0.19.5 has a named-parameter bug in
+        // wallet::delete_account: the sent_notes rewrite binds `:address`
+        // while the SQL expects `:to_address`. Keep this local copy aligned
+        // with upstream except for that binding until the dependency is fixed.
+        drop(db);
+        delete_account_rows(db_path, account_id)
     })
+}
+
+fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), String> {
+    let mut conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| format!("Failed to open wallet DB: {e}"))?;
+    conn.busy_timeout(ACCOUNT_MUTATION_DB_BUSY_TIMEOUT)
+        .map_err(|e| format!("Failed to configure wallet DB busy timeout: {e}"))?;
+    rusqlite::vtab::array::load_module(&conn)
+        .map_err(|e| format!("Failed to load SQLite array module: {e}"))?;
+    conn.execute("PRAGMA foreign_keys = ON", [])
+        .map_err(|e| format!("Failed to enable SQLite foreign keys: {e}"))?;
+
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Failed to begin account delete transaction: {e}"))?;
+    let account_uuid = account_id.expose_uuid();
+    let account_uuid_bytes = account_uuid.as_bytes().as_slice();
+
+    {
+        let mut to_account_tx = tx
+            .prepare(
+                r#"
+                SELECT
+                    sn.id AS sent_note_id,
+                    COALESCE(addresses.address, addresses.cached_transparent_receiver_address) AS to_address
+                FROM sent_notes sn
+                JOIN v_received_outputs ro ON ro.sent_note_id = sn.id
+                JOIN addresses ON addresses.id = ro.address_id
+                JOIN accounts ta ON ta.id = sn.to_account_id
+                WHERE ta.uuid = :account_uuid
+                "#,
+            )
+            .map_err(|e| format!("Failed to prepare sent note rewrite query: {e}"))?;
+
+        let mut update_sent_note = tx
+            .prepare(
+                r#"
+                UPDATE sent_notes
+                SET to_address = :to_address, to_account_id = NULL
+                WHERE id = :sent_note_id
+                "#,
+            )
+            .map_err(|e| format!("Failed to prepare sent note rewrite update: {e}"))?;
+
+        let mut rows = to_account_tx
+            .query(named_params![":account_uuid": account_uuid_bytes])
+            .map_err(|e| format!("Failed to query sent notes for account deletion: {e}"))?;
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("Failed to read sent notes for account deletion: {e}"))?
+        {
+            if let Some(address) = row
+                .get::<_, Option<String>>("to_address")
+                .map_err(|e| format!("Failed to read sent note destination address: {e}"))?
+            {
+                update_sent_note
+                    .execute(named_params![
+                        ":sent_note_id": row
+                            .get::<_, i64>("sent_note_id")
+                            .map_err(|e| format!("Failed to read sent note id: {e}"))?,
+                        ":to_address": address,
+                    ])
+                    .map_err(|e| format!("Failed to rewrite sent note destination: {e}"))?;
+            }
+        }
+    }
+
+    tx.execute(
+        r#"
+        WITH account_transactions AS (
+            SELECT ro.transaction_id
+            FROM v_received_outputs ro
+            JOIN accounts a ON a.id = ro.account_id
+            WHERE a.uuid = :account_uuid
+            UNION
+            SELECT ros.transaction_id
+            FROM v_received_output_spends ros
+            JOIN accounts sa ON sa.id = ros.account_id
+            WHERE sa.uuid = :account_uuid
+        ),
+        non_account_transactions AS (
+            SELECT ro.transaction_id
+            FROM v_received_outputs ro
+            JOIN accounts a ON a.id = ro.account_id
+            WHERE a.uuid != :account_uuid
+            UNION
+            SELECT ros.transaction_id
+            FROM v_received_output_spends ros
+            JOIN accounts sa ON sa.id = ros.account_id
+            WHERE sa.uuid != :account_uuid
+        )
+        DELETE FROM transactions WHERE id_tx IN (
+            SELECT transaction_id FROM account_transactions
+            EXCEPT
+            SELECT transaction_id FROM non_account_transactions
+        )
+        "#,
+        named_params![":account_uuid": account_uuid_bytes],
+    )
+    .map_err(|e| format!("Failed to delete account-only transactions: {e}"))?;
+
+    tx.execute(
+        "DELETE FROM accounts WHERE uuid = :account_uuid",
+        named_params![":account_uuid": account_uuid_bytes],
+    )
+    .map_err(|e| format!("Failed to delete account: {e}"))?;
+
+    tx.commit()
+        .map_err(|e| format!("Failed to commit account deletion: {e}"))
 }
 
 /// Parse an account UUID string into AccountUuid.
@@ -633,6 +747,44 @@ mod tests {
     }
 
     #[test]
+    fn test_delete_account_handles_internal_sent_note_to_deleted_account() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let first_phrase = generate_mnemonic();
+        let first_seed = mnemonic_to_seed(&first_phrase).unwrap();
+        let (first_uuid, _) = init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &first_seed,
+            None,
+            "first",
+        )
+        .unwrap();
+
+        let second_phrase = generate_mnemonic();
+        let second_seed = mnemonic_to_seed(&second_phrase).unwrap();
+        let (second_uuid, _) = add_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "second",
+            &second_seed,
+            None,
+        )
+        .unwrap();
+
+        seed_internal_sent_note_to_account(db_path_str, &first_uuid, &second_uuid);
+
+        delete_account(db_path_str, WalletNetwork::Main, &second_uuid).unwrap();
+
+        let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert!(accounts.iter().all(|account| account.uuid != second_uuid));
+        assert_internal_sent_note_rewritten(db_path_str);
+    }
+
+    #[test]
     fn test_delete_account_rejects_last_seed_anchor_with_remaining_accounts() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
@@ -640,9 +792,14 @@ mod tests {
 
         let first_phrase = generate_mnemonic();
         let first_seed = mnemonic_to_seed(&first_phrase).unwrap();
-        let (first_uuid, _) =
-            init_db_and_create_account(db_path_str, WalletNetwork::Main, &first_seed, None, "first")
-                .unwrap();
+        let (first_uuid, _) = init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &first_seed,
+            None,
+            "first",
+        )
+        .unwrap();
 
         let second_phrase = generate_mnemonic();
         let second_seed = mnemonic_to_seed(&second_phrase).unwrap();
@@ -661,6 +818,103 @@ mod tests {
         let accounts = list_accounts(db_path_str, WalletNetwork::Main).unwrap();
         assert_eq!(accounts.len(), 2);
         assert!(accounts.iter().any(|account| account.uuid == first_uuid));
+    }
+
+    fn seed_internal_sent_note_to_account(db_path: &str, from_uuid: &str, to_uuid: &str) {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
+
+        let from_account_id = account_row_id(&conn, from_uuid);
+        let to_account_id = account_row_id(&conn, to_uuid);
+        let funding_txid = vec![0xCD_u8; 32];
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height, min_observed_height)
+             VALUES (?1, ?2, ?2)",
+            rusqlite::params![funding_txid, 9_i64],
+        )
+        .unwrap();
+        let funding_transaction_id = conn.last_insert_rowid();
+
+        conn.execute(
+            "INSERT INTO sapling_received_notes (
+                 transaction_id, output_index, account_id, diversifier, value,
+                 rcm, is_change
+             ) VALUES (?1, 0, ?2, x'01', 2000, x'01', 0)",
+            rusqlite::params![funding_transaction_id, from_account_id],
+        )
+        .unwrap();
+        let from_received_note_id = conn.last_insert_rowid();
+
+        let txid = vec![0xAB_u8; 32];
+        conn.execute(
+            "INSERT INTO transactions (txid, mined_height, min_observed_height)
+             VALUES (?1, ?2, ?2)",
+            rusqlite::params![txid, 10_i64],
+        )
+        .unwrap();
+        let transaction_id = conn.last_insert_rowid();
+
+        conn.execute(
+            "INSERT INTO sapling_received_note_spends (
+                 sapling_received_note_id, transaction_id
+             ) VALUES (?1, ?2)",
+            rusqlite::params![from_received_note_id, transaction_id],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO addresses (account_id, key_scope, address, receiver_flags)
+             VALUES (?1, -1, ?2, 0)",
+            rusqlite::params![to_account_id, "u1internalrecipient"],
+        )
+        .unwrap();
+        let address_id = conn.last_insert_rowid();
+
+        conn.execute(
+            "INSERT INTO sapling_received_notes (
+                 transaction_id, output_index, account_id, diversifier, value,
+                 rcm, is_change, address_id
+             ) VALUES (?1, 0, ?2, x'00', 1000, x'00', 0, ?3)",
+            rusqlite::params![transaction_id, to_account_id, address_id],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO sent_notes (
+                 transaction_id, output_pool, output_index, from_account_id,
+                 to_account_id, value
+             ) VALUES (?1, 2, 0, ?2, ?3, 1000)",
+            rusqlite::params![transaction_id, from_account_id, to_account_id],
+        )
+        .unwrap();
+    }
+
+    fn assert_internal_sent_note_rewritten(db_path: &str) {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        let sent_note_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sent_notes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(sent_note_count, 1);
+
+        let (to_address, to_account_id): (Option<String>, Option<i64>) = conn
+            .query_row(
+                "SELECT to_address, to_account_id FROM sent_notes",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(to_address.as_deref(), Some("u1internalrecipient"));
+        assert_eq!(to_account_id, None);
+    }
+
+    fn account_row_id(conn: &rusqlite::Connection, account_uuid: &str) -> i64 {
+        let uuid = uuid::Uuid::parse_str(account_uuid).unwrap();
+        conn.query_row(
+            "SELECT id FROM accounts WHERE uuid = ?1",
+            rusqlite::params![uuid.as_bytes().as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap()
     }
 
     #[test]
