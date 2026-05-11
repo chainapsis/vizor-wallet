@@ -49,6 +49,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
   String? _selectedCameraId;
   bool _loadingCameras = false;
   bool _cameraPickerOpen = false;
+  int _scanProgress = 0;
 
   @override
   void initState() {
@@ -137,6 +138,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
     setState(() {
       _selectedCameraId = camera.id;
       _cameraPickerOpen = false;
+      _scanProgress = 0;
     });
 
     try {
@@ -147,8 +149,27 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
       if (!mounted) return;
       setState(() {
         _selectedCameraId = _controller.value.camera?.id;
+        _scanProgress = 0;
       });
     }
+  }
+
+  void _handleScanProgress(int progress) {
+    final clamped = progress.clamp(0, 100);
+    widget.onProgress(clamped);
+    if (!mounted || _scanProgress == clamped) return;
+    setState(() {
+      _scanProgress = clamped;
+    });
+  }
+
+  void _handleScanComplete(ScanResult result) {
+    if (mounted && _scanProgress != 100) {
+      setState(() {
+        _scanProgress = 100;
+      });
+    }
+    widget.onComplete(result);
   }
 
   String _cameraLabel(MobileScannerState state) {
@@ -191,9 +212,9 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
                   AnimatedUrScannerView(
                     controller: _controller,
                     expectedUrType: widget.expectedUrType,
-                    onProgress: widget.onProgress,
+                    onProgress: _handleScanProgress,
                     onDecodeError: widget.onDecodeError,
-                    onComplete: widget.onComplete,
+                    onComplete: _handleScanComplete,
                   )
                 else
                   Center(
@@ -209,6 +230,15 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
                     ),
                   ),
                 const _ScanFrame(),
+                if (_scanProgress > 0 &&
+                    _scanProgress < 100 &&
+                    !widget.decoding)
+                  Positioned(
+                    left: AppSpacing.md,
+                    right: AppSpacing.md,
+                    bottom: AppSpacing.md,
+                    child: _QrScanProgressBar(progress: _scanProgress / 100),
+                  ),
                 if (widget.decoding)
                   KeystoneTransactionProgressOverlay(
                     label: widget.decodingLabel,
@@ -339,6 +369,43 @@ class _CameraControlRow extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QrScanProgressBar extends StatelessWidget {
+  const _QrScanProgressBar({required this.progress});
+
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final normalized = progress.clamp(0.0, 1.0);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadii.full),
+      child: SizedBox(
+        height: 4,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.background.ground.withValues(alpha: 0.42),
+              ),
+            ),
+            FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: normalized,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.text.accent.withValues(alpha: 0.92),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
