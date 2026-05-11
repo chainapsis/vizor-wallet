@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
+import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
@@ -14,7 +15,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
@@ -109,7 +110,7 @@ class _KeystoneShieldConfirmScreenState
       }
 
       final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
+      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       final shieldPczt = await rust_sync.createShieldTransparentPczt(
         dbPath: dbPath,
         network: endpoint.networkName,
@@ -198,9 +199,11 @@ class _KeystoneShieldConfirmScreenState
       _statusMessage = null;
     });
 
+    RpcEndpointConfig? attemptedEndpoint;
     try {
       final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
+      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      attemptedEndpoint = endpoint;
       final result = await rust_sync.extractAndBroadcastPczt(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -214,6 +217,10 @@ class _KeystoneShieldConfirmScreenState
         'KeystoneShieldConfirm: broadcast shield txid=${result.txid} '
         'status=${result.status}',
       );
+
+      if (result.status != 'broadcasted' && result.message != null) {
+        await _maybeSwitchBroadcastEndpoint(result.message!, attemptedEndpoint);
+      }
 
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();
@@ -231,6 +238,7 @@ class _KeystoneShieldConfirmScreenState
       context.go('/home');
     } catch (e, st) {
       log('KeystoneShieldConfirm._broadcast: ERROR: $e\n$st');
+      await _maybeSwitchBroadcastEndpoint(e, attemptedEndpoint);
       if (!mounted) return;
       final postBroadcastMessage = _postBroadcastErrorMessage(e);
       if (postBroadcastMessage != null) {
@@ -244,6 +252,22 @@ class _KeystoneShieldConfirmScreenState
         _phase = _KeystoneShieldPhase.failed;
         _error = _friendlyError(e);
       });
+    }
+  }
+
+  Future<void> _maybeSwitchBroadcastEndpoint(
+    Object error,
+    RpcEndpointConfig? attemptedEndpoint,
+  ) async {
+    final switched = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .switchToFallbackFor(
+          error,
+          endpoint: attemptedEndpoint,
+          operation: 'keystone shield broadcast',
+        );
+    if (switched) {
+      unawaited(ref.read(syncProvider.notifier).restartSync());
     }
   }
 
