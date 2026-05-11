@@ -1,3 +1,5 @@
+![Vizor banner](.github/assets/gh-vizor-banner.png)
+
 # Vizor
 
 Vizor is a self-custody Zcash wallet for shielded ZEC, with a polished desktop
