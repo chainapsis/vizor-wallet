@@ -252,7 +252,7 @@ class _Sidebar extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (var i = 0; i < _steps.length; i++) ...[
-                    AppSidebarItem(
+                    _KeystoneSidebarItem(
                       label: _steps[i].label,
                       iconName: _steps[i].iconName,
                       active: _steps[i] == activeStep,
@@ -261,6 +261,47 @@ class _Sidebar extends StatelessWidget {
                       const SizedBox(height: AppSpacing.xs),
                   ],
                 ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KeystoneSidebarItem extends StatelessWidget {
+  const _KeystoneSidebarItem({
+    required this.label,
+    required this.iconName,
+    required this.active,
+  });
+
+  final String label;
+  final String iconName;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      height: 40,
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: active ? colors.state.selectedOpacity : null,
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
+      child: Row(
+        children: [
+          AppIcon(iconName, size: 20, color: colors.icon.accent),
+          const SizedBox(width: AppSpacing.s),
+          Expanded(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelLarge.copyWith(
+                color: colors.text.accent,
               ),
             ),
           ),
