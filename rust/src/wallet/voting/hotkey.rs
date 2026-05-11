@@ -1,4 +1,8 @@
 use secrecy::{ExposeSecret, SecretVec};
+use zcash_keys::keys::UnifiedSpendingKey;
+use zip32::Scope;
+
+use crate::wallet::network::WalletNetwork;
 
 const HOTKEY_CONTEXT_PREFIX: &[u8] = b"VizorWalletVotingHotkeyV1";
 
@@ -6,16 +10,40 @@ const HOTKEY_CONTEXT_PREFIX: &[u8] = b"VizorWalletVotingHotkeyV1";
 ///
 /// The caller supplies the platform-owned secret seed; Rust only derives and returns
 /// the hotkey bytes and does not persist them.
-pub fn derive_hotkey(seed: &SecretVec<u8>, round_id: &str, account_uuid: &str) -> Vec<u8> {
-    let hotkey_seed = contextual_hotkey_seed(seed, round_id, account_uuid);
-    zcash_voting::hotkey::generate_hotkey(hotkey_seed.expose_secret())
-        .expect("contextual voting hotkey seed must be valid")
-        .secret_key
+pub fn derive_hotkey(
+    seed: &SecretVec<u8>,
+    round_id: &str,
+    account_uuid: &str,
+) -> Result<Vec<u8>, String> {
+    generate_contextual_hotkey(seed, round_id, account_uuid).map(|hotkey| hotkey.secret_key)
 }
 
-/// Returns the secure-storage key used by Dart for a round/account hotkey.
-pub fn hotkey_storage_key(account_uuid: &str, round_id: &str) -> String {
-    format!("zcash_account_voting_hotkey_{account_uuid}_{round_id}")
+/// Derives the Orchard raw address used as the governance PCZT output target.
+pub fn derive_hotkey_raw_orchard_address(
+    seed: &SecretVec<u8>,
+    round_id: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+) -> Result<Vec<u8>, String> {
+    let hotkey = generate_contextual_hotkey(seed, round_id, account_uuid)?;
+    let usk = UnifiedSpendingKey::from_seed(&network, &hotkey.secret_key, zip32::AccountId::ZERO)
+        .map_err(|e| format!("Hotkey USK derivation failed: {e:?}"))?;
+    let ufvk = usk.to_unified_full_viewing_key();
+    let orchard_fvk = ufvk
+        .orchard()
+        .ok_or_else(|| "Hotkey UFVK has no Orchard component".to_string())?;
+    let address = orchard_fvk.address_at(0u32, Scope::External);
+    Ok(address.to_raw_address_bytes().to_vec())
+}
+
+fn generate_contextual_hotkey(
+    seed: &SecretVec<u8>,
+    round_id: &str,
+    account_uuid: &str,
+) -> Result<zcash_voting::VotingHotkey, String> {
+    let hotkey_seed = contextual_hotkey_seed(seed, round_id, account_uuid);
+    zcash_voting::hotkey::generate_hotkey(hotkey_seed.expose_secret())
+        .map_err(|e| format!("Voting hotkey derivation failed: {e}"))
 }
 
 /// Builds the deterministic seed material passed to `zcash_voting`.
@@ -74,10 +102,13 @@ mod tests {
     #[test]
     fn hotkey_determinism() {
         let seed = test_seed();
-        let expected = derive_hotkey(&seed, ROUND_ID, ACCOUNT_UUID);
+        let expected = derive_hotkey(&seed, ROUND_ID, ACCOUNT_UUID).unwrap();
 
         for _ in 0..100 {
-            assert_eq!(derive_hotkey(&seed, ROUND_ID, ACCOUNT_UUID), expected);
+            assert_eq!(
+                derive_hotkey(&seed, ROUND_ID, ACCOUNT_UUID).unwrap(),
+                expected
+            );
         }
     }
 
@@ -86,8 +117,8 @@ mod tests {
         let seed = test_seed();
 
         assert_ne!(
-            derive_hotkey(&seed, ROUND_ID, ACCOUNT_UUID),
-            derive_hotkey(&seed, OTHER_ROUND_ID, ACCOUNT_UUID)
+            derive_hotkey(&seed, ROUND_ID, ACCOUNT_UUID).unwrap(),
+            derive_hotkey(&seed, OTHER_ROUND_ID, ACCOUNT_UUID).unwrap()
         );
     }
 
@@ -96,16 +127,30 @@ mod tests {
         let seed = test_seed();
 
         assert_ne!(
-            derive_hotkey(&seed, ROUND_ID, ACCOUNT_UUID),
-            derive_hotkey(&seed, ROUND_ID, OTHER_ACCOUNT_UUID)
+            derive_hotkey(&seed, ROUND_ID, ACCOUNT_UUID).unwrap(),
+            derive_hotkey(&seed, ROUND_ID, OTHER_ACCOUNT_UUID).unwrap()
         );
     }
 
     #[test]
-    fn hotkey_storage_key_format() {
-        assert_eq!(
-            hotkey_storage_key(ACCOUNT_UUID, ROUND_ID),
-            "zcash_account_voting_hotkey_550e8400-e29b-41d4-a716-446655440000_round-1"
-        );
+    fn hotkey_raw_orchard_address_is_deterministic_and_address_sized() {
+        let seed = test_seed();
+        let first = derive_hotkey_raw_orchard_address(
+            &seed,
+            ROUND_ID,
+            ACCOUNT_UUID,
+            WalletNetwork::Regtest,
+        )
+        .unwrap();
+        let second = derive_hotkey_raw_orchard_address(
+            &seed,
+            ROUND_ID,
+            ACCOUNT_UUID,
+            WalletNetwork::Regtest,
+        )
+        .unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 43);
     }
 }

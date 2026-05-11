@@ -13,8 +13,6 @@ use crate::wallet::{
     keys::parse_account_uuid, network::WalletNetwork, sync::open_wallet_db_for_read, sync_engine,
 };
 
-use super::state::ensure_voting_table;
-
 const POOL_ORCHARD: &str = "orchard";
 
 /// A snapshot-eligible shielded note selected for voting.
@@ -72,8 +70,7 @@ impl SelectedNotes {
     }
 }
 
-pub fn build_bundle(conn: &rusqlite::Connection) -> ! {
-    ensure_voting_table(conn).expect("voting_round_state table migration failed");
+pub fn build_bundle(_voting_db: &zcash_voting::storage::VotingDb) -> ! {
     unimplemented!()
 }
 
@@ -423,6 +420,16 @@ mod tests {
         );
 
         assert!(result.unwrap_err().contains("Snapshot height out of range"));
+    }
+
+    #[test]
+    #[should_panic(expected = "not implemented")]
+    fn build_bundle_is_explicit_placeholder() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("zcash_wallet.db");
+        let db = zcash_voting::storage::VotingDb::open(db_path.to_str().unwrap()).unwrap();
+
+        build_bundle(&db);
     }
 
     fn account_internal_id(

@@ -46,6 +46,8 @@ bip0039 = "0.12"
 
 # Serialization
 nonempty = "0.11"
+prost = "0.14"
+incrementalmerkletree = "0.8"
 
 # Security
 secrecy = "0.8"
