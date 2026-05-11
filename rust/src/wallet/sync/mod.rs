@@ -42,8 +42,10 @@ pub use pczt::{
     redact_pczt_for_signer, ExtractAndBroadcastPcztResult,
 };
 pub(crate) use send::estimate_send_max;
+pub(crate) use send::{
+    create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
+};
 pub use send::{estimate_fee, execute_proposal, propose_send, ExecuteProposalResult};
-pub(crate) use send::{get_shield_transparent_status, shield_transparent_balance};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
 pub(crate) use send::resubmit_pending_transactions;
@@ -51,6 +53,8 @@ pub(crate) use send::resubmit_pending_transactions;
 pub(crate) use send::ProposalResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::SendMaxEstimateResult;
+#[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
+pub(crate) use send::ShieldTransparentPcztResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ShieldTransparentResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface

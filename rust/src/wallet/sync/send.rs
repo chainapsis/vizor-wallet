@@ -112,6 +112,13 @@ pub(crate) struct ShieldTransparentStatus {
     pub reason: String,
 }
 
+pub(crate) struct ShieldTransparentPcztResult {
+    pub pczt_bytes: Vec<u8>,
+    pub fee_zatoshi: u64,
+    pub shielded_zatoshi: u64,
+    pub needs_sapling_params: bool,
+}
+
 const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
 
 pub fn propose_send(
@@ -294,6 +301,47 @@ pub(crate) fn get_shield_transparent_status(
             reason,
         }),
     }
+}
+
+/// Create a PCZT for shielding transparent funds on a hardware account.
+/// This mirrors `shield_transparent_balance` up to proposal creation, but
+/// stops before signing/broadcast and returns the base PCZT for Keystone.
+pub(crate) fn create_shield_transparent_pczt(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<ShieldTransparentPcztResult, String> {
+    use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
+
+    let shielding_threshold = shielding_threshold()?;
+    with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        let account_id = parse_account_uuid(account_uuid)?;
+        let (proposal, _) =
+            build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
+        let fee_zatoshi = proposal_fee_zatoshi(&proposal);
+        let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
+        let needs_sapling_params = proposal
+            .steps()
+            .iter()
+            .any(|step| step.involves(PoolType::Shielded(ShieldedProtocol::Sapling)));
+
+        let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+            &mut db,
+            &network,
+            account_id,
+            OvkPolicy::Sender,
+            &proposal,
+        )
+        .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
+
+        Ok(ShieldTransparentPcztResult {
+            pczt_bytes: pczt.serialize(),
+            fee_zatoshi,
+            shielded_zatoshi,
+            needs_sapling_params,
+        })
+    })
 }
 
 /// Shield spendable transparent funds for a software account to its

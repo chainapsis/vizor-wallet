@@ -14,36 +14,36 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/sync_provider.dart';
+import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
-import '../services/sapling_params.dart';
-import '../widgets/sapling_params_prompt.dart';
-import 'send_review_screen.dart';
+import '../../send/services/sapling_params.dart';
+import '../../send/widgets/sapling_params_prompt.dart';
 
-enum _KeystoneConfirmPhase { preparing, ready, failed }
+enum _KeystoneShieldPhase { preparing, ready, broadcasting, failed }
 
-class KeystoneSendConfirmScreen extends ConsumerStatefulWidget {
-  const KeystoneSendConfirmScreen({super.key, required this.args});
-
-  final SendReviewArgs args;
+class KeystoneShieldConfirmScreen extends ConsumerStatefulWidget {
+  const KeystoneShieldConfirmScreen({super.key});
 
   @override
-  ConsumerState<KeystoneSendConfirmScreen> createState() =>
-      _KeystoneSendConfirmScreenState();
+  ConsumerState<KeystoneShieldConfirmScreen> createState() =>
+      _KeystoneShieldConfirmScreenState();
 }
 
-class _KeystoneSendConfirmScreenState
-    extends ConsumerState<KeystoneSendConfirmScreen> {
-  _KeystoneConfirmPhase _phase = _KeystoneConfirmPhase.preparing;
-  bool _proposalConsumed = false;
-  bool _discardScheduled = false;
+class _KeystoneShieldConfirmScreenState
+    extends ConsumerState<KeystoneShieldConfirmScreen> {
+  _KeystoneShieldPhase _phase = _KeystoneShieldPhase.preparing;
   bool _showSaplingParamsPrompt = false;
   Completer<bool>? _saplingParamsPromptCompleter;
   String? _error;
   List<String> _urParts = const [];
   List<int>? _pcztWithProofs;
   SaplingParamsStatus? _saplingParams;
+  bool _needsSaplingParams = false;
+  BigInt? _feeZatoshi;
+  BigInt? _shieldedZatoshi;
 
   @override
   void initState() {
@@ -62,30 +62,7 @@ class _KeystoneSendConfirmScreenState
     if (promptCompleter != null && !promptCompleter.isCompleted) {
       promptCompleter.complete(false);
     }
-    _scheduleDiscardIfNeeded();
     super.dispose();
-  }
-
-  void _scheduleDiscardIfNeeded() {
-    if (_proposalConsumed || _discardScheduled) return;
-    _discardScheduled = true;
-    unawaited(
-      rust_sync
-          .discardProposal(
-            proposalId: widget.args.proposalId,
-            sendFlowId: widget.args.sendFlowId,
-          )
-          .then((_) {
-            log(
-              'KeystoneSendConfirm: released proposal ${widget.args.proposalId}',
-            );
-          })
-          .catchError((Object e) {
-            log(
-              'KeystoneSendConfirm: discardProposal cleanup failed (non-critical): $e',
-            );
-          }),
-    );
   }
 
   Future<bool> _showDownloadPrompt() {
@@ -117,52 +94,50 @@ class _KeystoneSendConfirmScreenState
 
   Future<void> _preparePczt() async {
     try {
+      final accountUuid = ref.read(walletProvider).value?.activeAccountUuid;
+      if (accountUuid == null) {
+        throw Exception('No active account.');
+      }
+
       final dbPath = await getWalletDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
-      final saplingParams = await loadSaplingParamsStatus();
+      final shieldPczt = await rust_sync.createShieldTransparentPczt(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+      );
 
-      if (widget.args.needsSaplingParams && !saplingParams.complete) {
+      var saplingParams = await loadSaplingParamsStatus();
+      if (shieldPczt.needsSaplingParams && !saplingParams.complete) {
         final confirmed = await _showDownloadPrompt();
         if (!confirmed) {
-          _scheduleDiscardIfNeeded();
           if (!mounted) return;
           setState(() {
-            _phase = _KeystoneConfirmPhase.failed;
+            _phase = _KeystoneShieldPhase.failed;
             _error =
-                'Signing was cancelled before proving parameters were downloaded.';
+                'Shielding was cancelled before proving parameters were downloaded.';
           });
           return;
         }
 
         await downloadMissingSaplingParams(
           saplingParams,
-          log: (message) => log('KeystoneSendConfirm: $message'),
+          log: (message) => log('KeystoneShieldConfirm: $message'),
         );
+        saplingParams = await loadSaplingParamsStatus();
       }
 
-      if (!mounted) return;
-      final currentSaplingParams = await loadSaplingParamsStatus();
-      _saplingParams = currentSaplingParams;
-
-      final pcztBytes = await rust_sync.createPcztFromProposal(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        proposalId: widget.args.proposalId,
-        sendFlowId: widget.args.sendFlowId,
-      );
-      _proposalConsumed = true;
-
       final pcztWithProofs = await rust_sync.addProofsToPczt(
-        pcztBytes: pcztBytes,
-        spendParamsPath: widget.args.needsSaplingParams
-            ? currentSaplingParams.spendPath
+        pcztBytes: shieldPczt.pcztBytes,
+        spendParamsPath: shieldPczt.needsSaplingParams
+            ? saplingParams.spendPath
             : null,
-        outputParamsPath: widget.args.needsSaplingParams
-            ? currentSaplingParams.outputPath
+        outputParamsPath: shieldPczt.needsSaplingParams
+            ? saplingParams.outputPath
             : null,
       );
       final redactedPczt = await rust_sync.redactPcztForSigner(
-        pcztBytes: pcztBytes,
+        pcztBytes: shieldPczt.pcztBytes,
       );
       final urParts = await rust_keystone.encodePcztUrParts(
         pcztBytes: redactedPczt,
@@ -171,45 +146,28 @@ class _KeystoneSendConfirmScreenState
 
       if (!mounted) return;
       setState(() {
-        _phase = _KeystoneConfirmPhase.ready;
+        _phase = _KeystoneShieldPhase.ready;
         _pcztWithProofs = pcztWithProofs;
+        _saplingParams = saplingParams;
+        _needsSaplingParams = shieldPczt.needsSaplingParams;
+        _feeZatoshi = shieldPczt.feeZatoshi;
+        _shieldedZatoshi = shieldPczt.shieldedZatoshi;
         _urParts = urParts;
       });
     } catch (e, st) {
-      log('KeystoneSendConfirm._preparePczt: ERROR: $e\n$st');
-      if (!_proposalConsumed) {
-        _scheduleDiscardIfNeeded();
-      }
+      log('KeystoneShieldConfirm._preparePczt: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _phase = _KeystoneConfirmPhase.failed;
-        _error = _friendlyError(e.toString());
+        _phase = _KeystoneShieldPhase.failed;
+        _error = _friendlyError(e);
       });
     }
-  }
-
-  String _friendlyError(String raw) {
-    final lower = raw.toLowerCase();
-    if (lower.contains('proposal not found') ||
-        lower.contains('send flow mismatch')) {
-      return 'Transaction expired before it could be signed.';
-    }
-    if (lower.contains('sapling') || lower.contains('download')) {
-      return 'Required proving parameters could not be prepared.';
-    }
-    return 'Keystone signing could not be prepared. Return to Send and try again.';
-  }
-
-  Future<void> _cancelToSend() async {
-    _scheduleDiscardIfNeeded();
-    if (!mounted) return;
-    context.go('/send');
   }
 
   Future<void> _getSignature() async {
     final pcztWithProofs = _pcztWithProofs;
     final saplingParams = _saplingParams;
-    if (_phase != _KeystoneConfirmPhase.ready ||
+    if (_phase != _KeystoneShieldPhase.ready ||
         pcztWithProofs == null ||
         saplingParams == null) {
       return;
@@ -217,28 +175,89 @@ class _KeystoneSendConfirmScreenState
 
     final signatures = await context.push<List<int>>('/send/keystone/scan');
     if (signatures == null || !mounted) return;
+    await _broadcast(pcztWithProofs, signatures, saplingParams);
+  }
 
-    context.go(
-      '/send/status',
-      extra: KeystoneBroadcastArgs(
-        reviewArgs: widget.args,
+  Future<void> _broadcast(
+    List<int> pcztWithProofs,
+    List<int> signatures,
+    SaplingParamsStatus saplingParams,
+  ) async {
+    setState(() {
+      _phase = _KeystoneShieldPhase.broadcasting;
+      _error = null;
+    });
+
+    try {
+      final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
+      final result = await rust_sync.extractAndBroadcastPczt(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
         pcztWithProofsBytes: pcztWithProofs,
         pcztWithSignaturesBytes: signatures,
-      ),
-    );
+        spendParamsPath: _needsSaplingParams ? saplingParams.spendPath : null,
+        outputParamsPath: _needsSaplingParams ? saplingParams.outputPath : null,
+      );
+      log(
+        'KeystoneShieldConfirm: broadcast shield txid=${result.txid} '
+        'status=${result.status}',
+      );
+
+      try {
+        await ref.read(syncProvider.notifier).refreshAfterSend();
+      } catch (e) {
+        log('KeystoneShieldConfirm: refreshAfterSend failed: $e');
+      }
+      if (!mounted) return;
+      context.go('/home');
+    } catch (e, st) {
+      log('KeystoneShieldConfirm._broadcast: ERROR: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _phase = _KeystoneShieldPhase.failed;
+        _error = _friendlyError(e);
+      });
+    }
   }
 
-  String _amountLine() {
-    final amount = ZecAmount.fromZatoshi(
-      widget.args.amountZatoshi,
-    ).pretty(minFractionDigits: 2, denomStyle: ZecDenomStyle.upper);
-    return 'Sending $amount';
+  String _friendlyError(Object error) {
+    final lower = error.toString().toLowerCase();
+    if (lower.contains('sync')) {
+      return 'Sync the wallet before shielding transparent balance.';
+    }
+    if (lower.contains('threshold') ||
+        lower.contains('too small') ||
+        lower.contains('no transparent funds')) {
+      return 'Transparent balance is too small to shield after fees.';
+    }
+    if (lower.contains('sapling') || lower.contains('download')) {
+      return 'Required proving parameters could not be prepared.';
+    }
+    if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
+      return 'Shield transaction could not be broadcast.';
+    }
+    if (lower.contains('extract') || lower.contains('pczt')) {
+      return 'Keystone signature could not be applied.';
+    }
+    return 'Shield balance failed. Please try again.';
   }
 
-  String _recipientLine() {
-    final address = widget.args.address.trim();
-    if (address.length <= 24) return 'To: $address';
-    return 'To: ${address.substring(0, 12)} ... ${address.substring(address.length - 9)}';
+  void _cancelToHome() {
+    context.go('/home');
+  }
+
+  String _shieldingLine() {
+    final amount = _shieldedZatoshi;
+    if (amount == null) return 'Shielding balance';
+    return 'Shielding ${ZecAmount.fromZatoshi(amount).pretty(minFractionDigits: 2, denomStyle: ZecDenomStyle.upper)}';
+  }
+
+  String _feeLine() {
+    final fee = _feeZatoshi;
+    if (fee == null) return 'Fee: calculating';
+    return 'Fee: ${ZecAmount.fromZatoshi(fee).fee}';
   }
 
   @override
@@ -254,7 +273,7 @@ class _KeystoneSendConfirmScreenState
               children: [
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: AppBackLink(label: 'Back', onTap: _cancelToSend),
+                  child: AppBackLink(label: 'Back', onTap: _cancelToHome),
                 ),
                 Expanded(
                   child: Center(
@@ -262,7 +281,7 @@ class _KeystoneSendConfirmScreenState
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Confirm with Keystone',
+                          'Shield with Keystone',
                           style: AppTypography.headlineLarge.copyWith(
                             color: colors.button.ghost.label,
                           ),
@@ -271,15 +290,18 @@ class _KeystoneSendConfirmScreenState
                         const SizedBox(height: 48),
                         KeystonePcztQrStage(
                           phase: switch (_phase) {
-                            _KeystoneConfirmPhase.preparing =>
+                            _KeystoneShieldPhase.preparing =>
                               KeystonePcztQrStagePhase.preparing,
-                            _KeystoneConfirmPhase.ready =>
+                            _KeystoneShieldPhase.ready =>
                               KeystonePcztQrStagePhase.ready,
-                            _KeystoneConfirmPhase.failed =>
+                            _KeystoneShieldPhase.broadcasting =>
+                              KeystonePcztQrStagePhase.working,
+                            _KeystoneShieldPhase.failed =>
                               KeystonePcztQrStagePhase.failed,
                           },
                           urParts: _urParts,
                           error: _error,
+                          workingLabel: 'Broadcasting shield transaction...',
                         ),
                         const SizedBox(height: 48),
                         SizedBox(
@@ -288,16 +310,14 @@ class _KeystoneSendConfirmScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                _amountLine(),
+                                _shieldingLine(),
                                 style: AppTypography.labelLarge.copyWith(
                                   color: colors.button.ghost.label,
                                 ),
                               ),
                               const SizedBox(height: AppSpacing.xxs),
                               Text(
-                                _recipientLine(),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                _feeLine(),
                                 style: AppTypography.labelLarge.copyWith(
                                   color: colors.button.ghost.label,
                                 ),
@@ -316,7 +336,7 @@ class _KeystoneSendConfirmScreenState
                         SizedBox(
                           width: 256,
                           child: AppButton(
-                            onPressed: _phase == _KeystoneConfirmPhase.ready
+                            onPressed: _phase == _KeystoneShieldPhase.ready
                                 ? () => unawaited(_getSignature())
                                 : null,
                             minWidth: 256,
@@ -327,7 +347,7 @@ class _KeystoneSendConfirmScreenState
                         SizedBox(
                           width: 256,
                           child: AppButton(
-                            onPressed: _cancelToSend,
+                            onPressed: _cancelToHome,
                             variant: AppButtonVariant.ghost,
                             minWidth: 256,
                             child: const Text('Reject'),

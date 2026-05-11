@@ -42,6 +42,7 @@ abstract final class AppBackResolver {
     '/send/keystone/confirm': 'Keystone',
     '/send/keystone/scan': 'Keystone',
     '/send/status': 'Status',
+    '/home/keystone/shield/confirm': 'Keystone',
     '/receive': 'Receive',
     '/activity': 'Activity',
     '/activity/tx/:txid': 'Transaction',

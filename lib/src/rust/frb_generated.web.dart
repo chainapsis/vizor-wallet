@@ -142,6 +142,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SendMaxEstimateResult dco_decode_send_max_estimate_result(dynamic raw);
 
   @protected
+  ShieldTransparentPcztResult dco_decode_shield_transparent_pczt_result(
+    dynamic raw,
+  );
+
+  @protected
   ShieldTransparentResult dco_decode_shield_transparent_result(dynamic raw);
 
   @protected
@@ -335,6 +340,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SendMaxEstimateResult sse_decode_send_max_estimate_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ShieldTransparentPcztResult sse_decode_shield_transparent_pczt_result(
     SseDeserializer deserializer,
   );
 
@@ -579,6 +589,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_send_max_estimate_result(
     SendMaxEstimateResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_shield_transparent_pczt_result(
+    ShieldTransparentPcztResult self,
     SseSerializer serializer,
   );
 

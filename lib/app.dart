@@ -11,6 +11,7 @@ import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
+import 'src/features/home/screens/keystone_shield_confirm_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/about/screens/about_screen.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
@@ -442,6 +443,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
       GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+      GoRoute(
+        path: '/home/keystone/shield/confirm',
+        builder: (_, _) => const KeystoneShieldConfirmScreen(),
+      ),
       GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
       GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),
       GoRoute(

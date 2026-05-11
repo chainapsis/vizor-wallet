@@ -282,9 +282,20 @@ Future<ShieldTransparentStatus> getShieldTransparentStatus({
   accountUuid: accountUuid,
 );
 
+/// Create a PCZT for shielding spendable transparent funds on a hardware account.
+Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiSyncCreateShieldTransparentPczt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
 /// Shield spendable transparent funds into the account's shielded balance.
-/// Software-account only; hardware shielding will be added separately through
-/// the PCZT flow.
+/// Software-account only; hardware shielding uses `create_shield_transparent_pczt`
+/// followed by the PCZT QR signing flow.
 Future<ShieldTransparentResult> shieldTransparentBalance({
   required String dbPath,
   required String lightwalletdUrl,
@@ -770,6 +781,37 @@ class SendMaxEstimateResult {
           runtimeType == other.runtimeType &&
           amountZatoshi == other.amountZatoshi &&
           feeZatoshi == other.feeZatoshi &&
+          needsSaplingParams == other.needsSaplingParams;
+}
+
+class ShieldTransparentPcztResult {
+  final Uint8List pcztBytes;
+  final BigInt feeZatoshi;
+  final BigInt shieldedZatoshi;
+  final bool needsSaplingParams;
+
+  const ShieldTransparentPcztResult({
+    required this.pcztBytes,
+    required this.feeZatoshi,
+    required this.shieldedZatoshi,
+    required this.needsSaplingParams,
+  });
+
+  @override
+  int get hashCode =>
+      pcztBytes.hashCode ^
+      feeZatoshi.hashCode ^
+      shieldedZatoshi.hashCode ^
+      needsSaplingParams.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ShieldTransparentPcztResult &&
+          runtimeType == other.runtimeType &&
+          pcztBytes == other.pcztBytes &&
+          feeZatoshi == other.feeZatoshi &&
+          shieldedZatoshi == other.shieldedZatoshi &&
           needsSaplingParams == other.needsSaplingParams;
 }
 

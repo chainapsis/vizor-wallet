@@ -226,9 +226,6 @@ Future<AppBootstrapState> loadAppBootstrap() async {
         dbPath: dbPath,
         network: network,
         accountUuid: activeAccountUuid,
-        isHardwareAccount: accounts.any(
-          (account) => account.uuid == activeAccountUuid && account.isHardware,
-        ),
       );
     }
 
@@ -391,7 +388,6 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
   required String dbPath,
   required String network,
   required String accountUuid,
-  required bool isHardwareAccount,
 }) async {
   try {
     final syncStatus = await rust_sync.getSyncStatus(
@@ -412,7 +408,7 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
     var canShieldTransparentBalance = false;
     var shieldTransparentFee = BigInt.zero;
     var shieldTransparentAmount = BigInt.zero;
-    if (!isHardwareAccount && balance.transparent > BigInt.zero) {
+    if (balance.transparent > BigInt.zero) {
       try {
         final shieldStatus = await rust_sync.getShieldTransparentStatus(
           dbPath: dbPath,

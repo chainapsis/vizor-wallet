@@ -613,6 +613,13 @@ pub struct ShieldTransparentStatus {
     pub reason: String,
 }
 
+pub struct ShieldTransparentPcztResult {
+    pub pczt_bytes: Vec<u8>,
+    pub fee_zatoshi: u64,
+    pub shielded_zatoshi: u64,
+    pub needs_sapling_params: bool,
+}
+
 /// Step 1: Propose a transfer. Returns proposal info including whether Sapling params are needed.
 pub fn propose_send(
     db_path: String,
@@ -739,9 +746,27 @@ pub fn get_shield_transparent_status(
     })
 }
 
+/// Create a PCZT for shielding spendable transparent funds on a hardware account.
+pub fn create_shield_transparent_pczt(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<ShieldTransparentPcztResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let r = wallet_sync::create_shield_transparent_pczt(&db_path, network, &account_uuid)?;
+        Ok(ShieldTransparentPcztResult {
+            pczt_bytes: r.pczt_bytes,
+            fee_zatoshi: r.fee_zatoshi,
+            shielded_zatoshi: r.shielded_zatoshi,
+            needs_sapling_params: r.needs_sapling_params,
+        })
+    })
+}
+
 /// Shield spendable transparent funds into the account's shielded balance.
-/// Software-account only; hardware shielding will be added separately through
-/// the PCZT flow.
+/// Software-account only; hardware shielding uses `create_shield_transparent_pczt`
+/// followed by the PCZT QR signing flow.
 pub fn shield_transparent_balance(
     db_path: String,
     lightwalletd_url: String,

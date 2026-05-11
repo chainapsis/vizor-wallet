@@ -1593,9 +1593,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     required String accountUuid,
     required BigInt transparentBalance,
   }) async {
-    final isHardware =
-        ref.read(accountProvider).value?.activeAccount?.isHardware ?? false;
-    if (isHardware || transparentBalance <= BigInt.zero) {
+    if (transparentBalance <= BigInt.zero) {
       return (canShield: false, fee: BigInt.zero, amount: BigInt.zero);
     }
 

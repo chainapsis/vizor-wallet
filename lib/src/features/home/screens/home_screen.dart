@@ -74,25 +74,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _shieldTransparentBalance() async {
     if (_isShieldingBalance) return;
 
+    final wallet = ref.read(walletProvider).value;
+    final accountUuid = wallet?.activeAccountUuid;
+    if (accountUuid == null) {
+      setState(() {
+        _shieldBalanceError = 'No active account.';
+      });
+      return;
+    }
+
+    final accountNotifier = ref.read(accountProvider.notifier);
+    if (accountNotifier.isHardwareAccount(accountUuid)) {
+      context.go('/home/keystone/shield/confirm');
+      return;
+    }
+
     setState(() {
       _isShieldingBalance = true;
       _shieldBalanceError = null;
     });
 
     try {
-      final wallet = ref.read(walletProvider).value;
-      final accountUuid = wallet?.activeAccountUuid;
-      if (accountUuid == null) {
-        throw Exception('No active account.');
-      }
-
-      final accountNotifier = ref.read(accountProvider.notifier);
-      if (accountNotifier.isHardwareAccount(accountUuid)) {
-        throw Exception(
-          'Shielding transparent balance is only available for software accounts.',
-        );
-      }
-
       final sync = (ref.read(syncProvider).value ?? SyncState())
           .scopedToAccount(accountUuid);
       if (!sync.canShieldTransparentBalance) {
@@ -144,9 +146,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _friendlyShieldBalanceError(Object error) {
     final message = error.toString();
     final lower = message.toLowerCase();
-    if (lower.contains('hardware')) {
-      return 'Shield balance is only available for software accounts.';
-    }
     if (lower.contains('mnemonic')) {
       return 'Mnemonic not found for the active account.';
     }
