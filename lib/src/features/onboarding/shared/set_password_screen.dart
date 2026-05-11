@@ -108,6 +108,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
                   ufvk: args.requiredKeystoneUfvk,
                   seedFingerprint: args.requiredKeystoneSeedFingerprint,
                   zip32Index: args.requiredKeystoneZip32Index,
+                  birthdayHeight: args.importBirthdayHeight,
                 );
             }
           },
@@ -127,6 +128,9 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
 
         securityNotifier.commitPasswordSetup();
         passwordCommitted = true;
+        if (args.flow == SetPasswordFlow.importKeystone) {
+          ref.read(keystoneOnboardingProvider.notifier).resetScan();
+        }
         router.go('/home');
       });
     } catch (e, st) {

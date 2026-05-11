@@ -405,6 +405,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     required String ufvk,
     required List<int> seedFingerprint,
     required int zip32Index,
+    required int birthdayHeight,
   }) async {
     try {
       final prev = state.value ?? const AccountState();
@@ -418,7 +419,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ufvkString: ufvk,
         seedFingerprint: seedFingerprint,
         zip32Index: zip32Index,
-        birthdayHeight: null,
+        birthdayHeight: BigInt.from(birthdayHeight),
       );
       final accountUuid = result.accountUuid;
       final address = result.unifiedAddress;

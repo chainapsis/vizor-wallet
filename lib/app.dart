@@ -25,6 +25,7 @@ import 'src/features/onboarding/keystone/keystone_how_to_connect_screen.dart';
 import 'src/features/onboarding/keystone/keystone_onboarding_flow.dart';
 import 'src/features/onboarding/keystone/keystone_scan_qr_screen.dart';
 import 'src/features/onboarding/keystone/keystone_select_account_screen.dart';
+import 'src/features/onboarding/keystone/keystone_wallet_birthday_screen.dart';
 import 'src/features/onboarding/lost_password_screen.dart';
 import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
@@ -322,6 +323,25 @@ final _routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
           GoRoute(
+            path: KeystoneOnboardingStep.walletBirthdayHeight.routePath,
+            redirect: (_, _) {
+              final state = ref.read(keystoneOnboardingProvider);
+              if (state.accounts.isEmpty) {
+                return KeystoneOnboardingStep.scanQrCode.routePath;
+              }
+              return state.selectedAccount == null
+                  ? KeystoneOnboardingStep.selectAccount.routePath
+                  : null;
+            },
+            pageBuilder: (context, state) => CustomTransitionPage<void>(
+              key: state.pageKey,
+              transitionDuration: kOnboardingForwardDuration,
+              reverseTransitionDuration: kOnboardingReverseDuration,
+              child: const KeystoneWalletBirthdayScreen(),
+              transitionsBuilder: _onboardingFadeTransition,
+            ),
+          ),
+          GoRoute(
             path: KeystoneOnboardingStep.setPassword.routePath,
             redirect: (_, state) {
               final args = state.extra;
@@ -329,7 +349,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
                   args.flow == SetPasswordFlow.importKeystone) {
                 return null;
               }
-              return KeystoneOnboardingStep.selectAccount.routePath;
+              return KeystoneOnboardingStep.walletBirthdayHeight.routePath;
             },
             pageBuilder: (context, state) => CustomTransitionPage<void>(
               key: state.pageKey,

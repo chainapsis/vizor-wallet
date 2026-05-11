@@ -2,16 +2,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../main.dart' show log;
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/account_provider.dart';
-import '../../../providers/app_security_provider.dart';
-import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/wallet/keystone.dart' show KeystoneAccountInfo;
-import '../shared/onboarding_error_messages.dart';
-import '../shared/onboarding_flow_args.dart';
 import 'keystone_onboarding_flow.dart';
 
 class KeystoneSelectAccountScreen extends ConsumerStatefulWidget {
@@ -22,73 +16,10 @@ class KeystoneSelectAccountScreen extends ConsumerStatefulWidget {
       _KeystoneSelectAccountScreenState();
 }
 
-enum _ImportPhase { idle, stoppingSync, importing }
-
 class _KeystoneSelectAccountScreenState
     extends ConsumerState<KeystoneSelectAccountScreen> {
-  _ImportPhase _phase = _ImportPhase.idle;
-  String? _error;
-
-  bool get _isLoading => _phase != _ImportPhase.idle;
-
-  Future<void> _continue(KeystoneAccountInfo account) async {
-    if (_isLoading) return;
-
-    final security = ref.read(appSecurityProvider);
-    if (!security.isPasswordConfigured) {
-      context.go(
-        KeystoneOnboardingStep.setPassword.routePath,
-        extra: SetPasswordScreenArgs.importKeystone(
-          name: account.name,
-          ufvk: account.ufvk,
-          seedFingerprint: account.seedFingerprint.toList(),
-          zip32Index: account.index,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _phase = _ImportPhase.importing;
-      _error = null;
-    });
-
-    try {
-      await runWithSyncPausedForAccountMutation(
-        ref,
-        () => ref
-            .read(accountProvider.notifier)
-            .importKeystoneAccount(
-              name: account.name,
-              ufvk: account.ufvk,
-              seedFingerprint: account.seedFingerprint.toList(),
-              zip32Index: account.index,
-            ),
-        onStoppingSync: () {
-          if (!mounted) return;
-          setState(() {
-            _phase = _ImportPhase.stoppingSync;
-          });
-        },
-        onSyncPaused: () {
-          if (!mounted) return;
-          setState(() {
-            _phase = _ImportPhase.importing;
-          });
-        },
-      );
-
-      ref.read(keystoneOnboardingProvider.notifier).resetScan();
-      if (!mounted) return;
-      context.go('/home');
-    } catch (e, st) {
-      log('KeystoneSelectAccountScreen: import error: $e\n$st');
-      if (!mounted) return;
-      setState(() {
-        _phase = _ImportPhase.idle;
-        _error = onboardingSubmitErrorMessage(e);
-      });
-    }
+  void _continue() {
+    context.go(KeystoneOnboardingStep.walletBirthdayHeight.routePath);
   }
 
   @override
@@ -138,9 +69,6 @@ class _KeystoneSelectAccountScreenState
                         ref
                             .read(keystoneOnboardingProvider.notifier)
                             .selectAccount(account);
-                        setState(() {
-                          _error = null;
-                        });
                       },
                     ),
                   ],
@@ -153,30 +81,12 @@ class _KeystoneSelectAccountScreenState
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_error != null) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                    child: Text(
-                      _error!,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: colors.text.destructive,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ],
                 AppButton(
-                  onPressed: selected == null || _isLoading
-                      ? null
-                      : () => _continue(selected),
+                  onPressed: selected == null ? null : _continue,
                   variant: AppButtonVariant.primary,
                   minWidth: 256,
                   trailing: const AppIcon(AppIcons.chevronForward),
-                  child: Text(switch (_phase) {
-                    _ImportPhase.stoppingSync => 'Stop syncing...',
-                    _ImportPhase.importing => 'Importing...',
-                    _ImportPhase.idle => 'Continue',
-                  }),
+                  child: const Text('Continue'),
                 ),
               ],
             ),

@@ -50,8 +50,10 @@ class SetPasswordScreenArgs {
     required String ufvk,
     required List<int> seedFingerprint,
     required int zip32Index,
+    required int birthdayHeight,
   }) : this._(
          flow: SetPasswordFlow.importKeystone,
+         birthdayHeight: birthdayHeight,
          keystoneAccountName: name,
          keystoneUfvk: ufvk,
          keystoneSeedFingerprint: seedFingerprint,
@@ -79,7 +81,7 @@ class SetPasswordScreenArgs {
   String get backRoutePath => switch (flow) {
     SetPasswordFlow.create => '/onboarding/secret-passphrase',
     SetPasswordFlow.importWallet => '/import/birthday',
-    SetPasswordFlow.importKeystone => '/onboarding/keystone/select-account',
+    SetPasswordFlow.importKeystone => '/onboarding/keystone/birthday',
   };
 
   Object get backRouteExtra => switch (flow) {

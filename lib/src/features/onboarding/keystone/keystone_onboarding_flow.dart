@@ -12,6 +12,7 @@ enum KeystoneOnboardingStep {
   howToConnect,
   scanQrCode,
   selectAccount,
+  walletBirthdayHeight,
   setPassword,
 }
 
@@ -20,6 +21,7 @@ extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
     KeystoneOnboardingStep.howToConnect => 'How to Connect',
     KeystoneOnboardingStep.scanQrCode => 'Scan QR Code',
     KeystoneOnboardingStep.selectAccount => 'Select account',
+    KeystoneOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
     KeystoneOnboardingStep.setPassword => 'Set Password',
   };
 
@@ -27,6 +29,7 @@ extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
     KeystoneOnboardingStep.howToConnect => AppIcons.zcash,
     KeystoneOnboardingStep.scanQrCode => AppIcons.qr,
     KeystoneOnboardingStep.selectAccount => AppIcons.users,
+    KeystoneOnboardingStep.walletBirthdayHeight => AppIcons.block,
     KeystoneOnboardingStep.setPassword => AppIcons.lock,
   };
 
@@ -35,6 +38,8 @@ extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
     KeystoneOnboardingStep.scanQrCode => '/onboarding/keystone/scan',
     KeystoneOnboardingStep.selectAccount =>
       '/onboarding/keystone/select-account',
+    KeystoneOnboardingStep.walletBirthdayHeight =>
+      '/onboarding/keystone/birthday',
     KeystoneOnboardingStep.setPassword => '/onboarding/keystone/set-password',
   };
 }
@@ -42,6 +47,11 @@ extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
 KeystoneOnboardingStep keystoneOnboardingStepFromLocation(String location) {
   if (location.startsWith(KeystoneOnboardingStep.setPassword.routePath)) {
     return KeystoneOnboardingStep.setPassword;
+  }
+  if (location.startsWith(
+    KeystoneOnboardingStep.walletBirthdayHeight.routePath,
+  )) {
+    return KeystoneOnboardingStep.walletBirthdayHeight;
   }
   if (location.startsWith(KeystoneOnboardingStep.selectAccount.routePath)) {
     return KeystoneOnboardingStep.selectAccount;
@@ -141,13 +151,32 @@ class KeystoneOnboardingShell extends StatelessWidget {
 }
 
 class KeystoneOnboardingTrailingPane extends StatelessWidget {
-  const KeystoneOnboardingTrailingPane({required this.child, super.key});
+  const KeystoneOnboardingTrailingPane({
+    required this.child,
+    this.overlay,
+    super.key,
+  });
 
   final Widget child;
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
-    return AppDesktopPane(child: child);
+    final overlay = this.overlay;
+    if (overlay == null) {
+      return AppDesktopPane(child: child);
+    }
+
+    return AppDesktopPane(
+      padding: EdgeInsets.zero,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Padding(padding: const EdgeInsets.all(AppSpacing.md), child: child),
+          overlay,
+        ],
+      ),
+    );
   }
 }
 
@@ -203,6 +232,7 @@ class _Sidebar extends StatelessWidget {
     KeystoneOnboardingStep.howToConnect,
     KeystoneOnboardingStep.scanQrCode,
     KeystoneOnboardingStep.selectAccount,
+    KeystoneOnboardingStep.walletBirthdayHeight,
     if (showPasswordStep) KeystoneOnboardingStep.setPassword,
   ];
 
