@@ -126,6 +126,10 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
         expectedUrType: widget.expectedUrType,
       );
     } catch (e) {
+      if (!mounted) return;
+      if (_shouldResetScanSessionAfterError(e)) {
+        _resetScanSession();
+      }
       widget.onDecodeError?.call(e);
       log('QrScanner: UR part decode error: $e');
       return;
@@ -142,6 +146,10 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
         ScanResult(urType: result.urType ?? '', data: result.data!),
       );
     }
+  }
+
+  bool _shouldResetScanSessionAfterError(Object error) {
+    return error.toString().contains('UR session reset:');
   }
 
   @override

@@ -198,19 +198,34 @@ pub fn decode_ur_part(part: &str, expected_ur_type: &str) -> Result<UrDecodeResu
         }
     }
 
-    // Subsequent parts — feed to existing decoder.
-    let session = session_guard.as_mut().unwrap();
-    session
-        .decoder
-        .receive(&part_lower)
-        .map_err(|e| format!("UR receive: {e}"))?;
+    // Subsequent parts — feed to existing decoder. If the decoder rejects a
+    // same-type fragment, treat the session as corrupted and force the caller
+    // to restart from a clean fountain-code state.
+    let receive_result = {
+        let session = session_guard.as_mut().unwrap();
+        session.decoder.receive(&part_lower)
+    };
+    if let Err(e) = receive_result {
+        *session_guard = None;
+        return Err(format!("UR session reset: UR receive: {e}"));
+    }
 
-    if session.decoder.complete() {
-        let cbor = session
-            .decoder
-            .message()
-            .map_err(|e| format!("UR message: {e}"))?
-            .ok_or("Decoder complete but no message")?;
+    if session_guard.as_ref().unwrap().decoder.complete() {
+        let message_result = {
+            let session = session_guard.as_mut().unwrap();
+            session.decoder.message()
+        };
+        let cbor = match message_result {
+            Ok(Some(cbor)) => cbor,
+            Ok(None) => {
+                *session_guard = None;
+                return Err("UR session reset: Decoder complete but no message".to_string());
+            }
+            Err(e) => {
+                *session_guard = None;
+                return Err(format!("UR session reset: UR message: {e}"));
+            }
+        };
         log::info!(
             "keystone: multi-part UR complete ({} bytes, type={expected_ur_type})",
             cbor.len()
@@ -224,7 +239,7 @@ pub fn decode_ur_part(part: &str, expected_ur_type: &str) -> Result<UrDecodeResu
         });
     }
 
-    let progress = session.decoder.progress();
+    let progress = session_guard.as_ref().unwrap().decoder.progress();
     Ok(UrDecodeResult {
         complete: false,
         progress: progress as u32,
