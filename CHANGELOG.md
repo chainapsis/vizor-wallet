@@ -4,6 +4,12 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.5.9
+
+## Added
+- Added `VotingDb::has_round` for checking round existence through the storage
+  API without downstream callers depending on SQLite schema details.
+
 # 0.5.8
 
 ## Added
