@@ -19,7 +19,6 @@ class KeystoneScanQrScreen extends ConsumerStatefulWidget {
 }
 
 class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
-  int _progress = 0;
   bool _decoding = false;
   String? _error;
 
@@ -28,7 +27,6 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
     setState(() {
       _decoding = true;
       _error = null;
-      _progress = 100;
     });
 
     try {
@@ -94,7 +92,7 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     SizedBox(
-                      width: 360,
+                      width: 340,
                       child: Text(
                         'Grant access to your camera and then place the QR code in front of your screen.',
                         style: AppTypography.bodyMediumStrong.copyWith(
@@ -103,17 +101,13 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
                         textAlign: TextAlign.center,
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.lg),
-                    const _CameraGuidance(),
-                    const SizedBox(height: AppSpacing.md),
+                    const SizedBox(height: AppSpacing.base),
                     _ScannerCard(
-                      progress: _progress,
                       decoding: _decoding,
                       error: _error,
                       onProgress: (progress) {
                         if (!mounted) return;
                         setState(() {
-                          _progress = progress;
                           if (progress > 0) _error = null;
                         });
                       },
@@ -131,26 +125,8 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
   }
 }
 
-class _CameraGuidance extends StatelessWidget {
-  const _CameraGuidance();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      width: 456,
-      child: Text(
-        'A camera is required. Monitor webcams may struggle to focus on QR codes; increase the distance, improve lighting, or use an external webcam.',
-        style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
-        textAlign: TextAlign.center,
-      ),
-    );
-  }
-}
-
 class _ScannerCard extends StatelessWidget {
   const _ScannerCard({
-    required this.progress,
     required this.decoding,
     required this.error,
     required this.onProgress,
@@ -158,7 +134,6 @@ class _ScannerCard extends StatelessWidget {
     required this.onComplete,
   });
 
-  final int progress;
   final bool decoding;
   final String? error;
   final ValueChanged<int> onProgress;
@@ -176,8 +151,7 @@ class _ScannerCard extends StatelessWidget {
             height: 316,
             decoration: BoxDecoration(
               color: colors.background.overlay.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(AppRadii.large),
-              border: Border.all(color: colors.border.regular, width: 1.5),
+              borderRadius: BorderRadius.circular(20),
             ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
@@ -204,12 +178,6 @@ class _ScannerCard extends StatelessWidget {
                     ),
                   ),
                 const _ScanFrame(),
-                Positioned(
-                  left: AppSpacing.md,
-                  right: AppSpacing.md,
-                  bottom: AppSpacing.md,
-                  child: _ProgressBar(progress: progress),
-                ),
                 if (decoding)
                   DecoratedBox(
                     decoration: BoxDecoration(
@@ -279,44 +247,86 @@ class _ScannerCard extends StatelessWidget {
 class _ScanFrame extends StatelessWidget {
   const _ScanFrame();
 
+  static const _width = 263.0;
+  static const _height = 262.0;
+  static const _segmentLength = 58.0;
+  static const _strokeWidth = 5.0;
+  static const _radius = 17.0;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Center(
-      child: Container(
-        width: 188,
-        height: 188,
-        decoration: BoxDecoration(
-          border: Border.all(color: colors.border.strong, width: 2),
-          borderRadius: BorderRadius.circular(AppRadii.medium),
+      child: SizedBox(
+        width: _width,
+        height: _height,
+        child: Stack(
+          children: [
+            _ScanCorner(
+              alignment: Alignment.topLeft,
+              color: colors.text.accent,
+            ),
+            _ScanCorner(
+              alignment: Alignment.topRight,
+              color: colors.text.accent,
+            ),
+            _ScanCorner(
+              alignment: Alignment.bottomLeft,
+              color: colors.text.accent,
+            ),
+            _ScanCorner(
+              alignment: Alignment.bottomRight,
+              color: colors.text.accent,
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({required this.progress});
+class _ScanCorner extends StatelessWidget {
+  const _ScanCorner({required this.alignment, required this.color});
 
-  final int progress;
+  final Alignment alignment;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final value = progress.clamp(0, 100) / 100;
-    return Container(
-      height: 4,
-      decoration: BoxDecoration(
-        color: colors.background.overlay.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(AppRadii.full),
-      ),
-      alignment: Alignment.centerLeft,
-      child: FractionallySizedBox(
-        widthFactor: value == 0 ? 0.02 : value,
-        child: Container(
+    final isLeft = alignment.x < 0;
+    final isTop = alignment.y < 0;
+    final border = BorderSide(
+      color: color,
+      width: _ScanFrame._strokeWidth,
+      strokeAlign: BorderSide.strokeAlignInside,
+    );
+    return Align(
+      alignment: alignment,
+      child: SizedBox(
+        width: _ScanFrame._segmentLength,
+        height: _ScanFrame._segmentLength,
+        child: DecoratedBox(
           decoration: BoxDecoration(
-            color: colors.button.primary.bg,
-            borderRadius: BorderRadius.circular(AppRadii.full),
+            border: Border(
+              left: isLeft ? border : BorderSide.none,
+              right: isLeft ? BorderSide.none : border,
+              top: isTop ? border : BorderSide.none,
+              bottom: isTop ? BorderSide.none : border,
+            ),
+            borderRadius: BorderRadius.only(
+              topLeft: isLeft && isTop
+                  ? const Radius.circular(_ScanFrame._radius)
+                  : Radius.zero,
+              topRight: !isLeft && isTop
+                  ? const Radius.circular(_ScanFrame._radius)
+                  : Radius.zero,
+              bottomLeft: isLeft && !isTop
+                  ? const Radius.circular(_ScanFrame._radius)
+                  : Radius.zero,
+              bottomRight: !isLeft && !isTop
+                  ? const Radius.circular(_ScanFrame._radius)
+                  : Radius.zero,
+            ),
           ),
         ),
       ),
