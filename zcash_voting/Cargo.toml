@@ -1,6 +1,6 @@
 [package]
 name = "zcash_voting"
-version = "0.5.7"
+version = "0.5.8"
 edition = "2021"
 description = "Client-side library for Zcash shielded voting: ZKP delegation and vote-commitment proofs (Halo 2), ElGamal encryption, governance PCZT construction, Merkle witness generation, and SQLite round-state persistence."
 license = "MIT OR Apache-2.0"

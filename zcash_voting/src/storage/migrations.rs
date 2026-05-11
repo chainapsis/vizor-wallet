@@ -2,7 +2,31 @@ use rusqlite::Connection;
 
 use crate::VotingError;
 
-const CURRENT_VERSION: u32 = 7;
+const CURRENT_VERSION: u32 = 8;
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, VotingError> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to inspect {table} columns: {e}"),
+        })?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to query {table} columns: {e}"),
+        })?;
+
+    for name in columns {
+        let name = name.map_err(|e| VotingError::Internal {
+            message: format!("failed to read {table} column name: {e}"),
+        })?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
 
 pub fn migrate(conn: &Connection) -> Result<(), VotingError> {
     let version: u32 = conn
@@ -191,6 +215,23 @@ pub fn migrate(conn: &Connection) -> Result<(), VotingError> {
             })?;
     }
 
+    if version < 8 {
+        // v8: persist full bundle note identity hashes so later workflow steps
+        // can reject same-position note substitutions. Fresh DBs and drop-all
+        // migrations already get the column from 001_init.sql, so guard the
+        // ALTER for those paths.
+        if !column_exists(conn, "bundles", "note_identity_hashes_blob")? {
+            conn.execute_batch("ALTER TABLE bundles ADD COLUMN note_identity_hashes_blob BLOB;")
+                .map_err(|e| VotingError::Internal {
+                    message: format!("migration to version 8 failed: {}", e),
+                })?;
+        }
+        conn.pragma_update(None, "user_version", 8)
+            .map_err(|e| VotingError::Internal {
+                message: format!("failed to update database version: {}", e),
+            })?;
+    }
+
     let final_version: u32 = conn
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .map_err(|e| VotingError::Internal {
@@ -212,6 +253,22 @@ pub fn migrate(conn: &Connection) -> Result<(), VotingError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::queries;
+    use crate::VotingRoundParams;
+
+    fn v7_schema() -> String {
+        include_str!("migrations/001_init.sql").replace("    note_identity_hashes_blob BLOB,\n", "")
+    }
+
+    fn test_params() -> VotingRoundParams {
+        VotingRoundParams {
+            vote_round_id: "test-round".to_string(),
+            snapshot_height: 1000,
+            ea_pk: vec![0xEA; 32],
+            nc_root: vec![0xAA; 32],
+            nullifier_imt_root: vec![0xBB; 32],
+        }
+    }
 
     #[test]
     fn test_migrate_fresh_database() {
@@ -234,6 +291,28 @@ mod tests {
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
         assert_eq!(version, CURRENT_VERSION);
+    }
+
+    #[test]
+    fn test_migrate_from_v7_preserves_existing_bundles() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(&v7_schema()).unwrap();
+        queries::insert_round(&conn, "wallet", &test_params(), None).unwrap();
+        queries::insert_bundle(&conn, "test-round", "wallet", 0, &[1]).unwrap();
+        conn.pragma_update(None, "user_version", 7).unwrap();
+
+        migrate(&conn).unwrap();
+
+        let (positions, identity_hashes): (Vec<u8>, Option<Vec<u8>>) = conn
+            .query_row(
+                "SELECT note_positions_blob, note_identity_hashes_blob FROM bundles
+                 WHERE round_id = 'test-round' AND wallet_id = 'wallet' AND bundle_index = 0",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(positions, 1u64.to_le_bytes().to_vec());
+        assert_eq!(identity_hashes, None);
     }
 
     #[test]

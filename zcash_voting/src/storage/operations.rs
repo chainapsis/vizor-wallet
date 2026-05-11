@@ -255,7 +255,7 @@ impl VotingDb {
         round_id: &str,
         notes: &[NoteInfo],
     ) -> Result<(u32, u64), VotingError> {
-        let conn = self.conn();
+        let mut conn = self.conn();
         let wallet_id = self.wallet_id();
         let result = crate::types::chunk_notes(notes);
         if result.dropped_count > 0 {
@@ -266,10 +266,15 @@ impl VotingDb {
                 notes.len()
             );
         }
+        let tx = conn.transaction().map_err(|e| VotingError::Internal {
+            message: format!("failed to begin bundle setup transaction: {e}"),
+        })?;
         for (i, chunk) in result.bundles.iter().enumerate() {
-            let positions: Vec<u64> = chunk.iter().map(|n| n.position).collect();
-            queries::insert_bundle(&conn, round_id, &wallet_id, i as u32, &positions)?;
+            queries::insert_bundle_notes(&tx, round_id, &wallet_id, i as u32, chunk)?;
         }
+        tx.commit().map_err(|e| VotingError::Internal {
+            message: format!("failed to commit bundle setup transaction: {e}"),
+        })?;
         Ok((result.bundles.len() as u32, result.eligible_weight))
     }
 
@@ -320,6 +325,7 @@ impl VotingDb {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
         let params = queries::load_round_params(&conn, round_id, &wallet_id)?;
+        queries::require_bundle_notes(&conn, round_id, &wallet_id, bundle_index, notes)?;
         let result = crate::action::build_governance_pczt(
             notes,
             &params,
@@ -340,7 +346,7 @@ impl VotingDb {
             })?;
         // Persist delegation data fields
         // plus padded_note_secrets and pczt_sighash for ZCA-74 randomness threading.
-        queries::store_delegation_data(
+        queries::store_delegation_data_with_pczt_fields(
             &conn,
             round_id,
             &wallet_id,
@@ -359,6 +365,8 @@ impl VotingDb {
             address_index,
             &result.padded_note_secrets,
             &result.pczt_sighash,
+            &result.rk,
+            &result.gov_nullifiers,
         )?;
         Ok(result)
     }
@@ -439,6 +447,7 @@ impl VotingDb {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
         let params = queries::load_round_params(&conn, round_id, &wallet_id)?;
+        queries::require_bundle_notes(&conn, round_id, &wallet_id, bundle_index, notes)?;
         let padded_secrets =
             queries::load_padded_note_secrets(&conn, round_id, &wallet_id, bundle_index)?;
         let padded_nullifiers = padded_nullifiers_for_circuit(notes, &padded_secrets, network_id)?;
@@ -545,6 +554,7 @@ impl VotingDb {
         let conn = self.conn();
         let wallet_id = self.wallet_id();
         let params = queries::load_round_params(&conn, round_id, &wallet_id)?;
+        queries::require_bundle_notes(&conn, round_id, &wallet_id, bundle_index, notes)?;
         let alpha = queries::load_alpha(&conn, round_id, &wallet_id, bundle_index)?;
         let van_comm_rand = queries::load_van_comm_rand(&conn, round_id, &wallet_id, bundle_index)?;
         let witnesses = queries::load_witnesses(&conn, round_id, &wallet_id, bundle_index)?;
@@ -615,13 +625,8 @@ impl VotingDb {
 
         // Phase 2: Load/fetch IMT exclusion proofs via PIR.
         let pir_start = std::time::Instant::now();
-        let precompute = self.precompute_delegation_pir(
-            round_id,
-            bundle_index,
-            notes,
-            pir_client,
-            network_id,
-        )?;
+        let precompute =
+            self.precompute_delegation_pir(round_id, bundle_index, notes, pir_client, network_id)?;
 
         let conn = self.conn();
         let real_targets = delegation_nullifier_targets(notes, &[])?;
@@ -729,14 +734,16 @@ impl VotingDb {
             prove_elapsed.as_secs_f64()
         );
 
-        // Store proof bytes for debugging/recovery
-        let conn = self.conn();
-        queries::store_proof(&conn, round_id, &wallet_id, bundle_index, &result.proof)?;
-        // Persist prover's public inputs — needed later for delegation TX submission.
-        // With PrecomputedRandomness (ZCA-74 fix), nf_signed/cmx_new should match
-        // Phase 1 values. We still store them to be explicit and support the legacy path.
-        queries::store_proof_result_fields(
-            &conn,
+        // Persist proof bytes, public inputs, and phase together. The public
+        // inputs are checked against the PCZT fields before any partial proof
+        // success state is committed.
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(|e| VotingError::Internal {
+            message: format!("failed to begin proof result transaction: {e}"),
+        })?;
+        queries::store_proof(&tx, round_id, &wallet_id, bundle_index, &result.proof)?;
+        queries::store_proof_result_fields_with_van_comm(
+            &tx,
             round_id,
             &wallet_id,
             bundle_index,
@@ -744,8 +751,12 @@ impl VotingDb {
             &result.gov_nullifiers,
             &result.nf_signed,
             &result.cmx_new,
+            &result.van_comm,
         )?;
-        queries::update_round_phase(&conn, round_id, &wallet_id, RoundPhase::DelegationProved)?;
+        queries::update_round_phase(&tx, round_id, &wallet_id, RoundPhase::DelegationProved)?;
+        tx.commit().map_err(|e| VotingError::Internal {
+            message: format!("failed to commit proof result transaction: {e}"),
+        })?;
 
         let total_elapsed = total_start.elapsed();
         eprintln!(
@@ -1295,6 +1306,20 @@ mod tests {
         }
     }
 
+    fn identity_test_note() -> NoteInfo {
+        NoteInfo {
+            commitment: vec![0x01; 32],
+            nullifier: vec![0x02; 32],
+            value: 13_000_000,
+            position: 7,
+            diversifier: vec![0x03; 11],
+            rho: vec![0x04; 32],
+            rseed: vec![0x05; 32],
+            scope: 0,
+            ufvk_str: "uview1test".to_string(),
+        }
+    }
+
     #[test]
     fn test_init_and_get_round() {
         let db = test_db();
@@ -1351,6 +1376,303 @@ mod tests {
         // Quantized: bundle 0 (65M → 5×12.5M=62.5M) = 62.5M
         assert_eq!(eligible, 62_500_000);
         assert_eq!(db.get_bundle_count(ROUND_ID).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_setup_bundles_rolls_back_partial_insert_on_error() {
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        let notes: Vec<NoteInfo> = (0..6)
+            .map(|i| NoteInfo {
+                commitment: vec![i as u8; 32],
+                nullifier: vec![i as u8 + 1; 32],
+                value: 13_000_000,
+                position: i as u64,
+                diversifier: vec![0; 11],
+                rho: vec![0; 32],
+                rseed: vec![0; 32],
+                scope: 0,
+                ufvk_str: String::new(),
+            })
+            .collect();
+
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 1, &[99]).unwrap();
+        }
+
+        let err = db
+            .setup_bundles(ROUND_ID, &notes)
+            .expect_err("bundle index conflict should fail setup");
+        assert!(err.to_string().contains("failed to insert bundle"));
+
+        let conn = db.conn();
+        let bundle_zero_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM bundles
+                 WHERE round_id = ?1 AND wallet_id = ?2 AND bundle_index = 0",
+                rusqlite::params![ROUND_ID, W],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(bundle_zero_count, 0);
+        assert_eq!(queries::get_bundle_count(&conn, ROUND_ID, W).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_require_bundle_notes_rejects_each_identity_field_substitution() {
+        fn mutate_commitment(note: &mut NoteInfo) {
+            note.commitment[0] ^= 0x01;
+        }
+        fn mutate_nullifier(note: &mut NoteInfo) {
+            note.nullifier[0] ^= 0x01;
+        }
+        fn mutate_value(note: &mut NoteInfo) {
+            note.value += 1;
+        }
+        fn mutate_position(note: &mut NoteInfo) {
+            note.position += 1;
+        }
+        fn mutate_diversifier(note: &mut NoteInfo) {
+            note.diversifier[0] ^= 0x01;
+        }
+        fn mutate_rho(note: &mut NoteInfo) {
+            note.rho[0] ^= 0x01;
+        }
+        fn mutate_rseed(note: &mut NoteInfo) {
+            note.rseed[0] ^= 0x01;
+        }
+        fn mutate_scope(note: &mut NoteInfo) {
+            note.scope += 1;
+        }
+        fn mutate_ufvk(note: &mut NoteInfo) {
+            note.ufvk_str.push_str("-substituted");
+        }
+
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+        let note = identity_test_note();
+        let conn = db.conn();
+        queries::insert_bundle_notes(&conn, ROUND_ID, W, 0, &[note.clone()]).unwrap();
+
+        let cases: [(&str, fn(&mut NoteInfo)); 9] = [
+            ("commitment", mutate_commitment),
+            ("nullifier", mutate_nullifier),
+            ("value", mutate_value),
+            ("position", mutate_position),
+            ("diversifier", mutate_diversifier),
+            ("rho", mutate_rho),
+            ("rseed", mutate_rseed),
+            ("scope", mutate_scope),
+            ("ufvk_str", mutate_ufvk),
+        ];
+
+        for (field, mutate) in cases {
+            let mut substituted = note.clone();
+            mutate(&mut substituted);
+
+            let err = queries::require_bundle_notes(&conn, ROUND_ID, W, 0, &[substituted])
+                .expect_err(field);
+            assert!(err.to_string().contains("bundle_index 0"), "{field}: {err}");
+        }
+    }
+
+    #[test]
+    fn test_require_bundle_notes_allows_legacy_position_only_rows() {
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+        let note = identity_test_note();
+        let conn = db.conn();
+        queries::insert_bundle(&conn, ROUND_ID, W, 0, &[note.position]).unwrap();
+
+        let mut substituted = note;
+        substituted.nullifier[0] ^= 0x01;
+        substituted.rseed[0] ^= 0x01;
+        substituted.ufvk_str.push_str("-substituted");
+
+        queries::require_bundle_notes(&conn, ROUND_ID, W, 0, &[substituted]).unwrap();
+    }
+
+    #[test]
+    fn test_build_governance_pczt_rejects_same_position_note_substitution() {
+        use orchard::keys::{FullViewingKey, SpendingKey};
+        use zip32::Scope;
+
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        let notes = vec![NoteInfo {
+            commitment: vec![0x01; 32],
+            nullifier: vec![0x02; 32],
+            value: 13_000_000,
+            position: 0,
+            diversifier: vec![0; 11],
+            rho: vec![0; 32],
+            rseed: vec![0; 32],
+            scope: 0,
+            ufvk_str: String::new(),
+        }];
+        db.setup_bundles(ROUND_ID, &notes).unwrap();
+
+        let mut substituted_notes = notes.clone();
+        substituted_notes[0].nullifier = vec![0x03; 32];
+
+        let sk = SpendingKey::from_bytes([0x42; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let hotkey_sk = SpendingKey::from_bytes([0x43; 32]).expect("valid spending key");
+        let hotkey_fvk = FullViewingKey::from(&hotkey_sk);
+        let hotkey_raw_address = hotkey_fvk
+            .address_at(0u32, Scope::External)
+            .to_raw_address_bytes()
+            .to_vec();
+        let seed_fingerprint = [0x42u8; 32];
+
+        let err = db
+            .build_governance_pczt(
+                ROUND_ID,
+                0,
+                &substituted_notes,
+                &fvk.to_bytes().to_vec(),
+                &hotkey_raw_address,
+                0xC8E71055,
+                1,
+                &seed_fingerprint,
+                0,
+                "test-round",
+                0,
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("note identity mismatch"));
+    }
+
+    #[test]
+    fn test_store_proof_result_fields_rejects_pczt_mismatch() {
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        let rk = [0x10; 32];
+        let wrong_rk = [0x11; 32];
+        let gov_nullifiers = vec![vec![0x20; 32]; 5];
+        let nf_signed = [0x30; 32];
+        let cmx_new = [0x40; 32];
+        let van_comm = [0x50; 32];
+
+        let mut conn = db.conn();
+        queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
+        queries::store_delegation_data_with_pczt_fields(
+            &conn,
+            ROUND_ID,
+            W,
+            0,
+            &[0x01; 32],
+            &[],
+            &[0x02; 32],
+            &[],
+            &nf_signed,
+            &cmx_new,
+            &[0x03; 32],
+            &[0x04; 32],
+            &[0x05; 32],
+            &van_comm,
+            1,
+            0,
+            &[],
+            &[0x06; 32],
+            &rk,
+            &gov_nullifiers,
+        )
+        .unwrap();
+
+        let tx = conn.transaction().unwrap();
+        queries::store_proof(&tx, ROUND_ID, W, 0, &[0xAB; 96]).unwrap();
+        let err = queries::store_proof_result_fields_with_van_comm(
+            &tx,
+            ROUND_ID,
+            W,
+            0,
+            &wrong_rk,
+            &gov_nullifiers,
+            &nf_signed,
+            &cmx_new,
+            &van_comm,
+        )
+        .expect_err("proof rk must match PCZT rk");
+        assert!(err.to_string().contains("rk"));
+        drop(tx);
+
+        let proof_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM proofs
+                 WHERE round_id = ?1 AND wallet_id = ?2 AND bundle_index = ?3",
+                rusqlite::params![ROUND_ID, W, 0],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(proof_count, 0);
+
+        queries::store_proof_result_fields_with_van_comm(
+            &conn,
+            ROUND_ID,
+            W,
+            0,
+            &rk,
+            &gov_nullifiers,
+            &nf_signed,
+            &cmx_new,
+            &van_comm,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_store_proof_result_fields_allows_legacy_missing_pczt_fields() {
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        let rk = [0x10; 32];
+        let gov_nullifiers = vec![vec![0x20; 32]; 5];
+        let nf_signed = [0x30; 32];
+        let cmx_new = [0x40; 32];
+        let van_comm = [0x50; 32];
+
+        let conn = db.conn();
+        queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
+        queries::store_delegation_data(
+            &conn,
+            ROUND_ID,
+            W,
+            0,
+            &[0x01; 32],
+            &[],
+            &[0x02; 32],
+            &[],
+            &nf_signed,
+            &cmx_new,
+            &[0x03; 32],
+            &[0x04; 32],
+            &[0x05; 32],
+            &van_comm,
+            1,
+            0,
+            &[],
+            &[0x06; 32],
+        )
+        .unwrap();
+
+        queries::store_proof_result_fields_with_van_comm(
+            &conn,
+            ROUND_ID,
+            W,
+            0,
+            &rk,
+            &gov_nullifiers,
+            &nf_signed,
+            &cmx_new,
+            &van_comm,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1466,8 +1788,7 @@ mod tests {
         let alpha = pallas::Scalar::from(7);
         let alpha_bytes = alpha.to_repr();
         let sighash = [0x99; 32];
-        let account_1_rk: [u8; 32] =
-            (&randomized_verification_key(&sender_seed, 1, &alpha)).into();
+        let account_1_rk: [u8; 32] = (&randomized_verification_key(&sender_seed, 1, &alpha)).into();
 
         {
             let conn = db.conn();
@@ -1493,7 +1814,7 @@ mod tests {
                 &sighash,
             )
             .unwrap();
-            queries::store_proof_result_fields(
+            queries::store_proof_result_fields_with_van_comm(
                 &conn,
                 ROUND_ID,
                 W,
@@ -1502,6 +1823,7 @@ mod tests {
                 &[vec![0x88; 32]],
                 &[0x33; 32],
                 &[0x44; 32],
+                &[0x77; 32],
             )
             .unwrap();
             queries::store_proof(&conn, ROUND_ID, W, 0, &[0xAB; 96]).unwrap();
@@ -1567,7 +1889,7 @@ mod tests {
                 &stored_sighash,
             )
             .unwrap();
-            queries::store_proof_result_fields(
+            queries::store_proof_result_fields_with_van_comm(
                 &conn,
                 ROUND_ID,
                 W,
@@ -1576,6 +1898,7 @@ mod tests {
                 &[vec![0x89; 32]],
                 &[0x33; 32],
                 &[0x44; 32],
+                &[0x88; 32],
             )
             .unwrap();
             queries::store_proof(&conn, ROUND_ID, W, 0, &[0xAC; 96]).unwrap();
