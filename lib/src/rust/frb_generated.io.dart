@@ -28,12 +28,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
   @protected
+  RustStreamSink<ApiDelegationProofEvent>
+  dco_decode_StreamSink_api_delegation_proof_event_Sse(dynamic raw);
+
+  @protected
   RustStreamSink<ApiMempoolTxEvent>
   dco_decode_StreamSink_api_mempool_tx_event_Sse(dynamic raw);
 
   @protected
   RustStreamSink<ApiSyncProgressEvent>
   dco_decode_StreamSink_api_sync_progress_event_Sse(dynamic raw);
+
+  @protected
+  RustStreamSink<ApiVoteCommitEvent>
+  dco_decode_StreamSink_api_vote_commit_event_Sse(dynamic raw);
 
   @protected
   String dco_decode_String(dynamic raw);
@@ -48,16 +56,37 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AddressValidationResult dco_decode_address_validation_result(dynamic raw);
 
   @protected
+  ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw);
+
+  @protected
+  ApiDraftVote dco_decode_api_draft_vote(dynamic raw);
+
+  @protected
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
 
   @protected
   ApiSignedDelegation dco_decode_api_signed_delegation(dynamic raw);
 
   @protected
+  ApiSignedVoteCommitment dco_decode_api_signed_vote_commitment(dynamic raw);
+
+  @protected
+  ApiSignedVoteCommitments dco_decode_api_signed_vote_commitments(dynamic raw);
+
+  @protected
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
 
   @protected
   ApiVanWitness dco_decode_api_van_witness(dynamic raw);
+
+  @protected
+  ApiVoteCommitEvent dco_decode_api_vote_commit_event(dynamic raw);
+
+  @protected
+  ApiVoteRecord dco_decode_api_vote_record(dynamic raw);
+
+  @protected
+  ApiVoteSharePayload dco_decode_api_vote_share_payload(dynamic raw);
 
   @protected
   ApiVotingBundleSetupResult dco_decode_api_voting_bundle_setup_result(
@@ -76,10 +105,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiVotingRoundParams dco_decode_api_voting_round_params(dynamic raw);
 
   @protected
+  ApiWireEncryptedShare dco_decode_api_wire_encrypted_share(dynamic raw);
+
+  @protected
   BlockMetaInfo dco_decode_block_meta_info(dynamic raw);
 
   @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  ApiSignedDelegation dco_decode_box_autoadd_api_signed_delegation(dynamic raw);
+
+  @protected
+  ApiSignedVoteCommitments dco_decode_box_autoadd_api_signed_vote_commitments(
+    dynamic raw,
+  );
+
+  @protected
+  ApiVanWitness dco_decode_box_autoadd_api_van_witness(dynamic raw);
 
   @protected
   ApiVotingRoundParams dco_decode_box_autoadd_api_voting_round_params(
@@ -116,7 +159,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<AccountInfo> dco_decode_list_account_info(dynamic raw);
 
   @protected
+  List<ApiDraftVote> dco_decode_list_api_draft_vote(dynamic raw);
+
+  @protected
+  List<ApiSignedVoteCommitment> dco_decode_list_api_signed_vote_commitment(
+    dynamic raw,
+  );
+
+  @protected
+  List<ApiVoteRecord> dco_decode_list_api_vote_record(dynamic raw);
+
+  @protected
+  List<ApiVoteSharePayload> dco_decode_list_api_vote_share_payload(dynamic raw);
+
+  @protected
   List<ApiVotingNoteRef> dco_decode_list_api_voting_note_ref(dynamic raw);
+
+  @protected
+  List<ApiWireEncryptedShare> dco_decode_list_api_wire_encrypted_share(
+    dynamic raw,
+  );
 
   @protected
   List<BlockMetaInfo> dco_decode_list_block_meta_info(dynamic raw);
@@ -152,6 +214,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  ApiSignedDelegation? dco_decode_opt_box_autoadd_api_signed_delegation(
+    dynamic raw,
+  );
+
+  @protected
+  ApiSignedVoteCommitments?
+  dco_decode_opt_box_autoadd_api_signed_vote_commitments(dynamic raw);
 
   @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
@@ -237,6 +308,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
+  RustStreamSink<ApiDelegationProofEvent>
+  sse_decode_StreamSink_api_delegation_proof_event_Sse(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RustStreamSink<ApiMempoolTxEvent>
   sse_decode_StreamSink_api_mempool_tx_event_Sse(SseDeserializer deserializer);
 
@@ -245,6 +322,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_StreamSink_api_sync_progress_event_Sse(
     SseDeserializer deserializer,
   );
+
+  @protected
+  RustStreamSink<ApiVoteCommitEvent>
+  sse_decode_StreamSink_api_vote_commit_event_Sse(SseDeserializer deserializer);
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -263,6 +344,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiDelegationProofEvent sse_decode_api_delegation_proof_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiDraftVote sse_decode_api_draft_vote(SseDeserializer deserializer);
+
+  @protected
   ApiMempoolTxEvent sse_decode_api_mempool_tx_event(
     SseDeserializer deserializer,
   );
@@ -273,12 +362,35 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiSignedVoteCommitment sse_decode_api_signed_vote_commitment(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiSignedVoteCommitments sse_decode_api_signed_vote_commitments(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiSyncProgressEvent sse_decode_api_sync_progress_event(
     SseDeserializer deserializer,
   );
 
   @protected
   ApiVanWitness sse_decode_api_van_witness(SseDeserializer deserializer);
+
+  @protected
+  ApiVoteCommitEvent sse_decode_api_vote_commit_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteRecord sse_decode_api_vote_record(SseDeserializer deserializer);
+
+  @protected
+  ApiVoteSharePayload sse_decode_api_vote_share_payload(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ApiVotingBundleSetupResult sse_decode_api_voting_bundle_setup_result(
@@ -299,10 +411,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiWireEncryptedShare sse_decode_api_wire_encrypted_share(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BlockMetaInfo sse_decode_block_meta_info(SseDeserializer deserializer);
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  ApiSignedDelegation sse_decode_box_autoadd_api_signed_delegation(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiSignedVoteCommitments sse_decode_box_autoadd_api_signed_vote_commitments(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVanWitness sse_decode_box_autoadd_api_van_witness(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ApiVotingRoundParams sse_decode_box_autoadd_api_voting_round_params(
@@ -343,7 +475,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
 
   @protected
+  List<ApiDraftVote> sse_decode_list_api_draft_vote(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ApiSignedVoteCommitment> sse_decode_list_api_signed_vote_commitment(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ApiVoteRecord> sse_decode_list_api_vote_record(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ApiVoteSharePayload> sse_decode_list_api_vote_share_payload(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<ApiVotingNoteRef> sse_decode_list_api_voting_note_ref(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ApiWireEncryptedShare> sse_decode_list_api_wire_encrypted_share(
     SseDeserializer deserializer,
   );
 
@@ -393,6 +550,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  ApiSignedDelegation? sse_decode_opt_box_autoadd_api_signed_delegation(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiSignedVoteCommitments?
+  sse_decode_opt_box_autoadd_api_signed_vote_commitments(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
@@ -496,6 +664,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_StreamSink_api_delegation_proof_event_Sse(
+    RustStreamSink<ApiDelegationProofEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_StreamSink_api_mempool_tx_event_Sse(
     RustStreamSink<ApiMempoolTxEvent> self,
     SseSerializer serializer,
@@ -504,6 +678,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_StreamSink_api_sync_progress_event_Sse(
     RustStreamSink<ApiSyncProgressEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_StreamSink_api_vote_commit_event_Sse(
+    RustStreamSink<ApiVoteCommitEvent> self,
     SseSerializer serializer,
   );
 
@@ -526,6 +706,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_delegation_proof_event(
+    ApiDelegationProofEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_draft_vote(ApiDraftVote self, SseSerializer serializer);
+
+  @protected
   void sse_encode_api_mempool_tx_event(
     ApiMempoolTxEvent self,
     SseSerializer serializer,
@@ -538,6 +727,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_signed_vote_commitment(
+    ApiSignedVoteCommitment self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_signed_vote_commitments(
+    ApiSignedVoteCommitments self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_sync_progress_event(
     ApiSyncProgressEvent self,
     SseSerializer serializer,
@@ -545,6 +746,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_api_van_witness(ApiVanWitness self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_api_vote_commit_event(
+    ApiVoteCommitEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_vote_record(ApiVoteRecord self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_api_vote_share_payload(
+    ApiVoteSharePayload self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_api_voting_bundle_setup_result(
@@ -571,10 +787,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_wire_encrypted_share(
+    ApiWireEncryptedShare self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_block_meta_info(BlockMetaInfo self, SseSerializer serializer);
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_api_signed_delegation(
+    ApiSignedDelegation self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_signed_vote_commitments(
+    ApiSignedVoteCommitments self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_van_witness(
+    ApiVanWitness self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_box_autoadd_api_voting_round_params(
@@ -622,8 +862,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_api_draft_vote(
+    List<ApiDraftVote> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_signed_vote_commitment(
+    List<ApiSignedVoteCommitment> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_vote_record(
+    List<ApiVoteRecord> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_vote_share_payload(
+    List<ApiVoteSharePayload> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_api_voting_note_ref(
     List<ApiVotingNoteRef> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_wire_encrypted_share(
+    List<ApiWireEncryptedShare> self,
     SseSerializer serializer,
   );
 
@@ -686,6 +956,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_signed_delegation(
+    ApiSignedDelegation? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_api_signed_vote_commitments(
+    ApiSignedVoteCommitments? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);

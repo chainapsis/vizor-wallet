@@ -24,6 +24,7 @@ use super::{
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Internal progress phases for delegation PCZT build/prove/sign/broadcast.
 pub enum ProofEvent {
     SelectingNotes,
     BuildingPczt,
@@ -34,6 +35,7 @@ pub enum ProofEvent {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Completed delegation bundle plus broadcast/storage status.
 pub struct SignedDelegation {
     pub pczt_bytes: Vec<u8>,
     pub txid_hex: String,
@@ -46,6 +48,7 @@ pub struct SignedDelegation {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Result of preparing bundle rows for a voting round.
 pub struct BundleSetupResult {
     pub bundle_count: u32,
     pub eligible_weight_zatoshi: u64,
@@ -94,11 +97,13 @@ impl DelegationBroadcastResult {
     }
 }
 
+/// Initialize the local voting database for delegation operations.
 pub fn prepare_delegation(db_path: &str, wallet_id: &str) -> Result<(), String> {
     open_voting_db(db_path, wallet_id).map(|_| ())
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Select notes and create/reuse delegation bundle rows for a round.
 pub async fn setup_delegation_bundles(
     db_path: &str,
     lightwalletd_url: &str,
@@ -124,6 +129,10 @@ pub async fn setup_delegation_bundles(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Build, prove, sign, broadcast, and locally store one delegation bundle.
+///
+/// Broadcast is attempted before local transaction storage. If broadcast succeeds
+/// but storage fails, the returned status tells callers not to retry the bundle.
 pub async fn build_and_prove_delegation_bundle<F>(
     db_path: &str,
     lightwalletd_url: &str,
@@ -328,6 +337,7 @@ fn bundle_weight_zatoshi(notes: &[zcash_voting::NoteInfo]) -> Result<u64, String
         * zcash_voting::governance::BALLOT_DIVISOR)
 }
 
+/// Return the stored bundle count for `round_id`.
 pub fn get_bundle_count(db_path: &str, wallet_id: &str, round_id: &str) -> Result<u32, String> {
     let voting_db = open_voting_db(db_path, wallet_id)?;
     voting_db
@@ -335,6 +345,10 @@ pub fn get_bundle_count(db_path: &str, wallet_id: &str, round_id: &str) -> Resul
         .map_err(|e| format!("get_bundle_count failed: {e}"))
 }
 
+/// Delete bundle rows at or above `keep_count`.
+///
+/// Used by partial-bundle recovery when the user elects not to delegate later
+/// bundles. Returns the number of deleted rows.
 pub fn delete_skipped_bundles(
     db_path: &str,
     wallet_id: &str,
@@ -352,6 +366,7 @@ pub fn delete_skipped_bundles(
         .map_err(|e| format!("delete_skipped_bundles failed: {e}"))
 }
 
+/// Store and verify the transaction hash for one delegation bundle row.
 pub fn store_delegation_tx_hash(
     db_path: &str,
     wallet_id: &str,
@@ -377,6 +392,7 @@ pub fn store_delegation_tx_hash(
     }
 }
 
+/// Load the transaction hash for one delegation bundle row, if present.
 pub fn get_delegation_tx_hash(
     db_path: &str,
     wallet_id: &str,
@@ -651,10 +667,23 @@ async fn extract_broadcast_store_delegation_pczt(
         Err(status) => return Err(format!("Broadcast delegation transaction: {status}")),
     };
 
-    if resp.error_code != 0 {
+    finish_delegation_broadcast(
+        &txid.to_string(),
+        resp.error_code,
+        &resp.error_message,
+        store_locally,
+    )
+}
+
+fn finish_delegation_broadcast(
+    txid: &str,
+    error_code: i32,
+    error_message: &str,
+    store_locally: impl FnOnce() -> Result<(), String>,
+) -> Result<DelegationBroadcastResult, String> {
+    if error_code != 0 {
         return Err(format!(
-            "Delegation broadcast rejected: {} (code {})",
-            resp.error_message, resp.error_code
+            "Delegation broadcast rejected: {error_message} (code {error_code})"
         ));
     }
 
@@ -986,6 +1015,35 @@ mod tests {
             DelegationBroadcastResult::BROADCASTED_STORAGE_FAILED
         );
         assert_eq!(storage_failed.message.as_deref(), Some("storage failed"));
+    }
+
+    #[test]
+    fn finish_delegation_broadcast_rejects_before_local_storage() {
+        let store_called = Arc::new(Mutex::new(false));
+        let store_called_for_callback = store_called.clone();
+
+        let err = finish_delegation_broadcast("txid-rejected", 18, "bad-tx", move || {
+            *store_called_for_callback.lock().unwrap() = true;
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert!(err.contains("Delegation broadcast rejected"));
+        assert!(!*store_called.lock().unwrap());
+    }
+
+    #[test]
+    fn finish_delegation_broadcast_reports_storage_failure_after_success() {
+        let result = finish_delegation_broadcast("txid-stored-late", 0, "", || {
+            Err("sqlite busy".to_string())
+        })
+        .unwrap();
+
+        assert_eq!(
+            result.status,
+            DelegationBroadcastResult::BROADCASTED_STORAGE_FAILED
+        );
+        assert!(result.message.unwrap().contains("do not retry"));
     }
 
     #[test]
