@@ -22,7 +22,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   static const double _selectorHeight = 40;
   static const double _selectorGap = 6;
   static const double _dropdownHeaderHeight = 50;
-  static const double _dropdownFooterHeight = 100;
+  static const double _dropdownFooterHeight = 50;
   static const double _accountRowHeight = 40;
   static const double _maxListViewportHeight = 164;
 
@@ -405,21 +405,8 @@ class _SidebarAccountDropdown extends StatelessWidget {
             height: footerHeight,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _SidebarCreateWalletRow(
-                    label: 'Create New Wallet',
-                    iconName: AppIcons.addNew,
-                    onTap: () => context.go('/add-account'),
-                  ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  _SidebarCreateWalletRow(
-                    label: 'Connect Keystone',
-                    iconName: AppIcons.qr,
-                    onTap: () => context.go('/onboarding/keystone'),
-                  ),
-                ],
+              child: _SidebarCreateWalletRow(
+                onTap: () => context.go('/add-account'),
               ),
             ),
           ),
@@ -491,14 +478,8 @@ class _SidebarAccountRow extends StatelessWidget {
 }
 
 class _SidebarCreateWalletRow extends StatelessWidget {
-  const _SidebarCreateWalletRow({
-    required this.label,
-    required this.iconName,
-    required this.onTap,
-  });
+  const _SidebarCreateWalletRow({required this.onTap});
 
-  final String label;
-  final String iconName;
   final VoidCallback onTap;
 
   @override
@@ -510,8 +491,8 @@ class _SidebarCreateWalletRow extends StatelessWidget {
           onPressed: onTap,
           variant: AppButtonVariant.ghost,
           minWidth: constraints.maxWidth,
-          leading: AppIcon(iconName),
-          child: Text(label),
+          leading: const AppIcon(AppIcons.addNew),
+          child: const Text('Create New Wallet'),
         ),
       ),
     );
