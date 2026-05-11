@@ -1,5 +1,10 @@
 import '../../rust/api/voting.dart' as rust_voting;
 
+/// Injectable boundary around the Rust voting recovery API.
+///
+/// Keeping the FRB calls behind this interface lets Dart resume-planning tests
+/// use in-memory fakes while production code still delegates all durable state
+/// reads and writes to Rust.
 abstract interface class VotingRecoveryApi {
   Future<rust_voting.ApiRoundRecoveryState> getRoundRecoveryState({
     required String dbPath,
@@ -24,6 +29,7 @@ abstract interface class VotingRecoveryApi {
   });
 }
 
+/// Production recovery API implementation backed by generated FRB bindings.
 class RustVotingRecoveryApi implements VotingRecoveryApi {
   const RustVotingRecoveryApi();
 

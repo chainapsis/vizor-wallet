@@ -2,6 +2,10 @@ import 'dart:collection';
 
 import '../../rust/api/voting.dart' as rust_voting;
 
+/// Stable key for per-proposal vote state within one note bundle.
+///
+/// A round can split voting power across bundles, and every bundle/proposal pair
+/// can independently have a stored vote, commitment bundle, or broadcast hash.
 class VotingVoteKey {
   final int bundleIndex;
   final int proposalId;
@@ -24,6 +28,11 @@ class VotingVoteKey {
       'VotingVoteKey(bundleIndex: $bundleIndex, proposalId: $proposalId)';
 }
 
+/// Immutable summary of what the app should resume for a voting round.
+///
+/// The plan preserves the raw recovery state for details, but exposes sorted
+/// indexes and maps for the UI/state machine so resume work happens in a stable
+/// order after app restarts.
 class VotingResumePlan {
   final rust_voting.ApiRoundRecoveryState recoveryState;
   final UnmodifiableListView<int> pendingDelegationBundleIndexes;
@@ -75,6 +84,7 @@ class VotingResumePlan {
 
   int get bundleCount => recoveryState.bundleCount;
 
+  /// True when there is still user-visible network or confirmation work.
   bool get hasPendingWork =>
       pendingDelegationBundleIndexes.isNotEmpty ||
       pendingVoteSubmissionKeys.isNotEmpty ||

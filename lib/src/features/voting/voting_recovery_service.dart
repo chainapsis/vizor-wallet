@@ -2,12 +2,18 @@ import '../../rust/api/voting.dart' as rust_voting;
 import 'voting_recovery_api.dart';
 import 'voting_resume_plan.dart';
 
+/// Converts persisted Rust recovery records into Dart actions for resuming UI.
+///
+/// Rust owns the durable voting database. This service keeps the Dart side
+/// focused on orchestration: deciding which bundle/proposal/share steps still
+/// need network work and clearing recovery records only at explicit boundaries.
 class VotingRecoveryService {
   final VotingRecoveryApi _api;
 
   const VotingRecoveryService({VotingRecoveryApi? api})
     : _api = api ?? const RustVotingRecoveryApi();
 
+  /// Loads the raw round recovery state and derives the next resume actions.
   Future<VotingResumePlan> loadResumePlan({
     required String dbPath,
     required String walletId,
@@ -22,6 +28,10 @@ class VotingRecoveryService {
     return buildResumePlan(state);
   }
 
+  /// Builds a deterministic view of incomplete delegation, vote, and share work.
+  ///
+  /// Bundle/proposal pairs are keyed together because voting is bundle-indexed:
+  /// one proposal can have independent state for each note bundle.
   VotingResumePlan buildResumePlan(rust_voting.ApiRoundRecoveryState state) {
     final delegatedBundleIndexes = state.delegationTxHashes
         .map((record) => record.bundleIndex)
@@ -87,6 +97,10 @@ class VotingRecoveryService {
     );
   }
 
+  /// Records additional helper servers that accepted an already-created share.
+  ///
+  /// Recovery can retry failed helpers without regenerating shares; this appends
+  /// only the newly successful URLs for the durable share key.
   Future<void> addSentServersForShare({
     required String dbPath,
     required String walletId,
@@ -104,6 +118,7 @@ class VotingRecoveryService {
     );
   }
 
+  /// Clears recovery data after a round has finished successfully.
   Future<void> finalizeRound({
     required String dbPath,
     required String walletId,
@@ -116,6 +131,7 @@ class VotingRecoveryService {
     );
   }
 
+  /// Clears recovery data when the user intentionally stops participating.
   Future<void> abandonRound({
     required String dbPath,
     required String walletId,
