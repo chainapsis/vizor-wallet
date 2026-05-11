@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -6,14 +7,14 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'keystone_onboarding_flow.dart';
 
-class KeystoneHowToConnectScreen extends StatelessWidget {
+class KeystoneHowToConnectScreen extends ConsumerWidget {
   const KeystoneHowToConnectScreen({super.key});
 
   static const _contentWidth = 460.0;
   static const _buttonWidth = 256.0;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     return KeystoneOnboardingTrailingPane(
       child: Column(
@@ -55,8 +56,10 @@ class KeystoneHowToConnectScreen extends StatelessWidget {
           SizedBox(
             width: _buttonWidth,
             child: AppButton(
-              onPressed: () =>
-                  context.go(KeystoneOnboardingStep.scanQrCode.routePath),
+              onPressed: () {
+                ref.read(keystoneOnboardingProvider.notifier).resetScan();
+                context.go(KeystoneOnboardingStep.scanQrCode.routePath);
+              },
               variant: AppButtonVariant.primary,
               minWidth: _buttonWidth,
               trailing: const AppIcon(AppIcons.chevronForward),

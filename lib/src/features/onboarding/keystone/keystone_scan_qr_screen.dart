@@ -23,12 +23,6 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
   bool _decoding = false;
   String? _error;
 
-  @override
-  void initState() {
-    super.initState();
-    ref.read(keystoneOnboardingProvider.notifier).resetScan();
-  }
-
   Future<void> _handleScanComplete(ScanResult result) async {
     if (_decoding) return;
     setState(() {
