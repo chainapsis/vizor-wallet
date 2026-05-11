@@ -20,7 +20,7 @@ class KeystoneHowToConnectScreen extends ConsumerWidget {
       child: Column(
         children: [
           const KeystoneBackRow(routePath: '/welcome'),
-          const SizedBox(height: AppSpacing.s),
+          const SizedBox(height: AppSpacing.xs),
           Expanded(
             child: Center(
               child: SizedBox(
@@ -29,7 +29,7 @@ class KeystoneHowToConnectScreen extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Connect your Keystone',
+                      'Connect your\nKeystone',
                       style: AppTypography.displayMedium.copyWith(
                         color: colors.text.accent,
                       ),
@@ -77,20 +77,25 @@ class _InstructionList extends StatelessWidget {
 
   static const _steps = [
     'Unlock your Keystone.',
-    'Tap the menu, then go to Sync.',
+    'Tap the ... Menu, then go to Sync',
     'Open the Zcash QR Code in order to connect.',
-    'Grant camera access on this device and proceed with QR code import to Vizor.',
+    'Grant camera access in your laptop settings and proceed with QR code import to Vizor.',
   ];
+
+  static const _width = 384.0;
+  static const _markerWidth = 15.0;
+  static const _markerGap = 6.0;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (var i = 0; i < _steps.length; i++) ...[
-          _InstructionRow(index: i + 1, text: _steps[i]),
-          if (i != _steps.length - 1) const SizedBox(height: AppSpacing.s),
+    return SizedBox(
+      width: _width,
+      child: Column(
+        children: [
+          for (var i = 0; i < _steps.length; i++)
+            _InstructionRow(index: i + 1, text: _steps[i]),
         ],
-      ],
+      ),
     );
   }
 }
@@ -104,36 +109,16 @@ class _InstructionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final style = AppTypography.bodyMedium.copyWith(color: colors.text.primary);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 28,
-          height: 28,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadii.full),
-            color: colors.background.overlay.withValues(alpha: 0.35),
-          ),
-          child: Text(
-            '$index',
-            style: AppTypography.labelMedium.copyWith(
-              color: colors.text.accent,
-            ),
-          ),
+        SizedBox(
+          width: _InstructionList._markerWidth,
+          child: Text('$index.', style: style, textAlign: TextAlign.right),
         ),
-        const SizedBox(width: AppSpacing.s),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              text,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.accent,
-              ),
-            ),
-          ),
-        ),
+        const SizedBox(width: _InstructionList._markerGap),
+        Expanded(child: Text(text, style: style)),
       ],
     );
   }
