@@ -10,6 +10,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/qr_scanner.dart';
+import 'keystone_transaction_progress_panel.dart';
 
 class KeystoneQrScannerCard extends StatefulWidget {
   const KeystoneQrScannerCard({
@@ -209,18 +210,9 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
                   ),
                 const _ScanFrame(),
                 if (widget.decoding)
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: colors.background.ground.withValues(alpha: 0.72),
-                    ),
-                    child: Center(
-                      child: Text(
-                        widget.decodingLabel,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                    ),
+                  KeystoneTransactionProgressOverlay(
+                    label: widget.decodingLabel,
+                    borderRadius: BorderRadius.circular(_scannerRadius),
                   ),
                 if (_cameraPickerOpen)
                   AppPaneModalOverlay(

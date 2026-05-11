@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_icon.dart';
 
 enum KeystonePcztQrStagePhase { preparing, ready, working, failed }
 
@@ -12,16 +13,12 @@ class KeystonePcztQrStage extends StatelessWidget {
     required this.phase,
     required this.urParts,
     required this.error,
-    this.preparingLabel = 'Preparing QR...',
-    this.workingLabel = 'Broadcasting...',
     super.key,
   });
 
   final KeystonePcztQrStagePhase phase;
   final List<String> urParts;
   final String? error;
-  final String preparingLabel;
-  final String workingLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -40,25 +37,25 @@ class KeystonePcztQrStage extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
         ),
-        KeystonePcztQrStagePhase.working => Center(
-          child: Text(
-            workingLabel,
-            style: AppTypography.labelLarge.copyWith(
-              color: colors.text.secondary,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
-        KeystonePcztQrStagePhase.preparing => Center(
-          child: Text(
-            preparingLabel,
-            style: AppTypography.labelLarge.copyWith(
-              color: colors.text.secondary,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
+        KeystonePcztQrStagePhase.working ||
+        KeystonePcztQrStagePhase.preparing => const _QrStageLoader(),
       },
+    );
+  }
+}
+
+class _QrStageLoader extends StatelessWidget {
+  const _QrStageLoader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: AppIcon(
+        AppIcons.loader,
+        size: 24,
+        color: context.colors.icon.regular,
+        semanticLabel: 'Preparing QR',
+      ),
     );
   }
 }

@@ -19,6 +19,7 @@ import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
+import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
 import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
 
@@ -263,6 +264,7 @@ class _KeystoneShieldConfirmScreenState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isBroadcasting = _phase == _KeystoneShieldPhase.broadcasting;
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
@@ -288,71 +290,75 @@ class _KeystoneShieldConfirmScreenState
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 48),
-                        KeystonePcztQrStage(
-                          phase: switch (_phase) {
-                            _KeystoneShieldPhase.preparing =>
-                              KeystonePcztQrStagePhase.preparing,
-                            _KeystoneShieldPhase.ready =>
-                              KeystonePcztQrStagePhase.ready,
-                            _KeystoneShieldPhase.broadcasting =>
-                              KeystonePcztQrStagePhase.working,
-                            _KeystoneShieldPhase.failed =>
-                              KeystonePcztQrStagePhase.failed,
-                          },
-                          urParts: _urParts,
-                          error: _error,
-                          workingLabel: 'Broadcasting shield transaction...',
-                        ),
-                        const SizedBox(height: 48),
-                        SizedBox(
-                          width: 325,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _shieldingLine(),
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: colors.button.ghost.label,
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.xxs),
-                              Text(
-                                _feeLine(),
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: colors.button.ghost.label,
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.xxs),
-                              Text(
-                                'After you sign with Keystone, click Get Signature',
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: colors.text.secondary,
-                                ),
-                              ),
-                            ],
+                        if (isBroadcasting)
+                          const KeystoneTransactionProgressPanel()
+                        else
+                          KeystonePcztQrStage(
+                            phase: switch (_phase) {
+                              _KeystoneShieldPhase.preparing =>
+                                KeystonePcztQrStagePhase.preparing,
+                              _KeystoneShieldPhase.ready =>
+                                KeystonePcztQrStagePhase.ready,
+                              _KeystoneShieldPhase.failed =>
+                                KeystonePcztQrStagePhase.failed,
+                              _KeystoneShieldPhase.broadcasting =>
+                                KeystonePcztQrStagePhase.preparing,
+                            },
+                            urParts: _urParts,
+                            error: _error,
                           ),
-                        ),
-                        const SizedBox(height: 32),
-                        SizedBox(
-                          width: 256,
-                          child: AppButton(
-                            onPressed: _phase == _KeystoneShieldPhase.ready
-                                ? () => unawaited(_getSignature())
-                                : null,
-                            minWidth: 256,
-                            child: const Text('Get Signature'),
+                        if (!isBroadcasting) ...[
+                          const SizedBox(height: 48),
+                          SizedBox(
+                            width: 325,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _shieldingLine(),
+                                  style: AppTypography.labelLarge.copyWith(
+                                    color: colors.button.ghost.label,
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.xxs),
+                                Text(
+                                  _feeLine(),
+                                  style: AppTypography.labelLarge.copyWith(
+                                    color: colors.button.ghost.label,
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.xxs),
+                                Text(
+                                  'After you sign with Keystone, click Get Signature',
+                                  style: AppTypography.labelLarge.copyWith(
+                                    color: colors.text.secondary,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.s),
-                        SizedBox(
-                          width: 256,
-                          child: AppButton(
-                            onPressed: _cancelToHome,
-                            variant: AppButtonVariant.ghost,
-                            minWidth: 256,
-                            child: const Text('Reject'),
+                          const SizedBox(height: 32),
+                          SizedBox(
+                            width: 256,
+                            child: AppButton(
+                              onPressed: _phase == _KeystoneShieldPhase.ready
+                                  ? () => unawaited(_getSignature())
+                                  : null,
+                              minWidth: 256,
+                              child: const Text('Get Signature'),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: AppSpacing.s),
+                          SizedBox(
+                            width: 256,
+                            child: AppButton(
+                              onPressed: _cancelToHome,
+                              variant: AppButtonVariant.ghost,
+                              minWidth: 256,
+                              child: const Text('Reject'),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

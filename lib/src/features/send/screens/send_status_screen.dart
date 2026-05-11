@@ -21,6 +21,7 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
 import '../services/sapling_params.dart';
 import '../widgets/sapling_params_prompt.dart';
 import '../widgets/transaction_receipt_view.dart';
@@ -450,6 +451,42 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     }
   }
 
+  Widget _buildKeystoneSubmittingScreen(BuildContext context) {
+    final colors = context.colors;
+    return AppDesktopShell(
+      sidebar: const AppMainSidebar(),
+      pane: AppDesktopPane(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          children: [
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: AppRouteBackLink(),
+            ),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Scan your Keystone QR Code',
+                      style: AppTypography.headlineLarge.copyWith(
+                        color: colors.button.ghost.label,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 32),
+                    const KeystoneTransactionProgressPanel(),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final addressLines = _splitAddress();
@@ -461,6 +498,8 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     };
     final useFailedReceiptLayout = _phase == _SendStatusPhase.failed;
     final statusMessage = _statusMessage;
+    final isKeystoneSubmitting =
+        widget.keystone != null && _phase == _SendStatusPhase.sending;
 
     return PopScope<void>(
       canPop: false,
@@ -469,118 +508,133 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           unawaited(_goHome());
         }
       },
-      child: AppDesktopShell(
-        sidebar: const AppMainSidebar(),
-        pane: AppDesktopPane(
-          padding: EdgeInsets.zero,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: TransactionReceiptIllustration(
-                    failed: useFailedReceiptLayout,
-                  ),
-                ),
-              ),
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.md,
-                    AppSpacing.md,
-                    0,
-                    AppSpacing.md,
-                  ),
-                  child: Column(
-                    children: [
-                      const Align(
-                        alignment: Alignment.centerLeft,
-                        child: AppRouteBackLink(),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 255),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: TransactionReceiptView(
-                              key: ValueKey('send_status_${receiptPhase.name}'),
-                              phase: receiptPhase,
-                              amountText: _formatReceiptAmount(
-                                widget.args.amountZatoshi,
-                              ),
-                              primaryBlock: TransactionReceiptBlockData(
-                                title: 'To',
-                                child: useFailedReceiptLayout
-                                    ? TransactionReceiptAddressText(
-                                        address: widget.args.address,
-                                        highlightEdges: widget.args.isShielded,
-                                      )
-                                    : Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          for (final line in addressLines)
-                                            RichText(
-                                              text: TextSpan(
-                                                children: _addressSpans(
-                                                  context,
-                                                  line,
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                onCopy: useFailedReceiptLayout
-                                    ? () => unawaited(_copyRecipientAddress())
-                                    : null,
-                              ),
-                              feeText:
-                                  '${_formatFee(widget.args.feeZatoshi)} ZEC',
-                              extraBlocks: [
-                                if (statusMessage != null)
-                                  TransactionReceiptBlockData(
-                                    title: 'Status',
-                                    child: Text(
-                                      statusMessage,
-                                      style: AppTypography.bodyMedium.copyWith(
-                                        color: context.colors.text.accent,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                              dateText: _formatDate(_completedAt ?? _startedAt),
-                              error: _error,
-                              failureFallbackText: 'Send failed',
-                              useFailedReceiptLayout: useFailedReceiptLayout,
-                              onTransactionHashPressed:
-                                  (_phase == _SendStatusPhase.succeeded ||
-                                          _phase ==
-                                              _SendStatusPhase
-                                                  .pendingBroadcast) &&
-                                      _txid != null
-                                  ? _openTransactionExplorer
-                                  : null,
-                              onBackToWallet: _phase == _SendStatusPhase.failed
-                                  ? _goHome
-                                  : null,
-                            ),
-                          ),
+      child: isKeystoneSubmitting
+          ? _buildKeystoneSubmittingScreen(context)
+          : AppDesktopShell(
+              sidebar: const AppMainSidebar(),
+              pane: AppDesktopPane(
+                padding: EdgeInsets.zero,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: TransactionReceiptIllustration(
+                          failed: useFailedReceiptLayout,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    Positioned.fill(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.md,
+                          AppSpacing.md,
+                          0,
+                          AppSpacing.md,
+                        ),
+                        child: Column(
+                          children: [
+                            const Align(
+                              alignment: Alignment.centerLeft,
+                              child: AppRouteBackLink(),
+                            ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 255),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TransactionReceiptView(
+                                    key: ValueKey(
+                                      'send_status_${receiptPhase.name}',
+                                    ),
+                                    phase: receiptPhase,
+                                    amountText: _formatReceiptAmount(
+                                      widget.args.amountZatoshi,
+                                    ),
+                                    primaryBlock: TransactionReceiptBlockData(
+                                      title: 'To',
+                                      child: useFailedReceiptLayout
+                                          ? TransactionReceiptAddressText(
+                                              address: widget.args.address,
+                                              highlightEdges:
+                                                  widget.args.isShielded,
+                                            )
+                                          : Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                for (final line in addressLines)
+                                                  RichText(
+                                                    text: TextSpan(
+                                                      children: _addressSpans(
+                                                        context,
+                                                        line,
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                      onCopy: useFailedReceiptLayout
+                                          ? () => unawaited(
+                                              _copyRecipientAddress(),
+                                            )
+                                          : null,
+                                    ),
+                                    feeText:
+                                        '${_formatFee(widget.args.feeZatoshi)} ZEC',
+                                    extraBlocks: [
+                                      if (statusMessage != null)
+                                        TransactionReceiptBlockData(
+                                          title: 'Status',
+                                          child: Text(
+                                            statusMessage,
+                                            style: AppTypography.bodyMedium
+                                                .copyWith(
+                                                  color: context
+                                                      .colors
+                                                      .text
+                                                      .accent,
+                                                ),
+                                          ),
+                                        ),
+                                    ],
+                                    dateText: _formatDate(
+                                      _completedAt ?? _startedAt,
+                                    ),
+                                    error: _error,
+                                    failureFallbackText: 'Send failed',
+                                    useFailedReceiptLayout:
+                                        useFailedReceiptLayout,
+                                    onTransactionHashPressed:
+                                        (_phase == _SendStatusPhase.succeeded ||
+                                                _phase ==
+                                                    _SendStatusPhase
+                                                        .pendingBroadcast) &&
+                                            _txid != null
+                                        ? _openTransactionExplorer
+                                        : null,
+                                    onBackToWallet:
+                                        _phase == _SendStatusPhase.failed
+                                        ? _goHome
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_showSaplingParamsPrompt)
+                      Positioned.fill(
+                        child: SaplingParamsPrompt(
+                          onDownload: () => _resolveSaplingParamsDialog(true),
+                          onCancel: () => _resolveSaplingParamsDialog(false),
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              if (_showSaplingParamsPrompt)
-                Positioned.fill(
-                  child: SaplingParamsPrompt(
-                    onDownload: () => _resolveSaplingParamsDialog(true),
-                    onCancel: () => _resolveSaplingParamsDialog(false),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }
