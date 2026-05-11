@@ -1,0 +1,105 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/app_bootstrap.dart';
+import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
+import 'package:zcash_wallet/src/features/onboarding/import/import_wallet_birthday_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
+
+void main() {
+  testWidgets('birthday tab labels show a click cursor', (tester) async {
+    await _setDesktopSurface(tester);
+    await tester.pumpWidget(_birthdayHarness());
+    await tester.pump();
+
+    expect(_cursorForText(tester, 'Enter the Date'), SystemMouseCursors.click);
+    expect(
+      _cursorForText(tester, 'Enter the Block Height'),
+      SystemMouseCursors.click,
+    );
+  });
+
+  testWidgets('birthday date field shows a click cursor when enabled', (
+    tester,
+  ) async {
+    await _setDesktopSurface(tester);
+    await tester.pumpWidget(_birthdayHarness());
+    await tester.pump();
+    await tester.pump();
+
+    expect(_cursorForText(tester, 'mm/dd/yyyy'), SystemMouseCursors.click);
+  });
+}
+
+Future<void> _setDesktopSurface(WidgetTester tester) async {
+  await tester.binding.setSurfaceSize(const Size(1512, 982));
+  addTearDown(() async {
+    await tester.binding.setSurfaceSize(null);
+  });
+}
+
+Widget _birthdayHarness() {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      rpcEndpointFailoverProvider.overrideWith(
+        _FakeRpcEndpointFailoverNotifier.new,
+      ),
+    ],
+    child: MaterialApp(
+      home: MediaQuery(
+        data: const MediaQueryData(textScaler: TextScaler.linear(0.5)),
+        child: AppTheme(
+          data: AppThemeData.light,
+          child: const ImportWalletBirthdayScreen(
+            args: ImportBirthdayArgs(mnemonic: 'test mnemonic'),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+MouseCursor _cursorForText(WidgetTester tester, String text) {
+  final mouseRegion = find.ancestor(
+    of: find.text(text),
+    matching: find.byType(MouseRegion),
+  );
+  expect(mouseRegion, findsOneWidget);
+  return tester.widget<MouseRegion>(mouseRegion).cursor;
+}
+
+class _FakeRpcEndpointFailoverNotifier extends RpcEndpointFailoverNotifier {
+  @override
+  RpcEndpointFailoverState build() {
+    final endpoint = defaultRpcEndpointConfig('main');
+    return RpcEndpointFailoverState(
+      primary: endpoint,
+      current: endpoint,
+      fallbackCandidates: const [],
+    );
+  }
+
+  @override
+  Future<T> runWithEndpointFallback<T>({
+    required String operation,
+    required Future<T> Function(RpcEndpointConfig endpoint) action,
+    bool allowFallback = true,
+    bool Function(Object error) shouldFallback =
+        shouldFallbackFromLightwalletdError,
+  }) async {
+    if (operation == 'import birthday metadata') {
+      return ImportBirthdayMetadata(
+            saplingActivationHeight: 419200,
+            saplingActivationDate: DateTime(2016, 10, 28),
+            tipHeight: 3336000,
+            tipDate: DateTime(2026, 5, 11),
+          )
+          as T;
+    }
+    return action(state.current);
+  }
+}
