@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
@@ -382,7 +383,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       for (var i = 0; i < remaining.length; i++)
         remaining[i].copyWith(order: i),
     ];
-    final nextActiveUuid = _nextActiveAccountUuid(prev, target, updated);
+    final nextActiveUuid = _nextActiveAccountUuid(
+      previousState: prev,
+      removedAccount: target,
+      remainingAccounts: updated,
+    );
     final nextActiveAddress = await _nextActiveAddress(
       prev,
       nextActiveUuid,
@@ -569,18 +574,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     await _storage.writeString(_accountsKey, json);
   }
 
-  String? _nextActiveAccountUuid(
-    AccountState prev,
-    AccountInfo removed,
-    List<AccountInfo> remaining,
-  ) {
-    if (remaining.isEmpty) return null;
-    if (prev.activeAccountUuid != removed.uuid &&
-        remaining.any((a) => a.uuid == prev.activeAccountUuid)) {
-      return prev.activeAccountUuid;
-    }
-    final nextIndex = removed.order.clamp(0, remaining.length - 1);
-    return remaining[nextIndex].uuid;
+  String? _nextActiveAccountUuid({
+    required AccountState previousState,
+    required AccountInfo removedAccount,
+    required List<AccountInfo> remainingAccounts,
+  }) {
+    return resolveNextActiveAccountUuidAfterRemoval(
+      previousState: previousState,
+      removedAccount: removedAccount,
+      remainingAccounts: remainingAccounts,
+    );
   }
 
   Future<String?> _nextActiveAddress(
@@ -639,3 +642,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 final accountProvider = AsyncNotifierProvider<AccountNotifier, AccountState>(
   AccountNotifier.new,
 );
+
+@visibleForTesting
+String? resolveNextActiveAccountUuidAfterRemoval({
+  required AccountState previousState,
+  required AccountInfo removedAccount,
+  required List<AccountInfo> remainingAccounts,
+}) {
+  if (remainingAccounts.isEmpty) return null;
+  if (previousState.activeAccountUuid != removedAccount.uuid &&
+      remainingAccounts.any((a) => a.uuid == previousState.activeAccountUuid)) {
+    return previousState.activeAccountUuid;
+  }
+  final nextIndex = removedAccount.order
+      .clamp(0, remainingAccounts.length - 1)
+      .toInt();
+  return remainingAccounts[nextIndex].uuid;
+}
