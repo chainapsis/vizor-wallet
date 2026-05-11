@@ -253,6 +253,22 @@ pub fn migrate(conn: &Connection) -> Result<(), VotingError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::queries;
+    use crate::VotingRoundParams;
+
+    fn v7_schema() -> String {
+        include_str!("migrations/001_init.sql").replace("    note_identity_hashes_blob BLOB,\n", "")
+    }
+
+    fn test_params() -> VotingRoundParams {
+        VotingRoundParams {
+            vote_round_id: "test-round".to_string(),
+            snapshot_height: 1000,
+            ea_pk: vec![0xEA; 32],
+            nc_root: vec![0xAA; 32],
+            nullifier_imt_root: vec![0xBB; 32],
+        }
+    }
 
     #[test]
     fn test_migrate_fresh_database() {
@@ -280,19 +296,10 @@ mod tests {
     #[test]
     fn test_migrate_from_v7_preserves_existing_bundles() {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE bundles (
-                round_id           TEXT NOT NULL,
-                wallet_id          TEXT NOT NULL DEFAULT '',
-                bundle_index       INTEGER NOT NULL,
-                note_positions_blob BLOB,
-                PRIMARY KEY (round_id, wallet_id, bundle_index)
-            );
-            INSERT INTO bundles (round_id, wallet_id, bundle_index, note_positions_blob)
-            VALUES ('test-round', 'wallet', 0, X'0100000000000000');
-            PRAGMA user_version = 7;",
-        )
-        .unwrap();
+        conn.execute_batch(&v7_schema()).unwrap();
+        queries::insert_round(&conn, "wallet", &test_params(), None).unwrap();
+        queries::insert_bundle(&conn, "test-round", "wallet", 0, &[1]).unwrap();
+        conn.pragma_update(None, "user_version", 7).unwrap();
 
         migrate(&conn).unwrap();
 

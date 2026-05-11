@@ -8,12 +8,18 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 ## Added
 - `VotingDb::setup_bundles` now persists bundle note identity hashes, and
-  `VotingDb::build_governance_pczt` rejects same-position note substitutions
-  for bundles set up under 0.5.8 or later before constructing a governance
-  PCZT. Bundles persisted by earlier releases retain the prior position-only
-  check until they are re-setup.
+  `VotingDb::build_governance_pczt`, `VotingDb::precompute_delegation_pir`,
+  and `VotingDb::build_and_prove_delegation` reject same-position note
+  substitutions for bundles set up under 0.5.8 or later. Bundles persisted by
+  earlier releases retain the prior position-only check until they are
+  re-setup.
 
 ## Fixed
+- Delegation proof storage now checks proof-derived public inputs against the
+  PCZT-derived values stored during `VotingDb::build_governance_pczt`, and
+  stores the proof, public inputs, and round phase atomically.
+- `VotingDb::setup_bundles` now persists all bundle rows in a single
+  transaction.
 - Avoided dropping the Hyper/Tokio transport runtime from inside an active Tokio
   context.
 

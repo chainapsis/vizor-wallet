@@ -18,6 +18,7 @@ fn note_identity_hash(note: &NoteInfo) -> [u8; NOTE_IDENTITY_HASH_BYTES] {
     let mut state = blake2b_simd::Params::new()
         .hash_length(NOTE_IDENTITY_HASH_BYTES)
         .to_state();
+    // The domain string is longer than BLAKE2b's 16-byte personalization field.
     state.update(NOTE_IDENTITY_DOMAIN);
     state.update(&note.position.to_le_bytes());
     state.update(&note.value.to_le_bytes());
@@ -54,6 +55,13 @@ fn note_identity_hashes_blob(notes: &[NoteInfo]) -> Vec<u8> {
     notes
         .iter()
         .flat_map(|note| note_identity_hash(note))
+        .collect()
+}
+
+fn encode_gov_nullifiers_blob(gov_nullifiers: &[Vec<u8>]) -> Vec<u8> {
+    gov_nullifiers
+        .iter()
+        .flat_map(|n| n.iter().copied())
         .collect()
 }
 
@@ -251,7 +259,12 @@ pub fn clear_round(conn: &Connection, round_id: &str, wallet_id: &str) -> Result
 
 // --- Bundles ---
 
-/// Insert a bundle row. `note_positions` is stored as a flat blob of u64 LE values.
+/// Insert a bundle row from positions only.
+///
+/// Retained for SDK/FFI compatibility with callers that cannot provide full
+/// notes at insertion time. Rows written this way have a NULL
+/// `note_identity_hashes_blob`, so `require_bundle_notes` can only enforce the
+/// legacy position check until callers migrate to `insert_bundle_notes`.
 pub fn insert_bundle(
     conn: &Connection,
     round_id: &str,
@@ -477,6 +490,101 @@ pub fn store_delegation_data(
     padded_note_secrets: &[(Vec<u8>, Vec<u8>)],
     pczt_sighash: &[u8],
 ) -> Result<(), VotingError> {
+    store_delegation_data_inner(
+        conn,
+        round_id,
+        wallet_id,
+        bundle_index,
+        van_comm_rand,
+        dummy_nullifiers,
+        rho_signed,
+        padded_cmx,
+        nf_signed,
+        cmx_new,
+        alpha,
+        rseed_signed,
+        rseed_output,
+        gov_comm,
+        total_note_value,
+        address_index,
+        padded_note_secrets,
+        pczt_sighash,
+        None,
+        None,
+    )
+}
+
+/// Persist delegation action data plus PCZT-derived public inputs that the
+/// later delegation proof must reproduce.
+pub(crate) fn store_delegation_data_with_pczt_fields(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    bundle_index: u32,
+    van_comm_rand: &[u8],
+    dummy_nullifiers: &[Vec<u8>],
+    rho_signed: &[u8],
+    padded_cmx: &[Vec<u8>],
+    nf_signed: &[u8],
+    cmx_new: &[u8],
+    alpha: &[u8],
+    rseed_signed: &[u8],
+    rseed_output: &[u8],
+    gov_comm: &[u8],
+    total_note_value: u64,
+    address_index: u32,
+    padded_note_secrets: &[(Vec<u8>, Vec<u8>)],
+    pczt_sighash: &[u8],
+    rk: &[u8],
+    gov_nullifiers: &[Vec<u8>],
+) -> Result<(), VotingError> {
+    let gov_nullifiers_blob = encode_gov_nullifiers_blob(gov_nullifiers);
+    store_delegation_data_inner(
+        conn,
+        round_id,
+        wallet_id,
+        bundle_index,
+        van_comm_rand,
+        dummy_nullifiers,
+        rho_signed,
+        padded_cmx,
+        nf_signed,
+        cmx_new,
+        alpha,
+        rseed_signed,
+        rseed_output,
+        gov_comm,
+        total_note_value,
+        address_index,
+        padded_note_secrets,
+        pczt_sighash,
+        Some(rk),
+        Some(gov_nullifiers_blob.as_slice()),
+    )
+}
+
+fn store_delegation_data_inner(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    bundle_index: u32,
+    van_comm_rand: &[u8],
+    dummy_nullifiers: &[Vec<u8>],
+    rho_signed: &[u8],
+    padded_cmx: &[Vec<u8>],
+    nf_signed: &[u8],
+    cmx_new: &[u8],
+    alpha: &[u8],
+    rseed_signed: &[u8],
+    rseed_output: &[u8],
+    gov_comm: &[u8],
+    total_note_value: u64,
+    address_index: u32,
+    padded_note_secrets: &[(Vec<u8>, Vec<u8>)],
+    pczt_sighash: &[u8],
+    rk: Option<&[u8]>,
+    gov_nullifiers_blob: Option<&[u8]>,
+) -> Result<(), VotingError> {
     // Serialize padded-note nullifiers as a flat byte blob: [nf0 (32 bytes) | nf1 | nf2 | ...].
     // Length 0 means no padding was needed (all 5 notes were real).
     // Length 32/64/96/128 means 1/2/3/4 dummy notes respectively.
@@ -501,7 +609,9 @@ pub fn store_delegation_data(
              cmx_new = :cmx_new, alpha = :alpha, rseed_signed = :rseed_signed, \
              rseed_output = :rseed_output, gov_comm = :gov_comm, \
              total_note_value = :total_note_value, address_index = :address_index, \
-             padded_note_secrets = :secrets, pczt_sighash = :sighash \
+             padded_note_secrets = :secrets, pczt_sighash = :sighash, \
+             rk = COALESCE(:rk, rk), \
+             gov_nullifiers_blob = COALESCE(:gov_nullifiers_blob, gov_nullifiers_blob) \
              WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index",
             named_params! {
                 ":rand": van_comm_rand,
@@ -518,6 +628,8 @@ pub fn store_delegation_data(
                 ":address_index": address_index as i64,
                 ":secrets": secrets_blob,
                 ":sighash": pczt_sighash,
+                ":rk": rk,
+                ":gov_nullifiers_blob": gov_nullifiers_blob,
                 ":round_id": round_id,
                 ":wallet_id": wallet_id,
                 ":bundle_index": bundle_index as i64,
@@ -904,8 +1016,24 @@ pub fn load_van_position(
 
 // --- Delegation proof result fields ---
 
-/// Persist rk and gov_nullifiers from DelegationProofResult after proof generation.
-/// These survive the FFI boundary and are needed later for delegation TX submission.
+fn require_matching_stored_field(
+    stored: Option<&[u8]>,
+    requested: &[u8],
+    field: &str,
+) -> Result<(), VotingError> {
+    if let Some(stored) = stored {
+        if stored != requested {
+            return Err(VotingError::InvalidInput {
+                message: format!("delegation proof result {field} does not match stored PCZT data"),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+/// Persist public inputs from DelegationProofResult after proof generation.
+/// If PCZT-derived values already exist, the proof result must reproduce them.
 pub fn store_proof_result_fields(
     conn: &Connection,
     round_id: &str,
@@ -916,11 +1044,95 @@ pub fn store_proof_result_fields(
     nf_signed: &[u8],
     cmx_new: &[u8],
 ) -> Result<(), VotingError> {
-    // Serialize gov_nullifiers as flat blob: [nf0 (32 bytes) | nf1 | nf2 | nf3]
-    let gov_nullifiers_blob: Vec<u8> = gov_nullifiers
-        .iter()
-        .flat_map(|n| n.iter().copied())
-        .collect();
+    store_proof_result_fields_inner(
+        conn,
+        round_id,
+        wallet_id,
+        bundle_index,
+        rk,
+        gov_nullifiers,
+        nf_signed,
+        cmx_new,
+        None,
+    )
+}
+
+/// Persist proof public inputs and compare the proof VAN against the stored PCZT VAN.
+#[cfg_attr(not(feature = "client-pir"), allow(dead_code))]
+pub(crate) fn store_proof_result_fields_with_van_comm(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    bundle_index: u32,
+    rk: &[u8],
+    gov_nullifiers: &[Vec<u8>],
+    nf_signed: &[u8],
+    cmx_new: &[u8],
+    van_comm: &[u8],
+) -> Result<(), VotingError> {
+    store_proof_result_fields_inner(
+        conn,
+        round_id,
+        wallet_id,
+        bundle_index,
+        rk,
+        gov_nullifiers,
+        nf_signed,
+        cmx_new,
+        Some(van_comm),
+    )
+}
+
+fn store_proof_result_fields_inner(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    bundle_index: u32,
+    rk: &[u8],
+    gov_nullifiers: &[Vec<u8>],
+    nf_signed: &[u8],
+    cmx_new: &[u8],
+    van_comm: Option<&[u8]>,
+) -> Result<(), VotingError> {
+    // Serialize gov_nullifiers as flat blob: [nf0 (32 bytes) | ... | nf4]
+    let gov_nullifiers_blob = encode_gov_nullifiers_blob(gov_nullifiers);
+
+    let (stored_rk, stored_gov_nullifiers, stored_nf_signed, stored_cmx_new, stored_gov_comm): (
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+    ) = conn
+        .query_row(
+            "SELECT rk, gov_nullifiers_blob, nf_signed, cmx_new, gov_comm \
+             FROM bundles \
+             WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index",
+            named_params! {
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+                ":bundle_index": bundle_index as i64,
+            },
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        )
+        .map_err(|e| VotingError::InvalidInput {
+            message: format!(
+                "bundle not found: round={}, bundle={} ({})",
+                round_id, bundle_index, e
+            ),
+        })?;
+
+    require_matching_stored_field(stored_rk.as_deref(), rk, "rk")?;
+    require_matching_stored_field(
+        stored_gov_nullifiers.as_deref(),
+        &gov_nullifiers_blob,
+        "gov_nullifiers",
+    )?;
+    require_matching_stored_field(stored_nf_signed.as_deref(), nf_signed, "nf_signed")?;
+    require_matching_stored_field(stored_cmx_new.as_deref(), cmx_new, "cmx_new")?;
+    if let Some(van_comm) = van_comm {
+        require_matching_stored_field(stored_gov_comm.as_deref(), van_comm, "van_comm")?;
+    }
 
     let rows = conn
         .execute(
