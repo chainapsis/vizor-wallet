@@ -937,6 +937,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               _error = null;
                             }),
                             showClearButton: true,
+                            clearButtonRequiresText: false,
+                            clearButtonSemanticLabel: 'Close message',
                             onClear: () {
                               setState(() {
                                 _messageExpanded = false;
