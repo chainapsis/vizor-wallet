@@ -29,6 +29,7 @@ import '../../activity/activity_row_mapper.dart';
 import '../../activity/models/activity_row_data.dart';
 import '../../activity/screens/activity_transaction_status_screen.dart';
 import '../../activity/widgets/activity_table.dart';
+import '../widgets/keystone_shield_signing_overlay.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
@@ -43,6 +44,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _canBackgroundSync = false;
   bool _isShieldingBalance = false;
+  bool _showKeystoneShieldSigning = false;
   String? _shieldBalanceError;
   String? _shieldBalanceErrorDetail;
 
@@ -91,7 +93,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     final accountNotifier = ref.read(accountProvider.notifier);
     if (accountNotifier.isHardwareAccount(accountUuid)) {
-      context.go('/home/keystone/shield/confirm');
+      setState(() {
+        _showKeystoneShieldSigning = true;
+        _shieldBalanceError = null;
+        _shieldBalanceErrorDetail = null;
+      });
       return;
     }
 
@@ -189,6 +195,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return message.isEmpty ? null : message;
   }
 
+  void _closeKeystoneShieldSigning() {
+    setState(() {
+      _showKeystoneShieldSigning = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final walletAsync = ref.watch(walletProvider);
@@ -218,46 +230,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, 0, 0),
-        child: SizedBox.expand(
-          child: walletAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (err, _) => Center(
-              child: Text(
-                'Something went wrong. Try again in a moment.\n\n'
-                'Details: $err',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: context.colors.text.warning,
+        padding: EdgeInsets.zero,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, 0, 0),
+              child: SizedBox.expand(
+                child: walletAsync.when(
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (err, _) => Center(
+                    child: Text(
+                      'Something went wrong. Try again in a moment.\n\n'
+                      'Details: $err',
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: context.colors.text.warning,
+                      ),
+                    ),
+                  ),
+                  data: (_) => _HomePane(
+                    sync: sync,
+                    hasActivitySyncData: hasActivitySyncData,
+                    isActivityLoading: isActivityLoading,
+                    passwordRotationRecoveryFailed:
+                        bootstrap.passwordRotationRecoveryFailed,
+                    canBackgroundSync: _canBackgroundSync,
+                    privacyModeEnabled: privacyModeEnabled,
+                    shieldedBalanceText: _formatZec(shieldedBalance),
+                    transparentBalanceText: _formatZec(transparentBalance),
+                    hasTransparentBalance: transparentBalance > BigInt.zero,
+                    canShieldBalance: canShieldTransparentBalance,
+                    isShieldingBalance: _isShieldingBalance,
+                    shieldBalanceError: _shieldBalanceError,
+                    shieldBalanceErrorDetail: _shieldBalanceErrorDetail,
+                    onTogglePrivacyMode: () =>
+                        ref.read(privacyModeProvider.notifier).toggle(),
+                    onShieldBalancePressed: () =>
+                        unawaited(_shieldTransparentBalance()),
+                    onDismissShieldBalanceError: _dismissShieldBalanceError,
+                    onSyncInBackground: () =>
+                        ref.read(syncProvider.notifier).enableBackgroundSync(),
+                    onStopBackgroundSync: () =>
+                        ref.read(syncProvider.notifier).disableBackgroundSync(),
+                    onRetrySync: () =>
+                        ref.read(syncProvider.notifier).startSync(),
+                  ),
                 ),
               ),
             ),
-            data: (_) => _HomePane(
-              sync: sync,
-              hasActivitySyncData: hasActivitySyncData,
-              isActivityLoading: isActivityLoading,
-              passwordRotationRecoveryFailed:
-                  bootstrap.passwordRotationRecoveryFailed,
-              canBackgroundSync: _canBackgroundSync,
-              privacyModeEnabled: privacyModeEnabled,
-              shieldedBalanceText: _formatZec(shieldedBalance),
-              transparentBalanceText: _formatZec(transparentBalance),
-              hasTransparentBalance: transparentBalance > BigInt.zero,
-              canShieldBalance: canShieldTransparentBalance,
-              isShieldingBalance: _isShieldingBalance,
-              shieldBalanceError: _shieldBalanceError,
-              shieldBalanceErrorDetail: _shieldBalanceErrorDetail,
-              onTogglePrivacyMode: () =>
-                  ref.read(privacyModeProvider.notifier).toggle(),
-              onShieldBalancePressed: () =>
-                  unawaited(_shieldTransparentBalance()),
-              onDismissShieldBalanceError: _dismissShieldBalanceError,
-              onSyncInBackground: () =>
-                  ref.read(syncProvider.notifier).enableBackgroundSync(),
-              onStopBackgroundSync: () =>
-                  ref.read(syncProvider.notifier).disableBackgroundSync(),
-              onRetrySync: () => ref.read(syncProvider.notifier).startSync(),
-            ),
-          ),
+            if (_showKeystoneShieldSigning)
+              KeystoneShieldSigningOverlay(
+                onCancel: _closeKeystoneShieldSigning,
+                onComplete: _closeKeystoneShieldSigning,
+              ),
+          ],
         ),
       ),
     );

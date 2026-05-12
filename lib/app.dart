@@ -14,7 +14,6 @@ import 'src/core/widgets/network_fallback_toast.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
-import 'src/features/home/screens/keystone_shield_confirm_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/about/screens/about_screen.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
@@ -36,7 +35,6 @@ import 'src/features/onboarding/shared/set_password_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/receive/screens/receive_screen.dart';
-import 'src/features/send/screens/keystone_send_confirm_screen.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
 import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
@@ -455,10 +453,6 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
       GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
-      GoRoute(
-        path: '/home/keystone/shield/confirm',
-        builder: (_, _) => const KeystoneShieldConfirmScreen(),
-      ),
       GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
       GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),
       GoRoute(
@@ -493,14 +487,6 @@ final _routerProvider = Provider<GoRouter>((ref) {
           final args = state.extra;
           if (args is! SendReviewArgs) return const SendScreen();
           return SendReviewScreen(args: args);
-        },
-      ),
-      GoRoute(
-        path: '/send/keystone/confirm',
-        builder: (_, state) {
-          final args = state.extra;
-          if (args is! SendReviewArgs) return const SendScreen();
-          return KeystoneSendConfirmScreen(args: args);
         },
       ),
       GoRoute(

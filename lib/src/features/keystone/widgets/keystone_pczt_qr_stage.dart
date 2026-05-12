@@ -117,11 +117,11 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
           size: 226,
           backgroundColor: const Color(0xFFFFFFFF),
           eyeStyle: const QrEyeStyle(
-            eyeShape: QrEyeShape.square,
+            eyeShape: QrEyeShape.circle,
             color: Color(0xFF141818),
           ),
           dataModuleStyle: const QrDataModuleStyle(
-            dataModuleShape: QrDataModuleShape.square,
+            dataModuleShape: QrDataModuleShape.circle,
             color: Color(0xFF141818),
           ),
           errorCorrectionLevel: QrErrorCorrectLevel.L,

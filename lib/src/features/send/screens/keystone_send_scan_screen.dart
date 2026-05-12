@@ -93,37 +93,49 @@ class _KeystoneSendScanScreenState
               alignment: Alignment.centerLeft,
               child: AppBackLink(label: 'Back', onTap: _goBack),
             ),
+            const SizedBox(height: AppSpacing.xs),
             Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Scan your Keystone QR Code',
-                      style: AppTypography.headlineLarge.copyWith(
-                        color: colors.button.ghost.label,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Scan QR Code',
+                        style: AppTypography.displaySmall.copyWith(
+                          color: colors.text.accent,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 32),
-                    KeystoneQrScannerCard(
-                      expectedUrType: 'zcash-pczt',
-                      decoding: _decoding,
-                      error: _error,
-                      onProgress: (progress) {
-                        if (!mounted) return;
-                        setState(() {
-                          if (progress > 0) _error = null;
-                        });
-                      },
-                      onDecodeError: _handleDecodeError,
-                      onComplete: (result) =>
-                          unawaited(_handleScanComplete(result)),
-                      decodingLabel: 'Reading signature...',
-                      unavailableMessage:
-                          'Keystone signing uses camera QR scanning only. Connect a camera and try again.',
-                    ),
-                  ],
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        'Prepare your Keystone wallet',
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: colors.text.accent,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppSpacing.base),
+                      KeystoneQrScannerCard(
+                        expectedUrType: 'zcash-pczt',
+                        decoding: _decoding,
+                        error: _error,
+                        onProgress: (progress) {
+                          if (!mounted) return;
+                          setState(() {
+                            if (progress > 0) _error = null;
+                          });
+                        },
+                        onDecodeError: _handleDecodeError,
+                        onComplete: (result) =>
+                            unawaited(_handleScanComplete(result)),
+                        decodingLabel: 'Reading signature...',
+                        unavailableMessage:
+                            'Keystone signing uses camera QR scanning only. Connect a camera and try again.',
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

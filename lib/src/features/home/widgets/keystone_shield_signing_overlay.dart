@@ -5,23 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/formatting/zec_amount.dart';
 import '../../../core/config/rpc_endpoint_config.dart';
-import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
-import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/storage/wallet_paths.dart';
-import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
-import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
+import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../../send/services/sapling_params.dart';
 import '../../send/widgets/sapling_params_prompt.dart';
 
@@ -33,16 +26,23 @@ enum _KeystoneShieldPhase {
   failed,
 }
 
-class KeystoneShieldConfirmScreen extends ConsumerStatefulWidget {
-  const KeystoneShieldConfirmScreen({super.key});
+class KeystoneShieldSigningOverlay extends ConsumerStatefulWidget {
+  const KeystoneShieldSigningOverlay({
+    required this.onCancel,
+    required this.onComplete,
+    super.key,
+  });
+
+  final VoidCallback onCancel;
+  final VoidCallback onComplete;
 
   @override
-  ConsumerState<KeystoneShieldConfirmScreen> createState() =>
-      _KeystoneShieldConfirmScreenState();
+  ConsumerState<KeystoneShieldSigningOverlay> createState() =>
+      _KeystoneShieldSigningOverlayState();
 }
 
-class _KeystoneShieldConfirmScreenState
-    extends ConsumerState<KeystoneShieldConfirmScreen> {
+class _KeystoneShieldSigningOverlayState
+    extends ConsumerState<KeystoneShieldSigningOverlay> {
   _KeystoneShieldPhase _phase = _KeystoneShieldPhase.preparing;
   bool _showSaplingParamsPrompt = false;
   Completer<bool>? _saplingParamsPromptCompleter;
@@ -52,8 +52,6 @@ class _KeystoneShieldConfirmScreenState
   List<int>? _pcztWithProofs;
   SaplingParamsStatus? _saplingParams;
   bool _needsSaplingParams = false;
-  BigInt? _feeZatoshi;
-  BigInt? _shieldedZatoshi;
 
   @override
   void initState() {
@@ -160,8 +158,6 @@ class _KeystoneShieldConfirmScreenState
         _pcztWithProofs = pcztWithProofs;
         _saplingParams = saplingParams;
         _needsSaplingParams = shieldPczt.needsSaplingParams;
-        _feeZatoshi = shieldPczt.feeZatoshi;
-        _shieldedZatoshi = shieldPczt.shieldedZatoshi;
         _urParts = urParts;
       });
     } catch (e, st) {
@@ -235,7 +231,7 @@ class _KeystoneShieldConfirmScreenState
         });
         return;
       }
-      context.go('/home');
+      widget.onComplete();
     } catch (e, st) {
       log('KeystoneShieldConfirm._broadcast: ERROR: $e\n$st');
       await _maybeSwitchBroadcastEndpoint(e, attemptedEndpoint);
@@ -315,180 +311,69 @@ class _KeystoneShieldConfirmScreenState
   }
 
   void _cancelToHome() {
-    context.go('/home');
-  }
-
-  String _shieldingLine() {
-    final amount = _shieldedZatoshi;
-    if (amount == null) return 'Shielding balance';
-    return 'Shielding ${ZecAmount.fromZatoshi(amount).pretty(minFractionDigits: 2, denomStyle: ZecDenomStyle.upper)}';
-  }
-
-  String _feeLine() {
-    final fee = _feeZatoshi;
-    if (fee == null) return 'Fee: calculating';
-    return 'Fee: ${ZecAmount.fromZatoshi(fee).fee}';
+    if (_phase == _KeystoneShieldPhase.broadcasting) return;
+    widget.onCancel();
   }
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final isBroadcasting = _phase == _KeystoneShieldPhase.broadcasting;
     final isBroadcastWarning = _phase == _KeystoneShieldPhase.broadcastWarning;
-    return AppDesktopShell(
-      sidebar: const AppMainSidebar(),
-      pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: AppBackLink(label: 'Back', onTap: _cancelToHome),
-                ),
-                Expanded(
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Shield with Keystone',
-                          style: AppTypography.headlineLarge.copyWith(
-                            color: colors.button.ghost.label,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 48),
-                        if (isBroadcasting)
-                          const KeystoneTransactionProgressPanel()
-                        else if (isBroadcastWarning)
-                          _ShieldBroadcastWarningPanel(
-                            message:
-                                _statusMessage ??
-                                'The shield transaction status is uncertain. Check activity before trying again.',
-                          )
-                        else
-                          KeystonePcztQrStage(
-                            phase: switch (_phase) {
-                              _KeystoneShieldPhase.preparing =>
-                                KeystonePcztQrStagePhase.preparing,
-                              _KeystoneShieldPhase.ready =>
-                                KeystonePcztQrStagePhase.ready,
-                              _KeystoneShieldPhase.failed =>
-                                KeystonePcztQrStagePhase.failed,
-                              _KeystoneShieldPhase.broadcasting =>
-                                KeystonePcztQrStagePhase.preparing,
-                              _KeystoneShieldPhase.broadcastWarning =>
-                                KeystonePcztQrStagePhase.failed,
-                            },
-                            urParts: _urParts,
-                            error: _error,
-                          ),
-                        if (isBroadcastWarning) ...[
-                          const SizedBox(height: 32),
-                          SizedBox(
-                            width: 256,
-                            child: AppButton(
-                              onPressed: _cancelToHome,
-                              minWidth: 256,
-                              child: const Text('Back to Wallet'),
-                            ),
-                          ),
-                        ] else if (!isBroadcasting) ...[
-                          const SizedBox(height: 48),
-                          SizedBox(
-                            width: 325,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _shieldingLine(),
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: colors.button.ghost.label,
-                                  ),
-                                ),
-                                const SizedBox(height: AppSpacing.xxs),
-                                Text(
-                                  _feeLine(),
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: colors.button.ghost.label,
-                                  ),
-                                ),
-                                const SizedBox(height: AppSpacing.xxs),
-                                Text(
-                                  'After you sign with Keystone, click Get Signature',
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: colors.text.secondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 32),
-                          SizedBox(
-                            width: 256,
-                            child: AppButton(
-                              onPressed: _phase == _KeystoneShieldPhase.ready
-                                  ? () => unawaited(_getSignature())
-                                  : null,
-                              minWidth: 256,
-                              child: const Text('Get Signature'),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.s),
-                          SizedBox(
-                            width: 256,
-                            child: AppButton(
-                              onPressed: _cancelToHome,
-                              variant: AppButtonVariant.ghost,
-                              minWidth: 256,
-                              child: const Text('Reject'),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (_showSaplingParamsPrompt)
-              SaplingParamsPrompt(
-                onDownload: () => _resolveSaplingParamsDialog(true),
-                onCancel: () => _resolveSaplingParamsDialog(false),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+    final isFailed = _phase == _KeystoneShieldPhase.failed;
+    final modalPhase = switch (_phase) {
+      _KeystoneShieldPhase.ready => KeystoneSigningModalPhase.ready,
+      _KeystoneShieldPhase.failed ||
+      _KeystoneShieldPhase.broadcastWarning => KeystoneSigningModalPhase.failed,
+      _KeystoneShieldPhase.preparing ||
+      _KeystoneShieldPhase.broadcasting => KeystoneSigningModalPhase.preparing,
+    };
+    final error = isBroadcastWarning
+        ? _statusMessage ??
+              'The shield transaction status is uncertain. Check activity before trying again.'
+        : _error;
 
-class _ShieldBroadcastWarningPanel extends StatelessWidget {
-  const _ShieldBroadcastWarningPanel({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return SizedBox(
-      width: 325,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppIcon(AppIcons.warning, size: 28, color: colors.icon.warning),
-          const SizedBox(height: AppSpacing.s),
-          Text(
-            message,
-            style: AppTypography.bodyMediumStrong.copyWith(
-              color: colors.text.warning,
-            ),
-            textAlign: TextAlign.center,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        AppPaneModalOverlay(
+          onDismiss: _cancelToHome,
+          child: KeystoneSigningModal(
+            phase: modalPhase,
+            urParts: _urParts,
+            error: error,
+            title: isBroadcasting
+                ? 'Broadcasting shield tx'
+                : 'Sign tx on your Keystone',
+            subtitle: isBroadcasting
+                ? 'Submitting transaction'
+                : 'Scan the QR code to sign',
+            instruction: isBroadcasting
+                ? 'Keep Vizor open while the transaction is sent.'
+                : isFailed || isBroadcastWarning
+                ? null
+                : 'After you scanned, click Get Signature.',
+            primaryLabel: isFailed || isBroadcastWarning || isBroadcasting
+                ? null
+                : 'Get Signature',
+            onPrimary: _phase == _KeystoneShieldPhase.ready
+                ? () => unawaited(_getSignature())
+                : null,
+            secondaryLabel: isBroadcasting
+                ? null
+                : isFailed || isBroadcastWarning
+                ? 'Back to Wallet'
+                : 'Reject',
+            onSecondary: _cancelToHome,
           ),
-        ],
-      ),
+        ),
+        if (_showSaplingParamsPrompt)
+          Positioned.fill(
+            child: SaplingParamsPrompt(
+              onDownload: () => _resolveSaplingParamsDialog(true),
+              onCancel: () => _resolveSaplingParamsDialog(false),
+            ),
+          ),
+      ],
     );
   }
 }
