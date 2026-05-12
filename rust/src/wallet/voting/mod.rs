@@ -9,8 +9,13 @@ pub mod state;
 pub mod tree_sync;
 pub mod types;
 pub mod vote;
+pub mod workflow;
 
 impl WalletNetwork {
+    /// Returns the network identifier used by shielded-voting services.
+    ///
+    /// Mainnet maps to `1`; testnet and regtest map to `0` so local and test
+    /// voting workflows share the non-mainnet voting namespace.
     pub fn voting_id(&self) -> u8 {
         match self {
             WalletNetwork::Main => 1,

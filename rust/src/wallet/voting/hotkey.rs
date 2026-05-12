@@ -6,10 +6,17 @@ use crate::wallet::network::WalletNetwork;
 
 const HOTKEY_CONTEXT_PREFIX: &[u8] = b"VizorWalletVotingHotkeyV1";
 
-/// Derives opaque voting hotkey bytes for a single wallet account and voting round.
+/// Derives opaque voting hotkey bytes for a wallet account in a voting round.
 ///
-/// The caller supplies the platform-owned secret seed; Rust only derives and returns
-/// the hotkey bytes and does not persist them.
+/// `seed` is the platform-owned secret seed material, while `round_id` and
+/// `account_uuid` are UTF-8 context strings. The same tuple always returns the
+/// same hotkey bytes; changing any tuple member produces independent material.
+///
+/// The returned secret is not persisted by Rust.
+///
+/// # Errors
+///
+/// Returns an error when `zcash_voting` rejects the contextual seed material.
 pub fn derive_hotkey(
     seed: &SecretVec<u8>,
     round_id: &str,
@@ -20,6 +27,17 @@ pub fn derive_hotkey(
 }
 
 /// Derives the Orchard raw address used as the governance PCZT output target.
+///
+/// The address is deterministically derived from the contextual hotkey for
+/// `seed`, `round_id`, `account_uuid`, and the requested wallet `network`.
+/// The returned bytes are the raw Orchard address bytes expected by voting
+/// transaction construction.
+///
+/// # Errors
+///
+/// Returns an error if hotkey derivation fails, the hotkey cannot be converted
+/// into a Zcash spending key for `network`, or the resulting UFVK has no Orchard
+/// receiver.
 pub fn derive_hotkey_raw_orchard_address(
     seed: &SecretVec<u8>,
     round_id: &str,
@@ -47,9 +65,11 @@ fn generate_contextual_hotkey(
         .map_err(|e| format!("Voting hotkey derivation failed: {e}"))
 }
 
-/// Builds the deterministic seed material passed to `zcash_voting`.
+/// Builds deterministic, domain-separated seed material for `zcash_voting`.
 ///
-/// Length-prefixing keeps the `(seed, round_id, account_uuid)` tuple unambiguous.
+/// The context prefix separates Vizor voting hotkeys from other seed uses.
+/// Length-prefixing keeps the `(seed, round_id, account_uuid)` tuple
+/// unambiguous even when adjacent parts contain overlapping byte sequences.
 /// TODO: evaluate if we should move this to zcash_voting
 /// https://linear.app/zcale/issue/ZCA-403/review-round-id-usage-in-generate-hotkey-api
 fn contextual_hotkey_seed(
@@ -75,12 +95,17 @@ fn contextual_hotkey_seed(
     SecretVec::new(material)
 }
 
-/// Returns the number of bytes needed to encode a context part.
+/// Returns the number of bytes needed to length-prefix and store a context part.
 fn encoded_part_len(part: &[u8]) -> usize {
     std::mem::size_of::<u32>() + part.len()
 }
 
 /// Appends one length-prefixed context part to the hotkey seed material.
+///
+/// # Panics
+///
+/// Panics if `part.len()` exceeds `u32::MAX`; voting context strings and wallet
+/// seed material are expected to be far below that bound.
 fn append_context_part(material: &mut Vec<u8>, part: &[u8]) {
     let len = u32::try_from(part.len()).expect("voting hotkey context part must fit in u32");
     material.extend_from_slice(&len.to_be_bytes());
