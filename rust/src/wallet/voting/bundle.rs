@@ -231,6 +231,21 @@ pub fn voting_power(notes: &SelectedNotes) -> u64 {
         .sum()
 }
 
+/// Validates that `bundle_index` is in `[0, bundle_count)`.
+pub(super) fn validate_bundle_index(
+    bundle_count: u32,
+    bundle_index: u32,
+    bundle_kind: &str,
+) -> Result<(), String> {
+    if bundle_index < bundle_count {
+        Ok(())
+    } else {
+        Err(format!(
+            "bundle_index {bundle_index} is out of range for {bundle_count} {bundle_kind} bundles"
+        ))
+    }
+}
+
 fn note_voting_weight(value_zatoshi: u64) -> Option<u64> {
     let ballots = value_zatoshi / zcash_voting::governance::BALLOT_DIVISOR;
     (ballots > 0).then_some(ballots * zcash_voting::governance::BALLOT_DIVISOR)
@@ -289,6 +304,18 @@ mod tests {
         };
 
         assert_eq!(voting_power(&selected), divisor * 3);
+    }
+
+    #[test]
+    fn validate_bundle_index_rejects_out_of_range_before_work() {
+        assert!(validate_bundle_index(2, 0, "voting").is_ok());
+        assert!(validate_bundle_index(2, 1, "voting").is_ok());
+        assert!(validate_bundle_index(2, 2, "voting")
+            .unwrap_err()
+            .contains("out of range"));
+        assert!(validate_bundle_index(0, 0, "delegation")
+            .unwrap_err()
+            .contains("0 delegation bundles"));
     }
 
     #[test]

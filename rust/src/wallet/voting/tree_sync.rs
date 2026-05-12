@@ -5,7 +5,7 @@ use std::{
 
 use zcash_voting::{storage::VotingDb, tree_sync::VoteTreeSync};
 
-use super::{endpoint_validation, state};
+use super::{bundle::validate_bundle_index, endpoint_validation, state};
 
 /// FRB-friendly representation of a Vote Authority Note Merkle witness.
 ///
@@ -166,6 +166,10 @@ pub fn generate_van_witness_with_db(
     bundle_index: u32,
     anchor_height: u32,
 ) -> Result<VanWitness, String> {
+    let bundle_count = voting_db
+        .get_bundle_count(round_id)
+        .map_err(|e| format!("get_bundle_count failed: {e}"))?;
+    validate_bundle_index(bundle_count, bundle_index, "voting")?;
     let tree_sync = tree_sync_for(db_path, wallet_id)?;
     tree_sync
         .generate_van_witness(voting_db, round_id, bundle_index, anchor_height)
@@ -337,13 +341,33 @@ mod tests {
     }
 
     #[test]
-    fn generate_van_witness_reports_missing_bundle_position_before_sync_requirement() {
+    fn generate_van_witness_reports_missing_bundle_before_sync_requirement() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = generate_van_witness(db_path.to_str().unwrap(), "wallet-1", "round-1", 0, 100)
             .unwrap_err();
 
-        assert!(!err.is_empty());
+        assert!(err.contains("bundle_index 0 is out of range for 0 voting bundles"));
+    }
+
+    #[test]
+    fn generate_van_witness_rejects_out_of_range_bundle_before_tree_work() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-out-of-range").unwrap();
+        state::init_voting_round(&db, &test_round_params(), None).unwrap();
+        db.setup_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+
+        let err = generate_van_witness(
+            db_path.to_str().unwrap(),
+            "wallet-out-of-range",
+            ROUND_ID,
+            1,
+            100,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("bundle_index 1 is out of range for 1 voting bundles"));
     }
 
     fn start_tree_server(height: u32, leaves: Vec<String>, expected_requests: usize) -> String {
