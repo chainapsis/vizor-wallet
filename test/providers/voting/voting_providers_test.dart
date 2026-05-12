@@ -257,6 +257,27 @@ void main() {
     expect(rust.storedVanPositions, ['0:0']);
   });
 
+  test('session keeps using account from initial round load', () async {
+    final rust = FakeVotingRustApi();
+    final recoveryApi = FakeVotingRecoveryApi(state: recoveryState());
+    final activeAccount = _MutableActiveAccount('account-1');
+    final container = _sessionContainer(
+      rust: rust,
+      recoveryApi: recoveryApi,
+      activeAccountUuid: activeAccount.call,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    activeAccount.value = 'account-2';
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .delegatePendingBundles(seedBytes: [1, 2, 3]);
+
+    expect(rust.accountUuids.toSet(), {'account-1'});
+    expect(recoveryApi.walletIds.toSet(), {'account-1'});
+  });
+
   test(
     'delegation submission matches Swift SDK snake case wire shape',
     () async {
@@ -740,6 +761,7 @@ ProviderContainer _sessionContainer({
   FakeVotingRecoveryApi? recoveryApi,
   PirSnapshotResolver? pirResolver,
   VotingHotkeyStore hotkeyStore = const FakeVotingHotkeyStore([9, 9, 9]),
+  Future<String?> Function()? activeAccountUuid,
 }) {
   final effectiveHttp =
       http ?? FakeVotingHttpClient(responses: votingHttpResponses());
@@ -756,7 +778,7 @@ ProviderContainer _sessionContainer({
       ),
       votingWalletDbPathProvider.overrideWithValue(() async => 'wallet.db'),
       votingActiveAccountUuidProvider.overrideWithValue(
-        () async => 'account-1',
+        activeAccountUuid ?? () async => 'account-1',
       ),
       votingRpcEndpointConfigProvider.overrideWithValue(
         const RpcEndpointConfig(
@@ -943,6 +965,7 @@ rust_voting.ApiVoteRecord vote({
 
 class FakeVotingRecoveryApi implements VotingRecoveryApi {
   rust_voting.ApiRoundRecoveryState state;
+  final walletIds = <String>[];
 
   FakeVotingRecoveryApi({required this.state});
 
@@ -970,8 +993,17 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required String walletId,
     required String roundId,
   }) async {
+    walletIds.add(walletId);
     return state;
   }
+}
+
+class _MutableActiveAccount {
+  _MutableActiveAccount(this.value);
+
+  String? value;
+
+  Future<String?> call() async => value;
 }
 
 class FakePirResolver implements PirSnapshotResolver {
@@ -1065,6 +1097,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final precomputedDelegationPir = <int>[];
   final resetVotingSessionStateCalls = <String>[];
   final draftSingleShareValues = <bool>[];
+  final accountUuids = <String>[];
 
   @override
   Future<rust_voting.ApiVotingBundleSetupResult> setupDelegationBundles({
@@ -1076,6 +1109,7 @@ class FakeVotingRustApi implements VotingRustApi {
     String? sessionJson,
     required String accountUuid,
   }) async {
+    accountUuids.add(accountUuid);
     _activeSetups++;
     if (_activeSetups > maxConcurrentSetups) {
       maxConcurrentSetups = _activeSetups;
@@ -1105,6 +1139,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required List<int> seedBytes,
     required int bundleIndex,
   }) async* {
+    accountUuids.add(accountUuid);
     delegationBundleCalls.add(bundleIndex);
     yield rust_voting.ApiDelegationProofEvent(
       phase: 'result',
@@ -1145,6 +1180,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required List<int> seedBytes,
     required int bundleIndex,
   }) async {
+    accountUuids.add(accountUuid);
     precomputedDelegationPir.add(bundleIndex);
     return rust_voting.ApiDelegationPirPrecomputeResult(
       cachedCount: 0,

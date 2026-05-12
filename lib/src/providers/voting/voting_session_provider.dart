@@ -28,9 +28,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _operation = Future.value();
   final String _roundId;
   final Map<String, Future<void>> _delegationPirPrecomputes = {};
+  String? _sessionAccountUuid;
 
   @override
   Future<VotingSessionState> build() async {
+    await _accountUuidForSession();
     final context = await _loadContext(_roundId);
     final rust = ref.read(votingRustApiProvider);
     ref.onDispose(() {
@@ -958,10 +960,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final round = VotingRoundDetails.fromStatus(
       await api.getRoundStatus(roundId),
     );
-    final accountUuid = await ref.read(votingActiveAccountUuidProvider).call();
-    if (accountUuid == null) {
-      throw StateError('No active account for voting session.');
-    }
+    final accountUuid = await _accountUuidForSession();
     final endpoint = ref.read(votingRpcEndpointConfigProvider);
     final dbPath = await ref.read(votingWalletDbPathProvider).call();
     final context = _VotingSessionContext(
@@ -980,6 +979,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           ),
     );
     return context;
+  }
+
+  Future<String> _accountUuidForSession() async {
+    final existing = _sessionAccountUuid;
+    if (existing != null) return existing;
+
+    final accountUuid = await ref.read(votingActiveAccountUuidProvider).call();
+    if (accountUuid == null) {
+      throw StateError('No active account for voting session.');
+    }
+    _sessionAccountUuid = accountUuid;
+    return accountUuid;
   }
 
   Future<VotingResumePlan> _loadResumePlan(_VotingSessionContext context) {
@@ -1013,7 +1024,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   /// Clear process-local state for the current round after an action failure.
   ///
-  /// The context is reloaded so cleanup follows the current account and DB path.
+  /// The context is reloaded so cleanup follows the session account and DB path.
   /// If that lookup fails, cleanup is skipped because there is no safe key to
   /// clear.
   Future<void> _cleanupCurrentSessionState({required String reason}) async {
