@@ -867,6 +867,15 @@ mod tests {
             }]
         );
         assert_eq!(state.commitment_bundles[0].vc_tree_position, 9);
+        assert_eq!(
+            state.share_workflows,
+            vec![ShareWorkflowRecovery {
+                bundle_index: 0,
+                proposal_id: 1,
+                share_index: 0,
+                phase: "submitted_share".to_string(),
+            }]
+        );
         assert_eq!(state.share_delegations.len(), 1);
         assert_eq!(
             state.share_delegations[0].sent_to_urls,
@@ -875,7 +884,19 @@ mod tests {
                 "https://helper-b.example".to_string(),
             ]
         );
+        assert_eq!(state.share_delegations[0].round_id, ROUND_ID);
+        assert_eq!(state.share_delegations[0].bundle_index, 0);
+        assert_eq!(state.share_delegations[0].proposal_id, 1);
+        assert_eq!(state.share_delegations[0].share_index, 0);
+        assert_eq!(state.share_delegations[0].nullifier, vec![7; 32]);
+        assert_eq!(state.share_delegations[0].phase, "submitted_share");
+        assert!(!state.share_delegations[0].confirmed);
+        assert_eq!(state.share_delegations[0].submit_at, 0);
         assert_eq!(state.unconfirmed_share_delegations.len(), 1);
+        assert_eq!(
+            state.unconfirmed_share_delegations[0],
+            state.share_delegations[0]
+        );
     }
 
     #[test]

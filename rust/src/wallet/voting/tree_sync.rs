@@ -301,6 +301,39 @@ mod tests {
         assert_eq!(witness.anchor_height, 1);
         assert_eq!(witness.auth_path.len(), 24);
         assert!(witness.auth_path.iter().all(|hash| hash.len() == 32));
+        assert_eq!(
+            witness
+                .auth_path
+                .iter()
+                .map(hex::encode)
+                .collect::<Vec<_>>(),
+            vec![
+                "7a515983cec6c21e27c2f24fbc31c54d698400d33300ebc7f4677cb71b529403",
+                "82a64809dbe974e7d141cebe86442be2fb7f9b9a9eeb1f75f462d6e7e8202336",
+                "14815bae396c839e1210560d74ef1cdb97851d89f999b6e8e4128a08fdb4a912",
+                "8c3074d3f71c5c6316c5d2a536dd5a79b694d562436eac88eccc51b551f4af2e",
+                "878d8066cbd4d0073520041c2fe41c3b8b1933041d8b862337378474a6405d14",
+                "306c6fa59275c245f89ccb1a857624f8d78ae999035d33aa66d0a65b27314f38",
+                "953990ee917dce3d11f332fa6539f0e932fa11973828163943501d67b3373d15",
+                "74cb897bc0643f418ac9a2eaaafaeb83179d6d6fa54ef6d559b32998b747020f",
+                "a0b190e21a231d274275f20e4c40af39e5387d66339e1f436e23a5e70618431f",
+                "e01482b9f9d66be7feb94d3ba771dec9dc299ecaf91edd612e15cb718c558e01",
+                "30d9c5b9372fbad01fef2baa713cfaba14d0eb7d2d5ffd29381be274468eb800",
+                "07023d01f99b5c7a2495449156fdfea3d47476ff9a5cd7a65f1aec743a1e9e31",
+                "f86737aa6004422175918549ffecb01dd7b7893dd4659e8de9c529810639761e",
+                "7fd484623a74052f1eeb4326c7ed34a2708d0343ebe717aa3ab2140a2ab42c30",
+                "09385fd5ab538ac5f24451b30fc597a2b3f1a6022d92e50c6cf81a5e87a97715",
+                "053114f4ba1aa6a2ce1a7c7eb1816f3d4906941eb3f86d7acb0a69b2efc35435",
+                "02bcecd24479b7017f0d1ef5b404fcda609126d79c4d3b32e0d3639918d0c333",
+                "bb61ef6c5b7013f54215cf9e52cec51739bb6c783c154666e9ccb63baaf4791c",
+                "892d340244e211747dacdaf755c7423a5514f4c17d1bbe5f9b6afc86cb7e6c35",
+                "2f405cdca85c479d2207e41deef7589e63d7d55e8dd7c26ecc6fce748e12372d",
+                "617ef09aa96820c33e241c6f483faca32fb407775eedce8f7bd6e8ae48ea8d25",
+                "b25282f8717a7d0de5b799ea8e6d13c298cb0058388af568818b53bbe1ba5824",
+                "0d6709c82b101cfed97d7923df40fe28c90a6b982a9239b16496df6f6efbe530",
+                "1a872423eac38fa63d3e848cbe8d857f2e6da3c3f4d4b8cdc9962dda06def715",
+            ]
+        );
     }
 
     #[test]
