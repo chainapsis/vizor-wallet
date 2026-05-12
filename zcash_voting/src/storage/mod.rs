@@ -9,6 +9,9 @@ use rusqlite::Connection;
 use crate::types::VotingError;
 
 /// Current phase of a voting round.
+///
+/// Discriminants are ordered lifecycle ranks; `advance_round_phase` compares
+/// them to enforce forward-only progression.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
 pub enum RoundPhase {
