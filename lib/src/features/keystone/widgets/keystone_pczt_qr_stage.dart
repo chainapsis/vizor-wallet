@@ -91,7 +91,7 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
   void _startTimer() {
     _timer?.cancel();
     if (widget.urParts.length <= 1) return;
-    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+    _timer = Timer.periodic(const Duration(milliseconds: 250), (_) {
       if (!mounted) return;
       setState(() {
         _index = (_index + 1) % widget.urParts.length;
@@ -117,11 +117,11 @@ class _AnimatedKeystoneQrState extends State<_AnimatedKeystoneQr> {
           size: 226,
           backgroundColor: const Color(0xFFFFFFFF),
           eyeStyle: const QrEyeStyle(
-            eyeShape: QrEyeShape.circle,
+            eyeShape: QrEyeShape.square,
             color: Color(0xFF141818),
           ),
           dataModuleStyle: const QrDataModuleStyle(
-            dataModuleShape: QrDataModuleShape.circle,
+            dataModuleShape: QrDataModuleShape.square,
             color: Color(0xFF141818),
           ),
           errorCorrectionLevel: QrErrorCorrectLevel.L,

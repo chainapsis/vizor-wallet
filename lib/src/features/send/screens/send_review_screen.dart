@@ -320,7 +320,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       );
       final urParts = await rust_keystone.encodePcztUrParts(
         pcztBytes: redactedPczt,
-        maxFragmentLen: BigInt.from(200),
+        maxFragmentLen: BigInt.from(140),
       );
 
       if (!mounted) return;
