@@ -265,10 +265,15 @@ fn cmd_witness(node: &str, round: &str, position: u64, anchor_height: Option<u32
     });
 
     let anchor = anchor_height.unwrap_or_else(|| {
-        client.last_synced_height().expect("must have synced at least one block")
+        client
+            .last_synced_height()
+            .expect("must have synced at least one block")
     });
 
-    println!("Generating witness for position {} at anchor height {}...", position, anchor);
+    println!(
+        "Generating witness for position {} at anchor height {}...",
+        position, anchor
+    );
     match client.witness(position, anchor) {
         Some(path) => {
             let path_bytes = path.to_bytes();
@@ -297,7 +302,10 @@ fn cmd_verify(leaf_hex: &str, witness_hex: &str, root_hex: &str) {
     });
 
     let path = MerklePath::from_bytes(&witness_bytes).unwrap_or_else(|| {
-        eprintln!("error: could not parse witness bytes (expected {} bytes)", vote_commitment_tree::MERKLE_PATH_BYTES);
+        eprintln!(
+            "error: could not parse witness bytes (expected {} bytes)",
+            vote_commitment_tree::MERKLE_PATH_BYTES
+        );
         process::exit(1);
     });
 

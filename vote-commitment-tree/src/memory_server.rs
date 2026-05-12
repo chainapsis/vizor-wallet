@@ -145,23 +145,40 @@ mod tests {
         tree.append(fp(2)).unwrap();
 
         // Equal height: must return NotMonotonic.
-        let err = tree.checkpoint(5).expect_err("expected error on duplicate checkpoint height");
+        let err = tree
+            .checkpoint(5)
+            .expect_err("expected error on duplicate checkpoint height");
         assert!(
-            matches!(err, CheckpointError::NotMonotonic { prev: 5, requested: 5 }),
+            matches!(
+                err,
+                CheckpointError::NotMonotonic {
+                    prev: 5,
+                    requested: 5
+                }
+            ),
             "unexpected error variant: {:?}",
             err,
         );
 
         // Regressing height: must also return NotMonotonic.
-        let err = tree.checkpoint(3).expect_err("expected error on regressing checkpoint height");
+        let err = tree
+            .checkpoint(3)
+            .expect_err("expected error on regressing checkpoint height");
         assert!(
-            matches!(err, CheckpointError::NotMonotonic { prev: 5, requested: 3 }),
+            matches!(
+                err,
+                CheckpointError::NotMonotonic {
+                    prev: 5,
+                    requested: 3
+                }
+            ),
             "unexpected error variant: {:?}",
             err,
         );
 
         // The tree must still be usable: a strictly increasing height succeeds.
-        tree.checkpoint(6).expect("checkpoint with higher height must succeed");
+        tree.checkpoint(6)
+            .expect("checkpoint with higher height must succeed");
     }
 
     /// Verifies that old checkpoints are evicted from the store once the

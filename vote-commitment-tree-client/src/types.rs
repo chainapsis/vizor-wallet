@@ -11,8 +11,8 @@ use ff::PrimeField;
 use pasta_curves::Fp;
 use serde::Deserialize;
 
-use vote_commitment_tree::MerkleHashVote;
 use vote_commitment_tree::sync_api::{BlockCommitments, TreeState};
+use vote_commitment_tree::MerkleHashVote;
 
 // ---------------------------------------------------------------------------
 // Error
@@ -180,7 +180,13 @@ mod tests {
         );
         let resp: QueryCommitmentLeavesResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(resp.blocks.len(), 1);
-        let block = resp.blocks.into_iter().next().unwrap().into_block_commitments().unwrap();
+        let block = resp
+            .blocks
+            .into_iter()
+            .next()
+            .unwrap()
+            .into_block_commitments()
+            .unwrap();
         assert_eq!(block.height, 5);
         assert_eq!(block.start_index, 0);
         assert_eq!(block.leaves.len(), 2);

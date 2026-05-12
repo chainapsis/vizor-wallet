@@ -20,7 +20,11 @@ use std::collections::BTreeMap;
 
 use incrementalmerkletree::{Hashable, Level, Retention};
 use pasta_curves::{group::ff::PrimeField, Fp};
-use shardtree::{error::ShardTreeError, store::{memory::MemoryShardStore, ShardStore}, ShardTree};
+use shardtree::{
+    error::ShardTreeError,
+    store::{memory::MemoryShardStore, ShardStore},
+    ShardTree,
+};
 
 use crate::hash::{MerkleHashVote, MAX_CHECKPOINTS, SHARD_HEIGHT, TREE_DEPTH};
 use crate::kv_shard_store::{KvCallbacks, KvError, KvShardStore};
@@ -40,8 +44,9 @@ use crate::sync_api::BlockCommitments;
 /// callers. For [`MemoryTreeServer`] the error type is `Infallible`, so those
 /// results can be safely `.unwrap()`-ed; for [`TreeServer`] the error type is
 /// [`crate::kv_shard_store::KvError`] and must be propagated.
-pub struct GenericTreeServer<S: shardtree::store::ShardStore<H = MerkleHashVote, CheckpointId = u32>>
-{
+pub struct GenericTreeServer<
+    S: shardtree::store::ShardStore<H = MerkleHashVote, CheckpointId = u32>,
+> {
     pub(crate) inner: ShardTree<S, { TREE_DEPTH as u8 }, { SHARD_HEIGHT }>,
     /// Latest checkpoint id (block height) that has been recorded.
     pub(crate) latest_checkpoint: Option<u32>,
@@ -107,9 +112,15 @@ impl std::fmt::Display for AppendFromKvError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AppendFromKvError::Kv(e) => write!(f, "KV error reading leaf: {}", e),
-            AppendFromKvError::MissingLeaf(i) => write!(f, "leaf at index {} is missing from KV", i),
+            AppendFromKvError::MissingLeaf(i) => {
+                write!(f, "leaf at index {} is missing from KV", i)
+            }
             AppendFromKvError::MalformedLeaf(i) => {
-                write!(f, "leaf at index {} is malformed (wrong length or non-canonical Fp)", i)
+                write!(
+                    f,
+                    "leaf at index {} is malformed (wrong length or non-canonical Fp)",
+                    i
+                )
             }
             AppendFromKvError::Tree(e) => write!(f, "ShardTree error: {:?}", e),
         }
@@ -365,7 +376,10 @@ where
     pub fn checkpoint(&mut self, height: u32) -> Result<(), CheckpointError<S::Error>> {
         if let Some(prev) = self.latest_checkpoint {
             if height <= prev {
-                return Err(CheckpointError::NotMonotonic { prev, requested: height });
+                return Err(CheckpointError::NotMonotonic {
+                    prev,
+                    requested: height,
+                });
             }
         }
         self.inner.checkpoint(height)?;

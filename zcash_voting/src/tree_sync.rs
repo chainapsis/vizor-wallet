@@ -31,11 +31,7 @@ pub struct VanWitness {
 
 impl From<(MerklePath, u32)> for VanWitness {
     fn from((path, anchor_height): (MerklePath, u32)) -> Self {
-        let auth_path = path
-            .auth_path()
-            .iter()
-            .map(|h| h.to_bytes())
-            .collect();
+        let auth_path = path.auth_path().iter().map(|h| h.to_bytes()).collect();
         Self {
             auth_path,
             position: path.position(),
@@ -114,9 +110,11 @@ impl VoteTreeSync {
             message: format!("tree client lock poisoned: {}", e),
         })?;
 
-        let client = guard.get(round_id).ok_or_else(|| VotingError::InvalidInput {
-            message: "must call sync before generate_van_witness".to_string(),
-        })?;
+        let client = guard
+            .get(round_id)
+            .ok_or_else(|| VotingError::InvalidInput {
+                message: "must call sync before generate_van_witness".to_string(),
+            })?;
 
         let path = client
             .witness(van_position as u64, anchor_height)

@@ -96,11 +96,7 @@ impl<E: fmt::Debug> From<E> for SyncError<E> {
 /// - **Wallet**: marks its own VAN position (for ZKP #2)
 /// - **Helper server**: marks delegated VC positions (for ZKP #3)
 pub struct TreeClient {
-    inner: ShardTree<
-        MemoryShardStore<MerkleHashVote, u32>,
-        { TREE_DEPTH as u8 },
-        { SHARD_HEIGHT },
-    >,
+    inner: ShardTree<MemoryShardStore<MerkleHashVote, u32>, { TREE_DEPTH as u8 }, { SHARD_HEIGHT }>,
     /// Next leaf position expected (mirrors server's next_position).
     next_position: u64,
     /// Latest synced block height.

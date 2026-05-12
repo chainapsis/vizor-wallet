@@ -11,7 +11,7 @@ use orchard::note::{ExtractedNoteCommitment, RandomSeed, Rho};
 use orchard::pczt::Zip32Derivation;
 use orchard::tree::{MerkleHashOrchard, MerklePath};
 use orchard::value::NoteValue;
-use orchard::{Anchor, Address};
+use orchard::{Address, Anchor};
 use zcash_primitives::transaction::builder::PcztParts;
 use zcash_primitives::transaction::TxVersion;
 use zcash_protocol::consensus::{BlockHeight, BranchId, Network};
@@ -22,8 +22,7 @@ const MERKLE_DEPTH: usize = 32;
 
 use crate::governance;
 use crate::types::{
-    validate_notes, validate_round_params, GovernancePczt, NoteInfo, VotingError,
-    VotingRoundParams,
+    validate_notes, validate_round_params, GovernancePczt, NoteInfo, VotingError, VotingRoundParams,
 };
 
 /// Orchard key diversification personalization for DiversifyHash^Orchard.
@@ -259,8 +258,7 @@ pub fn build_governance_pczt(
             let (pad_note, rseed_bytes) = make_note(pad_addr, NoteValue::ZERO, rho, &mut rng)?;
             let cmx: ExtractedNoteCommitment = pad_note.commitment().into();
             let real_nf = pad_note.nullifier(&fvk);
-            let gov_null =
-                governance::derive_gov_nullifier(nk_bytes, &dom, &real_nf.to_bytes())?;
+            let gov_null = governance::derive_gov_nullifier(nk_bytes, &dom, &real_nf.to_bytes())?;
             padded_cmx.push(cmx.to_bytes().to_vec());
             gov_nullifiers.push(gov_null);
             dummy_nullifiers.push(real_nf.to_bytes().to_vec());
@@ -379,23 +377,23 @@ pub fn build_governance_pczt(
 
     // Build the PCZT bundle
     let (mut orchard_pczt_bundle, bundle_meta) =
-        builder.build_for_pczt(&mut rng).map_err(|e| {
-            VotingError::Internal {
+        builder
+            .build_for_pczt(&mut rng)
+            .map_err(|e| VotingError::Internal {
                 message: format!("Builder::build_for_pczt failed: {:?}", e),
-            }
-        })?;
+            })?;
 
     // Extract data from the real governance action (may be shuffled by Builder)
-    let spend_idx = bundle_meta.spend_action_index(0).ok_or_else(|| {
-        VotingError::Internal {
+    let spend_idx = bundle_meta
+        .spend_action_index(0)
+        .ok_or_else(|| VotingError::Internal {
             message: "BundleMetadata missing spend action index".to_string(),
-        }
-    })?;
-    let output_idx = bundle_meta.output_action_index(0).ok_or_else(|| {
-        VotingError::Internal {
+        })?;
+    let output_idx = bundle_meta
+        .output_action_index(0)
+        .ok_or_else(|| VotingError::Internal {
             message: "BundleMetadata missing output action index".to_string(),
-        }
-    })?;
+        })?;
 
     let spend_action = &orchard_pczt_bundle.actions()[spend_idx];
     let nf_signed_bytes: [u8; 32] = spend_action.spend().nullifier().to_bytes();
@@ -407,12 +405,13 @@ pub fn build_governance_pczt(
             message: "PCZT spend missing alpha".to_string(),
         })?;
     let alpha_bytes: [u8; 32] = alpha.to_repr();
-    let rseed_signed_from_pczt = spend_action
-        .spend()
-        .rseed()
-        .ok_or_else(|| VotingError::Internal {
-            message: "PCZT spend missing rseed".to_string(),
-        })?;
+    let rseed_signed_from_pczt =
+        spend_action
+            .spend()
+            .rseed()
+            .ok_or_else(|| VotingError::Internal {
+                message: "PCZT spend missing rseed".to_string(),
+            })?;
     // Verify rseed consistency between our note and the PCZT
     if rseed_signed_from_pczt.as_bytes() != &rseed_signed_bytes {
         return Err(VotingError::Internal {
@@ -435,9 +434,9 @@ pub fn build_governance_pczt(
     let zip32_deriv = Zip32Derivation::parse(
         *seed_fingerprint,
         vec![
-            32 | (1 << 31),              // purpose: hardened(32)
-            coin_type | (1 << 31),        // coin_type
-            account_index | (1 << 31),    // account
+            32 | (1 << 31),            // purpose: hardened(32)
+            coin_type | (1 << 31),     // coin_type
+            account_index | (1 << 31), // account
         ],
     )
     .map_err(|e| VotingError::Internal {
@@ -457,11 +456,13 @@ pub fn build_governance_pczt(
     // --- Serialize to full PCZT ---
     // Use Creator::build_from_parts to construct the PCZT with the orchard bundle,
     // matching the same path the wallet transaction builder uses.
-    let branch_id = BranchId::try_from(consensus_branch_id).map_err(|e| {
-        VotingError::InvalidInput {
-            message: format!("invalid consensus_branch_id 0x{:08X}: {}", consensus_branch_id, e),
-        }
-    })?;
+    let branch_id =
+        BranchId::try_from(consensus_branch_id).map_err(|e| VotingError::InvalidInput {
+            message: format!(
+                "invalid consensus_branch_id 0x{:08X}: {}",
+                consensus_branch_id, e
+            ),
+        })?;
     let network = match coin_type {
         133 => Network::MainNetwork,
         _ => Network::TestNetwork,
@@ -480,7 +481,8 @@ pub fn build_governance_pczt(
     };
     let pczt = pczt::roles::creator::Creator::build_from_parts(parts).ok_or_else(|| {
         VotingError::Internal {
-            message: "Creator::build_from_parts returned None (incompatible tx version)".to_string(),
+            message: "Creator::build_from_parts returned None (incompatible tx version)"
+                .to_string(),
         }
     })?;
 
@@ -536,10 +538,9 @@ pub fn extract_pczt_sighash(pczt_bytes: &[u8]) -> Result<[u8; 32], VotingError> 
     let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| VotingError::Internal {
         message: format!("Failed to parse PCZT: {:?}", e),
     })?;
-    let signer =
-        pczt::roles::signer::Signer::new(pczt).map_err(|e| VotingError::Internal {
-            message: format!("Failed to create Signer from PCZT: {:?}", e),
-        })?;
+    let signer = pczt::roles::signer::Signer::new(pczt).map_err(|e| VotingError::Internal {
+        message: format!("Failed to create Signer from PCZT: {:?}", e),
+    })?;
     Ok(signer.shielded_sighash())
 }
 
@@ -717,7 +718,11 @@ mod tests {
         // PCZT bytes are non-empty and parseable
         assert!(!result.pczt_bytes.is_empty());
         let parsed = pczt::Pczt::parse(&result.pczt_bytes);
-        assert!(parsed.is_ok(), "PCZT bytes should parse: {:?}", parsed.err());
+        assert!(
+            parsed.is_ok(),
+            "PCZT bytes should parse: {:?}",
+            parsed.err()
+        );
 
         // rk is 32 bytes, non-zero
         assert_eq!(result.rk.len(), 32);

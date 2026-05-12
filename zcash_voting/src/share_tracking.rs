@@ -47,27 +47,18 @@ pub fn compute_share_nullifier(
     }
 
     let vc = ct_option_to_result(
-        pallas::Base::from_repr(
-            vote_commitment
-                .try_into()
-                .expect("checked length above"),
-        ),
+        pallas::Base::from_repr(vote_commitment.try_into().expect("checked length above")),
         "invalid vote_commitment field element",
     )?;
 
     let blind = ct_option_to_result(
-        pallas::Base::from_repr(
-            primary_blind
-                .try_into()
-                .expect("checked length above"),
-        ),
+        pallas::Base::from_repr(primary_blind.try_into().expect("checked length above")),
         "invalid primary_blind field element",
     )?;
 
     let share_index_fp = pallas::Base::from(share_index as u64);
 
-    let nullifier =
-        voting_circuits::share_reveal::share_nullifier_hash(vc, share_index_fp, blind);
+    let nullifier = voting_circuits::share_reveal::share_nullifier_hash(vc, share_index_fp, blind);
 
     Ok(nullifier.to_repr().to_vec())
 }
@@ -105,7 +96,10 @@ mod tests {
         let blind = [2u8; 32];
         let r0 = compute_share_nullifier(&vc, 0, &blind).unwrap();
         let r1 = compute_share_nullifier(&vc, 1, &blind).unwrap();
-        assert_ne!(r0, r1, "different share indices must produce different nullifiers");
+        assert_ne!(
+            r0, r1,
+            "different share indices must produce different nullifiers"
+        );
     }
 
     #[test]

@@ -120,8 +120,16 @@ mod tests {
         let vote_decision = Fp::from(1u64);
 
         let ours = vote_commitment_hash(voting_round_id, shares_hash, proposal_id, vote_decision);
-        let theirs = vote_proof::vote_commitment_hash(voting_round_id, shares_hash, proposal_id, vote_decision);
-        assert_eq!(ours, theirs, "vote_commitment_hash must match orchard circuit helper");
+        let theirs = vote_proof::vote_commitment_hash(
+            voting_round_id,
+            shares_hash,
+            proposal_id,
+            vote_decision,
+        );
+        assert_eq!(
+            ours, theirs,
+            "vote_commitment_hash must match orchard circuit helper"
+        );
     }
 
     #[test]

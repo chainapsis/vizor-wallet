@@ -1,6 +1,6 @@
 use crate::types::{
-    validate_encrypted_shares, validate_vote_decision, CastVoteSignature, WireEncryptedShare,
-    SharePayload, VoteCommitmentBundle, VotingError,
+    validate_encrypted_shares, validate_vote_decision, CastVoteSignature, SharePayload,
+    VoteCommitmentBundle, VotingError, WireEncryptedShare,
 };
 
 /// Build payloads for helper server (one per share).
@@ -39,9 +39,7 @@ pub fn build_share_payloads(
 
     let mut payloads = Vec::with_capacity(iter_shares.len());
     for (i, share) in iter_shares.iter().enumerate() {
-        let primary_blind = commitment.share_blinds.get(i)
-            .cloned()
-            .unwrap_or_default();
+        let primary_blind = commitment.share_blinds.get(i).cloned().unwrap_or_default();
         payloads.push(SharePayload {
             shares_hash: commitment.shares_hash.clone(),
             proposal_id: commitment.proposal_id,
@@ -200,7 +198,8 @@ mod tests {
     #[test]
     fn test_build_share_payloads() {
         let commitment = mock_commitment();
-        let result = build_share_payloads(&mock_enc_shares(), &commitment, 1, 2, 42, false).unwrap();
+        let result =
+            build_share_payloads(&mock_enc_shares(), &commitment, 1, 2, 42, false).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].proposal_id, 1);
         assert_eq!(result[0].vote_decision, 1);

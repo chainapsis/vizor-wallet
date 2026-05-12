@@ -77,12 +77,8 @@ pub fn derive_gov_nullifier(
     let dom_fp = bytes_to_fp(dom)?;
     let nf_fp = bytes_to_fp(note_nullifier)?;
 
-    let gov_null =
-        poseidon::Hash::<_, P128Pow5T3, ConstantLength<3>, 3, 2>::init().hash([
-            nk_fp,
-            dom_fp,
-            nf_fp,
-        ]);
+    let gov_null = poseidon::Hash::<_, P128Pow5T3, ConstantLength<3>, 3, 2>::init()
+        .hash([nk_fp, dom_fp, nf_fp]);
 
     Ok(fp_to_bytes(gov_null))
 }
@@ -110,7 +106,8 @@ pub fn construct_van(
     let num_ballots = total_weight / BALLOT_DIVISOR;
     if num_ballots == 0 {
         return Err(VotingError::InvalidInput {
-            message: "total_weight must yield at least 1 ballot (>= 12_500_000 zatoshi)".to_string(),
+            message: "total_weight must yield at least 1 ballot (>= 12_500_000 zatoshi)"
+                .to_string(),
         });
     }
 
@@ -354,11 +351,16 @@ mod tests {
         let base = compute_rho_binding(&cmx1, &cmx2, &cmx3, &cmx4, &cmx5, &gov, &vri).unwrap();
 
         // Changing any cmx should change the output
-        let alt1 = compute_rho_binding(&[0x11u8; 32], &cmx2, &cmx3, &cmx4, &cmx5, &gov, &vri).unwrap();
-        let alt2 = compute_rho_binding(&cmx1, &[0x12u8; 32], &cmx3, &cmx4, &cmx5, &gov, &vri).unwrap();
-        let alt3 = compute_rho_binding(&cmx1, &cmx2, &[0x13u8; 32], &cmx4, &cmx5, &gov, &vri).unwrap();
-        let alt4 = compute_rho_binding(&cmx1, &cmx2, &cmx3, &[0x14u8; 32], &cmx5, &gov, &vri).unwrap();
-        let alt5 = compute_rho_binding(&cmx1, &cmx2, &cmx3, &cmx4, &[0x15u8; 32], &gov, &vri).unwrap();
+        let alt1 =
+            compute_rho_binding(&[0x11u8; 32], &cmx2, &cmx3, &cmx4, &cmx5, &gov, &vri).unwrap();
+        let alt2 =
+            compute_rho_binding(&cmx1, &[0x12u8; 32], &cmx3, &cmx4, &cmx5, &gov, &vri).unwrap();
+        let alt3 =
+            compute_rho_binding(&cmx1, &cmx2, &[0x13u8; 32], &cmx4, &cmx5, &gov, &vri).unwrap();
+        let alt4 =
+            compute_rho_binding(&cmx1, &cmx2, &cmx3, &[0x14u8; 32], &cmx5, &gov, &vri).unwrap();
+        let alt5 =
+            compute_rho_binding(&cmx1, &cmx2, &cmx3, &cmx4, &[0x15u8; 32], &gov, &vri).unwrap();
 
         assert_ne!(base, alt1, "changing cmx_1 must change rho");
         assert_ne!(base, alt2, "changing cmx_2 must change rho");
@@ -383,10 +385,9 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                0x36, 0xfe, 0x8d, 0x03, 0x0e, 0xb6, 0xe2, 0xe6,
-                0x89, 0xc3, 0x31, 0x1a, 0x9f, 0x45, 0x17, 0xb8,
-                0x31, 0xb5, 0x46, 0xe6, 0xbc, 0x2f, 0x4e, 0xe2,
-                0x62, 0x7c, 0x86, 0xbe, 0x7a, 0x80, 0x67, 0x1e,
+                0x36, 0xfe, 0x8d, 0x03, 0x0e, 0xb6, 0xe2, 0xe6, 0x89, 0xc3, 0x31, 0x1a, 0x9f, 0x45,
+                0x17, 0xb8, 0x31, 0xb5, 0x46, 0xe6, 0xbc, 0x2f, 0x4e, 0xe2, 0x62, 0x7c, 0x86, 0xbe,
+                0x7a, 0x80, 0x67, 0x1e,
             ],
             "rho_binding known-answer regression"
         );
