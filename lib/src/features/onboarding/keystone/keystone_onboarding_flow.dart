@@ -20,15 +20,15 @@ extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
   String get label => switch (this) {
     KeystoneOnboardingStep.howToConnect => 'How to Connect',
     KeystoneOnboardingStep.scanQrCode => 'Scan QR Code',
-    KeystoneOnboardingStep.selectAccount => 'Select account',
+    KeystoneOnboardingStep.selectAccount => 'Select Account',
     KeystoneOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
     KeystoneOnboardingStep.setPassword => 'Set Password',
   };
 
   String get iconName => switch (this) {
-    KeystoneOnboardingStep.howToConnect => AppIcons.zcash,
+    KeystoneOnboardingStep.howToConnect => AppIcons.book,
     KeystoneOnboardingStep.scanQrCode => AppIcons.qr,
-    KeystoneOnboardingStep.selectAccount => AppIcons.users,
+    KeystoneOnboardingStep.selectAccount => AppIcons.user,
     KeystoneOnboardingStep.walletBirthdayHeight => AppIcons.block,
     KeystoneOnboardingStep.setPassword => AppIcons.lock,
   };
