@@ -24,6 +24,11 @@ flutter_rust_bridge_codegen generate
 log stream --predicate 'subsystem == "frb_user"' --level info
 ```
 
+## Release Notes
+
+When asked to prepare user-facing release notes or a changelog for a release,
+read `release_notes/README.md` and create `release_notes/vX.Y.Z.md`.
+
 ### clear-app.sh
 
 Removes the app from the booted iOS simulator including Keychain data. This is necessary when testing wallet creation/import because the mnemonic is stored in iOS Keychain via `flutter_secure_storage`, which persists even after a normal app uninstall.

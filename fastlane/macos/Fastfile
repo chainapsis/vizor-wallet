@@ -220,6 +220,10 @@ def sparkle_release_notes_asset_name(metadata)
   File.basename(metadata.fetch(:sparkle_release_notes_path))
 end
 
+def release_notes_source_path(metadata)
+  File.join(workspace_root, "release_notes", "v#{metadata.fetch(:version)}.md")
+end
+
 def with_restored_file(path)
   original_contents = File.binread(path)
   yield(path)
@@ -405,6 +409,13 @@ def validate_generated_sparkle_appcast!(appcast_path, metadata)
 end
 
 def write_sparkle_release_notes!(notes_path, metadata)
+  source_path = release_notes_source_path(metadata)
+  if File.exist?(source_path)
+    UI.message("Using release notes from #{source_path}")
+    FileUtils.cp(source_path, notes_path)
+    return
+  end
+
   File.write(
     notes_path,
     <<~MARKDOWN
@@ -473,6 +484,7 @@ end
 
 def generate_sparkle_appcast!(archives_dir, metadata)
   tool_path = sparkle_tool_path("generate_appcast")
+  appcast_path = File.join(archives_dir, "appcast.xml")
 
   Tempfile.create(["sparkle-private-ed-key", ".txt"]) do |private_key_file|
     private_key_file.write(sparkle_private_ed_key(metadata))
@@ -488,7 +500,7 @@ def generate_sparkle_appcast!(archives_dir, metadata)
         "--link", shell_escape(github_release_page_url(metadata)),
         "--versions", shell_escape(metadata[:build_number]),
         "--maximum-versions", "1",
-        "-o", shell_escape("appcast.xml"),
+        "-o", shell_escape(appcast_path),
         shell_escape(archives_dir)
       ].join(" ")
     )
