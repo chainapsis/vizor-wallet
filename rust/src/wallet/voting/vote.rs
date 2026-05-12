@@ -676,11 +676,15 @@ mod tests {
     }
 
     #[test]
-    fn compute_share_nullifier_hex_returns_64_hex_chars() {
+    fn compute_share_nullifier_hex_matches_swift_sdk_fixture() {
         let nullifier = compute_share_nullifier_hex(&[1; 32], 5, &[2; 32]).unwrap();
 
         assert_eq!(nullifier.len(), 64);
         assert!(nullifier.chars().all(|ch| ch.is_ascii_hexdigit()));
+        assert_eq!(
+            nullifier,
+            "8d6d97caa19a20e5e67e7cc24aaaa7beb72b4a513863f6adbe7b62ba1b1b0010"
+        );
         assert_eq!(
             nullifier,
             compute_share_nullifier_hex(&[1; 32], 5, &[2; 32]).unwrap()

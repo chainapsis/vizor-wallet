@@ -1968,6 +1968,10 @@ mod tests {
 
         assert_eq!(nullifier.len(), 64);
         assert!(nullifier.chars().all(|ch| ch.is_ascii_hexdigit()));
+        assert_eq!(
+            nullifier,
+            "79d3c56235a9ba06ec95ce8e6d3c264a9b3d14777240c8e1e6a76ca4f885e51d"
+        );
     }
 
     #[test]
