@@ -3,6 +3,7 @@ use crate::wallet::network::WalletNetwork;
 use secrecy::{ExposeSecret, SecretVec};
 
 use super::{
+    bundle::validate_bundle_index,
     progress::{ProofProgressBridge, VotingWorkCancellation},
     state::open_voting_db,
     tree_sync::VanWitness,
@@ -129,8 +130,12 @@ where
 {
     validate_draft_votes(&draft_votes)?;
     let on_progress = std::sync::Arc::new(on_progress);
-    let van_auth_path = van_auth_path_array(&van_witness)?;
     let voting_db = open_voting_db(db_path, wallet_id)?;
+    let bundle_count = voting_db
+        .get_bundle_count(round_id)
+        .map_err(|e| format!("get_bundle_count failed: {e}"))?;
+    validate_bundle_index(bundle_count, bundle_index, "voting")?;
+    let van_auth_path = van_auth_path_array(&van_witness)?;
     let mut commitments = Vec::with_capacity(draft_votes.len());
 
     for draft in draft_votes {
@@ -500,6 +505,49 @@ mod tests {
         }])
         .unwrap_err()
         .contains("choice"));
+    }
+
+    #[test]
+    fn build_vote_commitments_rejects_out_of_range_bundle_before_vote_work() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let wallet_db_path = temp_dir.path().join("wallet.sqlite");
+        let db = open_voting_db(wallet_db_path.to_str().unwrap(), "wallet-1").unwrap();
+        db.init_round(&test_round_params(), None).unwrap();
+        db.setup_bundles("round-1", &[test_note_info(0)]).unwrap();
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured_events = events.clone();
+
+        let err = build_vote_commitments(
+            wallet_db_path.to_str().unwrap(),
+            "wallet-1",
+            WalletNetwork::Regtest,
+            "round-1",
+            1,
+            &SecretVec::new(vec![7; 32]),
+            VanWitness {
+                auth_path: vec![vec![7; 32]; VAN_AUTH_PATH_LEN],
+                position: 0,
+                anchor_height: 1,
+            },
+            vec![DraftVote {
+                proposal_id: 1,
+                choice: 0,
+                num_options: 2,
+                vc_tree_position: 0,
+                single_share: false,
+            }],
+            move |event| captured_events.lock().unwrap().push(event),
+            VotingWorkCancellation::start(
+                wallet_db_path.to_str().unwrap(),
+                "wallet-1",
+                Some("round-1"),
+            )
+            .unwrap(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("bundle_index 1 is out of range for 1 voting bundles"));
+        assert!(events.lock().unwrap().is_empty());
     }
 
     #[test]

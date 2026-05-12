@@ -18,7 +18,7 @@ use crate::wallet::{
 };
 
 use super::{
-    bundle::{select_notes_with_lwd, voting_power, SelectedNotes},
+    bundle::{select_notes_with_lwd, validate_bundle_index, voting_power, SelectedNotes},
     endpoint_validation,
     hotkey::derive_hotkey_raw_orchard_address,
     progress::{ProofProgressBridge, VotingWorkCancellation},
@@ -439,7 +439,7 @@ pub async fn precompute_delegation_pir(
     if bundle_setup.bundle_count == 0 {
         return Err("No eligible voting bundles were created for PIR precompute".to_string());
     }
-    validate_bundle_index(bundle_setup.bundle_count, bundle_index)?;
+    validate_bundle_index(bundle_setup.bundle_count, bundle_index, "delegation")?;
     let bundle_note_infos = bundle_notes(&note_infos, bundle_index)?;
 
     store_and_generate_witnesses(
@@ -604,7 +604,7 @@ where
     if bundle_setup.bundle_count == 0 {
         return Err("No eligible voting bundles were created for delegation".to_string());
     }
-    validate_bundle_index(bundle_setup.bundle_count, bundle_index)?;
+    validate_bundle_index(bundle_setup.bundle_count, bundle_index, "delegation")?;
     let bundle_note_infos = bundle_notes(&note_infos, bundle_index)?;
     let delegated_weight_zatoshi = bundle_weight_zatoshi(&bundle_note_infos)?;
     log::info!(
@@ -848,17 +848,6 @@ fn validate_persisted_bundle_notes(
         .map_err(|e| format!("persisted bundle notes do not match current selection: {e}"))?;
     }
     Ok(())
-}
-
-/// Validates that `bundle_index` is in `[0, bundle_count)`.
-fn validate_bundle_index(bundle_count: u32, bundle_index: u32) -> Result<(), String> {
-    if bundle_index < bundle_count {
-        Ok(())
-    } else {
-        Err(format!(
-            "bundle_index {bundle_index} is out of range for {bundle_count} delegation bundles"
-        ))
-    }
 }
 
 /// Returns the eligible notes for one chunked delegation bundle.
@@ -1437,15 +1426,6 @@ mod tests {
             bundle_weight_zatoshi(&bundle_notes(&notes, 1).unwrap()).unwrap(),
             zcash_voting::governance::BALLOT_DIVISOR
         );
-    }
-
-    #[test]
-    fn validate_bundle_index_rejects_out_of_range_before_work() {
-        assert!(validate_bundle_index(2, 0).is_ok());
-        assert!(validate_bundle_index(2, 1).is_ok());
-        assert!(validate_bundle_index(2, 2)
-            .unwrap_err()
-            .contains("out of range"));
     }
 
     #[test]
