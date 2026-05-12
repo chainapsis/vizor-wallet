@@ -253,117 +253,151 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
             clipBehavior: Clip.antiAlias,
             child: Column(
               children: [
-                Container(
+                SizedBox(
                   width: _cameraWidth,
                   height: _cameraHeight,
-                  decoration: BoxDecoration(
-                    color: colors.background.base,
-                    borderRadius: BorderRadius.circular(_cameraRadius),
-                    border: Border.all(
-                      color: colors.border.subtleOpacity,
-                      width: 2,
-                    ),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: ValueListenableBuilder<MobileScannerState>(
-                    valueListenable: _controller,
-                    builder: (context, scannerState, _) {
-                      final accessStatus = _cameraAccessStatus(scannerState);
-                      final canScan =
-                          accessStatus == _CameraAccessStatus.active;
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(_cameraRadius),
+                        clipBehavior: Clip.antiAliasWithSaveLayer,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: colors.background.base,
+                          ),
+                          child: ValueListenableBuilder<MobileScannerState>(
+                            valueListenable: _controller,
+                            builder: (context, scannerState, _) {
+                              final accessStatus = _cameraAccessStatus(
+                                scannerState,
+                              );
+                              final canScan =
+                                  accessStatus == _CameraAccessStatus.active;
 
-                      return Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          if (QrScanner.isAvailable)
-                            AnimatedUrScannerView(
-                              controller: _controller,
-                              expectedUrType: widget.expectedUrType,
-                              scanSessionResetToken: _scanSessionResetToken,
-                              onProgress: _handleScanProgress,
-                              onDecodeError: widget.onDecodeError,
-                              onComplete: _handleScanComplete,
-                            )
-                          else
-                            Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(AppSpacing.md),
-                                child: Text(
-                                  widget.unavailableMessage,
-                                  style: AppTypography.bodyMediumStrong
-                                      .copyWith(color: colors.text.accent),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            ),
-                          if (canScan) const _ScanOverlay(),
-                          if (canScan &&
-                              _scanProgress > 0 &&
-                              _scanProgress < 100 &&
-                              !widget.decoding)
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: 20,
-                              child: Center(
-                                child: _QrScanProgressBar(
-                                  progress: _scanProgress / 100,
-                                ),
-                              ),
-                            ),
-                          if (canScan && widget.decoding)
-                            KeystoneTransactionProgressOverlay(
-                              label: widget.decodingLabel,
+                              return Stack(
+                                fit: StackFit.expand,
+                                clipBehavior: Clip.none,
+                                children: [
+                                  if (QrScanner.isAvailable)
+                                    AnimatedUrScannerView(
+                                      controller: _controller,
+                                      expectedUrType: widget.expectedUrType,
+                                      scanSessionResetToken:
+                                          _scanSessionResetToken,
+                                      onProgress: _handleScanProgress,
+                                      onDecodeError: widget.onDecodeError,
+                                      onComplete: _handleScanComplete,
+                                    )
+                                  else
+                                    Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(
+                                          AppSpacing.md,
+                                        ),
+                                        child: Text(
+                                          widget.unavailableMessage,
+                                          style: AppTypography.bodyMediumStrong
+                                              .copyWith(
+                                                color: colors.text.accent,
+                                              ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                  if (canScan) const _ScanOverlay(),
+                                  if (canScan &&
+                                      _scanProgress > 0 &&
+                                      _scanProgress < 100 &&
+                                      !widget.decoding)
+                                    Positioned(
+                                      left: 0,
+                                      right: 0,
+                                      bottom: 20,
+                                      child: Center(
+                                        child: _QrScanProgressBar(
+                                          progress: _scanProgress / 100,
+                                        ),
+                                      ),
+                                    ),
+                                  if (canScan && widget.decoding)
+                                    KeystoneTransactionProgressOverlay(
+                                      label: widget.decodingLabel,
+                                      borderRadius: BorderRadius.circular(
+                                        _cameraRadius,
+                                      ),
+                                    ),
+                                  if (canScan && _cameraPickerOpen)
+                                    AppPaneModalOverlay(
+                                      onDismiss: _toggleCameraPicker,
+                                      borderRadius: BorderRadius.circular(
+                                        _cameraRadius,
+                                      ),
+                                      child: _CameraPickerModal(
+                                        cameras: _cameras,
+                                        selectedCameraId:
+                                            _selectedCameraId ??
+                                            _controller.value.camera?.id,
+                                        onSelect: _selectCamera,
+                                        onCancel: _toggleCameraPicker,
+                                      ),
+                                    ),
+                                  if (accessStatus ==
+                                      _CameraAccessStatus.requesting)
+                                    const _CameraPermissionPrompt(
+                                      icon: AppIcons.camera,
+                                      title: 'Enable the Camera access',
+                                      description:
+                                          'A Camera is required to connect Keystone.\n'
+                                          'You can revert this in settings anytime later.',
+                                      iconStyle:
+                                          _CameraPermissionIconStyle.inverse,
+                                    ),
+                                  if (accessStatus ==
+                                      _CameraAccessStatus.denied)
+                                    _CameraPermissionPrompt(
+                                      icon: AppIcons.cameraDenied,
+                                      title: "You've denied the Camera access",
+                                      description:
+                                          'Request again, or enable manually\n'
+                                          'in the System settings.',
+                                      iconStyle:
+                                          _CameraPermissionIconStyle.raised,
+                                      action: AppButton(
+                                        onPressed: () => unawaited(
+                                          _retryCameraStart(
+                                            openSettingsOnDenied: true,
+                                          ),
+                                        ),
+                                        variant: AppButtonVariant.secondary,
+                                        size: AppButtonSize.medium,
+                                        minWidth: 96,
+                                        leading: const AppIcon(AppIcons.renew),
+                                        child: const Text('Request again'),
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(
                                 _cameraRadius,
                               ),
-                            ),
-                          if (canScan && _cameraPickerOpen)
-                            AppPaneModalOverlay(
-                              onDismiss: _toggleCameraPicker,
-                              borderRadius: BorderRadius.circular(
-                                _cameraRadius,
-                              ),
-                              child: _CameraPickerModal(
-                                cameras: _cameras,
-                                selectedCameraId:
-                                    _selectedCameraId ??
-                                    _controller.value.camera?.id,
-                                onSelect: _selectCamera,
-                                onCancel: _toggleCameraPicker,
+                              border: Border.all(
+                                color: colors.border.subtleOpacity,
+                                width: 2,
                               ),
                             ),
-                          if (accessStatus == _CameraAccessStatus.requesting)
-                            const _CameraPermissionPrompt(
-                              icon: AppIcons.camera,
-                              title: 'Enable the Camera access',
-                              description:
-                                  'A Camera is required to connect Keystone.\n'
-                                  'You can revert this in settings anytime later.',
-                              iconStyle: _CameraPermissionIconStyle.inverse,
-                            ),
-                          if (accessStatus == _CameraAccessStatus.denied)
-                            _CameraPermissionPrompt(
-                              icon: AppIcons.cameraDenied,
-                              title: "You've denied the Camera access",
-                              description:
-                                  'Request again, or enable manually\n'
-                                  'in the System settings.',
-                              iconStyle: _CameraPermissionIconStyle.raised,
-                              action: AppButton(
-                                onPressed: () => unawaited(
-                                  _retryCameraStart(openSettingsOnDenied: true),
-                                ),
-                                variant: AppButtonVariant.secondary,
-                                size: AppButtonSize.medium,
-                                minWidth: 96,
-                                leading: const AppIcon(AppIcons.renew),
-                                child: const Text('Request again'),
-                              ),
-                            ),
-                        ],
-                      );
-                    },
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 ConstrainedBox(
@@ -452,42 +486,52 @@ class _CameraPermissionPrompt extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(color: colors.background.base),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: iconBackground,
-                  borderRadius: BorderRadius.circular(AppRadii.large),
+      child: Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.md),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: iconBackground,
+                    borderRadius: BorderRadius.circular(AppRadii.small),
+                  ),
+                  child: Center(
+                    child: AppIcon(icon, size: 24, color: iconColor),
+                  ),
                 ),
-                child: Center(child: AppIcon(icon, size: 24, color: iconColor)),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                title,
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.accent,
+                const SizedBox(height: AppSpacing.md),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.accent,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      description,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.xxs),
-              Text(
-                description,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              if (action != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                action!,
+                if (action != null) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  action!,
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -519,7 +563,7 @@ class _CameraControlRow extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Row(
               children: [
-                AppIcon(AppIcons.camera, size: 20, color: colors.text.primary),
+                AppIcon(AppIcons.camera, size: 20, color: colors.icon.muted),
                 const SizedBox(width: AppSpacing.xxs),
                 Text(
                   'Camera',
@@ -866,12 +910,16 @@ class _CameraOptionIndicator extends StatelessWidget {
 class _ScanOverlay extends StatelessWidget {
   const _ScanOverlay();
 
+  static const _inset = -2.0;
+
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: SizedBox.expand(
-        child: CustomPaint(painter: const _ScanOverlayPainter()),
-      ),
+    return const Positioned(
+      left: _inset,
+      top: _inset,
+      right: _inset,
+      bottom: _inset,
+      child: IgnorePointer(child: CustomPaint(painter: _ScanOverlayPainter())),
     );
   }
 }
@@ -882,8 +930,7 @@ class _ScanOverlayPainter extends CustomPainter {
   static const _cutoutSize = 210.0;
   static const _cutoutRadius = 32.0;
   static const _strokeWidth = 5.0;
-  static const _dashLength = 42.0;
-  static const _dashGap = 24.0;
+  static const _cornerArmLength = 12.0;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -903,24 +950,82 @@ class _ScanOverlayPainter extends CustomPainter {
       ..fillType = PathFillType.evenOdd;
     canvas.drawPath(dimPath, Paint()..color = const Color(0xB3000000));
 
-    final borderPath = Path()..addRRect(cutoutRRect.deflate(_strokeWidth / 2));
     final borderPaint = Paint()
       ..color = const Color(0xFFFFFFFF)
       ..style = PaintingStyle.stroke
       ..strokeWidth = _strokeWidth
-      ..strokeCap = StrokeCap.round;
-    _drawDashedPath(canvas, borderPath, borderPaint);
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    _drawCornerMarkers(canvas, cutout, borderPaint);
   }
 
-  void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
-    for (final metric in path.computeMetrics()) {
-      var distance = 0.0;
-      while (distance < metric.length) {
-        final end = math.min(distance + _dashLength, metric.length);
-        canvas.drawPath(metric.extractPath(distance, end), paint);
-        distance += _dashLength + _dashGap;
-      }
-    }
+  void _drawCornerMarkers(Canvas canvas, Rect cutout, Paint paint) {
+    final rect = cutout.deflate(_strokeWidth / 2);
+    final radius = _cutoutRadius - _strokeWidth / 2;
+    final diameter = radius * 2;
+
+    canvas
+      ..drawPath(_topLeftCorner(rect, radius, diameter), paint)
+      ..drawPath(_topRightCorner(rect, radius, diameter), paint)
+      ..drawPath(_bottomRightCorner(rect, radius, diameter), paint)
+      ..drawPath(_bottomLeftCorner(rect, radius, diameter), paint);
+  }
+
+  Path _topLeftCorner(Rect rect, double radius, double diameter) {
+    return Path()
+      ..moveTo(rect.left + radius + _cornerArmLength, rect.top)
+      ..lineTo(rect.left + radius, rect.top)
+      ..arcTo(
+        Rect.fromLTWH(rect.left, rect.top, diameter, diameter),
+        -math.pi / 2,
+        -math.pi / 2,
+        false,
+      )
+      ..lineTo(rect.left, rect.top + radius + _cornerArmLength);
+  }
+
+  Path _topRightCorner(Rect rect, double radius, double diameter) {
+    return Path()
+      ..moveTo(rect.right - radius - _cornerArmLength, rect.top)
+      ..lineTo(rect.right - radius, rect.top)
+      ..arcTo(
+        Rect.fromLTWH(rect.right - diameter, rect.top, diameter, diameter),
+        -math.pi / 2,
+        math.pi / 2,
+        false,
+      )
+      ..lineTo(rect.right, rect.top + radius + _cornerArmLength);
+  }
+
+  Path _bottomRightCorner(Rect rect, double radius, double diameter) {
+    return Path()
+      ..moveTo(rect.right, rect.bottom - radius - _cornerArmLength)
+      ..lineTo(rect.right, rect.bottom - radius)
+      ..arcTo(
+        Rect.fromLTWH(
+          rect.right - diameter,
+          rect.bottom - diameter,
+          diameter,
+          diameter,
+        ),
+        0,
+        math.pi / 2,
+        false,
+      )
+      ..lineTo(rect.right - radius - _cornerArmLength, rect.bottom);
+  }
+
+  Path _bottomLeftCorner(Rect rect, double radius, double diameter) {
+    return Path()
+      ..moveTo(rect.left + radius + _cornerArmLength, rect.bottom)
+      ..lineTo(rect.left + radius, rect.bottom)
+      ..arcTo(
+        Rect.fromLTWH(rect.left, rect.bottom - diameter, diameter, diameter),
+        math.pi / 2,
+        math.pi / 2,
+        false,
+      )
+      ..lineTo(rect.left, rect.bottom - radius - _cornerArmLength);
   }
 
   @override
