@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
@@ -9,6 +10,7 @@ import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 const _oldPassword = 'Oldpass1!';
 const _newPassword = 'Newpass1!';
 const _wrongPassword = 'Wrongpass1!';
+const _accountUuid = 'test-account';
 const _mnemonicKey = 'zcash_account_mnemonic_test-account';
 const _externalEncryptedKey = 'external_encrypted_key';
 const _mnemonic = 'abandon abandon abandon abandon abandon abandon';
@@ -21,20 +23,23 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late AppSecureStore store;
+  TargetPlatform? previousTargetPlatform;
 
   setUp(() async {
+    previousTargetPlatform = debugDefaultTargetPlatformOverride;
     FlutterSecureStorage.setMockInitialValues({});
-    store = AppSecureStore.instance;
+    store = AppSecureStore.testing(storage: const FlutterSecureStorage());
     await store.deleteAll();
   });
 
   tearDown(() async {
     await store.deleteAll();
+    debugDefaultTargetPlatformOverride = previousTargetPlatform;
   });
 
   test('changePassword rotates mnemonic payloads and verifier', () async {
     await store.configurePassword(_oldPassword);
-    await store.writeSecretString(_mnemonicKey, _mnemonic);
+    await store.writeAccountMnemonic(_accountUuid, _mnemonic);
 
     final didChange = await store.changePassword(
       currentPassword: _oldPassword,
@@ -46,7 +51,7 @@ void main() {
     store.clearSessionPassword();
     expect(await store.verifyPasswordOnly(_oldPassword), isFalse);
     expect(await store.verifyPassword(_newPassword), isTrue);
-    expect(await store.readSecretStringWithOptions(_mnemonicKey), _mnemonic);
+    expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
   });
 
   test('changePassword journal stores only roll-forward data', () async {
@@ -55,7 +60,7 @@ void main() {
     );
     store = AppSecureStore.testing(storage: blockingStorage);
     await store.configurePassword(_oldPassword);
-    await store.writeSecretString(_mnemonicKey, _mnemonic);
+    await store.writeAccountMnemonic(_accountUuid, _mnemonic);
     final originalPayload = await store.readPlain(_mnemonicKey);
     final oldVerifier = await store.readPlain(_passwordVerifierKey);
 
@@ -112,7 +117,7 @@ void main() {
       store.clearSessionPassword();
       expect(await store.verifyPasswordOnly(_oldPassword), isFalse);
       expect(await store.verifyPassword(_newPassword), isTrue);
-      expect(await store.readSecretStringWithOptions(_mnemonicKey), _mnemonic);
+      expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
     },
   );
 
@@ -132,7 +137,7 @@ void main() {
       expect(await store.readPlain(_rotationInProgressKey), isNull);
       expect(await store.readPlain(_mnemonicKey), originalPayload);
       expect(await store.verifyPassword(_oldPassword), isTrue);
-      expect(await store.readSecretStringWithOptions(_mnemonicKey), _mnemonic);
+      expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
     },
   );
 
@@ -156,7 +161,7 @@ void main() {
 
   test('changePassword only rotates app-managed mnemonic payloads', () async {
     await store.configurePassword(_oldPassword);
-    await store.writeSecretString(_mnemonicKey, _mnemonic);
+    await store.writeAccountMnemonic(_accountUuid, _mnemonic);
     await store.writeSecretString(_externalEncryptedKey, 'external secret');
     final externalPayload = await store.readPlain(_externalEncryptedKey);
 
@@ -167,7 +172,7 @@ void main() {
 
     expect(didChange, isTrue);
     expect(await store.readPlain(_externalEncryptedKey), externalPayload);
-    expect(await store.readSecretStringWithOptions(_mnemonicKey), _mnemonic);
+    expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
   });
 
   test('changePassword rejects unreadable mnemonic payloads', () async {
@@ -192,7 +197,7 @@ void main() {
     final failingStorage = _FailingWriteStorage(failKey: _passwordVerifierKey);
     store = AppSecureStore.testing(storage: failingStorage);
     await store.configurePassword(_oldPassword);
-    await store.writeSecretString(_mnemonicKey, _mnemonic);
+    await store.writeAccountMnemonic(_accountUuid, _mnemonic);
     final originalPayload = await store.readPlain(_mnemonicKey);
 
     failingStorage.failNextMatchingWrite = true;
@@ -215,7 +220,7 @@ void main() {
     expect(await store.readPlain(_mnemonicKey), originalPayload);
     expect(await store.verifyPasswordOnly(_newPassword), isFalse);
     expect(await store.verifyPassword(_oldPassword), isTrue);
-    expect(await store.readSecretStringWithOptions(_mnemonicKey), _mnemonic);
+    expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
   });
 
   test(
@@ -257,20 +262,21 @@ void main() {
       expect(await store.readPlain(_rotationInProgressKey), isNull);
       expect(await store.verifyPasswordOnly(_oldPassword), isFalse);
       expect(await store.verifyPassword(_newPassword), isTrue);
-      expect(await store.readSecretStringWithOptions(_mnemonicKey), _mnemonic);
+      expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
     },
   );
 
   test('changePassword waits for concurrent mnemonic writes', () async {
+    const lateAccountUuid = 'late-account';
     const lateMnemonicKey = 'zcash_account_mnemonic_late-account';
     const lateMnemonic = 'legal winner thank year wave sausage worth useful';
     final blockingStorage = _BlockingWriteStorage(blockKey: lateMnemonicKey);
     store = AppSecureStore.testing(storage: blockingStorage);
     await store.configurePassword(_oldPassword);
-    await store.writeSecretString(_mnemonicKey, _mnemonic);
+    await store.writeAccountMnemonic(_accountUuid, _mnemonic);
 
     blockingStorage.blockNextWrite = true;
-    final lateWrite = store.writeSecretString(lateMnemonicKey, lateMnemonic);
+    final lateWrite = store.writeAccountMnemonic(lateAccountUuid, lateMnemonic);
     await blockingStorage.writeStarted.future;
 
     final rotation = store.changePassword(
@@ -293,10 +299,7 @@ void main() {
 
     store.clearSessionPassword();
     expect(await store.verifyPassword(_newPassword), isTrue);
-    expect(
-      await store.readSecretStringWithOptions(lateMnemonicKey),
-      lateMnemonic,
-    );
+    expect(await store.readAccountMnemonic(lateAccountUuid), lateMnemonic);
   });
 
   test(
@@ -342,7 +345,7 @@ void main() {
       );
       store = AppSecureStore.testing(storage: blockingStorage);
       await store.configurePassword(_oldPassword);
-      await store.writeSecretString(_mnemonicKey, _mnemonic);
+      await store.writeAccountMnemonic(_accountUuid, _mnemonic);
 
       blockingStorage.blockNextWrite = true;
       final rotation = store.changePassword(
@@ -351,14 +354,80 @@ void main() {
       );
       await blockingStorage.writeStarted.future;
 
-      final delete = store.delete(_mnemonicKey);
+      final delete = store.deleteAccountMnemonic(_accountUuid);
       blockingStorage.release();
       await rotation;
       await delete;
 
       store.clearSessionPassword();
       expect(await store.verifyPassword(_newPassword), isTrue);
-      expect(await store.readPlain(_mnemonicKey), isNull);
+      expect(await store.readAccountMnemonic(_accountUuid), isNull);
+    },
+  );
+
+  test('account mnemonic writes use mnemonic storage only', () async {
+    final regularStorage = _MapStorage('regular');
+    final mnemonicStorage = _MapStorage('mnemonic');
+    store = AppSecureStore.testing(
+      storage: regularStorage,
+      mnemonicStorage: mnemonicStorage,
+    );
+
+    await store.configurePassword(_oldPassword);
+    await store.writeAccountMnemonic(_accountUuid, _mnemonic);
+
+    expect(regularStorage.valueFor(_mnemonicKey), isNull);
+    expect(mnemonicStorage.valueFor(_mnemonicKey), isNotNull);
+    expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
+  });
+
+  test(
+    'macOS unlock migrates legacy mnemonic payloads write then delete',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      final operations = <String>[];
+      final regularStorage = _MapStorage('regular', operations: operations);
+      final mnemonicStorage = _MapStorage('mnemonic', operations: operations);
+      store = AppSecureStore.testing(
+        storage: regularStorage,
+        mnemonicStorage: mnemonicStorage,
+      );
+
+      await store.configurePassword(_oldPassword);
+      await store.writeSecretString(_mnemonicKey, _mnemonic);
+      store.clearSessionPassword();
+      operations.clear();
+
+      expect(await store.verifyPassword(_oldPassword), isTrue);
+
+      expect(regularStorage.valueFor(_mnemonicKey), isNull);
+      expect(mnemonicStorage.valueFor(_mnemonicKey), isNotNull);
+      expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
+      expect(
+        operations,
+        containsAllInOrder([
+          'mnemonic.write $_mnemonicKey',
+          'regular.delete $_mnemonicKey',
+        ]),
+      );
+    },
+  );
+
+  test(
+    'macOS mnemonic reads do not fallback before unlock migration',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      final regularStorage = _MapStorage('regular');
+      final mnemonicStorage = _MapStorage('mnemonic');
+      store = AppSecureStore.testing(
+        storage: regularStorage,
+        mnemonicStorage: mnemonicStorage,
+      );
+
+      await store.configurePassword(_oldPassword);
+      await store.writeSecretString(_mnemonicKey, _mnemonic);
+
+      expect(await store.readAccountMnemonic(_accountUuid), isNull);
     },
   );
 
@@ -446,6 +515,90 @@ class _FailingWriteStorage extends FlutterSecureStorage {
       mOptions: mOptions,
       wOptions: wOptions,
     );
+  }
+}
+
+class _MapStorage extends FlutterSecureStorage {
+  _MapStorage(this.name, {List<String>? operations})
+    : operations = operations ?? <String>[];
+
+  final String name;
+  final List<String> operations;
+  final _values = <String, String>{};
+
+  String? valueFor(String key) => _values[key];
+
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    operations.add('$name.read $key');
+    return _values[key];
+  }
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    operations.add('$name.write $key');
+    if (value == null) {
+      _values.remove(key);
+      return;
+    }
+    _values[key] = value;
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    operations.add('$name.delete $key');
+    _values.remove(key);
+  }
+
+  @override
+  Future<Map<String, String>> readAll({
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    operations.add('$name.readAll');
+    return Map<String, String>.from(_values);
+  }
+
+  @override
+  Future<void> deleteAll({
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    operations.add('$name.deleteAll');
+    _values.clear();
   }
 }
 

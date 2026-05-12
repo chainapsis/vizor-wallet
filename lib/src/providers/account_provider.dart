@@ -93,10 +93,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
 
       // Store mnemonic per-account
-      await _storage.writeSecretString(
-        'zcash_account_mnemonic_$accountUuid',
-        mnemonic,
-      );
+      await _storage.writeAccountMnemonic(accountUuid, mnemonic);
 
       // Update account list
       final newAccount = AccountInfo(
@@ -172,10 +169,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         unifiedAddress = result.unifiedAddress;
       }
 
-      await _storage.writeSecretString(
-        'zcash_account_mnemonic_$accountUuid',
-        mnemonic,
-      );
+      await _storage.writeAccountMnemonic(accountUuid, mnemonic);
 
       final newAccount = AccountInfo(
         uuid: accountUuid,
@@ -247,10 +241,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         unifiedAddress = result.unifiedAddress;
       }
 
-      await _storage.writeSecretString(
-        'zcash_account_mnemonic_$accountUuid',
-        mnemonic,
-      );
+      await _storage.writeAccountMnemonic(accountUuid, mnemonic);
 
       final newAccount = AccountInfo(
         uuid: accountUuid,
@@ -374,7 +365,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       '${rustDeleteWatch.elapsedMilliseconds}ms uuid=$uuid',
     );
     try {
-      await _storage.delete('zcash_account_mnemonic_$uuid');
+      await _storage.deleteAccountMnemonic(uuid);
     } catch (e, st) {
       log('removeAccount: failed to delete mnemonic for $uuid: $e\n$st');
     }
@@ -542,18 +533,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<String?> getActiveMnemonic() async {
     final uuid = state.value?.activeAccountUuid;
     if (uuid == null) return null;
-    return _storage.readSecretStringWithOptions(
-      'zcash_account_mnemonic_$uuid',
-      requireUnlockedSession: true,
-    );
+    return _storage.readAccountMnemonic(uuid, requireUnlockedSession: true);
   }
 
   /// Get the mnemonic for a specific account.
   Future<String?> getMnemonicForAccount(String uuid) async {
-    return _storage.readSecretStringWithOptions(
-      'zcash_account_mnemonic_$uuid',
-      requireUnlockedSession: true,
-    );
+    return _storage.readAccountMnemonic(uuid, requireUnlockedSession: true);
   }
 
   // ======================== Helpers ========================
