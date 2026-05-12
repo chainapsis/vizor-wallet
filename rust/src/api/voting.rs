@@ -5,11 +5,12 @@ use crate::wallet::{
     keys,
     voting::{
         bundle::{self, SelectedNotes},
-        delegation, hotkey, recovery, state, tree_sync,
-        types::{
+        delegation,
+        delegation::{
             BundleSetupResult, DelegationPirPrecomputeResult, ProofEvent, SignedDelegation,
-            VanWitness,
         },
+        hotkey, recovery, state, tree_sync,
+        tree_sync::VanWitness,
         vote,
     },
 };

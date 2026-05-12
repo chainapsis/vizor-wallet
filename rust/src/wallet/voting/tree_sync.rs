@@ -5,10 +5,25 @@ use std::{
 
 use zcash_voting::{storage::VotingDb, tree_sync::VoteTreeSync};
 
-use super::{
-    endpoint_validation, state,
-    types::{RegistryKey, VanWitness},
-};
+use super::{endpoint_validation, state};
+
+/// FRB-friendly representation of a Vote Authority Note Merkle witness.
+///
+/// `zcash_voting::tree_sync::VanWitness` stores the authentication path as
+/// fixed-size arrays. This shape keeps the public Vizor wrapper on simple byte
+/// vectors that are easy to pass through the API layer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VanWitness {
+    pub auth_path: Vec<Vec<u8>>,
+    pub position: u32,
+    pub anchor_height: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct RegistryKey {
+    db_path: String,
+    wallet_id: String,
+}
 
 static TREE_SYNC_REGISTRY: OnceLock<Mutex<HashMap<RegistryKey, Arc<VoteTreeSync>>>> =
     OnceLock::new();

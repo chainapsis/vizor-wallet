@@ -7,7 +7,6 @@ pub mod hotkey;
 pub mod recovery;
 pub mod state;
 pub mod tree_sync;
-pub mod types;
 pub mod vote;
 pub mod workflow;
 

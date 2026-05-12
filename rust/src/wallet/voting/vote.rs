@@ -2,7 +2,7 @@ use crate::wallet::network::WalletNetwork;
 
 use secrecy::{ExposeSecret, SecretVec};
 
-use super::{state::open_voting_db, types::VanWitness, workflow};
+use super::{state::open_voting_db, tree_sync::VanWitness, workflow};
 
 const VAN_AUTH_PATH_LEN: usize = 24;
 
