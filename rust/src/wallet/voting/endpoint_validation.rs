@@ -48,7 +48,7 @@ pub async fn validate_pir_endpoint(
 
     let root: serde_json::Value = serde_json::from_slice(&response.body)
         .map_err(|e| format!("PIR endpoint validation failed: malformed /root JSON: {e}"))?;
-    let reported_height = json_u64(
+    let reported_height = root_height_from_agreeing_aliases(
         &root,
         &[
             "height",
@@ -58,6 +58,7 @@ pub async fn validate_pir_endpoint(
             "snapshotHeight",
         ],
     )
+    .map_err(|e| format!("PIR endpoint validation failed: {e}"))?
     .ok_or_else(|| "PIR endpoint validation failed: /root did not include height".to_string())?;
     if reported_height < expected_height {
         return Err(format!(
@@ -158,12 +159,41 @@ fn validate_round_id(round_id: &str) -> Result<(), String> {
     }
 }
 
-fn json_u64(value: &serde_json::Value, keys: &[&str]) -> Option<u64> {
-    keys.iter().find_map(|key| match value.get(*key)? {
-        serde_json::Value::Number(number) => number.as_u64(),
-        serde_json::Value::String(string) => string.parse::<u64>().ok(),
-        _ => None,
-    })
+/// Parse PIR `/root` height aliases, failing closed if any present alias is
+/// malformed or disagrees with another present alias.
+fn root_height_from_agreeing_aliases(
+    value: &serde_json::Value,
+    keys: &[&str],
+) -> Result<Option<u64>, String> {
+    let mut first: Option<(&str, u64)> = None;
+    for key in keys {
+        let Some(raw) = value.get(*key) else {
+            continue;
+        };
+        let height = match raw {
+            serde_json::Value::Number(number) => number
+                .as_u64()
+                .ok_or_else(|| format!("/root field {key:?} is not a valid u64 height"))?,
+            serde_json::Value::String(string) => string
+                .parse::<u64>()
+                .map_err(|_| format!("/root field {key:?} is not a valid u64 height"))?,
+            _ => {
+                return Err(format!("/root field {key:?} is not a valid u64 height"));
+            }
+        };
+        if let Some((first_key, first_height)) = first {
+            // Conflicting aliases make the endpoint ambiguous; do not let key
+            // order decide which unauthenticated `/root` height to trust.
+            if height != first_height {
+                return Err(format!(
+                    "/root height fields disagree: {first_key:?}={first_height}, {key:?}={height}"
+                ));
+            }
+        } else {
+            first = Some((key, height));
+        }
+    }
+    Ok(first.map(|(_, height)| height))
 }
 
 #[cfg(test)]
@@ -257,6 +287,66 @@ mod tests {
         let result = validate_pir_endpoint(&server_url, &test_round_params()).await;
 
         assert_eq!(result.unwrap(), server_url);
+        assert_eq!(request_path.join().unwrap(), "/root");
+    }
+
+    #[tokio::test]
+    async fn pir_endpoint_validation_accepts_matching_height_aliases() {
+        let (server_url, request_path) = start_root_server(
+            200,
+            serde_json::json!({
+                "height": 100,
+                "root_height": "100",
+                "rootHeight": 100,
+                "snapshot_height": "100",
+                "snapshotHeight": 100,
+            })
+            .to_string(),
+        );
+
+        let result = validate_pir_endpoint(&server_url, &test_round_params()).await;
+
+        assert_eq!(result.unwrap(), server_url);
+        assert_eq!(request_path.join().unwrap(), "/root");
+    }
+
+    #[tokio::test]
+    async fn pir_endpoint_validation_rejects_conflicting_height_aliases() {
+        let (server_url, request_path) = start_root_server(
+            200,
+            serde_json::json!({
+                "height": 100,
+                "snapshot_height": 101,
+            })
+            .to_string(),
+        );
+
+        let err = validate_pir_endpoint(&server_url, &test_round_params())
+            .await
+            .unwrap_err();
+
+        assert!(err.contains("height fields disagree"));
+        assert!(err.contains("\"height\"=100"));
+        assert!(err.contains("\"snapshot_height\"=101"));
+        assert_eq!(request_path.join().unwrap(), "/root");
+    }
+
+    #[tokio::test]
+    async fn pir_endpoint_validation_rejects_malformed_height_alias() {
+        let (server_url, request_path) = start_root_server(
+            200,
+            serde_json::json!({
+                "height": 100,
+                "snapshot_height": "not-a-height",
+            })
+            .to_string(),
+        );
+
+        let err = validate_pir_endpoint(&server_url, &test_round_params())
+            .await
+            .unwrap_err();
+
+        assert!(err.contains("field \"snapshot_height\" is not a valid u64 height"));
         assert_eq!(request_path.join().unwrap(), "/root");
     }
 
