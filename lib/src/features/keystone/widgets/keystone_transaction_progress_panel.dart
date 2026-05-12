@@ -65,16 +65,22 @@ class KeystoneTransactionProgressOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     return ClipRRect(
       borderRadius: borderRadius,
       child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        filter: ui.ImageFilter.blur(sigmaX: 37, sigmaY: 37),
         child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: colors.background.inverse.withValues(alpha: 0.78),
+          decoration: const BoxDecoration(color: Color(0x4D000000)),
+          child: Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: Center(
+              child: KeystoneTransactionProgressLabel(
+                label: label,
+                color: const Color(0xFFFFFFFF),
+                gap: AppSpacing.xxs,
+              ),
+            ),
           ),
-          child: Center(child: KeystoneTransactionProgressLabel(label: label)),
         ),
       ),
     );
@@ -82,13 +88,21 @@ class KeystoneTransactionProgressOverlay extends StatelessWidget {
 }
 
 class KeystoneTransactionProgressLabel extends StatelessWidget {
-  const KeystoneTransactionProgressLabel({required this.label, super.key});
+  const KeystoneTransactionProgressLabel({
+    required this.label,
+    this.color,
+    this.gap = 10,
+    super.key,
+  });
 
   final String label;
+  final Color? color;
+  final double gap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final resolvedColor = color ?? colors.text.inverse;
     return Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
@@ -96,17 +110,17 @@ class KeystoneTransactionProgressLabel extends StatelessWidget {
         AppIcon(
           AppIcons.loader,
           size: 20,
-          color: colors.icon.inverse,
+          color: color ?? colors.icon.inverse,
           semanticLabel: label,
         ),
-        const SizedBox(width: 10),
+        SizedBox(width: gap),
         Flexible(
           child: Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyMediumStrong.copyWith(
-              color: colors.text.inverse,
+              color: resolvedColor,
             ),
           ),
         ),

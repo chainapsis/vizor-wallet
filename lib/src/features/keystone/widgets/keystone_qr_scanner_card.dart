@@ -321,10 +321,16 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                       ),
                                     ),
                                   if (canScan && widget.decoding)
-                                    KeystoneTransactionProgressOverlay(
-                                      label: widget.decodingLabel,
-                                      borderRadius: BorderRadius.circular(
-                                        _cameraRadius,
+                                    Positioned(
+                                      left: -2,
+                                      top: -2,
+                                      right: -2,
+                                      bottom: -2,
+                                      child: KeystoneTransactionProgressOverlay(
+                                        label: widget.decodingLabel,
+                                        borderRadius: BorderRadius.circular(
+                                          _cameraRadius,
+                                        ),
                                       ),
                                     ),
                                   if (canScan && _cameraPickerOpen)
@@ -421,6 +427,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                         return _CameraControlRow(
                           label: _cameraLabel(scannerState),
                           canChooseCamera: canChooseCamera,
+                          disabled: widget.decoding,
                           onTap: _toggleCameraPicker,
                         );
                       },
@@ -543,6 +550,7 @@ class _CameraControlRow extends StatelessWidget {
   const _CameraControlRow({
     required this.label,
     required this.canChooseCamera,
+    required this.disabled,
     required this.onTap,
   });
 
@@ -550,11 +558,19 @@ class _CameraControlRow extends StatelessWidget {
 
   final String label;
   final bool canChooseCamera;
+  final bool disabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final cameraLabelColor = disabled
+        ? colors.text.disabled
+        : colors.text.primary;
+    final cameraIconColor = disabled ? colors.text.disabled : colors.icon.muted;
+    final controlLabelColor = disabled
+        ? colors.button.disabled.label
+        : colors.button.ghost.label;
     return Row(
       children: [
         Expanded(
@@ -563,12 +579,12 @@ class _CameraControlRow extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Row(
               children: [
-                AppIcon(AppIcons.camera, size: 20, color: colors.icon.muted),
+                AppIcon(AppIcons.camera, size: 20, color: cameraIconColor),
                 const SizedBox(width: AppSpacing.xxs),
                 Text(
                   'Camera',
                   style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.primary,
+                    color: cameraLabelColor,
                   ),
                 ),
               ],
@@ -604,7 +620,7 @@ class _CameraControlRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
-                          color: colors.button.ghost.label,
+                          color: controlLabelColor,
                         ),
                       ),
                     ),
@@ -612,7 +628,7 @@ class _CameraControlRow extends StatelessWidget {
                   AppIcon(
                     AppIcons.expand,
                     size: AppIconSize.medium,
-                    color: colors.button.ghost.label,
+                    color: controlLabelColor,
                   ),
                 ],
               ),
