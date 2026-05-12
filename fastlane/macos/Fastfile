@@ -10,6 +10,7 @@ require "tempfile"
 require "tmpdir"
 require "uri"
 require "open3"
+require "rexml/document"
 require "spaceship"
 require_relative "../patches/developer_id_application_certificate_type_patch"
 
@@ -203,6 +204,22 @@ def github_release_download_base_url(metadata)
   "https://github.com/#{ENV.fetch("RELEASE_REPOSITORY")}/releases/download/#{metadata[:tag]}/"
 end
 
+def github_release_download_url(metadata, tag_name, asset_name)
+  "https://github.com/#{ENV.fetch("RELEASE_REPOSITORY")}/releases/download/#{tag_name}/#{asset_name}"
+end
+
+def sparkle_zip_asset_name(metadata)
+  File.basename(metadata.fetch(:zip_path))
+end
+
+def sparkle_appcast_asset_name(metadata)
+  File.basename(metadata.fetch(:appcast_path))
+end
+
+def sparkle_release_notes_asset_name(metadata)
+  File.basename(metadata.fetch(:sparkle_release_notes_path))
+end
+
 def with_restored_file(path)
   original_contents = File.binread(path)
   yield(path)
@@ -256,24 +273,87 @@ def github_api_json(url)
   )
 end
 
-def previous_release_zip_assets(metadata, limit: 5)
-  releases = github_api_json("https://api.github.com/repos/#{ENV.fetch("RELEASE_REPOSITORY")}/releases?per_page=100")
-  zip_asset_name = "#{metadata.fetch(:artifact_name)}-macos.zip"
+def sparkle_appcast_xml_enclosure_urls(appcast_xml)
+  document = REXML::Document.new(appcast_xml)
+  urls = []
+  document.elements.each("//*") do |element|
+    next unless element.name.to_s.split(":").last == "enclosure"
 
-  releases.filter_map do |release|
+    url = element.attributes["url"].to_s.strip
+    urls << url unless url.empty?
+  end
+  urls
+end
+
+def sparkle_appcast_xml_release_notes_urls(appcast_xml)
+  document = REXML::Document.new(appcast_xml)
+  urls = []
+  document.elements.each("//*") do |element|
+    next unless element.name.to_s.split(":").last == "releaseNotesLink"
+
+    url = element.text.to_s.strip
+    urls << url unless url.empty?
+  end
+  urls
+end
+
+def remote_sparkle_appcast_has_enclosure_url?(appcast_asset, expected_url)
+  appcast_url = appcast_asset.fetch("browser_download_url")
+  appcast_xml = http_get(
+    URI(appcast_url),
+    headers: {
+      "User-Agent" => "vizor-fastlane"
+    }
+  )
+  sparkle_appcast_xml_enclosure_urls(appcast_xml).include?(expected_url)
+rescue StandardError => e
+  UI.important("Could not validate prior Sparkle appcast #{appcast_url}: #{e.message}")
+  false
+end
+
+def previous_sparkle_release_zip_assets(metadata, limit: 5)
+  releases = github_api_json("https://api.github.com/repos/#{ENV.fetch("RELEASE_REPOSITORY")}/releases?per_page=100")
+  zip_asset_name = sparkle_zip_asset_name(metadata)
+  appcast_asset_name = sparkle_appcast_asset_name(metadata)
+  current_version = Gem::Version.new(metadata.fetch(:version))
+  previous_assets = []
+
+  releases.each do |release|
+    break if previous_assets.size >= limit
+
     tag_name = release["tag_name"].to_s
     next if release["draft"] || release["prerelease"] || tag_name == metadata[:tag]
     next unless tag_name.match?(/\Arelease\/v\d+\.\d+\.\d+\z/)
+    next unless Gem::Version.new(release_tag_info(tag_name).fetch(:base_version)) < current_version
 
-    asset = Array(release["assets"]).find { |candidate| candidate["name"].to_s == zip_asset_name }
-    next unless asset
+    assets = Array(release["assets"])
+    zip_asset = assets.find { |candidate| candidate["name"].to_s == zip_asset_name }
+    appcast_asset = assets.find { |candidate| candidate["name"].to_s == appcast_asset_name }
 
-    {
+    if zip_asset.nil? || appcast_asset.nil?
+      if zip_asset || appcast_asset
+        missing = []
+        missing << zip_asset_name if zip_asset.nil?
+        missing << appcast_asset_name if appcast_asset.nil?
+        UI.important("Skipping prior Sparkle delta source #{tag_name}: missing #{missing.join(" and ")}")
+      end
+      next
+    end
+
+    expected_zip_url = github_release_download_url(metadata, tag_name, zip_asset_name)
+    unless remote_sparkle_appcast_has_enclosure_url?(appcast_asset, expected_zip_url)
+      UI.important("Skipping prior Sparkle delta source #{tag_name}: #{appcast_asset_name} does not advertise #{expected_zip_url}")
+      next
+    end
+
+    previous_assets << {
       tag: tag_name,
-      name: asset.fetch("name"),
-      download_url: asset.fetch("browser_download_url")
+      name: zip_asset.fetch("name"),
+      download_url: zip_asset.fetch("browser_download_url")
     }
-  end.first(limit)
+  end
+
+  previous_assets
 end
 
 def previous_release_archive_filename(metadata, tag_name)
@@ -282,20 +362,45 @@ def previous_release_archive_filename(metadata, tag_name)
 end
 
 def download_previous_release_archives!(archives_dir, metadata)
-  previous_release_zip_assets(metadata).each do |asset|
+  previous_sparkle_release_zip_assets(metadata).each do |asset|
     destination_path = File.join(archives_dir, previous_release_archive_filename(metadata, asset.fetch(:tag)))
     next if File.exist?(destination_path)
 
     UI.message("Downloading prior Sparkle archive #{asset.fetch(:name)} from #{asset.fetch(:tag)}")
-    File.binwrite(
-      destination_path,
+    archive_data = begin
       http_get(
         URI(asset.fetch(:download_url)),
         headers: {
           "User-Agent" => "vizor-fastlane"
         }
       )
+    rescue StandardError => e
+      UI.important("Skipping prior Sparkle delta source #{asset.fetch(:tag)}: could not download #{asset.fetch(:name)}: #{e.message}")
+      next
+    end
+
+    File.binwrite(
+      destination_path,
+      archive_data
     )
+  end
+end
+
+def validate_generated_sparkle_appcast!(appcast_path, metadata)
+  appcast_xml = File.binread(appcast_path)
+  expected_zip_url = github_release_download_url(metadata, metadata.fetch(:tag), sparkle_zip_asset_name(metadata))
+  unless sparkle_appcast_xml_enclosure_urls(appcast_xml).include?(expected_zip_url)
+    UI.user_error!("Generated Sparkle appcast does not advertise full ZIP #{expected_zip_url}")
+  end
+
+  expected_release_notes_url = github_release_download_url(metadata, metadata.fetch(:tag), sparkle_release_notes_asset_name(metadata))
+  unless sparkle_appcast_xml_release_notes_urls(appcast_xml).include?(expected_release_notes_url)
+    UI.user_error!("Generated Sparkle appcast does not link release notes #{expected_release_notes_url}")
+  end
+
+  versioned_zip_asset_name = "#{metadata.fetch(:artifact_name)}-#{metadata.fetch(:asset_version)}-macos.zip"
+  if versioned_zip_asset_name != sparkle_zip_asset_name(metadata) && appcast_xml.include?(versioned_zip_asset_name)
+    UI.user_error!("Generated Sparkle appcast still references versioned ZIP asset #{versioned_zip_asset_name}")
   end
 end
 
@@ -493,6 +598,7 @@ def collect_sparkle_assets!(metadata)
     download_previous_release_archives!(archives_dir, metadata)
     write_sparkle_release_notes!(release_notes_path, metadata)
     generate_sparkle_appcast!(archives_dir, metadata)
+    validate_generated_sparkle_appcast!(File.join(archives_dir, "appcast.xml"), metadata)
 
     FileUtils.cp(File.join(archives_dir, "appcast.xml"), metadata[:appcast_path])
     FileUtils.cp(release_notes_path, metadata[:sparkle_release_notes_path])
