@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -38,9 +39,11 @@ class KeystoneQrScannerCard extends StatefulWidget {
 }
 
 class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
-  static const _scannerWidth = 456.0;
-  static const _scannerHeight = 316.0;
-  static const _scannerRadius = 20.0;
+  static const _cardWidth = 464.0;
+  static const _cameraWidth = 456.0;
+  static const _cameraHeight = 310.0;
+  static const _outerRadius = 28.0;
+  static const _cameraRadius = 24.0;
 
   late MobileScannerController _controller;
   StreamSubscription<List<MobileScannerCameraInfo>>? _camerasSubscription;
@@ -177,10 +180,12 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
     if (_loadingCameras && _cameras.isEmpty) return 'Loading camera...';
 
     final selectedCamera = _cameraById(_selectedCameraId);
-    return selectedCamera?.name ??
-        state.camera?.name ??
-        _defaultCamera?.name ??
-        'Default camera';
+    final camera = selectedCamera ?? state.camera ?? _defaultCamera;
+    final name = camera?.name ?? 'Default camera';
+    if (camera?.isDefault == true && !name.contains('(Default)')) {
+      return '$name (Default)';
+    }
+    return name;
   }
 
   @override
@@ -194,86 +199,116 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      width: _scannerWidth,
+      width: _cardWidth,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            height: _scannerHeight,
+            padding: const EdgeInsets.all(AppSpacing.xxs),
             decoration: BoxDecoration(
-              color: colors.background.overlay.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(_scannerRadius),
+              color: colors.background.base,
+              borderRadius: BorderRadius.circular(_outerRadius),
             ),
             clipBehavior: Clip.antiAlias,
-            child: Stack(
-              fit: StackFit.expand,
+            child: Column(
               children: [
-                if (QrScanner.isAvailable)
-                  AnimatedUrScannerView(
-                    controller: _controller,
-                    expectedUrType: widget.expectedUrType,
-                    scanSessionResetToken: _scanSessionResetToken,
-                    onProgress: _handleScanProgress,
-                    onDecodeError: widget.onDecodeError,
-                    onComplete: _handleScanComplete,
-                  )
-                else
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Text(
-                        widget.unavailableMessage,
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.accent,
+                Container(
+                  width: _cameraWidth,
+                  height: _cameraHeight,
+                  decoration: BoxDecoration(
+                    color: colors.background.base,
+                    borderRadius: BorderRadius.circular(_cameraRadius),
+                    border: Border.all(
+                      color: colors.border.subtleOpacity,
+                      width: 2,
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (QrScanner.isAvailable)
+                        AnimatedUrScannerView(
+                          controller: _controller,
+                          expectedUrType: widget.expectedUrType,
+                          scanSessionResetToken: _scanSessionResetToken,
+                          onProgress: _handleScanProgress,
+                          onDecodeError: widget.onDecodeError,
+                          onComplete: _handleScanComplete,
+                        )
+                      else
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.md),
+                            child: Text(
+                              widget.unavailableMessage,
+                              style: AppTypography.bodyMediumStrong.copyWith(
+                                color: colors.text.accent,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
                         ),
-                        textAlign: TextAlign.center,
-                      ),
+                      if (QrScanner.isAvailable) const _ScanOverlay(),
+                      if (_scanProgress > 0 &&
+                          _scanProgress < 100 &&
+                          !widget.decoding)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 20,
+                          child: Center(
+                            child: _QrScanProgressBar(
+                              progress: _scanProgress / 100,
+                            ),
+                          ),
+                        ),
+                      if (widget.decoding)
+                        KeystoneTransactionProgressOverlay(
+                          label: widget.decodingLabel,
+                          borderRadius: BorderRadius.circular(_cameraRadius),
+                        ),
+                      if (_cameraPickerOpen)
+                        AppPaneModalOverlay(
+                          onDismiss: _toggleCameraPicker,
+                          borderRadius: BorderRadius.circular(_cameraRadius),
+                          child: _CameraPickerModal(
+                            cameras: _cameras,
+                            selectedCameraId:
+                                _selectedCameraId ??
+                                _controller.value.camera?.id,
+                            onSelect: _selectCamera,
+                            onCancel: _toggleCameraPicker,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 56),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s,
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: ValueListenableBuilder<MobileScannerState>(
+                      valueListenable: _controller,
+                      builder: (context, scannerState, _) {
+                        final canChooseCamera =
+                            _cameras.length > 1 &&
+                            !widget.decoding &&
+                            scannerState.isInitialized;
+                        return _CameraControlRow(
+                          label: _cameraLabel(scannerState),
+                          canChooseCamera: canChooseCamera,
+                          onTap: _toggleCameraPicker,
+                        );
+                      },
                     ),
                   ),
-                const _ScanFrame(),
-                if (_scanProgress > 0 &&
-                    _scanProgress < 100 &&
-                    !widget.decoding)
-                  Positioned(
-                    left: AppSpacing.md,
-                    right: AppSpacing.md,
-                    bottom: AppSpacing.md,
-                    child: _QrScanProgressBar(progress: _scanProgress / 100),
-                  ),
-                if (widget.decoding)
-                  KeystoneTransactionProgressOverlay(
-                    label: widget.decodingLabel,
-                    borderRadius: BorderRadius.circular(_scannerRadius),
-                  ),
-                if (_cameraPickerOpen)
-                  AppPaneModalOverlay(
-                    onDismiss: _toggleCameraPicker,
-                    borderRadius: BorderRadius.circular(_scannerRadius),
-                    child: _CameraPickerModal(
-                      cameras: _cameras,
-                      selectedCameraId:
-                          _selectedCameraId ?? _controller.value.camera?.id,
-                      onSelect: _selectCamera,
-                      onCancel: _toggleCameraPicker,
-                    ),
-                  ),
+                ),
               ],
             ),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          ValueListenableBuilder<MobileScannerState>(
-            valueListenable: _controller,
-            builder: (context, scannerState, _) {
-              final canChooseCamera =
-                  _cameras.length > 1 &&
-                  !widget.decoding &&
-                  scannerState.isInitialized;
-              return _CameraControlRow(
-                label: _cameraLabel(scannerState),
-                canChooseCamera: canChooseCamera,
-                onTap: _toggleCameraPicker,
-              );
-            },
           ),
           if (widget.error != null) ...[
             const SizedBox(height: AppSpacing.s),
@@ -307,8 +342,7 @@ class _CameraControlRow extends StatelessWidget {
     required this.onTap,
   });
 
-  static const _height = 24.0;
-  static const _trailingMaxWidth = 320.0;
+  static const _labelMaxWidth = 304.0;
 
   final String label;
   final bool canChooseCamera;
@@ -317,61 +351,71 @@ class _CameraControlRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return MouseRegion(
-      cursor: canChooseCamera
-          ? SystemMouseCursors.click
-          : SystemMouseCursors.basic,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: canChooseCamera ? onTap : null,
-        child: SizedBox(
-          height: _height,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 80),
+            padding: const EdgeInsets.all(AppSpacing.xxs),
+            child: Row(
+              children: [
+                AppIcon(AppIcons.camera, size: 20, color: colors.text.primary),
+                const SizedBox(width: AppSpacing.xxs),
+                Text(
                   'Camera',
                   style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.secondary,
+                    color: colors.text.primary,
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        MouseRegion(
+          cursor: canChooseCamera
+              ? SystemMouseCursors.click
+              : SystemMouseCursors.basic,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: canChooseCamera ? onTap : null,
+            child: Container(
+              height: 32,
+              constraints: const BoxConstraints(minWidth: 96),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppRadii.full),
               ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: _trailingMaxWidth,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: _labelMaxWidth),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xxs,
                       ),
                       child: Text(
                         label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
                         style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
+                          color: colors.button.ghost.label,
                         ),
                       ),
                     ),
-                    if (canChooseCamera) ...[
-                      const SizedBox(width: AppSpacing.xxs),
-                      AppIcon(
-                        AppIcons.chevronForward,
-                        size: AppIconSize.medium,
-                        color: colors.icon.accent,
-                      ),
-                    ],
-                  ],
-                ),
+                  ),
+                  AppIcon(
+                    AppIcons.expand,
+                    size: AppIconSize.medium,
+                    color: colors.button.ghost.label,
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -379,31 +423,32 @@ class _CameraControlRow extends StatelessWidget {
 class _QrScanProgressBar extends StatelessWidget {
   const _QrScanProgressBar({required this.progress});
 
+  static const _width = 128.0;
+  static const _height = 6.0;
+
   final double progress;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final normalized = progress.clamp(0.0, 1.0);
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadii.full),
       child: SizedBox(
-        height: 4,
+        width: _width,
+        height: _height,
         child: Stack(
           fit: StackFit.expand,
           children: [
             DecoratedBox(
               decoration: BoxDecoration(
-                color: colors.background.ground.withValues(alpha: 0.42),
+                color: const Color(0xFFFFFFFF).withValues(alpha: 0.4),
               ),
             ),
             FractionallySizedBox(
               alignment: Alignment.centerLeft,
               widthFactor: normalized,
               child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: colors.text.accent.withValues(alpha: 0.92),
-                ),
+                decoration: BoxDecoration(color: const Color(0xFFFFFFFF)),
               ),
             ),
           ],
@@ -658,92 +703,66 @@ class _CameraOptionIndicator extends StatelessWidget {
   }
 }
 
-class _ScanFrame extends StatelessWidget {
-  const _ScanFrame();
-
-  static const _width = 263.0;
-  static const _height = 262.0;
-  static const _segmentLength = 58.0;
-  static const _strokeWidth = 5.0;
-  static const _radius = 17.0;
+class _ScanOverlay extends StatelessWidget {
+  const _ScanOverlay();
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Center(
-      child: SizedBox(
-        width: _width,
-        height: _height,
-        child: Stack(
-          children: [
-            _ScanCorner(
-              alignment: Alignment.topLeft,
-              color: colors.text.accent,
-            ),
-            _ScanCorner(
-              alignment: Alignment.topRight,
-              color: colors.text.accent,
-            ),
-            _ScanCorner(
-              alignment: Alignment.bottomLeft,
-              color: colors.text.accent,
-            ),
-            _ScanCorner(
-              alignment: Alignment.bottomRight,
-              color: colors.text.accent,
-            ),
-          ],
-        ),
+    return IgnorePointer(
+      child: SizedBox.expand(
+        child: CustomPaint(painter: const _ScanOverlayPainter()),
       ),
     );
   }
 }
 
-class _ScanCorner extends StatelessWidget {
-  const _ScanCorner({required this.alignment, required this.color});
+class _ScanOverlayPainter extends CustomPainter {
+  const _ScanOverlayPainter();
 
-  final Alignment alignment;
-  final Color color;
+  static const _cutoutSize = 210.0;
+  static const _cutoutRadius = 32.0;
+  static const _strokeWidth = 5.0;
+  static const _dashLength = 42.0;
+  static const _dashGap = 24.0;
 
   @override
-  Widget build(BuildContext context) {
-    final isLeft = alignment.x < 0;
-    final isTop = alignment.y < 0;
-    final border = BorderSide(
-      color: color,
-      width: _ScanFrame._strokeWidth,
-      strokeAlign: BorderSide.strokeAlignInside,
+  void paint(Canvas canvas, Size size) {
+    final cutout = Rect.fromCenter(
+      center: size.center(Offset.zero),
+      width: _cutoutSize,
+      height: _cutoutSize,
     );
-    return Align(
-      alignment: alignment,
-      child: SizedBox(
-        width: _ScanFrame._segmentLength,
-        height: _ScanFrame._segmentLength,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(
-              left: isLeft ? border : BorderSide.none,
-              right: isLeft ? BorderSide.none : border,
-              top: isTop ? border : BorderSide.none,
-              bottom: isTop ? BorderSide.none : border,
-            ),
-            borderRadius: BorderRadius.only(
-              topLeft: isLeft && isTop
-                  ? const Radius.circular(_ScanFrame._radius)
-                  : Radius.zero,
-              topRight: !isLeft && isTop
-                  ? const Radius.circular(_ScanFrame._radius)
-                  : Radius.zero,
-              bottomLeft: isLeft && !isTop
-                  ? const Radius.circular(_ScanFrame._radius)
-                  : Radius.zero,
-              bottomRight: !isLeft && !isTop
-                  ? const Radius.circular(_ScanFrame._radius)
-                  : Radius.zero,
-            ),
-          ),
-        ),
-      ),
+    final cutoutRRect = RRect.fromRectAndRadius(
+      cutout,
+      const Radius.circular(_cutoutRadius),
     );
+
+    final dimPath = Path()
+      ..addRect(Offset.zero & size)
+      ..addRRect(cutoutRRect)
+      ..fillType = PathFillType.evenOdd;
+    canvas.drawPath(dimPath, Paint()..color = const Color(0xB3000000));
+
+    final borderPath = Path()..addRRect(cutoutRRect.deflate(_strokeWidth / 2));
+    final borderPaint = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _strokeWidth
+      ..strokeCap = StrokeCap.round;
+    _drawDashedPath(canvas, borderPath, borderPaint);
   }
+
+  void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final end = math.min(distance + _dashLength, metric.length);
+        canvas.drawPath(metric.extractPath(distance, end), paint);
+        distance += _dashLength + _dashGap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ScanOverlayPainter oldDelegate) => false;
 }

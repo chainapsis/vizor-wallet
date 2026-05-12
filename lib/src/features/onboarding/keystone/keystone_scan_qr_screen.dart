@@ -74,7 +74,7 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
           KeystoneBackRow(
             routePath: KeystoneOnboardingStep.howToConnect.routePath,
           ),
-          const SizedBox(height: AppSpacing.s),
+          const SizedBox(height: AppSpacing.xs),
           Expanded(
             child: Center(
               child: Padding(
@@ -90,15 +90,12 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: AppSpacing.sm),
-                    SizedBox(
-                      width: 340,
-                      child: Text(
-                        'Grant access to your camera and then place the QR code in front of your screen.',
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.accent,
-                        ),
-                        textAlign: TextAlign.center,
+                    Text(
+                      'Prepare your Keystone wallet',
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.accent,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: AppSpacing.base),
                     KeystoneQrScannerCard(
