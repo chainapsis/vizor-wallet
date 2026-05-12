@@ -2,7 +2,7 @@ use crate::wallet::network::WalletNetwork;
 
 pub mod bundle;
 pub mod delegation;
-pub mod endorsement;
+pub mod endpoint_validation;
 pub mod hotkey;
 pub mod recovery;
 pub mod state;

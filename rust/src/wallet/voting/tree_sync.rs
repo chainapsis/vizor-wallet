@@ -5,7 +5,7 @@ use std::{
 
 use zcash_voting::{storage::VotingDb, tree_sync::VoteTreeSync};
 
-use super::state;
+use super::{endpoint_validation, state};
 
 /// FRB-friendly representation of a Vote Authority Note Merkle witness.
 ///
@@ -107,9 +107,10 @@ pub fn sync_commitment_tree_with_db(
     round_id: &str,
     node_url: &str,
 ) -> Result<u32, String> {
+    let node_url = endpoint_validation::validate_tree_base_endpoint(node_url, round_id)?;
     let tree_sync = tree_sync_for(db_path, wallet_id)?;
     tree_sync
-        .sync(voting_db, round_id, node_url)
+        .sync(voting_db, round_id, &node_url)
         .map_err(|e| format!("sync_vote_tree failed: {e}"))
 }
 
