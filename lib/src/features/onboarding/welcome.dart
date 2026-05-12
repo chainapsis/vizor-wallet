@@ -162,10 +162,7 @@ class _Pane extends StatelessWidget {
                     height: _canvasHeight,
                     child: Padding(
                       padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [child],
-                      ),
+                      child: child,
                     ),
                   ),
                 );
@@ -221,31 +218,44 @@ class _BackRow extends StatelessWidget {
   }
 }
 
-/// Vizor logo + title block + buttons + legal footer, bottom-anchored.
+/// Vizor logo + title block + buttons + legal footer.
 ///
-/// Figma's Container contributes 32 dp vertical padding and `_Welcome Content`
-/// contributes another 24 dp. Combined with the pane's outer 24 dp content
-/// padding above, the legal footer sits 80 dp above the pane edge.
+/// Mirrors the Figma layout hierarchy: `Content Area` owns the 24 dp outer
+/// padding, this `Container` adds 64 dp top padding and centers `_Welcome
+/// Content`, whose main content and legal footer are separated by 32 dp.
 class _Content extends StatelessWidget {
   const _Content();
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.base),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      padding: const EdgeInsets.only(top: AppSpacing.xl),
+      child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const _TitleBlock(),
-            const SizedBox(height: AppSpacing.lg),
-            const _ButtonsStack(),
-            const SizedBox(height: AppSpacing.lg),
+            const _MainWelcomeContent(),
+            const SizedBox(height: AppSpacing.base),
             const _LegalFooter(),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MainWelcomeContent extends StatelessWidget {
+  const _MainWelcomeContent();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _TitleBlock(),
+        SizedBox(height: AppSpacing.xl),
+        _WelcomeButtonsWrap(),
+      ],
     );
   }
 }
@@ -282,8 +292,33 @@ class _VizorLogo extends StatelessWidget {
   Widget build(BuildContext context) => const VizorWordmark();
 }
 
-class _ButtonsStack extends StatelessWidget {
-  const _ButtonsStack();
+class _WelcomeButtonsWrap extends StatelessWidget {
+  const _WelcomeButtonsWrap();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const _WalletButtonsStack(),
+        const SizedBox(height: AppSpacing.md),
+        const _OrDivider(),
+        const SizedBox(height: AppSpacing.md),
+        AppButton(
+          key: const ValueKey('welcome_connect_keystone_button'),
+          onPressed: () => context.go('/onboarding/keystone'),
+          variant: AppButtonVariant.ghost,
+          minWidth: _welcomeActionWidth,
+          leading: const AppIcon(AppIcons.qrCodeFill, size: 18),
+          child: const Text('Connect Keystone'),
+        ),
+      ],
+    );
+  }
+}
+
+class _WalletButtonsStack extends StatelessWidget {
+  const _WalletButtonsStack();
 
   @override
   Widget build(BuildContext context) {
@@ -310,17 +345,6 @@ class _ButtonsStack extends StatelessWidget {
           leading: const AppIcon(AppIcons.importWallet),
           child: const Text('Import a wallet'),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        const _OrDivider(),
-        const SizedBox(height: AppSpacing.sm),
-        AppButton(
-          key: const ValueKey('welcome_connect_keystone_button'),
-          onPressed: () => context.go('/onboarding/keystone'),
-          variant: AppButtonVariant.ghost,
-          minWidth: _welcomeActionWidth,
-          leading: const AppIcon(AppIcons.qrCodeFill, size: 18),
-          child: const Text('Connect Keystone'),
-        ),
       ],
     );
   }
@@ -336,18 +360,18 @@ class _OrDivider extends StatelessWidget {
       opacity: 0.4,
       child: SizedBox(
         width: _welcomeActionWidth,
-        height: 18,
+        height: 16,
         child: Row(
           children: [
             Expanded(child: _OrDividerLine(color: colors.text.secondary)),
-            const SizedBox(width: 20),
+            const SizedBox(width: AppSpacing.sm),
             Text(
               'or',
-              style: AppTypography.labelLarge.copyWith(
+              style: AppTypography.labelMedium.copyWith(
                 color: colors.text.secondary,
               ),
             ),
-            const SizedBox(width: 20),
+            const SizedBox(width: AppSpacing.sm),
             Expanded(child: _OrDividerLine(color: colors.text.secondary)),
           ],
         ),
