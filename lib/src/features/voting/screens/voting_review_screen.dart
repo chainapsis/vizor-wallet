@@ -45,9 +45,13 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
           .getActiveMnemonic();
       if (mnemonic == null || mnemonic.isEmpty) return;
       final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
-      await ref
-          .read(votingSessionProvider(widget.roundId).notifier)
-          .precomputeDelegationPir(seedBytes: seedBytes);
+      try {
+        await ref
+            .read(votingSessionProvider(widget.roundId).notifier)
+            .precomputeDelegationPir(seedBytes: seedBytes);
+      } finally {
+        seedBytes.fillRange(0, seedBytes.length, 0);
+      }
     } catch (e) {
       debugPrint('[zcash] Voting: delegation PIR precompute skipped: $e');
     }

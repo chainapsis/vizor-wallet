@@ -59,7 +59,11 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       return;
     }
     final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
-    await sessionNotifier.delegatePendingBundles(seedBytes: seedBytes);
+    try {
+      await sessionNotifier.delegatePendingBundles(seedBytes: seedBytes);
+    } finally {
+      seedBytes.fillRange(0, seedBytes.length, 0);
+    }
     final afterDelegation = ref.read(votingSessionProvider(roundId)).value;
     if (afterDelegation?.phase == VotingSessionPhase.error) return;
     await sessionNotifier.castVotes(draftVotes: draftVotes);

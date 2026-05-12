@@ -1,5 +1,6 @@
 use secrecy::{ExposeSecret, SecretVec};
 use zcash_keys::keys::UnifiedSpendingKey;
+use zeroize::Zeroizing;
 use zip32::Scope;
 
 use crate::wallet::network::WalletNetwork;
@@ -45,13 +46,22 @@ pub fn derive_hotkey_raw_orchard_address(
     network: WalletNetwork,
 ) -> Result<Vec<u8>, String> {
     let hotkey = generate_contextual_hotkey(seed, round_id, account_uuid)?;
-    let usk = UnifiedSpendingKey::from_seed(&network, &hotkey.secret_key, zip32::AccountId::ZERO)
+    let hotkey_secret = SecretVec::new(hotkey.secret_key);
+    let address = {
+        // `UnifiedSpendingKey` does not expose a zeroizing wrapper here, so keep
+        // its lifetime limited to the address derivation scope.
+        let usk = UnifiedSpendingKey::from_seed(
+            &network,
+            hotkey_secret.expose_secret(),
+            zip32::AccountId::ZERO,
+        )
         .map_err(|e| format!("Hotkey USK derivation failed: {e:?}"))?;
-    let ufvk = usk.to_unified_full_viewing_key();
-    let orchard_fvk = ufvk
-        .orchard()
-        .ok_or_else(|| "Hotkey UFVK has no Orchard component".to_string())?;
-    let address = orchard_fvk.address_at(0u32, Scope::External);
+        let ufvk = usk.to_unified_full_viewing_key();
+        let orchard_fvk = ufvk
+            .orchard()
+            .ok_or_else(|| "Hotkey UFVK has no Orchard component".to_string())?;
+        orchard_fvk.address_at(0u32, Scope::External)
+    };
     Ok(address.to_raw_address_bytes().to_vec())
 }
 
@@ -61,7 +71,7 @@ fn generate_contextual_hotkey(
     account_uuid: &str,
 ) -> Result<zcash_voting::VotingHotkey, String> {
     let hotkey_seed = contextual_hotkey_seed(seed, round_id, account_uuid);
-    zcash_voting::hotkey::generate_hotkey(hotkey_seed.expose_secret())
+    zcash_voting::hotkey::generate_hotkey(&hotkey_seed)
         .map_err(|e| format!("Voting hotkey derivation failed: {e}"))
 }
 
@@ -76,23 +86,23 @@ fn contextual_hotkey_seed(
     seed: &SecretVec<u8>,
     round_id: &str,
     account_uuid: &str,
-) -> SecretVec<u8> {
+) -> Zeroizing<Vec<u8>> {
     let seed_bytes = seed.expose_secret();
     let round_bytes = round_id.as_bytes();
     let account_bytes = account_uuid.as_bytes();
 
-    let mut material = Vec::with_capacity(
+    let mut material = Zeroizing::new(Vec::with_capacity(
         HOTKEY_CONTEXT_PREFIX.len()
             + encoded_part_len(seed_bytes)
             + encoded_part_len(round_bytes)
             + encoded_part_len(account_bytes),
-    );
+    ));
     material.extend_from_slice(HOTKEY_CONTEXT_PREFIX);
     append_context_part(&mut material, seed_bytes);
     append_context_part(&mut material, round_bytes);
     append_context_part(&mut material, account_bytes);
 
-    SecretVec::new(material)
+    material
 }
 
 /// Returns the number of bytes needed to length-prefix and store a context part.

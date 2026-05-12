@@ -282,6 +282,7 @@ pub struct ApiRoundRecoveryState {
 ///
 /// The seed stays platform-owned; Rust only applies the same zcash_voting
 /// hotkey derivation used by delegation and returns bytes for secure storage.
+/// The returned `Vec<u8>` is an unavoidable FRB copy boundary
 pub fn derive_voting_hotkey(
     seed_bytes: Vec<u8>,
     round_id: String,
@@ -289,8 +290,11 @@ pub fn derive_voting_hotkey(
 ) -> Result<Vec<u8>, String> {
     catch(|| {
         let seed = secrecy::SecretVec::new(seed_bytes);
-        hotkey::derive_hotkey(&seed, &round_id, &account_uuid)
-            .map(|hotkey| hotkey.expose_secret().to_vec())
+        hotkey::derive_hotkey(&seed, &round_id, &account_uuid).map(|hotkey| {
+            // FRB returns owned bytes, so this copy cannot be zeroized by Rust
+            // after Dart receives it.
+            hotkey.expose_secret().to_vec()
+        })
     })
 }
 
