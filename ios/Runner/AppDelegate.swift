@@ -89,6 +89,25 @@ import UIKit
       }
     }
 
+    let cameraPermissionChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/camera_permission",
+      binaryMessenger: messenger
+    )
+    cameraPermissionChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "openSettings":
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+          result(false)
+          return
+        }
+        UIApplication.shared.open(url, options: [:]) { success in
+          result(success)
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     // EventChannel for sync progress (Swift → Dart)
     let eventChannel = FlutterEventChannel(
       name: "com.zcash.wallet/sync_progress",

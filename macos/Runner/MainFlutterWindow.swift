@@ -436,6 +436,34 @@ final class PrivacyExposureChannel: NSObject, FlutterStreamHandler {
   }
 }
 
+final class CameraPermissionSettingsChannel {
+  private static var channel: FlutterMethodChannel?
+
+  static func register(messenger: FlutterBinaryMessenger) {
+    let methodChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/camera_permission",
+      binaryMessenger: messenger
+    )
+    channel = methodChannel
+    methodChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "openSettings":
+        guard
+          let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
+          )
+        else {
+          result(false)
+          return
+        }
+        result(NSWorkspace.shared.open(url))
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+}
+
 private final class TitlebarTitleLabel: NSTextField {
   override func hitTest(_ point: NSPoint) -> NSView? {
     nil
@@ -462,6 +490,9 @@ class MainFlutterWindow: NSWindow {
     )
     PrivacyExposureChannel.register(
       window: self,
+      messenger: flutterViewController.engine.binaryMessenger
+    )
+    CameraPermissionSettingsChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
     RegisterGeneratedPlugins(registry: flutterViewController)

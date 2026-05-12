@@ -9,8 +9,11 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
 import 'keystone_transaction_progress_panel.dart';
+
+enum _CameraAccessStatus { active, requesting, denied, unavailable }
 
 class KeystoneQrScannerCard extends StatefulWidget {
   const KeystoneQrScannerCard({
@@ -38,7 +41,8 @@ class KeystoneQrScannerCard extends StatefulWidget {
   State<KeystoneQrScannerCard> createState() => _KeystoneQrScannerCardState();
 }
 
-class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
+class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
+    with WidgetsBindingObserver {
   static const _cardWidth = 464.0;
   static const _cameraWidth = 456.0;
   static const _cameraHeight = 310.0;
@@ -57,6 +61,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller = _createController();
     _camerasSubscription = _controller.camerasStream.listen(_applyCameras);
     _loadCameras();
@@ -188,8 +193,44 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
     return name;
   }
 
+  _CameraAccessStatus _cameraAccessStatus(MobileScannerState state) {
+    if (!QrScanner.isAvailable) return _CameraAccessStatus.unavailable;
+    if (state.error?.errorCode == MobileScannerErrorCode.permissionDenied) {
+      return _CameraAccessStatus.denied;
+    }
+    if (state.hasCameraPermission) return _CameraAccessStatus.active;
+    return _CameraAccessStatus.requesting;
+  }
+
+  Future<void> _retryCameraStart({required bool openSettingsOnDenied}) async {
+    if (!QrScanner.isAvailable || _controller.value.isStarting) return;
+
+    try {
+      await _controller.start();
+    } catch (e, st) {
+      log('KeystoneQrScannerCard: camera start retry error: $e\n$st');
+    }
+
+    if (!mounted || !openSettingsOnDenied) return;
+    if (_cameraAccessStatus(_controller.value) != _CameraAccessStatus.denied) {
+      return;
+    }
+
+    final opened = await CameraPermissionSettings.open();
+    if (!opened) {
+      log('KeystoneQrScannerCard: failed to open camera permission settings');
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    unawaited(_retryCameraStart(openSettingsOnDenied: false));
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _camerasSubscription?.cancel();
     _controller.dispose();
     super.dispose();
@@ -224,64 +265,105 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
                     ),
                   ),
                   clipBehavior: Clip.antiAlias,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (QrScanner.isAvailable)
-                        AnimatedUrScannerView(
-                          controller: _controller,
-                          expectedUrType: widget.expectedUrType,
-                          scanSessionResetToken: _scanSessionResetToken,
-                          onProgress: _handleScanProgress,
-                          onDecodeError: widget.onDecodeError,
-                          onComplete: _handleScanComplete,
-                        )
-                      else
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(AppSpacing.md),
-                            child: Text(
-                              widget.unavailableMessage,
-                              style: AppTypography.bodyMediumStrong.copyWith(
-                                color: colors.text.accent,
+                  child: ValueListenableBuilder<MobileScannerState>(
+                    valueListenable: _controller,
+                    builder: (context, scannerState, _) {
+                      final accessStatus = _cameraAccessStatus(scannerState);
+                      final canScan =
+                          accessStatus == _CameraAccessStatus.active;
+
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (QrScanner.isAvailable)
+                            AnimatedUrScannerView(
+                              controller: _controller,
+                              expectedUrType: widget.expectedUrType,
+                              scanSessionResetToken: _scanSessionResetToken,
+                              onProgress: _handleScanProgress,
+                              onDecodeError: widget.onDecodeError,
+                              onComplete: _handleScanComplete,
+                            )
+                          else
+                            Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppSpacing.md),
+                                child: Text(
+                                  widget.unavailableMessage,
+                                  style: AppTypography.bodyMediumStrong
+                                      .copyWith(color: colors.text.accent),
+                                  textAlign: TextAlign.center,
+                                ),
                               ),
-                              textAlign: TextAlign.center,
                             ),
-                          ),
-                        ),
-                      if (QrScanner.isAvailable) const _ScanOverlay(),
-                      if (_scanProgress > 0 &&
-                          _scanProgress < 100 &&
-                          !widget.decoding)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 20,
-                          child: Center(
-                            child: _QrScanProgressBar(
-                              progress: _scanProgress / 100,
+                          if (canScan) const _ScanOverlay(),
+                          if (canScan &&
+                              _scanProgress > 0 &&
+                              _scanProgress < 100 &&
+                              !widget.decoding)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 20,
+                              child: Center(
+                                child: _QrScanProgressBar(
+                                  progress: _scanProgress / 100,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      if (widget.decoding)
-                        KeystoneTransactionProgressOverlay(
-                          label: widget.decodingLabel,
-                          borderRadius: BorderRadius.circular(_cameraRadius),
-                        ),
-                      if (_cameraPickerOpen)
-                        AppPaneModalOverlay(
-                          onDismiss: _toggleCameraPicker,
-                          borderRadius: BorderRadius.circular(_cameraRadius),
-                          child: _CameraPickerModal(
-                            cameras: _cameras,
-                            selectedCameraId:
-                                _selectedCameraId ??
-                                _controller.value.camera?.id,
-                            onSelect: _selectCamera,
-                            onCancel: _toggleCameraPicker,
-                          ),
-                        ),
-                    ],
+                          if (canScan && widget.decoding)
+                            KeystoneTransactionProgressOverlay(
+                              label: widget.decodingLabel,
+                              borderRadius: BorderRadius.circular(
+                                _cameraRadius,
+                              ),
+                            ),
+                          if (canScan && _cameraPickerOpen)
+                            AppPaneModalOverlay(
+                              onDismiss: _toggleCameraPicker,
+                              borderRadius: BorderRadius.circular(
+                                _cameraRadius,
+                              ),
+                              child: _CameraPickerModal(
+                                cameras: _cameras,
+                                selectedCameraId:
+                                    _selectedCameraId ??
+                                    _controller.value.camera?.id,
+                                onSelect: _selectCamera,
+                                onCancel: _toggleCameraPicker,
+                              ),
+                            ),
+                          if (accessStatus == _CameraAccessStatus.requesting)
+                            const _CameraPermissionPrompt(
+                              icon: AppIcons.camera,
+                              title: 'Enable the Camera access',
+                              description:
+                                  'A Camera is required to connect Keystone.\n'
+                                  'You can revert this in settings anytime later.',
+                              iconStyle: _CameraPermissionIconStyle.inverse,
+                            ),
+                          if (accessStatus == _CameraAccessStatus.denied)
+                            _CameraPermissionPrompt(
+                              icon: AppIcons.cameraDenied,
+                              title: "You've denied the Camera access",
+                              description:
+                                  'Request again, or enable manually\n'
+                                  'in the System settings.',
+                              iconStyle: _CameraPermissionIconStyle.raised,
+                              action: AppButton(
+                                onPressed: () => unawaited(
+                                  _retryCameraStart(openSettingsOnDenied: true),
+                                ),
+                                variant: AppButtonVariant.secondary,
+                                size: AppButtonSize.medium,
+                                minWidth: 96,
+                                leading: const AppIcon(AppIcons.renew),
+                                child: const Text('Request again'),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ),
                 ConstrainedBox(
@@ -294,6 +376,10 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
                     child: ValueListenableBuilder<MobileScannerState>(
                       valueListenable: _controller,
                       builder: (context, scannerState, _) {
+                        final accessStatus = _cameraAccessStatus(scannerState);
+                        if (accessStatus != _CameraAccessStatus.active) {
+                          return const SizedBox.shrink();
+                        }
                         final canChooseCamera =
                             _cameras.length > 1 &&
                             !widget.decoding &&
@@ -330,6 +416,80 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard> {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+enum _CameraPermissionIconStyle { inverse, raised }
+
+class _CameraPermissionPrompt extends StatelessWidget {
+  const _CameraPermissionPrompt({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.iconStyle,
+    this.action,
+  });
+
+  final String icon;
+  final String title;
+  final String description;
+  final _CameraPermissionIconStyle iconStyle;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final iconBackground = switch (iconStyle) {
+      _CameraPermissionIconStyle.inverse => colors.background.inverse,
+      _CameraPermissionIconStyle.raised => colors.background.raised,
+    };
+    final iconColor = switch (iconStyle) {
+      _CameraPermissionIconStyle.inverse => colors.icon.inverse,
+      _CameraPermissionIconStyle.raised => colors.icon.regular,
+    };
+
+    return DecoratedBox(
+      decoration: BoxDecoration(color: colors.background.base),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: iconBackground,
+                  borderRadius: BorderRadius.circular(AppRadii.large),
+                ),
+                child: Center(child: AppIcon(icon, size: 24, color: iconColor)),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                title,
+                style: AppTypography.bodyMediumStrong.copyWith(
+                  color: colors.text.accent,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                description,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              if (action != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                action!,
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
