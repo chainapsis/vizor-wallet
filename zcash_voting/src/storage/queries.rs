@@ -4,7 +4,7 @@ use rusqlite::{named_params, Connection, OptionalExtension};
 use voting_circuits::delegation::imt::ImtProofData;
 
 use crate::storage::{KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord};
-use crate::types::{NoteInfo, ShareDelegationRecord, VotingError, VotingRoundParams};
+use crate::types::{NoteInfo, ShareDelegationRecord, VotingError, VotingRoundParams, WitnessData};
 
 const NOTE_IDENTITY_HASH_BYTES: usize = 32;
 const NOTE_IDENTITY_DOMAIN: &[u8] = b"zcash-voting-note-identity-v1";
@@ -100,6 +100,10 @@ pub fn insert_round(
     Ok(())
 }
 
+/// Set a round phase without checking lifecycle ordering.
+///
+/// Prefer `advance_round_phase` for normal workflow transitions.
+#[deprecated(note = "use advance_round_phase to preserve forward-only round progression")]
 pub fn update_round_phase(
     conn: &Connection,
     round_id: &str,
@@ -161,6 +165,8 @@ pub fn advance_round_phase(
     let current = get_round_state(conn, round_id, wallet_id)?.phase;
     let current_rank = current as i32;
 
+    // This can only happen if another connection changes the row between the
+    // failed UPDATE and this readback.
     if current_rank < requested_rank {
         Err(VotingError::Internal {
             message: format!(
@@ -1369,7 +1375,41 @@ pub fn store_witnesses(
     round_id: &str,
     wallet_id: &str,
     bundle_index: u32,
-    witnesses: &[crate::types::WitnessData],
+    witnesses: &[WitnessData],
+) -> Result<(), VotingError> {
+    insert_witnesses(conn, round_id, wallet_id, bundle_index, witnesses)
+}
+
+fn require_witness_positions_match_bundle(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    bundle_index: u32,
+    witnesses: &[WitnessData],
+) -> Result<(), VotingError> {
+    let mut expected = load_bundle_note_positions(conn, round_id, wallet_id, bundle_index)?;
+    let mut actual = witnesses.iter().map(|w| w.position).collect::<Vec<_>>();
+    expected.sort_unstable();
+    actual.sort_unstable();
+
+    if expected != actual {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "witness positions do not match bundle note positions for round={}, bundle={}: expected {:?}, got {:?}",
+                round_id, bundle_index, expected, actual
+            ),
+        });
+    }
+
+    Ok(())
+}
+
+fn insert_witnesses(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    bundle_index: u32,
+    witnesses: &[WitnessData],
 ) -> Result<(), VotingError> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1408,8 +1448,10 @@ pub fn replace_bundle_witnesses(
     round_id: &str,
     wallet_id: &str,
     bundle_index: u32,
-    witnesses: &[crate::types::WitnessData],
+    witnesses: &[WitnessData],
 ) -> Result<(), VotingError> {
+    require_witness_positions_match_bundle(conn, round_id, wallet_id, bundle_index, witnesses)?;
+
     let tx = conn.transaction().map_err(|e| VotingError::Internal {
         message: format!("failed to begin witness replacement transaction: {}", e),
     })?;
@@ -1430,7 +1472,7 @@ pub fn replace_bundle_witnesses(
         ),
     })?;
 
-    store_witnesses(&tx, round_id, wallet_id, bundle_index, witnesses)?;
+    insert_witnesses(&tx, round_id, wallet_id, bundle_index, witnesses)?;
 
     tx.commit().map_err(|e| VotingError::Internal {
         message: format!("failed to commit witness replacement: {}", e),

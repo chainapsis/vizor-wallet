@@ -790,7 +790,7 @@ impl VotingDb {
             &result.cmx_new,
             &result.van_comm,
         )?;
-        queries::update_round_phase(&tx, round_id, &wallet_id, RoundPhase::DelegationProved)?;
+        queries::advance_round_phase(&tx, round_id, &wallet_id, RoundPhase::DelegationProved)?;
         tx.commit().map_err(|e| VotingError::Internal {
             message: format!("failed to commit proof result transaction: {e}"),
         })?;
@@ -897,7 +897,7 @@ impl VotingDb {
             choice,
             &commitment_bytes,
         )?;
-        queries::update_round_phase(&conn, round_id, &wallet_id, RoundPhase::VoteReady)?;
+        queries::advance_round_phase(&conn, round_id, &wallet_id, RoundPhase::VoteReady)?;
         Ok(bundle)
     }
 
@@ -1357,11 +1357,10 @@ mod tests {
         }
     }
 
-    fn valid_empty_tree_witness(position: u64) -> WitnessData {
+    fn valid_tree_witness(position: u64, leaf: orchard::tree::MerkleHashOrchard) -> WitnessData {
         use incrementalmerkletree::{Hashable, Level};
         use orchard::tree::MerkleHashOrchard;
 
-        let leaf = MerkleHashOrchard::empty_leaf();
         let mut current = leaf;
         let mut auth_path = Vec::with_capacity(32);
         let mut pos = position;
@@ -1389,6 +1388,22 @@ mod tests {
             root: current.to_bytes().to_vec(),
             auth_path,
         }
+    }
+
+    fn valid_empty_tree_witness(position: u64) -> WitnessData {
+        use incrementalmerkletree::Hashable;
+        use orchard::tree::MerkleHashOrchard;
+
+        valid_tree_witness(position, MerkleHashOrchard::empty_leaf())
+    }
+
+    fn valid_field_tree_witness(position: u64, value: u64) -> WitnessData {
+        use orchard::tree::MerkleHashOrchard;
+
+        let leaf_bytes = pallas::Base::from(value).to_repr();
+        let leaf =
+            Option::from(MerkleHashOrchard::from_bytes(&leaf_bytes)).expect("field encoding");
+        valid_tree_witness(position, leaf)
     }
 
     #[test]
@@ -1813,6 +1828,8 @@ mod tests {
         db.store_witnesses(ROUND_ID, 0, &original).unwrap();
 
         let ignored = vec![valid_empty_tree_witness(2)];
+        // This second store is a no-op because the bundle already has cached rows;
+        // replacement below is what actually overwrites the cache.
         db.store_witnesses(ROUND_ID, 0, &ignored).unwrap();
 
         {
@@ -1823,12 +1840,50 @@ mod tests {
             assert_eq!(loaded[1].position, 1);
         }
 
-        db.replace_bundle_witnesses(ROUND_ID, 0, &ignored).unwrap();
+        let replacement = vec![
+            valid_field_tree_witness(0, 1),
+            valid_field_tree_witness(1, 2),
+        ];
+        db.replace_bundle_witnesses(ROUND_ID, 0, &replacement)
+            .unwrap();
 
         let conn = db.conn();
         let loaded = queries::load_witnesses(&conn, ROUND_ID, W, 0).unwrap();
-        assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].position, 2);
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].position, 0);
+        assert_eq!(loaded[1].position, 1);
+        assert_eq!(loaded[0].note_commitment, replacement[0].note_commitment);
+        assert_eq!(loaded[1].note_commitment, replacement[1].note_commitment);
+    }
+
+    #[test]
+    fn test_replace_bundle_witnesses_rejects_position_mismatch_without_clearing_cache() {
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0, 1]).unwrap();
+        }
+
+        let original = vec![valid_empty_tree_witness(0), valid_empty_tree_witness(1)];
+        db.store_witnesses(ROUND_ID, 0, &original).unwrap();
+
+        let invalid_replacement = vec![valid_empty_tree_witness(2)];
+        let err = db
+            .replace_bundle_witnesses(ROUND_ID, 0, &invalid_replacement)
+            .expect_err("position mismatch should fail");
+        assert!(err
+            .to_string()
+            .contains("witness positions do not match bundle note positions"));
+
+        let conn = db.conn();
+        let loaded = queries::load_witnesses(&conn, ROUND_ID, W, 0).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].position, 0);
+        assert_eq!(loaded[1].position, 1);
+        assert_eq!(loaded[0].note_commitment, original[0].note_commitment);
+        assert_eq!(loaded[1].note_commitment, original[1].note_commitment);
     }
 
     #[test]
