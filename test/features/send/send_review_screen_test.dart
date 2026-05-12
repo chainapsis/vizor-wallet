@@ -43,6 +43,50 @@ void main() {
       amountText.style?.letterSpacing,
       AppTypography.displayLarge.letterSpacing,
     );
+    expect(find.text('Tx Fee: 0.00012 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('send CTA uses leading action icon', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendReviewHarness(_reviewArgs(addressType: 'unified', memo: _longMemo)),
+    );
+    await tester.pump();
+
+    final sendButton = tester.widget<AppButton>(
+      find.widgetWithText(AppButton, 'Send'),
+    );
+    final leadingIcon = sendButton.leading;
+
+    expect(leadingIcon, isA<AppIcon>());
+    expect((leadingIcon! as AppIcon).name, AppIcons.plane);
+    expect(sendButton.trailing, isNull);
+  });
+
+  testWidgets('dark preview uses dark semantic colors', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendReviewHarness(
+        _reviewArgs(addressType: 'transparent'),
+        theme: AppThemeData.dark,
+      ),
+    );
+    await tester.pump();
+
+    final sendingLabel = tester.widget<Text>(find.text('Sending'));
+    expect(sendingLabel.style?.color, AppThemeData.dark.colors.text.secondary);
+    expect(
+      _assetImageNames(tester),
+      contains('assets/illustrations/send_review_receipt_mask_dark.png'),
+    );
+
+    final feeLabel = tester.widget<Text>(find.text('Tx Fee: 0.00012 ZEC'));
+    expect(feeLabel.style?.color, AppThemeData.dark.colors.text.accent);
+
+    final transparentIcon = tester
+        .widgetList<AppIcon>(find.byType(AppIcon))
+        .singleWhere((icon) => icon.name == AppIcons.transparentBalance);
+    expect(transparentIcon.color, AppThemeData.dark.colors.icon.muted);
   });
 
   testWidgets('transparent preview uses transparent balance badge', (
@@ -154,6 +198,28 @@ void main() {
     expect(shieldIcon.size, 20);
     expect(shieldIcon.color, AppThemeData.light.colors.icon.success);
   });
+
+  testWidgets('dark shielded preview uses dark receipt assets', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendReviewHarness(
+        _reviewArgs(addressType: 'sapling', memo: _longMemo),
+        theme: AppThemeData.dark,
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      _assetImageNames(tester),
+      containsAll(<String>[
+        'assets/illustrations/send_review_receipt_mask_dark.png',
+        'assets/illustrations/send_review_receipt_pattern_dark.png',
+      ]),
+    );
+
+    final badgeText = tester.widget<Text>(find.text('Shielded'));
+    expect(badgeText.style?.color, AppThemeData.dark.colors.text.success);
+  });
 }
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {
@@ -163,7 +229,10 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
   });
 }
 
-Widget _sendReviewHarness(SendReviewArgs args) {
+Widget _sendReviewHarness(
+  SendReviewArgs args, {
+  AppThemeData theme = AppThemeData.light,
+}) {
   final router = GoRouter(
     initialLocation: '/send/review',
     routes: [
@@ -181,7 +250,7 @@ Widget _sendReviewHarness(SendReviewArgs args) {
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(data: theme, child: child!),
     ),
   );
 }
@@ -210,6 +279,15 @@ Finder _receiptMaskFinder() {
     return image is AssetImage &&
         image.assetName == 'assets/illustrations/send_review_receipt_mask.png';
   });
+}
+
+Set<String> _assetImageNames(WidgetTester tester) {
+  return tester
+      .widgetList<Image>(find.byType(Image))
+      .map((widget) => widget.image)
+      .whereType<AssetImage>()
+      .map((image) => image.assetName)
+      .toSet();
 }
 
 const _longMemo =

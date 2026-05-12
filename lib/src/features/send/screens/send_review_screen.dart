@@ -437,7 +437,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                               onPressed: _handleSend,
                               variant: AppButtonVariant.primary,
                               minWidth: 256,
-                              trailing: AppIcon(
+                              leading: AppIcon(
                                 isHardware ? AppIcons.qr : AppIcons.plane,
                                 color: colors.button.primary.label,
                               ),
@@ -507,6 +507,10 @@ class _SendReviewReceiptCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = context.appTheme == AppThemeData.dark;
+    final receiptMaskAsset = isDark
+        ? 'assets/illustrations/send_review_receipt_mask_dark.png'
+        : 'assets/illustrations/send_review_receipt_mask.png';
     final hasMemo = args.memo != null && args.memo!.trim().isNotEmpty;
     final messageTextHeight = messageExpanded ? 156.0 : 62.0;
     final messageBlockHeight = 24.0 + messageTextHeight;
@@ -526,7 +530,7 @@ class _SendReviewReceiptCard extends StatelessWidget {
             width: 352,
             height: receiptHeight + 80.0,
             child: Image.asset(
-              'assets/illustrations/send_review_receipt_mask.png',
+              receiptMaskAsset,
               fit: BoxFit.fill,
             ),
           ),
@@ -639,7 +643,7 @@ class _SendReviewReceiptCard extends StatelessWidget {
             width: 320,
             height: 21,
             child: Text(
-              'Fee: $feeText',
+              'Tx Fee: $feeText',
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: colors.text.accent,
               ),
@@ -782,6 +786,10 @@ class _SendShieldedBadgeIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = context.appTheme == AppThemeData.dark;
+    final patternAsset = isDark
+        ? 'assets/illustrations/send_review_receipt_pattern_dark.png'
+        : 'assets/illustrations/send_review_receipt_pattern.png';
     return SizedBox(
       width: 20,
       height: 20,
@@ -796,7 +804,7 @@ class _SendShieldedBadgeIcon extends StatelessWidget {
               minHeight: 562.605,
               maxHeight: 562.605,
               child: Image.asset(
-                'assets/illustrations/send_review_receipt_pattern.png',
+                patternAsset,
                 width: 500.755,
                 height: 562.605,
                 fit: BoxFit.fill,
