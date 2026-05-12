@@ -59,8 +59,12 @@ fn server_append_client_sync_witness_roundtrip() {
     );
 
     // Roots already verified inside sync(); double-check here.
-    let server_root_1 = server.root_at_height(1).expect("server has root at height 1");
-    let client_root_1 = client.root_at_height(1).expect("client has root at height 1");
+    let server_root_1 = server
+        .root_at_height(1)
+        .expect("server has root at height 1");
+    let client_root_1 = client
+        .root_at_height(1)
+        .expect("client has root at height 1");
     assert_eq!(
         server_root_1, client_root_1,
         "server and client roots must match at height 1"
@@ -95,11 +99,15 @@ fn server_append_client_sync_witness_roundtrip() {
     // 5. Client syncs block 2 (incremental — only new data)
     //    Mark new VAN and VC positions before syncing block 2.
     // ---------------------------------------------------------------
-    client.mark_position(cast_idx);     // new VAN at position 1
+    client.mark_position(cast_idx); // new VAN at position 1
     client.mark_position(cast_idx + 1); // VC at position 2
     client.sync(&server).unwrap();
 
-    assert_eq!(client.size(), 3, "client should have 3 leaves after second sync");
+    assert_eq!(
+        client.size(),
+        3,
+        "client should have 3 leaves after second sync"
+    );
     assert_eq!(
         client.last_synced_height(),
         Some(2),
@@ -107,8 +115,12 @@ fn server_append_client_sync_witness_roundtrip() {
     );
 
     // Verify roots match at height 2.
-    let server_root_2 = server.root_at_height(2).expect("server has root at height 2");
-    let client_root_2 = client.root_at_height(2).expect("client has root at height 2");
+    let server_root_2 = server
+        .root_at_height(2)
+        .expect("server has root at height 2");
+    let client_root_2 = client
+        .root_at_height(2)
+        .expect("client has root at height 2");
     assert_eq!(
         server_root_2, client_root_2,
         "server and client roots must match at height 2"
@@ -180,7 +192,9 @@ fn historical_witness_survives_growth() {
     assert_eq!(client.size(), 4);
 
     // Witness at height 1 (before growth) still verifies.
-    let witness = client.witness(0, 1).expect("historical witness at height 1");
+    let witness = client
+        .witness(0, 1)
+        .expect("historical witness at height 1");
     assert!(
         witness.verify(fp(1), root_1),
         "historical witness must verify against the original anchor"
@@ -302,7 +316,9 @@ fn unmarked_position_returns_none() {
     );
 
     // Marked position: witness succeeds.
-    let witness = client.witness(1, 1).expect("marked position must produce witness");
+    let witness = client
+        .witness(1, 1)
+        .expect("marked position must produce witness");
     assert!(witness.verify(fp(20), server.root_at_height(1).unwrap()));
 
     // Unmarked positions: witness returns None.
@@ -550,7 +566,10 @@ fn shard_boundary_crossing() {
     // Server and client produce identical paths across shard boundaries.
     let server_path_16 = server.path(16, 10).unwrap();
     let client_path_16 = client.witness(16, 10).unwrap();
-    assert_eq!(server_path_16, client_path_16, "paths must be identical at shard boundary");
+    assert_eq!(
+        server_path_16, client_path_16,
+        "paths must be identical at shard boundary"
+    );
 }
 
 /// Test MerklePath serialization roundtrip.
@@ -788,12 +807,7 @@ fn stress_persistent_vs_flaky_client() {
         let check_val = leaf_values[final_check_pos as usize];
         let w = flaky
             .witness(final_check_pos, final_height)
-            .unwrap_or_else(|| {
-                panic!(
-                    "final flaky: no witness for position {}",
-                    final_check_pos
-                )
-            });
+            .unwrap_or_else(|| panic!("final flaky: no witness for position {}", final_check_pos));
         assert!(
             w.verify(check_val, final_root),
             "final flaky witness for position {} does not verify after full resync",

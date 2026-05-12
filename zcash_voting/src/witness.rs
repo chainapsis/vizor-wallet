@@ -33,8 +33,10 @@ pub fn verify_witness(witness: &WitnessData) -> Result<bool, VotingError> {
 
     // Parse note commitment as MerkleHashOrchard
     let commitment_bytes: [u8; 32] = witness.note_commitment[..].try_into().unwrap();
-    let mut current: MerkleHashOrchard =
-        ct_option_to_result(MerkleHashOrchard::from_bytes(&commitment_bytes), "note_commitment")?;
+    let mut current: MerkleHashOrchard = ct_option_to_result(
+        MerkleHashOrchard::from_bytes(&commitment_bytes),
+        "note_commitment",
+    )?;
 
     // Parse expected root
     let root_bytes: [u8; 32] = witness.root[..].try_into().unwrap();

@@ -139,8 +139,7 @@ pub type KvSetFn = unsafe extern "C" fn(
 ) -> i32;
 
 /// Delete a key. Returns 0 on success, -1 on error.
-pub type KvDeleteFn = unsafe extern "C" fn(ctx: *mut c_void, key: *const u8, key_len: usize)
-    -> i32;
+pub type KvDeleteFn = unsafe extern "C" fn(ctx: *mut c_void, key: *const u8, key_len: usize) -> i32;
 
 /// Create an iterator over the given prefix.
 ///
@@ -211,7 +210,13 @@ impl KvCallbacks {
         let mut out_ptr: *mut u8 = std::ptr::null_mut();
         let mut out_len: usize = 0;
         let rc = unsafe {
-            (self.get)(self.ctx, key.as_ptr(), key.len(), &mut out_ptr, &mut out_len)
+            (self.get)(
+                self.ctx,
+                key.as_ptr(),
+                key.len(),
+                &mut out_ptr,
+                &mut out_len,
+            )
         };
         match rc {
             0 => {
@@ -219,7 +224,7 @@ impl KvCallbacks {
                 unsafe { (self.free_buf)(out_ptr, out_len) };
                 Ok(Some(val))
             }
-            1 => Ok(None),        // not found
+            1 => Ok(None),              // not found
             _ => Err(KvError::IoError), // rc=-1 or any other error code
         }
     }
@@ -227,9 +232,7 @@ impl KvCallbacks {
     /// Write a key-value pair. Returns `Err(KvError::IoError)` if the
     /// callback returned a non-zero code.
     pub fn set(&self, key: &[u8], val: &[u8]) -> Result<(), KvError> {
-        let rc = unsafe {
-            (self.set)(self.ctx, key.as_ptr(), key.len(), val.as_ptr(), val.len())
-        };
+        let rc = unsafe { (self.set)(self.ctx, key.as_ptr(), key.len(), val.as_ptr(), val.len()) };
         if rc != 0 {
             Err(KvError::IoError)
         } else {
@@ -249,13 +252,9 @@ impl KvCallbacks {
 
     /// Create a forward or reverse iterator over the given prefix.
     fn iter(&self, prefix: &[u8], reverse: bool) -> KvIter<'_> {
-        let handle = unsafe {
-            (self.iter_create)(self.ctx, prefix.as_ptr(), prefix.len(), reverse as u8)
-        };
-        KvIter {
-            handle,
-            cb: self,
-        }
+        let handle =
+            unsafe { (self.iter_create)(self.ctx, prefix.as_ptr(), prefix.len(), reverse as u8) };
+        KvIter { handle, cb: self }
     }
 }
 
@@ -361,10 +360,7 @@ impl ShardStore for KvShardStore {
         }
     }
 
-    fn put_shard(
-        &mut self,
-        subtree: LocatedPrunableTree<MerkleHashVote>,
-    ) -> Result<(), KvError> {
+    fn put_shard(&mut self, subtree: LocatedPrunableTree<MerkleHashVote>) -> Result<(), KvError> {
         let idx = subtree.root_addr().index();
         let key = shard_key(idx);
         let blob = write_shard_vote(subtree.root()).map_err(|_| KvError::Serialization)?;
@@ -538,11 +534,7 @@ impl ShardStore for KvShardStore {
         Ok(())
     }
 
-    fn update_checkpoint_with<F>(
-        &mut self,
-        checkpoint_id: &u32,
-        update: F,
-    ) -> Result<bool, KvError>
+    fn update_checkpoint_with<F>(&mut self, checkpoint_id: &u32, update: F) -> Result<bool, KvError>
     where
         F: Fn(&mut Checkpoint) -> Result<(), KvError>,
     {
@@ -564,10 +556,7 @@ impl ShardStore for KvShardStore {
         self.cb.delete(&key)
     }
 
-    fn truncate_checkpoints_retaining(
-        &mut self,
-        checkpoint_id: &u32,
-    ) -> Result<(), KvError> {
+    fn truncate_checkpoints_retaining(&mut self, checkpoint_id: &u32) -> Result<(), KvError> {
         // Delete all checkpoints with id < checkpoint_id; clear marks_removed
         // on the retained checkpoint itself (matches MemoryShardStore semantics).
         let prefix = [CHECKPOINT_PREFIX];

@@ -86,24 +86,29 @@ pub fn build_vote_commitment(
     let sk = derive_spending_key(hotkey_seed, network_id)?;
 
     // Parse gov_comm_rand → pallas::Base
-    let gcr_bytes: [u8; 32] = gov_comm_rand.try_into().map_err(|_| VotingError::InvalidInput {
-        message: format!(
-            "gov_comm_rand must be 32 bytes, got {}",
-            gov_comm_rand.len()
-        ),
-    })?;
+    let gcr_bytes: [u8; 32] = gov_comm_rand
+        .try_into()
+        .map_err(|_| VotingError::InvalidInput {
+            message: format!(
+                "gov_comm_rand must be 32 bytes, got {}",
+                gov_comm_rand.len()
+            ),
+        })?;
     let gcr = ct_option_to_result(
         pallas::Base::from_repr(gcr_bytes),
         "gov_comm_rand is not a valid Pallas field element",
     )?;
 
     // Parse voting_round_id → pallas::Base (canonical Fp).
-    let vri_bytes: [u8; 32] = voting_round_id.try_into().map_err(|_| VotingError::InvalidInput {
-        message: format!(
-            "voting_round_id must be 32 bytes, got {}",
-            voting_round_id.len()
-        ),
-    })?;
+    let vri_bytes: [u8; 32] =
+        voting_round_id
+            .try_into()
+            .map_err(|_| VotingError::InvalidInput {
+                message: format!(
+                    "voting_round_id must be 32 bytes, got {}",
+                    voting_round_id.len()
+                ),
+            })?;
     let vri = ct_option_to_result(
         pallas::Base::from_repr(vri_bytes),
         "voting_round_id is not a canonical Pallas Fp element",
@@ -169,7 +174,11 @@ pub fn build_vote_commitment(
 
     // Convert Instance public inputs to byte vectors
     let van_nullifier = vote_bundle.instance.van_nullifier.to_repr().to_vec();
-    let van_new = vote_bundle.instance.vote_authority_note_new.to_repr().to_vec();
+    let van_new = vote_bundle
+        .instance
+        .vote_authority_note_new
+        .to_repr()
+        .to_vec();
     let vote_commitment = vote_bundle.instance.vote_commitment.to_repr().to_vec();
 
     // Convert encrypted shares from builder output to zcash_voting EncryptedShare format
@@ -195,8 +204,16 @@ pub fn build_vote_commitment(
         anchor_height,
         vote_round_id: hex::encode(voting_round_id),
         shares_hash: vote_bundle.shares_hash.to_repr().to_vec(),
-        share_blinds: vote_bundle.share_blinds.iter().map(|b| b.to_repr().to_vec()).collect(),
-        share_comms: vote_bundle.share_comms.iter().map(|c| c.to_repr().to_vec()).collect(),
+        share_blinds: vote_bundle
+            .share_blinds
+            .iter()
+            .map(|b| b.to_repr().to_vec())
+            .collect(),
+        share_comms: vote_bundle
+            .share_comms
+            .iter()
+            .map(|c| c.to_repr().to_vec())
+            .collect(),
         r_vpk_bytes: vote_bundle.r_vpk_bytes.to_vec(),
         alpha_v: alpha_v.to_repr().to_vec(),
     })
@@ -205,7 +222,10 @@ pub fn build_vote_commitment(
 /// Derive an Orchard SpendingKey from seed bytes using ZIP-32 account 0.
 ///
 /// `network_id`: 0 = testnet, 1 = mainnet (same encoding as the wallet SDK / `NoteInfo` flow).
-pub fn derive_spending_key(hotkey_seed: &[u8], network_id: u32) -> Result<SpendingKey, VotingError> {
+pub fn derive_spending_key(
+    hotkey_seed: &[u8],
+    network_id: u32,
+) -> Result<SpendingKey, VotingError> {
     derive_spending_key_for_account(hotkey_seed, network_id, 0)
 }
 

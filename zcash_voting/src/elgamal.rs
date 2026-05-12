@@ -145,7 +145,8 @@ mod tests {
             let r = pallas::Base::one();
             let v = pallas::Base::one();
             let pk = pallas::Point::identity(); // pk=0 simplifies C2
-            let (c1_x, _c2_x, _c1_y, _c2_y) = voting_circuits::vote_proof::elgamal_encrypt(v, r, pk);
+            let (c1_x, _c2_x, _c1_y, _c2_y) =
+                voting_circuits::vote_proof::elgamal_encrypt(v, r, pk);
             c1_x
         };
 
@@ -204,24 +205,23 @@ mod tests {
         for (i, share) in result.iter().enumerate() {
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&share.c1);
-            let c1_affine: pallas::Affine = Option::from(pallas::Affine::from_bytes(&arr))
-                .expect("c1 is a valid Pallas point");
+            let c1_affine: pallas::Affine =
+                Option::from(pallas::Affine::from_bytes(&arr)).expect("c1 is a valid Pallas point");
             let c1_coords = c1_affine.coordinates().unwrap();
             c1_x[i] = *c1_coords.x();
             c1_y[i] = *c1_coords.y();
 
             arr.copy_from_slice(&share.c2);
-            let c2_affine: pallas::Affine = Option::from(pallas::Affine::from_bytes(&arr))
-                .expect("c2 is a valid Pallas point");
+            let c2_affine: pallas::Affine =
+                Option::from(pallas::Affine::from_bytes(&arr)).expect("c2 is a valid Pallas point");
             let c2_coords = c2_affine.coordinates().unwrap();
             c2_x[i] = *c2_coords.x();
             c2_y[i] = *c2_coords.y();
         }
 
         // Use synthetic blinds for testing.
-        let blinds: [pallas::Base; 16] = core::array::from_fn(|i| {
-            pallas::Base::from(1001u64 + i as u64)
-        });
+        let blinds: [pallas::Base; 16] =
+            core::array::from_fn(|i| pallas::Base::from(1001u64 + i as u64));
 
         // Compute shares_hash using the circuit helper.
         let hash = voting_circuits::vote_proof::shares_hash(blinds, c1_x, c2_x, c1_y, c2_y);
