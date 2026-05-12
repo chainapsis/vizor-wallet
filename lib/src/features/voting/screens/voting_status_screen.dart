@@ -28,6 +28,7 @@ class VotingStatusScreen extends ConsumerStatefulWidget {
 class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   bool _started = false;
   bool _completedInThisRun = false;
+  bool _softwareAccountRequired = false;
 
   @override
   void initState() {
@@ -56,6 +57,10 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
         .read(accountProvider.notifier)
         .getActiveMnemonic();
     if (mnemonic == null || mnemonic.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _softwareAccountRequired = true;
+      });
       return;
     }
     final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
@@ -100,6 +105,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
                 final phase = _displayPhase(state.phase);
                 return _StatusContent(
                   phase: phase,
+                  softwareAccountRequired: _softwareAccountRequired,
                   errorMessage: state.error?.message,
                   onRetry: _retry,
                 );
@@ -121,19 +127,30 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   void _retry() {
     _started = false;
     _completedInThisRun = false;
+    _softwareAccountRequired = false;
     unawaited(_run());
   }
 }
 
 class _StatusContent extends StatelessWidget {
-  const _StatusContent({required this.phase, this.errorMessage, this.onRetry});
+  const _StatusContent({
+    required this.phase,
+    this.softwareAccountRequired = false,
+    this.errorMessage,
+    this.onRetry,
+  });
 
   final VotingSessionPhase phase;
+  final bool softwareAccountRequired;
   final String? errorMessage;
   final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
+    if (softwareAccountRequired) {
+      return const _SoftwareAccountRequiredContent();
+    }
+
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
@@ -207,6 +224,39 @@ class _StatusContent extends StatelessWidget {
 
   bool _after(VotingSessionPhase target) {
     return phase.index > target.index && phase != VotingSessionPhase.error;
+  }
+}
+
+class _SoftwareAccountRequiredContent extends StatelessWidget {
+  const _SoftwareAccountRequiredContent();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Software Account Required',
+              textAlign: TextAlign.center,
+              style: AppTypography.displaySmall.copyWith(
+                color: context.colors.text.accent,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Coinholder voting requires a software account. Switch to a software account to vote in this round.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
