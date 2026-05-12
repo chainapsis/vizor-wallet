@@ -85,7 +85,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _delegationPirPrecomputes[key] ??= _runDelegationPirPrecompute(
         context: context,
         pirEndpoint: pirEndpoint,
-        seedBytes: seedBytes,
+        seedBytes: List<int>.from(seedBytes),
         bundleIndex: bundleIndex,
       );
     }
@@ -855,14 +855,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       debugPrint(
         '[zcash] Voting: delegation PIR precompute failed '
         'round=${context.round.roundId} bundle=$bundleIndex '
-        'elapsed=${_formatElapsed(timer.elapsed)} error=$e',
-      );
-      await _resetVotingSessionState(
-        rust: ref.read(votingRustApiProvider),
-        context: context,
-        reason: 'pir-precompute-failed',
+        'elapsed=${_formatElapsed(timer.elapsed)} error=$e '
+        'reason=cache-miss',
       );
     } finally {
+      seedBytes.fillRange(0, seedBytes.length, 0);
       _delegationPirPrecomputes.remove(key);
     }
   }

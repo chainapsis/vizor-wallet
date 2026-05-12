@@ -781,6 +781,45 @@ void main() {
     expect(rust.maxConcurrentSetups, 1);
   });
 
+  test('delegation PIR warmup owns and zeros task-local seed bytes', () async {
+    final precomputeGate = Completer<void>();
+    final rust = FakeVotingRustApi(precomputeGate: precomputeGate);
+    final container = _sessionContainer(rust: rust);
+    addTearDown(container.dispose);
+    final seedBytes = [1, 2, 3];
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .precomputeDelegationPir(seedBytes: seedBytes);
+    await rust.precomputeStarted.future;
+
+    seedBytes.fillRange(0, seedBytes.length, 0);
+    expect(rust.precomputeSeedRefs.single, [1, 2, 3]);
+    expect(identical(rust.precomputeSeedRefs.single, seedBytes), isFalse);
+
+    precomputeGate.complete();
+    await rust.precomputeFinished.future;
+    await Future<void>.delayed(Duration.zero);
+
+    expect(rust.precomputeSeedRefs.single, [0, 0, 0]);
+  });
+
+  test('delegation PIR warmup failure is a non-fatal cache miss', () async {
+    final rust = FakeVotingRustApi(failPrecompute: true);
+    final container = _sessionContainer(rust: rust);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+    await notifier.precomputeDelegationPir(seedBytes: [1, 2, 3]);
+    await notifier.delegatePendingBundles(seedBytes: [1, 2, 3]);
+
+    expect(rust.precomputedDelegationPir, [0]);
+    expect(rust.delegationBundleCalls, [0]);
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
+  });
+
   test('session dispose clears round-scoped process state', () async {
     final rust = FakeVotingRustApi();
     final container = _sessionContainer(rust: rust);
@@ -1183,10 +1222,14 @@ class FakeVotingRustApi implements VotingRustApi {
   FakeVotingRustApi({
     this.setupDelay = Duration.zero,
     this.emitCommitments = false,
+    this.precomputeGate,
+    this.failPrecompute = false,
   });
 
   final Duration setupDelay;
   final bool emitCommitments;
+  final Completer<void>? precomputeGate;
+  final bool failPrecompute;
   int setupCalls = 0;
   int _activeSetups = 0;
   int maxConcurrentSetups = 0;
@@ -1199,6 +1242,9 @@ class FakeVotingRustApi implements VotingRustApi {
   final recordedShares = <_RecordedShare>[];
   final syncedVoteTrees = <String>[];
   final precomputedDelegationPir = <int>[];
+  final precomputeSeedRefs = <List<int>>[];
+  final precomputeStarted = Completer<void>();
+  final precomputeFinished = Completer<void>();
   final resetVotingSessionStateCalls = <String>[];
   final draftSingleShareValues = <bool>[];
   final accountUuids = <String>[];
@@ -1286,6 +1332,20 @@ class FakeVotingRustApi implements VotingRustApi {
   }) async {
     accountUuids.add(accountUuid);
     precomputedDelegationPir.add(bundleIndex);
+    precomputeSeedRefs.add(seedBytes);
+    if (!precomputeStarted.isCompleted) {
+      precomputeStarted.complete();
+    }
+    try {
+      await precomputeGate?.future;
+      if (failPrecompute) {
+        throw StateError('precompute failed');
+      }
+    } finally {
+      if (!precomputeFinished.isCompleted) {
+        precomputeFinished.complete();
+      }
+    }
     return rust_voting.ApiDelegationPirPrecomputeResult(
       cachedCount: 0,
       fetchedCount: 1,
