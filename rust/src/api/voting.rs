@@ -5,10 +5,9 @@ use crate::wallet::{
     keys,
     voting::{
         bundle::{self, SelectedNotes},
-        delegation::{
-            self, BundleSetupResult, DelegationPirPrecomputeResult, ProofEvent, SignedDelegation,
-        },
-        hotkey, recovery, state, tree_sync, vote,
+        delegation, hotkey, recovery, state, tree_sync,
+        types::{BundleSetupResult, DelegationPirPrecomputeResult, ProofEvent, SignedDelegation},
+        vote,
     },
 };
 use secrecy::ExposeSecret;

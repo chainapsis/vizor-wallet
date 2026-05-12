@@ -1,7 +1,20 @@
+/// Returns the sidecar path used for `zcash_voting` state for a wallet DB path.
+///
+/// The voting database is intentionally separate from the wallet SQLite file so
+/// upstream voting migrations cannot affect the wallet DB `user_version`.
 fn voting_db_path_for_wallet_db(db_path: &str) -> String {
     format!("{db_path}.voting")
 }
 
+/// Opens the voting sidecar database for a wallet and binds it to `wallet_id`.
+///
+/// `db_path` is the main wallet database path; the voting DB is opened at the
+/// deterministic sidecar path returned by `voting_db_path_for_wallet_db`.
+///
+/// # Errors
+///
+/// Returns an error if the upstream voting database cannot be opened or
+/// initialized.
 pub fn open_voting_db(
     db_path: &str,
     wallet_id: &str,
@@ -13,6 +26,15 @@ pub fn open_voting_db(
     Ok(db)
 }
 
+/// Validates and persists initial state for a voting round.
+///
+/// `session_json`, when present, is stored with the round as opaque upstream
+/// session metadata.
+///
+/// # Errors
+///
+/// Returns an error if the round parameters fail `zcash_voting` validation or
+/// the voting database rejects the round initialization.
 pub fn init_voting_round(
     db: &zcash_voting::storage::VotingDb,
     params: &zcash_voting::VotingRoundParams,
@@ -24,6 +46,15 @@ pub fn init_voting_round(
         .map_err(|e| format!("init_round failed: {e}"))
 }
 
+/// Loads a round state, initializing it first when the round is absent.
+///
+/// Existing round state is returned unchanged; missing state is created from
+/// `params` and `session_json` before being reloaded from storage.
+///
+/// # Errors
+///
+/// Returns an error if round initialization fails or if the round state cannot
+/// be read after initialization.
 pub fn ensure_voting_round(
     db: &zcash_voting::storage::VotingDb,
     params: &zcash_voting::VotingRoundParams,
