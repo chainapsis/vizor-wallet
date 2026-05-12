@@ -60,6 +60,17 @@ pub struct RoundRecoveryState {
     pub unconfirmed_share_delegations: Vec<ShareDelegationRecord>,
 }
 
+/// Loads the persisted recovery snapshot for a voting round.
+///
+/// The snapshot is keyed by `db_path`, `wallet_id`, and `round_id`, and includes
+/// bundle-level delegation tx hashes, vote records, vote tx hashes, commitment
+/// bundles, and share delegation retry state. Missing recovery rows are omitted
+/// rather than synthesized.
+///
+/// # Errors
+///
+/// Returns an error if the voting sidecar database cannot be opened or any
+/// recovery table query fails.
 pub fn get_round_recovery_state(
     db_path: &str,
     wallet_id: &str,
@@ -137,6 +148,15 @@ pub fn get_round_recovery_state(
     })
 }
 
+/// Persists the broadcast transaction hash for a vote and marks that vote submitted.
+///
+/// The `(round_id, bundle_index, proposal_id)` tuple must identify an existing
+/// vote row. After storing, the value is read back and must match `tx_hash`.
+///
+/// # Errors
+///
+/// Returns an error if storage fails, the vote row is missing, or read-after-write
+/// verification observes a different hash.
 pub fn store_vote_tx_hash(
     db_path: &str,
     wallet_id: &str,
@@ -166,6 +186,14 @@ pub fn store_vote_tx_hash(
     }
 }
 
+/// Returns the stored vote transaction hash for one vote, when present.
+///
+/// `None` means no recovery hash has been persisted for the exact
+/// `(round_id, bundle_index, proposal_id)` key.
+///
+/// # Errors
+///
+/// Returns an error if the voting database cannot be opened or queried.
 pub fn get_vote_tx_hash(
     db_path: &str,
     wallet_id: &str,
@@ -179,6 +207,15 @@ pub fn get_vote_tx_hash(
         .map_err(|e| format!("get_vote_tx_hash failed: {e}"))
 }
 
+/// Returns the stored commitment bundle recovery payload for one vote.
+///
+/// The returned value preserves the caller-supplied `bundle_index` and
+/// `proposal_id` alongside the stored bundle JSON and vote commitment tree
+/// position.
+///
+/// # Errors
+///
+/// Returns an error if the voting database cannot be opened or queried.
 pub fn get_commitment_bundle(
     db_path: &str,
     wallet_id: &str,
@@ -202,6 +239,16 @@ pub fn get_commitment_bundle(
         .map_err(|e| format!("get_commitment_bundle failed: {e}"))
 }
 
+/// Records helper-server share delegation progress for retry/resume.
+///
+/// `sent_to_urls` is the set of helper endpoints already attempted for the share,
+/// `nullifier` is the share nullifier bytes, and `submit_at` is the caller-owned
+/// retry scheduling timestamp.
+///
+/// # Errors
+///
+/// Returns an error if the voting database cannot be opened or the share record
+/// cannot be persisted.
 pub fn record_share_delegation(
     db_path: &str,
     wallet_id: &str,
@@ -227,6 +274,13 @@ pub fn record_share_delegation(
         .map_err(|e| format!("record_share_delegation failed: {e}"))
 }
 
+/// Lists all stored share delegation records for a round.
+///
+/// Returned records include both confirmed and unconfirmed shares.
+///
+/// # Errors
+///
+/// Returns an error if the voting database cannot be opened or queried.
 pub fn get_share_delegations(
     db_path: &str,
     wallet_id: &str,
@@ -236,6 +290,14 @@ pub fn get_share_delegations(
     get_share_delegations_from_db(&voting_db, round_id)
 }
 
+/// Lists share delegation records that still need confirmation.
+///
+/// A returned record may already have `sent_to_urls` populated; callers should
+/// preserve that history when retrying helper submission.
+///
+/// # Errors
+///
+/// Returns an error if the voting database cannot be opened or queried.
 pub fn get_unconfirmed_share_delegations(
     db_path: &str,
     wallet_id: &str,
@@ -245,6 +307,15 @@ pub fn get_unconfirmed_share_delegations(
     get_unconfirmed_share_delegations_from_db(&voting_db, round_id)
 }
 
+/// Marks one share delegation as confirmed.
+///
+/// The key is the exact `(round_id, bundle_index, proposal_id, share_index)`
+/// tuple previously passed to `record_share_delegation`.
+///
+/// # Errors
+///
+/// Returns an error if the voting database cannot be opened or no matching share
+/// delegation can be updated.
 pub fn mark_share_confirmed(
     db_path: &str,
     wallet_id: &str,
@@ -259,6 +330,15 @@ pub fn mark_share_confirmed(
         .map_err(|e| format!("mark_share_confirmed failed: {e}"))
 }
 
+/// Adds helper-server URLs to the sent history for one share delegation.
+///
+/// Existing URLs are preserved and duplicates are ignored by the storage layer.
+/// The share delegation must already exist.
+///
+/// # Errors
+///
+/// Returns an error if the voting database cannot be opened or the share record
+/// cannot be updated.
 pub fn add_sent_servers(
     db_path: &str,
     wallet_id: &str,
@@ -274,6 +354,16 @@ pub fn add_sent_servers(
         .map_err(|e| format!("add_sent_servers failed: {e}"))
 }
 
+/// Clears retry/recovery artifacts for a voting round.
+///
+/// This removes delegation tx hashes, vote tx hashes, commitment bundle recovery
+/// data, and share delegation tracking for `round_id`. Use only after a round is
+/// finalized or intentionally abandoned.
+///
+/// # Errors
+///
+/// Returns an error if the voting database cannot be opened or recovery state
+/// cannot be cleared.
 pub fn clear_recovery_state(db_path: &str, wallet_id: &str, round_id: &str) -> Result<(), String> {
     let voting_db = open_voting_db(db_path, wallet_id)?;
     voting_db
@@ -281,6 +371,7 @@ pub fn clear_recovery_state(db_path: &str, wallet_id: &str, round_id: &str) -> R
         .map_err(|e| format!("clear_recovery_state failed: {e}"))
 }
 
+/// Reads share delegation rows using an already-open voting database.
 fn get_share_delegations_from_db(
     voting_db: &zcash_voting::storage::VotingDb,
     round_id: &str,
@@ -296,6 +387,7 @@ fn get_share_delegations_from_db(
         .map_err(|e| format!("get_share_delegations failed: {e}"))
 }
 
+/// Reads only unconfirmed share delegation rows using an already-open database.
 fn get_unconfirmed_share_delegations_from_db(
     voting_db: &zcash_voting::storage::VotingDb,
     round_id: &str,
@@ -311,6 +403,7 @@ fn get_unconfirmed_share_delegations_from_db(
         .map_err(|e| format!("get_unconfirmed_delegations failed: {e}"))
 }
 
+/// Converts the upstream share record into the flat API-facing recovery type.
 fn share_record_from_upstream(
     record: zcash_voting::ShareDelegationRecord,
 ) -> ShareDelegationRecord {
