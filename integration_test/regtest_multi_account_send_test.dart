@@ -368,7 +368,7 @@ Future<void> _switchAccount(WidgetTester tester, int accountOrder) async {
   final accountUuid = await _accountUuidAtOrder(accountOrder);
   await _tapWidget(tester, const ValueKey('sidebar_accounts_button'));
   await _tapWidget(tester, ValueKey('accounts_other_row_$accountUuid'));
-  await _openWallet(tester);
+  await _waitForHome(tester);
 }
 
 Future<void> _waitForHome(WidgetTester tester) async {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart'
@@ -135,15 +136,11 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     final accountNotifier = ref.read(accountProvider.notifier);
 
     onProgress?.call(AccountRemoveProgress.stoppingSync);
-    await runWithSyncPausedForAccountMutation(
-      ref,
-      () async {
-        onProgress?.call(AccountRemoveProgress.removingAccount);
-        await accountNotifier.resetWallet();
-        syncNotifier.clearCachedWalletDbPath();
-      },
-      resumeAfterMutation: false,
-    );
+    await runWithSyncPausedForAccountMutation(ref, () async {
+      onProgress?.call(AccountRemoveProgress.removingAccount);
+      await accountNotifier.resetWallet();
+      syncNotifier.clearCachedWalletDbPath();
+    }, resumeAfterMutation: false);
     if (!mounted) return;
     _closeModal();
     context.go('/welcome');
@@ -231,8 +228,22 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         .value
         ?.activeAccountUuid;
     if (uuid == activeAccountUuid) return;
-    await ref.read(accountProvider.notifier).switchAccount(uuid);
-    await ref.read(syncProvider.notifier).refreshAfterSend();
+    final accountNotifier = ref.read(accountProvider.notifier);
+    final syncNotifier = ref.read(syncProvider.notifier);
+
+    await accountNotifier.switchAccount(uuid);
+    if (mounted) {
+      context.go('/home');
+    }
+    unawaited(_refreshAfterAccountSwitch(syncNotifier));
+  }
+
+  Future<void> _refreshAfterAccountSwitch(SyncNotifier syncNotifier) async {
+    try {
+      await syncNotifier.refreshAfterSend();
+    } catch (e) {
+      log('switchAccount: refreshAfterSend failed: $e');
+    }
   }
 
   static AccountInfo? _activeAccountFor(

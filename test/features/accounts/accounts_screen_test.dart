@@ -184,27 +184,23 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
+    late _FakeAccountNotifier accountNotifier;
     late _FakeSyncNotifier syncNotifier;
     await tester.pumpWidget(
       _accountsHarness(
-        accountNotifier: () =>
-            _FakeAccountNotifier(_bootstrap.initialAccountState),
+        accountNotifier: () => accountNotifier = _FakeAccountNotifier(
+          _bootstrap.initialAccountState,
+        ),
         syncNotifier: () => syncNotifier = _FakeSyncNotifier(),
       ),
     );
     await tester.pump();
 
     await tester.tap(find.text('Shielded Savings'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const ValueKey('accounts_active_row_account-2')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('accounts_other_row_account-1')),
-      findsOneWidget,
-    );
+    expect(find.text('home route'), findsOneWidget);
+    expect(accountNotifier.switchedUuid, 'account-2');
     expect(syncNotifier.refreshCount, 1);
   });
 
@@ -845,6 +841,7 @@ class _FakeAccountNotifier extends AccountNotifier {
   String? updatedProfilePictureUuid;
   String? updatedProfilePictureId;
   String? removedUuid;
+  String? switchedUuid;
   bool resetWalletCalled = false;
 
   @override
@@ -852,6 +849,7 @@ class _FakeAccountNotifier extends AccountNotifier {
 
   @override
   Future<void> switchAccount(String uuid) async {
+    switchedUuid = uuid;
     final prev = state.value ?? initialState;
     state = AsyncData(prev.copyWith(activeAccountUuid: uuid));
   }
