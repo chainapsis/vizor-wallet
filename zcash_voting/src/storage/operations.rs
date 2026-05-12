@@ -175,6 +175,19 @@ fn padded_nullifiers_for_circuit(
     Ok(out)
 }
 
+fn verify_witnesses(witnesses: &[WitnessData]) -> Result<(), VotingError> {
+    for w in witnesses {
+        let valid = crate::witness::verify_witness(w)?;
+        if !valid {
+            return Err(VotingError::Internal {
+                message: format!("witness verification failed for position {}", w.position),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 impl VotingDb {
     // --- Round management ---
 
@@ -412,20 +425,26 @@ impl VotingDb {
             return Ok(());
         }
 
-        // Verify each witness before caching
-        for w in witnesses {
-            let valid = crate::witness::verify_witness(w)?;
-            if !valid {
-                return Err(VotingError::Internal {
-                    message: format!("witness verification failed for position {}", w.position),
-                });
-            }
-        }
+        verify_witnesses(witnesses)?;
 
         // Cache results
         queries::store_witnesses(&conn, round_id, &wallet_id, bundle_index, witnesses)?;
 
         Ok(())
+    }
+
+    /// Verify and replace all cached Merkle inclusion witnesses for a bundle.
+    pub fn replace_bundle_witnesses(
+        &self,
+        round_id: &str,
+        bundle_index: u32,
+        witnesses: &[WitnessData],
+    ) -> Result<(), VotingError> {
+        verify_witnesses(witnesses)?;
+
+        let mut conn = self.conn();
+        let wallet_id = self.wallet_id();
+        queries::replace_bundle_witnesses(&mut conn, round_id, &wallet_id, bundle_index, witnesses)
     }
 
     // --- Phase 2: Delegation proof ---
@@ -1327,6 +1346,40 @@ mod tests {
         }
     }
 
+    fn valid_empty_tree_witness(position: u64) -> WitnessData {
+        use incrementalmerkletree::{Hashable, Level};
+        use orchard::tree::MerkleHashOrchard;
+
+        let leaf = MerkleHashOrchard::empty_leaf();
+        let mut current = leaf;
+        let mut auth_path = Vec::with_capacity(32);
+        let mut pos = position;
+
+        for level in 0..32 {
+            let tree_level = Level::from(level as u8);
+            let sibling = if level == 0 {
+                MerkleHashOrchard::empty_leaf()
+            } else {
+                MerkleHashOrchard::empty_root(tree_level)
+            };
+            auth_path.push(sibling.to_bytes().to_vec());
+
+            current = if pos & 1 == 0 {
+                MerkleHashOrchard::combine(tree_level, &current, &sibling)
+            } else {
+                MerkleHashOrchard::combine(tree_level, &sibling, &current)
+            };
+            pos >>= 1;
+        }
+
+        WitnessData {
+            note_commitment: leaf.to_bytes().to_vec(),
+            position,
+            root: current.to_bytes().to_vec(),
+            auth_path,
+        }
+    }
+
     #[test]
     fn test_init_and_get_round() {
         let db = test_db();
@@ -1705,6 +1758,38 @@ mod tests {
         let conn = db.conn();
         let loaded = queries::load_tree_state(&conn, ROUND_ID, W).unwrap();
         assert_eq!(loaded, tree_state);
+    }
+
+    #[test]
+    fn test_replace_bundle_witnesses_replaces_cached_bundle() {
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        {
+            let conn = db.conn();
+            queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0, 1]).unwrap();
+        }
+
+        let original = vec![valid_empty_tree_witness(0), valid_empty_tree_witness(1)];
+        db.store_witnesses(ROUND_ID, 0, &original).unwrap();
+
+        let ignored = vec![valid_empty_tree_witness(2)];
+        db.store_witnesses(ROUND_ID, 0, &ignored).unwrap();
+
+        {
+            let conn = db.conn();
+            let loaded = queries::load_witnesses(&conn, ROUND_ID, W, 0).unwrap();
+            assert_eq!(loaded.len(), 2);
+            assert_eq!(loaded[0].position, 0);
+            assert_eq!(loaded[1].position, 1);
+        }
+
+        db.replace_bundle_witnesses(ROUND_ID, 0, &ignored).unwrap();
+
+        let conn = db.conn();
+        let loaded = queries::load_witnesses(&conn, ROUND_ID, W, 0).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].position, 2);
     }
 
     #[test]

@@ -1352,6 +1352,41 @@ pub fn store_witnesses(
     Ok(())
 }
 
+/// Atomically replace all cached witnesses for a bundle.
+pub fn replace_bundle_witnesses(
+    conn: &mut Connection,
+    round_id: &str,
+    wallet_id: &str,
+    bundle_index: u32,
+    witnesses: &[crate::types::WitnessData],
+) -> Result<(), VotingError> {
+    let tx = conn.transaction().map_err(|e| VotingError::Internal {
+        message: format!("failed to begin witness replacement transaction: {}", e),
+    })?;
+
+    tx.execute(
+        "DELETE FROM witnesses
+         WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index",
+        named_params! {
+            ":round_id": round_id,
+            ":wallet_id": wallet_id,
+            ":bundle_index": bundle_index as i64,
+        },
+    )
+    .map_err(|e| VotingError::Internal {
+        message: format!(
+            "failed to clear witnesses for bundle {}: {}",
+            bundle_index, e
+        ),
+    })?;
+
+    store_witnesses(&tx, round_id, wallet_id, bundle_index, witnesses)?;
+
+    tx.commit().map_err(|e| VotingError::Internal {
+        message: format!("failed to commit witness replacement: {}", e),
+    })
+}
+
 /// Load cached witnesses for a bundle, ordered by position.
 pub fn load_witnesses(
     conn: &Connection,
