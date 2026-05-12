@@ -13,6 +13,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'import_birthday_estimator.dart';
 import 'import_birthday_calendar_overlay.dart';
@@ -263,7 +264,7 @@ class _ImportWalletBirthdayScreenState
       if (!mounted) return;
       setState(() {
         _submitPhase = _ImportWalletSubmitPhase.idle;
-        _submitError = e.toString();
+        _submitError = onboardingSubmitErrorMessage(e);
       });
       return;
     }

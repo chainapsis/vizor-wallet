@@ -15,4 +15,43 @@ void main() {
   test('strips default Exception prefix from onboarding submit errors', () {
     expect(onboardingSubmitErrorMessage(Exception('bad input')), 'bad input');
   });
+
+  test('strips rust wrapper from duplicate Secret Passphrase import error', () {
+    expect(
+      onboardingSubmitErrorMessage(
+        _FakeAnyhowException(kDuplicateSecretPassphraseImportErrorMessage),
+      ),
+      kDuplicateSecretPassphraseImportErrorMessage,
+    );
+  });
+
+  test('strips flutter rust bridge anyhow wrapper from submit errors', () {
+    expect(
+      onboardingSubmitErrorMessage(
+        _FakeAnyhowException(kDuplicateKeystoneAccountImportErrorMessage),
+      ),
+      kDuplicateKeystoneAccountImportErrorMessage,
+    );
+  });
+
+  test('maps raw account collision errors to generic duplicate account copy', () {
+    expect(
+      onboardingSubmitErrorMessage(
+        const _FakeAnyhowException(
+          'Failed to import account: An account corresponding to the data '
+          'provided already exists in the wallet with UUID 00000000-0000-0000-0000-000000000000.',
+        ),
+      ),
+      kDuplicateAccountImportErrorMessage,
+    );
+  });
+}
+
+class _FakeAnyhowException implements Exception {
+  const _FakeAnyhowException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'AnyhowException($message)';
 }

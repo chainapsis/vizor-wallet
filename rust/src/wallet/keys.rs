@@ -7,7 +7,7 @@ use zcash_client_backend::data_api::{
     chain::ChainState, Account as _, AccountBirthday, AccountPurpose, AccountSource, WalletRead,
     WalletWrite, Zip32Derivation,
 };
-use zcash_client_sqlite::{wallet::init::init_wallet_db, AccountUuid};
+use zcash_client_sqlite::{error::SqliteClientError, wallet::init::init_wallet_db, AccountUuid};
 use zcash_keys::{
     encoding::encode_transparent_address,
     keys::{ReceiverRequirement, UnifiedAddressRequest, UnifiedFullViewingKey, UnifiedSpendingKey},
@@ -24,6 +24,21 @@ use crate::wallet::{
     },
     network::WalletNetwork,
 };
+
+const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str =
+    "This account is already in your wallet.";
+const DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE: &str = "This Keystone account is already in your wallet.";
+
+fn map_account_import_error(
+    error: SqliteClientError,
+    duplicate_message: &str,
+    fallback_prefix: &str,
+) -> String {
+    match error {
+        SqliteClientError::AccountCollision(_) => duplicate_message.to_string(),
+        other => format!("{fallback_prefix}: {other}"),
+    }
+}
 
 fn open_wallet_db_for_init(
     db_path: &str,
@@ -146,7 +161,13 @@ pub fn add_account(
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
         let account = db
             .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
-            .map_err(|e| format!("Failed to import account: {e}"))?;
+            .map_err(|e| {
+                map_account_import_error(
+                    e,
+                    DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE,
+                    "Failed to import account",
+                )
+            })?;
         Ok::<_, String>(account.id())
     })?;
     let (ua, _di) = ufvk
@@ -201,7 +222,13 @@ pub fn import_hardware_account(
 
         let account = db
             .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
-            .map_err(|e| format!("Failed to import hardware account: {e}"))?;
+            .map_err(|e| {
+                map_account_import_error(
+                    e,
+                    DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE,
+                    "Failed to import hardware account",
+                )
+            })?;
         Ok::<_, String>(account.id())
     })?;
     // Hardware wallets (Keystone) have Orchard + transparent but no Sapling,
@@ -672,6 +699,69 @@ mod tests {
                 .unwrap()
                 .unified_address
         );
+    }
+
+    #[test]
+    fn test_add_account_duplicate_seed_returns_user_message() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+
+        init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "first").unwrap();
+
+        let error = add_account(db_path_str, WalletNetwork::Main, "duplicate", &seed, None)
+            .expect_err("duplicate seed import should fail");
+
+        assert_eq!(error, DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE);
+    }
+
+    #[test]
+    fn test_import_hardware_duplicate_ufvk_returns_user_message() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let account_index = zip32::AccountId::ZERO;
+        let usk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            account_index,
+        )
+        .unwrap();
+        let ufvk = usk.to_unified_full_viewing_key();
+        let ufvk_string = ufvk.encode(&WalletNetwork::Main);
+        let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+
+        import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Keystone",
+            &ufvk_string,
+            &seed_fingerprint,
+            u32::from(account_index),
+            None,
+        )
+        .unwrap();
+
+        let error = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Keystone",
+            &ufvk_string,
+            &seed_fingerprint,
+            u32::from(account_index),
+            None,
+        )
+        .expect_err("duplicate Keystone UFVK import should fail");
+
+        assert_eq!(error, DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE);
     }
 
     #[test]
