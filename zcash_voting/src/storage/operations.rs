@@ -209,6 +209,17 @@ impl VotingDb {
         queries::get_round_state(&conn, round_id, &wallet_id)
     }
 
+    /// Advance the round phase without allowing regressions.
+    pub fn advance_round_phase(
+        &self,
+        round_id: &str,
+        phase: RoundPhase,
+    ) -> Result<(), VotingError> {
+        let conn = self.conn();
+        let wallet_id = self.wallet_id();
+        queries::advance_round_phase(&conn, round_id, &wallet_id, phase)
+    }
+
     /// Return whether a voting round exists for the current wallet.
     pub fn has_round(&self, round_id: &str) -> Result<bool, VotingError> {
         let conn = self.conn();
@@ -1388,6 +1399,34 @@ mod tests {
         let state = db.get_round_state(ROUND_ID).unwrap();
         assert_eq!(state.phase, RoundPhase::Initialized);
         assert_eq!(state.snapshot_height, 1000);
+    }
+
+    #[test]
+    fn test_advance_round_phase_is_idempotent() {
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        db.advance_round_phase(ROUND_ID, RoundPhase::HotkeyGenerated)
+            .unwrap();
+        db.advance_round_phase(ROUND_ID, RoundPhase::HotkeyGenerated)
+            .unwrap();
+
+        let state = db.get_round_state(ROUND_ID).unwrap();
+        assert_eq!(state.phase, RoundPhase::HotkeyGenerated);
+    }
+
+    #[test]
+    fn test_advance_round_phase_rejects_regression() {
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        db.advance_round_phase(ROUND_ID, RoundPhase::DelegationConstructed)
+            .unwrap();
+        let err = db
+            .advance_round_phase(ROUND_ID, RoundPhase::HotkeyGenerated)
+            .expect_err("regression should fail");
+
+        assert!(err.to_string().contains("refusing to regress round phase"));
     }
 
     #[test]

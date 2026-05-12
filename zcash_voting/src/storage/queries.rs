@@ -128,6 +128,56 @@ pub fn update_round_phase(
     Ok(())
 }
 
+/// Advance a round phase without allowing regressions.
+///
+/// Re-applying the current phase is treated as idempotent.
+pub fn advance_round_phase(
+    conn: &Connection,
+    round_id: &str,
+    wallet_id: &str,
+    phase: RoundPhase,
+) -> Result<(), VotingError> {
+    let requested_rank = phase as i32;
+    let rows = conn
+        .execute(
+            "UPDATE rounds
+             SET phase = :phase
+             WHERE round_id = :round_id
+               AND wallet_id = :wallet_id
+               AND phase < :phase",
+            named_params! {
+                ":phase": requested_rank,
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+            },
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to advance round phase: {}", e),
+        })?;
+    if rows > 0 {
+        return Ok(());
+    }
+
+    let current = get_round_state(conn, round_id, wallet_id)?.phase;
+    let current_rank = current as i32;
+
+    if current_rank < requested_rank {
+        Err(VotingError::Internal {
+            message: format!(
+                "failed to advance round phase for {round_id}: current={current_rank}, requested={requested_rank}"
+            ),
+        })
+    } else if current_rank > requested_rank {
+        Err(VotingError::InvalidInput {
+            message: format!(
+                "refusing to regress round phase for {round_id}: current={current_rank}, requested={requested_rank}"
+            ),
+        })
+    } else {
+        Ok(())
+    }
+}
+
 pub fn load_round_params(
     conn: &Connection,
     round_id: &str,
