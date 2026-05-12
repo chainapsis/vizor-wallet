@@ -795,6 +795,204 @@ mod tests {
     }
 
     #[test]
+    fn round_recovery_state_survives_sidecar_reopen() {
+        let fixture = RecoveryFixture::new();
+        let RecoveryFixture {
+            _temp_dir,
+            db_path,
+            db,
+        } = fixture;
+        let path = db_path.to_str().unwrap().to_string();
+
+        workflow::mark_delegation_confirmed(&path, WALLET_ID, ROUND_ID, 0, "delegation-tx-0", 5)
+            .unwrap();
+        insert_vote(&db, 0, 1, 0, b"vote-0-1");
+        workflow::store_signed_vote_commitment(&db, ROUND_ID, 0, 1, r#"{"bundle":"one"}"#).unwrap();
+        mark_vote_confirmed(
+            &path,
+            WALLET_ID,
+            ROUND_ID,
+            0,
+            1,
+            "vote-tx-0-1",
+            5,
+            9,
+            r#"{"bundle":"one"}"#,
+        )
+        .unwrap();
+        record_share_delegation(
+            &path,
+            WALLET_ID,
+            ROUND_ID,
+            0,
+            1,
+            0,
+            &["https://helper-a.example".to_string()],
+            &[7; 32],
+            1234,
+        )
+        .unwrap();
+        add_sent_servers(
+            &path,
+            WALLET_ID,
+            ROUND_ID,
+            0,
+            1,
+            0,
+            &["https://helper-b.example".to_string()],
+        )
+        .unwrap();
+
+        drop(db);
+        let state = get_round_recovery_state(&path, WALLET_ID, ROUND_ID).unwrap();
+
+        assert_eq!(state.bundle_count, 2);
+        assert!(state
+            .delegation_workflows
+            .contains(&DelegationWorkflowRecovery {
+                bundle_index: 0,
+                phase: "confirmed".to_string(),
+                tx_hash: Some("delegation-tx-0".to_string()),
+                van_leaf_position: Some(5),
+            }));
+        assert_eq!(
+            state.vote_workflows,
+            vec![VoteWorkflowRecovery {
+                bundle_index: 0,
+                proposal_id: 1,
+                phase: "confirmed".to_string(),
+                tx_hash: Some("vote-tx-0-1".to_string()),
+                vc_tree_position: Some(9),
+                has_commitment_bundle: true,
+            }]
+        );
+        assert_eq!(state.commitment_bundles[0].vc_tree_position, 9);
+        assert_eq!(state.share_delegations.len(), 1);
+        assert_eq!(
+            state.share_delegations[0].sent_to_urls,
+            vec![
+                "https://helper-a.example".to_string(),
+                "https://helper-b.example".to_string(),
+            ]
+        );
+        assert_eq!(state.unconfirmed_share_delegations.len(), 1);
+    }
+
+    #[test]
+    fn recovery_writes_are_idempotent_and_reject_conflicts() {
+        let fixture = RecoveryFixture::new();
+        fixture.insert_vote(0, 1, 0, b"vote-0-1");
+
+        workflow::mark_delegation_submitted(
+            fixture.path(),
+            WALLET_ID,
+            ROUND_ID,
+            0,
+            "delegation-tx-0",
+        )
+        .unwrap();
+        workflow::mark_delegation_submitted(
+            fixture.path(),
+            WALLET_ID,
+            ROUND_ID,
+            0,
+            "delegation-tx-0",
+        )
+        .unwrap();
+        assert!(workflow::mark_delegation_submitted(
+            fixture.path(),
+            WALLET_ID,
+            ROUND_ID,
+            0,
+            "delegation-tx-conflict",
+        )
+        .unwrap_err()
+        .contains("delegation tx_hash conflict"));
+
+        store_vote_tx_hash(fixture.path(), WALLET_ID, ROUND_ID, 0, 1, "vote-tx-0-1").unwrap();
+        store_vote_tx_hash(fixture.path(), WALLET_ID, ROUND_ID, 0, 1, "vote-tx-0-1").unwrap();
+        assert!(store_vote_tx_hash(
+            fixture.path(),
+            WALLET_ID,
+            ROUND_ID,
+            0,
+            1,
+            "vote-tx-conflict",
+        )
+        .unwrap_err()
+        .contains("vote tx_hash conflict"));
+
+        record_share_delegation(
+            fixture.path(),
+            WALLET_ID,
+            ROUND_ID,
+            0,
+            1,
+            0,
+            &["https://helper-a.example".to_string()],
+            &[7; 32],
+            1234,
+        )
+        .unwrap();
+        record_share_delegation(
+            fixture.path(),
+            WALLET_ID,
+            ROUND_ID,
+            0,
+            1,
+            0,
+            &["https://helper-a.example".to_string()],
+            &[7; 32],
+            1234,
+        )
+        .unwrap();
+        assert!(record_share_delegation(
+            fixture.path(),
+            WALLET_ID,
+            ROUND_ID,
+            0,
+            1,
+            0,
+            &["https://helper-a.example".to_string()],
+            &[8; 32],
+            1234,
+        )
+        .unwrap_err()
+        .contains("share nullifier conflict"));
+    }
+
+    #[test]
+    fn recovery_state_is_scoped_by_wallet_id_for_account_switches() {
+        let fixture = RecoveryFixture::new();
+        fixture
+            .db
+            .store_delegation_tx_hash(ROUND_ID, 0, "account-1-delegation")
+            .unwrap();
+
+        let other_db = state::open_voting_db(fixture.path(), "wallet-recovery-other").unwrap();
+        state::init_voting_round(&other_db, &test_round_params(), None).unwrap();
+        other_db
+            .setup_bundles(ROUND_ID, &[test_note_info(0)])
+            .unwrap();
+        other_db
+            .store_delegation_tx_hash(ROUND_ID, 0, "account-2-delegation")
+            .unwrap();
+
+        let first = get_round_recovery_state(fixture.path(), WALLET_ID, ROUND_ID).unwrap();
+        let second =
+            get_round_recovery_state(fixture.path(), "wallet-recovery-other", ROUND_ID).unwrap();
+
+        assert_eq!(
+            first.delegation_tx_hashes[0].tx_hash,
+            "account-1-delegation"
+        );
+        assert_eq!(
+            second.delegation_tx_hashes[0].tx_hash,
+            "account-2-delegation"
+        );
+    }
+
+    #[test]
     fn store_vote_tx_hash_marks_vote_submitted() {
         let fixture = RecoveryFixture::new();
         fixture.insert_vote(0, 1, 0, b"vote-0-1");
@@ -886,18 +1084,29 @@ mod tests {
         }
 
         fn insert_vote(&self, bundle_index: u32, proposal_id: u32, choice: u32, commitment: &[u8]) {
-            let conn = self.db.conn();
-            zcash_voting::storage::queries::store_vote(
-                &conn,
-                ROUND_ID,
-                WALLET_ID,
-                bundle_index,
-                proposal_id,
-                choice,
-                commitment,
-            )
-            .unwrap();
+            insert_vote(&self.db, bundle_index, proposal_id, choice, commitment);
         }
+    }
+
+    fn insert_vote(
+        db: &zcash_voting::storage::VotingDb,
+        bundle_index: u32,
+        proposal_id: u32,
+        choice: u32,
+        commitment: &[u8],
+    ) {
+        let conn = db.conn();
+        let wallet_id = db.wallet_id();
+        zcash_voting::storage::queries::store_vote(
+            &conn,
+            ROUND_ID,
+            &wallet_id,
+            bundle_index,
+            proposal_id,
+            choice,
+            commitment,
+        )
+        .unwrap();
     }
 
     fn test_round_params() -> zcash_voting::VotingRoundParams {

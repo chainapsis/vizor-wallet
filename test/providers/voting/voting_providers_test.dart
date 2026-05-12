@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -200,6 +201,34 @@ void main() {
     expect(rust.storedVanPositions, ['0:0']);
   });
 
+  test(
+    'delegation submission matches Swift SDK snake case wire shape',
+    () async {
+      final http = FakeVotingHttpClient(responses: votingHttpResponses());
+      final container = _sessionContainer(http: http);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(seedBytes: [1, 2, 3]);
+
+      expect(_postBody(http, '/shielded-vote/v1/delegate-vote'), {
+        'rk': base64Encode([2]),
+        'spend_auth_sig': base64Encode([3]),
+        'sighash': base64Encode([4]),
+        'signed_note_nullifier': base64Encode([5]),
+        'cmx_new': base64Encode([6]),
+        'van_cmx': base64Encode([7]),
+        'gov_nullifiers': [
+          base64Encode([8]),
+        ],
+        'proof': base64Encode([1]),
+        'vote_round_id': base64Encode(List.filled(32, 0xaa)),
+      });
+    },
+  );
+
   test('vote progress is isolated by bundle index', () async {
     final rust = FakeVotingRustApi();
     final recoveryApi = FakeVotingRecoveryApi(
@@ -333,6 +362,82 @@ void main() {
     expect(rust.storedCommitmentBundles, ['0:7:2:{"proposal_id":7}']);
   });
 
+  test(
+    'vote and share submissions match Swift SDK snake case wire shapes',
+    () async {
+      final http = FakeVotingHttpClient(responses: votingHttpResponses());
+      final rust = FakeVotingRustApi(emitCommitments: true);
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 1,
+          delegationTxHashes: [
+            rust_voting.ApiDelegationTxRecovery(
+              bundleIndex: 0,
+              txHash: 'delegation-0',
+            ),
+          ],
+          votes: [vote(bundleIndex: 0, proposalId: 7)],
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(
+            draftVotes: [
+              rust_voting.ApiDraftVote(
+                proposalId: 7,
+                choice: 1,
+                numOptions: 2,
+                vcTreePosition: BigInt.zero,
+                singleShare: false,
+              ),
+            ],
+          );
+
+      expect(_postBody(http, '/shielded-vote/v1/cast-vote'), {
+        'van_nullifier': base64Encode(List.filled(32, 1)),
+        'vote_authority_note_new': base64Encode(List.filled(32, 2)),
+        'vote_commitment': base64Encode(List.filled(32, 3)),
+        'proposal_id': 7,
+        'proof': base64Encode([4]),
+        'vote_round_id': base64Encode(List.filled(32, 0xaa)),
+        'vote_comm_tree_anchor_height': 10,
+        'r_vpk': base64Encode(List.filled(32, 13)),
+        'vote_auth_sig': base64Encode(List.filled(64, 12)),
+      });
+      expect(_postBody(http, '/shielded-vote/v1/shares'), {
+        'vote_round_id': kRoundId,
+        'shares_hash': base64Encode(List.filled(32, 7)),
+        'proposal_id': 7,
+        'vote_decision': 1,
+        'enc_share': {
+          'c1': base64Encode([8]),
+          'c2': base64Encode([9]),
+          'share_index': 0,
+        },
+        'share_index': 0,
+        'tree_position': 2,
+        'all_enc_shares': [
+          {
+            'c1': base64Encode([8]),
+            'c2': base64Encode([9]),
+            'share_index': 0,
+          },
+        ],
+        'share_comms': [base64Encode(List.filled(32, 10))],
+        'primary_blind': base64Encode(List.filled(32, 11)),
+        'submit_at': 0,
+      });
+    },
+  );
+
   test('accepted unconfirmed shares do not keep status flow pending', () async {
     final acceptedShare = rust_voting.ApiShareDelegationRecord(
       roundId: kRoundId,
@@ -460,63 +565,20 @@ ProviderContainer _container({required VotingHttpClient http}) {
 }
 
 ProviderContainer _sessionContainer({
+  FakeVotingHttpClient? http,
   FakeVotingRustApi? rust,
   FakeVotingRecoveryApi? recoveryApi,
   PirSnapshotResolver? pirResolver,
   VotingHotkeyStore hotkeyStore = const FakeVotingHotkeyStore([9, 9, 9]),
 }) {
-  final http = FakeVotingHttpClient(
-    responses: {
-      'https://voting.example/static-voting-config.json': staticConfigJson(),
-      'https://voting.example/dynamic-voting-config.json': dynamicConfigJson(),
-      '/shielded-vote/v1/round/$kRoundId': {
-        'round': roundStatusJson(roundId: kRoundId),
-      },
-      '/shielded-vote/v1/delegate-vote': {
-        'tx_hash': 'delegation-tx',
-        'code': 0,
-        'log': '',
-      },
-      '/shielded-vote/v1/tx/delegation-tx': {
-        'height': 10,
-        'code': 0,
-        'log': '',
-        'events': [
-          {
-            'type': 'delegate_vote',
-            'attributes': [
-              {'key': 'leaf_index', 'value': '0'},
-            ],
-          },
-        ],
-      },
-      '/shielded-vote/v1/cast-vote': {
-        'tx_hash': 'vote-tx',
-        'code': 0,
-        'log': '',
-      },
-      '/shielded-vote/v1/tx/vote-tx': {
-        'height': 11,
-        'code': 0,
-        'log': '',
-        'events': [
-          {
-            'type': 'cast_vote',
-            'attributes': [
-              {'key': 'leaf_index', 'value': '1,2'},
-            ],
-          },
-        ],
-      },
-      '/shielded-vote/v1/share-status/$kRoundId/0102': {'status': 'confirmed'},
-    },
-  );
+  final effectiveHttp =
+      http ?? FakeVotingHttpClient(responses: votingHttpResponses());
   return ProviderContainer(
     overrides: [
-      votingHttpClientProvider.overrideWithValue(http),
+      votingHttpClientProvider.overrideWithValue(effectiveHttp),
       votingConfigLoaderProvider.overrideWithValue(
         VotingConfigLoader(
-          httpClient: http,
+          httpClient: effectiveHttp,
           staticConfigSource: StaticVotingConfigSource.parse(
             'https://voting.example/static-voting-config.json',
           ),
@@ -557,6 +619,54 @@ ProviderContainer _sessionContainer({
     ],
   );
 }
+
+Map<String, dynamic> _postBody(FakeVotingHttpClient http, String path) {
+  final request = http.requests.singleWhere(
+    (request) => request.method == 'POST' && request.uri.path == path,
+  );
+  return request.body!;
+}
+
+Map<String, Object> votingHttpResponses() => {
+  'https://voting.example/static-voting-config.json': staticConfigJson(),
+  'https://voting.example/dynamic-voting-config.json': dynamicConfigJson(),
+  '/shielded-vote/v1/round/$kRoundId': {
+    'round': roundStatusJson(roundId: kRoundId),
+  },
+  '/shielded-vote/v1/delegate-vote': {
+    'tx_hash': 'delegation-tx',
+    'code': 0,
+    'log': '',
+  },
+  '/shielded-vote/v1/tx/delegation-tx': {
+    'height': 10,
+    'code': 0,
+    'log': '',
+    'events': [
+      {
+        'type': 'delegate_vote',
+        'attributes': [
+          {'key': 'leaf_index', 'value': '0'},
+        ],
+      },
+    ],
+  },
+  '/shielded-vote/v1/cast-vote': {'tx_hash': 'vote-tx', 'code': 0, 'log': ''},
+  '/shielded-vote/v1/tx/vote-tx': {
+    'height': 11,
+    'code': 0,
+    'log': '',
+    'events': [
+      {
+        'type': 'cast_vote',
+        'attributes': [
+          {'key': 'leaf_index', 'value': '1,2'},
+        ],
+      },
+    ],
+  },
+  '/shielded-vote/v1/share-status/$kRoundId/0102': {'status': 'confirmed'},
+};
 
 const kRoundId =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
