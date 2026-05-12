@@ -29,6 +29,7 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(votingRoundsProvider.notifier).startPolling();
+      _preSyncLoadedRounds();
     });
   }
 
@@ -109,6 +110,23 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
                 .where((round) => shouldPreSyncVotingTree(round.status))
                 .map((round) => round.roundId),
           ),
+    );
+  }
+
+  void _preSyncLoadedRounds() {
+    unawaited(
+      ref
+          .read(votingRoundsProvider.future)
+          .then((rounds) {
+            if (!mounted) return;
+            _preSyncVisibleRoundTrees(rounds);
+          })
+          .catchError((Object error) {
+            debugPrint(
+              '[zcash] Voting: vote tree pre-sync skipped '
+              'reason=rounds-load-failed error=$error',
+            );
+          }),
     );
   }
 }

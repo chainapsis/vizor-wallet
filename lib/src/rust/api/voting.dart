@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `catch`, `selection_result`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Derive the opaque per-account, per-round voting hotkey bytes.
 ///
@@ -88,6 +88,34 @@ Future<ApiVotingBundleSetupResult> setupDelegationBundles({
   roundName: roundName,
   sessionJson: sessionJson,
   accountUuid: accountUuid,
+);
+
+/// Build delegation PCZT material and prefetch/cache PIR-backed IMT proofs.
+///
+/// This is a background warm-up path. The normal proof path still fetches any
+/// missing PIR proofs if this was not run or did not complete in time.
+Future<ApiDelegationPirPrecomputeResult> precomputeDelegationPir({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String pirServerUrl,
+  required String network,
+  required ApiVotingRoundParams roundParams,
+  required String roundName,
+  String? sessionJson,
+  required String accountUuid,
+  required List<int> seedBytes,
+  required int bundleIndex,
+}) => RustLib.instance.api.crateApiVotingPrecomputeDelegationPir(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  pirServerUrl: pirServerUrl,
+  network: network,
+  roundParams: roundParams,
+  roundName: roundName,
+  sessionJson: sessionJson,
+  accountUuid: accountUuid,
+  seedBytes: seedBytes,
+  bundleIndex: bundleIndex,
 );
 
 /// Build, prove, sign, broadcast, and locally store one delegation bundle.
@@ -536,6 +564,38 @@ class ApiCommitmentBundleRecovery {
           proposalId == other.proposalId &&
           commitmentBundleJson == other.commitmentBundleJson &&
           vcTreePosition == other.vcTreePosition;
+}
+
+/// Summary of delegation PIR proof precomputation for one bundle.
+class ApiDelegationPirPrecomputeResult {
+  final int cachedCount;
+  final int fetchedCount;
+  final int bundleCount;
+  final int bundleIndex;
+
+  const ApiDelegationPirPrecomputeResult({
+    required this.cachedCount,
+    required this.fetchedCount,
+    required this.bundleCount,
+    required this.bundleIndex,
+  });
+
+  @override
+  int get hashCode =>
+      cachedCount.hashCode ^
+      fetchedCount.hashCode ^
+      bundleCount.hashCode ^
+      bundleIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDelegationPirPrecomputeResult &&
+          runtimeType == other.runtimeType &&
+          cachedCount == other.cachedCount &&
+          fetchedCount == other.fetchedCount &&
+          bundleCount == other.bundleCount &&
+          bundleIndex == other.bundleIndex;
 }
 
 /// Progress event emitted while building, proving, signing, and broadcasting delegation PCZT.

@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
+};
 
 use incrementalmerkletree::Position;
 use prost::Message;
@@ -59,6 +62,32 @@ pub struct BundleSetupResult {
     pub eligible_weight_zatoshi: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DelegationPirPrecomputeResult {
+    pub cached_count: u32,
+    pub fetched_count: u32,
+    pub bundle_count: u32,
+    pub bundle_index: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct PreparedDelegationKey {
+    db_path: String,
+    account_uuid: String,
+    round_id: String,
+    bundle_index: u32,
+    hotkey_raw_address: Vec<u8>,
+}
+
+static PREPARED_DELEGATION_PCZTS: OnceLock<
+    Mutex<HashMap<PreparedDelegationKey, zcash_voting::GovernancePczt>>,
+> = OnceLock::new();
+
+fn prepared_pczt_cache(
+) -> &'static Mutex<HashMap<PreparedDelegationKey, zcash_voting::GovernancePczt>> {
+    PREPARED_DELEGATION_PCZTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 #[derive(Clone, Debug)]
 struct RoundContext {
     snapshot_height: u64,
@@ -103,6 +132,127 @@ pub async fn setup_delegation_bundles(
     .await?;
     let note_infos = selected.voting_note_infos();
     ensure_bundles(&voting_db, round_params.vote_round_id.as_str(), &note_infos)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn precompute_delegation_pir(
+    db_path: &str,
+    lightwalletd_url: &str,
+    pir_server_url: &str,
+    network: WalletNetwork,
+    round_params: zcash_voting::VotingRoundParams,
+    round_name: &str,
+    session_json: Option<&str>,
+    account_uuid: &str,
+    seed_bytes: &[u8],
+    bundle_index: u32,
+) -> Result<DelegationPirPrecomputeResult, String> {
+    let started = std::time::Instant::now();
+    let seed = SecretVec::new(seed_bytes.to_vec());
+    let voting_db = open_voting_db(db_path, account_uuid)?;
+    let round_context =
+        ensure_round_initialized(&voting_db, &round_params, round_name, session_json)?;
+    let round_id = round_params.vote_round_id.clone();
+
+    let selected = select_notes_with_lwd(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        round_context.snapshot_height,
+    )
+    .await?;
+    let note_infos = selected.voting_note_infos();
+    let bundle_setup = ensure_bundles(&voting_db, &round_id, &note_infos)?;
+    if bundle_setup.bundle_count == 0 {
+        return Err("No eligible voting bundles were created for PIR precompute".to_string());
+    }
+    validate_bundle_index(bundle_setup.bundle_count, bundle_index)?;
+    let bundle_note_infos = bundle_notes(&note_infos, bundle_index)?;
+
+    store_and_generate_witnesses(
+        db_path,
+        network,
+        &voting_db,
+        &round_id,
+        bundle_index,
+        &selected,
+        &bundle_note_infos,
+    )?;
+
+    let account = load_account_for_delegation(db_path, network, account_uuid)?;
+    let hotkey_raw_address =
+        derive_hotkey_raw_orchard_address(&seed, &round_id, account_uuid, network)?;
+    let branch_height = current_chain_height(lightwalletd_url).await?;
+    let branch_id = consensus_branch_id(network, branch_height)?;
+    let governance_pczt = build_paired_governance_pczt(
+        &voting_db,
+        &round_id,
+        account_uuid,
+        bundle_index,
+        &bundle_note_infos,
+        &account,
+        &hotkey_raw_address,
+        branch_id,
+        network,
+        &round_context.round_name,
+    )?;
+
+    let prepared_key = PreparedDelegationKey {
+        db_path: db_path.to_string(),
+        account_uuid: account_uuid.to_string(),
+        round_id: round_id.clone(),
+        bundle_index,
+        hotkey_raw_address: hotkey_raw_address.clone(),
+    };
+    prepared_pczt_cache()
+        .lock()
+        .map_err(|e| format!("prepared delegation PCZT cache lock poisoned: {e}"))?
+        .insert(prepared_key, governance_pczt);
+
+    let proof_db_path = db_path.to_string();
+    let proof_account_uuid = account_uuid.to_string();
+    let proof_round_id = round_id.clone();
+    let proof_bundle_note_infos = bundle_note_infos.clone();
+    let proof_pir_server_url = pir_server_url.to_string();
+    let proof_network_id = network.voting_id().into();
+    let precompute = tokio::task::spawn_blocking(move || {
+        let proof_voting_db = open_voting_db(&proof_db_path, &proof_account_uuid)?;
+        let pir_client = zcash_voting::PirClientBlocking::with_transport(
+            &proof_pir_server_url,
+            Arc::new(zcash_voting::HyperTransport::new()),
+        )
+        .map_err(|e| format!("connect to PIR server failed: {e}"))?;
+        proof_voting_db
+            .precompute_delegation_pir(
+                &proof_round_id,
+                bundle_index,
+                &proof_bundle_note_infos,
+                &pir_client,
+                proof_network_id,
+            )
+            .map_err(|e| format!("precompute_delegation_pir failed: {e}"))
+    })
+    .await
+    .map_err(|e| format!("delegation PIR precompute task failed: {e}"))??;
+
+    log::info!(
+        "voting delegation: PIR precompute completed \
+         (round_id={}, account_uuid={}, bundle_index={}, cached={}, fetched={}, elapsed={:.2}s)",
+        round_id,
+        account_uuid,
+        bundle_index,
+        precompute.cached_count,
+        precompute.fetched_count,
+        started.elapsed().as_secs_f64()
+    );
+
+    Ok(DelegationPirPrecomputeResult {
+        cached_count: precompute.cached_count,
+        fetched_count: precompute.fetched_count,
+        bundle_count: bundle_setup.bundle_count,
+        bundle_index,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -201,51 +351,39 @@ where
         branch_height,
         branch_id
     );
-    let governance_pczt = {
-        let mut last_unpaired = None;
-        let mut paired = None;
-        for attempt in 1..=16 {
-            let candidate = voting_db
-                .build_governance_pczt(
-                    &round_id,
-                    bundle_index,
-                    &bundle_note_infos,
-                    &account.orchard_fvk_bytes,
-                    &hotkey_raw_address,
-                    branch_id,
-                    network.network_type().coin_type(),
-                    &account.seed_fingerprint,
-                    account.account_index,
-                    &round_context.round_name,
-                    0,
-                )
-                .map_err(|e| format!("build_governance_pczt failed: {e}"))?;
-            if governance_pczt_output_paired_with_signed_action(&candidate)? {
-                if attempt > 1 {
-                    log::info!(
-                        "voting delegation: rebuilt governance PCZT after unpaired action layout \
-                         (round_id={}, account_uuid={}, bundle_index={}, attempts={})",
-                        round_id,
-                        account_uuid,
-                        bundle_index,
-                        attempt
-                    );
-                }
-                paired = Some(candidate);
-                break;
-            }
-            last_unpaired = Some(candidate);
-        }
-        paired.ok_or_else(|| {
-            let action_index = last_unpaired
-                .as_ref()
-                .map(|pczt| pczt.action_index.to_string())
-                .unwrap_or_else(|| "unknown".to_string());
-            format!(
-                "build_governance_pczt produced unpaired governance output after 16 attempts \
-                 (last action_index={action_index})"
-            )
-        })?
+    let prepared_key = PreparedDelegationKey {
+        db_path: db_path.to_string(),
+        account_uuid: account_uuid.to_string(),
+        round_id: round_id.clone(),
+        bundle_index,
+        hotkey_raw_address: hotkey_raw_address.clone(),
+    };
+    let prepared_governance_pczt = prepared_pczt_cache()
+        .lock()
+        .map_err(|e| format!("prepared delegation PCZT cache lock poisoned: {e}"))?
+        .remove(&prepared_key);
+    let governance_pczt = if let Some(governance_pczt) = prepared_governance_pczt {
+        log::info!(
+            "voting delegation: using precomputed governance PCZT \
+             (round_id={}, account_uuid={}, bundle_index={})",
+            round_id,
+            account_uuid,
+            bundle_index
+        );
+        governance_pczt
+    } else {
+        build_paired_governance_pczt(
+            &voting_db,
+            &round_id,
+            account_uuid,
+            bundle_index,
+            &bundle_note_infos,
+            &account,
+            &hotkey_raw_address,
+            branch_id,
+            network,
+            &round_context.round_name,
+        )?
     };
     log::info!(
         "voting delegation: built governance PCZT \
@@ -444,6 +582,62 @@ fn governance_pczt_output_paired_with_signed_action(
         })?;
 
     Ok(action.output().cmx().as_slice() == governance_pczt.cmx_new.as_slice())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_paired_governance_pczt(
+    voting_db: &zcash_voting::storage::VotingDb,
+    round_id: &str,
+    account_uuid: &str,
+    bundle_index: u32,
+    bundle_note_infos: &[zcash_voting::NoteInfo],
+    account: &DelegationAccount,
+    hotkey_raw_address: &[u8],
+    branch_id: u32,
+    network: WalletNetwork,
+    round_name: &str,
+) -> Result<zcash_voting::GovernancePczt, String> {
+    let mut last_unpaired = None;
+    for attempt in 1..=16 {
+        let candidate = voting_db
+            .build_governance_pczt(
+                round_id,
+                bundle_index,
+                bundle_note_infos,
+                &account.orchard_fvk_bytes,
+                hotkey_raw_address,
+                branch_id,
+                network.network_type().coin_type(),
+                &account.seed_fingerprint,
+                account.account_index,
+                round_name,
+                0,
+            )
+            .map_err(|e| format!("build_governance_pczt failed: {e}"))?;
+        if governance_pczt_output_paired_with_signed_action(&candidate)? {
+            if attempt > 1 {
+                log::info!(
+                    "voting delegation: rebuilt governance PCZT after unpaired action layout \
+                     (round_id={}, account_uuid={}, bundle_index={}, attempts={})",
+                    round_id,
+                    account_uuid,
+                    bundle_index,
+                    attempt
+                );
+            }
+            return Ok(candidate);
+        }
+        last_unpaired = Some(candidate);
+    }
+
+    let action_index = last_unpaired
+        .as_ref()
+        .map(|pczt| pczt.action_index.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    Err(format!(
+        "build_governance_pczt produced unpaired governance output after 16 attempts \
+         (last action_index={action_index})"
+    ))
 }
 
 /// Return the stored bundle count for `round_id`.

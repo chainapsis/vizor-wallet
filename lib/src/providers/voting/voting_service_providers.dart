@@ -168,6 +168,19 @@ abstract interface class VotingRustApi {
     required String accountUuid,
   });
 
+  Future<rust_voting.ApiDelegationPirPrecomputeResult> precomputeDelegationPir({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String pirServerUrl,
+    required String network,
+    required rust_voting.ApiVotingRoundParams roundParams,
+    required String roundName,
+    String? sessionJson,
+    required String accountUuid,
+    required List<int> seedBytes,
+    required int bundleIndex,
+  });
+
   Stream<rust_voting.ApiDelegationProofEvent>
   buildAndProveDelegationBundleWithProgress({
     required String dbPath,
@@ -299,6 +312,33 @@ class FrbVotingRustApi implements VotingRustApi {
       roundName: roundName,
       sessionJson: sessionJson,
       accountUuid: accountUuid,
+    );
+  }
+
+  @override
+  Future<rust_voting.ApiDelegationPirPrecomputeResult> precomputeDelegationPir({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String pirServerUrl,
+    required String network,
+    required rust_voting.ApiVotingRoundParams roundParams,
+    required String roundName,
+    String? sessionJson,
+    required String accountUuid,
+    required List<int> seedBytes,
+    required int bundleIndex,
+  }) {
+    return rust_voting.precomputeDelegationPir(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      pirServerUrl: pirServerUrl,
+      network: network,
+      roundParams: roundParams,
+      roundName: roundName,
+      sessionJson: sessionJson,
+      accountUuid: accountUuid,
+      seedBytes: seedBytes,
+      bundleIndex: bundleIndex,
     );
   }
 

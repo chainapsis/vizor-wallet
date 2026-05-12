@@ -61,6 +61,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiDelegationPirPrecomputeResult
+  dco_decode_api_delegation_pir_precompute_result(dynamic raw);
+
+  @protected
   ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw);
 
   @protected
@@ -389,6 +393,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiCommitmentBundleRecovery sse_decode_api_commitment_bundle_recovery(
     SseDeserializer deserializer,
   );
+
+  @protected
+  ApiDelegationPirPrecomputeResult
+  sse_decode_api_delegation_pir_precompute_result(SseDeserializer deserializer);
 
   @protected
   ApiDelegationProofEvent sse_decode_api_delegation_proof_event(
@@ -806,6 +814,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_commitment_bundle_recovery(
     ApiCommitmentBundleRecovery self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_delegation_pir_precompute_result(
+    ApiDelegationPirPrecomputeResult self,
     SseSerializer serializer,
   );
 

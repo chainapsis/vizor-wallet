@@ -5,7 +5,9 @@ use crate::wallet::{
     keys,
     voting::{
         bundle::{self, SelectedNotes},
-        delegation::{self, BundleSetupResult, ProofEvent, SignedDelegation},
+        delegation::{
+            self, BundleSetupResult, DelegationPirPrecomputeResult, ProofEvent, SignedDelegation,
+        },
         hotkey, recovery, state, tree_sync, vote,
     },
 };
@@ -48,6 +50,15 @@ pub struct ApiVotingNoteSelectionResult {
 pub struct ApiVotingBundleSetupResult {
     pub bundle_count: u32,
     pub eligible_weight_zatoshi: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Summary of delegation PIR proof precomputation for one bundle.
+pub struct ApiDelegationPirPrecomputeResult {
+    pub cached_count: u32,
+    pub fetched_count: u32,
+    pub bundle_count: u32,
+    pub bundle_index: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -278,6 +289,17 @@ impl From<BundleSetupResult> for ApiVotingBundleSetupResult {
         Self {
             bundle_count: result.bundle_count,
             eligible_weight_zatoshi: result.eligible_weight_zatoshi,
+        }
+    }
+}
+
+impl From<DelegationPirPrecomputeResult> for ApiDelegationPirPrecomputeResult {
+    fn from(result: DelegationPirPrecomputeResult) -> Self {
+        Self {
+            cached_count: result.cached_count,
+            fetched_count: result.fetched_count,
+            bundle_count: result.bundle_count,
+            bundle_index: result.bundle_index,
         }
     }
 }
@@ -682,6 +704,40 @@ pub async fn setup_delegation_bundles(
         &round_name,
         session_json.as_deref(),
         &account_uuid,
+    )
+    .await
+    .map(Into::into)
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Build delegation PCZT material and prefetch/cache PIR-backed IMT proofs.
+///
+/// This is a background warm-up path. The normal proof path still fetches any
+/// missing PIR proofs if this was not run or did not complete in time.
+pub async fn precompute_delegation_pir(
+    db_path: String,
+    lightwalletd_url: String,
+    pir_server_url: String,
+    network: String,
+    round_params: ApiVotingRoundParams,
+    round_name: String,
+    session_json: Option<String>,
+    account_uuid: String,
+    seed_bytes: Vec<u8>,
+    bundle_index: u32,
+) -> Result<ApiDelegationPirPrecomputeResult, String> {
+    let network = keys::parse_network(&network)?;
+    delegation::precompute_delegation_pir(
+        &db_path,
+        &lightwalletd_url,
+        &pir_server_url,
+        network,
+        round_params.into(),
+        &round_name,
+        session_json.as_deref(),
+        &account_uuid,
+        &seed_bytes,
+        bundle_index,
     )
     .await
     .map(Into::into)

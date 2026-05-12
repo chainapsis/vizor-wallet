@@ -24,6 +24,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> _operation = Future.value();
   final String _roundId;
+  final Map<String, Future<void>> _delegationPirPrecomputes = {};
 
   @override
   Future<VotingSessionState> build() async {
@@ -39,6 +40,37 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> prepareDelegation() {
     return _enqueue(_prepareDelegationUnlocked);
+  }
+
+  Future<void> precomputeDelegationPir({required List<int> seedBytes}) async {
+    final context = await _loadContext(_roundId);
+    final pirEndpoint = await _resolvePirEndpoint(context);
+    if (pirEndpoint == null) return;
+
+    final rust = ref.read(votingRustApiProvider);
+    final bundleSetup = await rust.setupDelegationBundles(
+      dbPath: context.dbPath,
+      lightwalletdUrl: context.lightwalletdUrl,
+      network: context.network,
+      roundParams: context.round.toRoundParams(),
+      roundName: context.round.title,
+      sessionJson: context.round.sessionJson,
+      accountUuid: context.accountUuid,
+    );
+    final plan = await _loadResumePlan(context);
+    final pendingBundles = plan.pendingDelegationBundleIndexes.isNotEmpty
+        ? plan.pendingDelegationBundleIndexes
+        : [for (var i = 0; i < bundleSetup.bundleCount; i++) i];
+
+    for (final bundleIndex in pendingBundles) {
+      final key = _delegationPirPrecomputeKey(context, bundleIndex);
+      _delegationPirPrecomputes[key] ??= _runDelegationPirPrecompute(
+        context: context,
+        pirEndpoint: pirEndpoint,
+        seedBytes: seedBytes,
+        bundleIndex: bundleIndex,
+      );
+    }
   }
 
   Future<void> delegatePendingBundles({required List<int> seedBytes}) {
@@ -66,6 +98,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final api = ref.read(votingApiClientProvider(context.config.apiBaseUrl));
       final rust = ref.read(votingRustApiProvider);
       for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
+        await _awaitDelegationPirPrecomputeIfRunning(context, bundleIndex);
         final bundleTimer = Stopwatch()..start();
         debugPrint(
           '[zcash] Voting: delegation bundle start '
@@ -249,58 +282,56 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'proposals=${draftVotes.length}',
       );
       for (final bundleIndex in pendingBundles) {
-        if (draftVotes.isEmpty) continue;
-        state = AsyncData(
-          (state.value ?? current).copyWith(
-            phase: VotingSessionPhase.syncingVoteTree,
-            currentBundleIndex: bundleIndex,
-          ),
-        );
-        debugPrint(
-          '[zcash] Voting: vote tree sync start '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'proposals=${draftVotes.length}',
-        );
-        final syncTimer = Stopwatch()..start();
-        final anchorHeight = await ref
-            .read(votingRustApiProvider)
-            .syncVoteTree(
-              dbPath: context.dbPath,
-              walletId: context.accountUuid,
-              roundId: context.round.roundId,
-              nodeUrl: context.config.apiBaseUrl.toString(),
-            );
-        debugPrint(
-          '[zcash] Voting: vote tree sync completed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'proposals=${draftVotes.length} anchorHeight=$anchorHeight '
-          'elapsed=${_formatElapsed(syncTimer.elapsed)}',
-        );
-
-        final witnessTimer = Stopwatch()..start();
-        debugPrint(
-          '[zcash] Voting: VAN witness generation start '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'anchorHeight=$anchorHeight',
-        );
-        final witness = await ref
-            .read(votingRustApiProvider)
-            .generateVanWitness(
-              dbPath: context.dbPath,
-              walletId: context.accountUuid,
-              roundId: context.round.roundId,
-              bundleIndex: bundleIndex,
-              anchorHeight: anchorHeight,
-            );
-        debugPrint(
-          '[zcash] Voting: VAN witness generation completed '
-          'round=${context.round.roundId} bundle=$bundleIndex '
-          'position=${witness.position} '
-          'elapsed=${_formatElapsed(witnessTimer.elapsed)}',
-        );
-
         for (final draftVote in draftVotes) {
           final voteTimer = Stopwatch()..start();
+          state = AsyncData(
+            (state.value ?? current).copyWith(
+              phase: VotingSessionPhase.syncingVoteTree,
+              currentBundleIndex: bundleIndex,
+            ),
+          );
+          debugPrint(
+            '[zcash] Voting: vote tree sync start '
+            'round=${context.round.roundId} bundle=$bundleIndex '
+            'proposal=${draftVote.proposalId}',
+          );
+          final syncTimer = Stopwatch()..start();
+          final anchorHeight = await ref
+              .read(votingRustApiProvider)
+              .syncVoteTree(
+                dbPath: context.dbPath,
+                walletId: context.accountUuid,
+                roundId: context.round.roundId,
+                nodeUrl: context.config.apiBaseUrl.toString(),
+              );
+          debugPrint(
+            '[zcash] Voting: vote tree sync completed '
+            'round=${context.round.roundId} bundle=$bundleIndex '
+            'proposal=${draftVote.proposalId} anchorHeight=$anchorHeight '
+            'elapsed=${_formatElapsed(syncTimer.elapsed)}',
+          );
+
+          final witnessTimer = Stopwatch()..start();
+          debugPrint(
+            '[zcash] Voting: VAN witness generation start '
+            'round=${context.round.roundId} bundle=$bundleIndex '
+            'proposal=${draftVote.proposalId} anchorHeight=$anchorHeight',
+          );
+          final witness = await ref
+              .read(votingRustApiProvider)
+              .generateVanWitness(
+                dbPath: context.dbPath,
+                walletId: context.accountUuid,
+                roundId: context.round.roundId,
+                bundleIndex: bundleIndex,
+                anchorHeight: anchorHeight,
+              );
+          debugPrint(
+            '[zcash] Voting: VAN witness generation completed '
+            'round=${context.round.roundId} bundle=$bundleIndex '
+            'proposal=${draftVote.proposalId} position=${witness.position} '
+            'elapsed=${_formatElapsed(witnessTimer.elapsed)}',
+          );
           state = AsyncData(
             (state.value ?? current).copyWith(
               phase: VotingSessionPhase.castingVotes,
@@ -646,6 +677,96 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
     });
+  }
+
+  Future<Uri?> _resolvePirEndpoint(_VotingSessionContext context) async {
+    final currentEndpoint = state.value?.pirEndpoint;
+    if (currentEndpoint != null) return currentEndpoint;
+
+    try {
+      final resolution = await ref
+          .read(votingPirResolverProvider)
+          .resolve(
+            endpoints: context.config.pirEndpointUrls,
+            expectedSnapshotHeight: context.round.snapshotHeight,
+          );
+      return resolution.endpoint;
+    } catch (e) {
+      debugPrint(
+        '[zcash] Voting: delegation PIR precompute skipped '
+        'round=${context.round.roundId} reason=pir-resolution-failed error=$e',
+      );
+      return null;
+    }
+  }
+
+  Future<void> _runDelegationPirPrecompute({
+    required _VotingSessionContext context,
+    required Uri pirEndpoint,
+    required List<int> seedBytes,
+    required int bundleIndex,
+  }) async {
+    final key = _delegationPirPrecomputeKey(context, bundleIndex);
+    final timer = Stopwatch()..start();
+    debugPrint(
+      '[zcash] Voting: delegation PIR precompute start '
+      'round=${context.round.roundId} bundle=$bundleIndex',
+    );
+    try {
+      final result = await ref
+          .read(votingRustApiProvider)
+          .precomputeDelegationPir(
+            dbPath: context.dbPath,
+            lightwalletdUrl: context.lightwalletdUrl,
+            pirServerUrl: pirEndpoint.toString(),
+            network: context.network,
+            roundParams: context.round.toRoundParams(),
+            roundName: context.round.title,
+            sessionJson: context.round.sessionJson,
+            accountUuid: context.accountUuid,
+            seedBytes: seedBytes,
+            bundleIndex: bundleIndex,
+          );
+      debugPrint(
+        '[zcash] Voting: delegation PIR precompute completed '
+        'round=${context.round.roundId} bundle=$bundleIndex '
+        'cached=${result.cachedCount} fetched=${result.fetchedCount} '
+        'elapsed=${_formatElapsed(timer.elapsed)}',
+      );
+    } catch (e) {
+      debugPrint(
+        '[zcash] Voting: delegation PIR precompute failed '
+        'round=${context.round.roundId} bundle=$bundleIndex '
+        'elapsed=${_formatElapsed(timer.elapsed)} error=$e',
+      );
+    } finally {
+      _delegationPirPrecomputes.remove(key);
+    }
+  }
+
+  Future<void> _awaitDelegationPirPrecomputeIfRunning(
+    _VotingSessionContext context,
+    int bundleIndex,
+  ) async {
+    final precompute =
+        _delegationPirPrecomputes[_delegationPirPrecomputeKey(
+          context,
+          bundleIndex,
+        )];
+    if (precompute == null) return;
+
+    debugPrint(
+      '[zcash] Voting: waiting for in-flight delegation PIR precompute '
+      'round=${context.round.roundId} bundle=$bundleIndex',
+    );
+    await precompute;
+  }
+
+  static String _delegationPirPrecomputeKey(
+    _VotingSessionContext context,
+    int bundleIndex,
+  ) {
+    return '${context.dbPath}|${context.accountUuid}|${context.round.roundId}|$bundleIndex';
   }
 
   Future<void> _enqueue(Future<void> Function() action) {

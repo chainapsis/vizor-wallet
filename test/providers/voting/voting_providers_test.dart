@@ -233,39 +233,36 @@ void main() {
     expect(rust.syncedVoteTrees, [kRoundId]);
   });
 
-  test(
-    'vote tree sync runs once per bundle across multiple proposals',
-    () async {
-      final rust = FakeVotingRustApi();
-      final container = _sessionContainer(rust: rust);
-      addTearDown(container.dispose);
+  test('vote tree sync runs before each proposal', () async {
+    final rust = FakeVotingRustApi();
+    final container = _sessionContainer(rust: rust);
+    addTearDown(container.dispose);
 
-      await container.read(votingSessionProvider(kRoundId).future);
-      await container
-          .read(votingSessionProvider(kRoundId).notifier)
-          .castVotes(
-            draftVotes: [
-              rust_voting.ApiDraftVote(
-                proposalId: 7,
-                choice: 1,
-                numOptions: 2,
-                vcTreePosition: BigInt.zero,
-                singleShare: false,
-              ),
-              rust_voting.ApiDraftVote(
-                proposalId: 8,
-                choice: 0,
-                numOptions: 2,
-                vcTreePosition: BigInt.one,
-                singleShare: false,
-              ),
-            ],
-          );
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(
+          draftVotes: [
+            rust_voting.ApiDraftVote(
+              proposalId: 7,
+              choice: 1,
+              numOptions: 2,
+              vcTreePosition: BigInt.zero,
+              singleShare: false,
+            ),
+            rust_voting.ApiDraftVote(
+              proposalId: 8,
+              choice: 0,
+              numOptions: 2,
+              vcTreePosition: BigInt.one,
+              singleShare: false,
+            ),
+          ],
+        );
 
-      expect(rust.syncedVoteTrees, [kRoundId]);
-      expect(rust.voteCommitBundleCalls, [0, 0]);
-    },
-  );
+    expect(rust.syncedVoteTrees, [kRoundId, kRoundId]);
+    expect(rust.voteCommitBundleCalls, [0, 0]);
+  });
 
   test('vote commitments submit shares and record recovery rows', () async {
     final rust = FakeVotingRustApi(emitCommitments: true);
@@ -687,6 +684,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final storedVanPositions = <String>[];
   final recordedShares = <_RecordedShare>[];
   final syncedVoteTrees = <String>[];
+  final precomputedDelegationPir = <int>[];
 
   @override
   Future<rust_voting.ApiVotingBundleSetupResult> setupDelegationBundles({
@@ -752,6 +750,28 @@ class FakeVotingRustApi implements VotingRustApi {
         bundleCount: 1,
         bundleIndex: bundleIndex,
       ),
+    );
+  }
+
+  @override
+  Future<rust_voting.ApiDelegationPirPrecomputeResult> precomputeDelegationPir({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String pirServerUrl,
+    required String network,
+    required rust_voting.ApiVotingRoundParams roundParams,
+    required String roundName,
+    String? sessionJson,
+    required String accountUuid,
+    required List<int> seedBytes,
+    required int bundleIndex,
+  }) async {
+    precomputedDelegationPir.add(bundleIndex);
+    return rust_voting.ApiDelegationPirPrecomputeResult(
+      cachedCount: 0,
+      fetchedCount: 1,
+      bundleCount: 1,
+      bundleIndex: bundleIndex,
     );
   }
 
