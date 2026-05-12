@@ -4,6 +4,11 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.5.10
+
+## Changed
+- Bumped `zcash_voting` to `0.5.10` and updated `voting-circuits` to `0.4.2`.
+
 # 0.5.9
 
 ## Added

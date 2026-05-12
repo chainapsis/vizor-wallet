@@ -21,4 +21,4 @@ libc = "0.2"
 [dev-dependencies]
 rand = "0.8"
 orchard = { version = "=0.13.1", features = ["unstable-voting-circuits"] }
-voting-circuits = "0.4.0"
+voting-circuits = "0.4.2"
