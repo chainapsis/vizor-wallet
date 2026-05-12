@@ -235,41 +235,53 @@ class _SettingsPane extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 752),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Settings',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.displaySmall.copyWith(
-                          color: colors.text.accent,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 752),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Settings',
+                                textAlign: TextAlign.center,
+                                style: AppTypography.displaySmall.copyWith(
+                                  color: colors.text.accent,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              const AppDecorativeDivider(width: 256),
+                              const SizedBox(height: AppSpacing.sm),
+                              _SettingsList(
+                                accountName: accountName,
+                                profilePictureLabel: profilePictureLabel,
+                                activeAccountIsHardware:
+                                    activeAccountIsHardware,
+                                endpointLabel: endpointLabel,
+                                themeLabel: themeLabel,
+                                updateLabel: updateLabel,
+                                onSeedPhrase: onSeedPhrase,
+                                onChangePassword: onChangePassword,
+                                onEndpoint: onEndpoint,
+                                onVoting: onVoting,
+                                onAccountName: onAccountName,
+                                onProfilePicture: onProfilePicture,
+                                onTheme: onTheme,
+                                onUpdates: onUpdates,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      const AppDecorativeDivider(width: 256),
-                      const SizedBox(height: AppSpacing.sm),
-                      _SettingsList(
-                        accountName: accountName,
-                        profilePictureLabel: profilePictureLabel,
-                        activeAccountIsHardware: activeAccountIsHardware,
-                        endpointLabel: endpointLabel,
-                        themeLabel: themeLabel,
-                        updateLabel: updateLabel,
-                        onSeedPhrase: onSeedPhrase,
-                        onChangePassword: onChangePassword,
-                        onEndpoint: onEndpoint,
-                        onVoting: onVoting,
-                        onAccountName: onAccountName,
-                        onProfilePicture: onProfilePicture,
-                        onTheme: onTheme,
-                        onUpdates: onUpdates,
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -351,7 +363,7 @@ class _SettingsList extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.s),
         _SettingsBlock(
-          title: 'Governance',
+          title: 'Extras',
           rows: [
             _SettingsRow(
               iconName: AppIcons.scroll,

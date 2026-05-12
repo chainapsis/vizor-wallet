@@ -42,10 +42,7 @@ void main() {
     final status = await client.getRoundStatus('round-1');
     final tally = await client.getRoundTally('round-1');
     final delegation = await client.submitDelegation(
-      submission: {
-        'vote_round_id': 'round-1',
-        'proof': 'AQ==',
-      },
+      submission: {'vote_round_id': 'round-1', 'proof': 'AQ=='},
     );
     await client.submitShare(
       roundId: 'round-1',
@@ -118,6 +115,29 @@ void main() {
       ]);
     },
   );
+
+  test('preserves numeric round status codes as strings', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        '/shielded-vote/v1/rounds': [
+          {
+            'vote_round_id': encodedRoundId,
+            'title': 'Closed poll',
+            'status': 3,
+          },
+          {'vote_round_id': hexRoundId, 'title': 'Active poll', 'status': 1},
+        ],
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: http,
+    );
+
+    final rounds = await client.listRounds();
+
+    expect(rounds.map((round) => round.status), ['3', '1']);
+  });
 
   test('normalizes base64 round ids before composing status URLs', () async {
     final http = FakeVotingHttpClient(
