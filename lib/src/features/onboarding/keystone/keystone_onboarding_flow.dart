@@ -248,19 +248,22 @@ class _Sidebar extends StatelessWidget {
             right: 0,
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.xs),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var i = 0; i < _steps.length; i++) ...[
-                    _KeystoneSidebarItem(
-                      label: _steps[i].label,
-                      iconName: _steps[i].iconName,
-                      active: _steps[i] == activeStep,
-                    ),
-                    if (i != _steps.length - 1)
-                      const SizedBox(height: AppSpacing.xs),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.xs),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < _steps.length; i++) ...[
+                      _KeystoneSidebarItem(
+                        label: _steps[i].label,
+                        iconName: _steps[i].iconName,
+                        active: _steps[i] == activeStep,
+                      ),
+                      if (i != _steps.length - 1)
+                        const SizedBox(height: AppSpacing.xs),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -285,12 +288,15 @@ class _KeystoneSidebarItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      height: 40,
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       decoration: BoxDecoration(
         color: active ? colors.state.selectedOpacity : null,
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
+      padding: const EdgeInsets.only(
+        left: AppSpacing.xs,
+        top: AppSpacing.xs,
+        bottom: AppSpacing.xs,
       ),
       child: Row(
         children: [

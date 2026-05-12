@@ -41,7 +41,12 @@ class _HeroLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const Expanded(child: Center(child: _HeroBlock())),
+        const Expanded(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.s),
+            child: Center(child: _HeroBlock()),
+          ),
+        ),
         const SizedBox(height: AppSpacing.md),
         AppButton(
           onPressed: () {
@@ -216,7 +221,7 @@ class _CardLabelLine extends StatelessWidget {
         const SizedBox(width: AppSpacing.xs),
         Text(
           label,
-          style: AppTypography.bodyMedium.copyWith(
+          style: AppTypography.codeMedium.copyWith(
             color: inverse ? colors.text.inverse : colors.text.secondary,
           ),
         ),
@@ -312,6 +317,7 @@ class _FirmwareCardBody extends StatelessWidget {
           variant: AppButtonVariant.ghost,
           size: AppButtonSize.medium,
           minWidth: 96,
+          iconGap: 0,
           leading: const AppIcon(AppIcons.link),
           child: const Text('Keystone Firmware'),
         ),
