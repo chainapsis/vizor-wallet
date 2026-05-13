@@ -44,7 +44,10 @@ pub(crate) use send::estimate_send_max;
 pub(crate) use send::{
     create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
 };
-pub use send::{estimate_fee, execute_proposal, propose_send, ExecuteProposalResult};
+pub use send::{
+    estimate_fee, execute_proposal, execute_proposal_with_seed_loader, propose_send,
+    ExecuteProposalResult,
+};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
 pub(crate) use send::resubmit_pending_transactions;
@@ -409,6 +412,27 @@ pub(super) fn consume_stored_proposal(
         .proposals
         .remove(&proposal_id)
         .ok_or_else(|| not_found_message.to_string())
+}
+
+pub(super) fn stored_proposal_seed_metadata(
+    proposal_id: u64,
+    send_flow_id: &str,
+    not_found_message: &str,
+) -> Result<(WalletNetwork, AccountUuid), String> {
+    let store = PROPOSAL_STORE
+        .lock()
+        .map_err(|e| format!("Lock error: {e}"))?;
+
+    match store.proposals.get(&proposal_id) {
+        Some(stored) if stored.send_flow_id == send_flow_id => {
+            Ok((stored.network, stored.account_id))
+        }
+        Some(_) => {
+            log::warn!("proposal store: send flow mismatch for proposal_id={proposal_id}");
+            Err("Send flow mismatch".to_string())
+        }
+        None => Err(not_found_message.to_string()),
+    }
 }
 
 pub(super) fn discard_stored_proposal(proposal_id: u64, send_flow_id: &str) {
