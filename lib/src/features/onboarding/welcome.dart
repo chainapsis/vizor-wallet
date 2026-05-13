@@ -221,25 +221,34 @@ class _BackRow extends StatelessWidget {
 /// Vizor logo + title block + buttons + legal footer.
 ///
 /// Mirrors the Figma layout hierarchy: `Content Area` owns the 24 dp outer
-/// padding, this `Container` adds 64 dp top padding and centers `_Welcome
-/// Content`, whose main content and legal footer are separated by 32 dp.
+/// padding, this `Container` centers `_Welcome Content`, using the Figma
+/// 64 dp / 32 dp vertical spacing when the fixed canvas has room and compact
+/// spacing when needed to keep the legal footer visible and hit-testable.
 class _Content extends StatelessWidget {
   const _Content();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.xl),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const _MainWelcomeContent(),
-            const SizedBox(height: AppSpacing.base),
-            const _LegalFooter(),
-          ],
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useCompactSpacing = constraints.maxHeight < 640;
+        final topPadding = useCompactSpacing ? AppSpacing.lg : AppSpacing.xl;
+        final footerGap = useCompactSpacing ? AppSpacing.sm : AppSpacing.base;
+
+        return Padding(
+          padding: EdgeInsets.only(top: topPadding),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _MainWelcomeContent(),
+                SizedBox(height: footerGap),
+                const _LegalFooter(),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
