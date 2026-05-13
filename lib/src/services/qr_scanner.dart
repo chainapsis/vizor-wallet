@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -21,8 +22,29 @@ CameraFacing get defaultQrScannerFacing => _defaultFacing;
 class QrScanner {
   QrScanner._();
 
+  static const formats = <BarcodeFormat>[BarcodeFormat.qrCode];
+  static const detectionSpeed = DetectionSpeed.noDuplicates;
+  static const scanWindowUpdateThreshold = 8.0;
+
   static bool get isAvailable =>
       Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
+
+  static Rect? scanWindowFor(Size layoutSize) {
+    if (!layoutSize.width.isFinite ||
+        !layoutSize.height.isFinite ||
+        layoutSize.width <= 0 ||
+        layoutSize.height <= 0) {
+      return null;
+    }
+
+    final shortestSide = math.min(layoutSize.width, layoutSize.height);
+    final side = math.min(shortestSide * 0.9, 280.0);
+    return Rect.fromCenter(
+      center: layoutSize.center(Offset.zero),
+      width: side,
+      height: side,
+    );
+  }
 }
 
 class ScanResult {
@@ -78,7 +100,11 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
     _ownsController = controller == null;
     _controller =
         controller ??
-        MobileScannerController(facing: widget.facing ?? _defaultFacing);
+        MobileScannerController(
+          facing: widget.facing ?? _defaultFacing,
+          formats: QrScanner.formats,
+          detectionSpeed: QrScanner.detectionSpeed,
+        );
   }
 
   void _resetScanSession() {
@@ -165,6 +191,15 @@ class _AnimatedUrScannerViewState extends State<AnimatedUrScannerView> {
 
   @override
   Widget build(BuildContext context) {
-    return MobileScanner(controller: _controller, onDetect: _onDetect);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return MobileScanner(
+          controller: _controller,
+          onDetect: _onDetect,
+          scanWindow: QrScanner.scanWindowFor(constraints.biggest),
+          scanWindowUpdateThreshold: QrScanner.scanWindowUpdateThreshold,
+        );
+      },
+    );
   }
 }
