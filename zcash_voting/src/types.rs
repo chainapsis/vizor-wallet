@@ -132,7 +132,8 @@ pub struct GovernancePczt {
     pub rseed_output: Vec<u8>,
     /// Canonical delegation action payload for cosmos chain submission.
     pub action_bytes: Vec<u8>,
-    /// Index of the real governance action within the PCZT's Orchard bundle.
+    /// Index of the paired governance action whose spend and output produce
+    /// `nf_signed`, `rk`, `alpha`, and `cmx_new`.
     /// (Actions are padded/shuffled by the Builder.)
     pub action_index: usize,
     /// Padded note secrets: N_padded * 64 bytes (32 rho + 32 rseed per padded note).
