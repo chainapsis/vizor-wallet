@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use pasta_curves::Fp;
-use vote_commitment_tree::sync_api::{BlockCommitments, TreeState, TreeSyncApi};
+use vote_commitment_tree::sync_api::{BlockCommitmentsPage, TreeState, TreeSyncApi};
 
 use crate::transport::{Transport, TransportError, TransportResponse};
 use crate::types::{
@@ -135,15 +135,13 @@ impl TreeSyncApi for HttpTreeSyncApi {
         &self,
         from_height: u32,
         to_height: u32,
-    ) -> Result<Vec<BlockCommitments>, Self::Error> {
+    ) -> Result<BlockCommitmentsPage, Self::Error> {
         let url = format!(
             "{}/shielded-vote/v1/commitment-tree/{}/leaves?from_height={}&to_height={}",
             self.base_url, self.round_id, from_height, to_height
         );
         let resp: QueryCommitmentLeavesResponse = self.get_json(url)?;
-        resp.blocks
-            .into_iter()
-            .map(|b| b.into_block_commitments().map_err(HttpSyncError::Parse))
-            .collect()
+        resp.into_block_commitments_page()
+            .map_err(HttpSyncError::Parse)
     }
 }

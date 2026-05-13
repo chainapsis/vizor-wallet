@@ -21,6 +21,17 @@ pub struct BlockCommitments {
     pub start_index: u64,
     /// Leaves appended in this block (in append order).
     pub leaves: Vec<MerkleHashVote>,
+    /// Commitment tree root after this block's leaves.
+    pub root: Fp,
+}
+
+/// Paginated response from `get_block_commitments`.
+#[derive(Clone, Debug)]
+pub struct BlockCommitmentsPage {
+    /// Blocks returned in this page.
+    pub blocks: Vec<BlockCommitments>,
+    /// Next height to request, or zero when the sync range is complete.
+    pub next_from_height: u32,
 }
 
 /// Current state of the server tree.
@@ -56,7 +67,7 @@ pub trait TreeSyncApi {
         &self,
         from_height: u32,
         to_height: u32,
-    ) -> Result<Vec<BlockCommitments>, Self::Error>;
+    ) -> Result<BlockCommitmentsPage, Self::Error>;
 
     /// Fetch tree root at a checkpoint height (anchor verification).
     ///

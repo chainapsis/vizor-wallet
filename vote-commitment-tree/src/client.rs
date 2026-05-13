@@ -20,10 +20,6 @@ use crate::hash::{MerkleHashVote, MAX_CHECKPOINTS, SHARD_HEIGHT, TREE_DEPTH};
 use crate::path::MerklePath;
 use crate::sync_api::TreeSyncApi;
 
-/// Keep each leaf query window within the chain's public API cap
-/// (`to_height - from_height <= 1000`).
-const MAX_SYNC_HEIGHT_SPAN: u32 = 1000;
-
 // ---------------------------------------------------------------------------
 // SyncError
 // ---------------------------------------------------------------------------
@@ -51,6 +47,8 @@ pub enum SyncError<E: fmt::Debug> {
         local: Option<Fp>,
         server: Fp,
     },
+    /// The server returned a pagination cursor that does not move forward.
+    InvalidPagination { current: u32, next: u32 },
 }
 
 impl<E: fmt::Debug> fmt::Display for SyncError<E> {
@@ -74,6 +72,11 @@ impl<E: fmt::Debug> fmt::Display for SyncError<E> {
                 f,
                 "root mismatch at height {}: local={:?}, server={:?}",
                 height, local, server
+            ),
+            SyncError::InvalidPagination { current, next } => write!(
+                f,
+                "invalid pagination cursor: current={}, next={}",
+                current, next
             ),
         }
     }
@@ -161,23 +164,22 @@ impl TreeClient {
     ///   server's root at that height (the consistency check described in the README).
     pub fn sync<A: TreeSyncApi>(&mut self, api: &A) -> Result<(), SyncError<A::Error>> {
         let state = api.get_tree_state()?;
-        let from_height = self.last_synced_height.map(|h| h + 1).unwrap_or(1);
+        if state.next_index == self.next_position {
+            return Ok(()); // No new leaves to apply.
+        }
+
+        let from_height = self.last_synced_height.map(|h| h + 1).unwrap_or(0);
         let to_height = state.height;
 
         if from_height > to_height {
             return Ok(()); // Already up to date.
         }
 
-        // Fetch in bounded windows so long catch-up syncs never exceed the
-        // chain API range cap.
-        let mut chunk_from = from_height;
-        while chunk_from <= to_height {
-            let chunk_to = chunk_from
-                .saturating_add(MAX_SYNC_HEIGHT_SPAN)
-                .min(to_height);
-            let blocks = api.get_block_commitments(chunk_from, chunk_to)?;
+        let mut page_from = from_height;
+        loop {
+            let page = api.get_block_commitments(page_from, to_height)?;
 
-            for block in &blocks {
+            for block in &page.blocks {
                 // Validate start_index continuity: the block's first leaf index must
                 // match exactly where the client expects the next leaf. A mismatch
                 // means missed blocks, duplicates, or wrong ordering.
@@ -214,23 +216,32 @@ impl TreeClient {
                 // Root consistency check: verify the client's computed root matches
                 // the server's root at this height. This catches corrupted leaf data,
                 // hash mismatches, or tree implementation differences.
-                let server_root = api.get_root_at_height(block.height)?;
-                if let Some(expected) = server_root {
-                    let local = self.root_at_height(block.height);
-                    if local != Some(expected) {
-                        return Err(SyncError::RootMismatch {
-                            height: block.height,
-                            local,
-                            server: expected,
-                        });
-                    }
+                let local = self.root_at_height(block.height);
+                if local != Some(block.root) {
+                    return Err(SyncError::RootMismatch {
+                        height: block.height,
+                        local,
+                        server: block.root,
+                    });
                 }
             }
 
-            chunk_from = match chunk_to.checked_add(1) {
-                Some(next) => next,
-                None => break,
-            };
+            if page.next_from_height == 0 {
+                break;
+            }
+            if page.next_from_height <= page_from {
+                return Err(SyncError::InvalidPagination {
+                    current: page_from,
+                    next: page.next_from_height,
+                });
+            }
+            if page.next_from_height > to_height {
+                return Err(SyncError::InvalidPagination {
+                    current: page_from,
+                    next: page.next_from_height,
+                });
+            }
+            page_from = page.next_from_height;
         }
 
         Ok(())

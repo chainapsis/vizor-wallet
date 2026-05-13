@@ -15,7 +15,7 @@ use shardtree::store::ShardStore;
 
 use crate::hash::MerkleHashVote;
 use crate::server::SyncableServer;
-use crate::sync_api::{BlockCommitments, TreeState, TreeSyncApi};
+use crate::sync_api::{BlockCommitmentsPage, TreeState, TreeSyncApi};
 
 // ---------------------------------------------------------------------------
 // TreeSyncApi implementation for SyncableServer<S>
@@ -34,13 +34,16 @@ where
         &self,
         from_height: u32,
         to_height: u32,
-    ) -> Result<Vec<BlockCommitments>, Infallible> {
+    ) -> Result<BlockCommitmentsPage, Infallible> {
         let blocks = self
             .blocks
             .range(from_height..=to_height)
             .map(|(_, bc)| bc.clone())
             .collect();
-        Ok(blocks)
+        Ok(BlockCommitmentsPage {
+            blocks,
+            next_from_height: 0,
+        })
     }
 
     fn get_root_at_height(&self, height: u32) -> Result<Option<Fp>, Infallible> {

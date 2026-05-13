@@ -222,7 +222,9 @@ fn sync_api_consistency() {
     assert_eq!(state.root, server.root());
 
     // get_block_commitments for a subrange.
-    let blocks = server.get_block_commitments(2, 4).unwrap();
+    let page = server.get_block_commitments(2, 4).unwrap();
+    let blocks = page.blocks;
+    assert_eq!(page.next_from_height, 0);
     assert_eq!(blocks.len(), 3);
     assert_eq!(blocks[0].height, 2);
     assert_eq!(blocks[1].height, 3);
@@ -230,6 +232,9 @@ fn sync_api_consistency() {
     assert_eq!(blocks[0].leaves.len(), 2);
     assert_eq!(blocks[1].leaves.len(), 3);
     assert_eq!(blocks[2].leaves.len(), 4);
+    assert_eq!(blocks[0].root, server.root_at_height(2).unwrap());
+    assert_eq!(blocks[1].root, server.root_at_height(3).unwrap());
+    assert_eq!(blocks[2].root, server.root_at_height(4).unwrap());
 
     // get_root_at_height for each block matches server.root_at_height.
     for height in 1..=5u32 {
