@@ -387,8 +387,9 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         }
 
         late final rust_sync.ExecuteProposalResult result;
+        late final Future<rust_sync.ExecuteProposalResult> resultFuture;
         try {
-          result = await rust_sync.executeProposal(
+          resultFuture = rust_sync.executeProposal(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             proposalId: widget.args.proposalId,
@@ -404,6 +405,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
         } finally {
           mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
         }
+        result = await resultFuture;
         _proposalConsumed = true;
         txids = result.txids;
         broadcastComplete = result.status == 'broadcasted';

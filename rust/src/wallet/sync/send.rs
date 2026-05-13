@@ -419,7 +419,7 @@ pub(crate) async fn shield_transparent_balance(
 
     let (txids, fee_zatoshi, shielded_zatoshi) = with_wallet_db_write_lock(
         "send.shield_transparent_balance.create_transactions",
-        || {
+        move || {
             let mut db = open_wallet_db(db_path, network)?;
             let account_id = parse_account_uuid(account_uuid)?;
             let account = db
@@ -439,6 +439,7 @@ pub(crate) async fn shield_transparent_balance(
                 .account_index();
             let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
                 .map_err(|e| format!("USK derivation failed: {e:?}"))?;
+            drop(seed);
 
             let spend_prover = NoOpSpendProver;
             let output_prover = NoOpOutputProver;
@@ -456,7 +457,6 @@ pub(crate) async fn shield_transparent_balance(
             Ok::<_, String>((txids, fee_zatoshi, shielded_zatoshi))
         },
     )?;
-    drop(seed);
 
     let txids: Vec<TxId> = txids.iter().cloned().collect();
     let txids = broadcast_created_transactions(db_path, lightwalletd_url, &txids, "shield")
@@ -492,55 +492,57 @@ pub async fn execute_proposal(
     )?;
     let network = stored.network;
 
-    // Scope DB writes and seed/USK so they are dropped before network I/O (broadcast).
-    let txids = with_wallet_db_write_lock("send.execute_proposal.create_transactions", || {
-        let mut db = open_wallet_db(db_path, network)?;
-        let account_id = stored.account_id;
-        let account = db
-            .get_account(account_id)
-            .map_err(|e| format!("{e}"))?
-            .ok_or("Account not found")?;
-        let zip32_index = account
-            .source()
-            .key_derivation()
-            .ok_or("No key derivation")?
-            .account_index();
-        let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
-            .map_err(|e| format!("USK derivation failed: {e:?}"))?;
+    // Scope DB writes and signing material so they are dropped before network I/O (broadcast).
+    let txids =
+        with_wallet_db_write_lock("send.execute_proposal.create_transactions", move || {
+            let mut db = open_wallet_db(db_path, network)?;
+            let account_id = stored.account_id;
+            let account = db
+                .get_account(account_id)
+                .map_err(|e| format!("{e}"))?
+                .ok_or("Account not found")?;
+            let zip32_index = account
+                .source()
+                .key_derivation()
+                .ok_or("No key derivation")?
+                .account_index();
+            let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
+                .map_err(|e| format!("USK derivation failed: {e:?}"))?;
+            drop(seed);
 
-        let txids = match (spend_params_path, output_params_path) {
-            (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
-                let prover = LocalTxProver::new(std::path::Path::new(sp), std::path::Path::new(op));
-                create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
-                    &mut db,
-                    &network,
-                    &prover,
-                    &prover,
-                    &wallet::SpendingKeys::from_unified_spending_key(usk),
-                    OvkPolicy::Sender,
-                    &stored.proposal,
-                )
-                .map_err(|e| format!("Create TX failed: {e}"))?
-            }
-            _ => {
-                let spend_prover = NoOpSpendProver;
-                let output_prover = NoOpOutputProver;
-                create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
-                    &mut db,
-                    &network,
-                    &spend_prover,
-                    &output_prover,
-                    &wallet::SpendingKeys::from_unified_spending_key(usk),
-                    OvkPolicy::Sender,
-                    &stored.proposal,
-                )
-                .map_err(|e| format!("Create TX failed: {e}"))?
-            }
-        };
-        // seed + usk dropped here, before broadcast
-        Ok::<_, String>(txids)
-    })?;
-    drop(seed);
+            let txids = match (spend_params_path, output_params_path) {
+                (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
+                    let prover =
+                        LocalTxProver::new(std::path::Path::new(sp), std::path::Path::new(op));
+                    create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+                        &mut db,
+                        &network,
+                        &prover,
+                        &prover,
+                        &wallet::SpendingKeys::from_unified_spending_key(usk),
+                        OvkPolicy::Sender,
+                        &stored.proposal,
+                    )
+                    .map_err(|e| format!("Create TX failed: {e}"))?
+                }
+                _ => {
+                    let spend_prover = NoOpSpendProver;
+                    let output_prover = NoOpOutputProver;
+                    create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+                        &mut db,
+                        &network,
+                        &spend_prover,
+                        &output_prover,
+                        &wallet::SpendingKeys::from_unified_spending_key(usk),
+                        OvkPolicy::Sender,
+                        &stored.proposal,
+                    )
+                    .map_err(|e| format!("Create TX failed: {e}"))?
+                }
+            };
+            // USK and derived spending keys dropped here, before broadcast.
+            Ok::<_, String>(txids)
+        })?;
 
     let txids: Vec<TxId> = txids.iter().cloned().collect();
     Ok(

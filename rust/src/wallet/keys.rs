@@ -14,6 +14,7 @@ use zcash_keys::{
 };
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{BlockHeight, NetworkConstants, NetworkUpgrade, Parameters};
+use zeroize::Zeroizing;
 use zip32::fingerprint::SeedFingerprint;
 
 use crate::wallet::{
@@ -79,7 +80,8 @@ pub fn mnemonic_word_list() -> Vec<String> {
 pub fn mnemonic_to_seed(phrase: &str) -> Result<SecretVec<u8>, String> {
     let mnemonic =
         Mnemonic::<English>::from_phrase(phrase).map_err(|e| format!("Invalid mnemonic: {e}"))?;
-    Ok(SecretVec::new(mnemonic.to_seed("").to_vec()))
+    let seed = Zeroizing::new(mnemonic.to_seed(""));
+    Ok(SecretVec::new(seed.to_vec()))
 }
 
 /// Convert UTF-8 mnemonic bytes to a 64-byte seed wrapped in SecretVec.

@@ -116,6 +116,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         );
       }
 
+      final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      attemptedEndpoint = endpoint;
+
       final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
         accountUuid,
       );
@@ -123,12 +127,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         throw Exception('Mnemonic not found for the active account.');
       }
 
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-      attemptedEndpoint = endpoint;
       late final rust_sync.ShieldTransparentResult result;
+      late final Future<rust_sync.ShieldTransparentResult> resultFuture;
       try {
-        result = await rust_sync.shieldTransparentBalance(
+        resultFuture = rust_sync.shieldTransparentBalance(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           network: endpoint.networkName,
@@ -138,6 +140,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       } finally {
         mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
       }
+      result = await resultFuture;
       log(
         'HomeScreen: shielded transparent balance txids=${result.txids} '
         'fee=${result.feeZatoshi} shielded=${result.shieldedZatoshi}',
