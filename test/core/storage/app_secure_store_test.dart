@@ -439,6 +439,50 @@ void main() {
     expect(operations, isNot(contains('regular.readAll')));
   });
 
+  test('macOS unlock fails if mnemonic copy migration fails', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    final regularStorage = _MapStorage('regular');
+    final mnemonicStorage = _FailingMapStorage('mnemonic');
+    store = AppSecureStore.testing(
+      storage: regularStorage,
+      mnemonicStorage: mnemonicStorage,
+    );
+
+    await store.configurePassword(_oldPassword);
+    await store.writeSecretString(_mnemonicKey, _mnemonic);
+    store.clearSessionPassword();
+    mnemonicStorage.failNextWriteFor(_mnemonicKey);
+
+    expect(await store.verifyPassword(_oldPassword), isFalse);
+    expect(store.hasSessionPassword, isFalse);
+    expect(regularStorage.valueFor(_mnemonicKey), isNotNull);
+    expect(mnemonicStorage.valueFor(_mnemonicKey), isNull);
+    expect(regularStorage.valueFor(_migrationCompleteKey), isNull);
+  });
+
+  test(
+    'macOS unlock allows legacy cleanup retry after delete failure',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      final regularStorage = _FailingMapStorage('regular');
+      final mnemonicStorage = _MapStorage('mnemonic');
+      store = AppSecureStore.testing(
+        storage: regularStorage,
+        mnemonicStorage: mnemonicStorage,
+      );
+
+      await store.configurePassword(_oldPassword);
+      await store.writeSecretString(_mnemonicKey, _mnemonic);
+      store.clearSessionPassword();
+      regularStorage.failNextDeleteFor(_mnemonicKey);
+
+      expect(await store.verifyPassword(_oldPassword), isTrue);
+      expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
+      expect(regularStorage.valueFor(_mnemonicKey), isNotNull);
+      expect(regularStorage.valueFor(_migrationCompleteKey), isNull);
+    },
+  );
+
   test(
     'macOS mnemonic reads do not fallback before unlock migration',
     () async {
@@ -483,31 +527,34 @@ void main() {
     expect(store.hasSessionPassword, isFalse);
   });
 
-  test('clearPasswordConfiguration waits for concurrent mnemonic writes', () async {
-    const lateMnemonicKey = 'zcash_account_mnemonic_clear-password-account';
-    const lateMnemonic = 'legal winner thank year wave sausage worth useful';
-    final blockingStorage = _BlockingWriteStorage(blockKey: lateMnemonicKey);
-    store = AppSecureStore.testing(storage: blockingStorage);
-    await store.configurePassword(_oldPassword);
+  test(
+    'clearPasswordConfiguration waits for concurrent mnemonic writes',
+    () async {
+      const lateMnemonicKey = 'zcash_account_mnemonic_clear-password-account';
+      const lateMnemonic = 'legal winner thank year wave sausage worth useful';
+      final blockingStorage = _BlockingWriteStorage(blockKey: lateMnemonicKey);
+      store = AppSecureStore.testing(storage: blockingStorage);
+      await store.configurePassword(_oldPassword);
 
-    blockingStorage.blockNextWrite = true;
-    final lateWrite = store.writeSecretString(lateMnemonicKey, lateMnemonic);
-    await blockingStorage.writeStarted.future;
+      blockingStorage.blockNextWrite = true;
+      final lateWrite = store.writeSecretString(lateMnemonicKey, lateMnemonic);
+      await blockingStorage.writeStarted.future;
 
-    var clearCompleted = false;
-    final clear = store.clearPasswordConfiguration().then((_) {
-      clearCompleted = true;
-    });
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(clearCompleted, isFalse);
+      var clearCompleted = false;
+      final clear = store.clearPasswordConfiguration().then((_) {
+        clearCompleted = true;
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(clearCompleted, isFalse);
 
-    blockingStorage.release();
-    await lateWrite;
-    await clear;
+      blockingStorage.release();
+      await lateWrite;
+      await clear;
 
-    expect(await store.readPlain(lateMnemonicKey), isNotNull);
-    expect(store.hasSessionPassword, isFalse);
-  });
+      expect(await store.readPlain(lateMnemonicKey), isNotNull);
+      expect(store.hasSessionPassword, isFalse);
+    },
+  );
 }
 
 class _FailingWriteStorage extends FlutterSecureStorage {
@@ -625,6 +672,71 @@ class _MapStorage extends FlutterSecureStorage {
   }) async {
     operations.add('$name.deleteAll');
     _values.clear();
+  }
+}
+
+class _FailingMapStorage extends _MapStorage {
+  _FailingMapStorage(super.name);
+
+  final _failNextWrite = <String>{};
+  final _failNextDelete = <String>{};
+
+  void failNextWriteFor(String key) {
+    _failNextWrite.add(key);
+  }
+
+  void failNextDeleteFor(String key) {
+    _failNextDelete.add(key);
+  }
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    if (_failNextWrite.remove(key)) {
+      throw StateError('forced map write failure for $key');
+    }
+    return super.write(
+      key: key,
+      value: value,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    if (_failNextDelete.remove(key)) {
+      throw StateError('forced map delete failure for $key');
+    }
+    return super.delete(
+      key: key,
+      iOptions: iOptions,
+      aOptions: aOptions,
+      lOptions: lOptions,
+      webOptions: webOptions,
+      mOptions: mOptions,
+      wOptions: wOptions,
+    );
   }
 }
 

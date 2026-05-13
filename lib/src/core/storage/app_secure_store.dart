@@ -271,8 +271,8 @@ class AppSecureStore {
       );
       final newSecretKey = await _deriveSecretKeyForPassword(newPassword);
       try {
-        final migrated = await _migrateAccountMnemonicsAfterUnlockLocked();
-        if (!migrated) {
+        final migration = await _migrateAccountMnemonicsAfterUnlockLocked();
+        if (!migration.legacyCleanupComplete) {
           throw StateError(
             'Failed to migrate account mnemonics before password rotation.',
           );
@@ -402,19 +402,28 @@ class AppSecureStore {
     if (isMatch) {
       setSessionPassword(password);
       try {
-        await migrateAccountMnemonicsAfterUnlock();
+        final migratedForRead = await migrateAccountMnemonicsAfterUnlock();
+        if (!migratedForRead) {
+          clearSessionPassword();
+          return false;
+        }
       } catch (error, stackTrace) {
+        clearSessionPassword();
         debugPrint(
           'AppSecureStore: failed to migrate account mnemonics after unlock: '
           '$error\n$stackTrace',
         );
+        return false;
       }
     }
     return isMatch;
   }
 
   Future<bool> migrateAccountMnemonicsAfterUnlock() {
-    return _secretMutationLock.run(_migrateAccountMnemonicsAfterUnlockLocked);
+    return _secretMutationLock.run(() async {
+      final migration = await _migrateAccountMnemonicsAfterUnlockLocked();
+      return migration.mnemonicsAvailable;
+    });
   }
 
   void setSessionPassword(String password) {
@@ -464,17 +473,19 @@ class AppSecureStore {
     ).serialize();
   }
 
-  Future<bool> _migrateAccountMnemonicsAfterUnlockLocked() async {
+  Future<_AccountMnemonicMigrationResult>
+  _migrateAccountMnemonicsAfterUnlockLocked() async {
     if (!_usesSeparateMacOsMnemonicStorage ||
         identical(_mnemonicStorage, _storage)) {
-      return true;
+      return _AccountMnemonicMigrationResult.complete;
     }
     if (await readPlain(_accountMnemonicMigrationCompleteKey) == 'true') {
-      return true;
+      return _AccountMnemonicMigrationResult.complete;
     }
 
     final legacyValues = await _storage.readAll();
-    var succeeded = true;
+    var mnemonicsAvailable = true;
+    var legacyCleanupComplete = true;
     for (final entry in legacyValues.entries) {
       if (!_isAccountMnemonicKey(entry.key)) continue;
 
@@ -483,16 +494,28 @@ class AppSecureStore {
         if (existing == null) {
           await _mnemonicStorage.write(key: entry.key, value: entry.value);
         }
+      } catch (error, stackTrace) {
+        mnemonicsAvailable = false;
+        legacyCleanupComplete = false;
+        debugPrint(
+          'AppSecureStore: failed to copy account mnemonic "${entry.key}": '
+          '$error\n$stackTrace',
+        );
+        continue;
+      }
+
+      try {
         await _storage.delete(key: entry.key);
       } catch (error, stackTrace) {
-        succeeded = false;
+        legacyCleanupComplete = false;
         debugPrint(
-          'AppSecureStore: failed to migrate account mnemonic "${entry.key}": '
+          'AppSecureStore: failed to delete legacy account mnemonic '
+          '"${entry.key}": '
           '$error\n$stackTrace',
         );
       }
     }
-    if (succeeded) {
+    if (legacyCleanupComplete) {
       try {
         await writePlain(_accountMnemonicMigrationCompleteKey, 'true');
       } catch (error, stackTrace) {
@@ -502,7 +525,10 @@ class AppSecureStore {
         );
       }
     }
-    return succeeded;
+    return _AccountMnemonicMigrationResult(
+      mnemonicsAvailable: mnemonicsAvailable,
+      legacyCleanupComplete: legacyCleanupComplete,
+    );
   }
 
   Future<void> _deleteLegacyAccountMnemonicBestEffort(String key) async {
@@ -708,6 +734,21 @@ String _accountMnemonicKey(String accountUuid) =>
 
 String _mnemonicSecureStoreServiceForNetwork(String networkName) {
   return '${secureStoreServiceForNetwork(networkName)}.mnemonic';
+}
+
+class _AccountMnemonicMigrationResult {
+  const _AccountMnemonicMigrationResult({
+    required this.mnemonicsAvailable,
+    required this.legacyCleanupComplete,
+  });
+
+  static const complete = _AccountMnemonicMigrationResult(
+    mnemonicsAvailable: true,
+    legacyCleanupComplete: true,
+  );
+
+  final bool mnemonicsAvailable;
+  final bool legacyCleanupComplete;
 }
 
 class _AsyncLock {
