@@ -71,6 +71,8 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     return MobileScannerController(
       cameraId: cameraId,
       facing: defaultQrScannerFacing,
+      formats: QrScanner.formats,
+      detectionSpeed: QrScanner.detectionSpeed,
     );
   }
 
@@ -943,7 +945,7 @@ class _ScanOverlay extends StatelessWidget {
 class _ScanOverlayPainter extends CustomPainter {
   const _ScanOverlayPainter();
 
-  static const _cutoutSize = 210.0;
+  static const _cutoutSize = 250.0;
   static const _cutoutRadius = 32.0;
   static const _strokeWidth = 5.0;
   static const _cornerArmLength = 12.0;
