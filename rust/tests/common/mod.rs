@@ -196,13 +196,12 @@ pub fn execute_send(
         None
     };
 
-    let seed = wallet_api::derive_seed(sender_mnemonic.into()).expect("derive_seed");
     sync_api::execute_proposal(
         path_str(db_path),
         LIGHTWALLETD_URL.into(),
         proposal.proposal_id,
         send_flow_id.into(),
-        seed,
+        sender_mnemonic.into(),
         sapling_params.as_ref().map(|p| p.spend_path.clone()),
         sapling_params.as_ref().map(|p| p.output_path.clone()),
     )

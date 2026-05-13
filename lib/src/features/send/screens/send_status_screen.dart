@@ -20,7 +20,6 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
 import '../services/sapling_params.dart';
 import '../widgets/sapling_params_prompt.dart';
@@ -387,13 +386,12 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           return;
         }
 
-        final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
         final result = await rust_sync.executeProposal(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           proposalId: widget.args.proposalId,
           sendFlowId: widget.args.sendFlowId,
-          seed: seedBytes,
+          mnemonic: mnemonic,
           spendParamsPath: widget.args.needsSaplingParams
               ? saplingParams.spendPath
               : null,

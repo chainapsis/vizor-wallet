@@ -24,7 +24,6 @@ import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../activity/activity_row_mapper.dart';
 import '../../activity/models/activity_row_data.dart';
 import '../../activity/screens/activity_transaction_status_screen.dart';
@@ -122,7 +121,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         throw Exception('Mnemonic not found for the active account.');
       }
 
-      final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
       final dbPath = await getWalletDbPath();
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       attemptedEndpoint = endpoint;
@@ -131,7 +129,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,
         accountUuid: accountUuid,
-        seed: seedBytes,
+        mnemonic: mnemonic,
       );
       log(
         'HomeScreen: shielded transparent balance txids=${result.txids} '
