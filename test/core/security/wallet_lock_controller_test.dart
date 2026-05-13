@@ -5,35 +5,32 @@ void main() {
   group('shouldAutoLock', () {
     test('returns false when no hidden timestamp is recorded', () {
       expect(
-        shouldAutoLock(
-          hiddenAt: null,
-          now: DateTime(2026, 1, 1, 12, 0, 0),
-        ),
+        shouldAutoLock(hiddenAt: null, now: const Duration(hours: 1)),
         isFalse,
       );
     });
 
     test('returns false when hidden duration is shorter than threshold', () {
-      final hiddenAt = DateTime(2026, 1, 1, 12, 0, 0);
-      final now = hiddenAt.add(kAutoLockBackgroundTimeout - const Duration(seconds: 1));
+      const hiddenAt = Duration(minutes: 5);
+      final now = hiddenAt + kAutoLockBackgroundTimeout - const Duration(seconds: 1);
       expect(shouldAutoLock(hiddenAt: hiddenAt, now: now), isFalse);
     });
 
     test('returns true at exactly the threshold boundary', () {
-      final hiddenAt = DateTime(2026, 1, 1, 12, 0, 0);
-      final now = hiddenAt.add(kAutoLockBackgroundTimeout);
+      const hiddenAt = Duration(minutes: 5);
+      final now = hiddenAt + kAutoLockBackgroundTimeout;
       expect(shouldAutoLock(hiddenAt: hiddenAt, now: now), isTrue);
     });
 
     test('returns true when hidden duration exceeds threshold', () {
-      final hiddenAt = DateTime(2026, 1, 1, 12, 0, 0);
-      final now = hiddenAt.add(kAutoLockBackgroundTimeout * 3);
+      const hiddenAt = Duration(minutes: 5);
+      final now = hiddenAt + kAutoLockBackgroundTimeout * 3;
       expect(shouldAutoLock(hiddenAt: hiddenAt, now: now), isTrue);
     });
 
     test('respects a custom threshold override', () {
-      final hiddenAt = DateTime(2026, 1, 1, 12, 0, 0);
-      final now = hiddenAt.add(const Duration(seconds: 30));
+      const hiddenAt = Duration(minutes: 5);
+      final now = hiddenAt + const Duration(seconds: 30);
       expect(
         shouldAutoLock(
           hiddenAt: hiddenAt,
@@ -54,6 +51,12 @@ void main() {
 
     test('default threshold is 10 minutes', () {
       expect(kAutoLockBackgroundTimeout, const Duration(minutes: 10));
+    });
+
+    test('does not lock when monotonic time appears to go backward', () {
+      const hiddenAt = Duration(minutes: 30);
+      const now = Duration(minutes: 5);
+      expect(shouldAutoLock(hiddenAt: hiddenAt, now: now), isFalse);
     });
   });
 }

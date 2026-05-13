@@ -11,12 +11,12 @@ import '../../providers/sync_provider.dart';
 const Duration kAutoLockBackgroundTimeout = Duration(minutes: 10);
 
 bool shouldAutoLock({
-  required DateTime? hiddenAt,
-  required DateTime now,
+  required Duration? hiddenAt,
+  required Duration now,
   Duration threshold = kAutoLockBackgroundTimeout,
 }) {
   if (hiddenAt == null) return false;
-  return now.difference(hiddenAt) >= threshold;
+  return (now - hiddenAt) >= threshold;
 }
 
 Future<void> lockWalletSession({
@@ -46,7 +46,8 @@ class AutoLockObserver extends ConsumerStatefulWidget {
 
 class _AutoLockObserverState extends ConsumerState<AutoLockObserver> {
   AppLifecycleListener? _listener;
-  DateTime? _hiddenAt;
+  final Stopwatch _clock = Stopwatch()..start();
+  Duration? _hiddenAt;
 
   @override
   void initState() {
@@ -58,13 +59,14 @@ class _AutoLockObserverState extends ConsumerState<AutoLockObserver> {
   void dispose() {
     _listener?.dispose();
     _listener = null;
+    _clock.stop();
     super.dispose();
   }
 
   void _onHide() {
     final security = ref.read(appSecurityProvider);
     if (!security.isUnlocked) return;
-    _hiddenAt = DateTime.now();
+    _hiddenAt = _clock.elapsed;
   }
 
   void _onShow() {
@@ -73,12 +75,9 @@ class _AutoLockObserverState extends ConsumerState<AutoLockObserver> {
     if (hiddenAt == null) return;
     final security = ref.read(appSecurityProvider);
     if (!security.isUnlocked) return;
-    final now = DateTime.now();
+    final now = _clock.elapsed;
     if (!shouldAutoLock(hiddenAt: hiddenAt, now: now)) return;
-    log(
-      'AutoLock: hidden for ${now.difference(hiddenAt)}, '
-      'locking wallet session',
-    );
+    log('AutoLock: hidden for ${now - hiddenAt}, locking wallet session');
     lockWalletSession(
       securityNotifier: ref.read(appSecurityProvider.notifier),
       accountNotifier: ref.read(accountProvider.notifier),
