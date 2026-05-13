@@ -647,7 +647,14 @@ class _TroubleScanningTip extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.xxs),
-      child: Text(text, style: style),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('•', style: style),
+          const SizedBox(width: AppSpacing.xxs),
+          Expanded(child: Text(text, style: style)),
+        ],
+      ),
     );
   }
 }
