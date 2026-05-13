@@ -383,6 +383,33 @@ void main() {
   });
 
   test(
+    'locked mnemonic read skips keychain when session is required',
+    () async {
+      final operations = <String>[];
+      final regularStorage = _MapStorage('regular', operations: operations);
+      final mnemonicStorage = _MapStorage('mnemonic', operations: operations);
+      store = AppSecureStore.testing(
+        storage: regularStorage,
+        mnemonicStorage: mnemonicStorage,
+      );
+
+      await store.configurePassword(_oldPassword);
+      await store.writeAccountMnemonic(_accountUuid, _mnemonic);
+      store.clearSessionPassword();
+      operations.clear();
+
+      expect(
+        await store.readAccountMnemonic(
+          _accountUuid,
+          requireUnlockedSession: true,
+        ),
+        isNull,
+      );
+      expect(operations, isEmpty);
+    },
+  );
+
+  test(
     'macOS unlock migrates legacy mnemonic payloads write then delete',
     () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;

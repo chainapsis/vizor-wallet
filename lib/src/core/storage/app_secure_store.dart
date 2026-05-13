@@ -128,6 +128,7 @@ class AppSecureStore {
     bool requireUnlockedSession = false,
   }) {
     return _secretMutationLock.run(() async {
+      if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
       final raw = await _storage.read(key: key);
       return _decryptStoredSecretString(
         raw,
@@ -142,6 +143,7 @@ class AppSecureStore {
     bool requireUnlockedSession = false,
   }) {
     return _secretMutationLock.run(() async {
+      if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
       final key = _accountMnemonicKey(accountUuid);
       final raw = await _mnemonicStorage.read(key: key);
       return _decryptStoredSecretString(
@@ -434,6 +436,10 @@ class AppSecureStore {
   void clearSessionPassword() {
     _sessionPassword = null;
     _cachedSecretKey = null;
+  }
+
+  bool _shouldSkipLockedSecretRead(bool requireUnlockedSession) {
+    return requireUnlockedSession && !hasSessionPassword;
   }
 
   Future<String?> _decryptStoredSecretString(
