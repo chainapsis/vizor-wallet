@@ -1343,7 +1343,7 @@ class _ReceiveInfoDialog extends StatelessWidget {
                         'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
                   ),
                   _InfoItemData(
-                    iconName: AppIcons.qr,
+                    iconName: AppIcons.keystone,
                     text:
                         "Keystone accounts use one fixed shielded address, so Renew isn't available.",
                   ),
