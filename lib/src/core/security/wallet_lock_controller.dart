@@ -7,6 +7,7 @@ import '../../../main.dart' show log;
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../providers/wallet_provider.dart';
 
 const Duration kAutoLockBackgroundTimeout = Duration(minutes: 10);
 
@@ -61,9 +62,15 @@ class _AutoLockObserverState extends ConsumerState<AutoLockObserver> {
     super.dispose();
   }
 
-  void _onHide() {
+  bool _isLockable() {
     final security = ref.read(appSecurityProvider);
-    if (!security.isUnlocked) return;
+    if (!security.isUnlocked) return false;
+    final wallet = ref.read(walletProvider).value;
+    return wallet?.hasWallet ?? false;
+  }
+
+  void _onHide() {
+    if (!_isLockable()) return;
     _monoHiddenAt = _clock.elapsed;
     _wallHiddenAt = DateTime.now();
   }
@@ -74,8 +81,7 @@ class _AutoLockObserverState extends ConsumerState<AutoLockObserver> {
     _monoHiddenAt = null;
     _wallHiddenAt = null;
     if (monoHiddenAt == null || wallHiddenAt == null) return;
-    final security = ref.read(appSecurityProvider);
-    if (!security.isUnlocked) return;
+    if (!_isLockable()) return;
     final monoElapsed = _clock.elapsed - monoHiddenAt;
     final wallElapsed = DateTime.now().difference(wallHiddenAt);
     if (!shouldAutoLock(elapsed: monoElapsed) &&
