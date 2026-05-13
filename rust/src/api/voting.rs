@@ -1845,20 +1845,9 @@ mod tests {
         })
         .unwrap();
 
-        let actual: serde_json::Value = serde_json::from_str(&wire).unwrap();
         assert_eq!(
-            actual,
-            serde_json::json!({
-                "rk": "AQ==",
-                "spend_auth_sig": "Ag==",
-                "sighash": "Aw==",
-                "signed_note_nullifier": "BA==",
-                "cmx_new": "BQ==",
-                "van_cmx": "Bg==",
-                "gov_nullifiers": ["Bw==", "CQ=="],
-                "proof": "CA==",
-                "vote_round_id": "AAECAw==",
-            })
+            wire,
+            r#"{"cmx_new":"BQ==","gov_nullifiers":["Bw==","CQ=="],"proof":"CA==","rk":"AQ==","sighash":"Aw==","signed_note_nullifier":"BA==","spend_auth_sig":"Ag==","van_cmx":"Bg==","vote_round_id":"AAECAw=="}"#
         );
     }
 
@@ -1883,20 +1872,9 @@ mod tests {
         })
         .unwrap();
 
-        let actual: serde_json::Value = serde_json::from_str(&wire).unwrap();
         assert_eq!(
-            actual,
-            serde_json::json!({
-                "van_nullifier": "AQ==",
-                "vote_authority_note_new": "Ag==",
-                "vote_commitment": "Aw==",
-                "proposal_id": 42,
-                "proof": "BA==",
-                "vote_round_id": "AAECAw==",
-                "vote_comm_tree_anchor_height": 77,
-                "r_vpk": "BQ==",
-                "vote_auth_sig": "Bg==",
-            })
+            wire,
+            r#"{"proof":"BA==","proposal_id":42,"r_vpk":"BQ==","van_nullifier":"AQ==","vote_auth_sig":"Bg==","vote_authority_note_new":"Ag==","vote_comm_tree_anchor_height":77,"vote_commitment":"Aw==","vote_round_id":"AAECAw=="}"#
         );
     }
 
@@ -1927,24 +1905,8 @@ mod tests {
             share_comms: vec![vec![7], vec![8]],
             primary_blind: vec![9],
         };
-        let live: serde_json::Value =
-            serde_json::from_str(&vote_share_wire_json(payload, Some(99), 123).unwrap()).unwrap();
-
-        let expected = serde_json::json!({
-            "shares_hash": "AQ==",
-            "proposal_id": 42,
-            "vote_decision": 2,
-            "enc_share": {"c1": "Aw==", "c2": "BA==", "share_index": 1},
-            "share_index": 1,
-            "tree_position": 99,
-            "all_enc_shares": [
-                {"c1": "Aw==", "c2": "BA==", "share_index": 1},
-                {"c1": "BQ==", "c2": "Bg==", "share_index": 2}
-            ],
-            "share_comms": ["Bw==", "CA=="],
-            "primary_blind": "CQ==",
-            "submit_at": 123,
-        });
+        let live = vote_share_wire_json(payload, Some(99), 123).unwrap();
+        let expected = r#"{"all_enc_shares":[{"c1":"Aw==","c2":"BA==","share_index":1},{"c1":"BQ==","c2":"Bg==","share_index":2}],"enc_share":{"c1":"Aw==","c2":"BA==","share_index":1},"primary_blind":"CQ==","proposal_id":42,"share_comms":["Bw==","CA=="],"share_index":1,"shares_hash":"AQ==","submit_at":123,"tree_position":99,"vote_decision":2}"#;
         assert_eq!(live, expected);
 
         let recovery_json = serde_json::json!({
@@ -1964,13 +1926,8 @@ mod tests {
             }]
         })
         .to_string();
-        let recovered: serde_json::Value = serde_json::from_str(
-            &recovered_vote_share_wire_json(recovery_json, 42, 1, 99, 0).unwrap(),
-        )
-        .unwrap();
-
-        let mut expected_recovered = expected;
-        expected_recovered["submit_at"] = serde_json::json!(0);
+        let recovered = recovered_vote_share_wire_json(recovery_json, 42, 1, 99, 0).unwrap();
+        let expected_recovered = r#"{"all_enc_shares":[{"c1":"Aw==","c2":"BA==","share_index":1},{"c1":"BQ==","c2":"Bg==","share_index":2}],"enc_share":{"c1":"Aw==","c2":"BA==","share_index":1},"primary_blind":"CQ==","proposal_id":42,"share_comms":["Bw==","CA=="],"share_index":1,"shares_hash":"AQ==","submit_at":0,"tree_position":99,"vote_decision":2}"#;
         assert_eq!(recovered, expected_recovered);
     }
 

@@ -423,19 +423,10 @@ void main() {
           .read(votingSessionProvider(kRoundId).notifier)
           .delegatePendingBundles(seedBytes: [1, 2, 3]);
 
-      expect(_postBody(http, '/shielded-vote/v1/delegate-vote'), {
-        'rk': base64Encode([2]),
-        'spend_auth_sig': base64Encode([3]),
-        'sighash': base64Encode([4]),
-        'signed_note_nullifier': base64Encode([5]),
-        'cmx_new': base64Encode([6]),
-        'van_cmx': base64Encode([7]),
-        'gov_nullifiers': [
-          base64Encode([8]),
-        ],
-        'proof': base64Encode([1]),
-        'vote_round_id': base64Encode(List.filled(32, 0xaa)),
-      });
+      expect(
+        _postBodyJson(http, '/shielded-vote/v1/delegate-vote'),
+        _delegationSubmissionWireGolden,
+      );
     },
   );
 
@@ -783,40 +774,14 @@ void main() {
             ],
           );
 
-      expect(_postBody(http, '/shielded-vote/v1/cast-vote'), {
-        'van_nullifier': base64Encode(List.filled(32, 1)),
-        'vote_authority_note_new': base64Encode(List.filled(32, 2)),
-        'vote_commitment': base64Encode(List.filled(32, 3)),
-        'proposal_id': 7,
-        'proof': base64Encode([4]),
-        'vote_round_id': base64Encode(List.filled(32, 0xaa)),
-        'vote_comm_tree_anchor_height': 10,
-        'r_vpk': base64Encode(List.filled(32, 13)),
-        'vote_auth_sig': base64Encode(List.filled(64, 12)),
-      });
-      expect(_postBody(http, '/shielded-vote/v1/shares'), {
-        'vote_round_id': kRoundId,
-        'shares_hash': base64Encode(List.filled(32, 7)),
-        'proposal_id': 7,
-        'vote_decision': 1,
-        'enc_share': {
-          'c1': base64Encode([8]),
-          'c2': base64Encode([9]),
-          'share_index': 0,
-        },
-        'share_index': 0,
-        'tree_position': 2,
-        'all_enc_shares': [
-          {
-            'c1': base64Encode([8]),
-            'c2': base64Encode([9]),
-            'share_index': 0,
-          },
-        ],
-        'share_comms': [base64Encode(List.filled(32, 10))],
-        'primary_blind': base64Encode(List.filled(32, 11)),
-        'submit_at': 0,
-      });
+      expect(
+        _postBodyJson(http, '/shielded-vote/v1/cast-vote'),
+        _voteCommitmentWireGolden,
+      );
+      expect(
+        _postBodyJson(http, '/shielded-vote/v1/shares'),
+        _voteShareWireGolden,
+      );
     },
   );
 
@@ -1232,6 +1197,9 @@ Map<String, dynamic> _postBody(FakeVotingHttpClient http, String path) {
   return request.body!;
 }
 
+String _postBodyJson(FakeVotingHttpClient http, String path) =>
+    jsonEncode(_postBody(http, path));
+
 Map<String, Object> votingHttpResponses({
   Map<String, dynamic>? roundStatus,
   Map<String, dynamic>? dynamicConfig,
@@ -1286,6 +1254,22 @@ const kEncodedRoundIdHex =
     '125e5475f653b074d5f4c36730852695f356416c2b6c3042516a912e5bffdd11';
 const _hex32 =
     '0101010101010101010101010101010101010101010101010101010101010101';
+const _roundIdBase64 = 'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo=';
+const _bytes1x32Base64 = 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=';
+const _bytes2x32Base64 = 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=';
+const _bytes3x32Base64 = 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=';
+const _bytes7x32Base64 = 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=';
+const _bytes10x32Base64 = 'CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo=';
+const _bytes11x32Base64 = 'CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws=';
+const _bytes12x64Base64 =
+    'DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA==';
+const _bytes13x32Base64 = 'DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0=';
+const _delegationSubmissionWireGolden =
+    '{"rk":"Ag==","spend_auth_sig":"Aw==","sighash":"BA==","signed_note_nullifier":"BQ==","cmx_new":"Bg==","van_cmx":"Bw==","gov_nullifiers":["CA=="],"proof":"AQ==","vote_round_id":"$_roundIdBase64"}';
+const _voteCommitmentWireGolden =
+    '{"van_nullifier":"$_bytes1x32Base64","vote_authority_note_new":"$_bytes2x32Base64","vote_commitment":"$_bytes3x32Base64","proposal_id":7,"proof":"BA==","vote_round_id":"$_roundIdBase64","vote_comm_tree_anchor_height":10,"r_vpk":"$_bytes13x32Base64","vote_auth_sig":"$_bytes12x64Base64"}';
+const _voteShareWireGolden =
+    '{"vote_round_id":"$kRoundId","shares_hash":"$_bytes7x32Base64","proposal_id":7,"vote_decision":1,"enc_share":{"c1":"CA==","c2":"CQ==","share_index":0},"share_index":0,"tree_position":2,"all_enc_shares":[{"c1":"CA==","c2":"CQ==","share_index":0}],"share_comms":["$_bytes10x32Base64"],"primary_blind":"$_bytes11x32Base64","submit_at":0}';
 const _fastTxConfirmationPolling = VotingTxConfirmationPolling(
   attempts: 1,
   delay: Duration.zero,

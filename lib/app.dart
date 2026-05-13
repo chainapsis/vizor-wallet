@@ -66,6 +66,7 @@ import 'src/features/voting/screens/voting_results_screen.dart';
 import 'src/features/voting/screens/voting_review_screen.dart';
 import 'src/features/voting/screens/voting_status_screen.dart';
 import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
+import 'src/features/voting/screens/voting_software_account_guard.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/linux_update_provider.dart';
@@ -664,37 +665,51 @@ final _routerProvider = Provider<GoRouter>((ref) {
         path: '/settings/endpoint',
         builder: (_, _) => const SettingsEndpointScreen(),
       ),
-      GoRoute(path: '/voting', builder: (_, _) => const VotingPollsScreen()),
+      GoRoute(
+        path: '/voting',
+        builder: (_, _) => _guardVotingScreen(const VotingPollsScreen()),
+      ),
       GoRoute(
         path: '/voting/poll/:roundId',
-        builder: (_, state) => VotingProposalDetailScreen(
-          roundId: state.pathParameters['roundId'] ?? '',
+        builder: (_, state) => _guardVotingScreen(
+          VotingProposalDetailScreen(
+            roundId: state.pathParameters['roundId'] ?? '',
+          ),
         ),
       ),
       GoRoute(
         path: '/voting/poll/:roundId/review',
-        builder: (_, state) =>
-            VotingReviewScreen(roundId: state.pathParameters['roundId'] ?? ''),
+        builder: (_, state) => _guardVotingScreen(
+          VotingReviewScreen(roundId: state.pathParameters['roundId'] ?? ''),
+        ),
       ),
       GoRoute(
         path: '/voting/poll/:roundId/status',
-        builder: (_, state) =>
-            VotingStatusScreen(roundId: state.pathParameters['roundId'] ?? ''),
+        builder: (_, state) => _guardVotingScreen(
+          VotingStatusScreen(roundId: state.pathParameters['roundId'] ?? ''),
+        ),
       ),
       GoRoute(
         path: '/voting/poll/:roundId/submitted',
-        builder: (_, state) => VotingSubmissionConfirmationScreen(
-          roundId: state.pathParameters['roundId'] ?? '',
+        builder: (_, state) => _guardVotingScreen(
+          VotingSubmissionConfirmationScreen(
+            roundId: state.pathParameters['roundId'] ?? '',
+          ),
         ),
       ),
       GoRoute(
         path: '/voting/poll/:roundId/results',
-        builder: (_, state) =>
-            VotingResultsScreen(roundId: state.pathParameters['roundId'] ?? ''),
+        builder: (_, state) => _guardVotingScreen(
+          VotingResultsScreen(roundId: state.pathParameters['roundId'] ?? ''),
+        ),
       ),
     ],
   );
 });
+
+Widget _guardVotingScreen(Widget child) {
+  return VotingSoftwareAccountGuard(child: child);
+}
 
 /// Cross-fade for onboarding page-level transitions. Both legs keep the
 /// two screens visible during the dissolve so the acrylic backdrop stays
