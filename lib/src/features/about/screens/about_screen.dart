@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart'
@@ -11,6 +12,7 @@ import 'package:flutter/material.dart'
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app_bootstrap.dart';
 import '../../../core/config/app_version_config.dart';
@@ -27,23 +29,46 @@ const _backLinkContentGap = AppSpacing.s;
 const _legalUpdatedLabel = 'Last Update:  ';
 const _paragraphWidth = 352.0;
 const _maxSidebarPaneContentWidth = 752.0;
+const _vizorGithubUrl = 'https://github.com/chainapsis/vizor-wallet/';
+const _vizorWebsiteUrl = 'https://vizor.cash';
 
-const _placeholderParagraph = _UtilityParagraphData(
+const _aboutParagraphs = [
+  _UtilityParagraphData(
+    heading: 'Built by the Keplr team',
+    body:
+        'We built Keplr, the wallet used by millions across Cosmos, Ethereum, '
+        'and Bitcoin. Vizor is our take on what a Zcash wallet should feel '
+        'like.',
+  ),
+  _UtilityParagraphData(
+    heading: 'Designed for shielded Zcash',
+    body:
+        'Vizor is built around shielded transactions, where the sender, '
+        'recipient, and amount stay private. Transparent Zcash works too, but '
+        'private is the default here.',
+  ),
+  _UtilityParagraphData(
+    heading: 'Open source, verifiable, and self-custodial',
+    body:
+        "Vizor is Apache licensed. Your keys stay on your device. We don't "
+        "see your balances or your transactions.",
+  ),
+];
+
+const _legalPlaceholderParagraph = _UtilityParagraphData(
   heading: 'From the team that brought you Keplr Wallet.',
   body:
       'Unlike Bitcoin or Ethereum, shielded Zcash transactions hide the '
       'sender, recipient, and amount.',
 );
 
-const _aboutParagraphs = [_placeholderParagraph, _placeholderParagraph];
-
 const _legalParagraphs = [
-  _placeholderParagraph,
-  _placeholderParagraph,
-  _placeholderParagraph,
-  _placeholderParagraph,
-  _placeholderParagraph,
-  _placeholderParagraph,
+  _legalPlaceholderParagraph,
+  _legalPlaceholderParagraph,
+  _legalPlaceholderParagraph,
+  _legalPlaceholderParagraph,
+  _legalPlaceholderParagraph,
+  _legalPlaceholderParagraph,
 ];
 
 class AboutScreen extends StatelessWidget {
@@ -101,6 +126,7 @@ class _AboutContent extends StatelessWidget {
         AppDecorativeDivider(width: 256),
         SizedBox(height: AppSpacing.md),
         _UtilityParagraphList(paragraphs: _aboutParagraphs),
+        _AboutLinkRow(),
         SizedBox(height: AppSpacing.md),
         VizorWordmark(width: 74, height: 27.925),
       ],
@@ -415,6 +441,93 @@ class _UtilityParagraph extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class _AboutLinkRow extends StatelessWidget {
+  const _AboutLinkRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      width: _paragraphWidth,
+      child: Wrap(
+        spacing: AppSpacing.md,
+        runSpacing: AppSpacing.xs,
+        children: [
+          _AboutTextLink(
+            label: 'GitHub',
+            semanticsLabel: 'Open Vizor GitHub',
+            url: _vizorGithubUrl,
+          ),
+          _AboutTextLink(
+            label: 'Website',
+            semanticsLabel: 'Open Vizor website',
+            url: _vizorWebsiteUrl,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AboutTextLink extends StatefulWidget {
+  const _AboutTextLink({
+    required this.label,
+    required this.semanticsLabel,
+    required this.url,
+  });
+
+  final String label;
+  final String semanticsLabel;
+  final String url;
+
+  @override
+  State<_AboutTextLink> createState() => _AboutTextLinkState();
+}
+
+class _AboutTextLinkState extends State<_AboutTextLink> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final textColor = colors.text.accent;
+    return Semantics(
+      button: true,
+      link: true,
+      label: widget.semanticsLabel,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => unawaited(_launchAboutUrl(widget.url)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(
+              widget.label,
+              style: AppTypography.labelLarge.copyWith(
+                color: textColor,
+                decoration: _hovered
+                    ? TextDecoration.underline
+                    : TextDecoration.none,
+                decorationColor: textColor,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _launchAboutUrl(String url) async {
+  try {
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  } on Exception {
+    // External links are best-effort from this utility page.
   }
 }
 
