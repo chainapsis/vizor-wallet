@@ -134,13 +134,21 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   void _toggleCameraPicker() {
     if (_cameras.length < 2 || widget.decoding) return;
     setState(() {
+      _troubleScanningOpen = false;
       _cameraPickerOpen = !_cameraPickerOpen;
     });
   }
 
   void _toggleTroubleScanning() {
     setState(() {
+      _cameraPickerOpen = false;
       _troubleScanningOpen = !_troubleScanningOpen;
+    });
+  }
+
+  void _dismissTroubleScanning() {
+    setState(() {
+      _troubleScanningOpen = false;
     });
   }
 
@@ -260,196 +268,215 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
               borderRadius: BorderRadius.circular(_outerRadius),
             ),
             clipBehavior: Clip.antiAlias,
-            child: Column(
+            child: Stack(
               children: [
-                SizedBox(
-                  width: _cameraWidth,
-                  height: _cameraHeight,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(_cameraRadius),
-                        clipBehavior: Clip.antiAliasWithSaveLayer,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: colors.background.base,
-                          ),
-                          child: ValueListenableBuilder<MobileScannerState>(
-                            valueListenable: _controller,
-                            builder: (context, scannerState, _) {
-                              final accessStatus = _cameraAccessStatus(
-                                scannerState,
-                              );
-                              final canScan =
-                                  accessStatus == _CameraAccessStatus.active;
+                Column(
+                  children: [
+                    SizedBox(
+                      width: _cameraWidth,
+                      height: _cameraHeight,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(_cameraRadius),
+                            clipBehavior: Clip.antiAliasWithSaveLayer,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: colors.background.base,
+                              ),
+                              child: ValueListenableBuilder<MobileScannerState>(
+                                valueListenable: _controller,
+                                builder: (context, scannerState, _) {
+                                  final accessStatus = _cameraAccessStatus(
+                                    scannerState,
+                                  );
+                                  final canScan =
+                                      accessStatus ==
+                                      _CameraAccessStatus.active;
 
-                              return Stack(
-                                fit: StackFit.expand,
-                                clipBehavior: Clip.none,
-                                children: [
-                                  if (QrScanner.isAvailable)
-                                    AnimatedUrScannerView(
-                                      controller: _controller,
-                                      expectedUrType: widget.expectedUrType,
-                                      scanSessionResetToken:
-                                          _scanSessionResetToken,
-                                      onProgress: _handleScanProgress,
-                                      onDecodeError: widget.onDecodeError,
-                                      onComplete: _handleScanComplete,
-                                    )
-                                  else
-                                    Center(
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(
-                                          AppSpacing.md,
-                                        ),
-                                        child: Text(
-                                          widget.unavailableMessage,
-                                          style: AppTypography.bodyMediumStrong
-                                              .copyWith(
-                                                color: colors.text.accent,
-                                              ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      ),
-                                    ),
-                                  if (canScan) const _ScanOverlay(),
-                                  if (canScan &&
-                                      _scanProgress > 0 &&
-                                      _scanProgress < 100 &&
-                                      !widget.decoding)
-                                    Positioned(
-                                      left: 0,
-                                      right: 0,
-                                      bottom: 20,
-                                      child: Center(
-                                        child: _QrScanProgressBar(
-                                          progress: _scanProgress / 100,
-                                        ),
-                                      ),
-                                    ),
-                                  if (canScan && widget.decoding)
-                                    Positioned(
-                                      left: -2,
-                                      top: -2,
-                                      right: -2,
-                                      bottom: -2,
-                                      child: KeystoneTransactionProgressOverlay(
-                                        label: widget.decodingLabel,
-                                        borderRadius: BorderRadius.circular(
-                                          _cameraRadius,
-                                        ),
-                                      ),
-                                    ),
-                                  if (canScan && _cameraPickerOpen)
-                                    AppPaneModalOverlay(
-                                      onDismiss: _toggleCameraPicker,
-                                      borderRadius: BorderRadius.circular(
-                                        _cameraRadius,
-                                      ),
-                                      child: _CameraPickerModal(
-                                        cameras: _cameras,
-                                        selectedCameraId:
-                                            _selectedCameraId ??
-                                            _controller.value.camera?.id,
-                                        onSelect: _selectCamera,
-                                        onCancel: _toggleCameraPicker,
-                                      ),
-                                    ),
-                                  if (accessStatus ==
-                                      _CameraAccessStatus.requesting)
-                                    const _CameraPermissionPrompt(
-                                      icon: AppIcons.camera,
-                                      title: 'Enable the Camera access',
-                                      description:
-                                          'A Camera is required to connect Keystone.\n'
-                                          'You can revert this in settings anytime later.',
-                                      iconStyle:
-                                          _CameraPermissionIconStyle.inverse,
-                                    ),
-                                  if (accessStatus ==
-                                      _CameraAccessStatus.denied)
-                                    _CameraPermissionPrompt(
-                                      icon: AppIcons.cameraDenied,
-                                      title: "You've denied the Camera access",
-                                      description:
-                                          'Request again, or enable manually\n'
-                                          'in the System settings.',
-                                      iconStyle:
-                                          _CameraPermissionIconStyle.raised,
-                                      action: AppButton(
-                                        onPressed: () => unawaited(
-                                          _retryCameraStart(
-                                            openSettingsOnDenied: true,
+                                  return Stack(
+                                    fit: StackFit.expand,
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      if (QrScanner.isAvailable)
+                                        AnimatedUrScannerView(
+                                          controller: _controller,
+                                          expectedUrType: widget.expectedUrType,
+                                          scanSessionResetToken:
+                                              _scanSessionResetToken,
+                                          onProgress: _handleScanProgress,
+                                          onDecodeError: widget.onDecodeError,
+                                          onComplete: _handleScanComplete,
+                                        )
+                                      else
+                                        Center(
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(
+                                              AppSpacing.md,
+                                            ),
+                                            child: Text(
+                                              widget.unavailableMessage,
+                                              style: AppTypography
+                                                  .bodyMediumStrong
+                                                  .copyWith(
+                                                    color: colors.text.accent,
+                                                  ),
+                                              textAlign: TextAlign.center,
+                                            ),
                                           ),
                                         ),
-                                        variant: AppButtonVariant.secondary,
-                                        size: AppButtonSize.medium,
-                                        minWidth: 96,
-                                        leading: const AppIcon(AppIcons.renew),
-                                        child: const Text('Request again'),
-                                      ),
-                                    ),
-                                ],
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(
-                                _cameraRadius,
-                              ),
-                              border: Border.all(
-                                color: colors.border.subtleOpacity,
-                                width: 2,
+                                      if (canScan) const _ScanOverlay(),
+                                      if (canScan &&
+                                          _scanProgress > 0 &&
+                                          _scanProgress < 100 &&
+                                          !widget.decoding)
+                                        Positioned(
+                                          left: 0,
+                                          right: 0,
+                                          bottom: 20,
+                                          child: Center(
+                                            child: _QrScanProgressBar(
+                                              progress: _scanProgress / 100,
+                                            ),
+                                          ),
+                                        ),
+                                      if (canScan && widget.decoding)
+                                        Positioned(
+                                          left: -2,
+                                          top: -2,
+                                          right: -2,
+                                          bottom: -2,
+                                          child:
+                                              KeystoneTransactionProgressOverlay(
+                                                label: widget.decodingLabel,
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                      _cameraRadius,
+                                                    ),
+                                              ),
+                                        ),
+                                      if (canScan && _cameraPickerOpen)
+                                        AppPaneModalOverlay(
+                                          onDismiss: _toggleCameraPicker,
+                                          borderRadius: BorderRadius.circular(
+                                            _cameraRadius,
+                                          ),
+                                          child: _CameraPickerModal(
+                                            cameras: _cameras,
+                                            selectedCameraId:
+                                                _selectedCameraId ??
+                                                _controller.value.camera?.id,
+                                            onSelect: _selectCamera,
+                                            onCancel: _toggleCameraPicker,
+                                          ),
+                                        ),
+                                      if (accessStatus ==
+                                          _CameraAccessStatus.requesting)
+                                        const _CameraPermissionPrompt(
+                                          icon: AppIcons.camera,
+                                          title: 'Enable the Camera access',
+                                          description:
+                                              'A Camera is required to connect Keystone.\n'
+                                              'You can revert this in settings anytime later.',
+                                          iconStyle: _CameraPermissionIconStyle
+                                              .inverse,
+                                        ),
+                                      if (accessStatus ==
+                                          _CameraAccessStatus.denied)
+                                        _CameraPermissionPrompt(
+                                          icon: AppIcons.cameraDenied,
+                                          title:
+                                              "You've denied the Camera access",
+                                          description:
+                                              'Request again, or enable manually\n'
+                                              'in the System settings.',
+                                          iconStyle:
+                                              _CameraPermissionIconStyle.raised,
+                                          action: AppButton(
+                                            onPressed: () => unawaited(
+                                              _retryCameraStart(
+                                                openSettingsOnDenied: true,
+                                              ),
+                                            ),
+                                            variant: AppButtonVariant.secondary,
+                                            size: AppButtonSize.medium,
+                                            minWidth: 96,
+                                            leading: const AppIcon(
+                                              AppIcons.renew,
+                                            ),
+                                            child: const Text('Request again'),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
                               ),
                             ),
                           ),
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(
+                                    _cameraRadius,
+                                  ),
+                                  border: Border.all(
+                                    color: colors.border.subtleOpacity,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    _TroubleScanningDisclosure(
+                      expanded: _troubleScanningOpen,
+                      onToggle: _toggleTroubleScanning,
+                    ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 56),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.s,
+                          vertical: AppSpacing.sm,
+                        ),
+                        child: ValueListenableBuilder<MobileScannerState>(
+                          valueListenable: _controller,
+                          builder: (context, scannerState, _) {
+                            final accessStatus = _cameraAccessStatus(
+                              scannerState,
+                            );
+                            if (accessStatus != _CameraAccessStatus.active) {
+                              return const SizedBox.shrink();
+                            }
+                            final canChooseCamera =
+                                _cameras.length > 1 &&
+                                !widget.decoding &&
+                                scannerState.isInitialized;
+                            return _CameraControlRow(
+                              label: _cameraLabel(scannerState),
+                              canChooseCamera: canChooseCamera,
+                              disabled: widget.decoding,
+                              onTap: _toggleCameraPicker,
+                            );
+                          },
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                const _ScanHelperText(),
-                const SizedBox(height: AppSpacing.xxs),
-                _TroubleScanningDisclosure(
-                  expanded: _troubleScanningOpen,
-                  onToggle: _toggleTroubleScanning,
-                ),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 56),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.s,
-                      vertical: AppSpacing.sm,
                     ),
-                    child: ValueListenableBuilder<MobileScannerState>(
-                      valueListenable: _controller,
-                      builder: (context, scannerState, _) {
-                        final accessStatus = _cameraAccessStatus(scannerState);
-                        if (accessStatus != _CameraAccessStatus.active) {
-                          return const SizedBox.shrink();
-                        }
-                        final canChooseCamera =
-                            _cameras.length > 1 &&
-                            !widget.decoding &&
-                            scannerState.isInitialized;
-                        return _CameraControlRow(
-                          label: _cameraLabel(scannerState),
-                          canChooseCamera: canChooseCamera,
-                          disabled: widget.decoding,
-                          onTap: _toggleCameraPicker,
-                        );
-                      },
+                  ],
+                ),
+                if (_troubleScanningOpen)
+                  AppPaneModalOverlay(
+                    onDismiss: _dismissTroubleScanning,
+                    borderRadius: BorderRadius.circular(_outerRadius),
+                    child: _TroubleScanningPopover(
+                      onDismiss: _dismissTroubleScanning,
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -473,23 +500,6 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _ScanHelperText extends StatelessWidget {
-  const _ScanHelperText();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
-      child: Text(
-        'Hold the QR code steady in front of your camera.',
-        style: AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
-        textAlign: TextAlign.center,
       ),
     );
   }
@@ -562,21 +572,61 @@ class _TroubleScanningDisclosure extends StatelessWidget {
               ),
             ),
           ),
-          if (expanded) ...[
-            const SizedBox(height: AppSpacing.xxs),
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.xs,
-                vertical: AppSpacing.xxs,
+        ],
+      ),
+    );
+  }
+}
+
+class _TroubleScanningPopover extends StatelessWidget {
+  const _TroubleScanningPopover({required this.onDismiss});
+
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: 360,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Trouble scanning?',
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (final tip in _tips) _TroubleScanningTip(text: tip),
-                ],
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onDismiss,
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xxs),
+                    child: AppIcon(
+                      AppIcons.cross,
+                      size: AppIconSize.medium,
+                      color: colors.icon.muted,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          for (final tip in _TroubleScanningDisclosure._tips)
+            _TroubleScanningTip(text: tip),
         ],
       ),
     );

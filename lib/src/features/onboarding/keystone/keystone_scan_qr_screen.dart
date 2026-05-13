@@ -91,7 +91,7 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Keep your Keystone steady while we scan',
+                      'Hold the QR code steady in front of your camera',
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.accent,
                       ),

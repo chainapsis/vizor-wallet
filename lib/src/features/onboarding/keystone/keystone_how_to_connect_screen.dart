@@ -331,10 +331,9 @@ class _ConnectionSteps extends StatelessWidget {
 
   static const _steps = [
     'Unlock your Keystone.',
-    'Tap the ⋯ menu (top right), then choose Connect Software Wallet.',
-    "Vizor isn't listed, so select Zodl. It uses the same connection method.",
-    'Your Keystone will show a moving QR code. Vizor will scan it through '
-        'your webcam, so allow camera access when prompted.',
+    'Tap the ⋯ menu, then Connect Software Wallet.',
+    "Vizor isn't listed. Select Zodl, it uses the same method.",
+    'Allow camera access when prompted. Vizor scans the QR through your webcam.',
   ];
 
   static const _markerWidth = 15.0;
