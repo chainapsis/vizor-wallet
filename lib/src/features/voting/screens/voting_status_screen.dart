@@ -15,6 +15,7 @@ import '../../../providers/voting/voting_state.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../voting_flow_models.dart';
 import '../voting_routes.dart';
+import '../voting_share_timing.dart';
 
 class VotingStatusScreen extends ConsumerStatefulWidget {
   const VotingStatusScreen({super.key, required this.roundId});
@@ -155,6 +156,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
                     : VotingSessionPhase.error;
                 return _StatusContent(
                   phase: phase,
+                  shareSummary: _shareSummary(state),
                   softwareAccountRequired: _softwareAccountRequired,
                   errorMessage: localError ?? state.error?.message,
                   onRetry: _retry,
@@ -174,6 +176,15 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     return phase;
   }
 
+  VotingShareTrackingSummary? _shareSummary(VotingSessionState state) {
+    final plan = state.resumePlan;
+    final round = state.round;
+    if (plan == null || round == null || plan.shareDelegations.isEmpty) {
+      return null;
+    }
+    return VotingShareTrackingSummary.fromShares(plan.shareDelegations, round);
+  }
+
   void _retry() {
     _started = false;
     _completedInThisRun = false;
@@ -186,12 +197,14 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
 class _StatusContent extends StatelessWidget {
   const _StatusContent({
     required this.phase,
+    this.shareSummary,
     this.softwareAccountRequired = false,
     this.errorMessage,
     this.onRetry,
   });
 
   final VotingSessionPhase phase;
+  final VotingShareTrackingSummary? shareSummary;
   final bool softwareAccountRequired;
   final String? errorMessage;
   final VoidCallback? onRetry;
@@ -251,6 +264,10 @@ class _StatusContent extends StatelessWidget {
               active: phase == VotingSessionPhase.submittingShares,
               complete: phase == VotingSessionPhase.done,
             ),
+            if (shareSummary case final summary? when summary.hasShares) ...[
+              const SizedBox(height: AppSpacing.xs),
+              _ShareTrackingRows(summary: summary),
+            ],
             if (phase == VotingSessionPhase.error) ...[
               const SizedBox(height: AppSpacing.sm),
               Text(
@@ -275,6 +292,76 @@ class _StatusContent extends StatelessWidget {
 
   bool _after(VotingSessionPhase target) {
     return phase.index > target.index && phase != VotingSessionPhase.error;
+  }
+}
+
+class _ShareTrackingRows extends StatelessWidget {
+  const _ShareTrackingRows({required this.summary});
+
+  final VotingShareTrackingSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: context.colors.border.subtle),
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          children: [
+            _ShareStatusLine(
+              label: 'Accepted, waiting for reveal',
+              count: summary.waiting,
+            ),
+            _ShareStatusLine(
+              label: 'Ready for helper confirmation',
+              count: summary.ready,
+            ),
+            _ShareStatusLine(
+              label: 'Overdue, retrying helpers',
+              count: summary.overdue,
+            ),
+            _ShareStatusLine(
+              label: 'Confirmed by helper',
+              count: summary.confirmed,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShareStatusLine extends StatelessWidget {
+  const _ShareStatusLine({required this.label, required this.count});
+
+  final String label;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+          Text(
+            count.toString(),
+            style: AppTypography.bodySmall.copyWith(color: colors.text.accent),
+          ),
+        ],
+      ),
+    );
   }
 }
 

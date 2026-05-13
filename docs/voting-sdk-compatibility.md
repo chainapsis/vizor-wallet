@@ -63,6 +63,11 @@ Swift's C FFI or TCA architecture.
   buffer, each share samples `submit_at` uniformly before `vote_end_time -
   last_moment_buffer`; inside the buffer it submits immediately with
   `submit_at = 0` and single-share vote-commitment mode.
+- Share recovery also follows zodl's timing model. Status polling waits until
+  `submit_at + 10s` for delayed shares or `created_at + 10s` for immediate
+  shares. Overdue shares are retried only after
+  `max(30s, min(1h, remaining_window / 4))`, and retry requests use
+  `submit_at = 0` without rewriting the original stored `submit_at`.
 - The current FRB voting surface's vote commitment builder stores the
   commitment bundle recovery state needed for subsequent share retry.
 - Round status payloads may use `proposals` or `questions`; the Flutter view

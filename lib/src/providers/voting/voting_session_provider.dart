@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/voting/voting_resume_plan.dart';
+import '../../features/voting/voting_share_timing.dart';
 import '../../rust/api/voting.dart' as rust_voting;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/voting_api_client.dart';
@@ -29,6 +30,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _operation = Future.value();
   final String _roundId;
   final Map<String, Future<void>> _delegationPirPrecomputes = {};
+  Timer? _shareTrackingTimer;
   String? _sessionAccountUuid;
 
   @override
@@ -40,6 +42,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // Provider disposal is round-scoped: clear abandoned prepared PCZTs but
       // keep account-wide vote-tree sync state reusable across rounds.
       _delegationPirPrecomputes.clear();
+      _shareTrackingTimer?.cancel();
       unawaited(
         _resetVotingSessionState(
           rust: rust,
@@ -48,7 +51,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
     });
-    return VotingSessionState(
+    final initialState = VotingSessionState(
       roundId: _roundId,
       accountUuid: context.accountUuid,
       config: context.config,
@@ -56,6 +59,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       resumePlan: context.resumePlan,
       phase: _phaseForResumePlan(context.resumePlan),
     );
+    _scheduleShareTracking(context, context.resumePlan);
+    return initialState;
   }
 
   Future<void> prepareDelegation() {
@@ -347,7 +352,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final plan = current.resumePlan ?? context.resumePlan;
       final api = ref.read(votingApiClientProvider(context.config.apiBaseUrl));
       final rust = ref.read(votingRustApiProvider);
-      final effectiveDraftVotes = _applyLastMomentMode(
+      final effectiveDraftVotes = VotingShareTimingPolicy.applyLastMomentMode(
         draftVotes,
         context.round,
       );
@@ -536,6 +541,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           clearCurrentVoteKey: true,
         ),
       );
+      _scheduleShareTracking(context, refreshedPlan);
     });
   }
 
@@ -581,7 +587,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final vcTreePosition = vcTreePositions[commitment.proposalId];
       for (final payload in commitment.sharePayloads) {
         final acceptedServers = <String>[];
-        final submitAt = _scheduledShareSubmitAt(context.round);
+        final submitAt = VotingShareTimingPolicy.scheduledShareSubmitAt(
+          context.round,
+          randomDouble: _submitAtRandom.nextDouble,
+        );
         final body = _sharePayloadJson(
           payload,
           vcTreePosition: vcTreePosition,
@@ -757,25 +766,73 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<void> submitPendingShares() {
     return _enqueue(() async {
+      _shareTrackingTimer?.cancel();
+      _shareTrackingTimer = null;
       final current = await future;
       final context = await _loadContext(_roundId);
-      final plan = current.resumePlan ?? context.resumePlan;
+      final plan = await _loadResumePlan(context);
       state = AsyncData(
-        current.copyWith(phase: VotingSessionPhase.submittingShares),
+        current.copyWith(
+          phase: VotingSessionPhase.submittingShares,
+          resumePlan: plan,
+        ),
       );
 
       final api = ref.read(votingApiClientProvider(context.config.apiBaseUrl));
       final configuredServerUrls = context.config.voteServers
           .map((endpoint) => endpoint.url.toString())
           .toList(growable: false);
+      final nowSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
+      final voteEnd = context.round.voteEndTime;
+      final voteEndSeconds = voteEnd == null
+          ? null
+          : voteEnd.millisecondsSinceEpoch ~/ 1000;
       for (final share in plan.unconfirmedShareDelegations) {
         // A share is recoverable once any helper accepted it, but every
         // configured helper should eventually receive it for redundancy.
         final acceptedUrls = LinkedHashSet<String>.of(share.sentToUrls);
+        final readyForStatusCheck =
+            VotingShareTimingPolicy.isShareReadyForStatusCheck(
+              share,
+              nowSeconds: nowSeconds,
+            );
+        final overdueForRetry =
+            voteEndSeconds != null &&
+            VotingShareTimingPolicy.shouldResubmitShare(
+              share,
+              nowSeconds: nowSeconds,
+              voteEndTimeSeconds: voteEndSeconds,
+            );
+
+        if (!readyForStatusCheck && !overdueForRetry) continue;
+
+        if (acceptedUrls.isNotEmpty && readyForStatusCheck) {
+          // Helpers can reveal at slightly different times. Confirmation by any
+          // helper is enough to advance the local workflow for this share.
+          final confirmed = await _shareConfirmedByAnyHelper(
+            api: api,
+            share: share,
+            serverUrls: acceptedUrls,
+          );
+          if (confirmed) {
+            await ref
+                .read(votingRustApiProvider)
+                .markShareConfirmed(
+                  dbPath: context.dbPath,
+                  walletId: context.accountUuid,
+                  roundId: share.roundId,
+                  bundleIndex: share.bundleIndex,
+                  proposalId: share.proposalId,
+                  shareIndex: share.shareIndex,
+                );
+            continue;
+          }
+        }
+
         final missingUrls = configuredServerUrls
             .where((serverUrl) => !acceptedUrls.contains(serverUrl))
             .toList(growable: false);
-        if (missingUrls.isNotEmpty) {
+        if (overdueForRetry && missingUrls.isNotEmpty) {
           final newUrls = await _resubmitShareToMissingHelpers(
             api: api,
             context: context,
@@ -795,27 +852,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             acceptedUrls.addAll(newUrls);
           }
         }
-
-        if (acceptedUrls.isEmpty) continue;
-        // Helpers can reveal at slightly different times. Confirmation by any
-        // helper is enough to advance the local workflow for this share.
-        final confirmed = await _shareConfirmedByAnyHelper(
-          api: api,
-          share: share,
-          serverUrls: acceptedUrls,
-        );
-        if (confirmed) {
-          await ref
-              .read(votingRustApiProvider)
-              .markShareConfirmed(
-                dbPath: context.dbPath,
-                walletId: context.accountUuid,
-                roundId: share.roundId,
-                bundleIndex: share.bundleIndex,
-                proposalId: share.proposalId,
-                shareIndex: share.shareIndex,
-              );
-        }
       }
 
       final refreshedPlan = await _loadResumePlan(context);
@@ -827,6 +863,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           resumePlan: refreshedPlan,
         ),
       );
+      _scheduleShareTracking(context, refreshedPlan);
     });
   }
 
@@ -859,7 +896,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         proposalId: share.proposalId,
         shareIndex: share.shareIndex,
         vcTreePosition: commitmentBundle.vcTreePosition,
-        submitAt: share.submitAt,
+        submitAt: BigInt.zero,
       );
     } catch (e) {
       debugPrint(
@@ -896,6 +933,31 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
     }
     return acceptedUrls;
+  }
+
+  void _scheduleShareTracking(
+    _VotingSessionContext context,
+    VotingResumePlan plan,
+  ) {
+    _shareTrackingTimer?.cancel();
+    _shareTrackingTimer = null;
+    if (plan.unconfirmedShareDelegations.isEmpty) return;
+
+    final delay = VotingShareTimingPolicy.nextTrackingDelay(
+      plan.unconfirmedShareDelegations,
+      context.round,
+    );
+    if (delay == null) return;
+
+    // Keep immediate-ready shares asynchronous so build/state updates settle
+    // before recovery polling re-enters the serialized operation queue.
+    final scheduledDelay = delay < const Duration(seconds: 1)
+        ? const Duration(seconds: 1)
+        : delay;
+    _shareTrackingTimer = Timer(scheduledDelay, () {
+      _shareTrackingTimer = null;
+      unawaited(submitPendingShares());
+    });
   }
 
   Future<bool> _shareConfirmedByAnyHelper({
@@ -1251,38 +1313,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final bundleCount = plan.bundleCount;
     if (bundleCount == 0) return const {};
     return {for (var i = 0; i < bundleCount; i++) i};
-  }
-
-  static List<rust_voting.ApiDraftVote> _applyLastMomentMode(
-    List<rust_voting.ApiDraftVote> draftVotes,
-    VotingRoundDetails round,
-  ) {
-    if (!round.isLastMoment()) return draftVotes;
-    return [
-      for (final draft in draftVotes)
-        rust_voting.ApiDraftVote(
-          proposalId: draft.proposalId,
-          choice: draft.choice,
-          numOptions: draft.numOptions,
-          vcTreePosition: draft.vcTreePosition,
-          singleShare: true,
-        ),
-    ];
-  }
-
-  static int _scheduledShareSubmitAt(VotingRoundDetails round) {
-    final end = round.voteEndTime;
-    final buffer = round.lastMomentBuffer;
-    if (end == null || buffer == null || round.isLastMoment()) return 0;
-
-    final now = DateTime.now().toUtc();
-    final deadline = end.subtract(buffer);
-    if (!deadline.isAfter(now)) return 0;
-
-    final windowSeconds = deadline.difference(now).inSeconds;
-    if (windowSeconds <= 0) return 0;
-    final delaySeconds = (_submitAtRandom.nextDouble() * windowSeconds).floor();
-    return now.millisecondsSinceEpoch ~/ 1000 + delaySeconds;
   }
 
   static String _hexFromBytes(List<int> bytes) {

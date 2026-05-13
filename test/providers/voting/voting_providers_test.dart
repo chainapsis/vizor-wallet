@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
+import 'package:zcash_wallet/src/features/voting/voting_share_timing.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_rounds_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
@@ -152,6 +153,71 @@ void main() {
         DateTime.fromMillisecondsSinceEpoch(1500000, isUtc: true),
       ),
       isFalse,
+    );
+  });
+
+  test('share timing policy schedules before last-moment buffer', () {
+    final round = VotingRoundDetails.fromStatus(
+      VotingRoundStatus.fromJson(
+        roundStatusJson(roundId: kRoundId, ceremonyStart: 1000, voteEnd: 1600),
+      ),
+    );
+    final submitAt = VotingShareTimingPolicy.scheduledShareSubmitAt(
+      round,
+      now: DateTime.fromMillisecondsSinceEpoch(1100000, isUtc: true),
+      randomDouble: () => 0.5,
+    );
+
+    expect(submitAt, 1230);
+  });
+
+  test('share timing policy gates status checks and overdue retries', () {
+    final share = rust_voting.ApiShareDelegationRecord(
+      roundId: kRoundId,
+      bundleIndex: 0,
+      proposalId: 7,
+      shareIndex: 0,
+      sentToUrls: const ['https://helper-a.example'],
+      nullifier: Uint8List.fromList(List.filled(32, 1)),
+      phase: VotingWorkflowPhase.submittedShare,
+      confirmed: false,
+      submitAt: BigInt.from(100),
+      createdAt: BigInt.from(50),
+    );
+
+    expect(
+      VotingShareTimingPolicy.isShareReadyForStatusCheck(
+        share,
+        nowSeconds: 109,
+      ),
+      isFalse,
+    );
+    expect(
+      VotingShareTimingPolicy.isShareReadyForStatusCheck(
+        share,
+        nowSeconds: 110,
+      ),
+      isTrue,
+    );
+    expect(
+      VotingShareTimingPolicy.overdueThreshold(share, voteEndTimeSeconds: 500),
+      const Duration(seconds: 100),
+    );
+    expect(
+      VotingShareTimingPolicy.shouldResubmitShare(
+        share,
+        nowSeconds: 199,
+        voteEndTimeSeconds: 500,
+      ),
+      isFalse,
+    );
+    expect(
+      VotingShareTimingPolicy.shouldResubmitShare(
+        share,
+        nowSeconds: 200,
+        voteEndTimeSeconds: 500,
+      ),
+      isTrue,
     );
   });
 
@@ -819,7 +885,76 @@ void main() {
     expect(rust.confirmedShares, ['0:7:0']);
   });
 
+  test(
+    'share recovery waits until submit_at plus grace before polling',
+    () async {
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final shareNullifier = Uint8List.fromList(List.filled(32, 3));
+      final futureShare = rust_voting.ApiShareDelegationRecord(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        nullifier: shareNullifier,
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.from(nowSeconds + 100),
+        createdAt: BigInt.from(nowSeconds),
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 1,
+          commitmentBundles: [
+            rust_voting.ApiCommitmentBundleRecovery(
+              bundleIndex: 0,
+              proposalId: 7,
+              commitmentBundleJson: commitmentBundleRecoveryJson(),
+              vcTreePosition: BigInt.from(42),
+            ),
+          ],
+          shareDelegations: [futureShare],
+          unconfirmedShareDelegations: [futureShare],
+        ),
+      );
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(
+          dynamicConfig: dynamicConfigJson(
+            voteServers: const [
+              {'url': 'https://helper-a.example', 'label': 'helper-a'},
+              {'url': 'https://helper-b.example', 'label': 'helper-b'},
+            ],
+          ),
+        ),
+      );
+      final container = _sessionContainer(http: http, recoveryApi: recoveryApi);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .submitPendingShares();
+
+      expect(
+        http.requests.where(
+          (request) => request.uri.path.contains('/share-status/'),
+        ),
+        isEmpty,
+      );
+      expect(
+        http.requests.where(
+          (request) =>
+              request.method == 'POST' &&
+              request.uri.host == 'helper-b.example',
+        ),
+        isEmpty,
+      );
+      expect(recoveryApi.addedSentServers, isEmpty);
+    },
+  );
+
   test('pending share recovery resubmits helpers missed initially', () async {
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final shareNullifier = Uint8List.fromList(List.filled(32, 2));
     final shareId = _hexFromBytes(shareNullifier);
     final pendingShare = rust_voting.ApiShareDelegationRecord(
@@ -858,6 +993,11 @@ void main() {
     final http = FakeVotingHttpClient(
       responses:
           votingHttpResponses(
+            roundStatus: roundStatusJson(
+              roundId: kRoundId,
+              ceremonyStart: 0,
+              voteEnd: nowSeconds + 1000,
+            ),
             dynamicConfig: dynamicConfigJson(
               voteServers: const [
                 {'url': 'https://helper-a.example', 'label': 'helper-a'},
@@ -886,7 +1026,7 @@ void main() {
     expect(helperBPost.uri.path, '/shielded-vote/v1/shares');
     expect(helperBPost.body?['vote_round_id'], kRoundId);
     expect(helperBPost.body?['tree_position'], 42);
-    expect(helperBPost.body?['submit_at'], 123);
+    expect(helperBPost.body?['submit_at'], 0);
     expect(helperBPost.body?['enc_share'], {
       'c1': base64Encode([8]),
       'c2': base64Encode([9]),

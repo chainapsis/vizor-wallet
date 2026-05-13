@@ -220,6 +220,14 @@ Retry/resubmission paths may submit immediately with `submit_at = 0`; the
 original scheduled value remains part of the durable audit/recovery record for
 the first accepted submission.
 
+Dart mirrors the zodl iOS share tracker before calling the Rust transitions:
+helper status checks wait until `submit_at + 10s` for delayed shares or
+`created_at + 10s` for immediate shares, and missing-helper retries wait until
+the share is overdue by `max(30s, min(1h, remaining_window / 4))`. Retry bodies
+are immediate (`submit_at = 0`), but `record_share_delegation` keeps the
+original scheduled value unless a new helper acceptance is appended through the
+same durable share key.
+
 Transition:
 
 ```text
