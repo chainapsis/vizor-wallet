@@ -55,6 +55,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   String? _selectedCameraId;
   bool _loadingCameras = false;
   bool _cameraPickerOpen = false;
+  bool _troubleScanningOpen = false;
   int _scanProgress = 0;
   int _scanSessionResetToken = 0;
 
@@ -134,6 +135,12 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     if (_cameras.length < 2 || widget.decoding) return;
     setState(() {
       _cameraPickerOpen = !_cameraPickerOpen;
+    });
+  }
+
+  void _toggleTroubleScanning() {
+    setState(() {
+      _troubleScanningOpen = !_troubleScanningOpen;
     });
   }
 
@@ -408,6 +415,13 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                     ],
                   ),
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                const _ScanHelperText(),
+                const SizedBox(height: AppSpacing.xxs),
+                _TroubleScanningDisclosure(
+                  expanded: _troubleScanningOpen,
+                  onToggle: _toggleTroubleScanning,
+                ),
                 ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: 56),
                   child: Padding(
@@ -460,6 +474,130 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
           ],
         ],
       ),
+    );
+  }
+}
+
+class _ScanHelperText extends StatelessWidget {
+  const _ScanHelperText();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+      child: Text(
+        'Hold the QR code steady in front of your camera.',
+        style: AppTypography.bodyMedium.copyWith(color: colors.text.secondary),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+}
+
+class _TroubleScanningDisclosure extends StatelessWidget {
+  const _TroubleScanningDisclosure({
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  static const _tips = [
+    'Tap the QR code on your Keystone to show it full screen. This is the '
+        'easiest fix.',
+    'Move your Keystone a few inches further from the camera so it can focus.',
+    "Make sure the room is well-lit and the QR code isn't reflecting glare.",
+    'On a Mac, you can use Continuity Camera to scan with your iPhone instead.',
+  ];
+
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final labelColor = colors.button.ghost.label;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.center,
+            child: Semantics(
+              button: true,
+              toggled: expanded,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onToggle,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xxs,
+                      vertical: AppSpacing.xxs,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Trouble scanning?',
+                          style: AppTypography.labelLarge.copyWith(
+                            color: labelColor,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.xxs),
+                        Transform.rotate(
+                          angle: expanded ? math.pi : 0,
+                          child: AppIcon(
+                            AppIcons.expand,
+                            size: AppIconSize.medium,
+                            color: labelColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (expanded) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.xxs,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final tip in _tips) _TroubleScanningTip(text: tip),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TroubleScanningTip extends StatelessWidget {
+  const _TroubleScanningTip({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final style = AppTypography.bodyMedium.copyWith(
+      color: colors.text.secondary,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xxs),
+      child: Text(text, style: style),
     );
   }
 }

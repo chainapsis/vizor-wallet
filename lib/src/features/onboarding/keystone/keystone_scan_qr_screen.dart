@@ -91,7 +91,7 @@ class _KeystoneScanQrScreenState extends ConsumerState<KeystoneScanQrScreen> {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
-                      'Prepare your Keystone wallet',
+                      'Keep your Keystone steady while we scan',
                       style: AppTypography.bodyMediumStrong.copyWith(
                         color: colors.text.accent,
                       ),
