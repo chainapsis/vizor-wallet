@@ -785,8 +785,8 @@ impl VotingDb {
                 message: format!("invalid vote_round_id hex '{}': {e}", params.vote_round_id),
             })?;
 
-        // Phase 2 must reproduce the already signed PCZT values instead of
-        // sampling new randomness when persisted data is incomplete.
+        // Proof generation must reproduce the values already signed in the PCZT
+        // instead of sampling new randomness when persisted data is incomplete.
         let precomputed = precomputed_randomness_from_stored(
             notes.len(),
             &padded_secrets,

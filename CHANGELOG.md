@@ -14,8 +14,8 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
   blind instead of using empty bytes.
 - Recovery now rejects stored commitment bundles that are missing their vote
   commitment tree position instead of assuming position 0.
-- Delegation proof generation now requires the Phase 1 randomness persisted from
-  the PCZT flow instead of sampling fresh randomness when those fields are empty.
+- Delegation proof generation now requires the randomness saved when the PCZT was
+  built instead of sampling fresh randomness when those fields are empty.
 
 # 0.6.0
 
