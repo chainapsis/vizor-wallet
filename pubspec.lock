@@ -588,8 +588,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "92141705ce5dc5afdb239fb5af5d512b1a0a726e"
-      resolved-ref: "92141705ce5dc5afdb239fb5af5d512b1a0a726e"
+      ref: "3d25458c554ba5aa8043e20926ff3f32decc7169"
+      resolved-ref: "3d25458c554ba5aa8043e20926ff3f32decc7169"
       url: "https://github.com/chainapsis/mobile_scanner.git"
     source: git
     version: "7.2.0"

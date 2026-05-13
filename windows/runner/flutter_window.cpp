@@ -1,5 +1,8 @@
 #include "flutter_window.h"
 
+#include <flutter/standard_method_codec.h>
+#include <shellapi.h>
+
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
@@ -25,6 +28,24 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+
+  camera_permission_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "com.zcash.wallet/camera_permission",
+          &flutter::StandardMethodCodec::GetInstance());
+  camera_permission_channel_->SetMethodCallHandler(
+      [](const auto& call, auto result) {
+        if (call.method_name() != "openSettings") {
+          result->NotImplemented();
+          return;
+        }
+        const auto shell_result = reinterpret_cast<intptr_t>(ShellExecuteW(
+            nullptr, L"open", L"ms-settings:privacy-webcam", nullptr, nullptr,
+            SW_SHOWNORMAL));
+        result->Success(flutter::EncodableValue(shell_result > 32));
+      });
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -41,6 +62,7 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   if (flutter_controller_) {
+    camera_permission_channel_.reset();
     flutter_controller_ = nullptr;
   }
 
