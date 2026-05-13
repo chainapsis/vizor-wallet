@@ -207,6 +207,19 @@ mod tests {
     }
 
     #[test]
+    fn decrypt_payload_accepts_dart_generated_fixture() {
+        const PASSWORD: &[u8] = b"correct horse battery staple";
+        const SALT_BASE64: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
+        const MNEMONIC: &[u8] = b"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        const PAYLOAD: &str = r#"{"v":1,"n":"ERITFBUWFxgZGhsc","c":"J72zWbdISI5fRMoTmiYhHCtXt7xdqwJ4zQfwMp693QwRSwsMX3ooQibazT49sdYPzjV5+7B7cbwvGPH0AKbAkK+5mjoFbPxziTpqUNC1VMacrlnDyB7wY4k7Iwqh","m":"Wnf1YadalnPgYjiH0MyJlg=="}"#;
+
+        let salt = STANDARD.decode(SALT_BASE64).unwrap();
+        let clear = decrypt_payload(PAYLOAD.as_bytes(), PASSWORD, salt.as_slice()).unwrap();
+
+        assert_eq!(clear.as_slice(), MNEMONIC);
+    }
+
+    #[test]
     fn decrypt_payload_rejects_wrong_password() {
         let salt = b"0123456789abcdef";
         let payload = encrypted_payload_json(b"good password", salt, b"secret");
