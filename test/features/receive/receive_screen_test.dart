@@ -62,7 +62,7 @@ void main() {
     expect(find.text('Shielded Address'), findsOneWidget);
     expect(
       find.text(
-        "Keystone provides an Orchard-only shielded address, so Vizor can't renew it from this screen.",
+        "Keystone accounts use one fixed shielded address, so Renew isn't available.",
       ),
       findsOneWidget,
     );
