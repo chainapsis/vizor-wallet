@@ -39,7 +39,14 @@ pub fn build_share_payloads(
 
     let mut payloads = Vec::with_capacity(iter_shares.len());
     for (i, share) in iter_shares.iter().enumerate() {
-        let primary_blind = commitment.share_blinds.get(i).cloned().unwrap_or_default();
+        let primary_blind =
+            commitment
+                .share_blinds
+                .get(i)
+                .cloned()
+                .ok_or_else(|| VotingError::InvalidInput {
+                    message: format!("missing primary blind for encrypted share index {i}"),
+                })?;
         payloads.push(SharePayload {
             shares_hash: commitment.shares_hash.clone(),
             proposal_id: commitment.proposal_id,
@@ -207,5 +214,16 @@ mod tests {
         assert_eq!(result[0].shares_hash, commitment.shares_hash);
         assert_eq!(result[0].enc_share.share_index, 0);
         assert_eq!(result[1].enc_share.share_index, 1);
+    }
+
+    #[test]
+    fn test_build_share_payloads_rejects_missing_primary_blind() {
+        let mut commitment = mock_commitment();
+        commitment.share_blinds.truncate(1);
+
+        let err = build_share_payloads(&mock_enc_shares(), &commitment, 1, 2, 42, false)
+            .expect_err("missing share blind should fail");
+
+        assert!(err.to_string().contains("missing primary blind"), "{err}");
     }
 }
