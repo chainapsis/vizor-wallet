@@ -43,8 +43,12 @@ pub fn seed_from_macos_stored_mnemonic(
             .ok_or_else(|| "Mnemonic not found for account".to_string())?;
 
     let salt = decode_base64(salt_raw.as_slice(), "secure storage salt")?;
+    drop(salt_raw);
     let mnemonic_bytes =
         decrypt_payload(payload_raw.as_slice(), password.as_slice(), salt.as_slice())?;
+    drop(password);
+    drop(salt);
+    drop(payload_raw);
     keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())
 }
 
