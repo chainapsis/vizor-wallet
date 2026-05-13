@@ -18,6 +18,7 @@ const _mnemonic = 'abandon abandon abandon abandon abandon abandon';
 const _passwordVerifierKey = 'zcash_password_verifier';
 const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
 const _rotationInProgressKey = 'zcash_rotation_in_progress';
+const _migrationCompleteKey = 'zcash_mnemonic_storage_migrated_v1';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -412,6 +413,31 @@ void main() {
       );
     },
   );
+
+  test('macOS mnemonic migration flag skips repeated legacy scans', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    final operations = <String>[];
+    final regularStorage = _MapStorage('regular', operations: operations);
+    final mnemonicStorage = _MapStorage('mnemonic', operations: operations);
+    store = AppSecureStore.testing(
+      storage: regularStorage,
+      mnemonicStorage: mnemonicStorage,
+    );
+
+    await store.configurePassword(_oldPassword);
+    await store.writeSecretString(_mnemonicKey, _mnemonic);
+    store.clearSessionPassword();
+
+    expect(await store.verifyPassword(_oldPassword), isTrue);
+    expect(regularStorage.valueFor(_migrationCompleteKey), 'true');
+    expect(operations, contains('regular.readAll'));
+
+    operations.clear();
+    store.clearSessionPassword();
+
+    expect(await store.verifyPassword(_oldPassword), isTrue);
+    expect(operations, isNot(contains('regular.readAll')));
+  });
 
   test(
     'macOS mnemonic reads do not fallback before unlock migration',

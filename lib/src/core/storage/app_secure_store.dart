@@ -26,6 +26,8 @@ const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
 const _passwordRotationInProgressKey = 'zcash_rotation_in_progress';
 const _passwordRotationRollbackFailedKind = 'rollbackFailed';
 const _accountMnemonicKeyPrefix = 'zcash_account_mnemonic_';
+const _accountMnemonicMigrationCompleteKey =
+    'zcash_mnemonic_storage_migrated_v1';
 
 class PasswordRotationRecoveryFailedException implements Exception {
   const PasswordRotationRecoveryFailedException();
@@ -467,6 +469,9 @@ class AppSecureStore {
         identical(_mnemonicStorage, _storage)) {
       return true;
     }
+    if (await readPlain(_accountMnemonicMigrationCompleteKey) == 'true') {
+      return true;
+    }
 
     final legacyValues = await _storage.readAll();
     var succeeded = true;
@@ -483,6 +488,16 @@ class AppSecureStore {
         succeeded = false;
         debugPrint(
           'AppSecureStore: failed to migrate account mnemonic "${entry.key}": '
+          '$error\n$stackTrace',
+        );
+      }
+    }
+    if (succeeded) {
+      try {
+        await writePlain(_accountMnemonicMigrationCompleteKey, 'true');
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppSecureStore: failed to mark account mnemonic migration complete: '
           '$error\n$stackTrace',
         );
       }
