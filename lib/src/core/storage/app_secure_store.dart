@@ -108,6 +108,14 @@ class AppSecureStore {
 
   bool get hasSessionPassword => _sessionPassword != null;
 
+  String requireSessionPasswordForNativeSecretUse() {
+    final password = _sessionPassword;
+    if (password == null) {
+      throw StateError('Secret storage requires an unlocked session.');
+    }
+    return password;
+  }
+
   Future<String> ensureWalletDbName() async {
     final existing = await readPlain(kWalletDbNameKey);
     if (existing != null && existing.isNotEmpty) {

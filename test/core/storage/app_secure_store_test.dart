@@ -68,6 +68,23 @@ void main() {
     expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
   });
 
+  test('native secret use requires an unlocked session password', () async {
+    expect(
+      store.requireSessionPasswordForNativeSecretUse,
+      throwsA(isA<StateError>()),
+    );
+
+    await store.configurePassword(_oldPassword);
+
+    expect(store.requireSessionPasswordForNativeSecretUse(), _oldPassword);
+
+    store.clearSessionPassword();
+    expect(
+      store.requireSessionPasswordForNativeSecretUse,
+      throwsA(isA<StateError>()),
+    );
+  });
+
   test('changePassword journal stores only roll-forward data', () async {
     final blockingStorage = _BlockingDeleteStorage(
       blockKey: _rotationInProgressKey,

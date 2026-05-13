@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart'
     show CircularProgressIndicator, Scrollbar, Tooltip;
@@ -19,6 +20,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -120,25 +122,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       attemptedEndpoint = endpoint;
 
-      final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
-        accountUuid,
-      );
-      if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-        throw Exception('Mnemonic not found for the active account.');
-      }
-
       late final rust_sync.ShieldTransparentResult result;
       late final Future<rust_sync.ShieldTransparentResult> resultFuture;
-      try {
-        resultFuture = rust_sync.shieldTransparentBalance(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
-          accountUuid: accountUuid,
-          mnemonicBytes: mnemonicBytes,
+
+      if (Platform.isMacOS) {
+        final password = ref
+            .read(appSecurityProvider.notifier)
+            .requireSessionPasswordForNativeSecretUse();
+        resultFuture = rust_sync
+            .shieldTransparentBalanceWithMacosStoredMnemonic(
+              dbPath: dbPath,
+              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              password: password,
+            );
+      } else {
+        final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
+          accountUuid,
         );
-      } finally {
-        mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+          throw Exception('Mnemonic not found for the active account.');
+        }
+
+        try {
+          resultFuture = rust_sync.shieldTransparentBalance(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            mnemonicBytes: mnemonicBytes,
+          );
+        } finally {
+          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+        }
       }
       result = await resultFuture;
       log(
