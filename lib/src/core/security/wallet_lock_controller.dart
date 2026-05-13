@@ -11,12 +11,10 @@ import '../../providers/sync_provider.dart';
 const Duration kAutoLockBackgroundTimeout = Duration(minutes: 10);
 
 bool shouldAutoLock({
-  required Duration? hiddenAt,
-  required Duration now,
+  required Duration elapsed,
   Duration threshold = kAutoLockBackgroundTimeout,
 }) {
-  if (hiddenAt == null) return false;
-  return (now - hiddenAt) >= threshold;
+  return elapsed >= threshold;
 }
 
 Future<void> lockWalletSession({
@@ -47,7 +45,8 @@ class AutoLockObserver extends ConsumerStatefulWidget {
 class _AutoLockObserverState extends ConsumerState<AutoLockObserver> {
   AppLifecycleListener? _listener;
   final Stopwatch _clock = Stopwatch()..start();
-  Duration? _hiddenAt;
+  Duration? _monoHiddenAt;
+  DateTime? _wallHiddenAt;
 
   @override
   void initState() {
@@ -59,25 +58,34 @@ class _AutoLockObserverState extends ConsumerState<AutoLockObserver> {
   void dispose() {
     _listener?.dispose();
     _listener = null;
-    _clock.stop();
     super.dispose();
   }
 
   void _onHide() {
     final security = ref.read(appSecurityProvider);
     if (!security.isUnlocked) return;
-    _hiddenAt = _clock.elapsed;
+    _monoHiddenAt = _clock.elapsed;
+    _wallHiddenAt = DateTime.now();
   }
 
   void _onShow() {
-    final hiddenAt = _hiddenAt;
-    _hiddenAt = null;
-    if (hiddenAt == null) return;
+    final monoHiddenAt = _monoHiddenAt;
+    final wallHiddenAt = _wallHiddenAt;
+    _monoHiddenAt = null;
+    _wallHiddenAt = null;
+    if (monoHiddenAt == null || wallHiddenAt == null) return;
     final security = ref.read(appSecurityProvider);
     if (!security.isUnlocked) return;
-    final now = _clock.elapsed;
-    if (!shouldAutoLock(hiddenAt: hiddenAt, now: now)) return;
-    log('AutoLock: hidden for ${now - hiddenAt}, locking wallet session');
+    final monoElapsed = _clock.elapsed - monoHiddenAt;
+    final wallElapsed = DateTime.now().difference(wallHiddenAt);
+    if (!shouldAutoLock(elapsed: monoElapsed) &&
+        !shouldAutoLock(elapsed: wallElapsed)) {
+      return;
+    }
+    log(
+      'AutoLock: monoElapsed=$monoElapsed wallElapsed=$wallElapsed, '
+      'locking wallet session',
+    );
     lockWalletSession(
       securityNotifier: ref.read(appSecurityProvider.notifier),
       accountNotifier: ref.read(accountProvider.notifier),
