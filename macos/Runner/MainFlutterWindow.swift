@@ -471,6 +471,17 @@ private final class TitlebarTitleLabel: NSTextField {
 }
 
 class MainFlutterWindow: NSWindow {
+  private static let fullscreenTitleFallbackDelay = DispatchTimeInterval.seconds(2)
+
+  private var fullscreenTitleObservers: [NSObjectProtocol] = []
+  private var fullscreenTitleTransitionGeneration = 0
+
+  deinit {
+    for observer in fullscreenTitleObservers {
+      NotificationCenter.default.removeObserver(observer)
+    }
+  }
+
   override func awakeFromNib() {
     let desktopWindowViewController = DesktopWindowBootstrapMacOS.start(
       mainFlutterWindow: self
@@ -482,6 +493,7 @@ class MainFlutterWindow: NSWindow {
       in: desktopWindowViewController.visualEffectView,
       above: flutterViewController.view
     )
+    installFullscreenTitleObservers(for: titleLabel)
     WindowAppearanceChannel.register(
       window: self,
       visualEffectView: desktopWindowViewController.visualEffectView,
@@ -498,6 +510,108 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+  }
+
+  private func installFullscreenTitleObservers(for titleLabel: NSTextField) {
+    guard fullscreenTitleObservers.isEmpty else {
+      return
+    }
+
+    syncTitleVisibilityWithFullscreenState(titleLabel)
+    scheduleInitialFullscreenTitleSync(for: titleLabel)
+
+    let center = NotificationCenter.default
+    fullscreenTitleObservers.append(
+      center.addObserver(
+        forName: NSWindow.willEnterFullScreenNotification,
+        object: self,
+        queue: .main
+      ) { [weak self, weak titleLabel] _ in
+        guard let self, let titleLabel else {
+          return
+        }
+        self.setTitleHidden(true, titleLabel: titleLabel)
+        self.scheduleFullscreenTitleFallback(for: titleLabel)
+      }
+    )
+    fullscreenTitleObservers.append(
+      center.addObserver(
+        forName: NSWindow.didEnterFullScreenNotification,
+        object: self,
+        queue: .main
+      ) { [weak self, weak titleLabel] _ in
+        self?.finishFullscreenTitleTransition()
+        self?.setTitleHidden(true, titleLabel: titleLabel)
+      }
+    )
+    fullscreenTitleObservers.append(
+      center.addObserver(
+        forName: NSWindow.willExitFullScreenNotification,
+        object: self,
+        queue: .main
+      ) { [weak self, weak titleLabel] _ in
+        guard let self, let titleLabel else {
+          return
+        }
+        self.setTitleHidden(true, titleLabel: titleLabel)
+        self.scheduleFullscreenTitleFallback(for: titleLabel)
+      }
+    )
+    fullscreenTitleObservers.append(
+      center.addObserver(
+        forName: NSWindow.didExitFullScreenNotification,
+        object: self,
+        queue: .main
+      ) { [weak self, weak titleLabel] _ in
+        guard let self, let titleLabel else {
+          return
+        }
+        self.finishFullscreenTitleTransition()
+        self.syncTitleVisibilityWithFullscreenState(titleLabel)
+      }
+    )
+  }
+
+  private func scheduleInitialFullscreenTitleSync(for titleLabel: NSTextField) {
+    DispatchQueue.main.async { [weak self, weak titleLabel] in
+      guard let self, let titleLabel else {
+        return
+      }
+
+      self.syncTitleVisibilityWithFullscreenState(titleLabel)
+    }
+  }
+
+  private func scheduleFullscreenTitleFallback(for titleLabel: NSTextField) {
+    fullscreenTitleTransitionGeneration += 1
+    let generation = fullscreenTitleTransitionGeneration
+
+    DispatchQueue.main.asyncAfter(
+      deadline: .now() + Self.fullscreenTitleFallbackDelay
+    ) { [weak self, weak titleLabel] in
+      guard
+        let self,
+        let titleLabel,
+        self.fullscreenTitleTransitionGeneration == generation
+      else {
+        return
+      }
+
+      self.syncTitleVisibilityWithFullscreenState(titleLabel)
+    }
+  }
+
+  private func finishFullscreenTitleTransition() {
+    fullscreenTitleTransitionGeneration += 1
+  }
+
+  private func setTitleHidden(_ hidden: Bool, titleLabel: NSTextField?) {
+    titleVisibility = .hidden
+    titleLabel?.isHidden = hidden
+  }
+
+  private func syncTitleVisibilityWithFullscreenState(_ titleLabel: NSTextField) {
+    setTitleHidden(styleMask.contains(.fullScreen), titleLabel: titleLabel)
   }
 
   private func makeTitleLabel() -> NSTextField {
