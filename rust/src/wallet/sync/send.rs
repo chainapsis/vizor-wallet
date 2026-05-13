@@ -17,8 +17,8 @@
 //!      the USK from the supplied seed (scoped + zeroized before
 //!      network I/O), build + sign the transaction(s), and broadcast
 //!      them via `send_transaction` gRPC. Once transaction creation
-//!      succeeds, broadcast failures are returned as a structured
-//!      pending-broadcast result instead of a fatal send failure.
+//!      succeeds, retryable broadcast failures are returned as pending
+//!      results while definite network rejections get their own status.
 //!
 //! The `PROPOSAL_STORE` stays in `sync/mod.rs` because the hardware
 //! PCZT pipeline also consumes from it (see `sync/pczt.rs`) and
@@ -36,6 +36,7 @@
 
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::fmt;
 use std::num::NonZeroUsize;
 
 use secrecy::{ExposeSecret, SecretVec};
@@ -772,6 +773,7 @@ impl CreatedBroadcastResult {
     const BROADCASTED: &'static str = "broadcasted";
     const PENDING_BROADCAST: &'static str = "pending_broadcast";
     const PARTIAL_BROADCAST: &'static str = "partial_broadcast";
+    const REJECTED_BROADCAST: &'static str = "rejected_broadcast";
 
     fn into_execute_result(self) -> ExecuteProposalResult {
         ExecuteProposalResult {
@@ -791,6 +793,33 @@ impl CreatedBroadcastResult {
                 .message
                 .unwrap_or_else(|| "Broadcast did not complete".to_string()))
         }
+    }
+}
+
+#[derive(Debug)]
+enum BroadcastTxError {
+    Rejected(String),
+    Transient(String),
+}
+
+impl fmt::Display for BroadcastTxError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Rejected(message) | Self::Transient(message) => f.write_str(message),
+        }
+    }
+}
+
+fn status_for_broadcast_failure(
+    broadcasted_count: usize,
+    error: &BroadcastTxError,
+) -> &'static str {
+    match error {
+        BroadcastTxError::Rejected(_) => CreatedBroadcastResult::REJECTED_BROADCAST,
+        BroadcastTxError::Transient(_) if broadcasted_count == 0 => {
+            CreatedBroadcastResult::PENDING_BROADCAST
+        }
+        BroadcastTxError::Transient(_) => CreatedBroadcastResult::PARTIAL_BROADCAST,
     }
 }
 
@@ -870,20 +899,26 @@ async fn broadcast_created_transactions(
                 log::info!("{log_label}: broadcast {txid} ({} bytes)", raw_tx.len());
             }
             Err(e) => {
-                let message = format!(
-                    "Broadcast failed after {}/{} txs sent ({}). Error: {e}",
-                    broadcast_ok.len(),
-                    txids.len(),
-                    broadcast_ok.join(",")
-                );
+                let status = status_for_broadcast_failure(broadcast_ok.len(), &e);
+                let message = if matches!(e, BroadcastTxError::Rejected(_)) {
+                    format!(
+                        "Broadcast was rejected after {}/{} txs sent ({}). Error: {e}",
+                        broadcast_ok.len(),
+                        txids.len(),
+                        broadcast_ok.join(",")
+                    )
+                } else {
+                    format!(
+                        "Broadcast failed after {}/{} txs sent ({}). Error: {e}",
+                        broadcast_ok.len(),
+                        txids.len(),
+                        broadcast_ok.join(",")
+                    )
+                };
                 log::warn!("{log_label}: {message}");
                 return CreatedBroadcastResult {
                     txids: txids_joined,
-                    status: if broadcast_ok.is_empty() {
-                        CreatedBroadcastResult::PENDING_BROADCAST
-                    } else {
-                        CreatedBroadcastResult::PARTIAL_BROADCAST
-                    },
+                    status,
                     broadcasted_count: broadcast_ok.len() as u32,
                     total_count,
                     message: Some(message),
@@ -905,16 +940,16 @@ async fn broadcast_created_transactions(
 async fn broadcast_raw_transaction(
     client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
     raw_tx: &[u8],
-) -> Result<(), String> {
+) -> Result<(), BroadcastTxError> {
     let resp = crate::wallet::sync_engine::send_transaction(client, raw_tx)
         .await
-        .map_err(|e| format!("SendTransaction gRPC failed: {e}"))?;
+        .map_err(|e| BroadcastTxError::Transient(format!("SendTransaction gRPC failed: {e}")))?;
 
     if resp.error_code != 0 {
-        return Err(format!(
+        return Err(BroadcastTxError::Rejected(format!(
             "Broadcast rejected: {} (code {})",
             resp.error_message, resp.error_code
-        ));
+        )));
     }
 
     Ok(())
@@ -1232,6 +1267,38 @@ mod tests {
 
     fn receiver(value: u64, scope: TransparentKeyScope) -> (TransparentKeyScope, Balance) {
         (scope, balance(value))
+    }
+
+    #[test]
+    fn rejected_broadcast_failure_uses_fatal_status() {
+        let err = BroadcastTxError::Rejected(
+            "Broadcast rejected: bad-txns-inputs-spent (code -26)".to_string(),
+        );
+
+        assert_eq!(
+            status_for_broadcast_failure(0, &err),
+            CreatedBroadcastResult::REJECTED_BROADCAST
+        );
+    }
+
+    #[test]
+    fn transient_broadcast_failure_without_successes_stays_pending() {
+        let err = BroadcastTxError::Transient("SendTransaction gRPC failed: unavailable".into());
+
+        assert_eq!(
+            status_for_broadcast_failure(0, &err),
+            CreatedBroadcastResult::PENDING_BROADCAST
+        );
+    }
+
+    #[test]
+    fn transient_broadcast_failure_after_successes_stays_partial() {
+        let err = BroadcastTxError::Transient("SendTransaction gRPC failed: unavailable".into());
+
+        assert_eq!(
+            status_for_broadcast_failure(1, &err),
+            CreatedBroadcastResult::PARTIAL_BROADCAST
+        );
     }
 
     #[test]

@@ -29,6 +29,21 @@ import 'send_review_screen.dart';
 
 enum _SendStatusPhase { sending, pendingBroadcast, succeeded, failed }
 
+String softwareBroadcastStatusMessage(rust_sync.ExecuteProposalResult result) {
+  if (result.status == 'partial_broadcast') {
+    return 'Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.';
+  }
+  final rawMessage = result.message?.toLowerCase() ?? '';
+  if (result.status == 'rejected_broadcast' ||
+      rawMessage.contains('broadcast rejected')) {
+    if (result.broadcastedCount > 0) {
+      return 'Some transactions were broadcast, but a later transaction was rejected by the network. Check activity before trying again.';
+    }
+    return 'Transaction was rejected by the network. Check activity before trying again.';
+  }
+  return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
+}
+
 class SendStatusScreen extends ConsumerStatefulWidget {
   const SendStatusScreen({super.key, required this.args, this.keystone});
 
@@ -133,16 +148,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
   }
 
   String _broadcastStatusMessage(rust_sync.ExecuteProposalResult result) {
-    if (result.status == 'partial_broadcast') {
-      return 'Some transactions were broadcast and the rest will retry automatically. Check activity before sending again.';
-    }
-    final rawMessage = result.message?.toLowerCase() ?? '';
-    if (rawMessage.contains('broadcast rejected')) {
-      return "Transaction was created locally but didn't reach the network. "
-          'The wallet will keep retrying until it expires. '
-          "Don't send again unless this one expires.";
-    }
-    return 'Transaction was created locally but could not be broadcast. It will retry automatically when the network is available. Do not send again unless this transaction expires.';
+    return softwareBroadcastStatusMessage(result);
   }
 
   String _pcztBroadcastStatusMessage(
