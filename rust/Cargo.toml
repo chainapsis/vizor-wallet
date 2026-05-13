@@ -47,7 +47,8 @@ nonempty = "0.10"
 # Security
 secrecy = "0.8"
 zeroize = "1"
-aes-gcm = "0.10"
+aes = { version = "0.8", features = ["zeroize"] }
+aes-gcm = { version = "0.10", features = ["zeroize"] }
 base64 = "0.22"
 pbkdf2 = "0.12"
 serde = { version = "1", features = ["derive"] }

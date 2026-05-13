@@ -42,6 +42,7 @@ dependencies = [
  "cfg-if",
  "cipher",
  "cpufeatures",
+ "zeroize",
 ]
 
 [[package]]
@@ -56,6 +57,7 @@ dependencies = [
  "ctr",
  "ghash",
  "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -2525,6 +2527,7 @@ dependencies = [
 name = "rust_lib_zcash_wallet"
 version = "0.1.0"
 dependencies = [
+ "aes",
  "aes-gcm",
  "base64",
  "bip0039",
