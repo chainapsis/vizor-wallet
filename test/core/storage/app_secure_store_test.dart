@@ -361,6 +361,58 @@ void main() {
       expect(await store.readPlain(_mnemonicKey), isNull);
     },
   );
+
+  test('deleteAll waits for concurrent mnemonic writes', () async {
+    const lateMnemonicKey = 'zcash_account_mnemonic_delete-all-account';
+    const lateMnemonic = 'legal winner thank year wave sausage worth useful';
+    final blockingStorage = _BlockingWriteStorage(blockKey: lateMnemonicKey);
+    store = AppSecureStore.testing(storage: blockingStorage);
+    await store.configurePassword(_oldPassword);
+
+    blockingStorage.blockNextWrite = true;
+    final lateWrite = store.writeSecretString(lateMnemonicKey, lateMnemonic);
+    await blockingStorage.writeStarted.future;
+
+    var deleteAllCompleted = false;
+    final deleteAll = store.deleteAll().then((_) {
+      deleteAllCompleted = true;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(deleteAllCompleted, isFalse);
+
+    blockingStorage.release();
+    await lateWrite;
+    await deleteAll;
+
+    expect(await store.readPlain(lateMnemonicKey), isNull);
+    expect(store.hasSessionPassword, isFalse);
+  });
+
+  test('clearPasswordConfiguration waits for concurrent mnemonic writes', () async {
+    const lateMnemonicKey = 'zcash_account_mnemonic_clear-password-account';
+    const lateMnemonic = 'legal winner thank year wave sausage worth useful';
+    final blockingStorage = _BlockingWriteStorage(blockKey: lateMnemonicKey);
+    store = AppSecureStore.testing(storage: blockingStorage);
+    await store.configurePassword(_oldPassword);
+
+    blockingStorage.blockNextWrite = true;
+    final lateWrite = store.writeSecretString(lateMnemonicKey, lateMnemonic);
+    await blockingStorage.writeStarted.future;
+
+    var clearCompleted = false;
+    final clear = store.clearPasswordConfiguration().then((_) {
+      clearCompleted = true;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(clearCompleted, isFalse);
+
+    blockingStorage.release();
+    await lateWrite;
+    await clear;
+
+    expect(await store.readPlain(lateMnemonicKey), isNotNull);
+    expect(store.hasSessionPassword, isFalse);
+  });
 }
 
 class _FailingWriteStorage extends FlutterSecureStorage {
