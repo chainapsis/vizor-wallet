@@ -251,9 +251,14 @@ impl TreeClient {
                 }
             }
 
+            // A zero cursor means this page completed the requested height range.
             if page.next_from_height == 0 {
                 break;
             }
+
+            // Nonzero cursors must move forward and stay inside the advertised
+            // tip range. Otherwise a broken server could make sync loop forever
+            // or skip past data that should have been returned.
             if page.next_from_height <= page_from {
                 return Err(SyncError::InvalidPagination {
                     current: page_from,
@@ -269,12 +274,17 @@ impl TreeClient {
             page_from = page.next_from_height;
         }
 
+        // Pagination is only complete if the leaves we applied reach the same
+        // next index the server advertised before the loop started.
         if self.next_position != state.next_index {
             return Err(SyncError::IncompleteSync {
                 local_next_index: self.next_position,
                 server_next_index: state.next_index,
             });
         }
+
+        // The final root check binds the full paginated sync result to the
+        // tree state fetched at the beginning of sync.
         if state.next_index > 0 {
             let local = self.root();
             if local != state.root {
