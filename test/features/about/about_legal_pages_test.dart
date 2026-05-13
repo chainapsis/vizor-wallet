@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
@@ -17,6 +18,8 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
 
 void main() {
+  setUpAll(_loadAppFonts);
+
   testWidgets('About Vizor sidebar item opens the About page', (tester) async {
     await _setDesktopViewport(tester);
 
@@ -264,6 +267,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Privacy Policy'), findsOneWidget);
   });
+}
+
+Future<void> _loadAppFonts() async {
+  final libreCaslonText = FontLoader('Libre Caslon Text')
+    ..addFont(rootBundle.load('assets/fonts/LibreCaslonText-Regular.ttf'));
+  final geist = FontLoader('Geist')
+    ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+    ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
+
+  await Future.wait([libreCaslonText.load(), geist.load()]);
 }
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {
