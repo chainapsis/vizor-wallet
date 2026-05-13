@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -45,7 +46,13 @@ void main() {
       find.byKey(const ValueKey('accounts_other_row_account-3')),
       findsOneWidget,
     );
+    expect(find.text('Current'), findsOneWidget);
     expect(find.text('Other'), findsOneWidget);
+    expect(find.text('Keystone'), findsOneWidget);
+    final keystoneIcon = tester
+        .widgetList<AppIcon>(find.byType(AppIcon))
+        .singleWhere((icon) => icon.name == AppIcons.keystone);
+    expect(keystoneIcon.color, AppThemeData.light.colors.icon.accent);
 
     await tester.tap(find.text('Add Account'));
     await tester.pumpAndSettle();
@@ -84,6 +91,7 @@ void main() {
         find.byKey(const ValueKey('accounts_active_row_account-1')),
         findsOneWidget,
       );
+      expect(find.text('Current'), findsOneWidget);
       expect(find.text('Other'), findsNothing);
       expect(find.text('Add Account'), findsOneWidget);
     },
@@ -220,7 +228,9 @@ void main() {
     );
     await tester.pump();
 
-    final row = find.byKey(const ValueKey('accounts_other_row_account-2'));
+    final menuButton = find.byKey(
+      const ValueKey('accounts_row_menu_button_account-2'),
+    );
     await tester.tap(
       find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
     );
@@ -238,7 +248,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      _accountRowBackgroundColor(tester, row),
+      _accountMenuButtonBackgroundColor(tester, menuButton),
       AppThemeData.light.colors.background.base,
     );
     expect(syncNotifier.refreshCount, 0);
@@ -251,7 +261,7 @@ void main() {
     expect(find.text('Remove Account'), findsNothing);
   });
 
-  testWidgets('account rows show hover treatment', (tester) async {
+  testWidgets('account row hover is limited to other accounts', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
@@ -261,7 +271,19 @@ void main() {
     await tester.pump();
 
     final row = find.byKey(const ValueKey('accounts_other_row_account-2'));
-    expect(_accountRowBackgroundColor(tester, row), isNull);
+    final activeRow = find.byKey(
+      const ValueKey('accounts_active_row_account-1'),
+    );
+    final menuButton = find.byKey(
+      const ValueKey('accounts_row_menu_button_account-2'),
+    );
+    final activeMenuButton = find.byKey(
+      const ValueKey('accounts_row_menu_button_account-1'),
+    );
+    expect(_accountRowBackgroundColor(tester, 'account-2'), isNull);
+    expect(_accountRowBackgroundColor(tester, 'account-1'), isNull);
+    expect(_accountMenuButtonBackgroundColor(tester, menuButton), isNull);
+    expect(_accountMenuButtonBackgroundColor(tester, activeMenuButton), isNull);
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
@@ -270,7 +292,35 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      _accountRowBackgroundColor(tester, row),
+      _accountRowBackgroundColor(tester, 'account-2'),
+      AppThemeData.light.colors.background.base,
+    );
+    expect(_accountMenuButtonBackgroundColor(tester, menuButton), isNull);
+
+    await mouse.moveTo(tester.getCenter(menuButton));
+    await tester.pumpAndSettle();
+
+    expect(
+      _accountRowBackgroundColor(tester, 'account-2'),
+      AppThemeData.light.colors.background.base,
+    );
+    expect(
+      _accountMenuButtonBackgroundColor(tester, menuButton),
+      AppThemeData.light.colors.background.base,
+    );
+
+    await mouse.moveTo(tester.getCenter(activeRow));
+    await tester.pumpAndSettle();
+
+    expect(_accountRowBackgroundColor(tester, 'account-1'), isNull);
+    expect(_accountMenuButtonBackgroundColor(tester, activeMenuButton), isNull);
+
+    await mouse.moveTo(tester.getCenter(activeMenuButton));
+    await tester.pumpAndSettle();
+
+    expect(_accountRowBackgroundColor(tester, 'account-1'), isNull);
+    expect(
+      _accountMenuButtonBackgroundColor(tester, activeMenuButton),
       AppThemeData.light.colors.background.base,
     );
   });
@@ -807,6 +857,7 @@ final _bootstrap = AppBootstrapState(
         uuid: 'account-2',
         name: 'Shielded Savings',
         order: 1,
+        isHardware: true,
         profilePictureId: kDefaultProfilePictureId,
       ),
       AccountInfo(uuid: 'account-3', name: 'Travel Funds', order: 2),
@@ -955,11 +1006,18 @@ class _FakeSyncNotifier extends SyncNotifier {
   }
 }
 
-Color? _accountRowBackgroundColor(WidgetTester tester, Finder row) {
+Color? _accountMenuButtonBackgroundColor(WidgetTester tester, Finder button) {
   final containerFinder = find.descendant(
-    of: row,
+    of: button,
     matching: find.byType(AnimatedContainer),
   );
   final container = tester.widget<AnimatedContainer>(containerFinder.first);
+  return (container.decoration as BoxDecoration?)?.color;
+}
+
+Color? _accountRowBackgroundColor(WidgetTester tester, String accountUuid) {
+  final container = tester.widget<AnimatedContainer>(
+    find.byKey(ValueKey('accounts_row_background_$accountUuid')),
+  );
   return (container.decoration as BoxDecoration?)?.color;
 }
