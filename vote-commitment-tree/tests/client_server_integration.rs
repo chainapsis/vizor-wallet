@@ -8,10 +8,13 @@
 //! - Roots match between server and client at every synced height
 //! - Sync detects root mismatches and start_index discontinuities
 
+use std::convert::Infallible;
+
 use pasta_curves::Fp;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use vote_commitment_tree::{MemoryTreeServer, MerklePath, TreeClient, TreeSyncApi};
+use vote_commitment_tree::sync_api::{BlockCommitmentsPage, TreeState};
+use vote_commitment_tree::{MemoryTreeServer, MerklePath, SyncError, TreeClient, TreeSyncApi};
 
 fn fp(x: u64) -> Fp {
     Fp::from(x)
@@ -222,7 +225,9 @@ fn sync_api_consistency() {
     assert_eq!(state.root, server.root());
 
     // get_block_commitments for a subrange.
-    let blocks = server.get_block_commitments(2, 4).unwrap();
+    let page = server.get_block_commitments(2, 4).unwrap();
+    let blocks = page.blocks;
+    assert_eq!(page.next_from_height, 0);
     assert_eq!(blocks.len(), 3);
     assert_eq!(blocks[0].height, 2);
     assert_eq!(blocks[1].height, 3);
@@ -230,6 +235,9 @@ fn sync_api_consistency() {
     assert_eq!(blocks[0].leaves.len(), 2);
     assert_eq!(blocks[1].leaves.len(), 3);
     assert_eq!(blocks[2].leaves.len(), 4);
+    assert_eq!(blocks[0].root, server.root_at_height(2).unwrap());
+    assert_eq!(blocks[1].root, server.root_at_height(3).unwrap());
+    assert_eq!(blocks[2].root, server.root_at_height(4).unwrap());
 
     // get_root_at_height for each block matches server.root_at_height.
     for height in 1..=5u32 {
@@ -347,6 +355,183 @@ fn sync_idempotent_when_up_to_date() {
     client.sync(&server).unwrap();
     assert_eq!(client.size(), 1);
     assert_eq!(client.last_synced_height(), Some(1));
+}
+
+#[test]
+fn sync_rejects_final_page_before_advertised_tip() {
+    struct TruncatedApi {
+        state: TreeState,
+    }
+
+    impl TreeSyncApi for TruncatedApi {
+        type Error = Infallible;
+
+        fn get_block_commitments(
+            &self,
+            _from_height: u32,
+            _to_height: u32,
+        ) -> Result<BlockCommitmentsPage, Self::Error> {
+            Ok(BlockCommitmentsPage {
+                blocks: Vec::new(),
+                next_from_height: 0,
+            })
+        }
+
+        fn get_root_at_height(&self, _height: u32) -> Result<Option<Fp>, Self::Error> {
+            Ok(None)
+        }
+
+        fn get_tree_state(&self) -> Result<TreeState, Self::Error> {
+            Ok(self.state.clone())
+        }
+    }
+
+    let mut server = MemoryTreeServer::empty();
+    server.append(fp(1)).unwrap();
+    server.checkpoint(1).unwrap();
+
+    let err = TreeClient::empty()
+        .sync(&TruncatedApi {
+            state: server.get_tree_state().unwrap(),
+        })
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        SyncError::IncompleteSync {
+            local_next_index: 0,
+            server_next_index: 1
+        }
+    ));
+}
+
+#[test]
+fn sync_rejects_invalid_pagination_cursors() {
+    use std::collections::BTreeMap;
+
+    struct CursorApi {
+        state: TreeState,
+        cursors: BTreeMap<u32, u32>,
+    }
+
+    impl TreeSyncApi for CursorApi {
+        type Error = Infallible;
+
+        fn get_block_commitments(
+            &self,
+            from_height: u32,
+            _to_height: u32,
+        ) -> Result<BlockCommitmentsPage, Self::Error> {
+            Ok(BlockCommitmentsPage {
+                blocks: Vec::new(),
+                next_from_height: *self
+                    .cursors
+                    .get(&from_height)
+                    .expect("test cursor for requested height"),
+            })
+        }
+
+        fn get_root_at_height(&self, _height: u32) -> Result<Option<Fp>, Self::Error> {
+            Ok(None)
+        }
+
+        fn get_tree_state(&self) -> Result<TreeState, Self::Error> {
+            Ok(self.state.clone())
+        }
+    }
+
+    let state = TreeState {
+        next_index: 1,
+        root: fp(1),
+        height: 5,
+    };
+
+    let err = TreeClient::empty()
+        .sync(&CursorApi {
+            state: state.clone(),
+            cursors: BTreeMap::from([(0, 1), (1, 1)]),
+        })
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        SyncError::InvalidPagination {
+            current: 1,
+            next: 1
+        }
+    ));
+
+    let err = TreeClient::empty()
+        .sync(&CursorApi {
+            state,
+            cursors: BTreeMap::from([(0, 6)]),
+        })
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        SyncError::InvalidPagination {
+            current: 0,
+            next: 6
+        }
+    ));
+}
+
+#[test]
+fn sync_rejects_fast_path_root_mismatch() {
+    struct WrongRootApi {
+        state: TreeState,
+    }
+
+    impl TreeSyncApi for WrongRootApi {
+        type Error = Infallible;
+
+        fn get_block_commitments(
+            &self,
+            _from_height: u32,
+            _to_height: u32,
+        ) -> Result<BlockCommitmentsPage, Self::Error> {
+            panic!("fast path should not request commitment leaves");
+        }
+
+        fn get_root_at_height(&self, _height: u32) -> Result<Option<Fp>, Self::Error> {
+            panic!("fast path should not request roots by height");
+        }
+
+        fn get_tree_state(&self) -> Result<TreeState, Self::Error> {
+            Ok(self.state.clone())
+        }
+    }
+
+    let mut server = MemoryTreeServer::empty();
+    server.append(fp(1)).unwrap();
+    server.checkpoint(1).unwrap();
+
+    let mut client = TreeClient::empty();
+    client.sync(&server).unwrap();
+
+    let server_state = server.get_tree_state().unwrap();
+    let bad_root = if server_state.root == fp(999) {
+        fp(998)
+    } else {
+        fp(999)
+    };
+
+    let err = client
+        .sync(&WrongRootApi {
+            state: TreeState {
+                root: bad_root,
+                ..server_state
+            },
+        })
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        SyncError::RootMismatch {
+            height: 1,
+            local: Some(_),
+            server
+        } if server == bad_root
+    ));
 }
 
 /// Test that server and client produce byte-identical auth paths.

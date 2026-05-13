@@ -4,6 +4,15 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.6.0
+
+## Changed
+- Bumped `zcash_voting` to `0.6.0`, `vote-commitment-tree` to `0.2.0`, and
+  `vote-commitment-tree-client` to `0.4.0` for the breaking commitment leaf
+  pagination API.
+- Vote commitment tree sync now consumes paginated commitment leaf responses
+  with per-block roots instead of issuing one request per height window.
+
 # 0.5.12
 
 ## Fixed

@@ -11,7 +11,7 @@ use ff::PrimeField;
 use pasta_curves::Fp;
 use serde::Deserialize;
 
-use vote_commitment_tree::sync_api::{BlockCommitments, TreeState};
+use vote_commitment_tree::sync_api::{BlockCommitments, BlockCommitmentsPage, TreeState};
 use vote_commitment_tree::MerkleHashVote;
 
 // ---------------------------------------------------------------------------
@@ -60,6 +60,9 @@ pub(crate) struct ChainBlockCommitments {
     /// Each entry is a base64-encoded 32-byte Pallas Fp (little-endian).
     #[serde(default)]
     pub leaves: Vec<String>,
+    /// Base64-encoded 32-byte Pallas Fp root after this block.
+    #[serde(default)]
+    pub root: Option<String>,
 }
 
 /// `GET /zally/v1/commitment-tree/latest` response.
@@ -79,6 +82,8 @@ pub(crate) struct QueryCommitmentTreeResponse {
 pub(crate) struct QueryCommitmentLeavesResponse {
     #[serde(default)]
     pub blocks: Vec<ChainBlockCommitments>,
+    #[serde(default)]
+    pub next_from_height: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +132,27 @@ impl ChainBlockCommitments {
             height: self.height as u32,
             start_index: self.start_index,
             leaves,
+            root: decode_fp_base64(
+                self.root
+                    .as_deref()
+                    .ok_or(ParseError::MissingField("block_commitments.root"))?,
+                "block_commitments.root",
+            )?,
+        })
+    }
+}
+
+impl QueryCommitmentLeavesResponse {
+    /// Convert to the domain `BlockCommitmentsPage`.
+    pub fn into_block_commitments_page(self) -> Result<BlockCommitmentsPage, ParseError> {
+        let blocks = self
+            .blocks
+            .into_iter()
+            .map(ChainBlockCommitments::into_block_commitments)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(BlockCommitmentsPage {
+            blocks,
+            next_from_height: self.next_from_height as u32,
         })
     }
 }
@@ -175,29 +201,28 @@ mod tests {
         let one_bytes = Fp::from(1).to_repr();
         let one_b64 = BASE64_STANDARD.encode(one_bytes);
         let json = format!(
-            r#"{{"blocks":[{{"height":5,"start_index":0,"leaves":["{}","{}"]}}]}}"#,
-            one_b64, one_b64
+            r#"{{"blocks":[{{"height":5,"start_index":0,"leaves":["{}","{}"],"root":"{}"}}],"next_from_height":9}}"#,
+            one_b64, one_b64, one_b64
         );
         let resp: QueryCommitmentLeavesResponse = serde_json::from_str(&json).unwrap();
-        assert_eq!(resp.blocks.len(), 1);
-        let block = resp
-            .blocks
-            .into_iter()
-            .next()
-            .unwrap()
-            .into_block_commitments()
-            .unwrap();
+        let page = resp.into_block_commitments_page().unwrap();
+        assert_eq!(page.next_from_height, 9);
+        assert_eq!(page.blocks.len(), 1);
+        let block = &page.blocks[0];
         assert_eq!(block.height, 5);
         assert_eq!(block.start_index, 0);
         assert_eq!(block.leaves.len(), 2);
         assert_eq!(block.leaves[0].inner(), Fp::from(1));
+        assert_eq!(block.root, Fp::from(1));
     }
 
     #[test]
     fn parse_empty_blocks() {
-        let json = r#"{"blocks":[]}"#;
+        let json = r#"{"blocks":[],"next_from_height":0}"#;
         let resp: QueryCommitmentLeavesResponse = serde_json::from_str(json).unwrap();
-        assert!(resp.blocks.is_empty());
+        let page = resp.into_block_commitments_page().unwrap();
+        assert!(page.blocks.is_empty());
+        assert_eq!(page.next_from_height, 0);
     }
 
     #[test]
@@ -205,7 +230,24 @@ mod tests {
         // Go's omitempty may omit the blocks field entirely.
         let json = r#"{}"#;
         let resp: QueryCommitmentLeavesResponse = serde_json::from_str(json).unwrap();
-        assert!(resp.blocks.is_empty());
+        let page = resp.into_block_commitments_page().unwrap();
+        assert!(page.blocks.is_empty());
+        assert_eq!(page.next_from_height, 0);
+    }
+
+    #[test]
+    fn parse_block_commitments_rejects_missing_root() {
+        let one_b64 = BASE64_STANDARD.encode(Fp::from(1).to_repr());
+        let json = format!(
+            r#"{{"blocks":[{{"height":5,"start_index":0,"leaves":["{}"]}}]}}"#,
+            one_b64
+        );
+        let resp: QueryCommitmentLeavesResponse = serde_json::from_str(&json).unwrap();
+        let err = resp.into_block_commitments_page().unwrap_err();
+        assert!(matches!(
+            err,
+            ParseError::MissingField("block_commitments.root")
+        ));
     }
 
     #[test]

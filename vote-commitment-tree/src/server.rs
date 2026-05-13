@@ -298,10 +298,14 @@ where
     /// greater than the previous checkpoint height.
     pub fn checkpoint(&mut self, height: u32) -> Result<(), CheckpointError<S::Error>> {
         self.tree.checkpoint(height)?;
+        let root = self
+            .root_at_height(height)
+            .unwrap_or_else(|| self.tree.root());
         let commitments = BlockCommitments {
             height,
             start_index: self.pending_start,
             leaves: std::mem::take(&mut self.pending_leaves),
+            root,
         };
         self.blocks.insert(height, commitments);
         self.pending_start = self.tree.next_position;

@@ -153,19 +153,23 @@ fn get_root_at_height_null_tree() {
 #[test]
 fn get_block_commitments_parses_response() {
     let body = format!(
-        r#"{{"blocks":[{{"height":5,"start_index":0,"leaves":["{}","{}"]}}]}}"#,
+        r#"{{"blocks":[{{"height":5,"start_index":0,"leaves":["{}","{}"],"root":"{}"}}],"next_from_height":12}}"#,
         fp_to_b64(100),
         fp_to_b64(200),
+        fp_to_b64(999),
     );
     let transport = MockTransport::with_responses([(leaves_url(1, 10), json_response(body))]);
 
-    let blocks = api(transport).get_block_commitments(1, 10).unwrap();
+    let page = api(transport).get_block_commitments(1, 10).unwrap();
+    let blocks = page.blocks;
+    assert_eq!(page.next_from_height, 12);
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].height, 5);
     assert_eq!(blocks[0].start_index, 0);
     assert_eq!(blocks[0].leaves.len(), 2);
     assert_eq!(blocks[0].leaves[0].inner(), fp(100));
     assert_eq!(blocks[0].leaves[1].inner(), fp(200));
+    assert_eq!(blocks[0].root, fp(999));
 }
 
 #[test]
@@ -175,8 +179,9 @@ fn get_block_commitments_empty() {
         json_response(r#"{"blocks":[]}"#.to_string()),
     )]);
 
-    let blocks = api(transport).get_block_commitments(1, 10).unwrap();
-    assert!(blocks.is_empty());
+    let page = api(transport).get_block_commitments(1, 10).unwrap();
+    assert!(page.blocks.is_empty());
+    assert_eq!(page.next_from_height, 0);
 }
 
 #[test]
@@ -200,12 +205,14 @@ fn full_sync_pipeline() {
             )),
         ),
         (
-            leaves_url(1, 2),
+            leaves_url(0, 2),
             json_response(format!(
-                r#"{{"blocks":[{{"height":1,"start_index":0,"leaves":["{}"]}},{{"height":2,"start_index":1,"leaves":["{}","{}"]}}]}}"#,
+                r#"{{"blocks":[{{"height":1,"start_index":0,"leaves":["{}"],"root":"{}"}},{{"height":2,"start_index":1,"leaves":["{}","{}"],"root":"{}"}}]}}"#,
                 fp_to_b64(10),
+                fp_bytes_to_b64(root_at_1),
                 fp_to_b64(20),
                 fp_to_b64(30),
+                fp_bytes_to_b64(root_at_2),
             )),
         ),
         (
@@ -240,6 +247,54 @@ fn full_sync_pipeline() {
 }
 
 #[test]
+fn full_sync_uses_paginated_leaf_responses() {
+    let mut tree_server = vote_commitment_tree::MemoryTreeServer::empty();
+    tree_server.append(fp(10)).unwrap();
+    tree_server.checkpoint(1).unwrap();
+    let root_at_1 = tree_server.root_at_height(1).unwrap();
+
+    tree_server.append(fp(20)).unwrap();
+    tree_server.checkpoint(2).unwrap();
+    let root_at_2 = tree_server.root_at_height(2).unwrap();
+
+    let transport = MockTransport::with_responses([
+        (
+            latest_url(),
+            json_response(format!(
+                r#"{{"tree":{{"next_index":2,"root":"{}","height":2}}}}"#,
+                fp_bytes_to_b64(root_at_2),
+            )),
+        ),
+        (
+            leaves_url(0, 2),
+            json_response(format!(
+                r#"{{"blocks":[{{"height":1,"start_index":0,"leaves":["{}"],"root":"{}"}}],"next_from_height":2}}"#,
+                fp_to_b64(10),
+                fp_bytes_to_b64(root_at_1),
+            )),
+        ),
+        (
+            leaves_url(2, 2),
+            json_response(format!(
+                r#"{{"blocks":[{{"height":2,"start_index":1,"leaves":["{}"],"root":"{}"}}]}}"#,
+                fp_to_b64(20),
+                fp_bytes_to_b64(root_at_2),
+            )),
+        ),
+    ]);
+
+    let api = api(transport.clone());
+    let mut client = TreeClient::empty();
+    client.sync(&api).unwrap();
+
+    transport.assert_called(&leaves_url(0, 2));
+    transport.assert_called(&leaves_url(2, 2));
+    assert_eq!(client.size(), 2);
+    assert_eq!(client.last_synced_height(), Some(2));
+    assert_eq!(client.root(), root_at_2);
+}
+
+#[test]
 fn incremental_sync() {
     let mut tree_server = vote_commitment_tree::MemoryTreeServer::empty();
     tree_server.append(fp(10)).unwrap();
@@ -267,10 +322,11 @@ fn incremental_sync() {
             )),
         ),
         (
-            leaves_url(1, 1),
+            leaves_url(0, 1),
             json_response(format!(
-                r#"{{"blocks":[{{"height":1,"start_index":0,"leaves":["{}"]}}]}}"#,
+                r#"{{"blocks":[{{"height":1,"start_index":0,"leaves":["{}"],"root":"{}"}}]}}"#,
                 fp_to_b64(10),
+                fp_bytes_to_b64(root_at_1),
             )),
         ),
         (
@@ -283,9 +339,10 @@ fn incremental_sync() {
         (
             leaves_url(2, 2),
             json_response(format!(
-                r#"{{"blocks":[{{"height":2,"start_index":1,"leaves":["{}","{}"]}}]}}"#,
+                r#"{{"blocks":[{{"height":2,"start_index":1,"leaves":["{}","{}"],"root":"{}"}}]}}"#,
                 fp_to_b64(20),
                 fp_to_b64(30),
+                fp_bytes_to_b64(root_at_2),
             )),
         ),
         (
@@ -360,10 +417,11 @@ fn witness_hex_roundtrip() {
             )),
         ),
         (
-            leaves_url(1, 1),
+            leaves_url(0, 1),
             json_response(format!(
-                r#"{{"blocks":[{{"height":1,"start_index":0,"leaves":["{}"]}}]}}"#,
+                r#"{{"blocks":[{{"height":1,"start_index":0,"leaves":["{}"],"root":"{}"}}]}}"#,
                 fp_to_b64(42),
+                fp_bytes_to_b64(root),
             )),
         ),
         (
