@@ -28,6 +28,7 @@ class RpcEndpointFailoverEvent {
 
 class RpcEndpointFailoverSettings {
   const RpcEndpointFailoverSettings({
+    this.allowPublicPresetFailover = false,
     this.primaryProbeInterval = const Duration(seconds: 60),
     this.primaryFailureThreshold = 1,
     this.slowHeightWindow = const Duration(minutes: 5),
@@ -36,6 +37,7 @@ class RpcEndpointFailoverSettings {
     this.primaryReturnLagToleranceBlocks = 1,
   });
 
+  final bool allowPublicPresetFailover;
   final Duration primaryProbeInterval;
   final int primaryFailureThreshold;
   final Duration slowHeightWindow;
@@ -232,10 +234,13 @@ class RpcEndpointFailoverNotifier extends Notifier<RpcEndpointFailoverState> {
   RpcEndpointFailoverState build() {
     _configGeneration += 1;
     final primary = ref.watch(rpcEndpointProvider);
+    final settings = ref.watch(rpcEndpointFailoverSettingsProvider);
     return RpcEndpointFailoverState(
       primary: primary,
       current: primary,
-      fallbackCandidates: fallbackRpcEndpointCandidatesFor(primary),
+      fallbackCandidates: settings.allowPublicPresetFailover
+          ? fallbackRpcEndpointCandidatesFor(primary)
+          : const [],
     );
   }
 

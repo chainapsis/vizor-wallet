@@ -9,6 +9,10 @@ import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_provider.dart';
 
+const _allowPublicPresetFailoverSettings = RpcEndpointFailoverSettings(
+  allowPublicPresetFailover: true,
+);
+
 void main() {
   test('classifies transient endpoint failures only', () {
     expect(
@@ -105,6 +109,38 @@ void main() {
 
     final state = container.read(rpcEndpointFailoverProvider);
     expect(state.fallbackCandidates, isEmpty);
+    expect(state.isUsingFallback, isFalse);
+    expect(state.lastEvent, isNull);
+  });
+
+  test('default privacy mode does not probe public preset fallbacks', () async {
+    final primary = defaultRpcEndpointConfig('main');
+    final healthChecks = <String>[];
+    final harness = _mutableContainer(
+      primary: primary,
+      settings: const RpcEndpointFailoverSettings(),
+      getChainName: (url) async {
+        healthChecks.add(url);
+        return 'main';
+      },
+      getLatestBlockHeight: (_) async => BigInt.from(10),
+    );
+    addTearDown(harness.container.dispose);
+
+    await expectLater(
+      harness.container
+          .read(rpcEndpointFailoverProvider.notifier)
+          .runWithEndpointFallback(
+            operation: 'test read',
+            action: (_) async =>
+                throw Exception('gRPC connect failed: connection refused'),
+          ),
+      throwsA(isA<Exception>()),
+    );
+
+    final state = harness.container.read(rpcEndpointFailoverProvider);
+    expect(state.fallbackCandidates, isEmpty);
+    expect(healthChecks, isEmpty);
     expect(state.isUsingFallback, isFalse);
     expect(state.lastEvent, isNull);
   });
@@ -335,6 +371,7 @@ void main() {
         primaryUrl: BigInt.from(11),
       },
       settings: const RpcEndpointFailoverSettings(
+        allowPublicPresetFailover: true,
         primaryProbeInterval: Duration(seconds: 5),
       ),
     );
@@ -484,6 +521,7 @@ void main() {
         },
         heightByUrl: heightByUrl,
         settings: const RpcEndpointFailoverSettings(
+          allowPublicPresetFailover: true,
           primaryProbeInterval: Duration(seconds: 5),
         ),
       );
@@ -528,6 +566,7 @@ void main() {
         chainNameByUrl: {fallbackUrl: 'main', primaryUrl: 'main'},
         heightByUrl: heightByUrl,
         settings: const RpcEndpointFailoverSettings(
+          allowPublicPresetFailover: true,
           primaryProbeInterval: Duration(seconds: 5),
         ),
       );
@@ -676,6 +715,7 @@ void main() {
         primary: primary,
         clock: () => now,
         settings: const RpcEndpointFailoverSettings(
+          allowPublicPresetFailover: true,
           primaryProbeInterval: Duration(seconds: 5),
         ),
         getChainName: (url) async {
@@ -727,7 +767,7 @@ ProviderContainer _container({
   required Map<String, String> chainNameByUrl,
   required Map<String, BigInt> heightByUrl,
   DateTime Function()? clock,
-  RpcEndpointFailoverSettings settings = const RpcEndpointFailoverSettings(),
+  RpcEndpointFailoverSettings settings = _allowPublicPresetFailoverSettings,
 }) {
   return ProviderContainer(
     overrides: [
@@ -751,7 +791,7 @@ _MutableEndpointHarness _mutableContainer({
   required RpcEndpointChainNameGetter getChainName,
   required RpcEndpointLatestBlockHeightGetter getLatestBlockHeight,
   DateTime Function()? clock,
-  RpcEndpointFailoverSettings settings = const RpcEndpointFailoverSettings(),
+  RpcEndpointFailoverSettings settings = _allowPublicPresetFailoverSettings,
 }) {
   late final _MutableRpcEndpointNotifier endpointNotifier;
   final container = ProviderContainer(
