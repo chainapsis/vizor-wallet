@@ -1,31 +1,10 @@
-use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
-};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
-use pbkdf2::pbkdf2_hmac;
 use secrecy::SecretVec;
-use serde::Deserialize;
-use sha2::Sha256;
 use zeroize::Zeroizing;
 
-use crate::wallet::{keys, network::WalletNetwork};
+use crate::wallet::{keys, network::WalletNetwork, secret_payload};
 
 const SECURE_STORE_SALT_KEY: &str = "zcash_secure_store_salt";
 const ACCOUNT_MNEMONIC_KEY_PREFIX: &str = "zcash_account_mnemonic_";
-const KDF_ITERATIONS: u32 = 100_000;
-
-#[derive(Debug, Deserialize)]
-struct EncryptedPayload<'a> {
-    #[serde(rename = "v")]
-    version: u8,
-    #[serde(rename = "n", borrow)]
-    nonce: &'a str,
-    #[serde(rename = "c", borrow)]
-    cipher_text: &'a str,
-    #[serde(rename = "m", borrow)]
-    mac: &'a str,
-}
 
 pub fn seed_from_macos_stored_mnemonic(
     network: WalletNetwork,
@@ -42,72 +21,17 @@ pub fn seed_from_macos_stored_mnemonic(
         macos_read_secure_store_value(&mnemonic_store_service_for_network(network), &account_key)?
             .ok_or_else(|| "Mnemonic not found for account".to_string())?;
 
-    let salt = decode_base64(salt_raw.as_slice(), "secure storage salt")?;
+    let salt = secret_payload::decode_base64(salt_raw.as_slice(), "secure storage salt")?;
     drop(salt_raw);
-    let mnemonic_bytes =
-        decrypt_payload(payload_raw.as_slice(), password.as_slice(), salt.as_slice())?;
+    let mnemonic_bytes = secret_payload::decrypt_payload(
+        payload_raw.as_slice(),
+        password.as_slice(),
+        salt.as_slice(),
+    )?;
     drop(password);
     drop(salt);
     drop(payload_raw);
     keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())
-}
-
-fn decrypt_payload(
-    raw_payload: &[u8],
-    password: &[u8],
-    salt: &[u8],
-) -> Result<Zeroizing<Vec<u8>>, String> {
-    let payload: EncryptedPayload<'_> = serde_json::from_slice(raw_payload)
-        .map_err(|e| format!("Failed to parse encrypted payload: {e}"))?;
-    if payload.version != 1 {
-        return Err(format!(
-            "Unsupported encrypted payload version: {}",
-            payload.version
-        ));
-    }
-
-    let nonce = decode_base64(payload.nonce.as_bytes(), "encrypted payload nonce")?;
-    if nonce.len() != 12 {
-        return Err(format!(
-            "Invalid encrypted payload nonce length: {}",
-            nonce.len()
-        ));
-    }
-    let cipher_text = decode_base64(
-        payload.cipher_text.as_bytes(),
-        "encrypted payload cipher text",
-    )?;
-    let mac = decode_base64(payload.mac.as_bytes(), "encrypted payload mac")?;
-    if mac.len() != 16 {
-        return Err(format!(
-            "Invalid encrypted payload mac length: {}",
-            mac.len()
-        ));
-    }
-
-    let mut key = Zeroizing::new([0u8; 32]);
-    pbkdf2_hmac::<Sha256>(password, salt, KDF_ITERATIONS, key.as_mut());
-
-    let cipher = Aes256Gcm::new_from_slice(key.as_slice())
-        .map_err(|e| format!("Failed to initialize AES-GCM: {e}"))?;
-    let mut ciphertext_and_tag = Zeroizing::new(Vec::with_capacity(cipher_text.len() + mac.len()));
-    ciphertext_and_tag.extend_from_slice(cipher_text.as_slice());
-    ciphertext_and_tag.extend_from_slice(mac.as_slice());
-
-    let clear_text = cipher
-        .decrypt(
-            Nonce::from_slice(nonce.as_slice()),
-            ciphertext_and_tag.as_slice(),
-        )
-        .map_err(|_| "Failed to decrypt secure-storage payload".to_string())?;
-    Ok(Zeroizing::new(clear_text))
-}
-
-fn decode_base64(input: &[u8], label: &str) -> Result<Zeroizing<Vec<u8>>, String> {
-    STANDARD
-        .decode(input)
-        .map(Zeroizing::new)
-        .map_err(|e| format!("Failed to decode {label}: {e}"))
 }
 
 fn secure_store_service_for_network(network: WalletNetwork) -> String {
@@ -169,63 +93,4 @@ fn macos_read_secure_store_value(
     _key: &str,
 ) -> Result<Option<Zeroizing<Vec<u8>>>, String> {
     Err("macOS stored mnemonic path is unsupported on this platform".to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use aes_gcm::aead::{Aead, AeadCore, OsRng};
-
-    fn encrypted_payload_json(password: &[u8], salt: &[u8], clear_text: &[u8]) -> String {
-        let mut key = [0u8; 32];
-        pbkdf2_hmac::<Sha256>(password, salt, KDF_ITERATIONS, &mut key);
-        let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
-        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-        let cipher_text_and_tag = cipher.encrypt(&nonce, clear_text).unwrap();
-        let split_at = cipher_text_and_tag.len() - 16;
-        let (cipher_text, mac) = cipher_text_and_tag.split_at(split_at);
-
-        serde_json::json!({
-            "v": 1,
-            "n": STANDARD.encode(nonce),
-            "c": STANDARD.encode(cipher_text),
-            "m": STANDARD.encode(mac),
-        })
-        .to_string()
-    }
-
-    #[test]
-    fn decrypt_payload_round_trips_flutter_secure_storage_format() {
-        let password = b"correct horse battery staple";
-        let salt = b"0123456789abcdef";
-        let mnemonic = b"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-        let payload = encrypted_payload_json(password, salt, mnemonic);
-
-        let clear = decrypt_payload(payload.as_bytes(), password, salt).unwrap();
-
-        assert_eq!(clear.as_slice(), mnemonic);
-    }
-
-    #[test]
-    fn decrypt_payload_accepts_dart_generated_fixture() {
-        const PASSWORD: &[u8] = b"correct horse battery staple";
-        const SALT_BASE64: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
-        const MNEMONIC: &[u8] = b"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-        const PAYLOAD: &str = r#"{"v":1,"n":"ERITFBUWFxgZGhsc","c":"J72zWbdISI5fRMoTmiYhHCtXt7xdqwJ4zQfwMp693QwRSwsMX3ooQibazT49sdYPzjV5+7B7cbwvGPH0AKbAkK+5mjoFbPxziTpqUNC1VMacrlnDyB7wY4k7Iwqh","m":"Wnf1YadalnPgYjiH0MyJlg=="}"#;
-
-        let salt = STANDARD.decode(SALT_BASE64).unwrap();
-        let clear = decrypt_payload(PAYLOAD.as_bytes(), PASSWORD, salt.as_slice()).unwrap();
-
-        assert_eq!(clear.as_slice(), MNEMONIC);
-    }
-
-    #[test]
-    fn decrypt_payload_rejects_wrong_password() {
-        let salt = b"0123456789abcdef";
-        let payload = encrypted_payload_json(b"good password", salt, b"secret");
-
-        let error = decrypt_payload(payload.as_bytes(), b"bad password", salt).unwrap_err();
-
-        assert!(error.contains("Failed to decrypt"));
-    }
 }
