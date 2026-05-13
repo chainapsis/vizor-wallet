@@ -48,7 +48,7 @@ dependencies:
   mobile_scanner:
     git:
       url: https://github.com/chainapsis/mobile_scanner.git
-      ref: 9c95a008733aa9d254a3f58a8d79377a67ab0bb6
+      ref: 47284e047a1ae3be34d6dd484ddf9bdf606edb2b
   desktop_window_bootstrap:
     git:
       url: https://github.com/chainapsis/desktop_window_bootstrap.git
