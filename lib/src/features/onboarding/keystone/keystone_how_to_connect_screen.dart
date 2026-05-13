@@ -278,7 +278,7 @@ class _KeystoneCardContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _isPrep ? 'Check Keystone firmware' : 'Prepare to connect',
+            _isPrep ? 'Check your firmware' : 'Prepare to connect',
             style: AppTypography.bodyLarge.copyWith(
               color: colors.text.accent,
               fontWeight: FontWeight.w500,
@@ -304,8 +304,8 @@ class _FirmwareCardBody extends StatelessWidget {
         SizedBox(
           width: 256,
           child: Text(
-            'Check if your Keystone device has the latest version of the '
-            'Cypherpunk firmware, update or install if needed.',
+            'Vizor only works with Keystone devices running the Cypherpunk '
+            'firmware. Update or install it before continuing.',
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.primary,
             ),
@@ -319,7 +319,7 @@ class _FirmwareCardBody extends StatelessWidget {
           minWidth: 96,
           iconGap: 0,
           leading: const AppIcon(AppIcons.link),
-          child: const Text('Keystone Firmware'),
+          child: const Text('Get Cypherpunk firmware'),
         ),
       ],
     );
@@ -331,9 +331,9 @@ class _ConnectionSteps extends StatelessWidget {
 
   static const _steps = [
     'Unlock your Keystone.',
-    'Tap the ... Menu, then go to Sync',
-    'Open the Zcash QR Code in order to connect.',
-    'Grant camera access in your laptop settings and proceed with QR code import to Vizor.',
+    'Tap the ⋯ menu, then Connect Software Wallet.',
+    "Vizor isn't listed. Select Zodl, it uses the same method.",
+    'Allow camera access when prompted. Vizor scans the QR through your webcam.',
   ];
 
   static const _markerWidth = 15.0;
