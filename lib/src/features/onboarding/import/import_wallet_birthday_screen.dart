@@ -48,7 +48,6 @@ class _ImportWalletBirthdayScreenState
   ImportBirthdayTab _activeTab = ImportBirthdayTab.date;
   DateTime? _selectedDate;
   int? _birthdayHeight;
-  bool _isLoadingMetadata = true;
   bool _isEstimating = false;
   bool _isCalendarOpen = false;
   _ImportWalletSubmitPhase _submitPhase = _ImportWalletSubmitPhase.idle;
@@ -91,7 +90,6 @@ class _ImportWalletBirthdayScreenState
 
   Future<void> _loadMetadata() async {
     setState(() {
-      _isLoadingMetadata = true;
       _metadataError = null;
     });
 
@@ -106,7 +104,6 @@ class _ImportWalletBirthdayScreenState
       if (!mounted) return;
       setState(() {
         _metadata = metadata;
-        _isLoadingMetadata = false;
       });
 
       if (_selectedDate != null && _birthdayHeight == null) {
@@ -116,7 +113,6 @@ class _ImportWalletBirthdayScreenState
       log('ImportWalletBirthdayScreen._loadMetadata: ERROR: $e\n$st');
       if (!mounted) return;
       setState(() {
-        _isLoadingMetadata = false;
         _metadataError = 'Could not load wallet birthday metadata.';
       });
     }
@@ -182,12 +178,12 @@ class _ImportWalletBirthdayScreenState
   }
 
   Future<void> _pickDate() async {
-    final metadata = _metadata;
-    if (metadata == null) return;
+    final firstDate = _calendarFirstDate;
+    final lastDate = _calendarLastDate;
     final initialDate = _clampDate(
-      _selectedDate ?? metadata.tipDate,
-      metadata.saplingActivationDate,
-      metadata.tipDate,
+      _selectedDate ?? lastDate,
+      firstDate,
+      lastDate,
     );
 
     setState(() {
@@ -209,6 +205,27 @@ class _ImportWalletBirthdayScreenState
       _isCalendarOpen = false;
     });
     await _estimateSelectedDate(selected);
+  }
+
+  DateTime get _calendarFirstDate {
+    final metadataDate = _metadata?.saplingActivationDate;
+    if (metadataDate != null) return metadataDate;
+
+    final networkName = ref.read(rpcEndpointProvider).networkName;
+    if (networkName == 'regtest') {
+      return _dateOnly(DateTime.now().subtract(const Duration(days: 6)));
+    }
+
+    // UI-only fallback so the picker can open while endpoint metadata loads.
+    // The eventual height estimate still clamps pre-Sapling dates correctly.
+    return DateTime(2016, 10, 28);
+  }
+
+  DateTime get _calendarLastDate {
+    final firstDate = _calendarFirstDate;
+    final lastDate = _dateOnly(_metadata?.tipDate ?? DateTime.now());
+    if (lastDate.isBefore(firstDate)) return firstDate;
+    return lastDate;
   }
 
   Future<void> _submit({int? birthdayHeightOverride}) async {
@@ -325,6 +342,8 @@ class _ImportWalletBirthdayScreenState
   @override
   Widget build(BuildContext context) {
     final activeTab = _activeTab;
+    final calendarFirstDate = _calendarFirstDate;
+    final calendarLastDate = _calendarLastDate;
     final buttonLabel = switch (_submitPhase) {
       _ImportWalletSubmitPhase.stoppingSync => 'Stop syncing...',
       _ImportWalletSubmitPhase.importing => 'Importing...',
@@ -335,12 +354,12 @@ class _ImportWalletBirthdayScreenState
     };
 
     return ImportOnboardingTrailingPane(
-      overlay: _isCalendarOpen && _metadata != null
+      overlay: _isCalendarOpen
           ? ImportBirthdayCalendarOverlay(
-              initialMonth: _calendarInitialDate ?? _metadata!.tipDate,
+              initialMonth: _calendarInitialDate ?? calendarLastDate,
               selectedDate: _selectedDate,
-              firstDate: _metadata!.saplingActivationDate,
-              lastDate: _metadata!.tipDate,
+              firstDate: calendarFirstDate,
+              lastDate: calendarLastDate,
               onDismiss: _dismissCalendar,
               onDateSelected: _handleCalendarDateSelected,
             )
@@ -404,9 +423,7 @@ class _ImportWalletBirthdayScreenState
                                     valueText: _selectedDate == null
                                         ? null
                                         : _formatDate(_selectedDate!),
-                                    enabled:
-                                        !_isLoadingMetadata &&
-                                        _metadata != null,
+                                    enabled: !_isSubmitting,
                                     onTap: _pickDate,
                                   )
                                 else
@@ -750,6 +767,10 @@ DateTime _clampDate(DateTime value, DateTime min, DateTime max) {
   if (date.isBefore(minDate)) return minDate;
   if (date.isAfter(maxDate)) return maxDate;
   return date;
+}
+
+DateTime _dateOnly(DateTime value) {
+  return DateTime(value.year, value.month, value.day);
 }
 
 String _formatDate(DateTime date) {
