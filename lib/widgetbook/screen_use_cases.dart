@@ -270,8 +270,9 @@ final _accountsState = AccountState(
     for (var index = 2; index <= 20; index += 1)
       AccountInfo(
         uuid: 'preview-account-$index',
-        name: 'Account $index',
+        name: index == 2 ? 'Keystone Vault' : 'Account $index',
         order: index - 1,
+        isHardware: index == 2,
         profilePictureId: index.isEven ? 'samurai' : 'knight',
       ),
   ],

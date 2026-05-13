@@ -49,6 +49,7 @@ abstract final class AppIcons {
   static const history = 'history';
   static const importWallet = 'import_wallet';
   static const key = 'key';
+  static const keystone = 'keystone';
   static const link = 'link';
   static const loader = 'loader';
   static const lock = 'lock';
@@ -83,10 +84,10 @@ abstract final class AppIcons {
 
 /// Renders a Figma-exported icon from `assets/icons/<name>.svg`.
 ///
-/// Each SVG ships with a `viewBox="0 0 24 24"` — the exact dimensions
-/// of the Figma icon frame — so the art's position inside the frame is
-/// preserved when Flutter scales the SVG to any [size]. Colour is
-/// swapped at paint time via `ColorFilter.mode(color, BlendMode.srcIn)`:
+/// SVGs preserve their Figma icon frame in the viewBox, so the art's
+/// position inside the frame is preserved when Flutter scales the SVG to any
+/// [size]. Colour is swapped at paint time via
+/// `ColorFilter.mode(color, BlendMode.srcIn)`:
 /// the SVG keeps its own alpha shape, every non-transparent pixel gets
 /// re-colored to [color]. Works for the single-fill monochrome icons
 /// the design system currently ships; multi-fill / gradient icons

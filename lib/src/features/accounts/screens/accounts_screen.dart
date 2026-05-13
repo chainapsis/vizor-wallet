@@ -329,8 +329,9 @@ class _AccountsPane extends StatelessWidget {
                   AppButton(
                     key: const ValueKey('accounts_add_account_button'),
                     onPressed: () => context.go('/add-account'),
+                    variant: AppButtonVariant.secondary,
                     minWidth: 256,
-                    trailing: const AppIcon(AppIcons.chevronForward),
+                    leading: const AppIcon(AppIcons.addNew),
                     child: const Text('Add Account'),
                   ),
                 ],
@@ -390,7 +391,9 @@ class _AccountsListState extends State<_AccountsList> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (widget.activeAccount != null)
+            if (widget.activeAccount != null) ...[
+              const _AccountsSectionLabel(label: 'Current'),
+              const SizedBox(height: AppSpacing.xs),
               _AccountRow(
                 key: ValueKey(
                   'accounts_active_row_${widget.activeAccount!.uuid}',
@@ -406,8 +409,12 @@ class _AccountsListState extends State<_AccountsList> {
                   seedAnchorCount,
                 ),
               ),
+            ],
             if (widget.otherAccounts.isNotEmpty) ...[
+              if (widget.activeAccount != null)
+                const SizedBox(height: AppSpacing.md),
               const _AccountsSectionLabel(label: 'Other'),
+              const SizedBox(height: AppSpacing.xs),
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
@@ -566,25 +573,31 @@ class _AccountRow extends StatefulWidget {
 
 class _AccountRowState extends State<_AccountRow> {
   bool _isHovered = false;
-  bool _isMenuOpen = false;
+
+  void _setHovered(bool isHovered) {
+    if (_isHovered == isHovered) return;
+    setState(() {
+      _isHovered = isHovered;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
     final enabled = widget.onTap != null;
-    final isHighlighted = _isHovered || _isMenuOpen;
+    final isHighlighted = enabled && _isHovered;
 
     return MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-      onEnter: (_) => _setHovered(true),
-      onExit: (_) => _setHovered(false),
+      onEnter: enabled ? (_) => _setHovered(true) : null,
+      onExit: enabled ? (_) => _setHovered(false) : null,
       child: AnimatedContainer(
+        key: ValueKey('accounts_row_background_${widget.account.uuid}'),
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
         height: _accountRowHeight,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
         decoration: BoxDecoration(
-          color: isHighlighted ? colors.background.base : null,
+          color: isHighlighted ? context.colors.background.base : null,
           borderRadius: BorderRadius.circular(AppRadii.xSmall),
         ),
         child: Row(
@@ -593,29 +606,25 @@ class _AccountRowState extends State<_AccountRow> {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: widget.onTap,
-                child: Row(
-                  children: [
-                    AppProfilePicture(
-                      profilePictureId: widget.account.profilePictureId,
-                      size: AppProfilePictureSize.large,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: Text(
-                        widget.account.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.accent,
-                        ),
+                child: SizedBox(
+                  height: _accountRowHeight,
+                  child: Row(
+                    children: [
+                      AppProfilePicture(
+                        profilePictureId: widget.account.profilePictureId,
+                        size: AppProfilePictureSize.large,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: _AccountRowContent(account: widget.account),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
             _AccountRowMenuButton(
               key: ValueKey('accounts_row_menu_button_${widget.account.uuid}'),
-              onOpenChanged: _setMenuOpen,
               onEditName: () => widget.onEditName(widget.account),
               onChangePicture: () => widget.onChangePicture(widget.account),
               onRemove: () => widget.onRemove(widget.account),
@@ -626,25 +635,63 @@ class _AccountRowState extends State<_AccountRow> {
       ),
     );
   }
+}
 
-  void _setHovered(bool value) {
-    if (_isHovered == value) return;
-    setState(() {
-      _isHovered = value;
-    });
-  }
+class _AccountRowContent extends StatelessWidget {
+  const _AccountRowContent({required this.account});
 
-  void _setMenuOpen(bool value) {
-    if (_isMenuOpen == value) return;
-    setState(() {
-      _isMenuOpen = value;
-    });
+  final AccountInfo account;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    if (!account.isHardware) {
+      return Text(
+        account.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          account.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(
+              AppIcons.keystone,
+              size: AppIconSize.medium,
+              color: colors.icon.accent,
+            ),
+            const SizedBox(width: AppSpacing.xxs),
+            Flexible(
+              child: Text(
+                'Keystone',
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }
 
 class _AccountRowMenuButton extends StatefulWidget {
   const _AccountRowMenuButton({
-    required this.onOpenChanged,
     required this.onEditName,
     required this.onChangePicture,
     required this.onRemove,
@@ -652,7 +699,6 @@ class _AccountRowMenuButton extends StatefulWidget {
     super.key,
   });
 
-  final ValueChanged<bool> onOpenChanged;
   final VoidCallback onEditName;
   final VoidCallback onChangePicture;
   final VoidCallback onRemove;
@@ -665,10 +711,11 @@ class _AccountRowMenuButton extends StatefulWidget {
 class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
   final LayerLink _layerLink = LayerLink();
   OverlayEntry? _menuEntry;
+  bool _isHovered = false;
 
   @override
   void dispose() {
-    _hideMenu(notify: false, rebuild: false);
+    _hideMenu(rebuild: false);
     super.dispose();
   }
 
@@ -711,16 +758,14 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
       },
     );
     overlay.insert(_menuEntry!);
-    widget.onOpenChanged(true);
     setState(() {});
   }
 
-  void _hideMenu({bool notify = true, bool rebuild = true}) {
+  void _hideMenu({bool rebuild = true}) {
     final entry = _menuEntry;
     if (entry == null) return;
     _menuEntry = null;
     entry.remove();
-    if (notify) widget.onOpenChanged(false);
     if (rebuild && mounted) setState(() {});
   }
 
@@ -741,19 +786,30 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
 
   @override
   Widget build(BuildContext context) {
+    final isHighlighted = _isHovered || _menuEntry != null;
+
     return CompositedTransformTarget(
       link: _layerLink,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
+        onEnter: (_) => _setHovered(true),
+        onExit: (_) => _setHovered(false),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: _toggleMenu,
           child: Semantics(
             button: true,
             label: 'Account actions',
-            child: SizedBox(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
               width: 20,
               height: 20,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: isHighlighted ? context.colors.background.base : null,
+                borderRadius: BorderRadius.circular(AppRadii.xSmall),
+              ),
               child: Center(
                 child: Transform.rotate(
                   angle: -math.pi / 2,
@@ -769,6 +825,13 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
         ),
       ),
     );
+  }
+
+  void _setHovered(bool value) {
+    if (_isHovered == value) return;
+    setState(() {
+      _isHovered = value;
+    });
   }
 }
 
