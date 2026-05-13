@@ -92,6 +92,36 @@ void main() {
     );
   });
 
+  test('deleteAccountSecrets removes mnemonic payloads only', () async {
+    final regularStorage = _MapStorage('regular');
+    final mnemonicStorage = _MapStorage('mnemonic');
+    store = AppSecureStore.testing(
+      storage: regularStorage,
+      mnemonicStorage: mnemonicStorage,
+    );
+
+    await store.configurePassword(_oldPassword);
+    await store.writeAccountMnemonic(_accountUuid, _mnemonic);
+    await store.writeAccountMnemonic('second', _mnemonic);
+    await regularStorage.write(
+      key: 'zcash_account_mnemonic_legacy',
+      value: 'legacy payload',
+    );
+    await store.writeString('zcash_accounts', 'accounts-json');
+    await store.writeString('zcash_active_account', 'account-1');
+    await store.writeString('unrelated_setting', 'keep-me');
+
+    await store.deleteAccountSecrets();
+
+    expect(mnemonicStorage.valueFor(_mnemonicKey), isNull);
+    expect(mnemonicStorage.valueFor('zcash_account_mnemonic_second'), isNull);
+    expect(regularStorage.valueFor('zcash_account_mnemonic_legacy'), isNull);
+    expect(await store.readString('zcash_accounts'), 'accounts-json');
+    expect(await store.readString('zcash_active_account'), 'account-1');
+    expect(await store.readString('unrelated_setting'), 'keep-me');
+    expect(await store.isPasswordConfigured(), isTrue);
+  });
+
   test('changePassword journal stores only roll-forward data', () async {
     final blockingStorage = _BlockingDeleteStorage(
       blockKey: _rotationInProgressKey,

@@ -414,6 +414,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     log('resetWallet: all data cleared');
   }
 
+  /// Roll back artifacts from a failed first-wallet onboarding attempt.
+  ///
+  /// Unlike a user-requested reset, this preserves unrelated app preferences
+  /// while removing the DB/account state that would make bootstrap think a
+  /// failed setup is a real wallet.
+  Future<void> rollbackFirstWalletOnboarding() async {
+    final dbPath = await _getDbPath();
+    await _deleteExistingDb(dbPath);
+    await _storage.deleteAccountSecrets();
+    await _storage.delete(_accountsKey);
+    await _storage.delete(_activeAccountKey);
+    await _storage.delete(_networkKey);
+    state = const AsyncData(AccountState());
+    log('rollbackFirstWalletOnboarding: wallet artifacts cleared');
+  }
+
   void clearSensitiveStateForLock() {
     final prev = state.value ?? const AccountState();
     state = AsyncData(

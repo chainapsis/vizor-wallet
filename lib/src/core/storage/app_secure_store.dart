@@ -209,6 +209,26 @@ class AppSecureStore {
     });
   }
 
+  Future<void> deleteAccountSecrets() {
+    return _secretMutationLock.run(() async {
+      final mnemonicValues = await _mnemonicStorage.readAll();
+      for (final key in mnemonicValues.keys.toList()) {
+        if (_isAccountMnemonicKey(key)) {
+          await _mnemonicStorage.delete(key: key);
+        }
+      }
+
+      if (!identical(_mnemonicStorage, _storage)) {
+        final legacyValues = await _storage.readAll();
+        for (final key in legacyValues.keys.toList()) {
+          if (_isAccountMnemonicKey(key)) {
+            await _storage.delete(key: key);
+          }
+        }
+      }
+    });
+  }
+
   Future<void> deleteAll() {
     return _secretMutationLock.run(() async {
       await _storage.deleteAll();

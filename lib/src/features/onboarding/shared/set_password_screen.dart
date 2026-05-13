@@ -81,6 +81,9 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     final securityNotifier = ref.read(appSecurityProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
     final routerRefresh = ref.read(routerRefreshProvider);
+    final startedWithoutAccounts =
+        (ref.read(accountProvider).value?.accounts ?? const <AccountInfo>[])
+            .isEmpty;
     var passwordPrepared = false;
     var passwordCommitted = false;
 
@@ -138,6 +141,16 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       });
     } catch (e, st) {
       if (passwordPrepared && !passwordCommitted) {
+        if (startedWithoutAccounts) {
+          try {
+            await accountNotifier.rollbackFirstWalletOnboarding();
+          } catch (rollbackError, rollbackStack) {
+            log(
+              'SetPasswordScreen._submit: wallet rollback failed: '
+              '$rollbackError\n$rollbackStack',
+            );
+          }
+        }
         try {
           await securityNotifier.rollbackPasswordSetup();
         } catch (rollbackError, rollbackStack) {
