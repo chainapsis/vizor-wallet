@@ -47,6 +47,11 @@ pub enum SyncError<E: fmt::Debug> {
         local: Option<Fp>,
         server: Fp,
     },
+    /// The server ended pagination before the client reached the advertised tip.
+    IncompleteSync {
+        local_next_index: u64,
+        server_next_index: u64,
+    },
     /// The server returned a pagination cursor that does not move forward.
     InvalidPagination { current: u32, next: u32 },
 }
@@ -72,6 +77,14 @@ impl<E: fmt::Debug> fmt::Display for SyncError<E> {
                 f,
                 "root mismatch at height {}: local={:?}, server={:?}",
                 height, local, server
+            ),
+            SyncError::IncompleteSync {
+                local_next_index,
+                server_next_index,
+            } => write!(
+                f,
+                "incomplete sync: local next_index={}, server next_index={}",
+                local_next_index, server_next_index
             ),
             SyncError::InvalidPagination { current, next } => write!(
                 f,
@@ -162,10 +175,22 @@ impl TreeClient {
     /// - Each block's `start_index` must match the client's expected next position.
     /// - After checkpointing each block, the client's root is verified against the
     ///   server's root at that height (the consistency check described in the README).
+    /// - After pagination completes, the client must match the tip advertised by
+    ///   `get_tree_state()`.
     pub fn sync<A: TreeSyncApi>(&mut self, api: &A) -> Result<(), SyncError<A::Error>> {
         let state = api.get_tree_state()?;
         if state.next_index == self.next_position {
-            return Ok(()); // No new leaves to apply.
+            if state.next_index > 0 {
+                let local = self.root();
+                if local != state.root {
+                    return Err(SyncError::RootMismatch {
+                        height: state.height,
+                        local: Some(local),
+                        server: state.root,
+                    });
+                }
+            }
+            return Ok(());
         }
 
         let from_height = self.last_synced_height.map(|h| h + 1).unwrap_or(0);
@@ -242,6 +267,23 @@ impl TreeClient {
                 });
             }
             page_from = page.next_from_height;
+        }
+
+        if self.next_position != state.next_index {
+            return Err(SyncError::IncompleteSync {
+                local_next_index: self.next_position,
+                server_next_index: state.next_index,
+            });
+        }
+        if state.next_index > 0 {
+            let local = self.root();
+            if local != state.root {
+                return Err(SyncError::RootMismatch {
+                    height: state.height,
+                    local: Some(local),
+                    server: state.root,
+                });
+            }
         }
 
         Ok(())

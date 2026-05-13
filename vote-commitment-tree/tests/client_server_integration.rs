@@ -8,10 +8,13 @@
 //! - Roots match between server and client at every synced height
 //! - Sync detects root mismatches and start_index discontinuities
 
+use std::convert::Infallible;
+
 use pasta_curves::Fp;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use vote_commitment_tree::{MemoryTreeServer, MerklePath, TreeClient, TreeSyncApi};
+use vote_commitment_tree::sync_api::{BlockCommitmentsPage, TreeState};
+use vote_commitment_tree::{MemoryTreeServer, MerklePath, SyncError, TreeClient, TreeSyncApi};
 
 fn fp(x: u64) -> Fp {
     Fp::from(x)
@@ -352,6 +355,54 @@ fn sync_idempotent_when_up_to_date() {
     client.sync(&server).unwrap();
     assert_eq!(client.size(), 1);
     assert_eq!(client.last_synced_height(), Some(1));
+}
+
+#[test]
+fn sync_rejects_final_page_before_advertised_tip() {
+    struct TruncatedApi {
+        state: TreeState,
+    }
+
+    impl TreeSyncApi for TruncatedApi {
+        type Error = Infallible;
+
+        fn get_block_commitments(
+            &self,
+            _from_height: u32,
+            _to_height: u32,
+        ) -> Result<BlockCommitmentsPage, Self::Error> {
+            Ok(BlockCommitmentsPage {
+                blocks: Vec::new(),
+                next_from_height: 0,
+            })
+        }
+
+        fn get_root_at_height(&self, _height: u32) -> Result<Option<Fp>, Self::Error> {
+            Ok(None)
+        }
+
+        fn get_tree_state(&self) -> Result<TreeState, Self::Error> {
+            Ok(self.state.clone())
+        }
+    }
+
+    let mut server = MemoryTreeServer::empty();
+    server.append(fp(1)).unwrap();
+    server.checkpoint(1).unwrap();
+
+    let err = TreeClient::empty()
+        .sync(&TruncatedApi {
+            state: server.get_tree_state().unwrap(),
+        })
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        SyncError::IncompleteSync {
+            local_next_index: 0,
+            server_next_index: 1
+        }
+    ));
 }
 
 /// Test that server and client produce byte-identical auth paths.
