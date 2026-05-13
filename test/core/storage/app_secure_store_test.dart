@@ -55,6 +55,19 @@ void main() {
     expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
   });
 
+  test('readAccountMnemonicBytes returns mutable mnemonic bytes', () async {
+    await store.configurePassword(_oldPassword);
+    await store.writeAccountMnemonic(_accountUuid, _mnemonic);
+
+    final bytes = await store.readAccountMnemonicBytes(_accountUuid);
+
+    expect(bytes, isNotNull);
+    expect(utf8.decode(bytes!), _mnemonic);
+    bytes.fillRange(0, bytes.length, 0);
+    expect(bytes.every((byte) => byte == 0), isTrue);
+    expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
+  });
+
   test('changePassword journal stores only roll-forward data', () async {
     final blockingStorage = _BlockingDeleteStorage(
       blockKey: _rotationInProgressKey,
@@ -436,33 +449,36 @@ void main() {
     },
   );
 
-  test('fresh macOS mnemonic survives lock unlock without legacy copy', () async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-    final operations = <String>[];
-    final regularStorage = _MapStorage('regular', operations: operations);
-    final mnemonicStorage = _MapStorage('mnemonic', operations: operations);
-    store = AppSecureStore.testing(
-      storage: regularStorage,
-      mnemonicStorage: mnemonicStorage,
-    );
+  test(
+    'fresh macOS mnemonic survives lock unlock without legacy copy',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      final operations = <String>[];
+      final regularStorage = _MapStorage('regular', operations: operations);
+      final mnemonicStorage = _MapStorage('mnemonic', operations: operations);
+      store = AppSecureStore.testing(
+        storage: regularStorage,
+        mnemonicStorage: mnemonicStorage,
+      );
 
-    await store.configurePassword(_oldPassword);
-    await store.writeAccountMnemonic(_accountUuid, _mnemonic);
-    expect(regularStorage.valueFor(_mnemonicKey), isNull);
-    expect(mnemonicStorage.valueFor(_mnemonicKey), isNotNull);
+      await store.configurePassword(_oldPassword);
+      await store.writeAccountMnemonic(_accountUuid, _mnemonic);
+      expect(regularStorage.valueFor(_mnemonicKey), isNull);
+      expect(mnemonicStorage.valueFor(_mnemonicKey), isNotNull);
 
-    store.clearSessionPassword();
-    operations.clear();
+      store.clearSessionPassword();
+      operations.clear();
 
-    expect(await store.verifyPassword(_oldPassword), isTrue);
-    expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
-    expect(regularStorage.valueFor(_mnemonicKey), isNull);
-    expect(mnemonicStorage.valueFor(_mnemonicKey), isNotNull);
-    expect(regularStorage.valueFor(_migrationCompleteKey), 'true');
-    expect(operations, contains('regular.readAll'));
-    expect(operations, isNot(contains('mnemonic.write $_mnemonicKey')));
-    expect(operations, isNot(contains('regular.delete $_mnemonicKey')));
-  });
+      expect(await store.verifyPassword(_oldPassword), isTrue);
+      expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
+      expect(regularStorage.valueFor(_mnemonicKey), isNull);
+      expect(mnemonicStorage.valueFor(_mnemonicKey), isNotNull);
+      expect(regularStorage.valueFor(_migrationCompleteKey), 'true');
+      expect(operations, contains('regular.readAll'));
+      expect(operations, isNot(contains('mnemonic.write $_mnemonicKey')));
+      expect(operations, isNot(contains('regular.delete $_mnemonicKey')));
+    },
+  );
 
   test(
     'macOS unlock migrates legacy mnemonic payloads write then delete',

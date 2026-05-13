@@ -25,8 +25,7 @@ use crate::wallet::{
     network::WalletNetwork,
 };
 
-const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str =
-    "This account is already in your wallet.";
+const DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE: &str = "This account is already in your wallet.";
 const DUPLICATE_KEYSTONE_ACCOUNT_MESSAGE: &str = "This Keystone account is already in your wallet.";
 
 fn map_account_import_error(
@@ -81,6 +80,13 @@ pub fn mnemonic_to_seed(phrase: &str) -> Result<SecretVec<u8>, String> {
     let mnemonic =
         Mnemonic::<English>::from_phrase(phrase).map_err(|e| format!("Invalid mnemonic: {e}"))?;
     Ok(SecretVec::new(mnemonic.to_seed("").to_vec()))
+}
+
+/// Convert UTF-8 mnemonic bytes to a 64-byte seed wrapped in SecretVec.
+/// The caller remains responsible for zeroizing the input bytes.
+pub fn mnemonic_bytes_to_seed(phrase: &[u8]) -> Result<SecretVec<u8>, String> {
+    let phrase = std::str::from_utf8(phrase).map_err(|_| "Mnemonic must be valid UTF-8")?;
+    mnemonic_to_seed(phrase)
 }
 
 /// Parse network string to wallet network enum.

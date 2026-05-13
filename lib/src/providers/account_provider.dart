@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -539,6 +540,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// Get the mnemonic for a specific account.
   Future<String?> getMnemonicForAccount(String uuid) async {
     return _storage.readAccountMnemonic(uuid, requireUnlockedSession: true);
+  }
+
+  Future<Uint8List?> getMnemonicBytesForAccount(String uuid) async {
+    return _storage.readAccountMnemonicBytes(
+      uuid,
+      requireUnlockedSession: true,
+    );
   }
 
   // ======================== Helpers ========================

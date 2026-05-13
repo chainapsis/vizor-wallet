@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart'
@@ -147,6 +148,22 @@ class AppSecureStore {
       final key = _accountMnemonicKey(accountUuid);
       final raw = await _mnemonicStorage.read(key: key);
       return _decryptStoredSecretString(
+        raw,
+        key: key,
+        requireUnlockedSession: requireUnlockedSession,
+      );
+    });
+  }
+
+  Future<Uint8List?> readAccountMnemonicBytes(
+    String accountUuid, {
+    bool requireUnlockedSession = false,
+  }) {
+    return _secretMutationLock.run(() async {
+      if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
+      final key = _accountMnemonicKey(accountUuid);
+      final raw = await _mnemonicStorage.read(key: key);
+      return _decryptStoredSecretBytes(
         raw,
         key: key,
         requireUnlockedSession: requireUnlockedSession,
@@ -464,19 +481,46 @@ class AppSecureStore {
     return _decryptPayloadForKey(key, payload, secretKey);
   }
 
+  Future<Uint8List?> _decryptStoredSecretBytes(
+    String? raw, {
+    required String key,
+    required bool requireUnlockedSession,
+  }) async {
+    if (requireUnlockedSession && !hasSessionPassword) {
+      return null;
+    }
+    if (!hasSessionPassword) {
+      throw StateError('Secret storage requires an unlocked session.');
+    }
+    if (raw == null || raw.isEmpty) return null;
+
+    final payload = _EncryptedPayload.tryParse(raw);
+    if (payload == null) {
+      return null;
+    }
+
+    final secretKey = await _getSecretKey();
+    return _decryptPayloadBytesForKey(key, payload, secretKey);
+  }
+
   Future<String> _encryptSecretString(String value) async {
     final secretKey = await _getSecretKey();
     final nonce = _randomBytes(12);
-    final secretBox = await _cipher.encrypt(
-      utf8.encode(value),
-      secretKey: secretKey,
-      nonce: nonce,
-    );
-    return _EncryptedPayload(
-      nonce: secretBox.nonce,
-      cipherText: secretBox.cipherText,
-      mac: secretBox.mac.bytes,
-    ).serialize();
+    final clearText = utf8.encode(value);
+    try {
+      final secretBox = await _cipher.encrypt(
+        clearText,
+        secretKey: secretKey,
+        nonce: nonce,
+      );
+      return _EncryptedPayload(
+        nonce: secretBox.nonce,
+        cipherText: secretBox.cipherText,
+        mac: secretBox.mac.bytes,
+      ).serialize();
+    } finally {
+      _zeroizeList(clearText);
+    }
   }
 
   Future<_AccountMnemonicMigrationResult>
@@ -587,7 +631,33 @@ class AppSecureStore {
       ),
       secretKey: secretKey,
     );
-    return utf8.decode(clearText);
+    try {
+      return utf8.decode(clearText);
+    } finally {
+      _zeroizeList(clearText);
+    }
+  }
+
+  Future<Uint8List> _decryptPayloadBytes(
+    _EncryptedPayload payload,
+    SecretKey secretKey,
+  ) async {
+    final clearText = await _cipher.decrypt(
+      SecretBox(
+        payload.cipherText,
+        nonce: payload.nonce,
+        mac: Mac(payload.mac),
+      ),
+      secretKey: secretKey,
+    );
+    if (clearText is Uint8List) {
+      return clearText;
+    }
+    try {
+      return Uint8List.fromList(clearText);
+    } finally {
+      _zeroizeList(clearText);
+    }
   }
 
   Future<String> _decryptPayloadForKey(
@@ -605,21 +675,41 @@ class AppSecureStore {
     }
   }
 
+  Future<Uint8List> _decryptPayloadBytesForKey(
+    String key,
+    _EncryptedPayload payload,
+    SecretKey secretKey,
+  ) async {
+    try {
+      return await _decryptPayloadBytes(payload, secretKey);
+    } catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        StateError('Failed to decrypt secure-storage value for "$key": $error'),
+        stackTrace,
+      );
+    }
+  }
+
   Future<String> _encryptStringWithKey(
     String value,
     SecretKey secretKey,
   ) async {
     final nonce = _randomBytes(12);
-    final secretBox = await _cipher.encrypt(
-      utf8.encode(value),
-      secretKey: secretKey,
-      nonce: nonce,
-    );
-    return _EncryptedPayload(
-      nonce: secretBox.nonce,
-      cipherText: secretBox.cipherText,
-      mac: secretBox.mac.bytes,
-    ).serialize();
+    final clearText = utf8.encode(value);
+    try {
+      final secretBox = await _cipher.encrypt(
+        clearText,
+        secretKey: secretKey,
+        nonce: nonce,
+      );
+      return _EncryptedPayload(
+        nonce: secretBox.nonce,
+        cipherText: secretBox.cipherText,
+        mac: secretBox.mac.bytes,
+      ).serialize();
+    } finally {
+      _zeroizeList(clearText);
+    }
   }
 
   Future<String> _derivePasswordVerifier(
@@ -634,6 +724,15 @@ class AppSecureStore {
       return base64Encode(await key.extractBytes());
     } finally {
       key.destroy();
+    }
+  }
+
+  void _zeroizeList(List<int> value) {
+    try {
+      value.fillRange(0, value.length, 0);
+    } catch (_) {
+      // Best effort only: some cryptography implementations may return
+      // fixed or unmodifiable list views.
     }
   }
 

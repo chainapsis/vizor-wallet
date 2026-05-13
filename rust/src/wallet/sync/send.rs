@@ -14,7 +14,7 @@
 //!      amount field.
 //!
 //!   3. [`execute_proposal`] — consume the stored proposal, derive
-//!      the USK from the supplied seed (scoped + dropped before
+//!      the USK from the supplied seed (scoped + zeroized before
 //!      network I/O), build + sign the transaction(s), and broadcast
 //!      them via `send_transaction` gRPC. Once transaction creation
 //!      succeeds, broadcast failures are returned as a structured
@@ -413,7 +413,7 @@ pub(crate) async fn shield_transparent_balance(
     lightwalletd_url: &str,
     network: WalletNetwork,
     account_uuid: &str,
-    seed_bytes: &[u8],
+    seed: SecretVec<u8>,
 ) -> Result<ShieldTransparentResult, String> {
     let shielding_threshold = shielding_threshold()?;
 
@@ -432,7 +432,6 @@ pub(crate) async fn shield_transparent_balance(
             let fee_zatoshi = proposal_fee_zatoshi(&proposal);
             let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
 
-            let seed = SecretVec::new(seed_bytes.to_vec());
             let zip32_index = account
                 .source()
                 .key_derivation()
@@ -457,6 +456,7 @@ pub(crate) async fn shield_transparent_balance(
             Ok::<_, String>((txids, fee_zatoshi, shielded_zatoshi))
         },
     )?;
+    drop(seed);
 
     let txids: Vec<TxId> = txids.iter().cloned().collect();
     let txids = broadcast_created_transactions(db_path, lightwalletd_url, &txids, "shield")
@@ -481,7 +481,7 @@ pub async fn execute_proposal(
     lightwalletd_url: &str,
     proposal_id: u64,
     send_flow_id: &str,
-    seed_bytes: &[u8],
+    seed: SecretVec<u8>,
     spend_params_path: Option<&str>,
     output_params_path: Option<&str>,
 ) -> Result<ExecuteProposalResult, String> {
@@ -500,7 +500,6 @@ pub async fn execute_proposal(
             .get_account(account_id)
             .map_err(|e| format!("{e}"))?
             .ok_or("Account not found")?;
-        let seed = SecretVec::new(seed_bytes.to_vec());
         let zip32_index = account
             .source()
             .key_derivation()
@@ -541,6 +540,7 @@ pub async fn execute_proposal(
         // seed + usk dropped here, before broadcast
         Ok::<_, String>(txids)
     })?;
+    drop(seed);
 
     let txids: Vec<TxId> = txids.iter().cloned().collect();
     Ok(
