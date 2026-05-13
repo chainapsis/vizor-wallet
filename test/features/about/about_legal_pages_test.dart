@@ -64,6 +64,14 @@ void main() {
 
     expect(find.text('About Vizor Wallet'), findsOneWidget);
     expect(find.text('Version: 0.0.0 Public Beta'), findsOneWidget);
+    expect(find.text('Built by the Keplr team'), findsOneWidget);
+    expect(find.text('Designed for shielded Zcash'), findsOneWidget);
+    expect(
+      find.text('Open source, verifiable, and self-custodial'),
+      findsOneWidget,
+    );
+    expect(find.text('GitHub'), findsOneWidget);
+    expect(find.text('Website'), findsOneWidget);
   });
 
   testWidgets('About sidebar navigation uses the standard Home back target', (
@@ -139,7 +147,11 @@ void main() {
     await tester.pumpAndSettle();
 
     _expectScrollbarFillsPaneEdge(tester, const Size(1280, 900));
-    _expectUtilityContentCentered(tester, const Size(1280, 900));
+    _expectUtilityContentCentered(
+      tester,
+      const Size(1280, 900),
+      headingText: 'From the team that brought you Keplr Wallet.',
+    );
 
     await tester.pumpWidget(
       _routerHarness(
@@ -155,7 +167,11 @@ void main() {
     await tester.pumpAndSettle();
 
     _expectScrollbarFillsPaneEdge(tester, const Size(1280, 900));
-    _expectUtilityContentCentered(tester, const Size(1280, 900));
+    _expectUtilityContentCentered(
+      tester,
+      const Size(1280, 900),
+      headingText: 'Built by the Keplr team',
+    );
   });
 
   testWidgets('legal back row scrolls with the page content', (tester) async {
@@ -326,15 +342,17 @@ void _expectScrollbarFillsPaneEdge(WidgetTester tester, Size viewport) {
   );
 }
 
-void _expectUtilityContentCentered(WidgetTester tester, Size viewport) {
+void _expectUtilityContentCentered(
+  WidgetTester tester,
+  Size viewport, {
+  required String headingText,
+}) {
   final scrollbarRect = tester.getRect(find.byKey(_utilityPageScrollbarKey));
   final dividerRect = tester.getRect(find.byType(AppDecorativeDivider).last);
   expect(dividerRect.width, moreOrLessEquals(256));
   expect(dividerRect.center.dx, moreOrLessEquals(scrollbarRect.center.dx));
 
-  final headingRect = tester.getRect(
-    find.text('From the team that brought you Keplr Wallet.').first,
-  );
+  final headingRect = tester.getRect(find.text(headingText).first);
   expect(headingRect.left, greaterThan(scrollbarRect.left + 100));
 }
 
