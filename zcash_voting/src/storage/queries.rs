@@ -1950,7 +1950,7 @@ pub fn get_commitment_bundle(
     bundle_index: u32,
     proposal_id: u32,
 ) -> Result<Option<(String, u64)>, VotingError> {
-    let result = conn.query_row(
+    let (json, pos): (Option<String>, Option<i64>) = conn.query_row(
         "SELECT commitment_bundle_json, vc_tree_position FROM votes WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
         named_params! {
             ":round_id": round_id,
@@ -1958,16 +1958,25 @@ pub fn get_commitment_bundle(
             ":bundle_index": bundle_index as i64,
             ":proposal_id": proposal_id as i64,
         },
-        |row| {
-            let json: Option<String> = row.get(0)?;
-            let pos: Option<i64> = row.get(1)?;
-            Ok(json.map(|j| (j, pos.unwrap_or(0) as u64)))
-        },
+        |row| Ok((row.get(0)?, row.get(1)?)),
     )
     .map_err(|e| VotingError::Internal {
         message: format!("failed to get commitment bundle: {}", e),
     })?;
-    Ok(result)
+    match (json, pos) {
+        (Some(json), Some(pos)) => {
+            let position = u64::try_from(pos).map_err(|_| VotingError::Internal {
+                message: format!("stored vc_tree_position must be non-negative, got {pos}"),
+            })?;
+            Ok(Some((json, position)))
+        }
+        (Some(_), None) => Err(VotingError::Internal {
+            message:
+                "commitment bundle is stored without vc_tree_position; refusing to assume position 0"
+                    .to_string(),
+        }),
+        (None, _) => Ok(None),
+    }
 }
 
 // --- Keystone signatures ---

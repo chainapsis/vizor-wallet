@@ -4,6 +4,19 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.7.0
+
+## Changed
+- Removed the unused `round_id` parameter from `VotingDb::generate_hotkey`.
+
+## Fixed
+- Share payload construction now errors when the requested share is missing its
+  blind instead of using empty bytes.
+- Recovery now rejects stored commitment bundles that are missing their vote
+  commitment tree position instead of assuming position 0.
+- Delegation proof generation now requires the randomness saved when the PCZT was
+  built instead of sampling fresh randomness when those fields are empty.
+
 # 0.6.0
 
 ## Changed

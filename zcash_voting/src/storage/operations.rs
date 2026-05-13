@@ -175,6 +175,76 @@ fn padded_nullifiers_for_circuit(
     Ok(out)
 }
 
+#[cfg(feature = "client-pir")]
+fn precomputed_randomness_from_stored(
+    notes_len: usize,
+    padded_secrets: &[(Vec<u8>, Vec<u8>)],
+    rseed_signed: &[u8],
+    rseed_output: &[u8],
+    bundle_index: u32,
+) -> Result<voting_circuits::delegation::builder::PrecomputedRandomness, VotingError> {
+    use voting_circuits::delegation::builder::{PaddedNoteData, PrecomputedRandomness};
+
+    let expected_padded_count = 5usize.saturating_sub(notes_len);
+    if padded_secrets.len() != expected_padded_count {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "stored padded_note_secrets count ({}) must match expected padded note count ({expected_padded_count}) for bundle {bundle_index}",
+                padded_secrets.len()
+            ),
+        });
+    }
+
+    let padded_notes: Vec<PaddedNoteData> = padded_secrets
+        .iter()
+        .enumerate()
+        .map(|(i, (rho, rseed))| {
+            let rho_arr: [u8; 32] =
+                rho.as_slice()
+                    .try_into()
+                    .map_err(|_| VotingError::Internal {
+                        message: format!(
+                            "stored padded_note_secrets[{i}].rho must be 32 bytes, got {}",
+                            rho.len()
+                        ),
+                    })?;
+            let rseed_arr: [u8; 32] =
+                rseed
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| VotingError::Internal {
+                        message: format!(
+                            "stored padded_note_secrets[{i}].rseed must be 32 bytes, got {}",
+                            rseed.len()
+                        ),
+                    })?;
+            Ok(PaddedNoteData {
+                rho: rho_arr,
+                rseed: rseed_arr,
+            })
+        })
+        .collect::<Result<Vec<_>, VotingError>>()?;
+
+    let rseed_signed: [u8; 32] = rseed_signed.try_into().map_err(|_| VotingError::Internal {
+        message: format!(
+            "stored rseed_signed must be 32 bytes, got {}",
+            rseed_signed.len()
+        ),
+    })?;
+    let rseed_output: [u8; 32] = rseed_output.try_into().map_err(|_| VotingError::Internal {
+        message: format!(
+            "stored rseed_output must be 32 bytes, got {}",
+            rseed_output.len()
+        ),
+    })?;
+
+    Ok(PrecomputedRandomness {
+        padded_notes,
+        rseed_signed,
+        rseed_output,
+    })
+}
+
 fn verify_witnesses(witnesses: &[WitnessData]) -> Result<(), VotingError> {
     for w in witnesses {
         let valid = crate::witness::verify_witness(w)?;
@@ -320,11 +390,7 @@ impl VotingDb {
 
     /// Generate a voting hotkey from seed bytes. Returns the hotkey (SDK needs address for Keystone flow).
     /// The seed comes from a BIP39 mnemonic stored in iOS Keychain.
-    pub fn generate_hotkey(
-        &self,
-        _round_id: &str,
-        seed: &[u8],
-    ) -> Result<VotingHotkey, VotingError> {
+    pub fn generate_hotkey(&self, seed: &[u8]) -> Result<VotingHotkey, VotingError> {
         crate::hotkey::generate_hotkey(seed)
     }
 
@@ -719,38 +785,15 @@ impl VotingDb {
                 message: format!("invalid vote_round_id hex '{}': {e}", params.vote_round_id),
             })?;
 
-        // Construct PrecomputedRandomness from Phase 1 values (ZCA-74 fix).
-        // If padded_note_secrets is empty (e.g. test data with no PCZT),
-        // we fall back to None and the builder will sample fresh randomness.
-        let precomputed = if !padded_secrets.is_empty() || !rseed_signed.is_empty() {
-            use voting_circuits::delegation::builder::PaddedNoteData;
-            let padded_notes: Vec<PaddedNoteData> = padded_secrets
-                .iter()
-                .map(|(rho, rseed)| {
-                    let mut rho_arr = [0u8; 32];
-                    let mut rseed_arr = [0u8; 32];
-                    rho_arr.copy_from_slice(rho);
-                    rseed_arr.copy_from_slice(rseed);
-                    PaddedNoteData {
-                        rho: rho_arr,
-                        rseed: rseed_arr,
-                    }
-                })
-                .collect();
-            let mut rseed_signed_arr = [0u8; 32];
-            rseed_signed_arr.copy_from_slice(&rseed_signed);
-            let mut rseed_output_arr = [0u8; 32];
-            rseed_output_arr.copy_from_slice(&rseed_output);
-            Some(
-                voting_circuits::delegation::builder::PrecomputedRandomness {
-                    padded_notes,
-                    rseed_signed: rseed_signed_arr,
-                    rseed_output: rseed_output_arr,
-                },
-            )
-        } else {
-            None
-        };
+        // Proof generation must reproduce the values already signed in the PCZT
+        // instead of sampling new randomness when persisted data is incomplete.
+        let precomputed = precomputed_randomness_from_stored(
+            notes.len(),
+            &padded_secrets,
+            &rseed_signed,
+            &rseed_output,
+            bundle_index,
+        )?;
 
         let result = crate::zkp1::build_and_prove_delegation(
             &notes,
@@ -763,7 +806,7 @@ impl VotingDb {
             &extra_imt_proofs,
             network_id,
             progress,
-            precomputed.as_ref(),
+            Some(&precomputed),
         )?;
         let prove_elapsed = prove_start.elapsed();
         eprintln!(
@@ -1472,9 +1515,20 @@ mod tests {
     fn test_generate_hotkey() {
         let db = test_db();
         let seed = [0x42_u8; 64];
-        let hotkey = db.generate_hotkey(ROUND_ID, &seed).unwrap();
+        let hotkey = db.generate_hotkey(&seed).unwrap();
         assert_eq!(hotkey.secret_key.len(), 32);
         assert_eq!(hotkey.public_key.len(), 32);
+    }
+
+    #[cfg(feature = "client-pir")]
+    #[test]
+    fn test_precomputed_randomness_requires_stored_rseeds() {
+        let err = match precomputed_randomness_from_stored(5, &[], &[], &[0x11; 32], 0) {
+            Ok(_) => panic!("empty signed rseed must fail"),
+            Err(err) => err,
+        };
+
+        assert!(err.to_string().contains("rseed_signed"), "{err}");
     }
 
     #[test]
@@ -1812,6 +1866,29 @@ mod tests {
         let conn = db.conn();
         let loaded = queries::load_tree_state(&conn, ROUND_ID, W).unwrap();
         assert_eq!(loaded, tree_state);
+    }
+
+    #[test]
+    fn test_get_commitment_bundle_rejects_missing_tree_position() {
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+        let conn = db.conn();
+        queries::insert_bundle(&conn, ROUND_ID, W, 0, &[0]).unwrap();
+        queries::store_vote(&conn, ROUND_ID, W, 0, 1, 0, b"commitment").unwrap();
+        conn.execute(
+            "UPDATE votes SET commitment_bundle_json = '{}', vc_tree_position = NULL \
+             WHERE round_id = ?1 AND wallet_id = ?2 AND bundle_index = 0 AND proposal_id = 1",
+            rusqlite::params![ROUND_ID, W],
+        )
+        .unwrap();
+
+        let err = queries::get_commitment_bundle(&conn, ROUND_ID, W, 0, 1)
+            .expect_err("stored commitment bundle without position should fail");
+
+        assert!(
+            err.to_string().contains("refusing to assume position 0"),
+            "{err}"
+        );
     }
 
     #[test]
