@@ -114,6 +114,14 @@ class ZecAmount {
 
   ZecAmountPretty get activity => activityPretty();
 
+  ZecAmountPretty activityDetailPretty({String? denomination}) => pretty(
+    minFractionDigits: 2,
+    denomStyle: ZecDenomStyle.upper,
+    denomination: denomination,
+  );
+
+  ZecAmountPretty get activityDetail => activityDetailPretty();
+
   ZecAmountPretty signedActivityPretty({String? denomination}) =>
       _activity(signed: true, denomination: denomination);
 

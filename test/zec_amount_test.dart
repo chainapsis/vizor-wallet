@@ -92,6 +92,21 @@ void main() {
       );
     });
 
+    test('formats activity details with full precision', () {
+      expect(
+        ZecAmount.fromZatoshi(BigInt.from(123450000)).activityDetail.toString(),
+        '1.2345 $kZcashDefaultCurrencyTicker',
+      );
+      expect(
+        ZecAmount.fromZatoshi(BigInt.one).activityDetail.toString(),
+        '0.00000001 $kZcashDefaultCurrencyTicker',
+      );
+      expect(
+        ZecAmount.fromZatoshi(BigInt.from(100000000)).activityDetail.toString(),
+        '1.00 $kZcashDefaultCurrencyTicker',
+      );
+    });
+
     test('can render testnet amounts with TAZ denomination', () {
       final ticker = ZcashNetwork.testnet.currencyTicker;
 
