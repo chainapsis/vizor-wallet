@@ -472,7 +472,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                 if (_troubleScanningOpen)
                   AppPaneModalOverlay(
                     onDismiss: _dismissTroubleScanning,
-                    borderRadius: BorderRadius.circular(_outerRadius),
+                    borderRadius: BorderRadius.circular(_cameraRadius),
                     child: _TroubleScanningPopover(
                       onDismiss: _dismissTroubleScanning,
                     ),
