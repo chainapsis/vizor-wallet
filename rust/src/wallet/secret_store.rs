@@ -31,7 +31,9 @@ pub fn seed_from_macos_stored_mnemonic(
     drop(password);
     drop(salt);
     drop(payload_raw);
-    keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())
+    let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
+    drop(mnemonic_bytes);
+    Ok(seed)
 }
 
 fn secure_store_service_for_network(network: WalletNetwork) -> String {

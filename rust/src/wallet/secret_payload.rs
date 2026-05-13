@@ -72,12 +72,15 @@ pub fn encrypt_payload(
     let key = derive_key(password, salt);
     let cipher = Aes256Gcm::new_from_slice(key.as_slice())
         .map_err(|e| format!("Failed to initialize AES-GCM: {e}"))?;
+    drop(key);
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let cipher_text_and_tag = Zeroizing::new(
         cipher
             .encrypt(&nonce, clear_text.as_slice())
             .map_err(|_| "Failed to encrypt secure-storage payload".to_string())?,
     );
+    drop(cipher);
+    drop(clear_text);
     if cipher_text_and_tag.len() < MAC_LEN {
         return Err("Encrypted payload is shorter than AES-GCM tag".to_string());
     }
@@ -90,6 +93,7 @@ pub fn encrypt_payload(
         cipher_text: STANDARD.encode(cipher_text),
         mac: STANDARD.encode(mac),
     };
+    drop(cipher_text_and_tag);
     serde_json::to_string(&payload)
         .map_err(|e| format!("Failed to serialize encrypted payload: {e}"))
 }
@@ -130,6 +134,7 @@ pub fn decrypt_payload(
     let key = derive_key(password, salt);
     let cipher = Aes256Gcm::new_from_slice(key.as_slice())
         .map_err(|e| format!("Failed to initialize AES-GCM: {e}"))?;
+    drop(key);
     let mut ciphertext_and_tag = Zeroizing::new(Vec::with_capacity(cipher_text.len() + mac.len()));
     ciphertext_and_tag.extend_from_slice(cipher_text.as_slice());
     ciphertext_and_tag.extend_from_slice(mac.as_slice());
@@ -140,6 +145,11 @@ pub fn decrypt_payload(
             ciphertext_and_tag.as_slice(),
         )
         .map_err(|_| "Failed to decrypt secure-storage payload".to_string())?;
+    drop(cipher);
+    drop(ciphertext_and_tag);
+    drop(cipher_text);
+    drop(mac);
+    drop(nonce);
     Ok(Zeroizing::new(clear_text))
 }
 

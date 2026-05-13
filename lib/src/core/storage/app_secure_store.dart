@@ -305,13 +305,13 @@ class AppSecureStore {
           );
         }
 
-        final clearText = await _decryptPayloadForKey(
+        final clearText = await _decryptPayloadBytesForKey(
           entry.key,
           entry.value,
           currentPassword,
           secretSaltBase64,
         );
-        final rotatedValue = await _encryptStringWithPassword(
+        final rotatedValue = await _encryptBytesWithPassword(
           clearText,
           newPassword,
           secretSaltBase64,
@@ -504,7 +504,14 @@ class AppSecureStore {
     String password,
     String saltBase64,
   ) async {
-    final clearText = utf8.encode(value);
+    return _encryptBytesWithPassword(utf8.encode(value), password, saltBase64);
+  }
+
+  Future<String> _encryptBytesWithPassword(
+    List<int> clearText,
+    String password,
+    String saltBase64,
+  ) async {
     try {
       return await rust_secret.encryptSecretPayload(
         plainBytes: clearText,
