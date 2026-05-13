@@ -112,7 +112,7 @@ class TransactionReceiptView extends StatelessWidget {
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: _TransactionReceiptBlock(
-                  title: 'Fee',
+                  title: 'Tx Fee',
                   child: Text(
                     feeText,
                     style: AppTypography.bodyMedium.copyWith(
@@ -475,9 +475,20 @@ class _TransactionReceiptHeadline extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.xs),
-        Text(
-          amountText,
-          style: AppTypography.displayLarge.copyWith(color: colors.text.accent),
+        SizedBox(
+          width: double.infinity,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              amountText,
+              maxLines: 1,
+              softWrap: false,
+              style: AppTypography.displayLarge.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
         ),
         if (useFailedReceiptLayout) ...[
           const SizedBox(height: AppSpacing.xs),

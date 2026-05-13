@@ -529,10 +529,7 @@ class _SendReviewReceiptCard extends StatelessWidget {
             top: 0,
             width: 352,
             height: receiptHeight + 80.0,
-            child: Image.asset(
-              receiptMaskAsset,
-              fit: BoxFit.fill,
-            ),
+            child: Image.asset(receiptMaskAsset, fit: BoxFit.fill),
           ),
           Positioned(
             top: 23,
@@ -554,13 +551,19 @@ class _SendReviewReceiptCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xs),
-                Text(
-                  amountText,
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.visible,
-                  style: AppTypography.displayLarge.copyWith(
-                    color: colors.text.accent,
+                SizedBox(
+                  width: double.infinity,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      amountText,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: AppTypography.displayLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
                   ),
                 ),
               ],

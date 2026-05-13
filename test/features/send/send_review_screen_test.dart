@@ -63,6 +63,32 @@ void main() {
     expect(sendButton.trailing, isNull);
   });
 
+  testWidgets('scales down long receipt amount text', (tester) async {
+    const amountText = '123456789.12345678 zec';
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendReviewHarness(
+        _reviewArgs(
+          addressType: 'unified',
+          amountZatoshi: BigInt.from(12345678912345678),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.ancestor(
+        of: find.text(amountText),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is FittedBox && widget.fit == BoxFit.scaleDown,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('dark preview uses dark semantic colors', (tester) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(
@@ -259,6 +285,7 @@ SendReviewArgs _reviewArgs({
   required String addressType,
   String? memo,
   String address = _longAddress,
+  BigInt? amountZatoshi,
 }) {
   return SendReviewArgs(
     proposalId: BigInt.one,
@@ -266,7 +293,7 @@ SendReviewArgs _reviewArgs({
     proposalAccountUuid: 'test-account',
     address: address,
     addressType: addressType,
-    amountZatoshi: BigInt.from(1512000000),
+    amountZatoshi: amountZatoshi ?? BigInt.from(1512000000),
     feeZatoshi: BigInt.from(12000),
     needsSaplingParams: false,
     memo: memo,

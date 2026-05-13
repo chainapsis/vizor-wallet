@@ -263,7 +263,7 @@ class _ActivityTransactionStatusScreenState
     }
     if (tx.displayAmount == BigInt.zero) return '--';
     return hideAmountIfPrivacyMode(
-      ZecAmount.fromZatoshi(tx.displayAmount).activity.toString(),
+      ZecAmount.fromZatoshi(tx.displayAmount).activityDetail.toString(),
       privacyModeEnabled: privacyModeEnabled,
     );
   }

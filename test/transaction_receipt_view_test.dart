@@ -48,6 +48,38 @@ void main() {
     expect(tester.getTopLeft(button).dy, moreOrLessEquals(456, epsilon: 0.1));
   });
 
+  testWidgets('labels tx fee and scales down long amount text', (tester) async {
+    const longAmount = '123456789.12345678 ZEC';
+
+    await tester.pumpWidget(
+      _receiptHarness(
+        const TransactionReceiptView(
+          phase: TransactionReceiptPhase.succeeded,
+          amountText: longAmount,
+          primaryBlock: TransactionReceiptBlockData(
+            title: 'To',
+            child: Text('u1testaddress'),
+          ),
+          dateText: 'April 20, 2026 13:50',
+          feeText: '0.00012 ZEC',
+          onTransactionHashPressed: _noop,
+        ),
+      ),
+    );
+
+    expect(find.text('Tx Fee'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text(longAmount),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is FittedBox && widget.fit == BoxFit.scaleDown,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('message block toggles between collapsed and expanded text', (
     tester,
   ) async {
