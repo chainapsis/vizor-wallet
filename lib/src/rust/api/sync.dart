@@ -258,7 +258,7 @@ Future<ExecuteProposalResult> executeProposal({
   required String lightwalletdUrl,
   required BigInt proposalId,
   required String sendFlowId,
-  required List<int> seed,
+  required List<int> mnemonicBytes,
   String? spendParamsPath,
   String? outputParamsPath,
 }) => RustLib.instance.api.crateApiSyncExecuteProposal(
@@ -266,7 +266,7 @@ Future<ExecuteProposalResult> executeProposal({
   lightwalletdUrl: lightwalletdUrl,
   proposalId: proposalId,
   sendFlowId: sendFlowId,
-  seed: seed,
+  mnemonicBytes: mnemonicBytes,
   spendParamsPath: spendParamsPath,
   outputParamsPath: outputParamsPath,
 );
@@ -301,13 +301,13 @@ Future<ShieldTransparentResult> shieldTransparentBalance({
   required String lightwalletdUrl,
   required String network,
   required String accountUuid,
-  required List<int> seed,
+  required List<int> mnemonicBytes,
 }) => RustLib.instance.api.crateApiSyncShieldTransparentBalance(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
   accountUuid: accountUuid,
-  seed: seed,
+  mnemonicBytes: mnemonicBytes,
 );
 
 Future<String> getNextAvailableAddress({

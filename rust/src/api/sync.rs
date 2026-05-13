@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use flutter_rust_bridge::frb;
+use zeroize::Zeroizing;
 
 use crate::frb_generated::StreamSink;
 use crate::wallet::{keys, sync as wallet_sync, sync_engine};
@@ -703,18 +704,22 @@ pub fn execute_proposal(
     lightwalletd_url: String,
     proposal_id: u64,
     send_flow_id: String,
-    seed: Vec<u8>,
+    mnemonic_bytes: Vec<u8>,
     spend_params_path: Option<String>,
     output_params_path: Option<String>,
 ) -> Result<ExecuteProposalResult, String> {
     catch(|| {
+        let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
+        let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
+        drop(mnemonic_bytes);
+
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         let r = rt.block_on(wallet_sync::execute_proposal(
             &db_path,
             &lightwalletd_url,
             proposal_id,
             &send_flow_id,
-            &seed,
+            seed,
             spend_params_path.as_deref(),
             output_params_path.as_deref(),
         ))?;
@@ -772,17 +777,21 @@ pub fn shield_transparent_balance(
     lightwalletd_url: String,
     network: String,
     account_uuid: String,
-    seed: Vec<u8>,
+    mnemonic_bytes: Vec<u8>,
 ) -> Result<ShieldTransparentResult, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
+        let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
+        let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
+        drop(mnemonic_bytes);
+
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         let r = rt.block_on(wallet_sync::shield_transparent_balance(
             &db_path,
             &lightwalletd_url,
             network,
             &account_uuid,
-            &seed,
+            seed,
         ))?;
         Ok(ShieldTransparentResult {
             txids: r.txids,

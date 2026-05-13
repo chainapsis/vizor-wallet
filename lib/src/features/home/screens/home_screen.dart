@@ -24,7 +24,6 @@ import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../activity/activity_row_mapper.dart';
 import '../../activity/models/activity_row_data.dart';
 import '../../activity/screens/activity_transaction_status_screen.dart';
@@ -117,22 +116,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         );
       }
 
-      final mnemonic = await accountNotifier.getMnemonicForAccount(accountUuid);
-      if (mnemonic == null) {
-        throw Exception('Mnemonic not found for the active account.');
-      }
-
-      final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
       final dbPath = await getWalletDbPath();
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       attemptedEndpoint = endpoint;
-      final result = await rust_sync.shieldTransparentBalance(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        seed: seedBytes,
+
+      final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
+        accountUuid,
       );
+      if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+        throw Exception('Mnemonic not found for the active account.');
+      }
+
+      late final rust_sync.ShieldTransparentResult result;
+      late final Future<rust_sync.ShieldTransparentResult> resultFuture;
+      try {
+        resultFuture = rust_sync.shieldTransparentBalance(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          accountUuid: accountUuid,
+          mnemonicBytes: mnemonicBytes,
+        );
+      } finally {
+        mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+      }
+      result = await resultFuture;
       log(
         'HomeScreen: shielded transparent balance txids=${result.txids} '
         'fee=${result.feeZatoshi} shielded=${result.shieldedZatoshi}',

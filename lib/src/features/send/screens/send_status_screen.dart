@@ -20,7 +20,6 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
 import '../services/sapling_params.dart';
 import '../widgets/sapling_params_prompt.dart';
@@ -375,10 +374,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
             : _pcztBroadcastStatusMessage(result);
         broadcastMessageForFallback = result.message;
       } else {
-        final mnemonic = await accountNotifier.getMnemonicForAccount(
+        final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
           widget.args.proposalAccountUuid,
         );
-        if (mnemonic == null) {
+        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
           if (await _abortIfUnmounted()) return;
           setState(() {
             _phase = _SendStatusPhase.failed;
@@ -387,20 +386,26 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
           return;
         }
 
-        final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
-        final result = await rust_sync.executeProposal(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          proposalId: widget.args.proposalId,
-          sendFlowId: widget.args.sendFlowId,
-          seed: seedBytes,
-          spendParamsPath: widget.args.needsSaplingParams
-              ? saplingParams.spendPath
-              : null,
-          outputParamsPath: widget.args.needsSaplingParams
-              ? saplingParams.outputPath
-              : null,
-        );
+        late final rust_sync.ExecuteProposalResult result;
+        late final Future<rust_sync.ExecuteProposalResult> resultFuture;
+        try {
+          resultFuture = rust_sync.executeProposal(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            proposalId: widget.args.proposalId,
+            sendFlowId: widget.args.sendFlowId,
+            mnemonicBytes: mnemonicBytes,
+            spendParamsPath: widget.args.needsSaplingParams
+                ? saplingParams.spendPath
+                : null,
+            outputParamsPath: widget.args.needsSaplingParams
+                ? saplingParams.outputPath
+                : null,
+          );
+        } finally {
+          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+        }
+        result = await resultFuture;
         _proposalConsumed = true;
         txids = result.txids;
         broadcastComplete = result.status == 'broadcasted';
