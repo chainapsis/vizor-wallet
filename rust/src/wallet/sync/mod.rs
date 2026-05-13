@@ -414,27 +414,6 @@ pub(super) fn consume_stored_proposal(
         .ok_or_else(|| not_found_message.to_string())
 }
 
-pub(super) fn stored_proposal_seed_metadata(
-    proposal_id: u64,
-    send_flow_id: &str,
-    not_found_message: &str,
-) -> Result<(WalletNetwork, AccountUuid), String> {
-    let store = PROPOSAL_STORE
-        .lock()
-        .map_err(|e| format!("Lock error: {e}"))?;
-
-    match store.proposals.get(&proposal_id) {
-        Some(stored) if stored.send_flow_id == send_flow_id => {
-            Ok((stored.network, stored.account_id))
-        }
-        Some(_) => {
-            log::warn!("proposal store: send flow mismatch for proposal_id={proposal_id}");
-            Err("Send flow mismatch".to_string())
-        }
-        None => Err(not_found_message.to_string()),
-    }
-}
-
 pub(super) fn discard_stored_proposal(proposal_id: u64, send_flow_id: &str) {
     match PROPOSAL_STORE.lock() {
         Ok(mut store) => match store.proposals.get(&proposal_id) {

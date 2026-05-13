@@ -79,7 +79,7 @@ use crate::wallet::network::WalletNetwork;
 
 use super::{
     consume_stored_proposal, open_readonly_conn, open_wallet_db, open_wallet_db_for_read,
-    stored_proposal_seed_metadata, StoredProposal, WalletDatabase, PROPOSAL_STORE,
+    StoredProposal, WalletDatabase, PROPOSAL_STORE,
 };
 
 /// Result of a successful [`propose_send`]. `proposal_id` is the
@@ -513,17 +513,12 @@ pub async fn execute_proposal_with_seed_loader<F>(
 where
     F: FnOnce(WalletNetwork, AccountUuid) -> Result<SecretVec<u8>, String>,
 {
-    let (network, account_id) = stored_proposal_seed_metadata(
-        proposal_id,
-        send_flow_id,
-        "Proposal not found (expired or already executed)",
-    )?;
-    let seed = load_seed(network, account_id)?;
     let stored = consume_stored_proposal(
         proposal_id,
         send_flow_id,
         "Proposal not found (expired or already executed)",
     )?;
+    let seed = load_seed(stored.network, stored.account_id)?;
     execute_stored_proposal(
         db_path,
         lightwalletd_url,
