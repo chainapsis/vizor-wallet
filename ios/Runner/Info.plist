@@ -19,6 +19,8 @@
 	<string>Vizor uses the camera to scan Keystone QR codes.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>DART_DEFINES</key>
+	<string>$(DART_DEFINES)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

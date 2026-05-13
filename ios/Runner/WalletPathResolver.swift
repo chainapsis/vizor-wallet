@@ -2,7 +2,6 @@ import Foundation
 import Security
 
 private let walletDbNameKey = "zcash_wallet_db_name"
-private let secureStoreService = "com.keplr.vizor.secure_store"
 
 enum WalletPathResolverError: Error {
     case dbNameMissing
@@ -31,6 +30,7 @@ func resolveWalletSupportDirectory() throws -> URL {
 }
 
 private func resolveWalletDbName() throws -> String {
+    let secureStoreService = secureStoreService(forNetwork: RpcEndpointConfigStore.network)
     let query: [CFString: Any] = [
         kSecClass: kSecClassGenericPassword,
         kSecAttrAccount: walletDbNameKey,
@@ -55,4 +55,11 @@ private func resolveWalletDbName() throws -> String {
     default:
         throw WalletPathResolverError.keychainStatus(status)
     }
+}
+
+func secureStoreService(forNetwork networkName: String) -> String {
+    let network = RpcEndpointConfigStore.normalizeNetwork(networkName)
+    return network == "main"
+        ? "com.keplr.vizor.secure_store"
+        : "com.keplr.vizor.\(network).secure_store"
 }
