@@ -152,10 +152,12 @@ class AppSecureStore {
     await _storage.delete(key: key);
   }
 
-  Future<void> deleteAll() async {
-    await _storage.deleteAll();
-    _cachedSecretKey = null;
-    _sessionPassword = null;
+  Future<void> deleteAll() {
+    return _secretMutationLock.run(() async {
+      await _storage.deleteAll();
+      _cachedSecretKey = null;
+      _sessionPassword = null;
+    });
   }
 
   Future<String?> readPlain(String key) {
@@ -316,11 +318,13 @@ class AppSecureStore {
     clearSessionPassword();
   }
 
-  Future<void> clearPasswordConfiguration() async {
-    await delete(_passwordVerifierSaltKey);
-    await delete(_passwordVerifierKey);
-    await delete(_passwordRotationInProgressKey);
-    clearSessionPassword();
+  Future<void> clearPasswordConfiguration() {
+    return _secretMutationLock.run(() async {
+      await _storage.delete(key: _passwordVerifierSaltKey);
+      await _storage.delete(key: _passwordVerifierKey);
+      await _storage.delete(key: _passwordRotationInProgressKey);
+      clearSessionPassword();
+    });
   }
 
   /// Checks the wallet password without opening or refreshing the encrypted
