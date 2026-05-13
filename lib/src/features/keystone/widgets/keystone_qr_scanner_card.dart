@@ -55,7 +55,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   String? _selectedCameraId;
   bool _loadingCameras = false;
   bool _cameraPickerOpen = false;
-  bool _troubleScanningOpen = false;
+  bool _troubleScanningPopoverOpen = false;
   int _scanProgress = 0;
   int _scanSessionResetToken = 0;
 
@@ -134,7 +134,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   void _toggleCameraPicker() {
     if (_cameras.length < 2 || widget.decoding) return;
     setState(() {
-      _troubleScanningOpen = false;
+      _troubleScanningPopoverOpen = false;
       _cameraPickerOpen = !_cameraPickerOpen;
     });
   }
@@ -142,13 +142,13 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   void _toggleTroubleScanning() {
     setState(() {
       _cameraPickerOpen = false;
-      _troubleScanningOpen = !_troubleScanningOpen;
+      _troubleScanningPopoverOpen = !_troubleScanningPopoverOpen;
     });
   }
 
   void _dismissTroubleScanning() {
     setState(() {
-      _troubleScanningOpen = false;
+      _troubleScanningPopoverOpen = false;
     });
   }
 
@@ -434,7 +434,6 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     _TroubleScanningDisclosure(
-                      expanded: _troubleScanningOpen,
                       onToggle: _toggleTroubleScanning,
                     ),
                     ConstrainedBox(
@@ -469,7 +468,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                     ),
                   ],
                 ),
-                if (_troubleScanningOpen)
+                if (_troubleScanningPopoverOpen)
                   AppPaneModalOverlay(
                     onDismiss: _dismissTroubleScanning,
                     borderRadius: BorderRadius.circular(_cameraRadius),
@@ -505,21 +504,17 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   }
 }
 
+const _troubleScanningTips = [
+  'Tap the QR code on your Keystone to show it full screen. This is the '
+      'easiest fix.',
+  'Move your Keystone a few inches further from the camera so it can focus.',
+  "Make sure the room is well-lit and the QR code isn't reflecting glare.",
+  'On a Mac, you can use Continuity Camera to scan with your iPhone instead.',
+];
+
 class _TroubleScanningDisclosure extends StatelessWidget {
-  const _TroubleScanningDisclosure({
-    required this.expanded,
-    required this.onToggle,
-  });
+  const _TroubleScanningDisclosure({required this.onToggle});
 
-  static const _tips = [
-    'Tap the QR code on your Keystone to show it full screen. This is the '
-        'easiest fix.',
-    'Move your Keystone a few inches further from the camera so it can focus.',
-    "Make sure the room is well-lit and the QR code isn't reflecting glare.",
-    'On a Mac, you can use Continuity Camera to scan with your iPhone instead.',
-  ];
-
-  final bool expanded;
   final VoidCallback onToggle;
 
   @override
@@ -536,7 +531,6 @@ class _TroubleScanningDisclosure extends StatelessWidget {
             alignment: Alignment.center,
             child: Semantics(
               button: true,
-              toggled: expanded,
               child: MouseRegion(
                 cursor: SystemMouseCursors.click,
                 child: GestureDetector(
@@ -557,13 +551,10 @@ class _TroubleScanningDisclosure extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: AppSpacing.xxs),
-                        Transform.rotate(
-                          angle: expanded ? math.pi : 0,
-                          child: AppIcon(
-                            AppIcons.expand,
-                            size: AppIconSize.medium,
-                            color: labelColor,
-                          ),
+                        AppIcon(
+                          AppIcons.expand,
+                          size: AppIconSize.medium,
+                          color: labelColor,
                         ),
                       ],
                     ),
@@ -625,7 +616,7 @@ class _TroubleScanningPopover extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          for (final tip in _TroubleScanningDisclosure._tips)
+          for (final tip in _troubleScanningTips)
             _TroubleScanningTip(text: tip),
         ],
       ),
