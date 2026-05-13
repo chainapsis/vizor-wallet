@@ -3,7 +3,13 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:cryptography/cryptography.dart';
-import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show
+        TargetPlatform,
+        debugPrint,
+        defaultTargetPlatform,
+        kIsWeb,
+        visibleForTesting;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../config/network_config.dart';
@@ -20,6 +26,8 @@ const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
 const _passwordRotationInProgressKey = 'zcash_rotation_in_progress';
 const _passwordRotationRollbackFailedKind = 'rollbackFailed';
 const _accountMnemonicKeyPrefix = 'zcash_account_mnemonic_';
+const _accountMnemonicMigrationCompleteKey =
+    'zcash_mnemonic_storage_migrated_v1';
 
 class PasswordRotationRecoveryFailedException implements Exception {
   const PasswordRotationRecoveryFailedException();
@@ -30,12 +38,18 @@ class PasswordRotationRecoveryFailedException implements Exception {
 }
 
 class AppSecureStore {
-  AppSecureStore._({FlutterSecureStorage? storage})
-    : _storage = storage ?? _defaultStorage();
+  AppSecureStore._({
+    FlutterSecureStorage? storage,
+    FlutterSecureStorage? mnemonicStorage,
+  }) : _storage = storage ?? _defaultStorage(),
+       _mnemonicStorage = mnemonicStorage ?? _defaultMnemonicStorage();
 
   @visibleForTesting
-  AppSecureStore.testing({required FlutterSecureStorage storage})
-    : _storage = storage;
+  AppSecureStore.testing({
+    required FlutterSecureStorage storage,
+    FlutterSecureStorage? mnemonicStorage,
+  }) : _storage = storage,
+       _mnemonicStorage = mnemonicStorage ?? storage;
 
   static final AppSecureStore instance = AppSecureStore._();
 
@@ -57,6 +71,27 @@ class AppSecureStore {
     );
   }
 
+  static FlutterSecureStorage _defaultMnemonicStorage() {
+    final service = secureStoreServiceForNetwork(kZcashDefaultNetworkName);
+    final macOsService = _mnemonicSecureStoreServiceForNetwork(
+      kZcashDefaultNetworkName,
+    );
+    return FlutterSecureStorage(
+      iOptions: IOSOptions(
+        accountName: service,
+        accessibility: KeychainAccessibility.first_unlock,
+      ),
+      aOptions: kZcashDefaultNetworkName == 'main'
+          ? AndroidOptions.defaultOptions
+          : AndroidOptions(sharedPreferencesName: service),
+      mOptions: MacOsOptions(
+        accountName: macOsService,
+        accessibility: KeychainAccessibility.unlocked,
+        usesDataProtectionKeychain: true,
+      ),
+    );
+  }
+
   static final Cipher _cipher = AesGcm.with256bits();
   static final Pbkdf2 _kdf = Pbkdf2(
     macAlgorithm: Hmac.sha256(),
@@ -65,6 +100,7 @@ class AppSecureStore {
   );
 
   final FlutterSecureStorage _storage;
+  final FlutterSecureStorage _mnemonicStorage;
   final _secretMutationLock = _AsyncLock();
   SecretKey? _cachedSecretKey;
   String? _sessionPassword;
@@ -92,31 +128,29 @@ class AppSecureStore {
     bool requireUnlockedSession = false,
   }) {
     return _secretMutationLock.run(() async {
-      if (requireUnlockedSession && !hasSessionPassword) {
-        return null;
-      }
-      if (!hasSessionPassword) {
-        throw StateError('Secret storage requires an unlocked session.');
-      }
-
+      if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
       final raw = await _storage.read(key: key);
-      if (raw == null || raw.isEmpty) return null;
-
-      final payload = _EncryptedPayload.tryParse(raw);
-      if (payload == null) {
-        return null;
-      }
-
-      final secretKey = await _getSecretKey();
-      final clearText = await _cipher.decrypt(
-        SecretBox(
-          payload.cipherText,
-          nonce: payload.nonce,
-          mac: Mac(payload.mac),
-        ),
-        secretKey: secretKey,
+      return _decryptStoredSecretString(
+        raw,
+        key: key,
+        requireUnlockedSession: requireUnlockedSession,
       );
-      return utf8.decode(clearText);
+    });
+  }
+
+  Future<String?> readAccountMnemonic(
+    String accountUuid, {
+    bool requireUnlockedSession = false,
+  }) {
+    return _secretMutationLock.run(() async {
+      if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
+      final key = _accountMnemonicKey(accountUuid);
+      final raw = await _mnemonicStorage.read(key: key);
+      return _decryptStoredSecretString(
+        raw,
+        key: key,
+        requireUnlockedSession: requireUnlockedSession,
+      );
     });
   }
 
@@ -126,35 +160,44 @@ class AppSecureStore {
 
   Future<void> writeSecretString(String key, String value) {
     return _secretMutationLock.run(() async {
-      final secretKey = await _getSecretKey();
-      final nonce = _randomBytes(12);
-      final secretBox = await _cipher.encrypt(
-        utf8.encode(value),
-        secretKey: secretKey,
-        nonce: nonce,
-      );
-      await _storage.write(
-        key: key,
-        value: _EncryptedPayload(
-          nonce: secretBox.nonce,
-          cipherText: secretBox.cipherText,
-          mac: secretBox.mac.bytes,
-        ).serialize(),
+      await _storage.write(key: key, value: await _encryptSecretString(value));
+    });
+  }
+
+  Future<void> writeAccountMnemonic(String accountUuid, String mnemonic) {
+    return _secretMutationLock.run(() async {
+      await _mnemonicStorage.write(
+        key: _accountMnemonicKey(accountUuid),
+        value: await _encryptSecretString(mnemonic),
       );
     });
   }
 
   Future<void> delete(String key) async {
     if (key.startsWith(_accountMnemonicKeyPrefix)) {
-      await _secretMutationLock.run(() => _storage.delete(key: key));
+      await _secretMutationLock.run(() async {
+        await _mnemonicStorage.delete(key: key);
+        await _deleteLegacyAccountMnemonicBestEffort(key);
+      });
       return;
     }
     await _storage.delete(key: key);
   }
 
+  Future<void> deleteAccountMnemonic(String accountUuid) {
+    final key = _accountMnemonicKey(accountUuid);
+    return _secretMutationLock.run(() async {
+      await _mnemonicStorage.delete(key: key);
+      await _deleteLegacyAccountMnemonicBestEffort(key);
+    });
+  }
+
   Future<void> deleteAll() {
     return _secretMutationLock.run(() async {
       await _storage.deleteAll();
+      if (!identical(_mnemonicStorage, _storage)) {
+        await _mnemonicStorage.deleteAll();
+      }
       _cachedSecretKey = null;
       _sessionPassword = null;
     });
@@ -230,7 +273,13 @@ class AppSecureStore {
       );
       final newSecretKey = await _deriveSecretKeyForPassword(newPassword);
       try {
-        final storedValues = await _storage.readAll();
+        final migration = await _migrateAccountMnemonicsAfterUnlockLocked();
+        if (!migration.legacyCleanupComplete) {
+          throw StateError(
+            'Failed to migrate account mnemonics before password rotation.',
+          );
+        }
+        final storedValues = await _mnemonicStorage.readAll();
         final rotatedSecrets = <_PasswordRotationEntry>[];
         final rollbackSecrets = <_PasswordRotationRollbackEntry>[];
 
@@ -354,8 +403,29 @@ class AppSecureStore {
     final isMatch = await verifyPasswordOnly(password);
     if (isMatch) {
       setSessionPassword(password);
+      try {
+        final migratedForRead = await migrateAccountMnemonicsAfterUnlock();
+        if (!migratedForRead) {
+          clearSessionPassword();
+          return false;
+        }
+      } catch (error, stackTrace) {
+        clearSessionPassword();
+        debugPrint(
+          'AppSecureStore: failed to migrate account mnemonics after unlock: '
+          '$error\n$stackTrace',
+        );
+        return false;
+      }
     }
     return isMatch;
+  }
+
+  Future<bool> migrateAccountMnemonicsAfterUnlock() {
+    return _secretMutationLock.run(() async {
+      final migration = await _migrateAccountMnemonicsAfterUnlockLocked();
+      return migration.mnemonicsAvailable;
+    });
   }
 
   void setSessionPassword(String password) {
@@ -366,6 +436,120 @@ class AppSecureStore {
   void clearSessionPassword() {
     _sessionPassword = null;
     _cachedSecretKey = null;
+  }
+
+  bool _shouldSkipLockedSecretRead(bool requireUnlockedSession) {
+    return requireUnlockedSession && !hasSessionPassword;
+  }
+
+  Future<String?> _decryptStoredSecretString(
+    String? raw, {
+    required String key,
+    required bool requireUnlockedSession,
+  }) async {
+    if (requireUnlockedSession && !hasSessionPassword) {
+      return null;
+    }
+    if (!hasSessionPassword) {
+      throw StateError('Secret storage requires an unlocked session.');
+    }
+    if (raw == null || raw.isEmpty) return null;
+
+    final payload = _EncryptedPayload.tryParse(raw);
+    if (payload == null) {
+      return null;
+    }
+
+    final secretKey = await _getSecretKey();
+    return _decryptPayloadForKey(key, payload, secretKey);
+  }
+
+  Future<String> _encryptSecretString(String value) async {
+    final secretKey = await _getSecretKey();
+    final nonce = _randomBytes(12);
+    final secretBox = await _cipher.encrypt(
+      utf8.encode(value),
+      secretKey: secretKey,
+      nonce: nonce,
+    );
+    return _EncryptedPayload(
+      nonce: secretBox.nonce,
+      cipherText: secretBox.cipherText,
+      mac: secretBox.mac.bytes,
+    ).serialize();
+  }
+
+  Future<_AccountMnemonicMigrationResult>
+  _migrateAccountMnemonicsAfterUnlockLocked() async {
+    if (!_usesSeparateMacOsMnemonicStorage ||
+        identical(_mnemonicStorage, _storage)) {
+      return _AccountMnemonicMigrationResult.complete;
+    }
+    if (await readPlain(_accountMnemonicMigrationCompleteKey) == 'true') {
+      return _AccountMnemonicMigrationResult.complete;
+    }
+
+    final legacyValues = await _storage.readAll();
+    var mnemonicsAvailable = true;
+    var legacyCleanupComplete = true;
+    for (final entry in legacyValues.entries) {
+      if (!_isAccountMnemonicKey(entry.key)) continue;
+
+      try {
+        final existing = await _mnemonicStorage.read(key: entry.key);
+        if (existing == null) {
+          await _mnemonicStorage.write(key: entry.key, value: entry.value);
+        }
+      } catch (error, stackTrace) {
+        mnemonicsAvailable = false;
+        legacyCleanupComplete = false;
+        debugPrint(
+          'AppSecureStore: failed to copy account mnemonic "${entry.key}": '
+          '$error\n$stackTrace',
+        );
+        continue;
+      }
+
+      try {
+        await _storage.delete(key: entry.key);
+      } catch (error, stackTrace) {
+        legacyCleanupComplete = false;
+        debugPrint(
+          'AppSecureStore: failed to delete legacy account mnemonic '
+          '"${entry.key}": '
+          '$error\n$stackTrace',
+        );
+      }
+    }
+    if (legacyCleanupComplete) {
+      try {
+        await writePlain(_accountMnemonicMigrationCompleteKey, 'true');
+      } catch (error, stackTrace) {
+        debugPrint(
+          'AppSecureStore: failed to mark account mnemonic migration complete: '
+          '$error\n$stackTrace',
+        );
+      }
+    }
+    return _AccountMnemonicMigrationResult(
+      mnemonicsAvailable: mnemonicsAvailable,
+      legacyCleanupComplete: legacyCleanupComplete,
+    );
+  }
+
+  Future<void> _deleteLegacyAccountMnemonicBestEffort(String key) async {
+    if (!_usesSeparateMacOsMnemonicStorage ||
+        identical(_mnemonicStorage, _storage)) {
+      return;
+    }
+    try {
+      await _storage.delete(key: key);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppSecureStore: failed to delete legacy account mnemonic "$key": '
+        '$error\n$stackTrace',
+      );
+    }
   }
 
   Future<SecretKey> _getSecretKey() async {
@@ -457,7 +641,7 @@ class AppSecureStore {
     _PasswordRotationRecord rotation,
   ) async {
     for (final entry in rotation.entries) {
-      await writePlain(entry.key, entry.rotatedValue);
+      await _mnemonicStorage.write(key: entry.key, value: entry.rotatedValue);
     }
     await writePlain(_passwordVerifierSaltKey, rotation.newVerifierSalt);
     await writePlain(_passwordVerifierKey, rotation.newVerifier);
@@ -469,7 +653,10 @@ class AppSecureStore {
   ) async {
     try {
       for (final entry in rollback.entries) {
-        await writePlain(entry.key, entry.originalValue);
+        await _mnemonicStorage.write(
+          key: entry.key,
+          value: entry.originalValue,
+        );
       }
       if (rollback.oldVerifierSalt == null) {
         await delete(_passwordVerifierSaltKey);
@@ -540,6 +727,34 @@ class AppSecureStore {
     }
     return buffer.toString();
   }
+}
+
+bool get _usesSeparateMacOsMnemonicStorage =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+
+bool _isAccountMnemonicKey(String key) =>
+    key.startsWith(_accountMnemonicKeyPrefix);
+
+String _accountMnemonicKey(String accountUuid) =>
+    '$_accountMnemonicKeyPrefix$accountUuid';
+
+String _mnemonicSecureStoreServiceForNetwork(String networkName) {
+  return '${secureStoreServiceForNetwork(networkName)}.mnemonic';
+}
+
+class _AccountMnemonicMigrationResult {
+  const _AccountMnemonicMigrationResult({
+    required this.mnemonicsAvailable,
+    required this.legacyCleanupComplete,
+  });
+
+  static const complete = _AccountMnemonicMigrationResult(
+    mnemonicsAvailable: true,
+    legacyCleanupComplete: true,
+  );
+
+  final bool mnemonicsAvailable;
+  final bool legacyCleanupComplete;
 }
 
 class _AsyncLock {
