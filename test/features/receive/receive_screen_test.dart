@@ -14,6 +14,61 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 
 void main() {
+  testWidgets('shows shielded renew button for software accounts', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness());
+    await tester.pump();
+    await tester.pump();
+
+    expect(_findAppIcon(AppIcons.renew), findsOneWidget);
+  });
+
+  testWidgets('hides shielded renew button for hardware accounts', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness(bootstrap: _hardwareBootstrap));
+    await tester.pump();
+    await tester.pump();
+
+    expect(_findAppIcon(AppIcons.renew), findsNothing);
+  });
+
+  testWidgets('uses Keystone shielded help copy for hardware accounts', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_receiveHarness(bootstrap: _hardwareBootstrap));
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(_findAppIcon(AppIcons.help));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('Shielded Address'), findsOneWidget);
+    expect(
+      find.text(
+        "Keystone accounts use one fixed shielded address, so Renew isn't available.",
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Renew button'), findsNothing);
+  });
+
   testWidgets('receive info modal does not block sidebar navigation', (
     tester,
   ) async {
@@ -103,6 +158,12 @@ Finder _findAddressRichText(String fragment) {
   );
 }
 
+Finder _findAppIcon(String iconName) {
+  return find.byWidgetPredicate(
+    (widget) => widget is AppIcon && widget.name == iconName,
+  );
+}
+
 Widget _receiveHarness({
   AppBootstrapState? bootstrap,
   ReceiveAddressService Function(Ref ref)? receiveAddressService,
@@ -181,6 +242,30 @@ final _twoAccountBootstrap = AppBootstrapState(
     ],
     activeAccountUuid: 'account-1',
     activeAddress: _accountOneAddress,
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _hardwareBootstrap = AppBootstrapState(
+  initialLocation: '/receive',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Keystone Vault',
+        order: 0,
+        isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: _shieldedAddress,
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',
