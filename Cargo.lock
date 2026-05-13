@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "vote-commitment-tree"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "ff",
@@ -2159,7 +2159,7 @@ dependencies = [
 
 [[package]]
 name = "vote-commitment-tree-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64",
  "bytes",
@@ -2481,7 +2481,7 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "0.5.12"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "blake2b_simd",
