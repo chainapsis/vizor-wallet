@@ -4,6 +4,21 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.5.12
+
+## Fixed
+- `zcash_voting::action::build_governance_pczt` now guarantees the returned
+  `GovernancePczt` describes a single Orchard action: the spend producing
+  `nf_signed`, `rk`, and `alpha` is the same action whose output produces
+  `cmx_new` and `rseed_output`. The Orchard PCZT builder pads to two actions
+  and shuffles spends and outputs independently, so previous calls could
+  return metadata mixing two different randomized actions, which later caused
+  `build_and_prove_delegation` to fail with `delegation proof result cmx_new
+  does not match stored PCZT data`. The construction tail now retries
+  `Builder::build_for_pczt` until `spend_idx == output_idx`, fails before
+  persistence if no paired layout appears, and re-validates the serialized
+  PCZT against the returned `action_index`.
+
 # 0.5.10
 
 ## Changed
