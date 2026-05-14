@@ -11,6 +11,7 @@ require "tmpdir"
 require "uri"
 require "open3"
 require "rexml/document"
+require "rexml/formatters/pretty"
 require "spaceship"
 require_relative "../patches/developer_id_application_certificate_type_patch"
 
@@ -301,6 +302,70 @@ def sparkle_appcast_xml_release_notes_urls(appcast_xml)
   urls
 end
 
+def github_release_asset_safe_name(asset_name)
+  safe_name = asset_name.to_s.gsub(/[^0-9A-Za-z._-]/, ".")
+  safe_name = safe_name.gsub(/\A\.+/, "").gsub(/\.+\z/, "")
+  UI.user_error!("GitHub release asset name became empty after sanitizing #{asset_name.inspect}") if safe_name.empty?
+  safe_name
+end
+
+def url_path_basename(url)
+  uri = URI(url)
+  URI::DEFAULT_PARSER.unescape(File.basename(uri.path))
+end
+
+def url_with_path_basename(url, basename)
+  uri = URI(url)
+  path_segments = uri.path.split("/")
+  path_segments[-1] = basename
+  uri.path = path_segments.join("/")
+  uri.to_s
+end
+
+def sparkle_delta_enclosure_asset_names(appcast_xml)
+  sparkle_appcast_xml_enclosure_urls(appcast_xml).filter_map do |url|
+    basename = url_path_basename(url)
+    basename.end_with?(".delta") ? basename : nil
+  end
+end
+
+def normalize_sparkle_delta_asset_names!(archives_dir, appcast_path)
+  appcast_xml = File.binread(appcast_path)
+  document = REXML::Document.new(appcast_xml)
+  changed = false
+
+  document.elements.each("//*") do |element|
+    next unless element.name.to_s.split(":").last == "enclosure"
+
+    url = element.attributes["url"].to_s.strip
+    next if url.empty?
+
+    basename = url_path_basename(url)
+    next unless basename.end_with?(".delta")
+
+    safe_basename = github_release_asset_safe_name(basename)
+    next if safe_basename == basename
+
+    source_path = File.join(archives_dir, basename)
+    destination_path = File.join(archives_dir, safe_basename)
+    UI.user_error!("Generated Sparkle delta is missing at #{source_path}") unless File.exist?(source_path)
+    UI.user_error!("Refusing to overwrite existing Sparkle delta at #{destination_path}") if File.exist?(destination_path)
+
+    FileUtils.mv(source_path, destination_path)
+    element.attributes["url"] = url_with_path_basename(url, safe_basename)
+    UI.message("Renamed Sparkle delta asset #{basename} -> #{safe_basename} to match GitHub release asset rules")
+    changed = true
+  end
+
+  return unless changed
+
+  output = +""
+  formatter = REXML::Formatters::Pretty.new(4)
+  formatter.compact = true
+  formatter.write(document, output)
+  File.binwrite(appcast_path, output)
+end
+
 def remote_sparkle_appcast_has_enclosure_url?(appcast_asset, expected_url)
   appcast_url = appcast_asset.fetch("browser_download_url")
   appcast_xml = http_get(
@@ -392,8 +457,9 @@ end
 
 def validate_generated_sparkle_appcast!(appcast_path, metadata)
   appcast_xml = File.binread(appcast_path)
+  enclosure_urls = sparkle_appcast_xml_enclosure_urls(appcast_xml)
   expected_zip_url = github_release_download_url(metadata, metadata.fetch(:tag), sparkle_zip_asset_name(metadata))
-  unless sparkle_appcast_xml_enclosure_urls(appcast_xml).include?(expected_zip_url)
+  unless enclosure_urls.include?(expected_zip_url)
     UI.user_error!("Generated Sparkle appcast does not advertise full ZIP #{expected_zip_url}")
   end
 
@@ -405,6 +471,13 @@ def validate_generated_sparkle_appcast!(appcast_path, metadata)
   versioned_zip_asset_name = "#{metadata.fetch(:artifact_name)}-#{metadata.fetch(:asset_version)}-macos.zip"
   if versioned_zip_asset_name != sparkle_zip_asset_name(metadata) && appcast_xml.include?(versioned_zip_asset_name)
     UI.user_error!("Generated Sparkle appcast still references versioned ZIP asset #{versioned_zip_asset_name}")
+  end
+
+  delta_asset_names = Dir[File.join(File.dirname(appcast_path), "*.delta")].map { |path| File.basename(path) }
+  sparkle_delta_enclosure_asset_names(appcast_xml).each do |asset_name|
+    safe_asset_name = github_release_asset_safe_name(asset_name)
+    UI.user_error!("Generated Sparkle appcast references GitHub-unsafe delta asset #{asset_name}") unless safe_asset_name == asset_name
+    UI.user_error!("Generated Sparkle appcast references missing delta asset #{asset_name}") unless delta_asset_names.include?(asset_name)
   end
 end
 
@@ -610,9 +683,11 @@ def collect_sparkle_assets!(metadata)
     download_previous_release_archives!(archives_dir, metadata)
     write_sparkle_release_notes!(release_notes_path, metadata)
     generate_sparkle_appcast!(archives_dir, metadata)
-    validate_generated_sparkle_appcast!(File.join(archives_dir, "appcast.xml"), metadata)
+    appcast_path = File.join(archives_dir, "appcast.xml")
+    normalize_sparkle_delta_asset_names!(archives_dir, appcast_path)
+    validate_generated_sparkle_appcast!(appcast_path, metadata)
 
-    FileUtils.cp(File.join(archives_dir, "appcast.xml"), metadata[:appcast_path])
+    FileUtils.cp(appcast_path, metadata[:appcast_path])
     FileUtils.cp(release_notes_path, metadata[:sparkle_release_notes_path])
 
     Dir[File.join(archives_dir, "*.delta")].sort.each do |delta_path|
