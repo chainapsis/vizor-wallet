@@ -33,7 +33,6 @@ class ActivityScreen extends ConsumerStatefulWidget {
 
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   static const _activityRowsPerPage = 6;
-  static const _firstPageTransactionCount = _activityRowsPerPage - 1;
   // Figma frame keeps a 32px Back row plus a 616px Activity panel.
   static const double _activityPaneMinHeight = 648;
 
@@ -254,23 +253,17 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         (hasSyncForActiveAccount
             ? sync.recentTransactions
             : const <rust_sync.TransactionInfo>[]);
-    final firstPageTransactionCount = hasSyncForActiveAccount
-        ? _firstPageTransactionCount
-        : _activityRowsPerPage;
     final transactionsAfterFirstPage = math.max(
       0,
-      transactions.length - firstPageTransactionCount,
+      transactions.length - _activityRowsPerPage,
     );
     final totalPages =
         1 + (transactionsAfterFirstPage / _activityRowsPerPage).ceil();
     final currentPage = math.min(math.max(_currentPage, 1), totalPages);
     final firstTxIndex = currentPage == 1
         ? 0
-        : firstPageTransactionCount +
-              ((currentPage - 2) * _activityRowsPerPage);
-    final transactionCount = currentPage == 1
-        ? firstPageTransactionCount
-        : _activityRowsPerPage;
+        : _activityRowsPerPage + ((currentPage - 2) * _activityRowsPerPage);
+    const transactionCount = _activityRowsPerPage;
     final pageTransactions = transactions
         .skip(firstTxIndex)
         .take(transactionCount);
@@ -279,23 +272,16 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         (loadedTransactions != null || hasSyncForActiveAccount);
     final rows = !canRenderRows
         ? const <ActivityRowData>[]
-        : [
-            if (currentPage == 1 && hasSyncForActiveAccount)
-              buildSyncActivityRow(
-                context: context,
-                sync: sync,
-                privacyModeEnabled: privacyModeEnabled,
-                onRetrySync: () => ref.read(syncProvider.notifier).startSync(),
-              ),
-            ...pageTransactions.map(
-              (tx) => buildTransactionActivityRow(
-                context: context,
-                transaction: tx,
-                privacyModeEnabled: privacyModeEnabled,
-                onTap: () => _openTransactionStatus(tx),
-              ),
-            ),
-          ];
+        : pageTransactions
+              .map(
+                (tx) => buildTransactionActivityRow(
+                  context: context,
+                  transaction: tx,
+                  privacyModeEnabled: privacyModeEnabled,
+                  onTap: () => _openTransactionStatus(tx),
+                ),
+              )
+              .toList(growable: false);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
