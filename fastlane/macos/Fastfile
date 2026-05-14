@@ -11,7 +11,7 @@ require "tmpdir"
 require "uri"
 require "open3"
 require "rexml/document"
-require "rexml/formatters/pretty"
+require "rexml/formatters/default"
 require "spaceship"
 require_relative "../patches/developer_id_application_certificate_type_patch"
 
@@ -314,8 +314,10 @@ def sparkle_appcast_xml_release_notes_links(appcast_xml)
   document.elements.each("//*") do |element|
     next unless element.name.to_s.split(":").last == "releaseNotesLink"
 
-    url = element.text.to_s.strip
+    raw_url = element.text.to_s
+    url = raw_url.strip
     links << {
+      raw_url: raw_url,
       url: url,
       ed_signature: (element.attributes["sparkle:edSignature"] || element.attributes["edSignature"]).to_s.strip,
       length: (element.attributes["sparkle:length"] || element.attributes["length"]).to_s.strip
@@ -342,6 +344,12 @@ def url_with_path_basename(url, basename)
   path_segments[-1] = basename
   uri.path = path_segments.join("/")
   uri.to_s
+end
+
+def write_sparkle_appcast_document!(appcast_path, document)
+  output = +""
+  REXML::Formatters::Default.new.write(document, output)
+  File.binwrite(appcast_path, output)
 end
 
 def sparkle_delta_enclosure_asset_names(appcast_xml)
@@ -381,11 +389,7 @@ def normalize_sparkle_delta_asset_names!(archives_dir, appcast_path)
 
   return unless changed
 
-  output = +""
-  formatter = REXML::Formatters::Pretty.new(4)
-  formatter.compact = true
-  formatter.write(document, output)
-  File.binwrite(appcast_path, output)
+  write_sparkle_appcast_document!(appcast_path, document)
 end
 
 def remote_sparkle_appcast_has_enclosure_url?(appcast_asset, expected_url)
@@ -491,6 +495,23 @@ def sign_sparkle_appcast!(appcast_path, metadata)
   end
 end
 
+def validate_sparkle_release_notes_link_url!(release_notes_link, expected_release_notes_url)
+  raw_url = release_notes_link.fetch(:raw_url)
+  url = release_notes_link.fetch(:url)
+
+  unless raw_url == url
+    UI.user_error!("Generated Sparkle appcast release notes URL contains surrounding whitespace: #{raw_url.inspect}")
+  end
+
+  unless raw_url == expected_release_notes_url
+    UI.user_error!("Generated Sparkle appcast release notes URL mismatch: expected #{expected_release_notes_url}, got #{raw_url.inspect}")
+  end
+
+  unless raw_url.match?(/\Ahttps?:\/\/\S+\z/)
+    UI.user_error!("Generated Sparkle appcast release notes URL is not a single absolute HTTP(S) URL: #{raw_url.inspect}")
+  end
+end
+
 def validate_generated_sparkle_appcast!(appcast_path, release_notes_path, metadata)
   appcast_xml = File.binread(appcast_path)
   enclosure_urls = sparkle_appcast_xml_enclosure_urls(appcast_xml)
@@ -505,6 +526,7 @@ def validate_generated_sparkle_appcast!(appcast_path, release_notes_path, metada
   unless expected_release_notes_link
     UI.user_error!("Generated Sparkle appcast does not link release notes #{expected_release_notes_url}")
   end
+  validate_sparkle_release_notes_link_url!(expected_release_notes_link, expected_release_notes_url)
 
   unless appcast_xml.include?("sparkle-signatures:")
     UI.user_error!("Generated Sparkle appcast is not signed")
