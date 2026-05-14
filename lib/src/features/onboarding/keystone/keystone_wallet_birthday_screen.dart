@@ -541,10 +541,17 @@ class _TabLabel extends StatelessWidget {
     final style = active
         ? AppTypography.bodyMediumStrong.copyWith(color: activeColor)
         : AppTypography.bodyMedium.copyWith(color: inactiveColor);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Text(label, style: style),
+    return Semantics(
+      button: true,
+      selected: active,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Text(label, style: style),
+        ),
+      ),
     );
   }
 }
@@ -568,32 +575,39 @@ class _DatePickerField extends StatelessWidget {
     final valueColor = valueText == null
         ? colors.text.muted
         : colors.text.accent;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: enabled ? onTap : null,
-      child: Container(
-        width: width,
-        height: 46,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
-        decoration: BoxDecoration(
-          color: colors.background.base,
-          borderRadius: BorderRadius.circular(AppRadii.small),
-          border: Border.all(color: colors.border.medium, width: 1.5),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                valueText ?? 'mm/dd/yyyy',
-                style: AppTypography.labelLarge.copyWith(color: valueColor),
-              ),
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? onTap : null,
+          child: Container(
+            width: width,
+            height: 46,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s),
+            decoration: BoxDecoration(
+              color: colors.background.base,
+              borderRadius: BorderRadius.circular(AppRadii.small),
+              border: Border.all(color: colors.border.medium, width: 1.5),
             ),
-            AppIcon(
-              AppIcons.calendar,
-              size: 20,
-              color: enabled ? colors.icon.accent : colors.icon.regular,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    valueText ?? 'mm/dd/yyyy',
+                    style: AppTypography.labelLarge.copyWith(color: valueColor),
+                  ),
+                ),
+                AppIcon(
+                  AppIcons.calendar,
+                  size: 20,
+                  color: enabled ? colors.icon.accent : colors.icon.regular,
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
