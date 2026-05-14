@@ -125,7 +125,6 @@ def release_metadata(flavor: "mainnet")
   dist_dir = File.join(workspace_root, "dist", "macos")
   sparkle_dir = File.join(dist_dir, "sparkle", flavor)
   app_path = File.join(workspace_root, "build", "macos", "Build", "Products", "Release", "#{app_name}.app")
-  zip_asset_name = "#{artifact_name}-macos.zip"
   dmg_asset_name = "#{artifact_name}-macos.dmg"
 
   {
@@ -146,7 +145,6 @@ def release_metadata(flavor: "mainnet")
     dist_dir: dist_dir,
     sparkle_dir: sparkle_dir,
     app_path: app_path,
-    zip_path: File.join(dist_dir, zip_asset_name),
     dmg_path: File.join(dist_dir, dmg_asset_name),
     appcast_path: File.join(sparkle_dir, flavor_config.fetch(:sparkle_feed_asset_name)),
     sparkle_feed_url: "https://github.com/#{ENV.fetch("RELEASE_REPOSITORY")}/releases/latest/download/#{flavor_config.fetch(:sparkle_feed_asset_name)}",
@@ -975,7 +973,7 @@ platform :mac do
     metadata_items = flavors.map { |flavor| release_metadata(flavor: flavor) }
     metadata = metadata_items.first
     extra_assets = Array((lane_context[:SPARKLE_RELEASE_ASSETS] || [])).compact
-    assets = metadata_items.flat_map { |item| [item[:zip_path], item[:dmg_path]] } + extra_assets
+    assets = metadata_items.map { |item| item[:dmg_path] } + extra_assets
 
     set_github_release(
       repository_name: ENV.fetch("RELEASE_REPOSITORY"),
@@ -1027,17 +1025,15 @@ platform :mac do
     end
   end
 
-  desc "Package the macOS release build into ZIP and DMG"
+  desc "Package the macOS release build into DMG"
   lane :package do |options|
     build(flavor: single_macos_release_flavor(options)) unless options[:skip_build]
 
     metadata = release_metadata(flavor: single_macos_release_flavor(options))
     FileUtils.mkdir_p(metadata[:dist_dir])
-    FileUtils.rm_f([metadata[:zip_path], metadata[:dmg_path]])
+    FileUtils.rm_f(metadata[:dmg_path])
 
     UI.user_error!("Expected app bundle at #{metadata[:app_path]}") unless File.directory?(metadata[:app_path])
-
-    sh("ditto -c -k --sequesterRsrc --keepParent #{shell_escape(metadata[:app_path])} #{shell_escape(metadata[:zip_path])}")
 
     dmg_script_path = File.join(workspace_root, "scripts", "package-macos-release-dmg.sh")
     UI.user_error!("Missing DMG packaging script at #{dmg_script_path}") unless File.executable?(dmg_script_path)
