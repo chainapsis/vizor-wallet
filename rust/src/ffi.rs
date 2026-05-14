@@ -38,7 +38,7 @@ unsafe fn c_str_to_str<'a>(ptr: *const c_char) -> Option<&'a str> {
 /// Run full sync from C (Swift). Blocks until complete or cancelled.
 /// Returns 0 on success, 1 on error, 2 on panic, 3 on already running, 4 on mode conflict.
 #[no_mangle]
-pub extern "C" fn zcash_run_full_sync(
+pub unsafe extern "C" fn zcash_run_full_sync(
     db_path: *const c_char,
     lightwalletd_url: *const c_char,
     network: *const c_char,
@@ -196,7 +196,7 @@ pub struct CPendingTx {
 /// Get the number of pending (unmined, unexpired, locally-created) transactions.
 /// Returns count on success, -1 on error.
 #[no_mangle]
-pub extern "C" fn zcash_get_pending_tx_count(db_path: *const c_char) -> i32 {
+pub unsafe extern "C" fn zcash_get_pending_tx_count(db_path: *const c_char) -> i32 {
     let db_path = match unsafe { c_str_to_str(db_path) } {
         Some(s) => s,
         None => {
@@ -215,7 +215,7 @@ pub extern "C" fn zcash_get_pending_tx_count(db_path: *const c_char) -> i32 {
 
 /// Fill buffer with pending transactions. Returns number written, -1 on error.
 #[no_mangle]
-pub extern "C" fn zcash_get_pending_txs(
+pub unsafe extern "C" fn zcash_get_pending_txs(
     db_path: *const c_char,
     out_buf: *mut CPendingTx,
     buf_len: i32,
@@ -261,7 +261,7 @@ pub extern "C" fn zcash_get_pending_txs(
 /// Check if a transaction has been mined via lightwalletd gRPC.
 /// Returns: >0 = mined height, 0 = still pending, -1 = error.
 #[no_mangle]
-pub extern "C" fn zcash_check_tx_status(
+pub unsafe extern "C" fn zcash_check_tx_status(
     lightwalletd_url: *const c_char,
     txid_hex: *const c_char,
 ) -> i64 {
