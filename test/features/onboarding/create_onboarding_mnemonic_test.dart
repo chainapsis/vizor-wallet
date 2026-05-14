@@ -51,6 +51,22 @@ void main() {
     expect(container.read(createOnboardingMnemonicProvider), isNull);
     expect(container.read(onboardingSecretPassphraseRevealedProvider), isFalse);
   });
+
+  test('clearCreateOnboardingSecretState clears mnemonic and reveal flag', () {
+    final container = _providerContainer();
+    addTearDown(container.dispose);
+    container
+        .read(createOnboardingMnemonicProvider.notifier)
+        .setMnemonic(_mnemonic);
+    container
+        .read(onboardingSecretPassphraseRevealedProvider.notifier)
+        .setRevealed(true);
+
+    clearCreateOnboardingSecretState(container.read);
+
+    expect(container.read(createOnboardingMnemonicProvider), isNull);
+    expect(container.read(onboardingSecretPassphraseRevealedProvider), isFalse);
+  });
 }
 
 Future<void> _setDesktopViewport(WidgetTester tester) async {
