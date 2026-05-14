@@ -238,7 +238,6 @@ def configure_sparkle_info_plist!(plist_path, metadata)
   sh("/usr/bin/plutil -replace SUFeedURL -string #{shell_escape(metadata.fetch(:sparkle_feed_url))} #{shell_escape(plist_path)}")
   sh("/usr/bin/plutil -replace SUVerifyUpdateBeforeExtraction -bool YES #{shell_escape(plist_path)}")
   sh("/usr/bin/plutil -replace SURequireSignedFeed -bool YES #{shell_escape(plist_path)}")
-  sh("/usr/bin/plutil -replace SUAllowsAutomaticUpdates -bool NO #{shell_escape(plist_path)}")
   sh("/usr/bin/plutil -replace SUSignedFeedFailureExpirationInterval -integer #{SPARKLE_SIGNED_FEED_FAILURE_EXPIRATION_INTERVAL} #{shell_escape(plist_path)}")
 end
 
@@ -867,7 +866,6 @@ def verify_built_app_metadata!(metadata)
   UI.user_error!("Expected Sparkle public EdDSA key to match configured key") unless actual_public_ed_key == sparkle_public_ed_key(metadata)
   UI.user_error!("Expected SUVerifyUpdateBeforeExtraction to be enabled") unless plist_bool_value(info_plist, "SUVerifyUpdateBeforeExtraction")
   UI.user_error!("Expected SURequireSignedFeed to be enabled") unless plist_bool_value(info_plist, "SURequireSignedFeed")
-  UI.user_error!("Expected SUAllowsAutomaticUpdates to be disabled") if plist_bool_value(info_plist, "SUAllowsAutomaticUpdates")
 
   actual_feed_failure_expiration = plist_integer_value(info_plist, "SUSignedFeedFailureExpirationInterval")
   unless actual_feed_failure_expiration == SPARKLE_SIGNED_FEED_FAILURE_EXPIRATION_INTERVAL
