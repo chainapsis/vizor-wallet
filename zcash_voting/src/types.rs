@@ -1,5 +1,9 @@
+use orchard::note::ExtractedNoteCommitment;
 use subtle::CtOption;
 use thiserror::Error;
+use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_protocol::consensus;
+use zip32::Scope;
 
 #[derive(Debug, Error)]
 pub enum VotingError {
@@ -52,6 +56,39 @@ pub struct NoteInfo {
     pub scope: u32,
     /// Unified full viewing key string for this note's account.
     pub ufvk_str: String,
+}
+
+impl NoteInfo {
+    /// Build voting note metadata from an Orchard note owned by the given UFVK.
+    pub fn from_orchard_note<P: consensus::Parameters>(
+        note: &orchard::note::Note,
+        position: u64,
+        scope: Scope,
+        ufvk: &UnifiedFullViewingKey,
+        network: &P,
+    ) -> Result<Self, VotingError> {
+        let fvk = ufvk.orchard().ok_or_else(|| VotingError::InvalidInput {
+            message: "ufvk has no Orchard component".to_string(),
+        })?;
+        let nullifier = note.nullifier(fvk);
+        let commitment: ExtractedNoteCommitment = note.commitment().into();
+        let scope = match scope {
+            Scope::External => 0,
+            Scope::Internal => 1,
+        };
+
+        Ok(Self {
+            commitment: commitment.to_bytes().to_vec(),
+            nullifier: nullifier.to_bytes().to_vec(),
+            value: note.value().inner(),
+            position,
+            diversifier: note.recipient().diversifier().as_array().to_vec(),
+            rho: note.rho().to_bytes().to_vec(),
+            rseed: note.rseed().as_bytes().to_vec(),
+            scope,
+            ufvk_str: ufvk.encode(network),
+        })
+    }
 }
 
 /// Parameters for a voting round, sourced from vote chain.
@@ -509,6 +546,12 @@ pub fn chunk_notes(notes: &[NoteInfo]) -> ChunkResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orchard::note::{ExtractedNoteCommitment, Rho};
+    use orchard::value::NoteValue;
+    use rand::rngs::OsRng;
+    use zcash_keys::keys::UnifiedSpendingKey;
+    use zcash_protocol::consensus::TEST_NETWORK;
+    use zip32::{AccountId, Scope};
 
     fn make_note(value: u64, position: u64) -> NoteInfo {
         NoteInfo {
@@ -522,6 +565,45 @@ mod tests {
             scope: 0,
             ufvk_str: String::new(),
         }
+    }
+
+    #[test]
+    fn from_orchard_note_populates_note_info() {
+        let seed = [0x42u8; 32];
+        let account = AccountId::try_from(0u32).unwrap();
+        let usk = UnifiedSpendingKey::from_seed(&TEST_NETWORK, &seed, account).unwrap();
+        let ufvk = usk.to_unified_full_viewing_key();
+        let fvk = ufvk.orchard().unwrap().clone();
+        let address = fvk.address_at(0u32, Scope::External);
+
+        let mut rng = OsRng;
+        let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None);
+        let note = orchard::Note::new(
+            address,
+            NoteValue::from_raw(12_500_000),
+            Rho::from_nf_old(parent_note.nullifier(&fvk)),
+            &mut rng,
+        );
+
+        let note_info =
+            NoteInfo::from_orchard_note(&note, 42, Scope::External, &ufvk, &TEST_NETWORK).unwrap();
+        let commitment: ExtractedNoteCommitment = note.commitment().into();
+
+        assert_eq!(note_info.commitment, commitment.to_bytes().to_vec());
+        assert_eq!(
+            note_info.nullifier,
+            note.nullifier(&fvk).to_bytes().to_vec()
+        );
+        assert_eq!(note_info.value, 12_500_000);
+        assert_eq!(note_info.position, 42);
+        assert_eq!(
+            note_info.diversifier,
+            note.recipient().diversifier().as_array().to_vec()
+        );
+        assert_eq!(note_info.rho, note.rho().to_bytes().to_vec());
+        assert_eq!(note_info.rseed, note.rseed().as_bytes().to_vec());
+        assert_eq!(note_info.scope, 0);
+        assert_eq!(note_info.ufvk_str, ufvk.encode(&TEST_NETWORK));
     }
 
     #[test]
