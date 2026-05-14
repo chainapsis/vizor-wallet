@@ -17,6 +17,7 @@ import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'import_birthday_estimator.dart';
 import 'import_birthday_calendar_overlay.dart';
+import 'import_birthday_unknown_height_modal.dart';
 import 'import_split_view.dart';
 
 enum ImportBirthdayTab { date, blockHeight }
@@ -50,6 +51,7 @@ class _ImportWalletBirthdayScreenState
   int? _birthdayHeight;
   bool _isEstimating = false;
   bool _isCalendarOpen = false;
+  bool _isUnknownBirthdayConfirmOpen = false;
   _ImportWalletSubmitPhase _submitPhase = _ImportWalletSubmitPhase.idle;
   String? _metadataError;
   String? _submitError;
@@ -198,6 +200,30 @@ class _ImportWalletBirthdayScreenState
     setState(() {
       _isCalendarOpen = false;
     });
+  }
+
+  void _showUnknownBirthdayConfirmation() {
+    if (_isSubmitting) return;
+    setState(() {
+      _isCalendarOpen = false;
+      _isUnknownBirthdayConfirmOpen = true;
+      _submitError = null;
+    });
+  }
+
+  void _dismissUnknownBirthdayConfirmation() {
+    if (!_isUnknownBirthdayConfirmOpen) return;
+    setState(() {
+      _isUnknownBirthdayConfirmOpen = false;
+    });
+  }
+
+  Future<void> _confirmUnknownBirthday() async {
+    if (_isSubmitting) return;
+    setState(() {
+      _isUnknownBirthdayConfirmOpen = false;
+    });
+    await _submit(birthdayHeightOverride: _minimumBirthdayHeight);
   }
 
   Future<void> _handleCalendarDateSelected(DateTime selected) async {
@@ -354,7 +380,12 @@ class _ImportWalletBirthdayScreenState
     };
 
     return ImportOnboardingTrailingPane(
-      overlay: _isCalendarOpen
+      overlay: _isUnknownBirthdayConfirmOpen
+          ? ImportBirthdayUnknownHeightModal(
+              onConfirm: _confirmUnknownBirthday,
+              onCancel: _dismissUnknownBirthdayConfirmation,
+            )
+          : _isCalendarOpen
           ? ImportBirthdayCalendarOverlay(
               initialMonth: _calendarInitialDate ?? calendarLastDate,
               selectedDate: _selectedDate,
@@ -475,9 +506,7 @@ class _ImportWalletBirthdayScreenState
                         key: const ValueKey('import_birthday_skip_button'),
                         onPressed: _isSubmitting
                             ? null
-                            : () => _submit(
-                                birthdayHeightOverride: _minimumBirthdayHeight,
-                              ),
+                            : _showUnknownBirthdayConfirmation,
                         variant: AppButtonVariant.ghost,
                         minWidth: _buttonWidth,
                         trailing: const AppIcon(AppIcons.skip),
