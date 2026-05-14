@@ -142,12 +142,12 @@ class ZecAmount {
 
     return ZecAmountPretty._(
       signed ? zatoshi : abs,
-      minFractionDigits: showFullFraction ? 0 : 2,
-      maxFractionDigits: showFullFraction ? 8 : 2,
+      minFractionDigits: 0,
+      maxFractionDigits: showFullFraction ? 8 : 4,
       denomStyle: ZecDenomStyle.upper,
       denomination: denomination,
       signed: signed,
-      trimTrailingZeros: showFullFraction,
+      trimTrailingZeros: true,
     );
   }
 }

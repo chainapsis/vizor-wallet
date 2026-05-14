@@ -63,10 +63,14 @@ void main() {
       );
     });
 
-    test('preserves existing activity precision rules', () {
+    test('formats activity rows with compact precision', () {
       expect(
         ZecAmount.fromZatoshi(BigInt.from(123450000)).activity.toString(),
-        '1.23 $kZcashDefaultCurrencyTicker',
+        '1.2345 $kZcashDefaultCurrencyTicker',
+      );
+      expect(
+        ZecAmount.fromZatoshi(BigInt.from(123400000)).activity.toString(),
+        '1.234 $kZcashDefaultCurrencyTicker',
       );
       expect(
         ZecAmount.fromZatoshi(BigInt.from(10000)).activity.toString(),
@@ -74,21 +78,21 @@ void main() {
       );
       expect(
         ZecAmount.fromZatoshi(BigInt.zero).activity.toString(),
-        '0.00 $kZcashDefaultCurrencyTicker',
+        '0 $kZcashDefaultCurrencyTicker',
       );
       expect(
         ZecAmount.fromZatoshi(-BigInt.from(100000000)).activity.toString(),
-        '1.00 $kZcashDefaultCurrencyTicker',
+        '1 $kZcashDefaultCurrencyTicker',
       );
       expect(
         ZecAmount.fromZatoshi(
           -BigInt.from(100000000),
         ).signedActivity.toString(),
-        '-1.00 $kZcashDefaultCurrencyTicker',
+        '-1 $kZcashDefaultCurrencyTicker',
       );
       expect(
         ZecAmount.fromZatoshi(BigInt.zero).signedActivity.toString(),
-        '0.00 $kZcashDefaultCurrencyTicker',
+        '0 $kZcashDefaultCurrencyTicker',
       );
     });
 

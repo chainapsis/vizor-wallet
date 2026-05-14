@@ -91,12 +91,12 @@ void main() {
       ),
     );
 
-    expect(rows[0].amountText, '+1.23 $ticker');
-    expect(rows[1].amountText, '-1.00 $ticker');
+    expect(rows[0].amountText, '+1.2345 $ticker');
+    expect(rows[1].amountText, '-1 $ticker');
     expect(rows[2].amountText, '0.0001 $ticker');
     expect(find.text('0.0001 $ticker'), findsOneWidget);
-    expect(find.text('+1.23 $ticker'), findsOneWidget);
-    expect(find.text('-1.00 $ticker'), findsOneWidget);
+    expect(find.text('+1.2345 $ticker'), findsOneWidget);
+    expect(find.text('-1 $ticker'), findsOneWidget);
     expect(find.text('Wallet Synced'), findsNothing);
   });
 
@@ -130,7 +130,7 @@ void main() {
     );
 
     expect(rows[0].title, 'Receiving');
-    expect(rows[0].amountText, '+1.23 $ticker');
+    expect(rows[0].amountText, '+1.2345 $ticker');
     expect(rows[0].statusText, 'In progress');
     expect(rows[0].leadingIconName, AppIcons.arrowDownCircle);
     expect(find.text('Receiving'), findsOneWidget);
@@ -180,8 +180,8 @@ void main() {
     expect(rows[1].amountText, '*** $ticker');
     expect(rows[2].amountText, '*** $ticker');
     expect(find.text('*** $ticker'), findsNWidgets(3));
-    expect(find.text('+1.23 $ticker'), findsNothing);
-    expect(find.text('-1.00 $ticker'), findsNothing);
+    expect(find.text('+1.2345 $ticker'), findsNothing);
+    expect(find.text('-1 $ticker'), findsNothing);
   });
 
   testWidgets('shielded activity rows use the shield keyhole outline icon', (
