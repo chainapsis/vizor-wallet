@@ -118,6 +118,38 @@ void main() {
     );
   });
 
+  testWidgets('sidebar uses dark success sync indicator color from Figma', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(SyncState(), themeData: AppThemeData.dark),
+    );
+    await tester.pump();
+
+    expect(_syncIndicatorColor(tester), const Color(0xFF0DC87D));
+  });
+
+  testWidgets('sidebar uses dark failure sync indicator color from Figma', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          failure: const SyncFailure(
+            kind: SyncFailureKind.network,
+            rawMessage: 'network failed',
+            userMessage: 'Network connection lost.',
+            showSettingsAction: false,
+          ),
+        ),
+        themeData: AppThemeData.dark,
+      ),
+    );
+    await tester.pump();
+
+    expect(_syncIndicatorColor(tester), const Color(0xFFA3A4A4));
+  });
+
   for (final entry in failureLabels.entries) {
     testWidgets('sidebar maps ${entry.key} sync failures', (tester) async {
       await tester.pumpWidget(
@@ -147,7 +179,10 @@ Color? _syncIndicatorColor(WidgetTester tester) {
   return (decoratedBox.decoration as BoxDecoration).color;
 }
 
-Widget _sidebarHarness(SyncState syncState) {
+Widget _sidebarHarness(
+  SyncState syncState, {
+  AppThemeData themeData = AppThemeData.light,
+}) {
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
@@ -174,7 +209,7 @@ Widget _sidebarHarness(SyncState syncState) {
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+      builder: (_, child) => AppTheme(data: themeData, child: child!),
     ),
   );
 }
