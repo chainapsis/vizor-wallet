@@ -1050,6 +1050,7 @@ class _SendMaxBalanceControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = context.appTheme == AppThemeData.dark;
     final maxLabel = Text(
       'Max: $spendableText',
       style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
@@ -1084,11 +1085,12 @@ class _SendMaxBalanceControl extends StatelessWidget {
             vertical: AppSpacing.xs,
           ),
           decoration: BoxDecoration(
-            color: colors.background.inverse,
+            color: isDark ? colors.surface.tooltip : colors.background.inverse,
             borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            border: isDark ? Border.all(color: colors.border.regular) : null,
           ),
           textStyle: AppTypography.bodySmall.copyWith(
-            color: colors.text.inverse,
+            color: isDark ? colors.text.accent : colors.text.inverse,
             letterSpacing: 0,
           ),
           child: SizedBox(

@@ -1337,6 +1337,7 @@ class _HomeNoticeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = context.appTheme == AppThemeData.dark;
     final detailMessage = data.detailMessage;
     return Container(
       padding: const EdgeInsets.all(AppSpacing.xs),
@@ -1374,11 +1375,16 @@ class _HomeNoticeCard extends StatelessWidget {
                     preferBelow: false,
                     positionDelegate: _positionShieldErrorTooltip,
                     decoration: BoxDecoration(
-                      color: colors.background.inverse,
+                      color: isDark
+                          ? colors.surface.tooltip
+                          : colors.background.inverse,
                       borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                      border: isDark
+                          ? Border.all(color: colors.border.regular)
+                          : null,
                     ),
                     textStyle: AppTypography.bodySmall.copyWith(
-                      color: colors.text.inverse,
+                      color: isDark ? colors.text.accent : colors.text.inverse,
                       letterSpacing: 0,
                     ),
                     child: AppIcon(
