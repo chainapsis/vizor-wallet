@@ -829,20 +829,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                 ? colors.icon.accent
                                 : colors.icon.regular,
                           ),
-                          rightSlot: MouseRegion(
-                            cursor: _isResolvingMax
-                                ? SystemMouseCursors.basic
-                                : SystemMouseCursors.click,
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: _isResolvingMax ? null : _activateMaxMode,
-                              child: Text(
-                                'Max: $spendableText',
-                                style: AppTypography.labelMedium.copyWith(
-                                  color: colors.text.secondary,
-                                ),
-                              ),
-                            ),
+                          rightSlot: _SendMaxBalanceControl(
+                            spendableText: spendableText,
+                            onMaxPressed: _isResolvingMax
+                                ? null
+                                : _activateMaxMode,
                           ),
                           messageText: _showAmountError ? _amountError : null,
                           messageIcon: _showAmountError
@@ -1037,6 +1028,83 @@ class _SendTitle extends StatelessWidget {
         color: context.colors.text.accent,
       ),
       textAlign: TextAlign.center,
+    );
+  }
+}
+
+class _SendMaxBalanceControl extends StatelessWidget {
+  const _SendMaxBalanceControl({
+    required this.spendableText,
+    required this.onMaxPressed,
+  });
+
+  static const _tooltipMessage =
+      'Your spendable balance may be lower than your total balance.\n\n'
+      'Funds need confirmations before they can be spent: 3 for change from '
+      'your own wallet, 10 for funds received from others. Shielded notes also '
+      "need to be fully scanned. They'll become available shortly.";
+
+  final String spendableText;
+  final VoidCallback? onMaxPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final maxLabel = Text(
+      'Max: $spendableText',
+      style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
+    );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Semantics(
+          button: true,
+          label: 'Use maximum spendable balance',
+          child: MouseRegion(
+            cursor: onMaxPressed == null
+                ? SystemMouseCursors.basic
+                : SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onMaxPressed,
+              child: maxLabel,
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xxs),
+        Tooltip(
+          message: _tooltipMessage,
+          waitDuration: const Duration(milliseconds: 350),
+          showDuration: const Duration(seconds: 8),
+          preferBelow: false,
+          constraints: const BoxConstraints(maxWidth: 340),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: colors.background.inverse,
+            borderRadius: BorderRadius.circular(AppRadii.xSmall),
+          ),
+          textStyle: AppTypography.bodySmall.copyWith(
+            color: colors.text.inverse,
+            letterSpacing: 0,
+          ),
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: Center(
+              child: AppIcon(
+                AppIcons.help,
+                size: 14,
+                color: colors.icon.muted,
+                semanticLabel: 'Spendable balance info',
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
