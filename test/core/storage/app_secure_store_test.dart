@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 const _oldPassword = 'Oldpass1!';
 const _newPassword = 'Newpass1!';
@@ -25,6 +26,12 @@ void main() {
 
   late AppSecureStore store;
   TargetPlatform? previousTargetPlatform;
+
+  setUpAll(() {
+    RustLib.initMock(api: _RustSecretApiFake());
+  });
+
+  tearDownAll(RustLib.dispose);
 
   setUp(() async {
     previousTargetPlatform = debugDefaultTargetPlatformOverride;
@@ -66,6 +73,23 @@ void main() {
     bytes.fillRange(0, bytes.length, 0);
     expect(bytes.every((byte) => byte == 0), isTrue);
     expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
+  });
+
+  test('native secret use requires an unlocked session password', () async {
+    expect(
+      store.requireSessionPasswordForNativeSecretUse,
+      throwsA(isA<StateError>()),
+    );
+
+    await store.configurePassword(_oldPassword);
+
+    expect(store.requireSessionPasswordForNativeSecretUse(), _oldPassword);
+
+    store.clearSessionPassword();
+    expect(
+      store.requireSessionPasswordForNativeSecretUse,
+      throwsA(isA<StateError>()),
+    );
   });
 
   test('changePassword journal stores only roll-forward data', () async {
@@ -1023,4 +1047,51 @@ class _CountingFailingWriteStorage extends FlutterSecureStorage {
       wOptions: wOptions,
     );
   }
+}
+
+class _RustSecretApiFake implements RustLibApi {
+  @override
+  Future<Uint8List> crateApiSecretDecryptSecretPayload({
+    required String payloadJson,
+    required String password,
+    required String saltBase64,
+  }) async {
+    final payload = jsonDecode(payloadJson) as Map<String, dynamic>;
+    final cipherText = payload['c'] as String;
+    final mac = payload['m'] as String;
+    if (mac != _fakeMac(password, saltBase64, cipherText)) {
+      throw StateError('Failed to decrypt secure-storage payload');
+    }
+    return Uint8List.fromList(base64Decode(cipherText));
+  }
+
+  @override
+  Future<String> crateApiSecretDeriveSecretPasswordVerifier({
+    required String password,
+    required String saltBase64,
+  }) async {
+    return base64Encode(utf8.encode('$saltBase64:$password'));
+  }
+
+  @override
+  Future<String> crateApiSecretEncryptSecretPayload({
+    required List<int> plainBytes,
+    required String password,
+    required String saltBase64,
+  }) async {
+    final cipherText = base64Encode(plainBytes);
+    return jsonEncode({
+      'v': 1,
+      'n': base64Encode(utf8.encode('test-nonce')),
+      'c': cipherText,
+      'm': _fakeMac(password, saltBase64, cipherText),
+    });
+  }
+
+  String _fakeMac(String password, String saltBase64, String cipherText) {
+    return base64Encode(utf8.encode('$password:$saltBase64:$cipherText'));
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

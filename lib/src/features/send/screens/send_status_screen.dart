@@ -17,6 +17,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -374,27 +375,17 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
             : _pcztBroadcastStatusMessage(result);
         broadcastMessageForFallback = result.message;
       } else {
-        final mnemonicBytes = await accountNotifier.getMnemonicBytesForAccount(
-          widget.args.proposalAccountUuid,
-        );
-        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-          if (await _abortIfUnmounted()) return;
-          setState(() {
-            _phase = _SendStatusPhase.failed;
-            _error = 'Mnemonic not found for the proposal account.';
-          });
-          return;
-        }
-
         late final rust_sync.ExecuteProposalResult result;
-        late final Future<rust_sync.ExecuteProposalResult> resultFuture;
-        try {
-          resultFuture = rust_sync.executeProposal(
+        if (Platform.isMacOS) {
+          final password = ref
+              .read(appSecurityProvider.notifier)
+              .requireSessionPasswordForNativeSecretUse();
+          result = await rust_sync.executeProposalWithMacosStoredMnemonic(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
             proposalId: widget.args.proposalId,
             sendFlowId: widget.args.sendFlowId,
-            mnemonicBytes: mnemonicBytes,
+            password: password,
             spendParamsPath: widget.args.needsSaplingParams
                 ? saplingParams.spendPath
                 : null,
@@ -402,10 +393,38 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                 ? saplingParams.outputPath
                 : null,
           );
-        } finally {
-          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+        } else {
+          final mnemonicBytes = await accountNotifier
+              .getMnemonicBytesForAccount(widget.args.proposalAccountUuid);
+          if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+            if (await _abortIfUnmounted()) return;
+            setState(() {
+              _phase = _SendStatusPhase.failed;
+              _error = 'Mnemonic not found for the proposal account.';
+            });
+            return;
+          }
+
+          late final Future<rust_sync.ExecuteProposalResult> resultFuture;
+          try {
+            resultFuture = rust_sync.executeProposal(
+              dbPath: dbPath,
+              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              proposalId: widget.args.proposalId,
+              sendFlowId: widget.args.sendFlowId,
+              mnemonicBytes: mnemonicBytes,
+              spendParamsPath: widget.args.needsSaplingParams
+                  ? saplingParams.spendPath
+                  : null,
+              outputParamsPath: widget.args.needsSaplingParams
+                  ? saplingParams.outputPath
+                  : null,
+            );
+          } finally {
+            mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+          }
+          result = await resultFuture;
         }
-        result = await resultFuture;
         _proposalConsumed = true;
         txids = result.txids;
         broadcastComplete = result.status == 'broadcasted';

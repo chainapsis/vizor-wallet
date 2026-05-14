@@ -44,7 +44,10 @@ pub(crate) use send::estimate_send_max;
 pub(crate) use send::{
     create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
 };
-pub use send::{estimate_fee, execute_proposal, propose_send, ExecuteProposalResult};
+pub use send::{
+    estimate_fee, execute_proposal, execute_proposal_with_seed_loader, propose_send,
+    ExecuteProposalResult,
+};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
 pub(crate) use send::resubmit_pending_transactions;

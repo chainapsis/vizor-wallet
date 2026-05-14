@@ -81,7 +81,10 @@ pub fn mnemonic_to_seed(phrase: &str) -> Result<SecretVec<u8>, String> {
     let mnemonic =
         Mnemonic::<English>::from_phrase(phrase).map_err(|e| format!("Invalid mnemonic: {e}"))?;
     let seed = Zeroizing::new(mnemonic.to_seed(""));
-    Ok(SecretVec::new(seed.to_vec()))
+    drop(mnemonic);
+    let secret_seed = SecretVec::new(seed.to_vec());
+    drop(seed);
+    Ok(secret_seed)
 }
 
 /// Convert UTF-8 mnemonic bytes to a 64-byte seed wrapped in SecretVec.

@@ -7,6 +7,7 @@
 // ignore_for_file: argument_type_not_assignable
 
 import 'api/keystone.dart';
+import 'api/secret.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';
 import 'api/wallet.dart';
