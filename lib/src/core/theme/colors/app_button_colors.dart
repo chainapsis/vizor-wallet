@@ -173,6 +173,6 @@ class AppDestructiveButtonColors {
     bgHover: PlumPrimitives.p400Light,
     bgPressed: PlumPrimitives.p400Light,
     border: Primitives.p0Alpha15Light,
-    label: PlumPrimitives.p800Light,
+    label: PlumPrimitives.p50Light,
   );
 }
