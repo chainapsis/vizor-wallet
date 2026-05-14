@@ -210,8 +210,8 @@ def github_release_download_url(metadata, tag_name, asset_name)
   "https://github.com/#{ENV.fetch("RELEASE_REPOSITORY")}/releases/download/#{tag_name}/#{asset_name}"
 end
 
-def sparkle_zip_asset_name(metadata)
-  File.basename(metadata.fetch(:zip_path))
+def sparkle_update_archive_asset_name(metadata)
+  File.basename(metadata.fetch(:dmg_path))
 end
 
 def sparkle_appcast_asset_name(metadata)
@@ -405,9 +405,9 @@ rescue StandardError => e
   false
 end
 
-def previous_sparkle_release_zip_assets(metadata, limit: 5)
+def previous_sparkle_release_archive_assets(metadata, limit: 5)
   releases = github_api_json("https://api.github.com/repos/#{ENV.fetch("RELEASE_REPOSITORY")}/releases?per_page=100")
-  zip_asset_name = sparkle_zip_asset_name(metadata)
+  archive_asset_name = sparkle_update_archive_asset_name(metadata)
   appcast_asset_name = sparkle_appcast_asset_name(metadata)
   current_version = Gem::Version.new(metadata.fetch(:version))
   previous_assets = []
@@ -421,29 +421,29 @@ def previous_sparkle_release_zip_assets(metadata, limit: 5)
     next unless Gem::Version.new(release_tag_info(tag_name).fetch(:base_version)) < current_version
 
     assets = Array(release["assets"])
-    zip_asset = assets.find { |candidate| candidate["name"].to_s == zip_asset_name }
+    archive_asset = assets.find { |candidate| candidate["name"].to_s == archive_asset_name }
     appcast_asset = assets.find { |candidate| candidate["name"].to_s == appcast_asset_name }
 
-    if zip_asset.nil? || appcast_asset.nil?
-      if zip_asset || appcast_asset
+    if archive_asset.nil? || appcast_asset.nil?
+      if archive_asset || appcast_asset
         missing = []
-        missing << zip_asset_name if zip_asset.nil?
+        missing << archive_asset_name if archive_asset.nil?
         missing << appcast_asset_name if appcast_asset.nil?
         UI.important("Skipping prior Sparkle delta source #{tag_name}: missing #{missing.join(" and ")}")
       end
       next
     end
 
-    expected_zip_url = github_release_download_url(metadata, tag_name, zip_asset_name)
-    unless remote_sparkle_appcast_has_enclosure_url?(appcast_asset, expected_zip_url)
-      UI.important("Skipping prior Sparkle delta source #{tag_name}: #{appcast_asset_name} does not advertise #{expected_zip_url}")
+    expected_archive_url = github_release_download_url(metadata, tag_name, archive_asset_name)
+    unless remote_sparkle_appcast_has_enclosure_url?(appcast_asset, expected_archive_url)
+      UI.important("Skipping prior Sparkle delta source #{tag_name}: #{appcast_asset_name} does not advertise #{expected_archive_url}")
       next
     end
 
     previous_assets << {
       tag: tag_name,
-      name: zip_asset.fetch("name"),
-      download_url: zip_asset.fetch("browser_download_url")
+      name: archive_asset.fetch("name"),
+      download_url: archive_asset.fetch("browser_download_url")
     }
   end
 
@@ -452,11 +452,11 @@ end
 
 def previous_release_archive_filename(metadata, tag_name)
   tag_info = release_tag_info(tag_name)
-  "#{metadata.fetch(:artifact_name)}-#{tag_info.fetch(:asset_version)}-macos.zip"
+  "#{metadata.fetch(:artifact_name)}-#{tag_info.fetch(:asset_version)}-macos.dmg"
 end
 
 def download_previous_release_archives!(archives_dir, metadata)
-  previous_sparkle_release_zip_assets(metadata).each do |asset|
+  previous_sparkle_release_archive_assets(metadata).each do |asset|
     destination_path = File.join(archives_dir, previous_release_archive_filename(metadata, asset.fetch(:tag)))
     next if File.exist?(destination_path)
 
@@ -497,9 +497,9 @@ end
 def validate_generated_sparkle_appcast!(appcast_path, release_notes_path, metadata)
   appcast_xml = File.binread(appcast_path)
   enclosure_urls = sparkle_appcast_xml_enclosure_urls(appcast_xml)
-  expected_zip_url = github_release_download_url(metadata, metadata.fetch(:tag), sparkle_zip_asset_name(metadata))
-  unless enclosure_urls.include?(expected_zip_url)
-    UI.user_error!("Generated Sparkle appcast does not advertise full ZIP #{expected_zip_url}")
+  expected_archive_url = github_release_download_url(metadata, metadata.fetch(:tag), sparkle_update_archive_asset_name(metadata))
+  unless enclosure_urls.include?(expected_archive_url)
+    UI.user_error!("Generated Sparkle appcast does not advertise full DMG #{expected_archive_url}")
   end
 
   expected_release_notes_url = github_release_download_url(metadata, metadata.fetch(:tag), sparkle_release_notes_asset_name(metadata))
@@ -529,9 +529,9 @@ def validate_generated_sparkle_appcast!(appcast_path, release_notes_path, metada
     UI.user_error!("Generated Sparkle release notes length mismatch: expected #{expected_release_notes_length}, got #{actual_release_notes_length}")
   end
 
-  versioned_zip_asset_name = "#{metadata.fetch(:artifact_name)}-#{metadata.fetch(:asset_version)}-macos.zip"
-  if versioned_zip_asset_name != sparkle_zip_asset_name(metadata) && appcast_xml.include?(versioned_zip_asset_name)
-    UI.user_error!("Generated Sparkle appcast still references versioned ZIP asset #{versioned_zip_asset_name}")
+  versioned_archive_asset_name = "#{metadata.fetch(:artifact_name)}-#{metadata.fetch(:asset_version)}-macos.dmg"
+  if versioned_archive_asset_name != sparkle_update_archive_asset_name(metadata) && appcast_xml.include?(versioned_archive_asset_name)
+    UI.user_error!("Generated Sparkle appcast still references versioned DMG asset #{versioned_archive_asset_name}")
   end
 
   delta_asset_names = Dir[File.join(File.dirname(appcast_path), "*.delta")].map { |path| File.basename(path) }
@@ -588,6 +588,21 @@ def codesign_for_distribution!(path, preserve_metadata: nil)
   command << path
 
   sh(command.map { |part| shell_escape(part) }.join(" "))
+end
+
+def codesign_dmg_for_distribution!(path)
+  UI.user_error!("Expected disk image at #{path}") unless File.exist?(path)
+
+  command = [
+    "/usr/bin/codesign",
+    "--force",
+    "--sign", DEVELOPER_ID_APPLICATION_IDENTITY,
+    "--timestamp",
+    path
+  ]
+
+  sh(command.map { |part| shell_escape(part) }.join(" "))
+  sh("/usr/bin/codesign --verify --verbose=2 #{shell_escape(path)}")
 end
 
 def resign_sparkle_for_notarization!(metadata)
@@ -730,16 +745,16 @@ def import_match_signing_assets!(output_dir, keychain)
 end
 
 def collect_sparkle_assets!(metadata)
-  UI.user_error!("Missing ZIP archive at #{metadata[:zip_path]}") unless File.exist?(metadata[:zip_path])
+  UI.user_error!("Missing DMG archive at #{metadata[:dmg_path]}") unless File.exist?(metadata[:dmg_path])
 
   FileUtils.rm_rf(metadata[:sparkle_dir])
   FileUtils.mkdir_p(metadata[:sparkle_dir])
 
   Dir.mktmpdir("sparkle-archives") do |archives_dir|
-    current_zip_path = File.join(archives_dir, File.basename(metadata[:zip_path]))
-    release_notes_path = File.join(archives_dir, "#{File.basename(metadata[:zip_path], ".zip")}.md")
+    current_archive_path = File.join(archives_dir, File.basename(metadata[:dmg_path]))
+    release_notes_path = File.join(archives_dir, "#{File.basename(metadata[:dmg_path], ".dmg")}.md")
 
-    FileUtils.cp(metadata[:zip_path], current_zip_path)
+    FileUtils.cp(metadata[:dmg_path], current_archive_path)
     download_previous_release_archives!(archives_dir, metadata)
     write_sparkle_release_notes!(release_notes_path, metadata)
     generate_sparkle_appcast!(archives_dir, metadata)
@@ -941,6 +956,8 @@ platform :mac do
   private_lane :notarize_dmg do |options|
     metadata = release_metadata(flavor: single_macos_release_flavor(options))
     UI.user_error!("Missing disk image at #{metadata[:dmg_path]}") unless File.exist?(metadata[:dmg_path])
+
+    codesign_dmg_for_distribution!(metadata[:dmg_path])
 
     with_app_store_connect_api_key_path do |api_key_path|
       notarize(
