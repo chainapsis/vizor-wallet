@@ -4,6 +4,12 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.8.1
+
+## Fixed
+- Recovery store operations now fail when their target bundle or vote row is
+  missing instead of treating a zero-row SQLite update as success.
+
 # 0.8.0
 
 ## Changed
