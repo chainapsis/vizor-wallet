@@ -364,6 +364,8 @@ class _HomePane extends ConsumerStatefulWidget {
 }
 
 class _HomePaneState extends ConsumerState<_HomePane> {
+  static const _recentActivityLimit = 10;
+
   final ScrollController _scrollController = ScrollController();
   bool _isHovered = false;
   bool _canScroll = false;
@@ -540,7 +542,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     }
     return buildActivityRows(
       context: context,
-      transactions: widget.sync.recentTransactions.take(9),
+      transactions: widget.sync.recentTransactions.take(_recentActivityLimit),
       privacyModeEnabled: widget.privacyModeEnabled,
       onTransactionTap: _openTransactionStatus,
     );
