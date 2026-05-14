@@ -9,6 +9,9 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+
+import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
   testWidgets('settings rows show hover and focus states', (tester) async {
@@ -63,7 +66,10 @@ Widget _settingsHarness() {
   );
 
   return ProviderScope(
-    overrides: [appBootstrapProvider.overrideWithValue(_bootstrap)],
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap),
+      syncProvider.overrideWith(FakeSyncNotifier.new),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),

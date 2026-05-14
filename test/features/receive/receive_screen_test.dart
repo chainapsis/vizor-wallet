@@ -12,6 +12,9 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/receive/screens/receive_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+
+import '../../fakes/fake_sync_notifier.dart';
 
 void main() {
   testWidgets('shows shielded renew button for software accounts', (
@@ -179,6 +182,7 @@ Widget _receiveHarness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+      syncProvider.overrideWith(FakeSyncNotifier.new),
       receiveAddressServiceProvider.overrideWith(
         receiveAddressService ?? _FakeReceiveAddressService.new,
       ),
@@ -206,6 +210,7 @@ Widget _receiveRaceHarness({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap),
+      syncProvider.overrideWith(FakeSyncNotifier.new),
       receiveAddressServiceProvider.overrideWith(receiveAddressService),
       accountProvider.overrideWith(accountNotifier),
     ],

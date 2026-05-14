@@ -14,6 +14,9 @@ import 'package:zcash_wallet/src/core/widgets/app_decorative_divider.dart';
 import 'package:zcash_wallet/src/features/about/screens/about_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
+
+import '../../fakes/fake_sync_notifier.dart';
 
 const _utilityPageScrollbarKey = ValueKey('utility-page-scrollbar');
 
@@ -292,14 +295,20 @@ Future<void> _setViewport(WidgetTester tester, Size size) async {
 
 Widget _appHarness(AppBootstrapState bootstrap) {
   return ProviderScope(
-    overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
+    overrides: [
+      appBootstrapProvider.overrideWithValue(bootstrap),
+      syncProvider.overrideWith(FakeSyncNotifier.new),
+    ],
     child: const ZcashWalletApp(),
   );
 }
 
 Widget _routerHarness(GoRouter router, AppBootstrapState bootstrap) {
   return ProviderScope(
-    overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
+    overrides: [
+      appBootstrapProvider.overrideWithValue(bootstrap),
+      syncProvider.overrideWith(FakeSyncNotifier.new),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
