@@ -5,6 +5,7 @@ import 'app_fade_colors.dart';
 import 'app_icon_colors.dart';
 import 'app_state_colors.dart';
 import 'app_surface_colors.dart';
+import 'app_sync_colors.dart';
 import 'app_text_colors.dart';
 
 export 'app_background_colors.dart';
@@ -14,12 +15,13 @@ export 'app_fade_colors.dart';
 export 'app_icon_colors.dart';
 export 'app_state_colors.dart';
 export 'app_surface_colors.dart';
+export 'app_sync_colors.dart';
 export 'app_text_colors.dart';
 
 /// Aggregated semantic color palette for the app. Sourced from the Zcash
-/// design system Figma spec; organized into eight categories that mirror
+/// design system Figma spec; organized into semantic categories that mirror
 /// the Figma sheet structure (Background / Surface / Border / Text /
-/// Icon / Button / State / Fade).
+/// Icon / Button / State / Fade / Sync).
 ///
 /// Do not read [AppColors] directly from widgets — it will be surfaced via an
 /// [AppTheme] InheritedWidget wired up in a later step.
@@ -33,6 +35,7 @@ class AppColors {
     required this.button,
     required this.state,
     required this.fade,
+    required this.sync,
   });
 
   final AppBackgroundColors background;
@@ -43,6 +46,7 @@ class AppColors {
   final AppButtonColors button;
   final AppStateColors state;
   final AppFadeColors fade;
+  final AppSyncColors sync;
 
   static const dark = AppColors(
     background: AppBackgroundColors.dark,
@@ -53,6 +57,7 @@ class AppColors {
     button: AppButtonColors.dark,
     state: AppStateColors.dark,
     fade: AppFadeColors.dark,
+    sync: AppSyncColors.dark,
   );
 
   static const light = AppColors(
@@ -64,5 +69,6 @@ class AppColors {
     button: AppButtonColors.light,
     state: AppStateColors.light,
     fade: AppFadeColors.light,
+    sync: AppSyncColors.light,
   );
 }
