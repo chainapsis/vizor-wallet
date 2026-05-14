@@ -1834,18 +1834,27 @@ pub fn store_delegation_tx_hash(
     bundle_index: u32,
     tx_hash: &str,
 ) -> Result<(), VotingError> {
-    conn.execute(
-        "UPDATE bundles SET delegation_tx_hash = :tx_hash WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index",
-        named_params! {
-            ":tx_hash": tx_hash,
-            ":round_id": round_id,
-            ":wallet_id": wallet_id,
-            ":bundle_index": bundle_index as i64,
-        },
-    )
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to store delegation tx hash: {}", e),
-    })?;
+    let rows = conn
+        .execute(
+            "UPDATE bundles SET delegation_tx_hash = :tx_hash WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index",
+            named_params! {
+                ":tx_hash": tx_hash,
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+                ":bundle_index": bundle_index as i64,
+            },
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to store delegation tx hash: {}", e),
+        })?;
+    if rows == 0 {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "no bundle found for round={}, wallet={}, bundle={}",
+                round_id, wallet_id, bundle_index
+            ),
+        });
+    }
     Ok(())
 }
 
@@ -1877,19 +1886,28 @@ pub fn store_vote_tx_hash(
     proposal_id: u32,
     tx_hash: &str,
 ) -> Result<(), VotingError> {
-    conn.execute(
-        "UPDATE votes SET tx_hash = :tx_hash WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
-        named_params! {
-            ":tx_hash": tx_hash,
-            ":round_id": round_id,
-            ":wallet_id": wallet_id,
-            ":bundle_index": bundle_index as i64,
-            ":proposal_id": proposal_id as i64,
-        },
-    )
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to store vote tx hash: {}", e),
-    })?;
+    let rows = conn
+        .execute(
+            "UPDATE votes SET tx_hash = :tx_hash WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+            named_params! {
+                ":tx_hash": tx_hash,
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+                ":bundle_index": bundle_index as i64,
+                ":proposal_id": proposal_id as i64,
+            },
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to store vote tx hash: {}", e),
+        })?;
+    if rows == 0 {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "no vote found for round={}, wallet={}, bundle={}, proposal={}",
+                round_id, wallet_id, bundle_index, proposal_id
+            ),
+        });
+    }
     Ok(())
 }
 
@@ -1926,20 +1944,29 @@ pub fn store_commitment_bundle(
     bundle_json: &str,
     vc_tree_position: u64,
 ) -> Result<(), VotingError> {
-    conn.execute(
-        "UPDATE votes SET commitment_bundle_json = :json, vc_tree_position = :pos WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
-        named_params! {
-            ":json": bundle_json,
-            ":pos": vc_tree_position as i64,
-            ":round_id": round_id,
-            ":wallet_id": wallet_id,
-            ":bundle_index": bundle_index as i64,
-            ":proposal_id": proposal_id as i64,
-        },
-    )
-    .map_err(|e| VotingError::Internal {
-        message: format!("failed to store commitment bundle: {}", e),
-    })?;
+    let rows = conn
+        .execute(
+            "UPDATE votes SET commitment_bundle_json = :json, vc_tree_position = :pos WHERE round_id = :round_id AND wallet_id = :wallet_id AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+            named_params! {
+                ":json": bundle_json,
+                ":pos": vc_tree_position as i64,
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+                ":bundle_index": bundle_index as i64,
+                ":proposal_id": proposal_id as i64,
+            },
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to store commitment bundle: {}", e),
+        })?;
+    if rows == 0 {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "no vote found for round={}, wallet={}, bundle={}, proposal={}",
+                round_id, wallet_id, bundle_index, proposal_id
+            ),
+        });
+    }
     Ok(())
 }
 
