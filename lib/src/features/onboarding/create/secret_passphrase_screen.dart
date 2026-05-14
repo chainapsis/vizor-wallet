@@ -170,10 +170,7 @@ class _SecretPassphraseScreenState
       return;
     }
     if (mounted) {
-      ref.read(createOnboardingMnemonicProvider.notifier).clear();
-      ref
-          .read(onboardingSecretPassphraseRevealedProvider.notifier)
-          .setRevealed(false);
+      clearCreateOnboardingSecretState(ref.read);
     }
     router.go('/home');
   }

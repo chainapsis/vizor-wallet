@@ -26,10 +26,7 @@ class _IntroZcashScreenState extends ConsumerState<IntroZcashScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(createOnboardingMnemonicProvider.notifier).clear();
-      ref
-          .read(onboardingSecretPassphraseRevealedProvider.notifier)
-          .setRevealed(false);
+      clearCreateOnboardingSecretState(ref.read);
     });
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/motion/onboarding_motion.dart';
@@ -37,6 +38,13 @@ final createOnboardingMnemonicProvider =
     NotifierProvider<CreateOnboardingMnemonicNotifier, String?>(
       CreateOnboardingMnemonicNotifier.new,
     );
+
+typedef ProviderReader = T Function<T>(ProviderListenable<T> provider);
+
+void clearCreateOnboardingSecretState(ProviderReader read) {
+  read(createOnboardingMnemonicProvider.notifier).clear();
+  read(onboardingSecretPassphraseRevealedProvider.notifier).setRevealed(false);
+}
 
 enum OnboardingStep {
   intro,

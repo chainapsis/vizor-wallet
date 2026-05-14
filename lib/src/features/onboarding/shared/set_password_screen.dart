@@ -131,6 +131,9 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
         if (args.flow == SetPasswordFlow.importKeystone) {
           ref.read(keystoneOnboardingProvider.notifier).resetScan();
         }
+        if (args.flow == SetPasswordFlow.create) {
+          clearCreateOnboardingSecretState(ref.read);
+        }
         router.go('/home');
       });
     } catch (e, st) {
