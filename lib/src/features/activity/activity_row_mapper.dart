@@ -4,7 +4,6 @@ import '../../core/formatting/zec_amount.dart';
 import '../../core/privacy/privacy_mask.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_icon.dart';
-import '../../providers/sync_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import 'models/activity_row_data.dart';
 
@@ -12,19 +11,11 @@ const _activityAmountPrivacyMaskLength = 3;
 
 List<ActivityRowData> buildActivityRows({
   required BuildContext context,
-  required SyncState sync,
   required Iterable<rust_sync.TransactionInfo> transactions,
   bool privacyModeEnabled = false,
-  VoidCallback? onRetrySync,
   ValueChanged<rust_sync.TransactionInfo>? onTransactionTap,
 }) {
   return [
-    buildSyncActivityRow(
-      context: context,
-      sync: sync,
-      privacyModeEnabled: privacyModeEnabled,
-      onRetrySync: onRetrySync,
-    ),
     ...transactions.map(
       (tx) => buildTransactionActivityRow(
         context: context,
@@ -34,69 +25,6 @@ List<ActivityRowData> buildActivityRows({
       ),
     ),
   ];
-}
-
-ActivityRowData buildSyncActivityRow({
-  required BuildContext context,
-  required SyncState sync,
-  bool privacyModeEnabled = false,
-  VoidCallback? onRetrySync,
-}) {
-  final colors = context.colors;
-
-  final failure = sync.failure;
-  if (failure != null) {
-    return ActivityRowData(
-      title: 'Wallet Synced',
-      leadingIconName: AppIcons.sync,
-      leadingBackgroundColor: colors.background.neutralSubtleOpacity,
-      leadingIconColor: colors.icon.regular,
-      amountText: '--',
-      amountColor: colors.text.secondary,
-      statusText: 'Failed',
-      statusIconName: AppIcons.skull,
-      statusColor: colors.text.destructive,
-      timestampText: formatActivityTimestamp(sync.lastSyncFailedAt),
-    );
-  }
-
-  if (sync.isSyncing) {
-    final pct = _formatInProgressSyncPercentage(sync.displayPercentage);
-    return ActivityRowData(
-      title: 'Wallet Synced',
-      leadingIconName: AppIcons.sync,
-      leadingBackgroundColor: colors.background.neutralSubtleOpacity,
-      leadingIconColor: colors.icon.regular,
-      subtitle: sync.phase.isEmpty ? null : _capitalize(sync.phase),
-      amountText: '$pct%',
-      amountColor: colors.text.secondary,
-      statusText: 'Pending',
-      statusIconName: AppIcons.loader,
-      statusColor: colors.text.secondary,
-      timestampText: formatActivityTimestamp(sync.lastSyncStartedAt),
-    );
-  }
-
-  return ActivityRowData(
-    title: 'Wallet Synced',
-    leadingIconName: AppIcons.sync,
-    leadingBackgroundColor: colors.background.neutralSubtleOpacity,
-    leadingIconColor: colors.icon.regular,
-    amountText: hideAmountIfPrivacyMode(
-      ZecAmount.fromZatoshi(sync.totalBalance).activity.toString(),
-      privacyModeEnabled: privacyModeEnabled,
-      maskLength: _activityAmountPrivacyMaskLength,
-    ),
-    amountColor: colors.text.accent,
-    statusText: 'Completed',
-    statusColor: colors.text.secondary,
-    timestampText: formatActivityTimestamp(sync.lastSyncCompletedAt),
-  );
-}
-
-String _formatInProgressSyncPercentage(double progress) {
-  final pct = (progress.clamp(0.0, 1.0) * 100).toDouble();
-  return pct.clamp(0.0, 99.0).toStringAsFixed(0);
 }
 
 ActivityRowData buildTransactionActivityRow({
@@ -234,11 +162,6 @@ DateTime? _txTimestamp(rust_sync.TransactionInfo tx) {
   final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
   if (seconds <= BigInt.zero) return null;
   return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
-}
-
-String _capitalize(String value) {
-  if (value.isEmpty) return value;
-  return '${value[0].toUpperCase()}${value.substring(1)}';
 }
 
 String _monthName(int month) {

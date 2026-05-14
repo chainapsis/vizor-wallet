@@ -523,10 +523,8 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     }
     return buildActivityRows(
       context: context,
-      sync: widget.sync,
       transactions: widget.sync.recentTransactions.take(9),
       privacyModeEnabled: widget.privacyModeEnabled,
-      onRetrySync: widget.onRetrySync,
       onTransactionTap: _openTransactionStatus,
     );
   }

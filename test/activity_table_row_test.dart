@@ -8,7 +8,6 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/activity_table.dart';
-import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
@@ -67,7 +66,6 @@ void main() {
             builder: (context) {
               rows = buildActivityRows(
                 context: context,
-                sync: SyncState(totalBalance: BigInt.from(10000)),
                 transactions: [
                   _tx(
                     txidHex: 'received',
@@ -93,13 +91,13 @@ void main() {
       ),
     );
 
-    expect(rows[0].amountText, '0.0001 $ticker');
-    expect(rows[1].amountText, '+1.23 $ticker');
-    expect(rows[2].amountText, '-1.00 $ticker');
-    expect(rows[3].amountText, '0.0001 $ticker');
-    expect(find.text('0.0001 $ticker'), findsNWidgets(2));
+    expect(rows[0].amountText, '+1.23 $ticker');
+    expect(rows[1].amountText, '-1.00 $ticker');
+    expect(rows[2].amountText, '0.0001 $ticker');
+    expect(find.text('0.0001 $ticker'), findsOneWidget);
     expect(find.text('+1.23 $ticker'), findsOneWidget);
     expect(find.text('-1.00 $ticker'), findsOneWidget);
+    expect(find.text('Wallet Synced'), findsNothing);
   });
 
   testWidgets('pending inbound activity rows render as receiving', (
@@ -115,7 +113,6 @@ void main() {
             builder: (context) {
               rows = buildActivityRows(
                 context: context,
-                sync: SyncState(totalBalance: BigInt.zero),
                 transactions: [
                   _tx(
                     txidHex: 'receiving',
@@ -132,10 +129,10 @@ void main() {
       ),
     );
 
-    expect(rows[1].title, 'Receiving');
-    expect(rows[1].amountText, '+1.23 $ticker');
-    expect(rows[1].statusText, 'In progress');
-    expect(rows[1].leadingIconName, AppIcons.arrowDownCircle);
+    expect(rows[0].title, 'Receiving');
+    expect(rows[0].amountText, '+1.23 $ticker');
+    expect(rows[0].statusText, 'In progress');
+    expect(rows[0].leadingIconName, AppIcons.arrowDownCircle);
     expect(find.text('Receiving'), findsOneWidget);
     expect(find.text('In progress'), findsOneWidget);
   });
@@ -153,7 +150,6 @@ void main() {
             builder: (context) {
               rows = buildActivityRows(
                 context: context,
-                sync: SyncState(totalBalance: BigInt.from(10000)),
                 privacyModeEnabled: true,
                 transactions: [
                   _tx(
@@ -183,8 +179,7 @@ void main() {
     expect(rows[0].amountText, '*** $ticker');
     expect(rows[1].amountText, '*** $ticker');
     expect(rows[2].amountText, '*** $ticker');
-    expect(rows[3].amountText, '*** $ticker');
-    expect(find.text('*** $ticker'), findsNWidgets(4));
+    expect(find.text('*** $ticker'), findsNWidgets(3));
     expect(find.text('+1.23 $ticker'), findsNothing);
     expect(find.text('-1.00 $ticker'), findsNothing);
   });
@@ -202,7 +197,6 @@ void main() {
             builder: (context) {
               rows = buildActivityRows(
                 context: context,
-                sync: SyncState(totalBalance: BigInt.zero),
                 transactions: [
                   _tx(
                     txidHex: 'shielded',
@@ -218,7 +212,7 @@ void main() {
       ),
     );
 
-    expect(rows[1].leadingIconName, AppIcons.shieldKeyholeOutline);
+    expect(rows[0].leadingIconName, AppIcons.shieldKeyholeOutline);
   });
 
   testWidgets('activity row value cells use label large typography', (
