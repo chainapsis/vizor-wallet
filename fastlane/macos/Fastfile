@@ -52,6 +52,7 @@ MACOS_RELEASE_FLAVOR_CONFIGS = {
 
 DEFAULT_MACOS_RELEASE_FLAVORS = ["mainnet", "testnet"].freeze
 DEVELOPER_ID_APPLICATION_IDENTITY = "Developer ID Application: Chainapsis Inc. (SZTB68DXM4)".freeze
+SPARKLE_SIGNED_FEED_FAILURE_EXPIRATION_INTERVAL = 0
 
 def normalize_macos_release_flavor(flavor)
   normalized = flavor.to_s.strip.downcase
@@ -235,6 +236,9 @@ end
 def configure_sparkle_info_plist!(plist_path, metadata)
   sh("/usr/bin/plutil -replace SUPublicEDKey -string #{shell_escape(sparkle_public_ed_key(metadata))} #{shell_escape(plist_path)}")
   sh("/usr/bin/plutil -replace SUFeedURL -string #{shell_escape(metadata.fetch(:sparkle_feed_url))} #{shell_escape(plist_path)}")
+  sh("/usr/bin/plutil -replace SUVerifyUpdateBeforeExtraction -bool YES #{shell_escape(plist_path)}")
+  sh("/usr/bin/plutil -replace SURequireSignedFeed -bool YES #{shell_escape(plist_path)}")
+  sh("/usr/bin/plutil -replace SUSignedFeedFailureExpirationInterval -integer #{SPARKLE_SIGNED_FEED_FAILURE_EXPIRATION_INTERVAL} #{shell_escape(plist_path)}")
 end
 
 def sparkle_tool_path(tool_name)
@@ -242,6 +246,18 @@ def sparkle_tool_path(tool_name)
   tool_path = candidates.max_by { |path| File.mtime(path) }
   UI.user_error!("Could not locate Sparkle tool #{tool_name}. Resolve Swift package dependencies first.") unless tool_path
   tool_path
+end
+
+def with_sparkle_private_ed_key_file(metadata)
+  Tempfile.create(["sparkle-private-ed-key", ".txt"]) do |private_key_file|
+    private_key_file.write(sparkle_private_ed_key(metadata))
+    private_key_file.flush
+    yield(private_key_file.path)
+  end
+end
+
+def sparkle_tool_command(tool_name, *args)
+  ([sparkle_tool_path(tool_name)] + args).map { |part| shell_escape(part) }.join(" ")
 end
 
 def http_get(uri, headers: {}, limit: 5)
@@ -291,15 +307,23 @@ def sparkle_appcast_xml_enclosure_urls(appcast_xml)
 end
 
 def sparkle_appcast_xml_release_notes_urls(appcast_xml)
+  sparkle_appcast_xml_release_notes_links(appcast_xml).map { |link| link[:url] }.reject(&:empty?)
+end
+
+def sparkle_appcast_xml_release_notes_links(appcast_xml)
   document = REXML::Document.new(appcast_xml)
-  urls = []
+  links = []
   document.elements.each("//*") do |element|
     next unless element.name.to_s.split(":").last == "releaseNotesLink"
 
     url = element.text.to_s.strip
-    urls << url unless url.empty?
+    links << {
+      url: url,
+      ed_signature: (element.attributes["sparkle:edSignature"] || element.attributes["edSignature"]).to_s.strip,
+      length: (element.attributes["sparkle:length"] || element.attributes["length"]).to_s.strip
+    }
   end
-  urls
+  links
 end
 
 def github_release_asset_safe_name(asset_name)
@@ -455,7 +479,21 @@ def download_previous_release_archives!(archives_dir, metadata)
   end
 end
 
-def validate_generated_sparkle_appcast!(appcast_path, metadata)
+def verify_sparkle_signature!(path, metadata, signature: nil)
+  with_sparkle_private_ed_key_file(metadata) do |private_key_path|
+    args = ["--verify", "--ed-key-file", private_key_path, path]
+    args << signature if signature
+    sh(sparkle_tool_command("sign_update", *args))
+  end
+end
+
+def sign_sparkle_appcast!(appcast_path, metadata)
+  with_sparkle_private_ed_key_file(metadata) do |private_key_path|
+    sh(sparkle_tool_command("sign_update", "--ed-key-file", private_key_path, appcast_path))
+  end
+end
+
+def validate_generated_sparkle_appcast!(appcast_path, release_notes_path, metadata)
   appcast_xml = File.binread(appcast_path)
   enclosure_urls = sparkle_appcast_xml_enclosure_urls(appcast_xml)
   expected_zip_url = github_release_download_url(metadata, metadata.fetch(:tag), sparkle_zip_asset_name(metadata))
@@ -464,8 +502,30 @@ def validate_generated_sparkle_appcast!(appcast_path, metadata)
   end
 
   expected_release_notes_url = github_release_download_url(metadata, metadata.fetch(:tag), sparkle_release_notes_asset_name(metadata))
-  unless sparkle_appcast_xml_release_notes_urls(appcast_xml).include?(expected_release_notes_url)
+  release_notes_links = sparkle_appcast_xml_release_notes_links(appcast_xml)
+  expected_release_notes_link = release_notes_links.find { |link| link[:url] == expected_release_notes_url }
+  unless expected_release_notes_link
     UI.user_error!("Generated Sparkle appcast does not link release notes #{expected_release_notes_url}")
+  end
+
+  unless appcast_xml.include?("sparkle-signatures:")
+    UI.user_error!("Generated Sparkle appcast is not signed")
+  end
+
+  release_notes_signature = expected_release_notes_link.fetch(:ed_signature)
+  if release_notes_signature.empty?
+    UI.user_error!("Generated Sparkle appcast release notes link is missing sparkle:edSignature")
+  end
+
+  release_notes_length = expected_release_notes_link.fetch(:length)
+  unless release_notes_length.match?(/\A[1-9]\d*\z/)
+    UI.user_error!("Generated Sparkle appcast release notes link is missing a valid sparkle:length")
+  end
+
+  expected_release_notes_length = release_notes_length.to_i
+  actual_release_notes_length = File.size(release_notes_path)
+  unless actual_release_notes_length == expected_release_notes_length
+    UI.user_error!("Generated Sparkle release notes length mismatch: expected #{expected_release_notes_length}, got #{actual_release_notes_length}")
   end
 
   versioned_zip_asset_name = "#{metadata.fetch(:artifact_name)}-#{metadata.fetch(:asset_version)}-macos.zip"
@@ -479,6 +539,9 @@ def validate_generated_sparkle_appcast!(appcast_path, metadata)
     UI.user_error!("Generated Sparkle appcast references GitHub-unsafe delta asset #{asset_name}") unless safe_asset_name == asset_name
     UI.user_error!("Generated Sparkle appcast references missing delta asset #{asset_name}") unless delta_asset_names.include?(asset_name)
   end
+
+  verify_sparkle_signature!(appcast_path, metadata)
+  verify_sparkle_signature!(release_notes_path, metadata, signature: release_notes_signature)
 end
 
 def write_sparkle_release_notes!(notes_path, metadata)
@@ -556,17 +619,13 @@ def resign_sparkle_for_notarization!(metadata)
 end
 
 def generate_sparkle_appcast!(archives_dir, metadata)
-  tool_path = sparkle_tool_path("generate_appcast")
   appcast_path = File.join(archives_dir, "appcast.xml")
 
-  Tempfile.create(["sparkle-private-ed-key", ".txt"]) do |private_key_file|
-    private_key_file.write(sparkle_private_ed_key(metadata))
-    private_key_file.flush
-
+  with_sparkle_private_ed_key_file(metadata) do |private_key_path|
     sh(
       [
-        shell_escape(tool_path),
-        "--ed-key-file", shell_escape(private_key_file.path),
+        shell_escape(sparkle_tool_path("generate_appcast")),
+        "--ed-key-file", shell_escape(private_key_path),
         "--download-url-prefix", shell_escape(github_release_download_base_url(metadata)),
         "--release-notes-url-prefix", shell_escape(github_release_download_base_url(metadata)),
         "--full-release-notes-url", shell_escape(github_release_page_url(metadata)),
@@ -685,7 +744,8 @@ def collect_sparkle_assets!(metadata)
     generate_sparkle_appcast!(archives_dir, metadata)
     appcast_path = File.join(archives_dir, "appcast.xml")
     normalize_sparkle_delta_asset_names!(archives_dir, appcast_path)
-    validate_generated_sparkle_appcast!(appcast_path, metadata)
+    sign_sparkle_appcast!(appcast_path, metadata)
+    validate_generated_sparkle_appcast!(appcast_path, release_notes_path, metadata)
 
     FileUtils.cp(appcast_path, metadata[:appcast_path])
     FileUtils.cp(release_notes_path, metadata[:sparkle_release_notes_path])
@@ -761,6 +821,16 @@ def plist_value(path, key)
   stdout.strip
 end
 
+def plist_bool_value(path, key)
+  plist_value(path, key).downcase == "true"
+end
+
+def plist_integer_value(path, key)
+  Integer(plist_value(path, key))
+rescue ArgumentError
+  UI.user_error!("Expected integer #{key} in #{path}")
+end
+
 def verify_built_app_metadata!(metadata)
   info_plist = File.join(metadata[:app_path], "Contents", "Info.plist")
   UI.user_error!("Missing Info.plist at #{info_plist}") unless File.exist?(info_plist)
@@ -772,6 +842,20 @@ def verify_built_app_metadata!(metadata)
   UI.user_error!("Expected bundle id #{metadata[:bundle_id]}, got #{actual_bundle_id}") unless actual_bundle_id == metadata[:bundle_id]
   UI.user_error!("Expected bundle name #{metadata[:app_name]}, got #{actual_bundle_name}") unless actual_bundle_name == metadata[:app_name]
   UI.user_error!("Expected icon file #{metadata[:app_icon_file]}, got #{actual_icon_file}") unless actual_icon_file == metadata[:app_icon_file]
+
+  return unless sparkle_enabled_for_release?(metadata)
+
+  actual_feed_url = plist_value(info_plist, "SUFeedURL")
+  actual_public_ed_key = plist_value(info_plist, "SUPublicEDKey")
+  UI.user_error!("Expected Sparkle feed URL #{metadata[:sparkle_feed_url]}, got #{actual_feed_url}") unless actual_feed_url == metadata[:sparkle_feed_url]
+  UI.user_error!("Expected Sparkle public EdDSA key to match configured key") unless actual_public_ed_key == sparkle_public_ed_key(metadata)
+  UI.user_error!("Expected SUVerifyUpdateBeforeExtraction to be enabled") unless plist_bool_value(info_plist, "SUVerifyUpdateBeforeExtraction")
+  UI.user_error!("Expected SURequireSignedFeed to be enabled") unless plist_bool_value(info_plist, "SURequireSignedFeed")
+
+  actual_feed_failure_expiration = plist_integer_value(info_plist, "SUSignedFeedFailureExpirationInterval")
+  unless actual_feed_failure_expiration == SPARKLE_SIGNED_FEED_FAILURE_EXPIRATION_INTERVAL
+    UI.user_error!("Expected SUSignedFeedFailureExpirationInterval #{SPARKLE_SIGNED_FEED_FAILURE_EXPIRATION_INTERVAL}, got #{actual_feed_failure_expiration}")
+  end
 end
 
 platform :mac do
