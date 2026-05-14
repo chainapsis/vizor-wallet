@@ -1038,8 +1038,9 @@ class _SendMaxBalanceControl extends StatelessWidget {
     required this.onMaxPressed,
   });
 
-  static const _tooltipMessage =
-      'Your spendable balance may be lower than your total balance.\n\n'
+  static const _tooltipTitle =
+      'Your spendable balance may be lower than your total balance.';
+  static const _tooltipBody =
       'Funds need confirmations before they can be spent: 3 for change from '
       'your own wallet, 10 for funds received from others. Shielded notes also '
       "need to be fully scanned. They'll become available shortly.";
@@ -1054,6 +1055,10 @@ class _SendMaxBalanceControl extends StatelessWidget {
     final maxLabel = Text(
       'Max: $spendableText',
       style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
+    );
+    final tooltipTextStyle = AppTypography.bodySmall.copyWith(
+      color: isDark ? colors.text.accent : colors.text.inverse,
+      letterSpacing: 0,
     );
 
     return Row(
@@ -1075,7 +1080,16 @@ class _SendMaxBalanceControl extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.xxs),
         Tooltip(
-          message: _tooltipMessage,
+          richMessage: TextSpan(
+            style: tooltipTextStyle,
+            children: [
+              TextSpan(
+                text: _tooltipTitle,
+                style: tooltipTextStyle.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const TextSpan(text: '\n\n$_tooltipBody'),
+            ],
+          ),
           waitDuration: const Duration(milliseconds: 350),
           showDuration: const Duration(seconds: 8),
           preferBelow: false,
@@ -1088,10 +1102,6 @@ class _SendMaxBalanceControl extends StatelessWidget {
             color: isDark ? colors.surface.tooltip : colors.background.inverse,
             borderRadius: BorderRadius.circular(AppRadii.xSmall),
             border: isDark ? Border.all(color: colors.border.regular) : null,
-          ),
-          textStyle: AppTypography.bodySmall.copyWith(
-            color: isDark ? colors.text.accent : colors.text.inverse,
-            letterSpacing: 0,
           ),
           child: SizedBox(
             width: 18,
