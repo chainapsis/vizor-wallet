@@ -322,13 +322,15 @@ class _SidebarIllustration extends StatelessWidget {
 
   static const _frameWidth = 256.0;
   static const _frameHeight = 405.0;
+  static const _lightAsset =
+      'assets/illustrations/onboarding_keystone_sidebar_light.png';
+  static const _darkAsset =
+      'assets/illustrations/onboarding_keystone_sidebar_dark.png';
 
   @override
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final asset = isDark
-        ? 'assets/illustrations/onboarding_intro_sidebar_dark.png'
-        : 'assets/illustrations/onboarding_intro_sidebar_light.png';
+    final asset = isDark ? _darkAsset : _lightAsset;
     return IgnorePointer(
       child: Align(
         alignment: Alignment.bottomCenter,
