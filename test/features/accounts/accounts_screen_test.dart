@@ -15,7 +15,11 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+
+const _validDeletePassword = 'Correct123!';
+const _invalidDeletePassword = 'Wrong123!';
 
 void main() {
   testWidgets('accounts screen renders active account and other accounts', (
@@ -493,9 +497,10 @@ void main() {
       find.textContaining('You will have to re-import your account.'),
       findsOneWidget,
     );
+    expect(find.text('Password'), findsOneWidget);
     expect(find.byType(AppPaneModalOverlay), findsOneWidget);
 
-    await tester.tap(find.text('Remove'));
+    await _submitRemovePassword(tester);
     await tester.pumpAndSettle();
 
     expect(accountNotifier.removedUuid, 'account-2');
@@ -507,6 +512,42 @@ void main() {
     expect(
       find.textContaining('Are you sure you want to remove this account?'),
       findsNothing,
+    );
+  });
+
+  testWidgets('remove account requires the current password before deleting', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    final syncNotifier = _FakeSyncNotifier();
+    final securityNotifier = _FakeAppSecurityNotifier();
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        syncNotifier: () => syncNotifier,
+        securityNotifier: () => securityNotifier,
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-2');
+    await _submitRemovePassword(tester, password: _invalidDeletePassword);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Incorrect password. Please try again.'), findsOneWidget);
+    expect(securityNotifier.confirmedPasswords, [_invalidDeletePassword]);
+    expect(accountNotifier.removedUuid, isNull);
+    expect(syncNotifier.refreshCount, 0);
+    expect(
+      find.byKey(const ValueKey('accounts_other_row_account-2')),
+      findsOneWidget,
     );
   });
 
@@ -538,7 +579,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Remove Account'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove'));
+    await _submitRemovePassword(tester);
     await tester.pumpAndSettle();
 
     expect(events, ['pause', 'remove:account-2', 'resume', 'refresh']);
@@ -573,7 +614,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Remove Account'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove'));
+    await _submitRemovePassword(tester);
     await tester.pump();
 
     expect(find.text('Stopping sync...'), findsOneWidget);
@@ -624,7 +665,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Remove Account'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Remove'));
+      await _submitRemovePassword(tester);
       await tester.pumpAndSettle();
     } finally {
       debugPrint = previousDebugPrint;
@@ -707,7 +748,7 @@ void main() {
     );
     expect(find.textContaining('This cannot be undone.'), findsOneWidget);
 
-    await tester.tap(find.text('Reset Vizor'));
+    await _submitRemovePassword(tester, buttonLabel: 'Reset Vizor');
     await tester.pumpAndSettle();
 
     expect(events, ['pause', 'resetWallet', 'clearCachedWalletDbPath']);
@@ -753,7 +794,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Remove Account'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Reset Vizor'));
+    await _submitRemovePassword(tester, buttonLabel: 'Reset Vizor');
     await tester.pumpAndSettle();
 
     expect(find.text("Couldn't reset Vizor."), findsOneWidget);
@@ -762,9 +803,32 @@ void main() {
   });
 }
 
+Future<void> _openRemoveAccountModal(
+  WidgetTester tester,
+  String accountUuid,
+) async {
+  await tester.tap(
+    find.byKey(ValueKey('accounts_row_menu_button_$accountUuid')),
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Remove Account'));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _submitRemovePassword(
+  WidgetTester tester, {
+  String password = _validDeletePassword,
+  String buttonLabel = 'Remove',
+}) async {
+  await tester.enterText(find.byType(EditableText), password);
+  await tester.pump();
+  await tester.tap(find.text(buttonLabel));
+}
+
 Widget _accountsHarness({
   AccountNotifier Function()? accountNotifier,
   SyncNotifier Function()? syncNotifier,
+  AppSecurityNotifier Function()? securityNotifier,
 }) {
   final router = GoRouter(
     initialLocation: '/accounts',
@@ -795,6 +859,9 @@ Widget _accountsHarness({
       appBootstrapProvider.overrideWithValue(_bootstrap),
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
+      appSecurityProvider.overrideWith(
+        securityNotifier ?? _FakeAppSecurityNotifier.new,
+      ),
       syncProvider.overrideWith(syncNotifier ?? _FakeSyncNotifier.new),
     ],
     child: MaterialApp.router(
@@ -960,6 +1027,24 @@ class _FakeAccountNotifier extends AccountNotifier {
     }
     resetWalletCalled = true;
     state = const AsyncData(AccountState());
+  }
+}
+
+class _FakeAppSecurityNotifier extends AppSecurityNotifier {
+  _FakeAppSecurityNotifier({this.validPassword = _validDeletePassword});
+
+  final String validPassword;
+  final List<String> confirmedPasswords = [];
+
+  @override
+  AppSecurityState build() {
+    return const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+  }
+
+  @override
+  Future<bool> confirmPassword(String password) async {
+    confirmedPasswords.add(password);
+    return password == validPassword;
   }
 }
 

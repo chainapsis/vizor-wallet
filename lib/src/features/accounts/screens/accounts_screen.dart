@@ -18,6 +18,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../widgets/account_name_modal.dart';
@@ -208,6 +209,9 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     profilePictureId: modalAccount.profilePictureId,
                     isLastAccount: isLastModalAccount,
                     onCancel: _closeModal,
+                    onConfirmPassword: (password) => ref
+                        .read(appSecurityProvider.notifier)
+                        .confirmPassword(password),
                     onRemove: (onProgress) => _removeAccount(
                       modalAccount.uuid,
                       isLastAccount: isLastModalAccount,
