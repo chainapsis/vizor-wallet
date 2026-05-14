@@ -271,6 +271,27 @@ Future<ExecuteProposalResult> executeProposal({
   outputParamsPath: outputParamsPath,
 );
 
+/// macOS-only software send path that keeps encrypted mnemonic payloads out of
+/// Dart memory. Rust reads and decrypts the stored mnemonic, derives the seed,
+/// and zeroizes intermediate material.
+Future<ExecuteProposalResult> executeProposalWithMacosStoredMnemonic({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required BigInt proposalId,
+  required String sendFlowId,
+  required String password,
+  String? spendParamsPath,
+  String? outputParamsPath,
+}) => RustLib.instance.api.crateApiSyncExecuteProposalWithMacosStoredMnemonic(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  proposalId: proposalId,
+  sendFlowId: sendFlowId,
+  password: password,
+  spendParamsPath: spendParamsPath,
+  outputParamsPath: outputParamsPath,
+);
+
 /// Dry-run transparent shielding without creating or broadcasting a transaction.
 Future<ShieldTransparentStatus> getShieldTransparentStatus({
   required String dbPath,
@@ -309,6 +330,25 @@ Future<ShieldTransparentResult> shieldTransparentBalance({
   accountUuid: accountUuid,
   mnemonicBytes: mnemonicBytes,
 );
+
+/// macOS-only software transparent shielding path that keeps encrypted mnemonic
+/// payloads out of Dart memory. Rust reads and decrypts the stored mnemonic,
+/// derives the seed, and zeroizes intermediate material.
+Future<ShieldTransparentResult>
+shieldTransparentBalanceWithMacosStoredMnemonic({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String password,
+}) => RustLib.instance.api
+    .crateApiSyncShieldTransparentBalanceWithMacosStoredMnemonic(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      password: password,
+    );
 
 Future<String> getNextAvailableAddress({
   required String dbPath,

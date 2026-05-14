@@ -95,6 +95,10 @@ class AppSecurityNotifier extends Notifier<AppSecurityState> {
     return _store.verifyPasswordOnly(password);
   }
 
+  String requireSessionPasswordForNativeSecretUse() {
+    return _store.requireSessionPasswordForNativeSecretUse();
+  }
+
   /// Changes the wallet password without using the setup path. The store must
   /// rotate encrypted secure-storage payloads before the verifier is updated.
   Future<bool> changePassword({

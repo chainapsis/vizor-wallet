@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart'
     show
         TargetPlatform,
@@ -15,6 +14,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../config/network_config.dart';
 import '../security/password_policy.dart';
+import '../../rust/api/secret.dart' as rust_secret;
 
 const kWalletDbNameKey = 'zcash_wallet_db_name';
 const kThemeModeKey = 'zcash_theme_mode';
@@ -93,20 +93,20 @@ class AppSecureStore {
     );
   }
 
-  static final Cipher _cipher = AesGcm.with256bits();
-  static final Pbkdf2 _kdf = Pbkdf2(
-    macAlgorithm: Hmac.sha256(),
-    iterations: 100000,
-    bits: 256,
-  );
-
   final FlutterSecureStorage _storage;
   final FlutterSecureStorage _mnemonicStorage;
   final _secretMutationLock = _AsyncLock();
-  SecretKey? _cachedSecretKey;
   String? _sessionPassword;
 
   bool get hasSessionPassword => _sessionPassword != null;
+
+  String requireSessionPasswordForNativeSecretUse() {
+    final password = _sessionPassword;
+    if (password == null) {
+      throw StateError('Secret storage requires an unlocked session.');
+    }
+    return password;
+  }
 
   Future<String> ensureWalletDbName() async {
     final existing = await readPlain(kWalletDbNameKey);
@@ -215,7 +215,6 @@ class AppSecureStore {
       if (!identical(_mnemonicStorage, _storage)) {
         await _mnemonicStorage.deleteAll();
       }
-      _cachedSecretKey = null;
       _sessionPassword = null;
     });
   }
@@ -243,8 +242,9 @@ class AppSecureStore {
       throw ArgumentError(error);
     }
     final salt = _randomBytes(16);
-    final verifier = await _derivePasswordVerifier(password, salt);
-    await writePlain(_passwordVerifierSaltKey, base64Encode(salt));
+    final saltBase64 = base64Encode(salt);
+    final verifier = await _derivePasswordVerifier(password, saltBase64);
+    await writePlain(_passwordVerifierSaltKey, saltBase64);
     await writePlain(_passwordVerifierKey, verifier);
     setSessionPassword(password);
   }
@@ -285,82 +285,76 @@ class AppSecureStore {
 
       final oldVerifierSalt = await readPlain(_passwordVerifierSaltKey);
       final oldVerifier = await readPlain(_passwordVerifierKey);
-      final currentSecretKey = await _deriveSecretKeyForPassword(
-        currentPassword,
-      );
-      final newSecretKey = await _deriveSecretKeyForPassword(newPassword);
-      try {
-        final migration = await _migrateAccountMnemonicsAfterUnlockLocked();
-        if (!migration.legacyCleanupComplete) {
-          throw StateError(
-            'Failed to migrate account mnemonics before password rotation.',
-          );
-        }
-        final storedValues = await _mnemonicStorage.readAll();
-        final rotatedSecrets = <_PasswordRotationEntry>[];
-        final rollbackSecrets = <_PasswordRotationRollbackEntry>[];
-
-        for (final entry in storedValues.entries) {
-          if (!entry.key.startsWith(_accountMnemonicKeyPrefix)) continue;
-
-          final payload = _EncryptedPayload.tryParse(entry.value);
-          if (payload == null) {
-            throw StateError(
-              'Failed to parse secure-storage value for "${entry.key}".',
-            );
-          }
-
-          final clearText = await _decryptPayloadForKey(
-            entry.key,
-            payload,
-            currentSecretKey,
-          );
-          final rotatedValue = await _encryptStringWithKey(
-            clearText,
-            newSecretKey,
-          );
-          rotatedSecrets.add(
-            _PasswordRotationEntry(key: entry.key, rotatedValue: rotatedValue),
-          );
-          rollbackSecrets.add(
-            _PasswordRotationRollbackEntry(
-              key: entry.key,
-              originalValue: entry.value,
-            ),
-          );
-        }
-
-        final newVerifierSalt = _randomBytes(16);
-        final newVerifier = await _derivePasswordVerifier(
-          newPassword,
-          newVerifierSalt,
+      final secretSaltBase64 = await _getOrCreateSaltBase64();
+      final migration = await _migrateAccountMnemonicsAfterUnlockLocked();
+      if (!migration.legacyCleanupComplete) {
+        throw StateError(
+          'Failed to migrate account mnemonics before password rotation.',
         );
-
-        final rotation = _PasswordRotationRecord(
-          newVerifierSalt: base64Encode(newVerifierSalt),
-          newVerifier: newVerifier,
-          entries: rotatedSecrets,
-        );
-        final rollbackSnapshot = _PasswordRotationRollbackSnapshot(
-          oldVerifierSalt: oldVerifierSalt,
-          oldVerifier: oldVerifier,
-          entries: rollbackSecrets,
-        );
-        await writePlain(_passwordRotationInProgressKey, rotation.serialize());
-
-        try {
-          await _writeRotatedPasswordState(rotation);
-        } catch (error, stackTrace) {
-          await _rollbackPasswordRotation(rollbackSnapshot, currentPassword);
-          Error.throwWithStackTrace(error, stackTrace);
-        }
-
-        setSessionPassword(newPassword);
-        await _deleteRotationRecordBestEffort();
-      } finally {
-        currentSecretKey.destroy();
-        newSecretKey.destroy();
       }
+      final storedValues = await _mnemonicStorage.readAll();
+      final rotatedSecrets = <_PasswordRotationEntry>[];
+      final rollbackSecrets = <_PasswordRotationRollbackEntry>[];
+
+      for (final entry in storedValues.entries) {
+        if (!entry.key.startsWith(_accountMnemonicKeyPrefix)) continue;
+
+        if (!_isEncryptedPayload(entry.value)) {
+          throw StateError(
+            'Failed to parse secure-storage value for "${entry.key}".',
+          );
+        }
+
+        final clearText = await _decryptPayloadBytesForKey(
+          entry.key,
+          entry.value,
+          currentPassword,
+          secretSaltBase64,
+        );
+        final rotatedValue = await _encryptBytesWithPassword(
+          clearText,
+          newPassword,
+          secretSaltBase64,
+        );
+        rotatedSecrets.add(
+          _PasswordRotationEntry(key: entry.key, rotatedValue: rotatedValue),
+        );
+        rollbackSecrets.add(
+          _PasswordRotationRollbackEntry(
+            key: entry.key,
+            originalValue: entry.value,
+          ),
+        );
+      }
+
+      final newVerifierSalt = _randomBytes(16);
+      final newVerifierSaltBase64 = base64Encode(newVerifierSalt);
+      final newVerifier = await _derivePasswordVerifier(
+        newPassword,
+        newVerifierSaltBase64,
+      );
+
+      final rotation = _PasswordRotationRecord(
+        newVerifierSalt: newVerifierSaltBase64,
+        newVerifier: newVerifier,
+        entries: rotatedSecrets,
+      );
+      final rollbackSnapshot = _PasswordRotationRollbackSnapshot(
+        oldVerifierSalt: oldVerifierSalt,
+        oldVerifier: oldVerifier,
+        entries: rollbackSecrets,
+      );
+      await writePlain(_passwordRotationInProgressKey, rotation.serialize());
+
+      try {
+        await _writeRotatedPasswordState(rotation);
+      } catch (error, stackTrace) {
+        await _rollbackPasswordRotation(rollbackSnapshot, currentPassword);
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+
+      setSessionPassword(newPassword);
+      await _deleteRotationRecordBestEffort();
 
       return true;
     });
@@ -409,10 +403,7 @@ class AppSecureStore {
       return false;
     }
 
-    final derived = await _derivePasswordVerifier(
-      password,
-      base64Decode(encodedSalt),
-    );
+    final derived = await _derivePasswordVerifier(password, encodedSalt);
     return derived == storedVerifier;
   }
 
@@ -447,12 +438,10 @@ class AppSecureStore {
 
   void setSessionPassword(String password) {
     _sessionPassword = password;
-    _cachedSecretKey = null;
   }
 
   void clearSessionPassword() {
     _sessionPassword = null;
-    _cachedSecretKey = null;
   }
 
   bool _shouldSkipLockedSecretRead(bool requireUnlockedSession) {
@@ -472,13 +461,12 @@ class AppSecureStore {
     }
     if (raw == null || raw.isEmpty) return null;
 
-    final payload = _EncryptedPayload.tryParse(raw);
-    if (payload == null) {
+    if (!_isEncryptedPayload(raw)) {
       return null;
     }
 
-    final secretKey = await _getSecretKey();
-    return _decryptPayloadForKey(key, payload, secretKey);
+    final saltBase64 = await _getOrCreateSaltBase64();
+    return _decryptPayloadForKey(key, raw, _sessionPassword!, saltBase64);
   }
 
   Future<Uint8List?> _decryptStoredSecretBytes(
@@ -494,30 +482,42 @@ class AppSecureStore {
     }
     if (raw == null || raw.isEmpty) return null;
 
-    final payload = _EncryptedPayload.tryParse(raw);
-    if (payload == null) {
+    if (!_isEncryptedPayload(raw)) {
       return null;
     }
 
-    final secretKey = await _getSecretKey();
-    return _decryptPayloadBytesForKey(key, payload, secretKey);
+    final saltBase64 = await _getOrCreateSaltBase64();
+    return _decryptPayloadBytesForKey(key, raw, _sessionPassword!, saltBase64);
   }
 
   Future<String> _encryptSecretString(String value) async {
-    final secretKey = await _getSecretKey();
-    final nonce = _randomBytes(12);
-    final clearText = utf8.encode(value);
+    final password = _sessionPassword;
+    if (password == null) {
+      throw StateError('Secret storage requires an unlocked session.');
+    }
+    final saltBase64 = await _getOrCreateSaltBase64();
+    return _encryptStringWithPassword(value, password, saltBase64);
+  }
+
+  Future<String> _encryptStringWithPassword(
+    String value,
+    String password,
+    String saltBase64,
+  ) async {
+    return _encryptBytesWithPassword(utf8.encode(value), password, saltBase64);
+  }
+
+  Future<String> _encryptBytesWithPassword(
+    List<int> clearText,
+    String password,
+    String saltBase64,
+  ) async {
     try {
-      final secretBox = await _cipher.encrypt(
-        clearText,
-        secretKey: secretKey,
-        nonce: nonce,
+      return await rust_secret.encryptSecretPayload(
+        plainBytes: clearText,
+        password: password,
+        saltBase64: saltBase64,
       );
-      return _EncryptedPayload(
-        nonce: secretBox.nonce,
-        cipherText: secretBox.cipherText,
-        mac: secretBox.mac.bytes,
-      ).serialize();
     } finally {
       _zeroizeList(clearText);
     }
@@ -596,77 +596,23 @@ class AppSecureStore {
     }
   }
 
-  Future<SecretKey> _getSecretKey() async {
-    final sessionPassword = _sessionPassword;
-    if (sessionPassword == null) {
-      throw StateError('Secret storage requires an unlocked session.');
-    }
-
-    final cached = _cachedSecretKey;
-    if (cached != null) return cached;
-
-    final salt = await _getOrCreateSalt();
-    final key = await _kdf.deriveKeyFromPassword(
-      password: sessionPassword,
-      nonce: salt,
-    );
-    _cachedSecretKey = key;
-    return key;
-  }
-
-  Future<SecretKey> _deriveSecretKeyForPassword(String password) async {
-    final salt = await _getOrCreateSalt();
-    return _kdf.deriveKeyFromPassword(password: password, nonce: salt);
-  }
-
-  Future<String> _decryptPayload(
-    _EncryptedPayload payload,
-    SecretKey secretKey,
-  ) async {
-    final clearText = await _cipher.decrypt(
-      SecretBox(
-        payload.cipherText,
-        nonce: payload.nonce,
-        mac: Mac(payload.mac),
-      ),
-      secretKey: secretKey,
-    );
-    try {
-      return utf8.decode(clearText);
-    } finally {
-      _zeroizeList(clearText);
-    }
-  }
-
-  Future<Uint8List> _decryptPayloadBytes(
-    _EncryptedPayload payload,
-    SecretKey secretKey,
-  ) async {
-    final clearText = await _cipher.decrypt(
-      SecretBox(
-        payload.cipherText,
-        nonce: payload.nonce,
-        mac: Mac(payload.mac),
-      ),
-      secretKey: secretKey,
-    );
-    if (clearText is Uint8List) {
-      return clearText;
-    }
-    try {
-      return Uint8List.fromList(clearText);
-    } finally {
-      _zeroizeList(clearText);
-    }
-  }
-
   Future<String> _decryptPayloadForKey(
     String key,
-    _EncryptedPayload payload,
-    SecretKey secretKey,
+    String payloadJson,
+    String password,
+    String saltBase64,
   ) async {
     try {
-      return await _decryptPayload(payload, secretKey);
+      final clearText = await rust_secret.decryptSecretPayload(
+        payloadJson: payloadJson,
+        password: password,
+        saltBase64: saltBase64,
+      );
+      try {
+        return utf8.decode(clearText);
+      } finally {
+        _zeroizeList(clearText);
+      }
     } catch (error, stackTrace) {
       Error.throwWithStackTrace(
         StateError('Failed to decrypt secure-storage value for "$key": $error'),
@@ -677,11 +623,16 @@ class AppSecureStore {
 
   Future<Uint8List> _decryptPayloadBytesForKey(
     String key,
-    _EncryptedPayload payload,
-    SecretKey secretKey,
+    String payloadJson,
+    String password,
+    String saltBase64,
   ) async {
     try {
-      return await _decryptPayloadBytes(payload, secretKey);
+      return await rust_secret.decryptSecretPayload(
+        payloadJson: payloadJson,
+        password: password,
+        saltBase64: saltBase64,
+      );
     } catch (error, stackTrace) {
       Error.throwWithStackTrace(
         StateError('Failed to decrypt secure-storage value for "$key": $error'),
@@ -690,49 +641,19 @@ class AppSecureStore {
     }
   }
 
-  Future<String> _encryptStringWithKey(
-    String value,
-    SecretKey secretKey,
-  ) async {
-    final nonce = _randomBytes(12);
-    final clearText = utf8.encode(value);
-    try {
-      final secretBox = await _cipher.encrypt(
-        clearText,
-        secretKey: secretKey,
-        nonce: nonce,
-      );
-      return _EncryptedPayload(
-        nonce: secretBox.nonce,
-        cipherText: secretBox.cipherText,
-        mac: secretBox.mac.bytes,
-      ).serialize();
-    } finally {
-      _zeroizeList(clearText);
-    }
-  }
-
-  Future<String> _derivePasswordVerifier(
-    String password,
-    List<int> salt,
-  ) async {
-    final key = await _kdf.deriveKeyFromPassword(
+  Future<String> _derivePasswordVerifier(String password, String saltBase64) {
+    return rust_secret.deriveSecretPasswordVerifier(
       password: password,
-      nonce: salt,
+      saltBase64: saltBase64,
     );
-    try {
-      return base64Encode(await key.extractBytes());
-    } finally {
-      key.destroy();
-    }
   }
 
   void _zeroizeList(List<int> value) {
     try {
       value.fillRange(0, value.length, 0);
     } catch (_) {
-      // Best effort only: some cryptography implementations may return
-      // fixed or unmodifiable list views.
+      // Best effort only: FFI/generated calls may return fixed or
+      // unmodifiable list views.
     }
   }
 
@@ -802,15 +723,16 @@ class AppSecureStore {
     }
   }
 
-  Future<List<int>> _getOrCreateSalt() async {
+  Future<String> _getOrCreateSaltBase64() async {
     final encoded = await readPlain(_secureStoreSaltKey);
     if (encoded != null && encoded.isNotEmpty) {
-      return base64Decode(encoded);
+      return encoded;
     }
 
     final salt = _randomBytes(16);
-    await writePlain(_secureStoreSaltKey, base64Encode(salt));
-    return salt;
+    final generated = base64Encode(salt);
+    await writePlain(_secureStoreSaltKey, generated);
+    return generated;
   }
 
   List<int> _randomBytes(int length) {
@@ -963,38 +885,24 @@ bool _isRollbackFailedRotationRecord(String raw) {
   }
 }
 
-class _EncryptedPayload {
-  const _EncryptedPayload({
-    required this.nonce,
-    required this.cipherText,
-    required this.mac,
-  });
+bool _isEncryptedPayload(String raw) {
+  try {
+    final json = jsonDecode(raw);
+    if (json is! Map<String, dynamic>) return false;
+    if (json['v'] != 1) return false;
 
-  final List<int> nonce;
-  final List<int> cipherText;
-  final List<int> mac;
-
-  String serialize() {
-    return jsonEncode({
-      'v': 1,
-      'n': base64Encode(nonce),
-      'c': base64Encode(cipherText),
-      'm': base64Encode(mac),
-    });
-  }
-
-  static _EncryptedPayload? tryParse(String raw) {
-    try {
-      final json = jsonDecode(raw);
-      if (json is! Map<String, dynamic>) return null;
-      if (json['v'] != 1) return null;
-      return _EncryptedPayload(
-        nonce: base64Decode(json['n'] as String),
-        cipherText: base64Decode(json['c'] as String),
-        mac: base64Decode(json['m'] as String),
-      );
-    } catch (_) {
-      return null;
+    final nonce = json['n'];
+    final cipherText = json['c'];
+    final mac = json['m'];
+    if (nonce is! String || cipherText is! String || mac is! String) {
+      return false;
     }
+
+    base64Decode(nonce);
+    base64Decode(cipherText);
+    base64Decode(mac);
+    return true;
+  } catch (_) {
+    return false;
   }
 }

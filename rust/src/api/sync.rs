@@ -6,7 +6,7 @@ use flutter_rust_bridge::frb;
 use zeroize::Zeroizing;
 
 use crate::frb_generated::StreamSink;
-use crate::wallet::{keys, sync as wallet_sync, sync_engine};
+use crate::wallet::{keys, secret_store, sync as wallet_sync, sync_engine};
 
 // ======================== Sync Mode ========================
 // 0 = None, 1 = Foreground, 2 = Background
@@ -733,6 +733,46 @@ pub fn execute_proposal(
     })
 }
 
+/// macOS-only software send path that keeps encrypted mnemonic payloads out of
+/// Dart memory. Rust reads and decrypts the stored mnemonic, derives the seed,
+/// and zeroizes intermediate material.
+pub fn execute_proposal_with_macos_stored_mnemonic(
+    db_path: String,
+    lightwalletd_url: String,
+    proposal_id: u64,
+    send_flow_id: String,
+    password: String,
+    spend_params_path: Option<String>,
+    output_params_path: Option<String>,
+) -> Result<ExecuteProposalResult, String> {
+    catch(|| {
+        let password = Zeroizing::new(password.into_bytes());
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::execute_proposal_with_seed_loader(
+            &db_path,
+            &lightwalletd_url,
+            proposal_id,
+            &send_flow_id,
+            move |network, account_id| {
+                secret_store::seed_from_macos_stored_mnemonic(
+                    network,
+                    &account_id.expose_uuid().to_string(),
+                    password,
+                )
+            },
+            spend_params_path.as_deref(),
+            output_params_path.as_deref(),
+        ))?;
+        Ok(ExecuteProposalResult {
+            txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
+        })
+    })
+}
+
 /// Dry-run transparent shielding without creating or broadcasting a transaction.
 pub fn get_shield_transparent_status(
     db_path: String,
@@ -784,6 +824,37 @@ pub fn shield_transparent_balance(
         let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
         let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
         drop(mnemonic_bytes);
+
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::shield_transparent_balance(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            seed,
+        ))?;
+        Ok(ShieldTransparentResult {
+            txids: r.txids,
+            fee_zatoshi: r.fee_zatoshi,
+            shielded_zatoshi: r.shielded_zatoshi,
+        })
+    })
+}
+
+/// macOS-only software transparent shielding path that keeps encrypted mnemonic
+/// payloads out of Dart memory. Rust reads and decrypts the stored mnemonic,
+/// derives the seed, and zeroizes intermediate material.
+pub fn shield_transparent_balance_with_macos_stored_mnemonic(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    password: String,
+) -> Result<ShieldTransparentResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let password = Zeroizing::new(password.into_bytes());
+        let seed = secret_store::seed_from_macos_stored_mnemonic(network, &account_uuid, password)?;
 
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         let r = rt.block_on(wallet_sync::shield_transparent_balance(
