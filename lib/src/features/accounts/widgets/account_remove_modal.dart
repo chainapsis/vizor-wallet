@@ -1,9 +1,12 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
+import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/password_text_field.dart';
 
 enum AccountRemoveProgress { stoppingSync, removingAccount }
 
@@ -16,6 +19,7 @@ class AccountRemoveModal extends StatefulWidget {
     required this.profilePictureId,
     required this.isLastAccount,
     required this.onCancel,
+    required this.onConfirmPassword,
     required this.onRemove,
     super.key,
   });
@@ -24,6 +28,7 @@ class AccountRemoveModal extends StatefulWidget {
   final String profilePictureId;
   final bool isLastAccount;
   final VoidCallback onCancel;
+  final Future<bool> Function(String password) onConfirmPassword;
   final Future<void> Function(AccountRemoveProgressCallback onProgress)
   onRemove;
 
@@ -33,17 +38,77 @@ class AccountRemoveModal extends StatefulWidget {
 
 class _AccountRemoveModalState extends State<AccountRemoveModal> {
   static const _buttonWidth = 280.0;
+  static const _fieldHeight = 68.0;
 
+  final _passwordController = TextEditingController();
   bool _isSubmitting = false;
   _AccountRemoveSubmitPhase? _submitPhase;
+  String? _passwordError;
   String? _submitError;
+
+  bool get _canSubmit =>
+      !_isSubmitting && isWalletPasswordValid(_passwordController.text);
+
+  String? get _passwordMessage {
+    if (_passwordError != null) return _passwordError;
+    return validateWalletPassword(_passwordController.text);
+  }
+
+  @override
+  void dispose() {
+    _passwordController.clear();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   Future<void> _submit() async {
     if (_isSubmitting) return;
+    final passwordError = validateRequiredWalletPassword(
+      _passwordController.text,
+    );
+    if (passwordError != null) {
+      setState(() {
+        _passwordError = passwordError;
+        _submitError = null;
+      });
+      return;
+    }
+
     setState(() {
       _isSubmitting = true;
-      _submitPhase = _AccountRemoveSubmitPhase.stoppingSync;
+      _submitPhase = _AccountRemoveSubmitPhase.checkingPassword;
+      _passwordError = null;
       _submitError = null;
+    });
+
+    bool isPasswordValid;
+    try {
+      isPasswordValid = await widget.onConfirmPassword(
+        _passwordController.text,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _passwordError = "Couldn't check your password. Please try again.";
+        _isSubmitting = false;
+        _submitPhase = null;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    if (!isPasswordValid) {
+      setState(() {
+        _passwordError = 'Incorrect password. Please try again.';
+        _isSubmitting = false;
+        _submitPhase = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _passwordController.clear();
+      _submitPhase = _AccountRemoveSubmitPhase.stoppingSync;
     });
 
     try {
@@ -65,6 +130,13 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     }
   }
 
+  void _handlePasswordChanged() {
+    setState(() {
+      _passwordError = null;
+      _submitError = null;
+    });
+  }
+
   void _setProgress(AccountRemoveProgress progress) {
     if (!mounted) return;
     final next = switch (progress) {
@@ -81,6 +153,8 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
   @override
   Widget build(BuildContext context) {
+    final passwordMessage = _passwordMessage;
+
     return _AccountRemoveModalCard(
       header: _AccountRemoveModalHeader(
         accountName: widget.accountName,
@@ -97,6 +171,34 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
               color: context.colors.text.accent,
             ),
           ),
+          const SizedBox(height: AppSpacing.sm),
+          SizedBox(
+            height: _fieldHeight,
+            child: PasswordTextField(
+              label: 'Password',
+              hintText: 'Enter Your Password',
+              leadingSlotWidth: 32,
+              trailingSlotWidth: 40,
+              inputHorizontalPadding: AppSpacing.s,
+              controller: _passwordController,
+              autofocus: true,
+              enabled: !_isSubmitting,
+              tone: passwordMessage == null
+                  ? AppTextFieldTone.neutral
+                  : AppTextFieldTone.destructive,
+              onChanged: (_) => _handlePasswordChanged(),
+              onSubmitted: (_) => _submit(),
+            ),
+          ),
+          if (passwordMessage != null) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              passwordMessage,
+              style: AppTypography.labelMedium.copyWith(
+                color: context.colors.text.destructive,
+              ),
+            ),
+          ],
           if (_submitError != null) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
@@ -109,7 +211,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
           ],
           const SizedBox(height: AppSpacing.md),
           AppButton(
-            onPressed: _isSubmitting ? null : _submit,
+            onPressed: _canSubmit ? _submit : null,
             variant: AppButtonVariant.destructive,
             minWidth: _buttonWidth,
             leading: _isSubmitting ? null : const AppIcon(AppIcons.trash),
@@ -145,6 +247,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
     }
 
     return switch (_submitPhase) {
+      _AccountRemoveSubmitPhase.checkingPassword => 'Checking password...',
       _AccountRemoveSubmitPhase.stoppingSync => 'Stopping sync...',
       _AccountRemoveSubmitPhase.removingAccount =>
         widget.isLastAccount ? 'Resetting...' : 'Removing account...',
@@ -168,7 +271,11 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   }
 }
 
-enum _AccountRemoveSubmitPhase { stoppingSync, removingAccount }
+enum _AccountRemoveSubmitPhase {
+  checkingPassword,
+  stoppingSync,
+  removingAccount,
+}
 
 class _AccountRemoveModalCard extends StatelessWidget {
   const _AccountRemoveModalCard({required this.header, required this.child});
