@@ -7,6 +7,7 @@ import '../../providers/app_security_provider.dart';
 import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
 import '../profile_pictures.dart';
+import '../security/wallet_lock_controller.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/app_profile_picture.dart';
@@ -45,12 +46,16 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     });
 
     try {
-      securityNotifier.lock();
-      accountNotifier.clearSensitiveStateForLock();
+      final lockFuture = lockWalletSession(
+        securityNotifier: securityNotifier,
+        accountNotifier: accountNotifier,
+        syncNotifier: syncNotifier,
+        awaitSync: true,
+      );
       if (mounted) {
         context.go('/unlock');
       }
-      await syncNotifier.clearSensitiveStateForLock();
+      await lockFuture;
     } finally {
       if (mounted) {
         setState(() {
