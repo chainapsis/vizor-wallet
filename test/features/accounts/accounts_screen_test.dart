@@ -795,7 +795,7 @@ Widget _accountsHarness({
       appBootstrapProvider.overrideWithValue(_bootstrap),
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
-      if (syncNotifier != null) syncProvider.overrideWith(syncNotifier),
+      syncProvider.overrideWith(syncNotifier ?? _FakeSyncNotifier.new),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -835,7 +835,10 @@ Widget _sidebarHarness() {
   );
 
   return ProviderScope(
-    overrides: [appBootstrapProvider.overrideWithValue(_bootstrap)],
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap),
+      syncProvider.overrideWith(_FakeSyncNotifier.new),
+    ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
