@@ -95,7 +95,7 @@ void main() {
       );
       await _expectActivityRow(
         tester,
-        const ValueKey('home_activity_row_1'),
+        const ValueKey('home_activity_row_0'),
         title: 'Receiving',
         amount: '+0.25 $_currencyTicker',
         status: 'In progress',
@@ -103,7 +103,7 @@ void main() {
       await _openActivity(tester);
       await _expectActivityRow(
         tester,
-        const ValueKey('activity_screen_row_1'),
+        const ValueKey('activity_screen_row_0'),
         title: 'Receiving',
         amount: '+0.25 $_currencyTicker',
         status: 'In progress',
@@ -119,7 +119,7 @@ void main() {
       );
       await _expectActivityRow(
         tester,
-        const ValueKey('home_activity_row_1'),
+        const ValueKey('home_activity_row_0'),
         title: 'Received',
         amount: '+0.25 $_currencyTicker',
         status: 'Completed',
@@ -134,7 +134,7 @@ void main() {
       await _openActivity(tester);
       await _expectActivityRow(
         tester,
-        const ValueKey('activity_screen_row_1'),
+        const ValueKey('activity_screen_row_0'),
         title: 'Received',
         amount: '+0.25 $_currencyTicker',
         status: 'Completed',
@@ -152,7 +152,7 @@ void main() {
       await _switchAccount(tester, 0);
       await _expectActivityRow(
         tester,
-        const ValueKey('home_activity_row_1'),
+        const ValueKey('home_activity_row_0'),
         title: 'Sent',
         amount: '-0.25 $_currencyTicker',
         status: 'Completed',
@@ -167,7 +167,7 @@ void main() {
       await _openActivity(tester);
       await _expectActivityRow(
         tester,
-        const ValueKey('activity_screen_row_1'),
+        const ValueKey('activity_screen_row_0'),
         title: 'Sent',
         amount: '-0.25 $_currencyTicker',
         status: 'Completed',
