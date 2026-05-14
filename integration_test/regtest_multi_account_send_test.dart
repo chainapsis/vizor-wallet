@@ -195,6 +195,10 @@ Future<void> _importFirstWallet(WidgetTester tester) async {
   );
   await _tapAppButton(tester, const ValueKey('import_secret_submit_button'));
   await _tapAppButton(tester, const ValueKey('import_birthday_skip_button'));
+  await _tapAppButton(
+    tester,
+    const ValueKey('unknown_birthday_confirm_button'),
+  );
   await _enterText(
     tester,
     const ValueKey('set_password_password_field'),
@@ -220,6 +224,10 @@ Future<void> _importAdditionalWallet(WidgetTester tester) async {
   );
   await _tapAppButton(tester, const ValueKey('import_secret_submit_button'));
   await _tapAppButton(tester, const ValueKey('import_birthday_skip_button'));
+  await _tapAppButton(
+    tester,
+    const ValueKey('unknown_birthday_confirm_button'),
+  );
   await _waitForHome(tester);
   _log('second wallet imported');
 }

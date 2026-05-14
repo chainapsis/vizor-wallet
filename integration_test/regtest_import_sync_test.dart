@@ -50,6 +50,10 @@ void main() {
 
       _log('skipping birthday');
       await _tapButton(tester, const ValueKey('import_birthday_skip_button'));
+      await _tapButton(
+        tester,
+        const ValueKey('unknown_birthday_confirm_button'),
+      );
 
       _log('setting password');
       await _enterText(
