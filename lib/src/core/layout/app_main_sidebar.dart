@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
+import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
 import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
@@ -77,6 +78,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       }
     }
     final accountName = activeAccount?.name ?? 'Username';
+    final sync = ref.watch(syncProvider).value ?? SyncState();
 
     return AppDesktopSidebarSurface(
       clipBehavior: Clip.none,
@@ -148,6 +150,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
             Padding(
               padding: const EdgeInsets.all(AppSpacing.xs),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   AppSidebarItem(
                     label: 'Settings',
@@ -172,6 +175,8 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     iconName: AppIcons.logOut,
                     onTap: _isSigningOut ? null : _handleSignOut,
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  _SidebarSyncStatus(sync: sync),
                 ],
               ),
             ),
@@ -194,4 +199,140 @@ class _SidebarAccountAvatar extends StatelessWidget {
       size: AppProfilePictureSize.medium,
     );
   }
+}
+
+class _SidebarSyncStatus extends StatelessWidget {
+  const _SidebarSyncStatus({required this.sync});
+
+  final SyncState sync;
+
+  static const _height = 34.0;
+  static const _indicatorWidth = 5.0;
+  static const _indicatorHeight = 32.0;
+  static const _indicatorLeft = -AppSpacing.md;
+  static const _textLeft = AppSpacing.xs;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final status = _SidebarSyncStatusData.from(sync);
+    final textColor = switch (status.kind) {
+      _SidebarSyncStatusKind.syncing => colors.sync.textSyncing,
+      _SidebarSyncStatusKind.failed => colors.sync.textError,
+      _SidebarSyncStatusKind.synced => colors.sync.text,
+    };
+    final indicatorColor = switch (status.kind) {
+      _SidebarSyncStatusKind.failed => colors.sync.lightError,
+      _ => colors.sync.lightSuccess,
+    };
+
+    return SizedBox(
+      height: _height,
+      child: Semantics(
+        label: status.semanticsLabel,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: _indicatorLeft,
+              top: (_height - _indicatorHeight) / 2,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: indicatorColor,
+                  borderRadius: const BorderRadius.horizontal(
+                    right: Radius.circular(AppRadii.full),
+                  ),
+                ),
+                child: const SizedBox(
+                  key: ValueKey('sidebar_sync_indicator'),
+                  width: _indicatorWidth,
+                  height: _indicatorHeight,
+                ),
+              ),
+            ),
+            Positioned(
+              left: _textLeft,
+              right: AppSpacing.xxs,
+              top: 0,
+              bottom: 0,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  status.label,
+                  key: const ValueKey('sidebar_sync_text'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelLarge.copyWith(color: textColor),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _SidebarSyncStatusKind { syncing, failed, synced }
+
+class _SidebarSyncStatusData {
+  const _SidebarSyncStatusData({
+    required this.kind,
+    required this.label,
+    required this.semanticsLabel,
+  });
+
+  final _SidebarSyncStatusKind kind;
+  final String label;
+  final String semanticsLabel;
+
+  factory _SidebarSyncStatusData.from(SyncState sync) {
+    final failure = sync.failure;
+    if (failure != null) {
+      final reason = _syncFailureReason(failure.kind);
+      return _SidebarSyncStatusData(
+        kind: _SidebarSyncStatusKind.failed,
+        label: 'Syncing failed. $reason...',
+        semanticsLabel: 'Syncing failed. $reason',
+      );
+    }
+
+    final complete =
+        !sync.isSyncing &&
+        (sync.percentage >= 1.0 ||
+            (sync.chainTipHeight > 0 &&
+                sync.scannedHeight >= sync.chainTipHeight));
+    if (!complete && (sync.isSyncing || sync.isBackgroundMode)) {
+      final pct = formatSidebarSyncPercentage(sync.displayPercentage);
+      return _SidebarSyncStatusData(
+        kind: _SidebarSyncStatusKind.syncing,
+        label: '$pct% Syncing...',
+        semanticsLabel: 'Syncing $pct percent',
+      );
+    }
+
+    return const _SidebarSyncStatusData(
+      kind: _SidebarSyncStatusKind.synced,
+      label: 'Vizor is synced',
+      semanticsLabel: 'Vizor is synced',
+    );
+  }
+}
+
+String _syncFailureReason(SyncFailureKind kind) {
+  return switch (kind) {
+    SyncFailureKind.network => 'Network error',
+    SyncFailureKind.endpoint => 'Endpoint error',
+    SyncFailureKind.databaseBusy => 'Wallet data busy',
+    SyncFailureKind.databaseFatal => 'Wallet data error',
+    SyncFailureKind.chainRecovery => 'Chain recovery',
+    SyncFailureKind.parseFatal => 'Data error',
+    SyncFailureKind.unknown => 'Unknown error',
+  };
+}
+
+@visibleForTesting
+String formatSidebarSyncPercentage(double progress) {
+  final pct = (progress.clamp(0.0, 1.0) * 100).toDouble();
+  return pct.clamp(0.0, 99.0).toStringAsFixed(0);
 }

@@ -1415,7 +1415,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         hasBalanceData: hasBalanceData,
         hasRecentTransactionsData: hasRecentTransactionsData,
         isSyncing: event.isSyncing && !event.isComplete,
-        isBackgroundMode: event.isBackground || _bgDelegate.isActive,
+        isBackgroundMode:
+            (!event.isComplete && event.isBackground) || _bgDelegate.isActive,
         percentage: actualPercentage,
         displayPercentage: displayPercentage,
         scannedHeight: event.scannedHeight,
