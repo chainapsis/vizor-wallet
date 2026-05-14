@@ -86,7 +86,7 @@ impl VotingDb {
     /// Runs migrations automatically.
     /// Call `set_wallet_id` before performing any round operations.
     pub fn open(path: &str) -> Result<Self, VotingError> {
-        let conn = if path == ":memory:" {
+        let mut conn = if path == ":memory:" {
             Connection::open_in_memory()
         } else {
             Connection::open(path)
@@ -100,7 +100,7 @@ impl VotingDb {
                 message: format!("failed to set pragmas: {}", e),
             })?;
 
-        migrations::migrate(&conn)?;
+        migrations::migrate(&mut conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -161,7 +161,7 @@ mod tests {
         let version: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
     }
 
     #[test]
