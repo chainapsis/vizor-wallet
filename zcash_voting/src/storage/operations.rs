@@ -2004,6 +2004,73 @@ mod tests {
     }
 
     #[test]
+    fn test_recovery_stores_require_existing_rows() {
+        fn assert_invalid_input(err: VotingError, expected: &str) {
+            assert!(matches!(err, VotingError::InvalidInput { .. }), "{err}");
+            assert!(err.to_string().contains(expected), "{err}");
+        }
+
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+
+        assert_invalid_input(
+            db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx")
+                .expect_err("missing bundle must fail"),
+            "no bundle found",
+        );
+
+        db.setup_bundles(ROUND_ID, &[identity_test_note()]).unwrap();
+        db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx")
+            .unwrap();
+        assert_eq!(
+            db.get_delegation_tx_hash(ROUND_ID, 0).unwrap(),
+            Some("delegation-tx".to_string())
+        );
+        assert_invalid_input(
+            db.store_delegation_tx_hash(ROUND_ID, 1, "delegation-tx")
+                .expect_err("missing bundle index must fail"),
+            "no bundle found",
+        );
+
+        assert_invalid_input(
+            db.store_vote_tx_hash(ROUND_ID, 0, 1, "vote-tx")
+                .expect_err("missing vote row must fail"),
+            "no vote found",
+        );
+        assert_invalid_input(
+            db.store_commitment_bundle(ROUND_ID, 0, 1, "{}", 42)
+                .expect_err("missing vote row must fail"),
+            "no vote found",
+        );
+
+        db.insert_vote_fixture(ROUND_ID, 0, 1, 0, &[0xAA; 32])
+            .unwrap();
+        db.store_vote_tx_hash(ROUND_ID, 0, 1, "vote-tx").unwrap();
+        assert_eq!(
+            db.get_vote_tx_hash(ROUND_ID, 0, 1).unwrap(),
+            Some("vote-tx".to_string())
+        );
+
+        db.store_commitment_bundle(ROUND_ID, 0, 1, "{\"ok\":true}", 42)
+            .unwrap();
+        assert_eq!(
+            db.get_commitment_bundle(ROUND_ID, 0, 1).unwrap(),
+            Some(("{\"ok\":true}".to_string(), 42))
+        );
+
+        assert_invalid_input(
+            db.store_vote_tx_hash(ROUND_ID, 0, 2, "vote-tx")
+                .expect_err("missing proposal row must fail"),
+            "no vote found",
+        );
+        assert_invalid_input(
+            db.store_commitment_bundle(ROUND_ID, 0, 2, "{}", 42)
+                .expect_err("missing proposal row must fail"),
+            "no vote found",
+        );
+    }
+
+    #[test]
     fn test_insert_vote_fixture() {
         let db = test_db();
         db.init_round(&test_params(), None).unwrap();
