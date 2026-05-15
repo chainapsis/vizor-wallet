@@ -364,12 +364,17 @@ class _PreviewSwapSessionStore implements SwapSessionStore {
   SwapDraftSnapshot? _draft;
 
   @override
-  Future<List<SwapPrototypeIntent>> loadIntents() async {
+  Future<List<SwapPrototypeIntent>> loadIntents({
+    required String accountUuid,
+  }) async {
     return _intents;
   }
 
   @override
-  Future<void> saveIntents(List<SwapPrototypeIntent> intents) async {
+  Future<void> saveIntents({
+    required String accountUuid,
+    required List<SwapPrototypeIntent> intents,
+  }) async {
     _intents = [...intents];
   }
 

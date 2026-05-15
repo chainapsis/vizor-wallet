@@ -45,6 +45,7 @@ Future<void> main(List<String> args) async {
           direction: options.direction,
           externalAsset: asset,
           sellAmount: options.amount,
+          sellAmountText: options.amountText,
           destination: options.destination!,
           refundAddress: options.refund!,
           dryRun: options.dryRun,
@@ -107,6 +108,7 @@ class OneClickProbeOptions {
     required this.asset,
     required this.assetId,
     required this.amount,
+    required this.amountText,
     required this.destination,
     required this.refund,
     required this.statusDeposit,
@@ -126,7 +128,8 @@ class OneClickProbeOptions {
       _option(args, '--direction') ?? 'zec-to-external',
     );
     final asset = _parseAsset(_option(args, '--asset') ?? 'USDC');
-    final amount = double.tryParse(_option(args, '--amount') ?? '0');
+    final amountText = _option(args, '--amount') ?? '0';
+    final amount = double.tryParse(amountText);
     final destination = _option(args, '--destination');
     final refund = _option(args, '--refund');
     final env = Platform.environment;
@@ -184,6 +187,7 @@ class OneClickProbeOptions {
       asset: asset,
       assetId: assetId,
       amount: amount ?? 0,
+      amountText: amountText,
       destination: destination,
       refund: refund,
       statusDeposit: statusDeposit,
@@ -203,6 +207,7 @@ class OneClickProbeOptions {
   final SwapAsset asset;
   final String? assetId;
   final double amount;
+  final String amountText;
   final String? destination;
   final String? refund;
   final String? statusDeposit;

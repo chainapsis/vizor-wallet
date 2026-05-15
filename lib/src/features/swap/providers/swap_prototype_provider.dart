@@ -65,8 +65,31 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
   var _quoteGeneration = 0;
   var _statusRefreshInFlight = false;
 
+  String? get _activeAccountUuidOrNull =>
+      ref.read(accountProvider).value?.activeAccountUuid;
+
+  String? _accountUuidForIntent(SwapPrototypeIntent intent) {
+    final activeAccountUuid = _activeAccountUuidOrNull;
+    if (activeAccountUuid == null || intent.accountUuid != activeAccountUuid) {
+      return null;
+    }
+    return activeAccountUuid;
+  }
+
   @override
   SwapPrototypeState build() {
+    ref.listen<String?>(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+      (previous, next) {
+        if (previous == next) return;
+        if (previous != null) {
+          unawaited(_persistCurrentIntents(accountUuid: previous));
+        }
+        unawaited(
+          _restorePersistedIntents(accountUuid: next, replaceExisting: true),
+        );
+      },
+    );
     final pollInterval = ref.watch(swapStatusPollIntervalProvider);
     final pollTimer = Timer.periodic(pollInterval, (_) {
       unawaited(refreshOpenIntentStatuses());
@@ -84,7 +107,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     ref.onDispose(priceRefreshTimer.cancel);
     unawaited(_restorePersistedDraft());
     unawaited(_loadSupportedExternalAssets());
-    unawaited(_restorePersistedIntents());
+    unawaited(_restorePersistedIntents(accountUuid: _activeAccountUuidOrNull));
     final initialIntents = ref.watch(swapInitialIntentsProvider);
     final initialRequests = ref.watch(swapInitialExternalRequestsProvider);
     return const SwapPrototypeState(
@@ -309,6 +332,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
           .quote(
             addressPlan.toQuoteRequest(
               sellAmount: amount,
+              sellAmountText: state.amountText.trim(),
               slippageBps: state.slippageBps,
             ),
           );
@@ -374,15 +398,15 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       'liveFunds=${ref.read(swapLiveFundsEnabledProvider)}',
     );
     state = state.copyWith(startSubmitting: true, clearStatusError: true);
+    if (accountUuid == null) {
+      log('Swap: start blocked; no active account');
+      state = state.copyWith(
+        startSubmitting: false,
+        statusError: 'No active account',
+      );
+      return false;
+    }
     if (quote.direction.sendsZec && ref.read(swapLiveFundsEnabledProvider)) {
-      if (accountUuid == null) {
-        log('Swap: start blocked; no active account for live ZEC deposit');
-        state = state.copyWith(
-          startSubmitting: false,
-          statusError: 'No active account',
-        );
-        return false;
-      }
       try {
         await ref
             .read(swapDepositSenderProvider)
@@ -411,14 +435,12 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         'Swap: start failed quote=${_shortSwapValue(quote.providerQuoteId)} '
         'error=$e',
       );
-      if (accountUuid != null) {
-        unawaited(
-          _releaseAddressReservation(
-            accountUuid: accountUuid,
-            addressPlan: addressPlan,
-          ),
-        );
-      }
+      unawaited(
+        _releaseAddressReservation(
+          accountUuid: accountUuid,
+          addressPlan: addressPlan,
+        ),
+      );
       state = state.copyWith(
         startSubmitting: false,
         quoteLoading: false,
@@ -426,7 +448,12 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       );
       return false;
     }
-    final intent = _intentFromSnapshot(snapshot, quote, addressPlan);
+    final intent = _intentFromSnapshot(
+      snapshot,
+      quote,
+      addressPlan,
+      accountUuid,
+    );
     log(
       'Swap: start saved intent=${_shortSwapValue(intent.id)} '
       'status=${intent.status.name}',
@@ -457,11 +484,6 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
           statusError:
               'Live ZEC deposit is disabled in this build. The quote is saved, but no wallet transaction was signed or broadcast.',
         );
-        return true;
-      }
-      if (accountUuid == null) {
-        log('Swap: live ZEC deposit skipped; no active account');
-        state = state.copyWith(statusError: 'No active account');
         return true;
       }
       await _sendAndSubmitZecDeposit(
@@ -766,7 +788,24 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         'intent=${_shortSwapValue(intentId)}',
       );
       final intent = _intentById(intentId);
-      if (intent == null) return;
+      if (intent == null) {
+        state = state.copyWith(
+          depositTxHashText: txHash,
+          depositSubmitting: false,
+          statusError:
+              'ZEC deposit was broadcast, but the saved swap intent was not found. Copy the transaction hash before leaving this screen.',
+        );
+        return;
+      }
+      final checkpointed = intent.copyWith(
+        depositTxHash: txHash,
+        receipt: _receiptWithDepositTx(intent.receipt, txHash),
+      );
+      state = state.copyWith(
+        depositTxHashText: txHash,
+        intents: _replaceIntent(state.intents, intentId, checkpointed),
+      );
+      await _persistCurrentIntents();
       final snapshot = await ref
           .read(swapIntentProvider)
           .submitDepositTransaction(
@@ -774,9 +813,12 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
             txHash: txHash,
             depositMemo: intent.depositMemo,
           );
-      final updated = _updateIntentFromSnapshot(intent, snapshot).copyWith(
+      final updated = _updateIntentFromSnapshot(
+        checkpointed,
+        snapshot,
+      ).copyWith(
         depositTxHash: txHash,
-        receipt: _receiptWithDepositTx(intent.receipt, txHash),
+        receipt: _receiptWithDepositTx(checkpointed.receipt, txHash),
       );
       state = state.copyWith(
         depositTxHashText: txHash,
@@ -842,7 +884,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
 
   Future<void> _releaseIntentReservation(SwapPrototypeIntent intent) async {
     if (intent.depositTxHash != null || intent.shieldTxHash != null) return;
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final accountUuid = _accountUuidForIntent(intent);
     final address = _walletReservationAddressForIntent(intent);
     if (accountUuid == null || address == null || address.trim().isEmpty) {
       return;
@@ -860,17 +902,37 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     };
   }
 
-  Future<void> _restorePersistedIntents() async {
+  Future<void> _restorePersistedIntents({
+    required String? accountUuid,
+    bool replaceExisting = false,
+  }) async {
+    if (accountUuid == null) {
+      if (replaceExisting) {
+        state = state.copyWith(
+          intents: const [],
+          depositTxHashText: '',
+          clearSelectedIntent: true,
+          clearStatusError: true,
+        );
+      }
+      return;
+    }
     try {
-      final persisted = await ref.read(swapSessionStoreProvider).loadIntents();
-      if (persisted.isEmpty) return;
+      final persisted = await ref
+          .read(swapSessionStoreProvider)
+          .loadIntents(accountUuid: accountUuid);
+      if (persisted.isEmpty && !replaceExisting) return;
       state = state.copyWith(
         intents: persisted,
-        selectedIntentId: persisted.first.id,
-        depositTxHashText: persisted.first.depositTxHash ?? '',
+        selectedIntentId: persisted.isEmpty ? null : persisted.first.id,
+        depositTxHashText:
+            persisted.isEmpty ? '' : persisted.first.depositTxHash ?? '',
+        clearSelectedIntent: persisted.isEmpty,
         clearStatusError: true,
       );
-      unawaited(refreshOpenIntentStatuses());
+      if (persisted.isNotEmpty) {
+        unawaited(refreshOpenIntentStatuses());
+      }
     } catch (_) {}
   }
 
@@ -984,12 +1046,17 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     }
   }
 
-  Future<void> _persistCurrentIntents() async {
+  Future<void> _persistCurrentIntents({String? accountUuid}) async {
+    final activeAccountUuid = accountUuid ?? _activeAccountUuidOrNull;
+    if (activeAccountUuid == null) return;
     final intents = [
       for (final intent in state.intents)
-        if (_isPersistableIntent(intent)) intent,
+        if (_isPersistableIntent(intent, accountUuid: activeAccountUuid))
+          intent.copyWith(accountUuid: activeAccountUuid),
     ];
-    await ref.read(swapSessionStoreProvider).saveIntents(intents);
+    await ref
+        .read(swapSessionStoreProvider)
+        .saveIntents(accountUuid: activeAccountUuid, intents: intents);
   }
 
   Future<void> _persistDraft(SwapDraftSnapshot draft) async {
@@ -1006,7 +1073,12 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     );
   }
 
-  bool _isPersistableIntent(SwapPrototypeIntent intent) {
+  bool _isPersistableIntent(SwapPrototypeIntent intent, {String? accountUuid}) {
+    final expectedAccountUuid = accountUuid ?? _activeAccountUuidOrNull;
+    if (expectedAccountUuid == null ||
+        intent.accountUuid != expectedAccountUuid) {
+      return false;
+    }
     return intent.direction != null &&
         intent.depositAddress != null &&
         (intent.providerQuoteId != null ||
@@ -1048,6 +1120,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     SwapIntentSnapshot snapshot,
     SwapQuote quote,
     SwapAddressPlan addressPlan,
+    String accountUuid,
   ) {
     final sendsZec = quote.direction.sendsZec;
     final externalSymbol = quote.externalAsset.symbol;
@@ -1128,7 +1201,6 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         ),
       ],
       receipt: [
-        SwapPrototypeField(label: 'Swap id', value: snapshot.id),
         SwapPrototypeField(label: 'Pair', value: quote.pairText),
         if (quote.providerQuoteId != null)
           SwapPrototypeField(
@@ -1148,10 +1220,6 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
           label: 'Refund to',
           value: addressPlan.oneClickRefundTo,
         ),
-        const SwapPrototypeField(
-          label: 'Shared fields',
-          value: 'txid + status only',
-        ),
       ],
       direction: quote.direction,
       externalAsset: quote.externalAsset,
@@ -1163,6 +1231,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       providerStatusRaw: snapshot.providerStatusRaw,
       oneClickRecipient: addressPlan.oneClickRecipient,
       oneClickRefundTo: addressPlan.oneClickRefundTo,
+      accountUuid: accountUuid,
     );
   }
 
@@ -1229,7 +1298,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
   ) async {
     if (!_needsWalletShielding(intent)) return intent;
 
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final accountUuid = _accountUuidForIntent(intent);
     final transparentAddress = intent.oneClickRecipient;
     if (accountUuid == null ||
         transparentAddress == null ||
@@ -1264,7 +1333,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         'tx=${_shortSwapValue(shieldTxHash)}',
       );
       const nextAction = 'Waiting for shield transaction confirmation.';
-      return intent.copyWith(
+      final updated = intent.copyWith(
         status: SwapIntentStatus.shieldingConfirming,
         nextAction: nextAction,
         steps: _stepsForStatus(
@@ -1274,6 +1343,8 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         receipt: _receiptWithShieldTx(intent.receipt, shieldTxHash),
         shieldTxHash: shieldTxHash,
       );
+      await _persistShieldSubmissionCheckpoint(updated);
+      return updated;
     } on SwapShieldingNotReadyException {
       log(
         'Swap: shielding not ready intent=${_shortSwapValue(intent.id)} '
@@ -1294,12 +1365,30 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         intent.status == SwapIntentStatus.shieldingPending;
   }
 
+  Future<void> _persistShieldSubmissionCheckpoint(
+    SwapPrototypeIntent updated,
+  ) async {
+    if (_intentById(updated.id) == null) return;
+    state = state.copyWith(
+      intents: _replaceIntent(state.intents, updated.id, updated),
+      clearStatusError: true,
+    );
+    try {
+      await _persistCurrentIntents();
+    } catch (e) {
+      log(
+        'Swap: shield checkpoint persist failed '
+        'intent=${_shortSwapValue(updated.id)} error=$e',
+      );
+    }
+  }
+
   Future<SwapPrototypeIntent> _tryTrackShieldTransaction(
     SwapPrototypeIntent intent,
   ) async {
     if (intent.status != SwapIntentStatus.shieldingConfirming) return intent;
 
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final accountUuid = _accountUuidForIntent(intent);
     final txHash = intent.shieldTxHash;
     if (accountUuid == null || txHash == null || txHash.trim().isEmpty) {
       return _shieldingFailedIntent(intent);

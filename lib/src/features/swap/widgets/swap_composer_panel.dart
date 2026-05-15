@@ -2,11 +2,13 @@ import 'package:flutter/material.dart' show InputDecoration, TextField, Tooltip;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../models/swap_prototype_models.dart';
+import 'swap_amount_text.dart';
 import 'swap_asset_icon.dart';
 
 class SwapComposerPanel extends StatefulWidget {
@@ -20,6 +22,7 @@ class SwapComposerPanel extends StatefulWidget {
     required this.onSlippageChanged,
     required this.onUseMaxZecAmount,
     required this.zecAvailableText,
+    required this.zecAvailableZatoshi,
     super.key,
   });
 
@@ -32,6 +35,7 @@ class SwapComposerPanel extends StatefulWidget {
   final ValueChanged<int> onSlippageChanged;
   final VoidCallback onUseMaxZecAmount;
   final String zecAvailableText;
+  final BigInt zecAvailableZatoshi;
 
   @override
   State<SwapComposerPanel> createState() => _SwapComposerPanelState();
@@ -138,9 +142,13 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
     final colors = context.colors;
     final state = widget.state;
     final quote = state.quote;
-    final quoteStatus = _ComposerQuoteStatus.fromState(state);
     final sendsZec = state.direction.sendsZec;
     final targetDirection = state.direction.toggled;
+    final rateText = _rateTextForState(state);
+    final zecAmountOverAvailable = _zecAmountOverAvailable(
+      state,
+      widget.zecAvailableZatoshi,
+    );
 
     final ticket = Container(
       key: const ValueKey('swap_compact_ticket'),
@@ -155,12 +163,13 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _SwapTicketHeader(
-            quoteStatus: quoteStatus,
+            rateText: rateText,
+            quoteLoading: state.quoteLoading,
             slippageBps: state.slippageBps,
             settingsOpen: _settingsOpen,
             onSettingsTap: _toggleSettings,
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.xxs),
           _SwapAmountTile(
             label: 'You pay',
             helper: sendsZec ? 'Shielded ZEC' : 'External source',
@@ -181,16 +190,21 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                     availableText: widget.zecAvailableText,
                     loading: state.maxAmountLoading,
                     errorText: state.maxAmountError,
+                    balanceExceeded: zecAmountOverAvailable,
                     onTap: widget.onUseMaxZecAmount,
                   )
-                : _InlineAddressField(
-                    label: '${state.externalAsset.symbol} refund',
-                    hint: 'Refund address on ${state.externalAsset.chainLabel}',
-                    badge: 'Refund only',
-                    controller: _destinationController,
-                    onChanged: widget.onDestinationChanged,
-                  ),
+                : null,
           ),
+          if (!sendsZec) ...[
+            const SizedBox(height: 3),
+            _InlineAddressField(
+              label: '${state.externalAsset.symbol} refund',
+              hint: 'Refund address on ${state.externalAsset.chainLabel}',
+              badge: 'Refund only',
+              controller: _destinationController,
+              onChanged: widget.onDestinationChanged,
+            ),
+          ],
           const SizedBox(height: AppSpacing.xxs),
           _SwapDirectionDivider(
             key: ValueKey('swap_direction_${targetDirection.name}'),
@@ -201,7 +215,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
             label: 'You receive',
             helper: quote == null
                 ? 'Estimated receive'
-                : 'Minimum ${quote.minimumReceiveText}',
+                : 'Minimum ${compactSwapAmountText(quote.minimumReceiveText)}',
             tone: _SwapAmountTileTone.output,
             amount: _ReceiveAmountText(
               quote: quote,
@@ -214,19 +228,16 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                     onTap: _toggleAssetPicker,
                   )
                 : const _TokenPill(asset: SwapAsset.zec),
-            footer: sendsZec
-                ? _InlineAddressField(
-                    label: 'Recipient',
-                    hint: 'Add ${state.externalAsset.chainLabel} recipient',
-                    badge: state.externalAsset.chainLabel,
-                    controller: _destinationController,
-                    onChanged: widget.onDestinationChanged,
-                  )
-                : null,
           ),
-          if (!state.quoteLoading && quote != null) ...[
-            const SizedBox(height: AppSpacing.xs),
-            _QuoteDetailsStrip(quote: quote, quoteStatus: quoteStatus),
+          if (sendsZec) ...[
+            const SizedBox(height: 3),
+            _InlineAddressField(
+              label: 'Recipient',
+              hint: 'Add ${state.externalAsset.chainLabel} recipient',
+              badge: state.externalAsset.chainLabel,
+              controller: _destinationController,
+              onChanged: widget.onDestinationChanged,
+            ),
           ],
           if (state.quoteError != null) ...[
             const SizedBox(height: AppSpacing.xs),
@@ -273,101 +284,17 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
   }
 }
 
-enum _ComposerQuoteTone { idle, estimate, loading, success, warning, error }
-
-class _ComposerQuoteStatus {
-  const _ComposerQuoteStatus({
-    required this.badgeLabel,
-    required this.title,
-    required this.detail,
-    required this.iconName,
-    required this.tone,
-  });
-
-  factory _ComposerQuoteStatus.fromState(SwapPrototypeState state) {
-    if (state.quoteLoading) {
-      return const _ComposerQuoteStatus(
-        badgeLabel: 'Checking',
-        title: 'Getting live quote',
-        detail:
-            'Fetching a one-time deposit address and minimum receive from NEAR Intents.',
-        iconName: AppIcons.loader,
-        tone: _ComposerQuoteTone.loading,
-      );
-    }
-
-    if (state.quoteError != null) {
-      return const _ComposerQuoteStatus(
-        badgeLabel: 'Issue',
-        title: 'Route issue',
-        detail:
-            'The swap service did not return a live route. The local draft remains editable.',
-        iconName: AppIcons.warning,
-        tone: _ComposerQuoteTone.error,
-      );
-    }
-
-    final reviewQuote = state.reviewQuote;
-    if (reviewQuote != null && state.quoteExpired) {
-      return const _ComposerQuoteStatus(
-        badgeLabel: 'Expired',
-        title: 'Review again required',
-        detail:
-            'The locked quote expired; start is disabled until a fresh route is loaded.',
-        iconName: AppIcons.time,
-        tone: _ComposerQuoteTone.warning,
-      );
-    }
-
-    if (reviewQuote != null) {
-      return _ComposerQuoteStatus(
-        badgeLabel: 'Locked',
-        title: 'Live quote locked',
-        detail: 'Minimum ${reviewQuote.minimumReceiveText}.',
-        iconName: AppIcons.checkCircle,
-        tone: _ComposerQuoteTone.success,
-      );
-    }
-
-    if (state.sellAmount != null && state.draftAddressPlan != null) {
-      return const _ComposerQuoteStatus(
-        badgeLabel: 'Estimate',
-        title: 'Estimated rate',
-        detail:
-            'Review fetches the live deposit address and minimum receive before anything moves.',
-        iconName: AppIcons.crystalBall,
-        tone: _ComposerQuoteTone.estimate,
-      );
-    }
-
-    final missingDestination = state.sellAmount != null;
-    return _ComposerQuoteStatus(
-      badgeLabel: 'Draft',
-      title: missingDestination ? 'Add destination details' : 'Enter a trade',
-      detail: state.direction.sendsZec
-          ? 'Choose an amount and external destination, then review the live quote.'
-          : 'Choose an external amount and refund address; ZEC is received by this wallet.',
-      iconName: AppIcons.link,
-      tone: _ComposerQuoteTone.idle,
-    );
-  }
-
-  final String badgeLabel;
-  final String title;
-  final String detail;
-  final String iconName;
-  final _ComposerQuoteTone tone;
-}
-
 class _SwapTicketHeader extends StatelessWidget {
   const _SwapTicketHeader({
-    required this.quoteStatus,
+    required this.rateText,
+    required this.quoteLoading,
     required this.slippageBps,
     required this.settingsOpen,
     required this.onSettingsTap,
   });
 
-  final _ComposerQuoteStatus quoteStatus;
+  final String rateText;
+  final bool quoteLoading;
   final int slippageBps;
   final bool settingsOpen;
   final VoidCallback onSettingsTap;
@@ -379,20 +306,19 @@ class _SwapTicketHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Flexible(
-                child: Text(
-                  'Powered by NEAR Intents',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.codeSmall.copyWith(
-                    color: colors.text.secondary,
-                  ),
+              Text(
+                'Powered by NEAR Intents',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.codeSmall.copyWith(
+                  color: colors.text.secondary,
                 ),
               ),
-              const SizedBox(width: AppSpacing.xs),
-              _QuoteReadinessBadge(status: quoteStatus),
+              const SizedBox(height: 2),
+              _SwapRateInline(rateText: rateText, quoteLoading: quoteLoading),
             ],
           ),
         ),
@@ -405,6 +331,42 @@ class _SwapTicketHeader extends StatelessWidget {
           selected: settingsOpen,
           onTap: onSettingsTap,
         ),
+      ],
+    );
+  }
+}
+
+class _SwapRateInline extends StatelessWidget {
+  const _SwapRateInline({required this.rateText, required this.quoteLoading});
+
+  final String rateText;
+  final bool quoteLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      key: const ValueKey('swap_rate_line'),
+      children: [
+        Text(
+          'Rate',
+          style: AppTypography.labelSmall.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xxs),
+        Expanded(
+          child: Text(
+            rateText,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.codeSmall.copyWith(color: colors.text.primary),
+          ),
+        ),
+        if (quoteLoading) ...[
+          const SizedBox(width: AppSpacing.xxs),
+          AppIcon(AppIcons.loader, size: 12, color: colors.icon.muted),
+        ],
       ],
     );
   }
@@ -434,7 +396,7 @@ class _SwapAmountTile extends StatelessWidget {
     final colors = context.colors;
     final isInput = tone == _SwapAmountTileTone.input;
     return Container(
-      constraints: const BoxConstraints(minHeight: 96),
+      constraints: const BoxConstraints(minHeight: 92),
       padding: const EdgeInsets.all(AppSpacing.xs),
       decoration: BoxDecoration(
         color: isInput
@@ -464,7 +426,7 @@ class _SwapAmountTile extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           amount,
-          const SizedBox(height: 2),
+          const SizedBox(height: AppSpacing.xxs),
           Text(
             helper,
             maxLines: 1,
@@ -474,7 +436,7 @@ class _SwapAmountTile extends StatelessWidget {
             ),
           ),
           if (footer != null) ...[
-            const SizedBox(height: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.xxs),
             footer!,
           ],
         ],
@@ -519,23 +481,28 @@ class _SwapMaxAmountFooter extends StatelessWidget {
     required this.availableText,
     required this.loading,
     required this.errorText,
+    required this.balanceExceeded,
     required this.onTap,
   });
 
   final String availableText;
   final bool loading;
   final String? errorText;
+  final bool balanceExceeded;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final hasError = errorText != null;
+    final hasError = errorText != null || balanceExceeded;
     return Row(
       children: [
         Expanded(
           child: Text(
-            hasError ? errorText! : 'Available $availableText',
+            errorText ??
+                (balanceExceeded
+                    ? 'Exceeds available $availableText'
+                    : 'Available $availableText'),
             key: const ValueKey('swap_available_balance'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -597,7 +564,9 @@ class _ReceiveAmountText extends StatelessWidget {
     final emptyAmount = receiveSymbol == 'ZEC' ? '0.0000' : '0.00';
     final value = quote == null
         ? emptyAmount
-        : _stripTrailingSymbol(quote!.receiveEstimateText, receiveSymbol);
+        : compactSwapAmountText(
+            _stripTrailingSymbol(quote!.receiveEstimateText, receiveSymbol),
+          );
     return Text(
       value,
       maxLines: 1,
@@ -614,6 +583,30 @@ class _ReceiveAmountText extends StatelessWidget {
 
 String _stripTrailingSymbol(String value, String symbol) {
   return value.replaceFirst(RegExp(r'\s+' + RegExp.escape(symbol) + r'$'), '');
+}
+
+String _rateTextForState(SwapPrototypeState state) {
+  final quote = state.quote;
+  if (quote != null) return quote.rateText;
+
+  final externalPerZec =
+      state.indicativeExternalPerZec[state.externalAsset] ??
+      state.externalAsset.fallbackExternalPerZec;
+  if (externalPerZec <= 0) return '--';
+  if (state.direction.sendsZec) {
+    return '1 ZEC = ${externalPerZec.toStringAsFixed(2)} ${state.externalAsset.symbol}';
+  }
+  return '1 ${state.externalAsset.symbol} = ${(1 / externalPerZec).toStringAsFixed(4)} ZEC';
+}
+
+bool _zecAmountOverAvailable(
+  SwapPrototypeState state,
+  BigInt availableZatoshi,
+) {
+  if (!state.direction.sendsZec) return false;
+  final amount = parseZecAmount(state.amountText);
+  if (amount == null || amount <= BigInt.zero) return false;
+  return amount >= availableZatoshi;
 }
 
 class _SwapDirectionDivider extends StatelessWidget {
@@ -659,7 +652,7 @@ class _SwapDirectionDivider extends StatelessWidget {
   }
 }
 
-class _InlineAddressField extends StatelessWidget {
+class _InlineAddressField extends StatefulWidget {
   const _InlineAddressField({
     required this.label,
     required this.hint,
@@ -675,60 +668,170 @@ class _InlineAddressField extends StatelessWidget {
   final ValueChanged<String> onChanged;
 
   @override
+  State<_InlineAddressField> createState() => _InlineAddressFieldState();
+}
+
+class _InlineAddressFieldState extends State<_InlineAddressField> {
+  late final FocusNode _focusNode;
+  late bool _hasText;
+  bool _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _hasText = widget.controller.text.trim().isNotEmpty;
+    _focusNode.addListener(_handleFocusChanged);
+    widget.controller.addListener(_handleTextChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _InlineAddressField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_handleTextChanged);
+      widget.controller.addListener(_handleTextChanged);
+      _hasText = widget.controller.text.trim().isNotEmpty;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleTextChanged);
+    _focusNode.removeListener(_handleFocusChanged);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (_focused == _focusNode.hasFocus) return;
+    setState(() => _focused = _focusNode.hasFocus);
+  }
+
+  void _handleTextChanged() {
+    final hasText = widget.controller.text.trim().isNotEmpty;
+    if (_hasText == hasText) return;
+    setState(() => _hasText = hasText);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final emphasized = _focused || _hasText;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        final showBadge = !maxWidth.isFinite || maxWidth >= 330;
+
+        return AnimatedContainer(
+          key: const ValueKey('swap_address_summary'),
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xs,
+            vertical: 6,
+          ),
+          decoration: BoxDecoration(
+            color: colors.background.base,
+            border: Border.all(
+              color: emphasized ? colors.border.regular : colors.border.subtle,
+            ),
+            borderRadius: BorderRadius.circular(AppRadii.small),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        AppIcon(
+                          AppIcons.link,
+                          size: 12,
+                          color: emphasized
+                              ? colors.icon.accent
+                              : colors.icon.muted,
+                        ),
+                        const SizedBox(width: AppSpacing.xxs),
+                        Expanded(
+                          child: Text(
+                            widget.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelSmall.copyWith(
+                              color: colors.text.accent,
+                            ),
+                          ),
+                        ),
+                        if (showBadge) ...[
+                          const SizedBox(width: AppSpacing.xxs),
+                          _AddressRoleBadge(
+                            label: widget.badge,
+                            emphasized: emphasized,
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 1),
+                    TextField(
+                      key: const ValueKey('swap_destination_field'),
+                      focusNode: _focusNode,
+                      controller: widget.controller,
+                      onChanged: widget.onChanged,
+                      style: AppTypography.codeSmall.copyWith(
+                        color: colors.text.primary,
+                      ),
+                      cursorColor: colors.text.accent,
+                      decoration: InputDecoration.collapsed(
+                        hintText: widget.hint,
+                        hintStyle: AppTypography.codeSmall.copyWith(
+                          color: colors.text.muted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AddressRoleBadge extends StatelessWidget {
+  const _AddressRoleBadge({required this.label, required this.emphasized});
+
+  final String label;
+  final bool emphasized;
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      key: const ValueKey('swap_address_summary'),
+      constraints: const BoxConstraints(maxWidth: 128),
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.xs,
-        vertical: AppSpacing.xxs,
+        vertical: 2,
       ),
-      decoration: _quietBoxDecoration(context),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 104,
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelMedium.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: TextField(
-              key: const ValueKey('swap_destination_field'),
-              controller: controller,
-              onChanged: onChanged,
-              style: AppTypography.codeSmall.copyWith(
-                color: colors.text.primary,
-              ),
-              cursorColor: colors.text.accent,
-              decoration: InputDecoration.collapsed(
-                hintText: hint,
-                hintStyle: AppTypography.codeSmall.copyWith(
-                  color: colors.text.muted,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 112),
-            child: Text(
-              badge,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelSmall.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ),
-        ],
+      decoration: BoxDecoration(
+        color: colors.background.raised,
+        border: Border.all(
+          color: emphasized ? colors.border.regular : colors.border.subtle,
+        ),
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTypography.labelSmall.copyWith(
+          color: emphasized ? colors.text.accent : colors.text.secondary,
+        ),
       ),
     );
   }
@@ -791,8 +894,8 @@ class _SwapSettingsPopoverState extends State<_SwapSettingsPopover> {
     final colors = context.colors;
     return Container(
       key: const ValueKey('swap_settings_popover'),
-      width: 280,
-      padding: const EdgeInsets.all(AppSpacing.xs),
+      width: 320,
+      padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
         color: colors.background.overlay,
         border: Border.all(color: colors.border.regular),
@@ -812,92 +915,139 @@ class _SwapSettingsPopoverState extends State<_SwapSettingsPopover> {
               color: colors.text.secondary,
             ),
           ),
-          const SizedBox(height: AppSpacing.xs),
-          Wrap(
-            spacing: AppSpacing.xxs,
-            runSpacing: AppSpacing.xxs,
+          const SizedBox(height: AppSpacing.sm),
+          Row(
             children: [
-              for (final preset in swapSlippagePresetBps)
-                _SlippagePresetButton(
-                  bps: preset,
-                  selected: preset == widget.slippageBps,
-                  onTap: () => widget.onSelected(preset),
+              for (var index = 0; index < swapSlippagePresetBps.length; index++)
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left: index == 0 ? 0 : AppSpacing.xxs,
+                    ),
+                    child: _SlippagePresetButton(
+                      bps: swapSlippagePresetBps[index],
+                      selected:
+                          swapSlippagePresetBps[index] == widget.slippageBps,
+                      onTap: () =>
+                          widget.onSelected(swapSlippagePresetBps[index]),
+                    ),
+                  ),
                 ),
             ],
           ),
-          const SizedBox(height: AppSpacing.xs),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Container(
-                  height: 36,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xs,
-                  ),
-                  decoration: _quietBoxDecoration(context),
-                  alignment: Alignment.center,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          key: const ValueKey('swap_slippage_custom_field'),
-                          controller: _customController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          textInputAction: TextInputAction.done,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9.]'),
-                            ),
-                          ],
-                          onChanged: (_) {
-                            if (_errorText == null) return;
-                            setState(() => _errorText = null);
-                          },
-                          onSubmitted: (_) => _applyCustomSlippage(),
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.accent,
-                          ),
-                          cursorColor: colors.text.accent,
-                          decoration: InputDecoration.collapsed(
-                            hintText: 'Custom',
-                            hintStyle: AppTypography.labelLarge.copyWith(
-                              color: colors.text.disabled,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '%',
-                        style: AppTypography.labelLarge.copyWith(
+          const SizedBox(height: AppSpacing.sm),
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.xs),
+            decoration: BoxDecoration(
+              color: colors.background.raised,
+              border: Border.all(color: colors.border.subtle),
+              borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Custom tolerance',
+                        style: AppTypography.labelMedium.copyWith(
                           color: colors.text.secondary,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    Text(
+                      '0.1% - 5%',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.text.muted,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              AppButton(
-                key: const ValueKey('swap_slippage_custom_apply'),
-                onPressed: _applyCustomSlippage,
-                variant: AppButtonVariant.secondary,
-                size: AppButtonSize.small,
-                child: const Text('Apply'),
-              ),
-            ],
-          ),
-          if (_errorText != null) ...[
-            const SizedBox(height: AppSpacing.xxs),
-            Text(
-              _errorText!,
-              style: AppTypography.bodyExtraSmall.copyWith(
-                color: colors.text.destructive,
-              ),
+                const SizedBox(height: AppSpacing.xs),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Container(
+                        height: 44,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xs,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.background.base,
+                          border: Border.all(color: colors.border.regular),
+                          borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                        ),
+                        alignment: Alignment.center,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                key: const ValueKey(
+                                  'swap_slippage_custom_field',
+                                ),
+                                controller: _customController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                textInputAction: TextInputAction.done,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                    RegExp(r'[0-9.]'),
+                                  ),
+                                ],
+                                onChanged: (_) {
+                                  if (_errorText == null) return;
+                                  setState(() => _errorText = null);
+                                },
+                                onSubmitted: (_) => _applyCustomSlippage(),
+                                style: AppTypography.labelLarge.copyWith(
+                                  color: colors.text.accent,
+                                ),
+                                cursorColor: colors.text.accent,
+                                decoration: InputDecoration.collapsed(
+                                  hintText: 'Custom',
+                                  hintStyle: AppTypography.labelLarge.copyWith(
+                                    color: colors.text.disabled,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '%',
+                              style: AppTypography.labelLarge.copyWith(
+                                color: colors.text.secondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    AppButton(
+                      key: const ValueKey('swap_slippage_custom_apply'),
+                      onPressed: _applyCustomSlippage,
+                      variant: AppButtonVariant.primary,
+                      size: AppButtonSize.medium,
+                      minWidth: 96,
+                      child: const Text('Apply'),
+                    ),
+                  ],
+                ),
+                if (_errorText != null) ...[
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    _errorText!,
+                    style: AppTypography.bodyExtraSmall.copyWith(
+                      color: colors.text.destructive,
+                    ),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -921,113 +1071,8 @@ class _SlippagePresetButton extends StatelessWidget {
       key: ValueKey('swap_slippage_${bps}bps'),
       onPressed: onTap,
       variant: selected ? AppButtonVariant.primary : AppButtonVariant.secondary,
-      size: AppButtonSize.small,
+      size: AppButtonSize.medium,
       child: Text(_formatSlippage(bps)),
-    );
-  }
-}
-
-class _QuoteDetailsStrip extends StatelessWidget {
-  const _QuoteDetailsStrip({required this.quoteStatus, required this.quote});
-
-  final _ComposerQuoteStatus quoteStatus;
-  final SwapQuote quote;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const ValueKey('swap_quote_details_strip'),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: AppSpacing.xxs,
-      ),
-      decoration: _quietBoxDecoration(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _QuoteStatusPanel(status: quoteStatus),
-          const SizedBox(height: AppSpacing.xxs),
-          Row(
-            children: [
-              Expanded(
-                child: _QuoteDetailPill(label: 'Rate', value: quote.rateText),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _QuoteDetailPill extends StatelessWidget {
-  const _QuoteDetailPill({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xxs,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: colors.background.base,
-        border: Border.all(color: colors.border.subtle),
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelSmall.copyWith(
-              color: colors.text.secondary,
-            ),
-          ),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.codeSmall.copyWith(
-              color: value == '--' ? colors.text.disabled : colors.text.primary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _QuoteStatusPanel extends StatelessWidget {
-  const _QuoteStatusPanel({required this.status});
-
-  final _ComposerQuoteStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _toneColor(context, status.tone);
-    final iconColor = _toneIconColor(context, status.tone);
-    return Row(
-      key: const ValueKey('swap_quote_status_panel'),
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        AppIcon(status.iconName, size: 16, color: iconColor),
-        const SizedBox(width: AppSpacing.xs),
-        Expanded(
-          child: Text(
-            status.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelLarge.copyWith(color: color),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1139,7 +1184,7 @@ class _TokenPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      constraints: const BoxConstraints(maxWidth: 168),
+      constraints: BoxConstraints(maxWidth: showChevron ? 184 : 168),
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       decoration: BoxDecoration(
@@ -1330,7 +1375,7 @@ class _AssetMenuRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      asset.railLabel,
+                      asset.chainLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelSmall.copyWith(
@@ -1349,31 +1394,6 @@ class _AssetMenuRow extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _QuoteReadinessBadge extends StatelessWidget {
-  const _QuoteReadinessBadge({required this.status});
-
-  final _ComposerQuoteStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _toneColor(context, status.tone);
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: Text(
-        status.badgeLabel,
-        style: AppTypography.labelSmall.copyWith(color: color),
       ),
     );
   }
@@ -1469,37 +1489,4 @@ String _formatSlippageValue(int bps) {
   if (value == value.roundToDouble()) return value.toStringAsFixed(0);
   if (bps % 10 == 0) return value.toStringAsFixed(1);
   return value.toStringAsFixed(2);
-}
-
-Color _toneColor(BuildContext context, _ComposerQuoteTone tone) {
-  final colors = context.colors;
-  return switch (tone) {
-    _ComposerQuoteTone.success => colors.text.success,
-    _ComposerQuoteTone.warning ||
-    _ComposerQuoteTone.loading ||
-    _ComposerQuoteTone.estimate => colors.text.warning,
-    _ComposerQuoteTone.error => colors.text.destructive,
-    _ComposerQuoteTone.idle => colors.text.secondary,
-  };
-}
-
-Color _toneIconColor(BuildContext context, _ComposerQuoteTone tone) {
-  final colors = context.colors;
-  return switch (tone) {
-    _ComposerQuoteTone.success => colors.icon.success,
-    _ComposerQuoteTone.warning ||
-    _ComposerQuoteTone.loading ||
-    _ComposerQuoteTone.estimate => colors.icon.warning,
-    _ComposerQuoteTone.error => colors.icon.destructive,
-    _ComposerQuoteTone.idle => colors.icon.muted,
-  };
-}
-
-BoxDecoration _quietBoxDecoration(BuildContext context) {
-  final colors = context.colors;
-  return BoxDecoration(
-    color: colors.background.raised,
-    border: Border.all(color: colors.border.subtle),
-    borderRadius: BorderRadius.circular(AppRadii.small),
-  );
 }

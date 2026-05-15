@@ -20,6 +20,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_shielding_service.
 import 'package:zcash_wallet/src/features/swap/providers/swap_session_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_qr_panel.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_queue_panel.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -28,6 +29,16 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
+  test('compactSwapAmountText caps visible decimals at six places', () {
+    expect(compactSwapAmountText('~0.123456789 BTC'), '~0.123456... BTC');
+    expect(compactSwapAmountText('12345.678901 USDC'), '12345.678901 USDC');
+    expect(compactSwapAmountText('2 ZEC'), '2 ZEC');
+    expect(
+      compactSwapAmountText('1.1234567 ZEC -> ~2.7654321 USDC'),
+      '1.123456... ZEC -> ~2.765432... USDC',
+    );
+  });
+
   testWidgets('sidebar Swap item opens the swap prototype route', (
     tester,
   ) async {
@@ -38,18 +49,17 @@ void main() {
       routes: [
         GoRoute(
           path: '/home',
-          builder:
-              (_, _) => AppDesktopShell(
-                sidebar: const AppMainSidebar(),
-                pane: AppDesktopPane(
-                  child: Text(
-                    'home route',
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: AppThemeData.light.colors.text.primary,
-                    ),
-                  ),
+          builder: (_, _) => AppDesktopShell(
+            sidebar: const AppMainSidebar(),
+            pane: AppDesktopPane(
+              child: Text(
+                'home route',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: AppThemeData.light.colors.text.primary,
                 ),
               ),
+            ),
+          ),
         ),
         GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
         GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
@@ -101,6 +111,8 @@ void main() {
       findsNothing,
     );
     expect(find.text('Powered by NEAR Intents'), findsWidgets);
+    expect(find.byKey(const ValueKey('swap_rate_line')), findsOneWidget);
+    expect(find.text('Draft'), findsNothing);
     expect(find.text('You pay'), findsOneWidget);
     expect(find.text('You receive'), findsOneWidget);
     expect(find.text('From'), findsNothing);
@@ -110,6 +122,11 @@ void main() {
       findsWidgets,
     );
     expect(find.byKey(const ValueKey('swap_address_summary')), findsOneWidget);
+    final addressFieldHeight = tester
+        .getSize(find.byKey(const ValueKey('swap_address_summary')))
+        .height;
+    expect(addressFieldHeight, greaterThanOrEqualTo(42));
+    expect(addressFieldHeight, lessThanOrEqualTo(56));
     expect(find.text('Recipient'), findsOneWidget);
     expect(find.text('Add Ethereum recipient'), findsOneWidget);
     expect(find.text('Ethereum'), findsWidgets);
@@ -121,7 +138,7 @@ void main() {
     expect(find.text('Enter a trade'), findsNothing);
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_review_button'))).width,
-      greaterThan(300),
+      greaterThanOrEqualTo(540),
     );
     final ticketRect = tester.getRect(
       find.byKey(const ValueKey('swap_compact_ticket')),
@@ -130,7 +147,7 @@ void main() {
       find.byKey(const ValueKey('swap_review_button')),
     );
     expect((ticketRect.center.dy - 491).abs(), lessThan(48));
-    expect(ticketRect.height, lessThan(400));
+    expect(ticketRect.height, lessThan(440));
     expect(
       reviewButtonRect.top,
       greaterThan(ticketRect.bottom + AppSpacing.xs),
@@ -167,7 +184,7 @@ void main() {
     expect(find.text('Receipt'), findsNothing);
   });
 
-  testWidgets('fresh swap screen starts without mock activity or requests', (
+  testWidgets('fresh swap screen starts without preview activity or requests', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -213,6 +230,43 @@ void main() {
     expect(find.text('No saved requests'), findsOneWidget);
   });
 
+  testWidgets('swap activity ignores sessions from another account', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapSessionStore(
+      initialIntents: [
+        _persistedIntent(
+          id: 't1other-account',
+          txHash: 'other-account-txid',
+          accountUuid: 'account-2',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+          ],
+        ),
+        seedPrototypeFixtures: false,
+        sessionStore: sessionStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(sessionStore.loadedAccounts, ['account-1']);
+
+    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No swap activity yet'), findsOneWidget);
+    expect(find.text('other-account-txid'), findsNothing);
+  });
+
   testWidgets('ZEC swap composer shows live balance and applies max amount', (
     tester,
   ) async {
@@ -246,6 +300,48 @@ void main() {
     expect(maxEstimator.requests, ['account-1']);
     expect(_fieldText(tester, 'swap_amount_field'), '1.2339');
   });
+
+  testWidgets(
+    'ZEC review is disabled when the amount reaches available balance',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _FakeSwapProvider();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [
+              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+            ],
+          ),
+          seedPrototypeFixtures: false,
+          spendableBalance: BigInt.from(100000000),
+          swapProvider: swapProvider,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '1',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_destination_field')),
+        '0xrecipient',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Exceeds available 1 ZEC'), findsOneWidget);
+      expect(find.text('Insufficient ZEC'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+
+      expect(swapProvider.requests, isEmpty);
+      expect(find.text('Swap review'), findsNothing);
+    },
+  );
 
   testWidgets('swap composer restores only the last attempted pair', (
     tester,
@@ -352,6 +448,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('ETH'), findsOneWidget);
+    expect(find.text('Ethereum'), findsWidgets);
+    expect(find.text('Ethereum ETH'), findsNothing);
 
     await tester.enterText(
       find.byKey(const ValueKey('swap_asset_search_field')),
@@ -360,7 +458,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_asset_row_btc')), findsOneWidget);
-    expect(find.text('Bitcoin'), findsOneWidget);
+    expect(find.text('Bitcoin'), findsWidgets);
+    expect(find.text('Bitcoin BTC'), findsNothing);
     expect(find.byKey(const ValueKey('swap_asset_row_sol')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('swap_asset_row_btc')));
@@ -430,10 +529,9 @@ void main() {
     final selectorCursor = tester.widget<MouseRegion>(
       find
           .ancestor(
-            of:
-                find
-                    .byKey(const ValueKey('swap_external_asset_selector'))
-                    .first,
+            of: find
+                .byKey(const ValueKey('swap_external_asset_selector'))
+                .first,
             matching: find.byType(MouseRegion),
           )
           .first,
@@ -593,26 +691,9 @@ void main() {
     expect(swapProvider.pricingRequests, 1);
     expect(find.text('~5.41'), findsOneWidget);
     expect(find.text('1 ZEC = 540.62 USDC'), findsOneWidget);
-    expect(find.text('Estimated rate'), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_rate_line')), findsOneWidget);
     expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_quote_details_strip')),
-        matching: find.text('Rate'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_quote_details_strip')),
-        matching: find.text('Minimum'),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_quote_details_strip')),
-        matching: find.text('Route'),
-      ),
+      find.byKey(const ValueKey('swap_quote_details_strip')),
       findsNothing,
     );
   });
@@ -773,11 +854,55 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_queue_row_swap-8f29')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_queue_asset_pair_swap-8f29')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_active_summary_panel')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      findsNothing,
+    );
+    expect(find.text('Shielding in wallet'), findsOneWidget);
+    expect(find.text('You pay'), findsNothing);
+    expect(find.text('Privacy check'), findsNothing);
+
+    await _openActivityDetail(tester, 'swap-8f29');
+
+    expect(
+      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_activity_detail_title')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_activity_detail_asset_pair')),
+      findsOneWidget,
+    );
+    final closeSize = tester.getSize(
+      find.byKey(const ValueKey('swap_activity_detail_close_button')),
+    );
+    expect(closeSize.width, greaterThanOrEqualTo(132));
+    expect(closeSize.height, greaterThanOrEqualTo(44));
     expect(
       find.byKey(const ValueKey('swap_active_summary_panel')),
       findsOneWidget,
     );
-    expect(find.text('Current swap'), findsOneWidget);
+    expect(find.text('Current swap'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('swap_activity_checked_label')),
+      findsOneWidget,
+    );
     expect(find.text('2.4000 ZEC'), findsOneWidget);
     expect(find.text('~168.42 USDC'), findsOneWidget);
     expect(
@@ -793,22 +918,32 @@ void main() {
       find.byKey(const ValueKey('swap_activity_route_tracker')),
       findsOneWidget,
     );
-    expect(find.text('Swap progress'), findsOneWidget);
-    expect(find.text('Current step'), findsOneWidget);
-    expect(find.text('Step 4 of 4'), findsOneWidget);
+    final activityDetailScrollbar = tester.widget<RawScrollbar>(
+      find.byKey(const ValueKey('swap_activity_detail_scrollbar')),
+    );
+    expect(activityDetailScrollbar.thickness, 4);
+    expect(activityDetailScrollbar.crossAxisMargin, AppSpacing.xxs);
+    final activityDetailScrollGutter = tester.widget<Padding>(
+      find.byKey(const ValueKey('swap_activity_detail_scroll_gutter')),
+    );
+    expect(
+      activityDetailScrollGutter.padding,
+      const EdgeInsets.only(right: AppSpacing.s),
+    );
+    expect(
+      find.byKey(const ValueKey('swap_activity_active_step_halo')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_activity_route_segment_blink_3')),
+      findsOneWidget,
+    );
+    expect(find.text('Now'), findsOneWidget);
     expect(find.text('Send ZEC'), findsWidgets);
     expect(find.text('Confirm'), findsWidgets);
     expect(find.text('Swap'), findsWidgets);
     expect(find.text('Deliver'), findsWidgets);
     expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
-    expect(
-      tester.getTopLeft(find.byKey(const ValueKey('swap_queue_title'))).dy,
-      lessThan(
-        tester
-            .getTopLeft(find.byKey(const ValueKey('swap_active_summary_panel')))
-            .dy,
-      ),
-    );
     expect(find.text('Technical details'), findsNothing);
     expect(find.text('Status timeline'), findsNothing);
     expect(find.text('Receipt'), findsNothing);
@@ -821,9 +956,14 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Copy redacted receipt'), findsNothing);
-    expect(find.text('Shielding pending'), findsWidgets);
-    expect(find.text('You pay'), findsNothing);
-    expect(find.text('Privacy check'), findsNothing);
+
+    await tester.tapAt(const Offset(16, 16));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      findsNothing,
+    );
   });
 
   testWidgets('activity tab refreshes status from the activity surface', (
@@ -848,14 +988,95 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Current swap'), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
     expect(find.text('Privacy check'), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('swap_status_refresh_button')));
+    await tester.tap(find.byKey(const ValueKey('swap_queue_refresh_button')));
     await tester.pumpAndSettle();
 
     expect(swapProvider.statusRequests, hasLength(1));
-    expect(find.text('USDC delivery in progress'), findsWidgets);
+    expect(find.text('Swapping through provider'), findsWidgets);
+  });
+
+  testWidgets('activity route tracker stages skipped status transitions', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _DeferredStatusSwapProvider(
+      const SwapIntentSnapshot(
+        id: 'jump-deposit',
+        providerLabel: 'NEAR Intents',
+        pairText: 'ZEC -> USDC',
+        sellAmountText: '1.0000 ZEC',
+        receiveEstimateText: '~70.170000 USDC',
+        status: SwapIntentStatus.processing,
+        nextAction: 'Swap is processing',
+        depositInstruction: SwapDepositInstruction(
+          asset: SwapAsset.zec,
+          address: 'jump-deposit',
+          expiresInLabel: '07:12',
+          reuseWarning: 'Do not reuse this address',
+          memo: 'memo-7',
+        ),
+      ),
+    );
+    final sessionStore = _FakeSwapSessionStore(
+      initialIntents: [
+        _persistedIntent(
+          id: 'jump-deposit',
+          txHash: '',
+          status: SwapIntentStatus.awaitingDeposit,
+          nextAction: 'Waiting for deposit',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+          ],
+        ),
+        seedPrototypeFixtures: false,
+        swapProvider: swapProvider,
+        sessionStore: sessionStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
+    await tester.pumpAndSettle();
+    await _openActivityDetail(tester, 'jump-deposit');
+
+    expect(
+      find.byKey(const ValueKey('swap_activity_route_step_0_active')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('swap_status_refresh_button')));
+    await tester.pump();
+    expect(swapProvider.statusRequests, hasLength(1));
+
+    swapProvider.completeStatus();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+
+    expect(
+      find.byKey(const ValueKey('swap_activity_route_step_1_active')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_activity_route_step_2_active')),
+      findsNothing,
+    );
+
+    await tester.pump(const Duration(milliseconds: 430));
+    expect(
+      find.byKey(const ValueKey('swap_activity_route_step_2_active')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('activity can manually remove a pending saved swap', (
@@ -886,14 +1107,11 @@ void main() {
         ),
         seedPrototypeFixtures: false,
         sessionStore: sessionStore,
-        releaseExchangeTransparentAddress: ({
-          required accountUuid,
-          required address,
-          required dbPath,
-        }) async {
-          releasedAddresses.add(address);
-          return true;
-        },
+        releaseExchangeTransparentAddress:
+            ({required accountUuid, required address, required dbPath}) async {
+              releasedAddresses.add(address);
+              return true;
+            },
       ),
     );
     await tester.pumpAndSettle();
@@ -909,6 +1127,8 @@ void main() {
       find.byKey(const ValueKey('swap_queue_row_keep-pending')),
       findsOneWidget,
     );
+
+    await _openActivityDetail(tester, 'oversized-pending');
 
     await tester.tap(find.byKey(const ValueKey('swap_activity_remove_button')));
     await tester.pumpAndSettle();
@@ -947,15 +1167,19 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     final clipboardWrites = <String>[];
+    final clipboardWriteCompleted = Completer<void>();
+    Future<Object?> handlePlatformCall(MethodCall call) async {
+      if (call.method == 'Clipboard.setData') {
+        final args = call.arguments as Map<Object?, Object?>;
+        clipboardWrites.add(args['text']! as String);
+        await clipboardWriteCompleted.future;
+      }
+      return null;
+    }
+
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') {
-          final args = call.arguments as Map<Object?, Object?>;
-          clipboardWrites.add(args['text']! as String);
-        }
-        return null;
-      },
+      handlePlatformCall,
     );
     addTearDown(() {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -1008,18 +1232,9 @@ void main() {
 
     expect(
       find.byKey(const ValueKey('swap_receipt_scope_panel')),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(
-      find.byKey(const ValueKey('swap_redacted_receipt_scope')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('swap_recovery_bundle_scope')),
-      findsOneWidget,
-    );
-    expect(find.text('Redacted receipt'), findsOneWidget);
-    expect(find.text('Recovery bundle'), findsOneWidget);
+    expect(find.text('Swap id'), findsNothing);
     expect(find.text('Copy recovery'), findsOneWidget);
 
     await tester.ensureVisible(
@@ -1029,16 +1244,23 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('swap_copy_recovery_bundle_button')),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(clipboardWrites, hasLength(1));
+    expect(find.text('Recovery Bundle Copied'), findsNothing);
+
+    clipboardWriteCompleted.complete();
+    await tester.pumpAndSettle();
+
     expect(
       clipboardWrites.single,
       contains('Recovery scope: local support bundle'),
     );
     expect(clipboardWrites.single, contains('Swap service: NEAR Intents'));
-    expect(clipboardWrites.single, contains('Swap id: swap-refund'));
+    expect(clipboardWrites.single, isNot(contains('Swap id:')));
+    expect(clipboardWrites.single, contains('Deposit address: t1refund'));
     expect(clipboardWrites.single, contains('Status: Refunded'));
+    expect(find.text('Recovery Bundle Copied'), findsOneWidget);
   });
 
   testWidgets('desktop shortcuts switch swap tabs and refresh status', (
@@ -1066,7 +1288,7 @@ void main() {
       LogicalKeyboardKey.digit2,
     );
 
-    expect(find.text('Current swap'), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
     expect(find.text('Privacy check'), findsNothing);
 
     await _sendShortcut(
@@ -1076,7 +1298,7 @@ void main() {
     );
 
     expect(swapProvider.statusRequests, hasLength(1));
-    expect(find.text('USDC delivery in progress'), findsWidgets);
+    expect(find.text('Swapping through provider'), findsWidgets);
 
     await _sendShortcut(
       tester,
@@ -1150,7 +1372,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_command_palette')), findsNothing);
-    expect(find.text('Current swap'), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
 
     await _sendShortcut(
       tester,
@@ -1172,8 +1394,10 @@ void main() {
       clipboardWrites.single,
       contains('Receipt scope: redacted status evidence'),
     );
-    expect(clipboardWrites.single, contains('Swap id:'));
-    expect(clipboardWrites.single, contains('Shared fields:'));
+    expect(clipboardWrites.single, isNot(contains('Swap id:')));
+    expect(clipboardWrites.single, isNot(contains('Shared fields:')));
+    expect(clipboardWrites.single, contains('Pair:'));
+    expect(find.text('Receipt Copied'), findsOneWidget);
   });
 
   testWidgets('command palette imports clipboard payment requests', (
@@ -1544,15 +1768,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Open'), findsOneWidget);
-    expect(find.text('Completed'), findsOneWidget);
-    expect(find.text('Shielding pending'), findsWidgets);
+    expect(find.text('Closed'), findsOneWidget);
+    expect(find.text('Shielding in wallet'), findsOneWidget);
 
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('swap_queue_row_swap-2a11')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_queue_row_swap-2a11')));
-    await tester.pumpAndSettle();
+    await _openActivityDetail(tester, 'swap-2a11');
 
     expect(find.text('Status timeline'), findsNothing);
     expect(
@@ -1641,21 +1860,90 @@ void main() {
       find.byKey(const ValueKey('swap_queue_row_expired-swap')),
       findsOneWidget,
     );
-    final colors =
-        tester
-            .element(
-              find.byKey(
-                const ValueKey('swap_queue_progress_segment_complete_0'),
-              ),
-            )
-            .colors;
-    for (var index = 0; index < 3; index++) {
+    expect(
+      find.byKey(
+        const ValueKey('swap_queue_progress_segment_blink_processing_2'),
+      ),
+      findsOneWidget,
+    );
+    final colors = tester
+        .element(
+          find.byKey(const ValueKey('swap_queue_progress_segment_complete_0')),
+        )
+        .colors;
+    for (var index = 0; index < 4; index++) {
       final segment = tester.widget<Container>(
         find.byKey(ValueKey('swap_queue_progress_segment_complete_$index')),
       );
       final decoration = segment.decoration! as BoxDecoration;
       expect(decoration.color, colors.text.success);
     }
+  });
+
+  testWidgets('swap queue progress stages skipped status transitions', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _themeHarness(
+        SwapQueuePanel(
+          intents: [
+            _persistedIntent(
+              id: 'jump-swap',
+              txHash: '',
+              status: SwapIntentStatus.awaitingDeposit,
+              nextAction: 'Waiting for deposit',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(
+        const ValueKey('swap_queue_progress_segment_blink_awaitingDeposit_0'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(
+      _themeHarness(
+        SwapQueuePanel(
+          intents: [
+            _persistedIntent(
+              id: 'jump-swap',
+              txHash: 'jump-tx',
+              status: SwapIntentStatus.shieldingPending,
+              nextAction: 'Shielding in wallet',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(
+        const ValueKey('swap_queue_progress_segment_blink_shieldingPending_1'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(milliseconds: 430));
+    expect(
+      find.byKey(
+        const ValueKey('swap_queue_progress_segment_blink_shieldingPending_2'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(milliseconds: 430));
+    expect(
+      find.byKey(
+        const ValueKey('swap_queue_progress_segment_blink_shieldingPending_3'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('activity exposes incomplete, refunded, and failed scenarios', (
@@ -1709,14 +1997,7 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('swap_queue_row_swap-underpaid')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('swap_queue_row_swap-underpaid')),
-    );
-    await tester.pumpAndSettle();
+    await _openActivityDetail(tester, 'swap-underpaid');
 
     expect(find.byKey(const ValueKey('swap_resolution_panel')), findsOneWidget);
     expect(find.text('Deposit needs attention'), findsOneWidget);
@@ -1751,13 +2032,9 @@ void main() {
       contains('Deposit address: 0xunderpaid-usdc-deposit'),
     );
     expect(clipboardWrites.single, contains('Deposit memo: memo-underpaid'));
+    expect(find.text('Top-up Details Copied'), findsOneWidget);
 
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('swap_queue_row_swap-refund')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_queue_row_swap-refund')));
-    await tester.pumpAndSettle();
+    await _openActivityDetail(tester, 'swap-refund');
 
     expect(find.byKey(const ValueKey('swap_resolution_panel')), findsOneWidget);
     expect(find.text('Funds refunded'), findsOneWidget);
@@ -1780,12 +2057,7 @@ void main() {
     expect(find.text('Refund tx submitted'), findsWidgets);
     expect(find.text('Refunded to source address'), findsWidgets);
 
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('swap_queue_row_swap-failed')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_queue_row_swap-failed')));
-    await tester.pumpAndSettle();
+    await _openActivityDetail(tester, 'swap-failed');
 
     expect(find.byKey(const ValueKey('swap_resolution_panel')), findsOneWidget);
     expect(find.text('Swap failed'), findsOneWidget);
@@ -1863,9 +2135,12 @@ void main() {
       sessionStore.savedIntents.single.status,
       SwapIntentStatus.processing,
     );
+
+    await _openActivityDetail(tester, 'persisted-deposit');
+
     expect(find.text('persisted-deposit'), findsWidgets);
     expect(find.text('persisted-txid'), findsWidgets);
-    expect(find.text('Processing'), findsWidgets);
+    expect(find.text('USDC delivery in progress'), findsWidgets);
   });
 
   testWidgets(
@@ -1913,8 +2188,11 @@ void main() {
         sessionStore.savedIntents.single.oneClickRefundTo,
         '0xpersisted-refund',
       );
+
+      await _openActivityDetail(tester, '0xpersisted-usdc-deposit');
+
       expect(find.text('t1persistedrotatingstaging'), findsWidgets);
-      expect(find.text('Awaiting external deposit'), findsWidgets);
+      expect(find.text('Send USDC'), findsWidgets);
       expect(
         find.byKey(const ValueKey('swap_activity_deposit_qr_panel')),
         findsOneWidget,
@@ -1966,8 +2244,11 @@ void main() {
         sessionStore.savedIntents.single.status,
         SwapIntentStatus.shieldingPending,
       );
-      expect(find.text('Shielding pending'), findsWidgets);
+      expect(find.text('Shielding in wallet'), findsOneWidget);
       expect(find.text('Complete'), findsNothing);
+
+      await _openActivityDetail(tester, '0xcomplete');
+
       expect(find.text('Shielding ZEC'), findsOneWidget);
       expect(find.text('Technical details'), findsNothing);
     },
@@ -2035,7 +2316,19 @@ void main() {
             .value,
         'shield-txid-1',
       );
-      expect(find.text('Shielding confirming'), findsWidgets);
+      expect(sessionStore.saveSnapshots, hasLength(greaterThanOrEqualTo(2)));
+      expect(
+        sessionStore.saveSnapshots.first.single.status,
+        SwapIntentStatus.shieldingConfirming,
+      );
+      expect(
+        sessionStore.saveSnapshots.first.single.shieldTxHash,
+        'shield-txid-1',
+      );
+      expect(find.text('Shielding in wallet'), findsOneWidget);
+
+      await _openActivityDetail(tester, '0xcomplete');
+
       expect(find.text('Confirming shield'), findsOneWidget);
       expect(find.text('Technical details'), findsNothing);
 
@@ -2098,7 +2391,9 @@ void main() {
       sessionStore.savedIntents.single.nextAction,
       'Shield transaction confirmed.',
     );
-    expect(find.text('Complete'), findsWidgets);
+    await _openActivityDetail(tester, '0xconfirming');
+
+    expect(find.text('ZEC ready'), findsOneWidget);
   });
 
   testWidgets('expired shield transaction opens retry recovery', (
@@ -2148,7 +2443,10 @@ void main() {
       sessionStore.savedIntents.single.status,
       SwapIntentStatus.shieldingFailed,
     );
-    expect(find.text('Shielding failed'), findsWidgets);
+    expect(find.text('Shielding needs retry'), findsOneWidget);
+
+    await _openActivityDetail(tester, '0xexpiredshield');
+
     expect(find.text('Retry shield'), findsOneWidget);
   });
 
@@ -2196,6 +2494,8 @@ void main() {
         sessionStore.savedIntents.single.status,
         SwapIntentStatus.shieldingFailed,
       );
+      await _openActivityDetail(tester, '0xcomplete');
+
       expect(
         find.byKey(const ValueKey('swap_resolution_panel')),
         findsOneWidget,
@@ -2239,7 +2539,9 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Shielding failed'), findsWidgets);
+      expect(find.text('Shielding needs retry'), findsOneWidget);
+      await _openActivityDetail(tester, '0xshieldfail');
+
       expect(
         find.byKey(const ValueKey('swap_resolution_panel')),
         findsOneWidget,
@@ -2275,7 +2577,7 @@ void main() {
         sessionStore.savedIntents.single.status,
         SwapIntentStatus.shieldingPending,
       );
-      expect(find.text('Shielding pending'), findsWidgets);
+      expect(find.text('Shielding in wallet'), findsOneWidget);
       expect(find.byKey(const ValueKey('swap_resolution_panel')), findsNothing);
       expect(
         find.byKey(const ValueKey('swap_deposit_submit_button')),
@@ -2408,6 +2710,8 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
     await tester.pumpAndSettle();
+    await _openActivityDetail(tester, 'swap-session-2');
+
     await _expandDepositTxHash(tester);
     await tester.enterText(
       find.byKey(const ValueKey('swap_deposit_tx_hash_field')),
@@ -2467,7 +2771,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Estimated rate'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('swap_rate_line')), findsOneWidget);
     expect(
       tester
           .widget<SingleChildScrollView>(find.byType(SingleChildScrollView))
@@ -2490,52 +2795,56 @@ void main() {
   ) async {
     await _setViewport(tester, const Size(940, 720));
 
-    final longIntent = _persistedIntent(
-      id: 'swap-long-provider-data',
-      txHash:
-          '0xdeposit-transaction-hash-with-a-very-long-source-chain-suffix-9876543210',
-      depositAddress:
-          '0xone-time-usdc-deposit-address-with-a-long-provider-suffix-abcdef1234567890',
-      status: SwapIntentStatus.awaitingExternalDeposit,
-      nextAction:
-          'Send the external deposit, then submit the source-chain transaction hash after confirmation.',
-    ).copyWith(
-      title: 'USDC to ZEC',
-      pair: 'USDC -> ZEC',
-      sellAmount: '12345.678901 USDC',
-      receiveEstimate: '~175.9421 ZEC',
-      direction: SwapDirection.externalToZec,
-      externalAsset: SwapAsset.usdc,
-      depositMemo:
-          'memo-with-a-long-routing-tag-and-provider-reference-9876543210',
-      oneClickRefundTo:
-          '0xrefund-address-with-a-very-long-source-chain-suffix-abcdef1234567890',
-      exposure: const [
-        SwapPrototypeField(
-          label: 'USDC source deposit',
-          value:
-              'one-time USDC address with source-chain routing metadata visible',
-        ),
-        SwapPrototypeField(
-          label: 'Refund path',
-          value:
-              'USDC refunds return to the long source-chain address entered during review',
-        ),
-      ],
-      receipt: const [
-        SwapPrototypeField(label: 'Swap id', value: 'swap-long-provider-data'),
-        SwapPrototypeField(
-          label: 'Deposit',
-          value:
+    final longIntent =
+        _persistedIntent(
+          id: 'swap-long-provider-data',
+          txHash:
+              '0xdeposit-transaction-hash-with-a-very-long-source-chain-suffix-9876543210',
+          depositAddress:
               '0xone-time-usdc-deposit-address-with-a-long-provider-suffix-abcdef1234567890',
-        ),
-        SwapPrototypeField(
-          label: 'Memo',
-          value:
+          status: SwapIntentStatus.awaitingExternalDeposit,
+          nextAction:
+              'Send the external deposit, then submit the source-chain transaction hash after confirmation.',
+        ).copyWith(
+          title: 'USDC to ZEC',
+          pair: 'USDC -> ZEC',
+          sellAmount: '12345.678901 USDC',
+          receiveEstimate: '~175.9421 ZEC',
+          direction: SwapDirection.externalToZec,
+          externalAsset: SwapAsset.usdc,
+          depositMemo:
               'memo-with-a-long-routing-tag-and-provider-reference-9876543210',
-        ),
-      ],
-    );
+          oneClickRefundTo:
+              '0xrefund-address-with-a-very-long-source-chain-suffix-abcdef1234567890',
+          exposure: const [
+            SwapPrototypeField(
+              label: 'USDC source deposit',
+              value:
+                  'one-time USDC address with source-chain routing metadata visible',
+            ),
+            SwapPrototypeField(
+              label: 'Refund path',
+              value:
+                  'USDC refunds return to the long source-chain address entered during review',
+            ),
+          ],
+          receipt: const [
+            SwapPrototypeField(
+              label: 'Swap id',
+              value: 'swap-long-provider-data',
+            ),
+            SwapPrototypeField(
+              label: 'Deposit',
+              value:
+                  '0xone-time-usdc-deposit-address-with-a-long-provider-suffix-abcdef1234567890',
+            ),
+            SwapPrototypeField(
+              label: 'Memo',
+              value:
+                  'memo-with-a-long-routing-tag-and-provider-reference-9876543210',
+            ),
+          ],
+        );
 
     await tester.pumpWidget(
       _routerHarness(
@@ -2553,6 +2862,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
     await tester.pumpAndSettle();
+    await _openActivityDetail(tester, 'swap-long-provider-data');
 
     expect(tester.takeException(), isNull);
     expect(find.text('Send USDC from source chain'), findsWidgets);
@@ -2615,7 +2925,7 @@ void main() {
     expect(find.text('Estimated fee'), findsOneWidget);
   });
 
-  testWidgets('swap composer previews, reviews, and starts a mock intent', (
+  testWidgets('swap composer previews, reviews, and starts a preview intent', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -2648,7 +2958,7 @@ void main() {
 
     expect(find.text('~105.26'), findsOneWidget);
     expect(find.text('1 ZEC = 70.17 USDC'), findsOneWidget);
-    expect(find.text('Estimated rate'), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_rate_line')), findsOneWidget);
     expect(find.byKey(const ValueKey('swap_address_summary')), findsOneWidget);
     expect(find.text('Recipient'), findsOneWidget);
     expect(find.text('0xabc123'), findsWidgets);
@@ -2660,6 +2970,15 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_review_panel')), findsOneWidget);
     expect(find.byKey(const ValueKey('swap_review_modal')), findsOneWidget);
+    final reviewScrollbar = tester.widget<RawScrollbar>(
+      find.byKey(const ValueKey('swap_review_scrollbar')),
+    );
+    expect(reviewScrollbar.thickness, 4);
+    expect(reviewScrollbar.crossAxisMargin, AppSpacing.xxs);
+    final scrollGutter = tester.widget<Padding>(
+      find.byKey(const ValueKey('swap_review_scroll_gutter')),
+    );
+    expect(scrollGutter.padding, const EdgeInsets.only(right: AppSpacing.s));
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_review_panel'))).height,
       greaterThan(900),
@@ -2681,14 +3000,15 @@ void main() {
           .height,
       greaterThanOrEqualTo(54),
     );
-    final startButtonWidth =
-        tester.getSize(find.byKey(const ValueKey('swap_start_button'))).width;
-    final cancelButtonWidth =
-        tester
-            .getSize(find.byKey(const ValueKey('swap_review_cancel_button')))
-            .width;
-    final actionsWidth =
-        tester.getSize(find.byKey(const ValueKey('swap_review_actions'))).width;
+    final startButtonWidth = tester
+        .getSize(find.byKey(const ValueKey('swap_start_button')))
+        .width;
+    final cancelButtonWidth = tester
+        .getSize(find.byKey(const ValueKey('swap_review_cancel_button')))
+        .width;
+    final actionsWidth = tester
+        .getSize(find.byKey(const ValueKey('swap_review_actions')))
+        .width;
     expect(startButtonWidth, closeTo(cancelButtonWidth, 1));
     expect(
       startButtonWidth + cancelButtonWidth + AppSpacing.s,
@@ -2707,7 +3027,6 @@ void main() {
     );
     expect(find.text('Swap review'), findsOneWidget);
     expect(find.text('Live quote'), findsOneWidget);
-    expect(find.text('Live quote locked'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('swap_review_consent_panel')),
       findsOneWidget,
@@ -2725,8 +3044,17 @@ void main() {
     await tester.tap(find.text('Start swap'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Swap Request Created'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_toast_overlay_host')),
+        matching: find.text('Swap Request Created'),
+      ),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
     expect(find.text('Technical details'), findsNothing);
+    await _closeActivityDetail(tester);
     await tester.tap(find.byKey(const ValueKey('swap_page_tab_swap')));
     await tester.pumpAndSettle();
     expect(_fieldText(tester, 'swap_amount_field'), isEmpty);
@@ -2772,12 +3100,12 @@ void main() {
       expect(request.direction, SwapDirection.zecToExternal);
       expect(request.externalAsset, SwapAsset.usdc);
       expect(request.sellAmount, 1.5);
+      expect(request.sellAmountText, '1.5');
       expect(request.destination, '0xrecipient');
       expect(request.refundAddress, 't1actualstaging');
 
       expect(find.byKey(const ValueKey('swap_review_panel')), findsOneWidget);
       expect(find.text('Live quote'), findsOneWidget);
-      expect(find.text('Live quote locked'), findsOneWidget);
       expect(find.text('Send ZEC deposit to'), findsOneWidget);
       expect(find.text('t1live-deposit'), findsOneWidget);
       expect(find.text('Memo memo-live'), findsOneWidget);
@@ -2866,7 +3194,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Estimated rate'), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_rate_line')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
     await tester.pump();
@@ -2887,7 +3215,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Getting live quote'), findsNothing);
-    expect(find.text('Live quote locked'), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_rate_line')), findsOneWidget);
   });
 
   testWidgets('expired review quote blocks start until reviewed again', (
@@ -2941,7 +3269,7 @@ void main() {
       find.text('Quote expired. Review again for a fresh route.'),
       findsOneWidget,
     );
-    expect(find.text('Review again required'), findsOneWidget);
+    expect(find.text('Review again required'), findsNothing);
 
     await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
     await tester.pumpAndSettle();
@@ -2976,14 +3304,11 @@ void main() {
           ],
         ),
         swapProvider: _FailingQuoteSwapProvider(),
-        releaseExchangeTransparentAddress: ({
-          required accountUuid,
-          required address,
-          required dbPath,
-        }) async {
-          releasedAddresses.add(address);
-          return true;
-        },
+        releaseExchangeTransparentAddress:
+            ({required accountUuid, required address, required dbPath}) async {
+              releasedAddresses.add(address);
+              return true;
+            },
       ),
     );
     await tester.pumpAndSettle();
@@ -3007,7 +3332,6 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Quote unavailable'), findsOneWidget);
-    expect(find.text('Route issue'), findsOneWidget);
     expect(
       find.textContaining('Could not load quote. Retry once.'),
       findsOneWidget,
@@ -3034,14 +3358,11 @@ void main() {
         ),
         swapProvider: swapProvider,
         liveFundsEnabled: true,
-        releaseExchangeTransparentAddress: ({
-          required accountUuid,
-          required address,
-          required dbPath,
-        }) async {
-          releasedAddresses.add(address);
-          return true;
-        },
+        releaseExchangeTransparentAddress:
+            ({required accountUuid, required address, required dbPath}) async {
+              releasedAddresses.add(address);
+              return true;
+            },
       ),
     );
     await tester.pumpAndSettle();
@@ -3077,6 +3398,16 @@ void main() {
     tester,
   ) async {
     await _setDesktopViewport(tester);
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => null,
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
 
     await tester.pumpWidget(
       _routerHarness(
@@ -3142,6 +3473,9 @@ void main() {
       find.byKey(const ValueKey('swap_deposit_qr_copy_memo')),
       findsOneWidget,
     );
+    await tester.tap(find.byKey(const ValueKey('swap_deposit_qr_copy_memo')));
+    await tester.pumpAndSettle();
+    expect(find.text('Memo Copied'), findsOneWidget);
     expect(find.text('ZEC delivery'), findsNothing);
     expect(find.text('Approval locks deposit instructions'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('swap_review_details_toggle')));
@@ -3154,11 +3488,12 @@ void main() {
     await tester.tap(find.text('Start swap'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Awaiting external deposit'), findsWidgets);
+    expect(find.text('Send USDC'), findsWidgets);
     expect(
       find.byKey(const ValueKey('swap_activity_deposit_qr_panel')),
       findsOneWidget,
     );
+    await _closeActivityDetail(tester);
     await tester.tap(find.byKey(const ValueKey('swap_page_tab_swap')));
     await tester.pumpAndSettle();
     expect(_fieldText(tester, 'swap_amount_field'), isEmpty);
@@ -3180,13 +3515,10 @@ void main() {
           ],
         ),
         swapProvider: swapProvider,
-        reserveExchangeTransparentAddress: ({
-          required accountUuid,
-          required dbPath,
-          required network,
-        }) async {
-          throw Exception('ephemeral gap exhausted');
-        },
+        reserveExchangeTransparentAddress:
+            ({required accountUuid, required dbPath, required network}) async {
+              throw Exception('ephemeral gap exhausted');
+            },
       ),
     );
     await tester.pumpAndSettle();
@@ -3231,20 +3563,17 @@ void main() {
           ],
         ),
         swapProvider: swapProvider,
-        reserveExchangeTransparentAddress: ({
-          required accountUuid,
-          required dbPath,
-          required network,
-        }) async {
-          expect(accountUuid, 'account-1');
-          expect(dbPath, 'wallet.db');
-          expect(network, 'main');
-          return rust_wallet.ExchangeTransparentAddressResult(
-            address: 't1rotatingstaging',
-            transparentChildIndex: 7,
-            exposedAtHeight: BigInt.from(2500000),
-          );
-        },
+        reserveExchangeTransparentAddress:
+            ({required accountUuid, required dbPath, required network}) async {
+              expect(accountUuid, 'account-1');
+              expect(dbPath, 'wallet.db');
+              expect(network, 'main');
+              return rust_wallet.ExchangeTransparentAddressResult(
+                address: 't1rotatingstaging',
+                transparentChildIndex: 7,
+                exposedAtHeight: BigInt.from(2500000),
+              );
+            },
       ),
     );
     await tester.pumpAndSettle();
@@ -3320,7 +3649,6 @@ void main() {
     expect(swapProvider.statusRequests, hasLength(1));
     expect(swapProvider.statusRequests.single.depositAddress, 't1live-deposit');
     expect(swapProvider.statusRequests.single.depositMemo, 'memo-live');
-    expect(find.text('Processing'), findsWidgets);
     expect(find.text('USDC delivery in progress'), findsWidgets);
   });
 
@@ -3383,7 +3711,6 @@ void main() {
     );
     expect(swapProvider.submittedDeposits.single.txHash, 'zec-txid');
     expect(swapProvider.submittedDeposits.single.depositMemo, 'memo-live');
-    expect(find.text('Deposit observed'), findsWidgets);
     expect(find.text('ZEC deposit confirmed'), findsWidgets);
   });
 
@@ -3392,6 +3719,23 @@ void main() {
     (tester) async {
       await _setDesktopViewport(tester);
       final sessionStore = _FakeSwapSessionStore();
+      final clipboardWrites = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            final args = call.arguments as Map<Object?, Object?>;
+            clipboardWrites.add(args['text']! as String);
+          }
+          return null;
+        },
+      );
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        );
+      });
 
       await tester.pumpWidget(
         _routerHarness(
@@ -3402,17 +3746,18 @@ void main() {
             ],
           ),
           sessionStore: sessionStore,
-          reserveExchangeTransparentAddress: ({
-            required accountUuid,
-            required dbPath,
-            required network,
-          }) async {
-            return rust_wallet.ExchangeTransparentAddressResult(
-              address: 't1rotatingstaging',
-              transparentChildIndex: 8,
-              exposedAtHeight: BigInt.from(2500001),
-            );
-          },
+          reserveExchangeTransparentAddress:
+              ({
+                required accountUuid,
+                required dbPath,
+                required network,
+              }) async {
+                return rust_wallet.ExchangeTransparentAddressResult(
+                  address: 't1rotatingstaging',
+                  transparentChildIndex: 8,
+                  exposedAtHeight: BigInt.from(2500001),
+                );
+              },
         ),
       );
       await tester.pumpAndSettle();
@@ -3453,14 +3798,38 @@ void main() {
         find.byKey(const ValueKey('swap_copy_usdc_source_deposit')),
         findsOneWidget,
       );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_copy_usdc_source_deposit')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_copy_usdc_source_deposit')),
+      );
+      await tester.pumpAndSettle();
+      expect(clipboardWrites.last, '0xlive-deposit');
+      expect(find.text('Address Copied'), findsOneWidget);
       expect(find.text('Memo'), findsWidgets);
       expect(find.text('memo-live'), findsWidgets);
       expect(find.byKey(const ValueKey('swap_copy_memo')), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const ValueKey('swap_copy_memo')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_copy_memo')));
+      await tester.pumpAndSettle();
+      expect(clipboardWrites.last, 'memo-live');
+      expect(find.text('Memo Copied'), findsOneWidget);
       expect(find.text('Receive address'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('swap_copy_receive_address')),
         findsOneWidget,
       );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_copy_receive_address')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_copy_receive_address')));
+      await tester.pumpAndSettle();
+      expect(clipboardWrites.last, 't1rotatingstaging');
+      expect(find.text('Address Copied'), findsOneWidget);
       expect(find.text('t1rotatingstaging'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('swap_open_receive_staging_button')),
@@ -3605,6 +3974,7 @@ void main() {
     expect(sessionStore.savedIntents, hasLength(1));
     expect(sessionStore.savedIntents.single.id, 't1live-deposit');
     expect(sessionStore.savedIntents.single.depositAddress, 't1live-deposit');
+    expect(sessionStore.savedIntents.single.accountUuid, 'account-1');
     expect(sessionStore.savedIntents.single.depositMemo, 'memo-live');
     expect(sessionStore.savedIntents.single.depositTxHash, 'zec-auto-txid');
     expect(sessionStore.savedIntents.single.providerQuoteId, 'quote-live');
@@ -3622,8 +3992,67 @@ void main() {
     expect(find.text('t1live-deposit'), findsWidgets);
     expect(find.text('ZEC deposit tx hash'), findsOneWidget);
     expect(find.text('Submit ZEC deposit'), findsOneWidget);
-    expect(find.text('Deposit observed'), findsWidgets);
+    expect(find.text('ZEC deposit confirmed'), findsWidgets);
     expect(find.text('zec-auto-txid'), findsWidgets);
+  });
+
+  testWidgets('ZEC deposit tx hash is checkpointed when submit fails', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider(
+      submitDepositError: Exception('submit temporarily unavailable'),
+    );
+    final depositSender = _FakeSwapDepositSender();
+    final sessionStore = _FakeSwapSessionStore();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+          ],
+        ),
+        swapProvider: swapProvider,
+        depositSender: depositSender,
+        sessionStore: sessionStore,
+        liveFundsEnabled: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0xrecipient',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Start swap'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start swap'));
+    await tester.pumpAndSettle();
+
+    expect(depositSender.requests, hasLength(1));
+    expect(swapProvider.submittedDeposits, hasLength(1));
+    expect(sessionStore.savedIntents, hasLength(1));
+    expect(sessionStore.savedIntents.single.depositTxHash, 'zec-auto-txid');
+    expect(sessionStore.savedIntents.single.accountUuid, 'account-1');
+    expect(
+      sessionStore.savedIntents.single.receipt
+          .where((field) => field.label == 'Deposit tx')
+          .single
+          .value,
+      'zec-auto-txid',
+    );
+    expect(find.text('zec-auto-txid'), findsWidgets);
+    expect(find.textContaining('Could not send ZEC deposit'), findsOneWidget);
   });
 
   testWidgets('ZEC deposit preflight failure does not start a swap intent', (
@@ -3764,7 +4193,8 @@ Widget _routerHarness(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap),
       syncProvider.overrideWith(
-        () => _FakeSwapSyncNotifier(spendableBalance ?? BigInt.zero),
+        () =>
+            _FakeSwapSyncNotifier(spendableBalance ?? BigInt.from(10000000000)),
       ),
       receiveAddressServiceProvider.overrideWith(
         _FakeReceiveAddressService.new,
@@ -3816,9 +4246,9 @@ Widget _routerHarness(
         sessionStore ?? _FakeSwapSessionStore(),
       ),
       if (seedPrototypeFixtures) ...[
-        swapInitialIntentsProvider.overrideWithValue(mockSwapIntents),
+        swapInitialIntentsProvider.overrideWithValue(previewSwapIntents),
         swapInitialExternalRequestsProvider.overrideWithValue(
-          mockExternalRequests,
+          previewExternalRequests,
         ),
       ],
       swapLiveFundsEnabledProvider.overrideWithValue(liveFundsEnabled),
@@ -3885,7 +4315,7 @@ class _FakeSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
 }
 
 class _FakeSwapProvider implements SwapProvider {
-  _FakeSwapProvider({List<SwapAsset>? supportedAssets})
+  _FakeSwapProvider({List<SwapAsset>? supportedAssets, this.submitDepositError})
     : supportedAssets = supportedAssets ?? swapExternalAssets;
 
   final requests = <SwapQuoteRequest>[];
@@ -3893,6 +4323,7 @@ class _FakeSwapProvider implements SwapProvider {
   final statusRequests = <_StatusRequest>[];
   final submittedDeposits = <_SubmittedDeposit>[];
   final List<SwapAsset> supportedAssets;
+  final Object? submitDepositError;
 
   @override
   String get providerLabel => 'NEAR Intents';
@@ -3926,10 +4357,9 @@ class _FakeSwapProvider implements SwapProvider {
       providerSignature: 'sig-live',
       depositInstruction: SwapDepositInstruction(
         asset: estimate.sellAsset,
-        address:
-            request.direction == SwapDirection.zecToExternal
-                ? 't1live-deposit'
-                : '0xlive-deposit',
+        address: request.direction == SwapDirection.zecToExternal
+            ? 't1live-deposit'
+            : '0xlive-deposit',
         expiresInLabel: '07:12',
         reuseWarning: 'Do not reuse this address',
         memo: 'memo-live',
@@ -3997,6 +4427,8 @@ class _FakeSwapProvider implements SwapProvider {
         depositMemo: depositMemo,
       ),
     );
+    final error = submitDepositError;
+    if (error != null) throw error;
     final statusQuote = await quote(
       const SwapQuoteRequest(
         direction: SwapDirection.zecToExternal,
@@ -4047,6 +4479,30 @@ class _FailingQuoteSwapProvider extends _FakeSwapProvider {
   Future<SwapQuote> quote(SwapQuoteRequest request) async {
     requests.add(request);
     throw StateError('provider unavailable');
+  }
+}
+
+class _DeferredStatusSwapProvider extends _FakeSwapProvider {
+  _DeferredStatusSwapProvider(this.snapshot);
+
+  final SwapIntentSnapshot snapshot;
+  final statusCompleter = Completer<SwapIntentSnapshot>();
+
+  void completeStatus() {
+    if (!statusCompleter.isCompleted) {
+      statusCompleter.complete(snapshot);
+    }
+  }
+
+  @override
+  Future<SwapIntentSnapshot> getStatus(
+    String intentId, {
+    String? depositMemo,
+  }) async {
+    statusRequests.add(
+      _StatusRequest(depositAddress: intentId, depositMemo: depositMemo),
+    );
+    return statusCompleter.future;
   }
 }
 
@@ -4327,18 +4783,35 @@ class _FakeSwapSessionStore implements SwapSessionStore {
 
   var loadCount = 0;
   var loadDraftCount = 0;
+  final saveSnapshots = <List<SwapPrototypeIntent>>[];
+  final loadedAccounts = <String>[];
+  final savedAccounts = <String>[];
   List<SwapPrototypeIntent> savedIntents;
   SwapDraftSnapshot? savedDraft;
 
   @override
-  Future<List<SwapPrototypeIntent>> loadIntents() async {
+  Future<List<SwapPrototypeIntent>> loadIntents({
+    required String accountUuid,
+  }) async {
     loadCount++;
-    return savedIntents;
+    loadedAccounts.add(accountUuid);
+    return [
+      for (final intent in savedIntents)
+        if (intent.accountUuid == null || intent.accountUuid == accountUuid)
+          intent.copyWith(accountUuid: accountUuid),
+    ];
   }
 
   @override
-  Future<void> saveIntents(List<SwapPrototypeIntent> intents) async {
-    savedIntents = [...intents];
+  Future<void> saveIntents({
+    required String accountUuid,
+    required List<SwapPrototypeIntent> intents,
+  }) async {
+    savedAccounts.add(accountUuid);
+    savedIntents = [
+      for (final intent in intents) intent.copyWith(accountUuid: accountUuid),
+    ];
+    saveSnapshots.add(savedIntents);
   }
 
   @override
@@ -4359,6 +4832,7 @@ SwapPrototypeIntent _persistedIntent({
   String? depositAddress,
   SwapIntentStatus status = SwapIntentStatus.processing,
   String? nextAction,
+  String accountUuid = 'account-1',
 }) {
   final effectiveNextAction = nextAction ?? status.label;
   return SwapPrototypeIntent(
@@ -4393,6 +4867,7 @@ SwapPrototypeIntent _persistedIntent({
     providerSignature: 'quote-signature',
     oneClickRecipient: '0xrecipient',
     oneClickRefundTo: 't1refund',
+    accountUuid: accountUuid,
   );
 }
 
@@ -4590,6 +5065,25 @@ Future<void> _openRequestsSurface(WidgetTester tester) async {
   );
 }
 
+Future<void> _openActivityDetail(WidgetTester tester, String intentId) async {
+  await _closeActivityDetail(tester);
+  final row = find.byKey(ValueKey('swap_queue_row_$intentId'));
+  await tester.ensureVisible(row);
+  await tester.pumpAndSettle();
+  await tester.tap(row, warnIfMissed: false);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _closeActivityDetail(WidgetTester tester) async {
+  final modal = find.byKey(const ValueKey('swap_activity_detail_modal'));
+  if (modal.evaluate().isEmpty) return;
+  await tester.tap(
+    find.byKey(const ValueKey('swap_activity_detail_close_button')),
+    warnIfMissed: false,
+  );
+  await tester.pumpAndSettle();
+}
+
 Future<void> _expandDepositTxHash(WidgetTester tester) async {
   final field = find.byKey(const ValueKey('swap_deposit_tx_hash_field'));
   if (field.evaluate().isNotEmpty) return;
@@ -4616,7 +5110,14 @@ Future<void> _tapDepositSubmit(WidgetTester tester) async {
   final button = find.byKey(const ValueKey('swap_deposit_submit_button'));
   await tester.ensureVisible(button);
   await tester.pumpAndSettle();
-  await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -180));
+  final modalScroll = find.descendant(
+    of: find.byKey(const ValueKey('swap_activity_detail_modal')),
+    matching: find.byType(SingleChildScrollView),
+  );
+  final scroll = modalScroll.evaluate().isNotEmpty
+      ? modalScroll.first
+      : find.byType(SingleChildScrollView).first;
+  await tester.drag(scroll, const Offset(0, -180));
   await tester.pumpAndSettle();
   await tester.tap(button);
   await tester.pumpAndSettle();

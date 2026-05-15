@@ -5,6 +5,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
+import 'swap_amount_text.dart';
 import 'swap_asset_icon.dart';
 import 'swap_deposit_qr_panel.dart';
 
@@ -75,7 +76,7 @@ class SwapReviewModal extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Expanded(
-                child: SingleChildScrollView(
+                child: _ReviewScrollArea(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -139,6 +140,58 @@ class SwapReviewModal extends StatelessWidget {
                 onStartIntent: onStartIntent,
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReviewScrollArea extends StatefulWidget {
+  const _ReviewScrollArea({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_ReviewScrollArea> createState() => _ReviewScrollAreaState();
+}
+
+class _ReviewScrollAreaState extends State<_ReviewScrollArea> {
+  late final ScrollController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+      child: RawScrollbar(
+        key: const ValueKey('swap_review_scrollbar'),
+        controller: _controller,
+        thumbVisibility: true,
+        thickness: 4,
+        radius: const Radius.circular(AppRadii.full),
+        thumbColor: colors.border.regular.withValues(alpha: 0.72),
+        mainAxisMargin: AppSpacing.xxs,
+        crossAxisMargin: AppSpacing.xxs,
+        child: SingleChildScrollView(
+          key: const ValueKey('swap_review_scroll_view'),
+          controller: _controller,
+          child: Padding(
+            key: const ValueKey('swap_review_scroll_gutter'),
+            padding: const EdgeInsets.only(right: AppSpacing.s),
+            child: widget.child,
           ),
         ),
       ),
@@ -368,7 +421,7 @@ class _ReviewTradeSummary extends StatelessWidget {
               children: [
                 _ReviewAmountColumn(
                   label: 'You send',
-                  value: quote.sellAmountText,
+                  value: compactSwapAmountText(quote.sellAmountText),
                   asset: quote.sellAsset,
                 ),
                 const SizedBox(height: AppSpacing.xs),
@@ -397,7 +450,7 @@ class _ReviewTradeSummary extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xs),
                 _ReviewAmountColumn(
                   label: 'You receive',
-                  value: quote.receiveEstimateText,
+                  value: compactSwapAmountText(quote.receiveEstimateText),
                   asset: quote.receiveAsset,
                 ),
               ],
@@ -410,7 +463,7 @@ class _ReviewTradeSummary extends StatelessWidget {
               Expanded(
                 child: _ReviewAmountColumn(
                   label: 'You send',
-                  value: quote.sellAmountText,
+                  value: compactSwapAmountText(quote.sellAmountText),
                   asset: quote.sellAsset,
                 ),
               ),
@@ -425,7 +478,7 @@ class _ReviewTradeSummary extends StatelessWidget {
               Expanded(
                 child: _ReviewAmountColumn(
                   label: 'You receive',
-                  value: quote.receiveEstimateText,
+                  value: compactSwapAmountText(quote.receiveEstimateText),
                   asset: quote.receiveAsset,
                   alignEnd: true,
                 ),
@@ -550,7 +603,7 @@ class _ReviewFeeSummary extends StatelessWidget {
           ),
           _ReviewFeeRow(
             label: 'Minimum receive',
-            value: quote.minimumReceiveText,
+            value: compactSwapAmountText(quote.minimumReceiveText),
             detail: 'Lowest amount accepted before the swap refreshes.',
           ),
         ],
@@ -633,8 +686,10 @@ String _priceProtectionText(SwapQuote quote) {
   final percentText = percent >= 1
       ? percent.toStringAsFixed(1)
       : percent.toStringAsFixed(2);
-  return '${quote.receiveAsset.formatAmount(bounded)} '
-      '${quote.receiveAsset.symbol} ($percentText%)';
+  return compactSwapAmountText(
+    '${quote.receiveAsset.formatAmount(bounded)} '
+    '${quote.receiveAsset.symbol} ($percentText%)',
+  );
 }
 
 class _ReviewDetailsDisclosure extends StatefulWidget {

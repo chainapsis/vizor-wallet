@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/features/swap/domain/mock_near_intents_swap_provider.dart';
+import 'package:zcash_wallet/src/features/swap/domain/static_near_intents_swap_provider.dart';
 import 'package:zcash_wallet/src/features/swap/domain/swap_contract.dart';
 
 void main() {
   test('provider contract quotes ZEC into an external asset', () async {
-    const provider = MockNearIntentsSwapProvider();
+    const provider = StaticNearIntentsSwapProvider();
 
     final quote = await provider.quote(
       const SwapQuoteRequest(
@@ -28,7 +28,7 @@ void main() {
   test(
     'provider contract quotes an external asset into shielded ZEC',
     () async {
-      const provider = MockNearIntentsSwapProvider();
+      const provider = StaticNearIntentsSwapProvider();
 
       final quote = await provider.quote(
         const SwapQuoteRequest(
@@ -49,7 +49,7 @@ void main() {
   );
 
   test('startSwap returns direction-specific initial intent status', () async {
-    const provider = MockNearIntentsSwapProvider();
+    const provider = StaticNearIntentsSwapProvider();
     final quote = await provider.quote(
       const SwapQuoteRequest(
         direction: SwapDirection.externalToZec,

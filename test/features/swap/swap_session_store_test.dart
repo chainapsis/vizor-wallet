@@ -62,14 +62,16 @@ void main() {
       oneClickRecipient: '0xrecipient',
       oneClickRefundTo: 't1refund',
       depositDeadline: DateTime.utc(2026, 5, 7, 12),
+      accountUuid: 'account-1',
     );
 
-    await store.saveIntents([intent]);
+    await store.saveIntents(accountUuid: 'account-1', intents: [intent]);
 
-    final restored = await store.loadIntents();
+    final restored = await store.loadIntents(accountUuid: 'account-1');
 
     expect(restored, hasLength(1));
     expect(restored.single.id, 't1deposit');
+    expect(restored.single.accountUuid, 'account-1');
     expect(restored.single.direction, SwapDirection.zecToExternal);
     expect(restored.single.externalAsset, SwapAsset.usdc);
     expect(restored.single.depositAddress, 't1deposit');
@@ -90,6 +92,34 @@ void main() {
     expect(restored.single.status, SwapIntentStatus.processing);
     expect(restored.single.steps.single.label, 'Deposit observed');
     expect(restored.single.receipt.last.value, 't1refund');
+  });
+
+  test('keeps persisted swap sessions scoped to their account', () async {
+    final accountOneIntent = _minimalIntent(
+      id: 'swap-account-1',
+      accountUuid: 'account-1',
+    );
+    final accountTwoIntent = _minimalIntent(
+      id: 'swap-account-2',
+      accountUuid: 'account-2',
+    );
+
+    await store.saveIntents(
+      accountUuid: 'account-1',
+      intents: [accountOneIntent],
+    );
+    await store.saveIntents(
+      accountUuid: 'account-2',
+      intents: [accountTwoIntent],
+    );
+
+    final accountOne = await store.loadIntents(accountUuid: 'account-1');
+    final accountTwo = await store.loadIntents(accountUuid: 'account-2');
+
+    expect(accountOne.single.id, 'swap-account-1');
+    expect(accountOne.single.accountUuid, 'account-1');
+    expect(accountTwo.single.id, 'swap-account-2');
+    expect(accountTwo.single.accountUuid, 'account-2');
   });
 
   test('round-trips only the last attempted swap pair', () async {
@@ -173,9 +203,9 @@ void main() {
       oneClickRefundTo: '0xrefund',
     );
 
-    await store.saveIntents([intent]);
+    await store.saveIntents(accountUuid: 'account-1', intents: [intent]);
 
-    final restored = await store.loadIntents();
+    final restored = await store.loadIntents(accountUuid: 'account-1');
 
     expect(restored.single.status, SwapIntentStatus.shieldingFailed);
     expect(restored.single.oneClickRecipient, 't1staging');
@@ -215,12 +245,36 @@ void main() {
       oneClickRefundTo: '0xrefund',
     );
 
-    await store.saveIntents([intent]);
+    await store.saveIntents(accountUuid: 'account-1', intents: [intent]);
 
-    final restored = await store.loadIntents();
+    final restored = await store.loadIntents(accountUuid: 'account-1');
 
     expect(restored.single.status, SwapIntentStatus.shieldingConfirming);
     expect(restored.single.shieldTxHash, 'shield-txid');
     expect(restored.single.receipt.single.value, 'shield-txid');
   });
+}
+
+SwapPrototypeIntent _minimalIntent({
+  required String id,
+  required String accountUuid,
+}) {
+  return SwapPrototypeIntent(
+    id: id,
+    title: 'ZEC to USDC',
+    pair: 'ZEC -> USDC',
+    sellAmount: '1.0000 ZEC',
+    receiveEstimate: '~100.00 USDC',
+    provider: 'NEAR Intents',
+    status: SwapIntentStatus.processing,
+    nextAction: 'Processing',
+    steps: const [],
+    exposure: const [],
+    receipt: const [],
+    direction: SwapDirection.zecToExternal,
+    externalAsset: SwapAsset.usdc,
+    depositAddress: id,
+    providerQuoteId: 'quote-$id',
+    accountUuid: accountUuid,
+  );
 }
