@@ -34,10 +34,10 @@ class SwapAsset {
     required this.chainTicker,
     required this.chainLabel,
     required this.decimals,
-    required double mockExternalPerZec,
+    required double fallbackExternalPerZec,
     this.assetId,
     String? railLabel,
-  }) : _mockExternalPerZec = mockExternalPerZec,
+  }) : _fallbackExternalPerZec = fallbackExternalPerZec,
        _railLabel = railLabel;
 
   factory SwapAsset.live({
@@ -60,7 +60,7 @@ class SwapAsset {
       chainLabel: _chainDisplayName(chainTicker),
       decimals: decimals,
       assetId: assetId,
-      mockExternalPerZec: _mockRateFor(displaySymbol),
+      fallbackExternalPerZec: _fallbackRateFor(displaySymbol),
     );
   }
 
@@ -72,7 +72,7 @@ class SwapAsset {
     chainLabel: 'Zcash',
     railLabel: 'Zcash wallet',
     decimals: 8,
-    mockExternalPerZec: 1,
+    fallbackExternalPerZec: 1,
   );
   static const usdc = SwapAsset._(
     name: 'usdc',
@@ -82,7 +82,7 @@ class SwapAsset {
     chainLabel: 'Ethereum',
     railLabel: 'Ethereum USDC',
     decimals: 6,
-    mockExternalPerZec: 70.1733333333,
+    fallbackExternalPerZec: 70.1733333333,
   );
   static const eth = SwapAsset._(
     name: 'eth',
@@ -92,7 +92,7 @@ class SwapAsset {
     chainLabel: 'Ethereum',
     railLabel: 'Ethereum ETH',
     decimals: 18,
-    mockExternalPerZec: 0.0254,
+    fallbackExternalPerZec: 0.0254,
   );
   static const btc = SwapAsset._(
     name: 'btc',
@@ -102,7 +102,7 @@ class SwapAsset {
     chainLabel: 'Bitcoin',
     railLabel: 'Bitcoin BTC',
     decimals: 8,
-    mockExternalPerZec: 0.00064,
+    fallbackExternalPerZec: 0.00064,
   );
   static const sol = SwapAsset._(
     name: 'sol',
@@ -112,7 +112,7 @@ class SwapAsset {
     chainLabel: 'Solana',
     railLabel: 'Solana SOL',
     decimals: 9,
-    mockExternalPerZec: 0.42,
+    fallbackExternalPerZec: 0.42,
   );
   static const usdt = SwapAsset._(
     name: 'usdt',
@@ -122,7 +122,7 @@ class SwapAsset {
     chainLabel: 'Ethereum',
     railLabel: 'Ethereum USDT',
     decimals: 6,
-    mockExternalPerZec: 70.11,
+    fallbackExternalPerZec: 70.11,
   );
   static const dai = SwapAsset._(
     name: 'dai',
@@ -132,7 +132,7 @@ class SwapAsset {
     chainLabel: 'Ethereum',
     railLabel: 'Ethereum DAI',
     decimals: 18,
-    mockExternalPerZec: 70.08,
+    fallbackExternalPerZec: 70.08,
   );
   static const wbtc = SwapAsset._(
     name: 'wbtc',
@@ -142,7 +142,7 @@ class SwapAsset {
     chainLabel: 'Ethereum',
     railLabel: 'Ethereum WBTC',
     decimals: 8,
-    mockExternalPerZec: 0.00064,
+    fallbackExternalPerZec: 0.00064,
   );
   static const near = SwapAsset._(
     name: 'near',
@@ -152,7 +152,7 @@ class SwapAsset {
     chainLabel: 'NEAR',
     railLabel: 'NEAR account',
     decimals: 24,
-    mockExternalPerZec: 50.4,
+    fallbackExternalPerZec: 50.4,
   );
   static const doge = SwapAsset._(
     name: 'doge',
@@ -162,7 +162,7 @@ class SwapAsset {
     chainLabel: 'Dogecoin',
     railLabel: 'Dogecoin DOGE',
     decimals: 8,
-    mockExternalPerZec: 435,
+    fallbackExternalPerZec: 435,
   );
 
   static const values = <SwapAsset>[
@@ -186,19 +186,19 @@ class SwapAsset {
   final int decimals;
   final String? assetId;
   final String? _railLabel;
-  final double _mockExternalPerZec;
+  final double _fallbackExternalPerZec;
 
   String get railLabel => _railLabel ?? '$chainLabel $symbol';
 
   String get preferredBlockchain => chainTicker;
 
-  double get mockExternalPerZec => _mockExternalPerZec;
+  double get fallbackExternalPerZec => _fallbackExternalPerZec;
 
   String get identityKey => assetId ?? name;
 
-  String get tokenIconAsset => 'assets/swap/tokens/$tokenIconKey.png';
+  String get tokenIconAsset => _tokenIconAssetPath(tokenIconKey);
 
-  String get chainIconAsset => 'assets/swap/chains/$chainIconKey.png';
+  String get chainIconAsset => _chainIconAssetPath(chainIconKey);
 
   String get tokenIconKey => _normalizeIconKey(symbol);
 
@@ -220,7 +220,7 @@ class SwapAsset {
       decimals: decimals,
       assetId: assetId,
       railLabel: _railLabel,
-      mockExternalPerZec: _mockExternalPerZec,
+      fallbackExternalPerZec: _fallbackExternalPerZec,
     );
   }
 
@@ -290,7 +290,7 @@ class SwapAsset {
       railLabel: value['railLabel'] is String
           ? value['railLabel'] as String
           : null,
-      mockExternalPerZec: _mockRateFor(symbol),
+      fallbackExternalPerZec: _fallbackRateFor(symbol),
     );
   }
 
@@ -357,6 +357,25 @@ String _normalizeIconKey(String value) {
   return value.trim().replaceFirst(RegExp(r'^\$'), '').toLowerCase();
 }
 
+String _tokenIconAssetPath(String iconKey) {
+  final assetKey = switch (iconKey) {
+    'btc(omni)' => 'btc',
+    'nrusdt' || 'usdt0' => 'usdt',
+    'stnear' => 'near',
+    _ => iconKey,
+  };
+  return 'assets/swap/tokens/$assetKey.png';
+}
+
+String _chainIconAssetPath(String iconKey) {
+  return switch (iconKey) {
+    'bsc' => 'assets/swap/tokens/bnb.png',
+    'cardano' => 'assets/swap/tokens/ada.png',
+    'xlayer' => 'assets/swap/tokens/okb.png',
+    _ => 'assets/swap/chains/$iconKey.png',
+  };
+}
+
 String _tokenDisplayName(String symbol) {
   return switch (symbol.toLowerCase()) {
     'btc' || 'wbtc' || 'xbtc' || 'cbbtc' => 'Bitcoin',
@@ -408,7 +427,7 @@ String _chainDisplayName(String ticker) {
   };
 }
 
-double _mockRateFor(String symbol) {
+double _fallbackRateFor(String symbol) {
   return switch (symbol.toLowerCase()) {
     'usdc' || 'usdt' || 'dai' => 70,
     'eth' || 'weth' => 0.0254,
@@ -468,6 +487,7 @@ class SwapQuoteRequest {
     required this.externalAsset,
     required this.sellAmount,
     required this.destination,
+    this.sellAmountText,
     this.refundAddress,
     this.dryRun = false,
     this.slippageBps,
@@ -477,6 +497,7 @@ class SwapQuoteRequest {
   final SwapDirection direction;
   final SwapAsset externalAsset;
   final double sellAmount;
+  final String? sellAmountText;
   final String destination;
   final String? refundAddress;
   final bool dryRun;
@@ -541,7 +562,7 @@ class SwapQuote {
     assert(externalAsset.name != 'zec');
     final sellAsset = direction.fromAsset(externalAsset);
     final receiveAsset = direction.toAsset(externalAsset);
-    final rate = externalPerZec ?? externalAsset.mockExternalPerZec;
+    final rate = externalPerZec ?? externalAsset.fallbackExternalPerZec;
     final receiveAmount = direction.sendsZec
         ? sellAmount * rate
         : sellAmount / rate;
@@ -606,7 +627,7 @@ class SwapQuote {
     if (override != null) {
       return override;
     }
-    final rate = externalAsset.mockExternalPerZec;
+    final rate = externalAsset.fallbackExternalPerZec;
     if (direction.sendsZec) {
       return '1 ZEC = ${rate.toStringAsFixed(2)} ${externalAsset.symbol}';
     }

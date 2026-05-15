@@ -153,9 +153,10 @@ fvm flutter run \
 `ZCASH_SWAP_1CLICK_JWT` in `~/.zshenv` is available to the shell, but the
 Flutter app reads it through `String.fromEnvironment`; pass it with
 `--dart-define` when launching the app. Reviewing a quote calls the live 1Click
-quote API and can return a real one-time deposit instruction. It does not move
-funds by itself, and live ZEC auto-deposit remains disabled unless the app is
-built with `--dart-define=ZCASH_SWAP_ENABLE_LIVE_FUNDS=true`.
+quote API and can return a real one-time deposit instruction. Reviewing a quote
+does not move funds by itself. Starting a ZEC-to-external swap sends the wallet
+deposit by default; build with
+`--dart-define=ZCASH_SWAP_ENABLE_LIVE_FUNDS=false` to disable live app funds.
 
 For local app validation, use the wrapper so the shell JWT is forwarded into
 the Flutter build:

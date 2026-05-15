@@ -8,14 +8,20 @@ import '../models/swap_prototype_models.dart';
 const _swapSessionsKey = 'zcash_swap_sessions_v1';
 const _swapDraftKey = 'zcash_swap_draft_v1';
 
+String _swapSessionsKeyFor(String accountUuid) =>
+    '$_swapSessionsKey:$accountUuid';
+
 final swapSessionStoreProvider = Provider<SwapSessionStore>((ref) {
   return AppSecureStoreSwapSessionStore(AppSecureStore.instance);
 });
 
 abstract interface class SwapSessionStore {
-  Future<List<SwapPrototypeIntent>> loadIntents();
+  Future<List<SwapPrototypeIntent>> loadIntents({required String accountUuid});
 
-  Future<void> saveIntents(List<SwapPrototypeIntent> intents);
+  Future<void> saveIntents({
+    required String accountUuid,
+    required List<SwapPrototypeIntent> intents,
+  });
 
   Future<SwapDraftSnapshot?> loadDraft();
 
@@ -28,8 +34,10 @@ class AppSecureStoreSwapSessionStore implements SwapSessionStore {
   final AppSecureStore _storage;
 
   @override
-  Future<List<SwapPrototypeIntent>> loadIntents() async {
-    final raw = await _storage.readString(_swapSessionsKey);
+  Future<List<SwapPrototypeIntent>> loadIntents({
+    required String accountUuid,
+  }) async {
+    final raw = await _storage.readString(_swapSessionsKeyFor(accountUuid));
     if (raw == null || raw.trim().isEmpty) {
       return const [];
     }
@@ -39,15 +47,22 @@ class AppSecureStoreSwapSessionStore implements SwapSessionStore {
     }
     return [
       for (final item in decoded)
-        if (item is Map<String, dynamic>) _intentFromJson(item),
+        if (item is Map<String, dynamic>)
+          _intentFromJson(item).copyWith(accountUuid: accountUuid),
     ];
   }
 
   @override
-  Future<void> saveIntents(List<SwapPrototypeIntent> intents) async {
+  Future<void> saveIntents({
+    required String accountUuid,
+    required List<SwapPrototypeIntent> intents,
+  }) async {
     await _storage.writeString(
-      _swapSessionsKey,
-      jsonEncode([for (final intent in intents) _intentToJson(intent)]),
+      _swapSessionsKeyFor(accountUuid),
+      jsonEncode([
+        for (final intent in intents)
+          _intentToJson(intent.copyWith(accountUuid: accountUuid)),
+      ]),
     );
   }
 
@@ -123,6 +138,7 @@ Map<String, Object?> _intentToJson(SwapPrototypeIntent intent) {
     'oneClickRecipient': intent.oneClickRecipient,
     'oneClickRefundTo': intent.oneClickRefundTo,
     'depositDeadline': intent.depositDeadline?.toUtc().toIso8601String(),
+    'accountUuid': intent.accountUuid,
   };
 }
 
@@ -157,6 +173,7 @@ SwapPrototypeIntent _intentFromJson(Map<String, dynamic> json) {
     oneClickRecipient: _optionalString(json['oneClickRecipient']),
     oneClickRefundTo: _optionalString(json['oneClickRefundTo']),
     depositDeadline: _optionalDateTime(json['depositDeadline']),
+    accountUuid: _optionalString(json['accountUuid']),
   );
 }
 

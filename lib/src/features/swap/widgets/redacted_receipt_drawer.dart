@@ -1,12 +1,10 @@
-import 'dart:async';
-
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../models/swap_prototype_models.dart';
+import 'swap_copy_feedback.dart';
 
 class RedactedReceiptDrawer extends StatelessWidget {
   const RedactedReceiptDrawer({
@@ -21,7 +19,8 @@ class RedactedReceiptDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final receiptText = redactedReceiptText(rows);
+    final supportRows = _supportRows(rows);
+    final receiptText = redactedReceiptText(supportRows);
     final recoveryBundleCopyText = recoveryBundleText(intent);
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
@@ -40,9 +39,7 @@ class RedactedReceiptDrawer extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          const _ReceiptScopePanel(),
-          const SizedBox(height: AppSpacing.sm),
-          for (final row in rows) _ReceiptRow(row: row),
+          for (final row in supportRows) _ReceiptRow(row: row),
           const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: AppSpacing.xs,
@@ -50,13 +47,16 @@ class RedactedReceiptDrawer extends StatelessWidget {
             children: [
               AppButton(
                 key: const ValueKey('swap_copy_redacted_receipt_button'),
-                onPressed: receiptText.isEmpty
-                    ? null
-                    : () {
-                        unawaited(
-                          Clipboard.setData(ClipboardData(text: receiptText)),
-                        );
-                      },
+                onPressed:
+                    receiptText.isEmpty
+                        ? null
+                        : () {
+                          copySwapText(
+                            context,
+                            text: receiptText,
+                            toastMessage: 'Receipt Copied',
+                          );
+                        },
                 variant: AppButtonVariant.secondary,
                 size: AppButtonSize.medium,
                 leading: const AppIcon(AppIcons.copy),
@@ -64,15 +64,16 @@ class RedactedReceiptDrawer extends StatelessWidget {
               ),
               AppButton(
                 key: const ValueKey('swap_copy_recovery_bundle_button'),
-                onPressed: recoveryBundleCopyText.isEmpty
-                    ? null
-                    : () {
-                        unawaited(
-                          Clipboard.setData(
-                            ClipboardData(text: recoveryBundleCopyText),
-                          ),
-                        );
-                      },
+                onPressed:
+                    recoveryBundleCopyText.isEmpty
+                        ? null
+                        : () {
+                          copySwapText(
+                            context,
+                            text: recoveryBundleCopyText,
+                            toastMessage: 'Recovery Bundle Copied',
+                          );
+                        },
                 variant: AppButtonVariant.secondary,
                 size: AppButtonSize.medium,
                 leading: const AppIcon(AppIcons.scroll),
@@ -87,7 +88,7 @@ class RedactedReceiptDrawer extends StatelessWidget {
 }
 
 String redactedReceiptText(List<SwapPrototypeField> rows) {
-  final fields = rows
+  final fields = _supportRows(rows)
       .where((row) => row.value.trim().isNotEmpty)
       .map((row) => '${row.label}: ${row.value}');
   if (fields.isEmpty) return '';
@@ -97,7 +98,6 @@ String redactedReceiptText(List<SwapPrototypeField> rows) {
 String recoveryBundleText(SwapPrototypeIntent intent) {
   final fields = <SwapPrototypeField>[
     SwapPrototypeField(label: 'Swap service', value: intent.provider),
-    SwapPrototypeField(label: 'Swap id', value: intent.id),
     SwapPrototypeField(label: 'Pair', value: intent.pair),
     SwapPrototypeField(label: 'Status', value: intent.statusLabel),
     SwapPrototypeField(label: 'Next action', value: intent.nextAction),
@@ -111,11 +111,9 @@ String recoveryBundleText(SwapPrototypeIntent intent) {
     if (intent.depositTxHash != null)
       SwapPrototypeField(label: 'Deposit tx', value: intent.depositTxHash!),
     if (intent.providerQuoteId != null)
-      SwapPrototypeField(label: 'Quote id', value: intent.providerQuoteId!),
-    if (intent.providerSignature != null)
       SwapPrototypeField(
-        label: 'Quote signature',
-        value: intent.providerSignature!,
+        label: 'Provider quote',
+        value: intent.providerQuoteId!,
       ),
     if (intent.oneClickRecipient != null)
       SwapPrototypeField(label: 'Recipient', value: intent.oneClickRecipient!),
@@ -133,93 +131,16 @@ String recoveryBundleText(SwapPrototypeIntent intent) {
   return ['Recovery scope: local support bundle', ...lines].join('\n');
 }
 
-class _ReceiptScopePanel extends StatelessWidget {
-  const _ReceiptScopePanel();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      key: const ValueKey('swap_receipt_scope_panel'),
-      padding: const EdgeInsets.all(AppSpacing.xs),
-      decoration: BoxDecoration(
-        color: colors.background.raised,
-        border: Border.all(color: colors.border.subtle),
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: Wrap(
-        spacing: AppSpacing.xs,
-        runSpacing: AppSpacing.xs,
-        children: const [
-          _ReceiptScopeChip(
-            key: ValueKey('swap_redacted_receipt_scope'),
-            iconName: AppIcons.eyeClosed,
-            label: 'Redacted receipt',
-            value: 'txid + status only',
-          ),
-          _ReceiptScopeChip(
-            key: ValueKey('swap_recovery_bundle_scope'),
-            iconName: AppIcons.scroll,
-            label: 'Recovery bundle',
-            value: 'local support fields',
-          ),
-        ],
-      ),
-    );
-  }
+List<SwapPrototypeField> _supportRows(List<SwapPrototypeField> rows) {
+  return [
+    for (final row in rows)
+      if (!_isNoisySupportRow(row)) row,
+  ];
 }
 
-class _ReceiptScopeChip extends StatelessWidget {
-  const _ReceiptScopeChip({
-    required this.iconName,
-    required this.label,
-    required this.value,
-    super.key,
-  });
-
-  final String iconName;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: AppSpacing.xxs,
-      ),
-      decoration: BoxDecoration(
-        color: colors.background.base,
-        border: Border.all(color: colors.border.subtle),
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppIcon(iconName, size: 14, color: colors.icon.regular),
-          const SizedBox(width: AppSpacing.xxs),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: AppTypography.labelSmall.copyWith(
-                  color: colors.text.accent,
-                ),
-              ),
-              Text(
-                value,
-                style: AppTypography.bodyExtraSmall.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+bool _isNoisySupportRow(SwapPrototypeField row) {
+  final label = row.label.trim().toLowerCase();
+  return label == 'swap id' || label == 'shared fields';
 }
 
 class _ReceiptRow extends StatelessWidget {

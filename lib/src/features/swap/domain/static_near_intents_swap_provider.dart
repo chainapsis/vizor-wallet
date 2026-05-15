@@ -1,7 +1,7 @@
 import 'swap_contract.dart';
 
-class MockNearIntentsSwapProvider implements SwapProvider {
-  const MockNearIntentsSwapProvider();
+class StaticNearIntentsSwapProvider implements SwapProvider {
+  const StaticNearIntentsSwapProvider();
 
   @override
   String get providerLabel => 'NEAR Intents';

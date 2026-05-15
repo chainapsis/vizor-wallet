@@ -101,6 +101,7 @@ class SwapAddressPlan {
 
   SwapQuoteRequest toQuoteRequest({
     required double sellAmount,
+    String? sellAmountText,
     bool dryRun = false,
     int? slippageBps,
     Duration? deadline,
@@ -109,6 +110,7 @@ class SwapAddressPlan {
       direction: direction,
       externalAsset: externalAsset,
       sellAmount: sellAmount,
+      sellAmountText: sellAmountText,
       destination: oneClickRecipient,
       refundAddress: oneClickRefundTo,
       dryRun: dryRun,

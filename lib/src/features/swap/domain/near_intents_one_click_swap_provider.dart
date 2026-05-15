@@ -180,7 +180,10 @@ class NearIntentsOneClickSwapProvider
       'originAsset': sellToken.assetId,
       'depositType': 'ORIGIN_CHAIN',
       'destinationAsset': receiveToken.assetId,
-      'amount': _toBaseUnits(request.sellAmount, sellToken.decimals),
+      'amount': _toBaseUnits(
+        request.sellAmountText ?? request.sellAmount.toString(),
+        sellToken.decimals,
+      ),
       'refundTo': request.refundAddress!.trim(),
       'refundType': 'ORIGIN_CHAIN',
       'recipient': request.destination.trim(),
@@ -742,14 +745,11 @@ double _parseAmount(String value, String fieldName) {
   return parsed;
 }
 
-String _toBaseUnits(double amount, int decimals) {
-  if (!amount.isFinite || amount < 0) {
-    throw const OneClickApiException('Invalid quote amount');
-  }
+String _toBaseUnits(String amount, int decimals) {
   if (decimals < 0) {
     throw const OneClickApiException('Invalid token decimals');
   }
-  return _decimalStringToBaseUnits(amount.toString(), decimals);
+  return _decimalStringToBaseUnits(amount, decimals);
 }
 
 String _decimalStringToBaseUnits(String value, int decimals) {

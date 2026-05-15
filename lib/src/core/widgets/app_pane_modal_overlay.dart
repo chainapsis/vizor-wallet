@@ -10,12 +10,14 @@ class AppPaneModalOverlay extends StatelessWidget {
     required this.child,
     required this.onDismiss,
     this.borderRadius,
+    this.alignment = Alignment.center,
     super.key,
   });
 
   final Widget child;
   final VoidCallback onDismiss;
   final BorderRadius? borderRadius;
+  final Alignment alignment;
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +50,8 @@ class AppPaneModalOverlay extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: colors.background.neutralScrim,
                   ),
-                  child: Center(
+                  child: Align(
+                    alignment: alignment,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () {},

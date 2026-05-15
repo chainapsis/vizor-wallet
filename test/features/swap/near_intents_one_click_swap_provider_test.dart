@@ -150,7 +150,7 @@ void main() {
 
   test('token list exposes live chain variants with local icon keys', () async {
     final transport = _FakeOneClickTransport([
-      _FakeResponse.get('/v0/tokens', _tokensWithNearUsdcFirst),
+      _FakeResponse.get('/v0/tokens', _tokensWithBscAssets),
       _FakeResponse.post(
         '/v0/quote',
         _quoteResponse(
@@ -179,6 +179,23 @@ void main() {
     expect(baseUsdc.railLabel, 'Base USDC');
     expect(baseUsdc.tokenIconKey, 'usdc');
     expect(baseUsdc.chainIconKey, 'base');
+    expect(baseUsdc.tokenIconAsset, 'assets/swap/tokens/usdc.png');
+    expect(baseUsdc.chainIconAsset, 'assets/swap/chains/base.png');
+
+    final bscUsdc = supported.singleWhere(
+      (asset) => asset.symbol == 'USDC' && asset.chainTicker == 'bsc',
+    );
+    expect(bscUsdc.chainLabel, 'Binance Smart Chain');
+    expect(bscUsdc.tokenIconAsset, 'assets/swap/tokens/usdc.png');
+    expect(bscUsdc.chainIconKey, 'bsc');
+    expect(bscUsdc.chainIconAsset, 'assets/swap/tokens/bnb.png');
+
+    final bnb = supported.singleWhere(
+      (asset) => asset.symbol == 'BNB' && asset.chainTicker == 'bsc',
+    );
+    expect(bnb.displayName, 'BNB');
+    expect(bnb.tokenIconAsset, 'assets/swap/tokens/bnb.png');
+    expect(bnb.chainIconAsset, 'assets/swap/tokens/bnb.png');
 
     await provider.quote(
       SwapQuoteRequest(
@@ -310,6 +327,44 @@ void main() {
       expect(request.body?['originAsset'], 'nep141:wrap.near');
       expect(request.body?['destinationAsset'], 'nep141:zec.omft.near');
       expect(quote.pairText, 'NEAR -> ZEC');
+    },
+  );
+
+  test(
+    'quote keeps original decimal text for exact-input base units',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:wrap.near',
+            destinationAsset: 'nep141:zec.omft.near',
+            amountInFormatted: '0.123456789012345678901234',
+            amountOutFormatted: '0.0002',
+            minAmountOut: '19900',
+            depositAddress: 'near-deposit',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapProvider(transport: transport);
+
+      await provider.quote(
+        const SwapQuoteRequest(
+          direction: SwapDirection.externalToZec,
+          externalAsset: SwapAsset.near,
+          sellAmount: 0.12345678901234568,
+          sellAmountText: '0.123456789012345678901234',
+          destination: 't1rotating-zec-recipient',
+          refundAddress: 'rowan.near',
+        ),
+      );
+
+      expect(
+        transport.requests.last.body?['amount'],
+        '123456789012345678901234',
+      );
     },
   );
 
@@ -695,6 +750,22 @@ const _tokensWithNearUsdcFirst = [
     'assetId': 'nep141:base-usdc.example',
     'decimals': 6,
     'blockchain': 'base',
+    'symbol': 'USDC',
+  },
+];
+
+const _tokensWithBscAssets = [
+  ..._tokensWithNearUsdcFirst,
+  {
+    'assetId': 'nep245:v2_1.omni.hot.tg:56_11111111111111111111',
+    'decimals': 18,
+    'blockchain': 'bsc',
+    'symbol': 'BNB',
+  },
+  {
+    'assetId': 'nep245:v2_1.omni.hot.tg:56_2w93GqMcEmQFDru84j3HZZWt557r',
+    'decimals': 6,
+    'blockchain': 'bsc',
     'symbol': 'USDC',
   },
 ];

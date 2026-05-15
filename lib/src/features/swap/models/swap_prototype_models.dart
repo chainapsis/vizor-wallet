@@ -159,6 +159,7 @@ class SwapPrototypeIntent {
     this.oneClickRecipient,
     this.oneClickRefundTo,
     this.depositDeadline,
+    this.accountUuid,
   });
 
   final String id;
@@ -186,6 +187,7 @@ class SwapPrototypeIntent {
   final String? oneClickRecipient;
   final String? oneClickRefundTo;
   final DateTime? depositDeadline;
+  final String? accountUuid;
 
   String get statusLabel => status.label;
 
@@ -215,6 +217,7 @@ class SwapPrototypeIntent {
     String? oneClickRecipient,
     String? oneClickRefundTo,
     DateTime? depositDeadline,
+    String? accountUuid,
     bool clearStatusError = false,
   }) {
     return SwapPrototypeIntent(
@@ -243,6 +246,7 @@ class SwapPrototypeIntent {
       oneClickRecipient: oneClickRecipient ?? this.oneClickRecipient,
       oneClickRefundTo: oneClickRefundTo ?? this.oneClickRefundTo,
       depositDeadline: depositDeadline ?? this.depositDeadline,
+      accountUuid: accountUuid ?? this.accountUuid,
     );
   }
 }
@@ -562,7 +566,7 @@ class SwapPrototypeState {
   }
 }
 
-const mockExternalRequests = <SwapExternalRequest>[
+const previewExternalRequests = <SwapExternalRequest>[
   SwapExternalRequest(
     id: 'request-one-click-usdc',
     source: 'Pasted request',
@@ -649,7 +653,7 @@ const mockExternalRequests = <SwapExternalRequest>[
   ),
 ];
 
-const mockSwapIntents = <SwapPrototypeIntent>[
+const previewSwapIntents = <SwapPrototypeIntent>[
   SwapPrototypeIntent(
     id: 'swap-8f29',
     title: 'ZEC to USDC',

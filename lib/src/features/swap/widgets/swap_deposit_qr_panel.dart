@@ -1,12 +1,10 @@
-import 'dart:async';
-
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import 'swap_copy_feedback.dart';
 
 class SwapDepositQrPanel extends StatelessWidget {
   const SwapDepositQrPanel({
@@ -227,7 +225,11 @@ class _DepositValueBlock extends StatelessWidget {
               AppButton(
                 key: copyKey,
                 onPressed: () {
-                  unawaited(Clipboard.setData(ClipboardData(text: value)));
+                  copySwapText(
+                    context,
+                    text: value,
+                    toastMessage: _copyToastMessage(label),
+                  );
                 },
                 variant: AppButtonVariant.secondary,
                 size: AppButtonSize.small,
@@ -247,6 +249,17 @@ class _DepositValueBlock extends StatelessWidget {
       ),
     );
   }
+}
+
+String _copyToastMessage(String label) {
+  final normalized = label.trim();
+  if (normalized.isEmpty) return 'Copied to Clipboard';
+  final lower = normalized.toLowerCase();
+  if (lower == 'memo') return 'Memo Copied';
+  if (lower.contains('address') || lower.contains('deposit')) {
+    return 'Address Copied';
+  }
+  return 'Copied to Clipboard';
 }
 
 class _DepositInfoPill extends StatelessWidget {
