@@ -1,9 +1,12 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -102,32 +105,46 @@ class RustSwapDepositSender implements SwapDepositSender {
         );
       }
 
-      final mnemonicBytes = await _ref
-          .read(accountProvider.notifier)
-          .getMnemonicBytesForAccount(accountUuid);
-      if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
-        throw StateError('Mnemonic not found for the active account');
-      }
-
-      proposalConsumed = true;
       late final rust_sync.ExecuteProposalResult result;
-      late final Future<rust_sync.ExecuteProposalResult> resultFuture;
       log(
         'SwapDepositSender: broadcast begin flow=$sendFlowId '
         'proposal=${proposal.proposalId}',
       );
-      try {
-        resultFuture = rust_sync.executeProposal(
+
+      if (Platform.isMacOS) {
+        final password = _ref
+            .read(appSecurityProvider.notifier)
+            .requireSessionPasswordForNativeSecretUse();
+        result = await rust_sync.executeProposalWithMacosStoredMnemonic(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           proposalId: proposal.proposalId,
           sendFlowId: sendFlowId,
-          mnemonicBytes: mnemonicBytes,
+          password: password,
         );
-      } finally {
-        mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+      } else {
+        final mnemonicBytes = await _ref
+            .read(accountProvider.notifier)
+            .getMnemonicBytesForAccount(accountUuid);
+        if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+          throw StateError('Mnemonic not found for the active account');
+        }
+
+        late final Future<rust_sync.ExecuteProposalResult> resultFuture;
+        try {
+          resultFuture = rust_sync.executeProposal(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            proposalId: proposal.proposalId,
+            sendFlowId: sendFlowId,
+            mnemonicBytes: mnemonicBytes,
+          );
+        } finally {
+          mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+        }
+        result = await resultFuture;
       }
-      result = await resultFuture;
+      proposalConsumed = true;
 
       try {
         await _ref.read(syncProvider.notifier).refreshAfterSend();

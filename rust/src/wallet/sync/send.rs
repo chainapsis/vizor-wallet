@@ -557,14 +557,14 @@ pub(crate) async fn shield_transparent_address(
     network: WalletNetwork,
     account_uuid: &str,
     transparent_address: &str,
-    seed_bytes: &[u8],
+    seed: SecretVec<u8>,
 ) -> Result<ShieldTransparentResult, String> {
     let shielding_threshold = shielding_threshold()?;
     let transparent_address = decode_transparent_address(network, transparent_address)?;
 
     let (txids, fee_zatoshi, shielded_zatoshi) = with_wallet_db_write_lock(
         "send.shield_transparent_address.create_transactions",
-        || {
+        move || {
             let mut db = open_wallet_db(db_path, network)?;
             let account_id = parse_account_uuid(account_uuid)?;
             let account = db
@@ -582,7 +582,6 @@ pub(crate) async fn shield_transparent_address(
             let fee_zatoshi = proposal_fee_zatoshi(&proposal);
             let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
 
-            let seed = SecretVec::new(seed_bytes.to_vec());
             let zip32_index = account
                 .source()
                 .key_derivation()
@@ -590,6 +589,7 @@ pub(crate) async fn shield_transparent_address(
                 .account_index();
             let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
                 .map_err(|e| format!("USK derivation failed: {e:?}"))?;
+            drop(seed);
 
             let spend_prover = NoOpSpendProver;
             let output_prover = NoOpOutputProver;

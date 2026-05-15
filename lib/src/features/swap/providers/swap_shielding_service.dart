@@ -1,12 +1,14 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
-import '../../../rust/api/wallet.dart' as rust_wallet;
 
 final swapShieldingServiceProvider = Provider<SwapShieldingService>((ref) {
   return RustSwapShieldingService(ref);
@@ -143,25 +145,45 @@ class RustSwapShieldingService implements SwapShieldingService {
       );
     }
 
-    final mnemonic = await _ref
-        .read(accountProvider.notifier)
-        .getMnemonicForAccount(accountUuid);
-    if (mnemonic == null) {
-      throw StateError('Mnemonic not found for the active account');
-    }
-
-    final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
     log(
       'SwapShielding: shield begin staging=${_shortSwapValue(transparentAddress)}',
     );
-    final result = await rust_sync.shieldTransparentAddress(
-      dbPath: dbPath,
-      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      network: endpoint.networkName,
-      accountUuid: accountUuid,
-      transparentAddress: transparentAddress,
-      seed: seedBytes,
-    );
+    late final rust_sync.ShieldTransparentResult result;
+    if (Platform.isMacOS) {
+      final password = _ref
+          .read(appSecurityProvider.notifier)
+          .requireSessionPasswordForNativeSecretUse();
+      result = await rust_sync.shieldTransparentAddressWithMacosStoredMnemonic(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        transparentAddress: transparentAddress,
+        password: password,
+      );
+    } else {
+      final mnemonicBytes = await _ref
+          .read(accountProvider.notifier)
+          .getMnemonicBytesForAccount(accountUuid);
+      if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+        throw StateError('Mnemonic not found for the active account');
+      }
+
+      late final Future<rust_sync.ShieldTransparentResult> resultFuture;
+      try {
+        resultFuture = rust_sync.shieldTransparentAddressWithMnemonicBytes(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          accountUuid: accountUuid,
+          transparentAddress: transparentAddress,
+          mnemonicBytes: mnemonicBytes,
+        );
+      } finally {
+        mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+      }
+      result = await resultFuture;
+    }
 
     try {
       await _ref.read(syncProvider.notifier).refreshAfterSend();

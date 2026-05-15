@@ -391,6 +391,44 @@ Future<ShieldTransparentResult> shieldTransparentAddress({
   seed: seed,
 );
 
+Future<ShieldTransparentResult> shieldTransparentAddressWithMnemonicBytes({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String transparentAddress,
+  required List<int> mnemonicBytes,
+}) =>
+    RustLib.instance.api.crateApiSyncShieldTransparentAddressWithMnemonicBytes(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      transparentAddress: transparentAddress,
+      mnemonicBytes: mnemonicBytes,
+    );
+
+/// macOS-only software transparent shielding path for one transparent staging
+/// address. Rust reads and decrypts the stored mnemonic, derives the seed, and
+/// zeroizes intermediate material.
+Future<ShieldTransparentResult>
+shieldTransparentAddressWithMacosStoredMnemonic({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String transparentAddress,
+  required String password,
+}) => RustLib.instance.api
+    .crateApiSyncShieldTransparentAddressWithMacosStoredMnemonic(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      transparentAddress: transparentAddress,
+      password: password,
+    );
+
 Future<String> getNextAvailableAddress({
   required String dbPath,
   required String network,

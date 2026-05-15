@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use flutter_rust_bridge::frb;
+use secrecy::SecretVec;
 use zeroize::Zeroizing;
 
 use crate::frb_generated::StreamSink;
@@ -929,6 +930,7 @@ pub fn shield_transparent_address(
 ) -> Result<ShieldTransparentResult, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
+        let seed = SecretVec::new(seed);
         let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
         let r = rt.block_on(wallet_sync::shield_transparent_address(
             &db_path,
@@ -936,7 +938,71 @@ pub fn shield_transparent_address(
             network,
             &account_uuid,
             &transparent_address,
-            &seed,
+            seed,
+        ))?;
+        Ok(ShieldTransparentResult {
+            txids: r.txids,
+            fee_zatoshi: r.fee_zatoshi,
+            shielded_zatoshi: r.shielded_zatoshi,
+        })
+    })
+}
+
+pub fn shield_transparent_address_with_mnemonic_bytes(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    transparent_address: String,
+    mnemonic_bytes: Vec<u8>,
+) -> Result<ShieldTransparentResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
+        let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
+        drop(mnemonic_bytes);
+
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::shield_transparent_address(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            &transparent_address,
+            seed,
+        ))?;
+        Ok(ShieldTransparentResult {
+            txids: r.txids,
+            fee_zatoshi: r.fee_zatoshi,
+            shielded_zatoshi: r.shielded_zatoshi,
+        })
+    })
+}
+
+/// macOS-only software transparent shielding path for one transparent staging
+/// address. Rust reads and decrypts the stored mnemonic, derives the seed, and
+/// zeroizes intermediate material.
+pub fn shield_transparent_address_with_macos_stored_mnemonic(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    transparent_address: String,
+    password: String,
+) -> Result<ShieldTransparentResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let password = Zeroizing::new(password.into_bytes());
+        let seed = secret_store::seed_from_macos_stored_mnemonic(network, &account_uuid, password)?;
+
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::shield_transparent_address(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            &transparent_address,
+            seed,
         ))?;
         Ok(ShieldTransparentResult {
             txids: r.txids,
