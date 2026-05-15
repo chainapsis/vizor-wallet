@@ -314,6 +314,18 @@ Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
   accountUuid: accountUuid,
 );
 
+Future<ShieldTransparentStatus> getShieldTransparentAddressStatus({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String transparentAddress,
+}) => RustLib.instance.api.crateApiSyncGetShieldTransparentAddressStatus(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  transparentAddress: transparentAddress,
+);
+
 /// Shield spendable transparent funds into the account's shielded balance.
 /// Software-account only; hardware shielding uses `create_shield_transparent_pczt`
 /// followed by the PCZT QR signing flow.
@@ -349,6 +361,22 @@ shieldTransparentBalanceWithMacosStoredMnemonic({
       accountUuid: accountUuid,
       password: password,
     );
+
+Future<ShieldTransparentResult> shieldTransparentAddress({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String transparentAddress,
+  required List<int> seed,
+}) => RustLib.instance.api.crateApiSyncShieldTransparentAddress(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  transparentAddress: transparentAddress,
+  seed: seed,
+);
 
 Future<String> getNextAvailableAddress({
   required String dbPath,

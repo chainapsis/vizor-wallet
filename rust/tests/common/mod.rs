@@ -68,6 +68,17 @@ pub fn fund_wallet(unified_address: &str, amount_zec: &str) -> String {
     run_script("fund-wallet.sh", &[unified_address, amount_zec, "10"])
 }
 
+pub fn fund_wallet_with_confirmations(
+    address: &str,
+    amount_zec: &str,
+    confirmations: u32,
+) -> String {
+    run_script(
+        "fund-wallet.sh",
+        &[address, amount_zec, &confirmations.to_string()],
+    )
+}
+
 pub fn current_tip_height() -> u64 {
     wallet_api::get_latest_block_height(LIGHTWALLETD_URL.into())
         .expect("failed to fetch regtest chain tip")

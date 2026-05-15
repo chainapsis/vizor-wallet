@@ -130,12 +130,28 @@ bool walletExists({required String dbPath}) =>
 bool validateMnemonic({required String mnemonic}) =>
     RustLib.instance.api.crateApiWalletValidateMnemonic(mnemonic: mnemonic);
 
+/// Derive seed bytes from a mnemonic phrase.
+/// Returns 64 raw bytes. The caller should treat these as sensitive.
+Future<Uint8List> deriveSeed({required String mnemonic}) =>
+    RustLib.instance.api.crateApiWalletDeriveSeed(mnemonic: mnemonic);
+
 /// Get the transparent address for a specific account (or first account if uuid is None).
 Future<String> getTransparentAddress({
   required String dbPath,
   required String network,
   String? accountUuid,
 }) => RustLib.instance.api.crateApiWalletGetTransparentAddress(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
+/// Reserve a one-time transparent staging address for exchange deposits.
+Future<ExchangeTransparentAddressResult> reserveExchangeTransparentAddress({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiWalletReserveExchangeTransparentAddress(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
@@ -193,6 +209,34 @@ class AccountInfo {
           name == other.name &&
           unifiedAddress == other.unifiedAddress &&
           isSeedAnchor == other.isSeedAnchor;
+}
+
+/// Exchange-only transparent address reserved from the ephemeral key scope.
+class ExchangeTransparentAddressResult {
+  final String address;
+  final int transparentChildIndex;
+  final BigInt exposedAtHeight;
+
+  const ExchangeTransparentAddressResult({
+    required this.address,
+    required this.transparentChildIndex,
+    required this.exposedAtHeight,
+  });
+
+  @override
+  int get hashCode =>
+      address.hashCode ^
+      transparentChildIndex.hashCode ^
+      exposedAtHeight.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExchangeTransparentAddressResult &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          transparentChildIndex == other.transparentChildIndex &&
+          exposedAtHeight == other.exposedAtHeight;
 }
 
 /// Result of wallet creation, containing the mnemonic, unified address, and account UUID.

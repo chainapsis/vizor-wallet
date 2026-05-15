@@ -809,6 +809,29 @@ pub fn create_shield_transparent_pczt(
     })
 }
 
+pub fn get_shield_transparent_address_status(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    transparent_address: String,
+) -> Result<ShieldTransparentStatus, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let r = wallet_sync::get_shield_transparent_address_status(
+            &db_path,
+            network,
+            &account_uuid,
+            &transparent_address,
+        )?;
+        Ok(ShieldTransparentStatus {
+            can_shield: r.can_shield,
+            fee_zatoshi: r.fee_zatoshi,
+            shielded_zatoshi: r.shielded_zatoshi,
+            reason: r.reason,
+        })
+    })
+}
+
 /// Shield spendable transparent funds into the account's shielded balance.
 /// Software-account only; hardware shielding uses `create_shield_transparent_pczt`
 /// followed by the PCZT QR signing flow.
@@ -863,6 +886,33 @@ pub fn shield_transparent_balance_with_macos_stored_mnemonic(
             network,
             &account_uuid,
             seed,
+        ))?;
+        Ok(ShieldTransparentResult {
+            txids: r.txids,
+            fee_zatoshi: r.fee_zatoshi,
+            shielded_zatoshi: r.shielded_zatoshi,
+        })
+    })
+}
+
+pub fn shield_transparent_address(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    transparent_address: String,
+    seed: Vec<u8>,
+) -> Result<ShieldTransparentResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::shield_transparent_address(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            &transparent_address,
+            &seed,
         ))?;
         Ok(ShieldTransparentResult {
             txids: r.txids,

@@ -1,6 +1,8 @@
 use std::panic;
 
-use crate::wallet::keys;
+use secrecy::ExposeSecret;
+
+use crate::wallet::{exchange_address, keys};
 
 /// Result of wallet creation, containing the mnemonic, unified address, and account UUID.
 pub struct WalletCreationResult {
@@ -27,6 +29,13 @@ pub struct AccountInfo {
     pub name: String,
     pub unified_address: String,
     pub is_seed_anchor: bool,
+}
+
+/// Exchange-only transparent address reserved from the ephemeral key scope.
+pub struct ExchangeTransparentAddressResult {
+    pub address: String,
+    pub transparent_child_index: u32,
+    pub exposed_at_height: u64,
 }
 
 /// Catches panics and converts them to Result<T, String>.
@@ -252,6 +261,15 @@ pub fn validate_mnemonic(mnemonic: String) -> bool {
     keys::mnemonic_to_seed(&mnemonic).is_ok()
 }
 
+/// Derive seed bytes from a mnemonic phrase.
+/// Returns 64 raw bytes. The caller should treat these as sensitive.
+pub fn derive_seed(mnemonic: String) -> Result<Vec<u8>, String> {
+    catch(|| {
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        Ok(seed.expose_secret().to_vec())
+    })
+}
+
 /// Get the transparent address for a specific account (or first account if uuid is None).
 pub fn get_transparent_address(
     db_path: String,
@@ -261,5 +279,27 @@ pub fn get_transparent_address(
     catch(|| {
         let network = keys::parse_network(&network)?;
         keys::get_transparent_address_from_db(&db_path, network, account_uuid.as_deref())
+    })
+}
+
+/// Reserve a one-time transparent staging address for exchange deposits.
+pub fn reserve_exchange_transparent_address(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<ExchangeTransparentAddressResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let reserved = exchange_address::reserve_exchange_transparent_address(
+            &db_path,
+            network,
+            &account_uuid,
+        )?;
+
+        Ok(ExchangeTransparentAddressResult {
+            address: reserved.address,
+            transparent_child_index: reserved.transparent_child_index,
+            exposed_at_height: reserved.exposed_at_height,
+        })
     })
 }

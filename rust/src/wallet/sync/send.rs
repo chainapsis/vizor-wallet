@@ -58,6 +58,7 @@ use zcash_client_backend::{
     zip321::{Payment, TransactionRequest},
 };
 use zcash_client_sqlite::AccountUuid;
+use zcash_keys::encoding::AddressCodec as _;
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::transaction::{
     fees::{
@@ -404,6 +405,39 @@ pub(crate) fn create_shield_transparent_pczt(
     })
 }
 
+pub(crate) fn get_shield_transparent_address_status(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    transparent_address: &str,
+) -> Result<ShieldTransparentStatus, String> {
+    let shielding_threshold = shielding_threshold()?;
+    let mut db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let transparent_address = decode_transparent_address(network, transparent_address)?;
+
+    match build_shielding_proposal_for_address(
+        &mut db,
+        network,
+        account_id,
+        transparent_address,
+        shielding_threshold,
+    ) {
+        Ok((proposal, _)) => Ok(ShieldTransparentStatus {
+            can_shield: true,
+            fee_zatoshi: proposal_fee_zatoshi(&proposal),
+            shielded_zatoshi: proposal_shielded_zatoshi(&proposal),
+            reason: String::new(),
+        }),
+        Err(reason) => Ok(ShieldTransparentStatus {
+            can_shield: false,
+            fee_zatoshi: 0,
+            shielded_zatoshi: 0,
+            reason,
+        }),
+    }
+}
+
 /// Shield spendable transparent funds for a software account to its
 /// internal shielded address. This is intentionally a one-shot API:
 /// unlike normal sends there is no confirmation screen, proposal ID,
@@ -440,6 +474,74 @@ pub(crate) async fn shield_transparent_balance(
             let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
                 .map_err(|e| format!("USK derivation failed: {e:?}"))?;
             drop(seed);
+
+            let spend_prover = NoOpSpendProver;
+            let output_prover = NoOpOutputProver;
+            let txids = create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+                &mut db,
+                &network,
+                &spend_prover,
+                &output_prover,
+                &wallet::SpendingKeys::from_unified_spending_key(usk),
+                OvkPolicy::Sender,
+                &proposal,
+            )
+            .map_err(|e| format!("Create shielding TX failed: {e}"))?;
+
+            Ok::<_, String>((txids, fee_zatoshi, shielded_zatoshi))
+        },
+    )?;
+
+    let txids: Vec<TxId> = txids.iter().cloned().collect();
+    let txids = broadcast_created_transactions(db_path, lightwalletd_url, &txids, "shield")
+        .await
+        .into_legacy_result()?;
+    Ok(ShieldTransparentResult {
+        txids,
+        fee_zatoshi,
+        shielded_zatoshi,
+    })
+}
+
+pub(crate) async fn shield_transparent_address(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    transparent_address: &str,
+    seed_bytes: &[u8],
+) -> Result<ShieldTransparentResult, String> {
+    let shielding_threshold = shielding_threshold()?;
+    let transparent_address = decode_transparent_address(network, transparent_address)?;
+
+    let (txids, fee_zatoshi, shielded_zatoshi) = with_wallet_db_write_lock(
+        "send.shield_transparent_address.create_transactions",
+        || {
+            let mut db = open_wallet_db(db_path, network)?;
+            let account_id = parse_account_uuid(account_uuid)?;
+            let account = db
+                .get_account(account_id)
+                .map_err(|e| format!("{e}"))?
+                .ok_or("Account not found")?;
+
+            let (proposal, _) = build_shielding_proposal_for_address(
+                &mut db,
+                network,
+                account_id,
+                transparent_address,
+                shielding_threshold,
+            )?;
+            let fee_zatoshi = proposal_fee_zatoshi(&proposal);
+            let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
+
+            let seed = SecretVec::new(seed_bytes.to_vec());
+            let zip32_index = account
+                .source()
+                .key_derivation()
+                .ok_or("No key derivation")?
+                .account_index();
+            let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
+                .map_err(|e| format!("USK derivation failed: {e:?}"))?;
 
             let spend_prover = NoOpSpendProver;
             let output_prover = NoOpOutputProver;
@@ -640,6 +742,43 @@ fn build_shielding_proposal(
     Ok((proposal, selected_value))
 }
 
+fn build_shielding_proposal_for_address(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+    transparent_address: TransparentAddress,
+    shielding_threshold: Zatoshis,
+) -> Result<(Proposal<WalletFeeRule, Infallible>, Zatoshis), String> {
+    let chain_height = db
+        .chain_height()
+        .map_err(|e| format!("Failed to read chain height: {e}"))?
+        .ok_or("Wallet must sync before shielding transparent funds")?;
+    let balances = db
+        .get_transparent_balances(
+            account_id,
+            (chain_height + 1).into(),
+            ConfirmationsPolicy::MIN,
+        )
+        .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
+    let selected_value =
+        select_shielding_source_address(balances, transparent_address, shielding_threshold)?;
+
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
+    let proposal = propose_shielding::<_, _, _, _, Infallible>(
+        db,
+        &network,
+        &input_selector,
+        &change_strategy,
+        shielding_threshold,
+        &[transparent_address],
+        account_id,
+        ConfirmationsPolicy::MIN,
+    )
+    .map_err(|e| format!("Shield proposal failed: {e}"))?;
+
+    Ok((proposal, selected_value))
+}
+
 fn build_send_max_proposal(
     db: &mut WalletDatabase,
     network: WalletNetwork,
@@ -740,6 +879,32 @@ fn select_shielding_sources(
     }
 
     Ok((addresses, total))
+}
+
+fn select_shielding_source_address(
+    mut account_receivers: HashMap<TransparentAddress, (TransparentKeyScope, Balance)>,
+    transparent_address: TransparentAddress,
+    shielding_threshold: Zatoshis,
+) -> Result<Zatoshis, String> {
+    let (_, balance) = account_receivers
+        .remove(&transparent_address)
+        .ok_or("Transparent address is not tracked by this account")?;
+    let spendable = balance.spendable_value();
+    if spendable == Zatoshis::ZERO {
+        return Err("No spendable transparent funds at this address".to_string());
+    }
+    if spendable < shielding_threshold {
+        return Err("Transparent funds at this address are below the fee threshold".to_string());
+    }
+    Ok(spendable)
+}
+
+fn decode_transparent_address(
+    network: WalletNetwork,
+    transparent_address: &str,
+) -> Result<TransparentAddress, String> {
+    TransparentAddress::decode(&network, transparent_address)
+        .map_err(|e| format!("Bad transparent address: {e}"))
 }
 
 fn proposal_fee_zatoshi<NoteRef>(proposal: &Proposal<WalletFeeRule, NoteRef>) -> u64 {
@@ -1425,5 +1590,40 @@ mod tests {
 
         assert_eq!(addresses, vec![taddr(2)]);
         assert_eq!(u64::from(total), 120_000);
+    }
+
+    #[test]
+    fn selects_only_requested_transparent_source() {
+        let mut receivers = HashMap::new();
+        receivers.insert(taddr(1), receiver(160_000, TransparentKeyScope::EPHEMERAL));
+        receivers.insert(taddr(2), receiver(250_000, TransparentKeyScope::EPHEMERAL));
+
+        let threshold = Zatoshis::from_u64(100_000).unwrap();
+        let total = select_shielding_source_address(receivers, taddr(1), threshold).unwrap();
+
+        assert_eq!(u64::from(total), 160_000);
+    }
+
+    #[test]
+    fn rejects_untracked_requested_transparent_source() {
+        let mut receivers = HashMap::new();
+        receivers.insert(taddr(1), receiver(160_000, TransparentKeyScope::EPHEMERAL));
+
+        let threshold = Zatoshis::from_u64(100_000).unwrap();
+        let err = select_shielding_source_address(receivers, taddr(9), threshold).unwrap_err();
+
+        assert!(err.contains("not tracked"));
+    }
+
+    #[test]
+    fn rejects_requested_transparent_source_below_threshold() {
+        let mut receivers = HashMap::new();
+        receivers.insert(taddr(1), receiver(60_000, TransparentKeyScope::EPHEMERAL));
+        receivers.insert(taddr(2), receiver(250_000, TransparentKeyScope::EPHEMERAL));
+
+        let threshold = Zatoshis::from_u64(100_000).unwrap();
+        let err = select_shielding_source_address(receivers, taddr(1), threshold).unwrap_err();
+
+        assert!(err.contains("below the fee threshold"));
     }
 }

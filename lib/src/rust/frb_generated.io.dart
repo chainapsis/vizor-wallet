@@ -65,6 +65,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
+  ExchangeTransparentAddressResult
+  dco_decode_exchange_transparent_address_result(dynamic raw);
+
+  @protected
   ExecuteProposalResult dco_decode_execute_proposal_result(dynamic raw);
 
   @protected
@@ -249,6 +253,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  ExchangeTransparentAddressResult
+  sse_decode_exchange_transparent_address_result(SseDeserializer deserializer);
 
   @protected
   ExecuteProposalResult sse_decode_execute_proposal_result(
@@ -473,6 +481,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_exchange_transparent_address_result(
+    ExchangeTransparentAddressResult self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_execute_proposal_result(
