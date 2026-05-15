@@ -136,11 +136,33 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String?>(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+      (previous, next) {
+        if (previous == next || !mounted) return;
+        setState(() {
+          _removeIntentId = null;
+          _activityDetailIntentId = null;
+          _keystoneSigningRequest = null;
+          _commandPaletteOpen = false;
+        });
+      },
+    );
     final swapState = ref.watch(swapPrototypeProvider);
     final swapNotifier = ref.read(swapPrototypeProvider.notifier);
     final liveFundsEnabled = ref.watch(swapLiveFundsEnabledProvider);
     final accountState = ref.watch(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
+    String? accountLabelFor(String? accountUuid) {
+      if (accountUuid == null || accountUuid.trim().isEmpty) return null;
+      for (final account in accountState?.accounts ?? const <AccountInfo>[]) {
+        if (account.uuid == accountUuid) {
+          return account.name;
+        }
+      }
+      return null;
+    }
+
     bool isHardwareIntent(SwapPrototypeIntent intent) {
       final accountUuid = intent.accountUuid;
       if (accountUuid == null || accountUuid.trim().isEmpty) return false;
@@ -165,6 +187,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     final selectedIntent = swapState.selectedIntentOrNull;
     final reviewQuote = swapState.reviewQuote;
     final reviewAddressPlan = swapState.reviewAddressPlan;
+    final reviewAccountLabel = accountLabelFor(swapState.reviewAccountUuid);
     final removeIntent = _intentById(swapState.intents, _removeIntentId);
     BuildContext toastContext() =>
         _toastOverlayContextKey.currentContext ?? context;
@@ -675,6 +698,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                   child: SwapReviewModal(
                     quote: reviewQuote,
                     addressPlan: reviewAddressPlan,
+                    accountLabel: reviewAccountLabel,
                     expired: swapState.quoteExpired,
                     starting: swapState.startSubmitting,
                     amountWarning: swapState.reviewAmountDifferenceWarning,

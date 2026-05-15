@@ -15,6 +15,16 @@ final swapSessionStoreProvider = Provider<SwapSessionStore>((ref) {
   return AppSecureStoreSwapSessionStore(AppSecureStore.instance);
 });
 
+final swapPendingIntentCountProvider = FutureProvider.family<int, String>((
+  ref,
+  accountUuid,
+) async {
+  final intents = await ref
+      .read(swapSessionStoreProvider)
+      .loadIntents(accountUuid: accountUuid);
+  return intents.where((intent) => !intent.status.isTerminal).length;
+});
+
 abstract interface class SwapSessionStore {
   Future<List<SwapPrototypeIntent>> loadIntents({required String accountUuid});
 

@@ -24,7 +24,7 @@ import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_qr_panel.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_queue_panel.dart';
-import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -268,6 +268,136 @@ void main() {
 
     expect(find.text('No swap activity yet'), findsOneWidget);
     expect(find.text('other-account-txid'), findsNothing);
+  });
+
+  testWidgets('account switch cancels in-flight quote review', (tester) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _DelayedQuoteSwapProvider();
+    final releasedReservations = <String>[];
+    final accountNotifier = _FakeSwapAccountNotifier(
+      _twoAccountBootstrap.initialAccountState,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+          ],
+        ),
+        bootstrap: _twoAccountBootstrap,
+        accountNotifier: () => accountNotifier,
+        swapProvider: swapProvider,
+        seedPrototypeFixtures: false,
+        releaseExchangeTransparentAddress:
+            ({required accountUuid, required address, required dbPath}) async {
+              releasedReservations.add('$accountUuid:$address');
+              return true;
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0xrecipient',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pump();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pump();
+
+    swapProvider.completeQuote();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('swap_review_panel')), findsNothing);
+    expect(swapProvider.startedQuotes, isEmpty);
+    expect(releasedReservations, ['account-1:t1actualstaging']);
+  });
+
+  testWidgets('account switch closes open swap activity detail', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapSessionStore(
+      initialIntents: [
+        _persistedIntent(
+          id: 'account-one-swap',
+          txHash: 'account-one-txid',
+          accountUuid: 'account-1',
+        ),
+        _persistedIntent(
+          id: 'account-two-swap',
+          txHash: 'account-two-txid',
+          accountUuid: 'account-2',
+        ),
+      ],
+    );
+    final accountNotifier = _FakeSwapAccountNotifier(
+      _twoAccountBootstrap.initialAccountState,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+          ],
+        ),
+        bootstrap: _twoAccountBootstrap,
+        accountNotifier: () => accountNotifier,
+        sessionStore: sessionStore,
+        seedPrototypeFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
+    await tester.pumpAndSettle();
+    await _openActivityDetail(tester, 'account-one-swap');
+    expect(
+      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      findsOneWidget,
+    );
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_queue_row_account-two-swap')),
+      findsOneWidget,
+    );
+
+    await container.read(accountProvider.notifier).switchAccount('account-1');
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('swap_queue_row_account-one-swap')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      findsNothing,
+    );
   });
 
   testWidgets('ZEC swap composer shows live balance and applies max amount', (
@@ -4974,10 +5104,13 @@ Widget _routerHarness(
   bool seedPrototypeFixtures = true,
   bool liveFundsEnabled = true,
   AppBootstrapState? bootstrap,
+  AccountNotifier Function()? accountNotifier,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+      if (accountNotifier != null)
+        accountProvider.overrideWith(accountNotifier),
       syncProvider.overrideWith(
         () =>
             _FakeSwapSyncNotifier(spendableBalance ?? BigInt.from(10000000000)),
@@ -5735,12 +5868,38 @@ class _FakeKeystoneScanScreen extends StatelessWidget {
   }
 }
 
+class _FakeSwapAccountNotifier extends AccountNotifier {
+  _FakeSwapAccountNotifier(this.initialState);
+
+  final AccountState initialState;
+
+  @override
+  FutureOr<AccountState> build() => initialState;
+
+  @override
+  Future<void> switchAccount(String uuid) async {
+    final prev = state.value ?? initialState;
+    state = AsyncData(prev.copyWith(activeAccountUuid: uuid));
+  }
+}
+
 class _FakeSwapSessionStore implements SwapSessionStore {
   _FakeSwapSessionStore({
     List<SwapPrototypeIntent> initialIntents = const [],
     SwapDraftSnapshot? initialDraft,
   }) : savedIntents = [...initialIntents],
-       savedDraft = initialDraft;
+       savedDraft = initialDraft {
+    for (final intent in initialIntents) {
+      final accountUuid = intent.accountUuid;
+      if (accountUuid == null || accountUuid.trim().isEmpty) {
+        _legacyIntents.add(intent);
+      } else {
+        _intentsByAccount
+            .putIfAbsent(accountUuid, () => <SwapPrototypeIntent>[])
+            .add(intent);
+      }
+    }
+  }
 
   var loadCount = 0;
   var loadDraftCount = 0;
@@ -5749,6 +5908,8 @@ class _FakeSwapSessionStore implements SwapSessionStore {
   final savedAccounts = <String>[];
   List<SwapPrototypeIntent> savedIntents;
   SwapDraftSnapshot? savedDraft;
+  final _legacyIntents = <SwapPrototypeIntent>[];
+  final _intentsByAccount = <String, List<SwapPrototypeIntent>>{};
 
   @override
   Future<List<SwapPrototypeIntent>> loadIntents({
@@ -5756,10 +5917,10 @@ class _FakeSwapSessionStore implements SwapSessionStore {
   }) async {
     loadCount++;
     loadedAccounts.add(accountUuid);
+    final accountIntents = _intentsByAccount[accountUuid] ?? const [];
     return [
-      for (final intent in savedIntents)
-        if (intent.accountUuid == null || intent.accountUuid == accountUuid)
-          intent.copyWith(accountUuid: accountUuid),
+      for (final intent in [..._legacyIntents, ...accountIntents])
+        intent.copyWith(accountUuid: accountUuid),
     ];
   }
 
@@ -5772,6 +5933,7 @@ class _FakeSwapSessionStore implements SwapSessionStore {
     savedIntents = [
       for (final intent in intents) intent.copyWith(accountUuid: accountUuid),
     ];
+    _intentsByAccount[accountUuid] = [...savedIntents];
     saveSnapshots.add(savedIntents);
   }
 
@@ -6107,6 +6269,26 @@ final _bootstrap = AppBootstrapState(
     accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
     activeAccountUuid: 'account-1',
     activeAddress: 'u1swapprototypeaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _twoAccountBootstrap = AppBootstrapState(
+  initialLocation: '/swap',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(uuid: 'account-1', name: 'Primary', order: 0),
+      AccountInfo(uuid: 'account-2', name: 'Trading', order: 1),
+    ],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1accountone',
   ),
   initialSyncSnapshot: AppSyncSnapshot.empty,
   network: 'main',

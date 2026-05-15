@@ -18,6 +18,9 @@ class AccountRemoveModal extends StatefulWidget {
     required this.accountName,
     required this.profilePictureId,
     required this.isLastAccount,
+    required this.pendingSwapCount,
+    required this.checkingPendingSwaps,
+    required this.pendingSwapCheckFailed,
     required this.onCancel,
     required this.onConfirmPassword,
     required this.onRemove,
@@ -27,6 +30,9 @@ class AccountRemoveModal extends StatefulWidget {
   final String accountName;
   final String profilePictureId;
   final bool isLastAccount;
+  final int pendingSwapCount;
+  final bool checkingPendingSwaps;
+  final bool pendingSwapCheckFailed;
   final VoidCallback onCancel;
   final Future<bool> Function(String password) onConfirmPassword;
   final Future<void> Function(AccountRemoveProgressCallback onProgress)
@@ -47,11 +53,25 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   String? _submitError;
 
   bool get _canSubmit =>
-      !_isSubmitting && isWalletPasswordValid(_passwordController.text);
+      !_isSubmitting &&
+      _swapRemovalBlockMessage == null &&
+      isWalletPasswordValid(_passwordController.text);
 
   String? get _passwordMessage {
     if (_passwordError != null) return _passwordError;
     return validateWalletPassword(_passwordController.text);
+  }
+
+  String? get _swapRemovalBlockMessage {
+    if (widget.checkingPendingSwaps) {
+      return 'Checking this account for active swaps before removal.';
+    }
+    if (widget.pendingSwapCheckFailed) {
+      return "Couldn't check this account for active swaps. Try again before removing it.";
+    }
+    if (widget.pendingSwapCount <= 0) return null;
+    final plural = widget.pendingSwapCount == 1 ? 'swap' : 'swaps';
+    return 'This account has ${widget.pendingSwapCount} active $plural. Complete or remove them from Swap Activity before removing this account.';
   }
 
   @override
@@ -63,6 +83,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
   Future<void> _submit() async {
     if (_isSubmitting) return;
+    if (_swapRemovalBlockMessage != null) return;
     final passwordError = validateRequiredWalletPassword(
       _passwordController.text,
     );
@@ -154,6 +175,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   @override
   Widget build(BuildContext context) {
     final passwordMessage = _passwordMessage;
+    final swapRemovalBlockMessage = _swapRemovalBlockMessage;
 
     return _AccountRemoveModalCard(
       header: _AccountRemoveModalHeader(
@@ -171,6 +193,10 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
               color: context.colors.text.accent,
             ),
           ),
+          if (swapRemovalBlockMessage != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            _AccountRemoveWarningPanel(message: swapRemovalBlockMessage),
+          ],
           const SizedBox(height: AppSpacing.sm),
           SizedBox(
             height: _fieldHeight,
@@ -182,7 +208,7 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
               inputHorizontalPadding: AppSpacing.s,
               controller: _passwordController,
               autofocus: true,
-              enabled: !_isSubmitting,
+              enabled: !_isSubmitting && swapRemovalBlockMessage == null,
               tone: passwordMessage == null
                   ? AppTextFieldTone.neutral
                   : AppTextFieldTone.destructive,
@@ -266,6 +292,45 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         textAlign: TextAlign.center,
+      ),
+    );
+  }
+}
+
+class _AccountRemoveWarningPanel extends StatelessWidget {
+  const _AccountRemoveWarningPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      key: const ValueKey('account_remove_pending_swap_warning'),
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: colors.background.raised,
+        border: Border.all(color: colors.border.subtle),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppIcon(
+            AppIcons.warning,
+            size: AppIconSize.medium,
+            color: colors.icon.warning,
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text(
+              message,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.warning,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

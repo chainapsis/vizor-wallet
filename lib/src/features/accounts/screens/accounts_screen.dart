@@ -21,6 +21,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../swap/providers/swap_session_store.dart';
 import '../widgets/account_name_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';
 import '../widgets/account_remove_modal.dart';
@@ -166,6 +167,9 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         modalAccount != null &&
         accounts.length == 1 &&
         accounts.first.uuid == modalAccount.uuid;
+    final modalPendingSwapCount = modalAccount == null
+        ? const AsyncValue<int>.data(0)
+        : ref.watch(swapPendingIntentCountProvider(modalAccount.uuid));
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -208,6 +212,9 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     accountName: modalAccount.name,
                     profilePictureId: modalAccount.profilePictureId,
                     isLastAccount: isLastModalAccount,
+                    pendingSwapCount: modalPendingSwapCount.value ?? 0,
+                    checkingPendingSwaps: modalPendingSwapCount.isLoading,
+                    pendingSwapCheckFailed: modalPendingSwapCount.hasError,
                     onCancel: _closeModal,
                     onConfirmPassword: (password) => ref
                         .read(appSecurityProvider.notifier)

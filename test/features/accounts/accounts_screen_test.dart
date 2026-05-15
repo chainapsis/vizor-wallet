@@ -14,6 +14,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_session_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -515,6 +516,46 @@ void main() {
     );
   });
 
+  testWidgets('remove account is blocked while the account has active swaps', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+    final syncNotifier = _FakeSyncNotifier();
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        syncNotifier: () => syncNotifier,
+        pendingSwapCounts: const {'account-2': 1},
+      ),
+    );
+    await tester.pump();
+
+    await _openRemoveAccountModal(tester, 'account-2');
+
+    expect(
+      find.byKey(const ValueKey('account_remove_pending_swap_warning')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('1 active swap'), findsOneWidget);
+
+    await tester.tap(find.text('Remove'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, isNull);
+    expect(syncNotifier.refreshCount, 0);
+    expect(
+      find.byKey(const ValueKey('accounts_other_row_account-2')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('remove account requires the current password before deleting', (
     tester,
   ) async {
@@ -829,6 +870,7 @@ Widget _accountsHarness({
   AccountNotifier Function()? accountNotifier,
   SyncNotifier Function()? syncNotifier,
   AppSecurityNotifier Function()? securityNotifier,
+  Map<String, int> pendingSwapCounts = const {},
 }) {
   final router = GoRouter(
     initialLocation: '/accounts',
@@ -859,6 +901,9 @@ Widget _accountsHarness({
       appBootstrapProvider.overrideWithValue(_bootstrap),
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
+      swapPendingIntentCountProvider.overrideWith((ref, accountUuid) async {
+        return pendingSwapCounts[accountUuid] ?? 0;
+      }),
       appSecurityProvider.overrideWith(
         securityNotifier ?? _FakeAppSecurityNotifier.new,
       ),

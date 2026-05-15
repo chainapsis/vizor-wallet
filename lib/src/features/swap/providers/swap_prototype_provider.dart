@@ -85,6 +85,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         if (previous != null) {
           unawaited(_persistCurrentIntents(accountUuid: previous));
         }
+        _clearAccountScopedTransientState(previousAccountUuid: previous);
         unawaited(
           _restorePersistedIntents(accountUuid: next, replaceExisting: true),
         );
@@ -339,11 +340,21 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         );
         return;
       }
+      if (!_isAccountActive(accountUuid)) {
+        unawaited(
+          _releaseAddressReservation(
+            accountUuid: accountUuid,
+            addressPlan: addressPlan,
+          ),
+        );
+        return;
+      }
 
       state = state.copyWith(
         reviewVisible: true,
         reviewQuote: quote,
         reviewAddressPlan: addressPlan,
+        reviewAccountUuid: accountUuid,
         quoteLoading: false,
         quoteExpired: false,
         clearQuoteError: true,
@@ -383,6 +394,20 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       return false;
     }
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    final reviewAccountUuid = state.reviewAccountUuid;
+    if (reviewAccountUuid == null || accountUuid != reviewAccountUuid) {
+      log(
+        'Swap: start blocked; active account changed '
+        'review=$reviewAccountUuid active=$accountUuid',
+      );
+      _clearReviewState(reservationAccountUuid: reviewAccountUuid);
+      state = state.copyWith(
+        startSubmitting: false,
+        statusError:
+            'Active account changed. Review the quote again before starting.',
+      );
+      return false;
+    }
 
     log(
       'Swap: start begin pair=${quote.pairText} '
@@ -1197,29 +1222,55 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     }
   }
 
-  void _clearReviewState({bool releaseReviewReservation = true}) {
+  void _clearReviewState({
+    bool releaseReviewReservation = true,
+    String? reservationAccountUuid,
+  }) {
     _quoteGeneration++;
     if (releaseReviewReservation) {
-      _releaseCurrentReviewReservation();
+      _releaseCurrentReviewReservation(accountUuid: reservationAccountUuid);
     }
     state = state.copyWith(
       reviewVisible: false,
       quoteLoading: false,
+      startSubmitting: false,
       clearReview: true,
       clearQuoteError: true,
       clearStatusError: true,
     );
   }
 
-  void _releaseCurrentReviewReservation() {
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+  void _releaseCurrentReviewReservation({String? accountUuid}) {
+    final scopedAccountUuid =
+        accountUuid ??
+        state.reviewAccountUuid ??
+        ref.read(accountProvider).value?.activeAccountUuid;
     final addressPlan = state.reviewAddressPlan;
-    if (accountUuid == null || addressPlan == null) return;
+    if (scopedAccountUuid == null || addressPlan == null) return;
     unawaited(
       _releaseAddressReservation(
-        accountUuid: accountUuid,
+        accountUuid: scopedAccountUuid,
         addressPlan: addressPlan,
       ),
+    );
+  }
+
+  void _clearAccountScopedTransientState({String? previousAccountUuid}) {
+    _quoteGeneration++;
+    _releaseCurrentReviewReservation(accountUuid: previousAccountUuid);
+    state = state.copyWith(
+      reviewVisible: false,
+      quoteLoading: false,
+      startSubmitting: false,
+      maxAmountLoading: false,
+      depositSubmitting: false,
+      depositTxHashText: '',
+      statusRefreshing: false,
+      clearReview: true,
+      clearQuoteError: true,
+      clearStatusError: true,
+      clearMaxAmountError: true,
+      clearSelectedIntent: true,
     );
   }
 

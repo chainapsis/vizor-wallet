@@ -15,6 +15,7 @@ class SwapReviewModal extends StatelessWidget {
   const SwapReviewModal({
     required this.quote,
     required this.addressPlan,
+    required this.accountLabel,
     required this.expired,
     required this.starting,
     required this.amountWarning,
@@ -27,6 +28,7 @@ class SwapReviewModal extends StatelessWidget {
 
   final SwapQuote quote;
   final SwapAddressPlan addressPlan;
+  final String? accountLabel;
   final bool expired;
   final bool starting;
   final String? amountWarning;
@@ -59,15 +61,32 @@ class SwapReviewModal extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Text(
-                      'Swap review',
-                      key: const ValueKey('swap_review_title'),
-                      style: AppTypography.headlineSmall.copyWith(
-                        color: colors.text.accent,
-                        fontSize: 26,
-                        height: 32 / 26,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Swap review',
+                          key: const ValueKey('swap_review_title'),
+                          style: AppTypography.headlineSmall.copyWith(
+                            color: colors.text.accent,
+                            fontSize: 26,
+                            height: 32 / 26,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (accountLabel != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Account: $accountLabel',
+                            key: const ValueKey('swap_review_account_label'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelMedium.copyWith(
+                              color: colors.text.secondary,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xs),

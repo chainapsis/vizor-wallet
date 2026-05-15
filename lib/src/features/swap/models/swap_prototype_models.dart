@@ -274,6 +274,7 @@ class SwapPrototypeState {
     this.indicativeExternalPerZec = const {},
     this.reviewQuote,
     this.reviewAddressPlan,
+    this.reviewAccountUuid,
     this.quoteLoading = false,
     this.quoteExpired = false,
     this.quoteError,
@@ -302,6 +303,7 @@ class SwapPrototypeState {
   final Map<SwapAsset, double> indicativeExternalPerZec;
   final SwapQuote? reviewQuote;
   final SwapAddressPlan? reviewAddressPlan;
+  final String? reviewAccountUuid;
   final bool quoteLoading;
   final bool quoteExpired;
   final String? quoteError;
@@ -510,6 +512,7 @@ class SwapPrototypeState {
     Map<SwapAsset, double>? indicativeExternalPerZec,
     SwapQuote? reviewQuote,
     SwapAddressPlan? reviewAddressPlan,
+    String? reviewAccountUuid,
     bool? quoteLoading,
     bool? quoteExpired,
     String? quoteError,
@@ -549,6 +552,9 @@ class SwapPrototypeState {
       reviewAddressPlan: clearReview
           ? null
           : reviewAddressPlan ?? this.reviewAddressPlan,
+      reviewAccountUuid: clearReview
+          ? null
+          : reviewAccountUuid ?? this.reviewAccountUuid,
       quoteLoading: quoteLoading ?? this.quoteLoading,
       quoteExpired: clearReview ? false : quoteExpired ?? this.quoteExpired,
       quoteError: clearQuoteError ? null : quoteError ?? this.quoteError,
