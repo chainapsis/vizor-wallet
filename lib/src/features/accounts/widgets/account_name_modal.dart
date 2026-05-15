@@ -1,4 +1,3 @@
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -27,7 +26,7 @@ class AccountNameModal extends StatefulWidget {
 class _AccountNameModalState extends State<AccountNameModal> {
   static const _fieldHeight = 86.0;
   static const _buttonWidth = 280.0;
-  static const _minNameLength = 5;
+  static const _minNameLength = 1;
   static const _maxNameLength = 20;
 
   final _controller = TextEditingController();
@@ -47,8 +46,8 @@ class _AccountNameModalState extends State<AccountNameModal> {
 
   String? get _messageText {
     if (_submitError != null) return _submitError;
-    if (_controller.text.isEmpty || _isLengthValid) return null;
-    return 'Use 5-20 characters.';
+    if (_trimmedName.length <= _maxNameLength) return null;
+    return 'Use up to 20 characters.';
   }
 
   @override
@@ -102,20 +101,16 @@ class _AccountNameModalState extends State<AccountNameModal> {
             height: _fieldHeight,
             child: AppTextField(
               label: 'New Account Name',
-              hintText: '5-20 Characters',
+              hintText: '1-20 Characters',
               controller: _controller,
               autofocus: true,
               enabled: !_isSubmitting,
               trailingSlotWidth: 40,
               inputHorizontalPadding: AppSpacing.s,
-              inputFormatters: [
-                LengthLimitingTextInputFormatter(_maxNameLength),
-              ],
               messageText: _messageText,
-              tone:
-                  _messageText == null
-                      ? AppTextFieldTone.neutral
-                      : AppTextFieldTone.destructive,
+              tone: _messageText == null
+                  ? AppTextFieldTone.neutral
+                  : AppTextFieldTone.destructive,
               onChanged: (_) => _handleChanged(),
               onSubmitted: (_) => _submit(),
             ),
@@ -160,7 +155,11 @@ class _AccountNameModalCard extends StatelessWidget {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [header, const SizedBox(height: AppSpacing.md), child],
+        children: [
+          header,
+          const SizedBox(height: AppSpacing.md),
+          child,
+        ],
       ),
     );
   }
