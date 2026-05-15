@@ -272,6 +272,7 @@ struct TxOutput {
     to_account_uuid: Option<Vec<u8>>,
     to_address: Option<String>,
     sent_to_address: Option<String>,
+    transparent_receiver_address: Option<String>,
     to_key_scope: Option<i64>,
     value: u64,
     is_change: bool,
@@ -281,6 +282,14 @@ struct TxOutput {
 impl TxOutput {
     fn detail_address(&self, tx_kind: &str) -> Option<String> {
         if tx_kind == "sent" {
+            if self.output_pool == 0 {
+                return self
+                    .transparent_receiver_address
+                    .clone()
+                    .or_else(|| self.sent_to_address.clone())
+                    .or_else(|| self.to_address.clone());
+            }
+
             self.sent_to_address
                 .clone()
                 .or_else(|| self.to_address.clone())
@@ -646,18 +655,8 @@ fn read_history_outputs(
             txo.from_account_uuid,
             txo.to_account_uuid,
             txo.to_address,
-            (
-                SELECT sn.to_address
-                FROM sent_notes sn
-                JOIN transactions st ON st.id_tx = sn.transaction_id
-                JOIN accounts from_acc ON from_acc.id = sn.from_account_id
-                WHERE st.txid = txo.txid
-                  AND from_acc.uuid = ?1
-                  AND sn.output_pool = txo.output_pool
-                  AND sn.output_index = txo.output_index
-                  AND sn.to_address IS NOT NULL
-                LIMIT 1
-            ) AS sent_to_address,
+            NULL AS sent_to_address,
+            NULL AS transparent_receiver_address,
             (
                 SELECT a.key_scope
                 FROM accounts acc
@@ -694,10 +693,11 @@ fn read_history_outputs(
                 to_account_uuid: row.get(4)?,
                 to_address: row.get(5)?,
                 sent_to_address: row.get(6)?,
-                to_key_scope: row.get(7)?,
-                value: row.get::<_, i64>(8)?.unsigned_abs(),
-                is_change: row.get(9)?,
-                memo: row.get(10)?,
+                transparent_receiver_address: row.get(7)?,
+                to_key_scope: row.get(8)?,
+                value: row.get::<_, i64>(9)?.unsigned_abs(),
+                is_change: row.get(10)?,
+                memo: row.get(11)?,
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -738,6 +738,19 @@ fn read_outputs_for_tx(
                 LIMIT 1
             ) AS sent_to_address,
             (
+                SELECT a.cached_transparent_receiver_address
+                FROM accounts acc
+                JOIN addresses a ON a.account_id = acc.id
+                WHERE acc.uuid = txo.to_account_uuid
+                  AND txo.output_pool = 0
+                  AND (
+                      a.address = txo.to_address
+                      OR a.cached_transparent_receiver_address = txo.to_address
+                  )
+                  AND a.cached_transparent_receiver_address IS NOT NULL
+                LIMIT 1
+            ) AS transparent_receiver_address,
+            (
                 SELECT a.key_scope
                 FROM accounts acc
                 JOIN addresses a ON a.account_id = acc.id
@@ -771,10 +784,11 @@ fn read_outputs_for_tx(
                 to_account_uuid: row.get(4)?,
                 to_address: row.get(5)?,
                 sent_to_address: row.get(6)?,
-                to_key_scope: row.get(7)?,
-                value: row.get::<_, i64>(8)?.unsigned_abs(),
-                is_change: row.get(9)?,
-                memo: row.get(10)?,
+                transparent_receiver_address: row.get(7)?,
+                to_key_scope: row.get(8)?,
+                value: row.get::<_, i64>(9)?.unsigned_abs(),
+                is_change: row.get(10)?,
+                memo: row.get(11)?,
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -1541,6 +1555,25 @@ mod tests {
             ],
         )
         .unwrap();
+    }
+
+    fn set_cached_transparent_receiver_address(
+        db: &NamedTempFile,
+        account: uuid::Uuid,
+        address: &str,
+        transparent_address: &str,
+    ) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        let account_id = ensure_account_row(&conn, account);
+        let changed = conn
+            .execute(
+                "UPDATE addresses
+                 SET cached_transparent_receiver_address = ?3
+                 WHERE account_id = ?1 AND address = ?2",
+                rusqlite::params![account_id, address, transparent_address],
+            )
+            .unwrap();
+        assert_eq!(changed, 1);
     }
 
     fn mark_expired_unmined(db: &NamedTempFile, txid: &[u8]) {
@@ -2337,6 +2370,12 @@ mod tests {
             Some("u-merged-own-transparent-receiver"),
             Some(0),
         );
+        set_cached_transparent_receiver_address(
+            &db,
+            account,
+            "u-merged-own-transparent-receiver",
+            "t-recipient",
+        );
         insert_sent_note(
             &db,
             &txid,
@@ -2374,6 +2413,82 @@ mod tests {
         assert_eq!(got.outputs.len(), 1);
         assert_eq!(got.outputs[0].address.as_deref(), Some("t-recipient"));
         assert_eq!(got.outputs[0].amount_zatoshi, 1_200_000);
+        assert_eq!(got.outputs[0].pool, "transparent");
+    }
+
+    #[test]
+    fn detail_sent_to_transparent_pool_prefers_cached_transparent_receiver() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD9);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -15_000,
+            18_990_000,
+            18_975_000,
+            false,
+            Some("2026-05-14T13:14:15Z"),
+        );
+        let recipient_output_index = insert_output_with_address(
+            &db,
+            &txid,
+            0,
+            Some(account),
+            Some(account),
+            11_000_000,
+            false,
+            Some("u-known-receiver"),
+            Some(0),
+        );
+        set_cached_transparent_receiver_address(
+            &db,
+            account,
+            "u-known-receiver",
+            "t-known-receiver",
+        );
+        insert_sent_note(
+            &db,
+            &txid,
+            0,
+            recipient_output_index,
+            account,
+            None,
+            Some("u-known-receiver"),
+            11_000_000,
+            None,
+        );
+        insert_output_with_address_and_memo(
+            &db,
+            &txid,
+            3,
+            Some(account),
+            Some(account),
+            7_975_000,
+            true,
+            None,
+            None,
+            Some(&[0xF6]),
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "sent",
+        )
+        .unwrap();
+
+        assert_eq!(got.primary_address.as_deref(), Some("t-known-receiver"));
+        assert_eq!(got.outputs.len(), 1);
+        assert_eq!(got.outputs[0].address.as_deref(), Some("t-known-receiver"));
+        assert_eq!(got.outputs[0].amount_zatoshi, 11_000_000);
         assert_eq!(got.outputs[0].pool, "transparent");
     }
 
