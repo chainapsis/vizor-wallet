@@ -42,8 +42,9 @@ pub use pczt::{
 };
 pub(crate) use send::estimate_send_max;
 pub(crate) use send::{
-    create_shield_transparent_pczt, get_shield_transparent_address_status,
-    get_shield_transparent_status, shield_transparent_address, shield_transparent_balance,
+    create_shield_transparent_address_pczt, create_shield_transparent_pczt,
+    get_shield_transparent_address_status, get_shield_transparent_status,
+    shield_transparent_address, shield_transparent_balance,
 };
 pub use send::{
     estimate_fee, execute_proposal, execute_proposal_with_seed_loader, propose_send,

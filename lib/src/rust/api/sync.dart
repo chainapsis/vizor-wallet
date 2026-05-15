@@ -314,6 +314,19 @@ Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
   accountUuid: accountUuid,
 );
 
+/// Create a PCZT for shielding one transparent staging address on a hardware account.
+Future<ShieldTransparentPcztResult> createShieldTransparentAddressPczt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String transparentAddress,
+}) => RustLib.instance.api.crateApiSyncCreateShieldTransparentAddressPczt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  transparentAddress: transparentAddress,
+);
+
 Future<ShieldTransparentStatus> getShieldTransparentAddressStatus({
   required String dbPath,
   required String network,

@@ -809,6 +809,30 @@ pub fn create_shield_transparent_pczt(
     })
 }
 
+/// Create a PCZT for shielding one transparent staging address on a hardware account.
+pub fn create_shield_transparent_address_pczt(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    transparent_address: String,
+) -> Result<ShieldTransparentPcztResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let r = wallet_sync::create_shield_transparent_address_pczt(
+            &db_path,
+            network,
+            &account_uuid,
+            &transparent_address,
+        )?;
+        Ok(ShieldTransparentPcztResult {
+            pczt_bytes: r.pczt_bytes,
+            fee_zatoshi: r.fee_zatoshi,
+            shielded_zatoshi: r.shielded_zatoshi,
+            needs_sapling_params: r.needs_sapling_params,
+        })
+    })
+}
+
 pub fn get_shield_transparent_address_status(
     db_path: String,
     network: String,
