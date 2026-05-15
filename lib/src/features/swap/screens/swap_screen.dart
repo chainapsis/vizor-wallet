@@ -29,11 +29,26 @@ import '../widgets/swap_asset_icon.dart';
 import '../widgets/swap_composer_panel.dart';
 import '../widgets/swap_copy_feedback.dart';
 import '../widgets/swap_queue_panel.dart';
+import '../widgets/swap_keystone_signing_overlay.dart';
 import '../widgets/swap_review_modal.dart';
 
 enum _SwapPageTab { swap, activity, requests }
 
 enum SwapScreenInitialTab { swap, activity, requests }
+
+class _SwapKeystoneSigningRequest {
+  const _SwapKeystoneSigningRequest({
+    required this.intentId,
+    required this.accountUuid,
+    required this.kind,
+    this.removeUnsentIntentOnCancel = false,
+  });
+
+  final String intentId;
+  final String accountUuid;
+  final SwapKeystoneSigningKind kind;
+  final bool removeUnsentIntentOnCancel;
+}
 
 extension _SwapPageTabLabel on _SwapPageTab {
   String get label => switch (this) {
@@ -62,6 +77,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
   bool _commandPaletteOpen = false;
   String? _removeIntentId;
   String? _activityDetailIntentId;
+  _SwapKeystoneSigningRequest? _keystoneSigningRequest;
 
   @override
   void initState() {
@@ -123,9 +139,20 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     final swapState = ref.watch(swapPrototypeProvider);
     final swapNotifier = ref.read(swapPrototypeProvider.notifier);
     final liveFundsEnabled = ref.watch(swapLiveFundsEnabledProvider);
-    final activeAccountUuid = ref.watch(
-      accountProvider.select((value) => value.value?.activeAccountUuid),
-    );
+    final accountState = ref.watch(accountProvider).value;
+    final activeAccountUuid = accountState?.activeAccountUuid;
+    bool isHardwareIntent(SwapPrototypeIntent intent) {
+      final accountUuid = intent.accountUuid;
+      if (accountUuid == null || accountUuid.trim().isEmpty) return false;
+      final currentAccountState =
+          ref.read(accountProvider).value ?? accountState;
+      final accountHardwareByUuid = {
+        for (final account in currentAccountState?.accounts ?? const [])
+          account.uuid: account.isHardware,
+      };
+      return accountHardwareByUuid[accountUuid] ?? false;
+    }
+
     final sync = ref.watch(
       syncProvider.select(
         (value) =>
@@ -146,13 +173,27 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
       unawaited(() async {
         final started = await swapNotifier.startIntent();
         if (!context.mounted || !started) return;
-        final intentId = ref
+        final startedIntent = ref
             .read(swapPrototypeProvider)
-            .selectedIntentOrNull
-            ?.id;
+            .selectedIntentOrNull;
         _selectTab(_SwapPageTab.activity);
-        if (intentId != null) {
-          setState(() => _activityDetailIntentId = intentId);
+        if (startedIntent != null) {
+          final needsKeystoneDeposit =
+              isHardwareIntent(startedIntent) &&
+              startedIntent.direction == SwapDirection.zecToExternal &&
+              !(startedIntent.depositTxHash?.trim().isNotEmpty ?? false);
+          setState(() {
+            _activityDetailIntentId = startedIntent.id;
+            if (needsKeystoneDeposit) {
+              _keystoneSigningRequest = _SwapKeystoneSigningRequest(
+                intentId: startedIntent.id,
+                accountUuid:
+                    startedIntent.accountUuid ?? activeAccountUuid ?? '',
+                kind: SwapKeystoneSigningKind.zecDeposit,
+                removeUnsentIntentOnCancel: true,
+              );
+            }
+          });
         }
         showAppToast(toastContext(), 'Swap created in Activity');
       }());
@@ -173,7 +214,112 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     }
 
     void retryShield() {
+      final selected = ref.read(swapPrototypeProvider).selectedIntentOrNull;
+      if (selected != null &&
+          isHardwareIntent(selected) &&
+          selected.direction == SwapDirection.externalToZec) {
+        unawaited(() async {
+          if (selected.status == SwapIntentStatus.shieldingFailed) {
+            await swapNotifier.retryShieldSelectedIntent();
+          }
+          final current = ref.read(swapPrototypeProvider).selectedIntentOrNull;
+          final intent = current != null && current.id == selected.id
+              ? current
+              : selected;
+          if (!mounted) return;
+          setState(() {
+            _keystoneSigningRequest = _SwapKeystoneSigningRequest(
+              intentId: intent.id,
+              accountUuid: intent.accountUuid ?? activeAccountUuid ?? '',
+              kind: SwapKeystoneSigningKind.shieldReceive,
+            );
+          });
+        }());
+        return;
+      }
       unawaited(swapNotifier.retryShieldSelectedIntent());
+    }
+
+    void closeKeystoneSigning({bool cleanupCancelledRequest = false}) {
+      final request = _keystoneSigningRequest;
+      setState(() => _keystoneSigningRequest = null);
+      if (cleanupCancelledRequest &&
+          request != null &&
+          request.removeUnsentIntentOnCancel) {
+        unawaited(
+          swapNotifier.removeUnsentHardwareDepositIntent(request.intentId),
+        );
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _shortcutFocusNode.requestFocus();
+      });
+    }
+
+    void signZecDeposit(SwapPrototypeIntent intent) {
+      setState(() {
+        _activityDetailIntentId = intent.id;
+        _keystoneSigningRequest = _SwapKeystoneSigningRequest(
+          intentId: intent.id,
+          accountUuid: intent.accountUuid ?? activeAccountUuid ?? '',
+          kind: SwapKeystoneSigningKind.zecDeposit,
+        );
+      });
+    }
+
+    void signShield(SwapPrototypeIntent intent) {
+      setState(() {
+        _activityDetailIntentId = intent.id;
+        _keystoneSigningRequest = _SwapKeystoneSigningRequest(
+          intentId: intent.id,
+          accountUuid: intent.accountUuid ?? activeAccountUuid ?? '',
+          kind: SwapKeystoneSigningKind.shieldReceive,
+        );
+      });
+    }
+
+    void handleKeystoneDepositBroadcast(SwapKeystoneBroadcastResult result) {
+      final request = _keystoneSigningRequest;
+      if (request == null) return;
+      closeKeystoneSigning();
+      unawaited(
+        swapNotifier.submitDepositTransactionForIntent(
+          intentId: request.intentId,
+          accountUuid: request.accountUuid,
+          txHash: result.txHash,
+          broadcastStatus: result.status,
+          broadcastMessage: result.message,
+        ),
+      );
+      showAppToast(
+        toastContext(),
+        result.isCertain ? 'ZEC Deposit Sent' : 'ZEC Deposit Checking',
+      );
+    }
+
+    void handleKeystoneShieldBroadcast({
+      required SwapKeystoneBroadcastResult result,
+      required BigInt feeZatoshi,
+    }) {
+      final request = _keystoneSigningRequest;
+      if (request == null) return;
+      closeKeystoneSigning();
+      unawaited(
+        swapNotifier.recordHardwareShieldSubmission(
+          intentId: request.intentId,
+          accountUuid: request.accountUuid,
+          txHash: result.txHash,
+          feeZatoshi: feeZatoshi,
+          broadcastStatus: result.status,
+          broadcastMessage: result.message,
+        ),
+      );
+      showAppToast(
+        toastContext(),
+        result.isCertain
+            ? 'Shield Transaction Sent'
+            : 'Shield Transaction Checking',
+      );
     }
 
     void copyNearIntentsExplorerLink(SwapPrototypeIntent intent) {
@@ -266,6 +412,11 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     final activityDetailIntent = _intentById(
       swapState.intents,
       _activityDetailIntentId,
+    );
+    final keystoneSigningRequest = _keystoneSigningRequest;
+    final keystoneSigningIntent = _intentById(
+      swapState.intents,
+      keystoneSigningRequest?.intentId,
     );
     final selectedRequest = swapState.selectedRequestOrNull;
     final canReviewFreshQuote =
@@ -545,11 +696,23 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                     onSubmitDepositTransaction: submitDepositTransaction,
                     onReviewFreshQuote: reviewFreshQuote,
                     onRetryShield: retryShield,
+                    onSignZecDeposit: signZecDeposit,
+                    onSignShield: signShield,
                     onCopyExplorerLink: copyNearIntentsExplorerLink,
                     onRemoveIntent: requestRemoveIntent,
+                    intentIsHardware: isHardwareIntent(activityDetailIntent),
                   ),
                 ),
               ),
+            ),
+          if (keystoneSigningRequest != null && keystoneSigningIntent != null)
+            SwapKeystoneSigningOverlay(
+              kind: keystoneSigningRequest.kind,
+              intent: keystoneSigningIntent,
+              onCancel: () =>
+                  closeKeystoneSigning(cleanupCancelledRequest: true),
+              onDepositBroadcast: handleKeystoneDepositBroadcast,
+              onShieldBroadcast: handleKeystoneShieldBroadcast,
             ),
           if (_commandPaletteOpen)
             AppPaneModalOverlay(
@@ -1894,9 +2057,12 @@ class _SwapActivityStack extends StatelessWidget {
     required this.onSubmitDepositTransaction,
     required this.onReviewFreshQuote,
     required this.onRetryShield,
+    required this.onSignZecDeposit,
+    required this.onSignShield,
     required this.onCopyExplorerLink,
     required this.onRemoveIntent,
     required this.liveFundsEnabled,
+    required this.intentIsHardware,
   });
 
   final SwapPrototypeState state;
@@ -1906,9 +2072,12 @@ class _SwapActivityStack extends StatelessWidget {
   final VoidCallback onSubmitDepositTransaction;
   final VoidCallback onReviewFreshQuote;
   final VoidCallback onRetryShield;
+  final ValueChanged<SwapPrototypeIntent> onSignZecDeposit;
+  final ValueChanged<SwapPrototypeIntent> onSignShield;
   final ValueChanged<SwapPrototypeIntent> onCopyExplorerLink;
   final VoidCallback onRemoveIntent;
   final bool liveFundsEnabled;
+  final bool intentIsHardware;
 
   @override
   Widget build(BuildContext context) {
@@ -1920,6 +2089,17 @@ class _SwapActivityStack extends StatelessWidget {
     final showDepositControls = _showDepositControls(selectedIntent.status);
     final showSupportDetails = _showActivityReceipt(selectedIntent.status);
     final statusError = selectedIntent.statusError ?? state.statusError;
+    final hasDepositTx =
+        selectedIntent.depositTxHash?.trim().isNotEmpty ?? false;
+    final showHardwareDepositAction =
+        intentIsHardware &&
+        selectedIntent.direction == SwapDirection.zecToExternal &&
+        selectedIntent.status == SwapIntentStatus.awaitingDeposit &&
+        !hasDepositTx;
+    final showHardwareShieldAction =
+        intentIsHardware &&
+        selectedIntent.direction == SwapDirection.externalToZec &&
+        selectedIntent.status == SwapIntentStatus.shieldingPending;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1936,6 +2116,32 @@ class _SwapActivityStack extends StatelessWidget {
           _ActivityStatusErrorPanel(message: statusError),
         ],
         const SizedBox(height: AppSpacing.xs),
+        if (showHardwareDepositAction) ...[
+          _ActivityHardwareActionPanel(
+            key: const ValueKey('swap_hardware_deposit_action_panel'),
+            iconName: AppIcons.qr,
+            title: 'Sign ZEC deposit',
+            message:
+                'Use Keystone to approve one ZEC transaction to the swap deposit address.',
+            buttonKey: const ValueKey('swap_hardware_deposit_button'),
+            buttonLabel: 'Sign with Keystone',
+            onPressed: () => onSignZecDeposit(selectedIntent),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+        ],
+        if (showHardwareShieldAction) ...[
+          _ActivityHardwareActionPanel(
+            key: const ValueKey('swap_hardware_shield_action_panel'),
+            iconName: AppIcons.shieldKeyhole,
+            title: 'Shield received ZEC',
+            message:
+                'ZEC arrived at the staging address. Sign one shield transaction to make it spendable.',
+            buttonKey: const ValueKey('swap_hardware_shield_button'),
+            buttonLabel: 'Shield with Keystone',
+            onPressed: () => onSignShield(selectedIntent),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+        ],
         if (resolution != null) ...[
           _ActivityResolutionPanel(
             resolution: resolution,
@@ -1945,7 +2151,9 @@ class _SwapActivityStack extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
         ],
-        if (showDepositControls && depositInstruction != null) ...[
+        if (showDepositControls &&
+            depositInstruction != null &&
+            !showHardwareDepositAction) ...[
           _ActivityDepositActionPanel(
             state: state,
             instruction: depositInstruction,
@@ -1975,8 +2183,11 @@ class _SwapActivityDetailModal extends StatelessWidget {
     required this.onSubmitDepositTransaction,
     required this.onReviewFreshQuote,
     required this.onRetryShield,
+    required this.onSignZecDeposit,
+    required this.onSignShield,
     required this.onCopyExplorerLink,
     required this.onRemoveIntent,
+    required this.intentIsHardware,
   });
 
   final SwapPrototypeState state;
@@ -1988,8 +2199,11 @@ class _SwapActivityDetailModal extends StatelessWidget {
   final VoidCallback onSubmitDepositTransaction;
   final VoidCallback onReviewFreshQuote;
   final VoidCallback onRetryShield;
+  final ValueChanged<SwapPrototypeIntent> onSignZecDeposit;
+  final ValueChanged<SwapPrototypeIntent> onSignShield;
   final ValueChanged<SwapPrototypeIntent> onCopyExplorerLink;
   final VoidCallback onRemoveIntent;
+  final bool intentIsHardware;
 
   @override
   Widget build(BuildContext context) {
@@ -2071,9 +2285,12 @@ class _SwapActivityDetailModal extends StatelessWidget {
                         onSubmitDepositTransaction: onSubmitDepositTransaction,
                         onReviewFreshQuote: onReviewFreshQuote,
                         onRetryShield: onRetryShield,
+                        onSignZecDeposit: onSignZecDeposit,
+                        onSignShield: onSignShield,
                         onCopyExplorerLink: onCopyExplorerLink,
                         onRemoveIntent: onRemoveIntent,
                         liveFundsEnabled: liveFundsEnabled,
+                        intentIsHardware: intentIsHardware,
                       ),
                     ),
                   ),
@@ -3949,6 +4166,84 @@ class _ActivityDepositInstruction {
   final String txHashHint;
   final String submitLabel;
   final bool showQr;
+}
+
+class _ActivityHardwareActionPanel extends StatelessWidget {
+  const _ActivityHardwareActionPanel({
+    required this.iconName,
+    required this.title,
+    required this.message,
+    required this.buttonKey,
+    required this.buttonLabel,
+    required this.onPressed,
+    super.key,
+  });
+
+  final String iconName;
+  final String title;
+  final String message;
+  final Key buttonKey;
+  final String buttonLabel;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: colors.background.raised,
+        border: Border.all(color: colors.border.regular),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: colors.background.base,
+              border: Border.all(color: colors.border.subtle),
+              borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            ),
+            child: AppIcon(iconName, size: 20, color: colors.icon.regular),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  message,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          AppButton(
+            key: buttonKey,
+            onPressed: onPressed,
+            variant: AppButtonVariant.primary,
+            size: AppButtonSize.medium,
+            leading: AppIcon(iconName),
+            child: Text(buttonLabel),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ActivityDepositActionPanel extends StatelessWidget {

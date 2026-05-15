@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_prototype_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_prototype_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_max_amount_estimator.dart';
@@ -26,6 +27,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_queue_panel.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
@@ -2473,6 +2475,83 @@ void main() {
   );
 
   testWidgets(
+    'hardware external-to-ZEC provider success waits for manual shield signing',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _CompletingExternalStatusSwapProvider();
+      final shieldingService = _FakeSwapShieldingService.success(
+        SwapShieldingResult(
+          txids: 'should-not-auto-shield',
+          feeZatoshi: BigInt.from(10000),
+          shieldedZatoshi: BigInt.from(200000000),
+        ),
+      );
+      final hardwareSigningService = _FakeSwapHardwareSigningService();
+      final sessionStore = _FakeSwapSessionStore(
+        initialIntents: [
+          _persistedExternalToZecIntent(
+            id: '0xhardwarecomplete',
+            stagingAddress: 't1hardwarestaging',
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [
+              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+            ],
+          ),
+          bootstrap: _hardwareBootstrap,
+          swapProvider: swapProvider,
+          shieldingService: shieldingService,
+          hardwareSigningService: hardwareSigningService,
+          sessionStore: sessionStore,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
+      await tester.pumpAndSettle();
+
+      expect(swapProvider.statusRequests, hasLength(1));
+      expect(shieldingService.requests, isEmpty);
+      expect(hardwareSigningService.shieldDrafts, isEmpty);
+      expect(
+        sessionStore.savedIntents.single.status,
+        SwapIntentStatus.shieldingPending,
+      );
+      expect(
+        sessionStore.savedIntents.single.nextAction,
+        'Sign a shield transaction with Keystone to make ZEC spendable.',
+      );
+
+      await _openActivityDetail(tester, '0xhardwarecomplete');
+
+      expect(
+        find.byKey(const ValueKey('swap_hardware_shield_action_panel')),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_hardware_shield_button')),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_hardware_shield_button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump();
+
+      expect(hardwareSigningService.shieldDrafts, ['t1hardwarestaging']);
+      expect(find.text('Sign shield transaction on Keystone'), findsOneWidget);
+      expect(shieldingService.requests, isEmpty);
+    },
+  );
+
+  testWidgets(
     'external-to-ZEC provider success starts shield confirmation tracking',
     (tester) async {
       await _setDesktopViewport(tester);
@@ -4429,6 +4508,386 @@ void main() {
     expect(find.textContaining('Insufficient balance'), findsOneWidget);
   });
 
+  testWidgets(
+    'hardware ZEC swaps start and wait for Keystone deposit signing',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _FakeSwapProvider();
+      final depositSender = _FakeSwapDepositSender();
+      final hardwareSigningService = _FakeSwapHardwareSigningService();
+      final sessionStore = _FakeSwapSessionStore();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [
+              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+            ],
+          ),
+          bootstrap: _hardwareBootstrap,
+          swapProvider: swapProvider,
+          depositSender: depositSender,
+          hardwareSigningService: hardwareSigningService,
+          sessionStore: sessionStore,
+          liveFundsEnabled: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '0.003',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_destination_field')),
+        '0xrecipient',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump();
+
+      expect(depositSender.preflightRequests, hasLength(1));
+      expect(depositSender.requests, isEmpty);
+      expect(swapProvider.startedQuotes, hasLength(1));
+      expect(swapProvider.submittedDeposits, isEmpty);
+      expect(sessionStore.savedIntents, hasLength(1));
+      expect(
+        sessionStore.savedIntents.single.status,
+        SwapIntentStatus.awaitingDeposit,
+      );
+      expect(sessionStore.savedIntents.single.depositTxHash, isNull);
+      expect(hardwareSigningService.depositDrafts, ['t1live-deposit']);
+      expect(find.byKey(const ValueKey('swap_review_panel')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('swap_hardware_deposit_action_panel')),
+        findsOneWidget,
+      );
+      expect(find.text('Sign ZEC deposit on Keystone'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'hardware ZEC signing shows QR while proofs are still preparing',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _FakeSwapProvider();
+      final depositSender = _FakeSwapDepositSender();
+      final proofCompleter = Completer<List<int>>();
+      final hardwareSigningService = _FakeSwapHardwareSigningService(
+        proofCompleter: proofCompleter,
+      );
+      final sessionStore = _FakeSwapSessionStore();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [
+              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+            ],
+          ),
+          bootstrap: _hardwareBootstrap,
+          swapProvider: swapProvider,
+          depositSender: depositSender,
+          hardwareSigningService: hardwareSigningService,
+          sessionStore: sessionStore,
+          liveFundsEnabled: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '0.003',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_destination_field')),
+        '0xrecipient',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pump();
+      for (
+        var i = 0;
+        i < 20 && hardwareSigningService.proofDrafts.isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(hardwareSigningService.proofDrafts, hasLength(1));
+      expect(find.text('Sign ZEC deposit on Keystone'), findsOneWidget);
+      expect(
+        find.text('Scan now. Signature import unlocks after proofs are ready.'),
+        findsOneWidget,
+      );
+      expect(find.text('Preparing'), findsOneWidget);
+      expect(find.text('Get Signature'), findsNothing);
+
+      proofCompleter.complete(const [7, 8, 9]);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('Get Signature'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'hardware ZEC signing cancel removes auto-created unsent activity',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _FakeSwapProvider();
+      final depositSender = _FakeSwapDepositSender();
+      final hardwareSigningService = _FakeSwapHardwareSigningService();
+      final sessionStore = _FakeSwapSessionStore();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [
+              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+            ],
+          ),
+          bootstrap: _hardwareBootstrap,
+          swapProvider: swapProvider,
+          depositSender: depositSender,
+          hardwareSigningService: hardwareSigningService,
+          sessionStore: sessionStore,
+          liveFundsEnabled: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '0.003',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_destination_field')),
+        '0xrecipient',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(sessionStore.savedIntents, hasLength(1));
+      expect(hardwareSigningService.depositDrafts, ['t1live-deposit']);
+
+      await tester.tap(find.text('Reject'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(sessionStore.savedIntents, isEmpty);
+      expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'hardware ZEC broadcast storage failure still records deposit txid',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _FakeSwapProvider();
+      final depositSender = _FakeSwapDepositSender();
+      final hardwareSigningService = _FakeSwapHardwareSigningService(
+        broadcastStatus: 'broadcasted_storage_failed',
+        broadcastMessage: 'local storage failed after broadcast',
+      );
+      final sessionStore = _FakeSwapSessionStore();
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [
+              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+              GoRoute(
+                path: '/send/keystone/scan',
+                builder: (_, _) => const _FakeKeystoneScanScreen(),
+              ),
+            ],
+          ),
+          bootstrap: _hardwareBootstrap,
+          swapProvider: swapProvider,
+          depositSender: depositSender,
+          hardwareSigningService: hardwareSigningService,
+          sessionStore: sessionStore,
+          liveFundsEnabled: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '0.003',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_destination_field')),
+        '0xrecipient',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pump();
+      for (
+        var i = 0;
+        i < 20 && hardwareSigningService.proofDrafts.isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(hardwareSigningService.proofDrafts, hasLength(1));
+      await tester.pump();
+
+      await tester.tap(find.text('Get Signature'));
+      for (
+        var i = 0;
+        i < 20 &&
+            find
+                .byKey(const ValueKey('fake_keystone_signature_done'))
+                .evaluate()
+                .isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(
+        find.byKey(const ValueKey('fake_keystone_signature_done')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('fake_keystone_signature_done')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump();
+
+      expect(hardwareSigningService.broadcasts, hasLength(1));
+      expect(swapProvider.submittedDeposits, hasLength(1));
+      expect(
+        swapProvider.submittedDeposits.single.txHash,
+        'hardware-broadcast-txid',
+      );
+      expect(
+        sessionStore.savedIntents.single.depositTxHash,
+        'hardware-broadcast-txid',
+      );
+      expect(find.text('ZEC Deposit Checking'), findsOneWidget);
+      expect(
+        sessionStore.savedIntents.single.statusError,
+        'local storage failed after broadcast',
+      );
+      expect(
+        sessionStore.savedIntents.single.receipt.any(
+          (field) =>
+              field.label == 'Broadcast status' &&
+              field.value == 'local storage failed after broadcast',
+        ),
+        isTrue,
+      );
+      expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
+    },
+  );
+
+  testWidgets('hardware receive-ZEC swaps start without automatic signing', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider();
+    final depositSender = _FakeSwapDepositSender();
+    final hardwareSigningService = _FakeSwapHardwareSigningService();
+    final sessionStore = _FakeSwapSessionStore();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+          ],
+        ),
+        bootstrap: _hardwareBootstrap,
+        swapProvider: swapProvider,
+        depositSender: depositSender,
+        hardwareSigningService: hardwareSigningService,
+        sessionStore: sessionStore,
+        liveFundsEnabled: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('swap_direction_externalToZec')),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '8.5',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0xexternal-refund',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+
+    expect(depositSender.preflightRequests, isEmpty);
+    expect(depositSender.requests, isEmpty);
+    expect(swapProvider.startedQuotes, hasLength(1));
+    expect(swapProvider.submittedDeposits, isEmpty);
+    expect(sessionStore.savedIntents, hasLength(1));
+    expect(
+      sessionStore.savedIntents.single.status,
+      SwapIntentStatus.awaitingExternalDeposit,
+    );
+    expect(hardwareSigningService.depositDrafts, isEmpty);
+    expect(hardwareSigningService.shieldDrafts, isEmpty);
+    expect(find.byKey(const ValueKey('swap_review_panel')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('swap_hardware_deposit_action_panel')),
+      findsNothing,
+    );
+    expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
+  });
+
   testWidgets('starting a ZEC swap ignores duplicate taps while in flight', (
     tester,
   ) async {
@@ -4493,6 +4952,7 @@ Widget _routerHarness(
   SwapDepositSender? depositSender,
   SwapMaxAmountEstimator? maxAmountEstimator,
   SwapShieldingService? shieldingService,
+  SwapHardwareSigningService? hardwareSigningService,
   SwapSessionStore? sessionStore,
   BigInt? spendableBalance,
   Duration? statusPollInterval,
@@ -4504,10 +4964,11 @@ Widget _routerHarness(
   releaseUnusedExchangeTransparentAddresses,
   bool seedPrototypeFixtures = true,
   bool liveFundsEnabled = true,
+  AppBootstrapState? bootstrap,
 }) {
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       syncProvider.overrideWith(
         () =>
             _FakeSwapSyncNotifier(spendableBalance ?? BigInt.from(10000000000)),
@@ -4557,6 +5018,9 @@ Widget _routerHarness(
       ),
       swapShieldingServiceProvider.overrideWithValue(
         shieldingService ?? _FakeSwapShieldingService.notReady(),
+      ),
+      swapHardwareSigningServiceProvider.overrideWithValue(
+        hardwareSigningService ?? _FakeSwapHardwareSigningService(),
       ),
       swapSessionStoreProvider.overrideWithValue(
         sessionStore ?? _FakeSwapSessionStore(),
@@ -5153,6 +5617,115 @@ class _FakeSwapShieldingService implements SwapShieldingService {
   }
 }
 
+class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
+  _FakeSwapHardwareSigningService({
+    this.broadcastStatus = 'broadcasted',
+    this.broadcastMessage,
+    this.proofCompleter,
+  });
+
+  final String broadcastStatus;
+  final String? broadcastMessage;
+  final Completer<List<int>>? proofCompleter;
+  final depositDrafts = <String>[];
+  final shieldDrafts = <String>[];
+  final proofDrafts = <List<int>>[];
+  final broadcasts = <_HardwareBroadcastRequest>[];
+
+  @override
+  Future<SwapHardwarePcztDraft> createZecDepositPczt({
+    required String accountUuid,
+    required SwapPrototypeIntent intent,
+  }) async {
+    depositDrafts.add(intent.id);
+    return SwapHardwarePcztDraft(
+      pcztBytes: const [1, 2, 3],
+      needsSaplingParams: false,
+      feeZatoshi: BigInt.from(10000),
+    );
+  }
+
+  @override
+  Future<SwapHardwarePcztDraft> createShieldPczt({
+    required String accountUuid,
+    required String transparentAddress,
+  }) async {
+    shieldDrafts.add(transparentAddress);
+    return SwapHardwarePcztDraft(
+      pcztBytes: const [4, 5, 6],
+      needsSaplingParams: false,
+      feeZatoshi: BigInt.from(15000),
+      shieldedZatoshi: BigInt.from(200000000),
+    );
+  }
+
+  @override
+  Future<List<String>> encodeSigningUrParts({
+    required SwapHardwarePcztDraft draft,
+  }) async {
+    return const ['ur:zcash-pczt/test'];
+  }
+
+  @override
+  Future<List<int>> addProofsForSigning({
+    required SwapHardwarePcztDraft draft,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    proofDrafts.add(draft.pcztBytes);
+    final pending = proofCompleter;
+    if (pending != null) return pending.future;
+    return const [7, 8, 9];
+  }
+
+  @override
+  Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
+    required List<int> pcztWithProofsBytes,
+    required List<int> pcztWithSignaturesBytes,
+    String? spendParamsPath,
+    String? outputParamsPath,
+  }) async {
+    broadcasts.add(
+      _HardwareBroadcastRequest(
+        proofs: pcztWithProofsBytes,
+        signatures: pcztWithSignaturesBytes,
+      ),
+    );
+    return rust_sync.ExtractAndBroadcastPcztResult(
+      txid: 'hardware-broadcast-txid',
+      status: broadcastStatus,
+      message: broadcastMessage,
+    );
+  }
+}
+
+class _HardwareBroadcastRequest {
+  const _HardwareBroadcastRequest({
+    required this.proofs,
+    required this.signatures,
+  });
+
+  final List<int> proofs;
+  final List<int> signatures;
+}
+
+class _FakeKeystoneScanScreen extends StatelessWidget {
+  const _FakeKeystoneScanScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: ElevatedButton(
+          key: const ValueKey('fake_keystone_signature_done'),
+          onPressed: () => Navigator.of(context).pop(<int>[10, 11, 12]),
+          child: const Text('Return signature'),
+        ),
+      ),
+    );
+  }
+}
+
 class _FakeSwapSessionStore implements SwapSessionStore {
   _FakeSwapSessionStore({
     List<SwapPrototypeIntent> initialIntents = const [],
@@ -5531,6 +6104,30 @@ final _bootstrap = AppBootstrapState(
   initialLocation: '/swap',
   initialAccountState: const AccountState(
     accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+    activeAccountUuid: 'account-1',
+    activeAddress: 'u1swapprototypeaddress',
+  ),
+  initialSyncSnapshot: AppSyncSnapshot.empty,
+  network: 'main',
+  rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+  themeMode: ThemeMode.system,
+  privacyModeEnabled: false,
+  isPasswordConfigured: true,
+  isUnlocked: true,
+  passwordRotationRecoveryFailed: false,
+);
+
+final _hardwareBootstrap = AppBootstrapState(
+  initialLocation: '/swap',
+  initialAccountState: const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Keystone',
+        order: 0,
+        isHardware: true,
+      ),
+    ],
     activeAccountUuid: 'account-1',
     activeAddress: 'u1swapprototypeaddress',
   ),

@@ -306,15 +306,6 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       );
       _keystoneProposalConsumed = true;
 
-      final pcztWithProofs = await rust_sync.addProofsToPczt(
-        pcztBytes: pcztBytes,
-        spendParamsPath: widget.args.needsSaplingParams
-            ? currentSaplingParams.spendPath
-            : null,
-        outputParamsPath: widget.args.needsSaplingParams
-            ? currentSaplingParams.outputPath
-            : null,
-      );
       final redactedPczt = await rust_sync.redactPcztForSigner(
         pcztBytes: pcztBytes,
       );
@@ -326,8 +317,22 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       if (!mounted) return;
       setState(() {
         _keystonePhase = KeystoneSigningModalPhase.ready;
-        _keystonePcztWithProofs = pcztWithProofs;
         _keystoneUrParts = urParts;
+      });
+
+      final pcztWithProofs = await rust_sync.addProofsToPczt(
+        pcztBytes: pcztBytes,
+        spendParamsPath: widget.args.needsSaplingParams
+            ? currentSaplingParams.spendPath
+            : null,
+        outputParamsPath: widget.args.needsSaplingParams
+            ? currentSaplingParams.outputPath
+            : null,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _keystonePcztWithProofs = pcztWithProofs;
       });
     } catch (e, st) {
       log('SendReview._prepareKeystonePczt: ERROR: $e\n$st');
@@ -462,9 +467,15 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                   error: _keystoneError,
                   title: 'Sign tx on your Keystone',
                   subtitle: 'Scan the QR code to sign',
-                  instruction: 'After you scanned, click Get Signature.',
-                  primaryLabel: 'Get Signature',
-                  onPrimary: keystonePhase == KeystoneSigningModalPhase.ready
+                  instruction: _keystonePcztWithProofs == null
+                      ? 'Scan now. Signature import unlocks after proofs are ready.'
+                      : 'After you scanned, click Get Signature.',
+                  primaryLabel: _keystonePcztWithProofs == null
+                      ? 'Preparing'
+                      : 'Get Signature',
+                  onPrimary:
+                      keystonePhase == KeystoneSigningModalPhase.ready &&
+                          _keystonePcztWithProofs != null
                       ? () => unawaited(_getKeystoneSignature())
                       : null,
                   secondaryLabel: 'Reject',

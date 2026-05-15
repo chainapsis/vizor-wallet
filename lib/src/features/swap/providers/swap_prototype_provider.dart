@@ -400,7 +400,11 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       );
       return false;
     }
-    if (quote.direction.sendsZec && ref.read(swapLiveFundsEnabledProvider)) {
+    final activeAccountIsHardware = ref
+        .read(accountProvider.notifier)
+        .isActiveAccountHardware;
+    final liveFundsEnabled = ref.read(swapLiveFundsEnabledProvider);
+    if (quote.direction.sendsZec && liveFundsEnabled) {
       try {
         await ref
             .read(swapDepositSenderProvider)
@@ -442,12 +446,14 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       );
       return false;
     }
-    final intent = _intentFromSnapshot(
-      snapshot,
-      quote,
-      addressPlan,
-      accountUuid,
-    );
+    var intent = _intentFromSnapshot(snapshot, quote, addressPlan, accountUuid);
+    if (activeAccountIsHardware && quote.direction.sendsZec) {
+      const nextAction = 'Sign and send the ZEC deposit with Keystone.';
+      intent = intent.copyWith(
+        nextAction: nextAction,
+        steps: _stepsForStatus(intent.status, nextAction),
+      );
+    }
     log(
       'Swap: start saved intent=${_shortSwapValue(intent.id)} '
       'status=${intent.status.name}',
@@ -477,6 +483,13 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         state = state.copyWith(
           statusError:
               'Live ZEC deposit is disabled in this build. The quote is saved, but no wallet transaction was signed or broadcast.',
+        );
+        return true;
+      }
+      if (activeAccountIsHardware) {
+        log(
+          'Swap: hardware ZEC deposit waiting for Keystone signing '
+          'intent=${_shortSwapValue(intent.id)}',
         );
         return true;
       }
@@ -556,6 +569,16 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       await _releaseIntentReservation(removedIntent);
     }
     await _persistCurrentIntents();
+  }
+
+  Future<void> removeUnsentHardwareDepositIntent(String intentId) async {
+    final intent = _intentById(intentId);
+    if (intent == null || !_isHardwareIntent(intent)) return;
+    if (intent.direction != SwapDirection.zecToExternal) return;
+    if (intent.depositTxHash?.trim().isNotEmpty ?? false) return;
+    if (intent.shieldTxHash?.trim().isNotEmpty ?? false) return;
+
+    await removeIntent(intentId);
   }
 
   void selectExternalRequest(String requestId) {
@@ -677,7 +700,10 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     final selected = state.selectedIntent;
     if (selected.status != SwapIntentStatus.shieldingFailed) return;
 
-    const nextAction = 'Retrying wallet shielding from the staging address';
+    final hardwareIntent = _isHardwareIntent(selected);
+    final nextAction = hardwareIntent
+        ? 'Sign a shield transaction with Keystone to make ZEC spendable.'
+        : 'Retrying wallet shielding from the staging address';
     final pending = selected.copyWith(
       status: SwapIntentStatus.shieldingPending,
       nextAction: nextAction,
@@ -688,6 +714,10 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       selectedIntentId: pending.id,
       clearStatusError: true,
     );
+    if (hardwareIntent) {
+      await _persistCurrentIntents();
+      return;
+    }
     final updated = await _tryShieldStagingAddress(pending);
     if (updated != pending) {
       state = state.copyWith(
@@ -711,6 +741,124 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
 
   Future<void> submitSelectedDepositTransaction() async {
     if (!state.canSubmitDepositTx || state.intents.isEmpty) return;
+    await _submitDepositTransaction(
+      state.selectedIntent,
+      state.depositTxHashText.trim(),
+    );
+  }
+
+  Future<void> submitDepositTransactionForIntent({
+    required String intentId,
+    required String accountUuid,
+    required String txHash,
+    String? broadcastStatus,
+    String? broadcastMessage,
+  }) async {
+    final selected = _intentById(intentId);
+    final normalizedTxHash = txHash.trim();
+    if (normalizedTxHash.isEmpty) return;
+    if (selected == null) {
+      await _submitDepositTransactionForStoredIntent(
+        accountUuid: accountUuid,
+        intentId: intentId,
+        txHash: normalizedTxHash,
+        broadcastStatus: broadcastStatus,
+        broadcastMessage: broadcastMessage,
+      );
+      return;
+    }
+    await _submitDepositTransaction(
+      selected,
+      normalizedTxHash,
+      broadcastStatus: broadcastStatus,
+      broadcastMessage: broadcastMessage,
+    );
+  }
+
+  Future<void> recordHardwareShieldSubmission({
+    required String intentId,
+    required String accountUuid,
+    required String txHash,
+    required BigInt feeZatoshi,
+    String? broadcastStatus,
+    String? broadcastMessage,
+  }) async {
+    final intent = _intentById(intentId);
+    final normalizedTxHash = txHash.trim();
+    if (normalizedTxHash.isEmpty) return;
+    if (intent == null) {
+      await _recordHardwareShieldSubmissionForStoredIntent(
+        accountUuid: accountUuid,
+        intentId: intentId,
+        txHash: normalizedTxHash,
+        feeZatoshi: feeZatoshi,
+        broadcastStatus: broadcastStatus,
+        broadcastMessage: broadcastMessage,
+      );
+      return;
+    }
+
+    if (!_isAccountActive(intent.accountUuid)) {
+      await _recordHardwareShieldSubmissionForStoredIntent(
+        accountUuid: intent.accountUuid ?? accountUuid,
+        intentId: intentId,
+        txHash: normalizedTxHash,
+        feeZatoshi: feeZatoshi,
+        broadcastStatus: broadcastStatus,
+        broadcastMessage: broadcastMessage,
+      );
+      return;
+    }
+
+    log(
+      'Swap: hardware shield submitted intent=${_shortSwapValue(intent.id)} '
+      'tx=${_shortSwapValue(normalizedTxHash)}',
+    );
+    const nextAction = 'Waiting for shield transaction confirmation.';
+    final broadcastNotice = _hardwareBroadcastNotice(
+      status: broadcastStatus,
+      message: broadcastMessage,
+    );
+    final updated = intent.copyWith(
+      status: SwapIntentStatus.shieldingConfirming,
+      nextAction: nextAction,
+      steps: _stepsForStatus(SwapIntentStatus.shieldingConfirming, nextAction),
+      receipt: _receiptWithBroadcastNotice(
+        _receiptWithShieldSubmission(
+          intent.receipt,
+          txHash: normalizedTxHash,
+          feeZatoshi: feeZatoshi,
+        ),
+        broadcastNotice,
+      ),
+      statusError: broadcastNotice,
+      shieldTxHash: normalizedTxHash,
+      clearStatusError: broadcastNotice == null,
+    );
+    state = state.copyWith(
+      intents: _replaceIntent(state.intents, intent.id, updated),
+      selectedIntentId: updated.id,
+      clearStatusError: true,
+    );
+    await _persistCurrentIntents();
+  }
+
+  Future<void> _submitDepositTransaction(
+    SwapPrototypeIntent selected,
+    String txHash, {
+    String? broadcastStatus,
+    String? broadcastMessage,
+  }) async {
+    if (!_isAccountActive(selected.accountUuid)) {
+      await _submitDepositTransactionForStoredIntent(
+        accountUuid: selected.accountUuid,
+        intentId: selected.id,
+        txHash: txHash,
+        broadcastStatus: broadcastStatus,
+        broadcastMessage: broadcastMessage,
+      );
+      return;
+    }
     if (!ref.read(swapLiveFundsEnabledProvider)) {
       state = state.copyWith(
         statusError:
@@ -718,8 +866,6 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       );
       return;
     }
-    final selected = state.selectedIntent;
-    final txHash = state.depositTxHashText.trim();
 
     log(
       'Swap: submit deposit begin intent=${_shortSwapValue(selected.id)} '
@@ -727,21 +873,58 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       'tx=${_shortSwapValue(txHash)}',
     );
     state = state.copyWith(depositSubmitting: true, clearStatusError: true);
+    final broadcastNotice = _hardwareBroadcastNotice(
+      status: broadcastStatus,
+      message: broadcastMessage,
+    );
+    final checkpointed = selected.copyWith(
+      depositTxHash: txHash,
+      receipt: _receiptWithBroadcastNotice(
+        _receiptWithDepositTx(selected.receipt, txHash),
+        broadcastNotice,
+      ),
+      statusError: broadcastNotice,
+      clearStatusError: broadcastNotice == null,
+    );
+    state = state.copyWith(
+      depositTxHashText: state.selectedIntentId == selected.id
+          ? txHash
+          : state.depositTxHashText,
+      intents: _replaceIntent(state.intents, selected.id, checkpointed),
+      clearStatusError: true,
+    );
+    await _persistCurrentIntents();
     try {
       final snapshot = await ref
           .read(swapIntentProvider)
           .submitDepositTransaction(
-            depositAddress: _providerDepositAddress(selected),
+            depositAddress: _providerDepositAddress(checkpointed),
             txHash: txHash,
-            depositMemo: selected.depositMemo,
+            depositMemo: checkpointed.depositMemo,
           );
-      final updated = _updateIntentFromSnapshot(selected, snapshot).copyWith(
-        depositTxHash: txHash,
-        receipt: _receiptWithDepositTx(selected.receipt, txHash),
+      final updated = _depositSnapshotIntent(
+        checkpointed,
+        snapshot,
+        txHash: txHash,
+        broadcastNotice: broadcastNotice,
       );
+      if (!_isAccountActive(selected.accountUuid)) {
+        await _recordDepositSnapshotForStoredIntent(
+          accountUuid: selected.accountUuid,
+          intentId: checkpointed.id,
+          txHash: txHash,
+          snapshot: snapshot,
+          broadcastStatus: broadcastStatus,
+          broadcastMessage: broadcastMessage,
+        );
+        return;
+      }
       state = state.copyWith(
         depositSubmitting: false,
-        intents: _replaceIntent(state.intents, selected.id, updated),
+        depositTxHashText: state.selectedIntentId == selected.id
+            ? txHash
+            : state.depositTxHashText,
+        intents: _replaceIntent(state.intents, checkpointed.id, updated),
         clearStatusError: true,
       );
       log(
@@ -754,11 +937,158 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         'Swap: submit deposit failed intent=${_shortSwapValue(selected.id)} '
         'error=$e',
       );
-      state = state.copyWith(
-        depositSubmitting: false,
+      final message = swapFailureMessage(SwapFailureOperation.submitDeposit, e);
+      if (selected.accountUuid != null &&
+          !_isAccountActive(selected.accountUuid)) {
+        await _submitDepositTransactionForStoredIntent(
+          accountUuid: selected.accountUuid,
+          intentId: selected.id,
+          txHash: txHash,
+          broadcastStatus: broadcastStatus,
+          broadcastMessage: broadcastMessage,
+          submitProviderStatus: false,
+          statusError: message,
+        );
+        return;
+      }
+      state = state.copyWith(depositSubmitting: false, statusError: message);
+    }
+  }
+
+  Future<void> _submitDepositTransactionForStoredIntent({
+    required String? accountUuid,
+    required String intentId,
+    required String txHash,
+    String? broadcastStatus,
+    String? broadcastMessage,
+    bool submitProviderStatus = true,
+    String? statusError,
+  }) async {
+    final scopedAccountUuid = accountUuid?.trim();
+    if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) return;
+    final store = ref.read(swapSessionStoreProvider);
+    final storedIntents = await store.loadIntents(
+      accountUuid: scopedAccountUuid,
+    );
+    final intent = _intentByIdFrom(storedIntents, intentId);
+    if (intent == null) return;
+
+    final broadcastNotice = _hardwareBroadcastNotice(
+      status: broadcastStatus,
+      message: broadcastMessage,
+    );
+    final checkpointed = intent.copyWith(
+      depositTxHash: txHash,
+      receipt: _receiptWithBroadcastNotice(
+        _receiptWithDepositTx(intent.receipt, txHash),
+        broadcastNotice,
+      ),
+      statusError: statusError ?? broadcastNotice,
+      clearStatusError: statusError == null && broadcastNotice == null,
+    );
+    var updatedIntents = _replaceIntent(storedIntents, intentId, checkpointed);
+    await _persistIntentsForAccount(scopedAccountUuid, updatedIntents);
+
+    if (!submitProviderStatus) return;
+
+    try {
+      final snapshot = await ref
+          .read(swapIntentProvider)
+          .submitDepositTransaction(
+            depositAddress: _providerDepositAddress(checkpointed),
+            txHash: txHash,
+            depositMemo: checkpointed.depositMemo,
+          );
+      final updated = _depositSnapshotIntent(
+        checkpointed,
+        snapshot,
+        txHash: txHash,
+        broadcastNotice: broadcastNotice,
+      );
+      updatedIntents = _replaceIntent(updatedIntents, intentId, updated);
+      await _persistIntentsForAccount(scopedAccountUuid, updatedIntents);
+    } catch (e) {
+      final failed = checkpointed.copyWith(
         statusError: swapFailureMessage(SwapFailureOperation.submitDeposit, e),
       );
+      updatedIntents = _replaceIntent(updatedIntents, intentId, failed);
+      await _persistIntentsForAccount(scopedAccountUuid, updatedIntents);
     }
+  }
+
+  Future<void> _recordDepositSnapshotForStoredIntent({
+    required String? accountUuid,
+    required String intentId,
+    required String txHash,
+    required SwapIntentSnapshot snapshot,
+    String? broadcastStatus,
+    String? broadcastMessage,
+  }) async {
+    final scopedAccountUuid = accountUuid?.trim();
+    if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) return;
+    final storedIntents = await ref
+        .read(swapSessionStoreProvider)
+        .loadIntents(accountUuid: scopedAccountUuid);
+    final intent = _intentByIdFrom(storedIntents, intentId);
+    if (intent == null) return;
+
+    final broadcastNotice = _hardwareBroadcastNotice(
+      status: broadcastStatus,
+      message: broadcastMessage,
+    );
+    final updated = _depositSnapshotIntent(
+      intent,
+      snapshot,
+      txHash: txHash,
+      broadcastNotice: broadcastNotice,
+    );
+    await _persistIntentsForAccount(
+      scopedAccountUuid,
+      _replaceIntent(storedIntents, intentId, updated),
+    );
+  }
+
+  Future<void> _recordHardwareShieldSubmissionForStoredIntent({
+    required String? accountUuid,
+    required String intentId,
+    required String txHash,
+    required BigInt feeZatoshi,
+    String? broadcastStatus,
+    String? broadcastMessage,
+  }) async {
+    final scopedAccountUuid = accountUuid?.trim();
+    if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) return;
+    final storedIntents = await ref
+        .read(swapSessionStoreProvider)
+        .loadIntents(accountUuid: scopedAccountUuid);
+    final intent = _intentByIdFrom(storedIntents, intentId);
+    if (intent == null) return;
+
+    const nextAction = 'Waiting for shield transaction confirmation.';
+    final broadcastNotice = _hardwareBroadcastNotice(
+      status: broadcastStatus,
+      message: broadcastMessage,
+    );
+    final updated = intent.copyWith(
+      status: SwapIntentStatus.shieldingConfirming,
+      nextAction: nextAction,
+      steps: _stepsForStatus(SwapIntentStatus.shieldingConfirming, nextAction),
+      receipt: _receiptWithBroadcastNotice(
+        _receiptWithShieldSubmission(
+          intent.receipt,
+          txHash: txHash,
+          feeZatoshi: feeZatoshi,
+        ),
+        broadcastNotice,
+      ),
+      statusError: broadcastNotice,
+      shieldTxHash: txHash,
+      clearStatusError: broadcastNotice == null,
+    );
+    await _persistIntentsForAccount(
+      scopedAccountUuid,
+      _replaceIntent(storedIntents, intentId, updated),
+    );
   }
 
   Future<void> _sendAndSubmitZecDeposit({
@@ -772,14 +1102,24 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       'deposit=${_shortSwapValue(quote.depositInstruction.address)}',
     );
     state = state.copyWith(depositSubmitting: true, clearStatusError: true);
+    String? broadcastTxHash;
     try {
       final txHash = await ref
           .read(swapDepositSenderProvider)
           .sendZecDeposit(accountUuid: accountUuid, quote: quote);
+      broadcastTxHash = txHash;
       log(
         'Swap: live ZEC deposit broadcast tx=${_shortSwapValue(txHash)} '
         'intent=${_shortSwapValue(intentId)}',
       );
+      if (!_isAccountActive(accountUuid)) {
+        await _submitDepositTransactionForStoredIntent(
+          accountUuid: accountUuid,
+          intentId: intentId,
+          txHash: txHash,
+        );
+        return;
+      }
       final intent = _intentById(intentId);
       if (intent == null) {
         state = state.copyWith(
@@ -810,7 +1150,17 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
           .copyWith(
             depositTxHash: txHash,
             receipt: _receiptWithDepositTx(checkpointed.receipt, txHash),
+            clearStatusError: true,
           );
+      if (!_isAccountActive(accountUuid)) {
+        await _recordDepositSnapshotForStoredIntent(
+          accountUuid: accountUuid,
+          intentId: intentId,
+          txHash: txHash,
+          snapshot: snapshot,
+        );
+        return;
+      }
       state = state.copyWith(
         depositTxHashText: txHash,
         depositSubmitting: false,
@@ -827,10 +1177,23 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         'Swap: live ZEC deposit failed intent=${_shortSwapValue(intentId)} '
         'error=$e',
       );
-      state = state.copyWith(
-        depositSubmitting: false,
-        statusError: swapFailureMessage(SwapFailureOperation.sendZecDeposit, e),
+      final message = swapFailureMessage(
+        SwapFailureOperation.sendZecDeposit,
+        e,
       );
+      if (!_isAccountActive(accountUuid)) {
+        if (broadcastTxHash != null) {
+          await _submitDepositTransactionForStoredIntent(
+            accountUuid: accountUuid,
+            intentId: intentId,
+            txHash: broadcastTxHash,
+            submitProviderStatus: false,
+            statusError: message,
+          );
+        }
+        return;
+      }
+      state = state.copyWith(depositSubmitting: false, statusError: message);
     }
   }
 
@@ -901,7 +1264,9 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       if (replaceExisting) {
         state = state.copyWith(
           intents: const [],
+          statusRefreshing: false,
           depositTxHashText: '',
+          depositSubmitting: false,
           clearSelectedIntent: true,
           clearStatusError: true,
         );
@@ -916,9 +1281,11 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       state = state.copyWith(
         intents: persisted,
         selectedIntentId: persisted.isEmpty ? null : persisted.first.id,
+        statusRefreshing: replaceExisting ? false : null,
         depositTxHashText: persisted.isEmpty
             ? ''
             : persisted.first.depositTxHash ?? '',
+        depositSubmitting: replaceExisting ? false : null,
         clearSelectedIntent: persisted.isEmpty,
         clearStatusError: true,
       );
@@ -963,6 +1330,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     required bool showBusy,
   }) async {
     if (_statusRefreshInFlight || intents.isEmpty) return;
+    final refreshAccountUuid = _activeAccountUuidOrNull;
     _statusRefreshInFlight = true;
     if (showBusy) {
       state = state.copyWith(statusRefreshing: true, clearStatusError: true);
@@ -1026,6 +1394,11 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         return;
       }
 
+      if (refreshAccountUuid != null && !_isAccountActive(refreshAccountUuid)) {
+        await _persistIntentsForAccount(refreshAccountUuid, updatedIntents);
+        return;
+      }
+
       state = state.copyWith(
         statusRefreshing: false,
         intents: updatedIntents,
@@ -1041,14 +1414,30 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
   Future<void> _persistCurrentIntents({String? accountUuid}) async {
     final activeAccountUuid = accountUuid ?? _activeAccountUuidOrNull;
     if (activeAccountUuid == null) return;
+    await _persistIntentsForAccount(activeAccountUuid, state.intents);
+  }
+
+  Future<void> _persistIntentsForAccount(
+    String? accountUuid,
+    List<SwapPrototypeIntent> intentsToPersist,
+  ) async {
+    final scopedAccountUuid = accountUuid?.trim();
+    if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) return;
     final intents = [
-      for (final intent in state.intents)
-        if (_isPersistableIntent(intent, accountUuid: activeAccountUuid))
-          intent.copyWith(accountUuid: activeAccountUuid),
+      for (final intent in intentsToPersist)
+        if (_isPersistableIntent(intent, accountUuid: scopedAccountUuid))
+          intent.copyWith(accountUuid: scopedAccountUuid),
     ];
     await ref
         .read(swapSessionStoreProvider)
-        .saveIntents(accountUuid: activeAccountUuid, intents: intents);
+        .saveIntents(accountUuid: scopedAccountUuid, intents: intents);
+  }
+
+  bool _isAccountActive(String? accountUuid) {
+    final scopedAccountUuid = accountUuid?.trim();
+    return scopedAccountUuid == null ||
+        scopedAccountUuid.isEmpty ||
+        scopedAccountUuid == _activeAccountUuidOrNull;
   }
 
   Future<void> _persistDraft(SwapDraftSnapshot draft) async {
@@ -1260,6 +1649,23 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     );
   }
 
+  SwapPrototypeIntent _depositSnapshotIntent(
+    SwapPrototypeIntent intent,
+    SwapIntentSnapshot snapshot, {
+    required String txHash,
+    String? broadcastNotice,
+  }) {
+    return _updateIntentFromSnapshot(intent, snapshot).copyWith(
+      depositTxHash: txHash,
+      receipt: _receiptWithBroadcastNotice(
+        _receiptWithDepositTx(intent.receipt, txHash),
+        broadcastNotice,
+      ),
+      statusError: broadcastNotice,
+      clearStatusError: broadcastNotice == null,
+    );
+  }
+
   SwapIntentStatus _walletAwareStatus(
     SwapPrototypeIntent intent,
     SwapIntentStatus providerStatus,
@@ -1307,6 +1713,20 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         'intent=${_shortSwapValue(intent.id)}',
       );
       return _shieldingFailedIntent(intent);
+    }
+    if (_isHardwareIntent(intent)) {
+      const nextAction =
+          'Sign a shield transaction with Keystone to make ZEC spendable.';
+      log(
+        'Swap: hardware shielding waiting for Keystone signing '
+        'intent=${_shortSwapValue(intent.id)} '
+        'staging=${_shortSwapValue(transparentAddress)}',
+      );
+      return intent.copyWith(
+        status: SwapIntentStatus.shieldingPending,
+        nextAction: nextAction,
+        steps: _stepsForStatus(SwapIntentStatus.shieldingPending, nextAction),
+      );
     }
 
     try {
@@ -1366,6 +1786,12 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
   bool _needsWalletShielding(SwapPrototypeIntent intent) {
     return intent.direction == SwapDirection.externalToZec &&
         intent.status == SwapIntentStatus.shieldingPending;
+  }
+
+  bool _isHardwareIntent(SwapPrototypeIntent intent) {
+    final accountUuid = _accountUuidForIntent(intent);
+    if (accountUuid == null || accountUuid.trim().isEmpty) return false;
+    return ref.read(accountProvider.notifier).isHardwareAccount(accountUuid);
   }
 
   Future<void> _persistShieldSubmissionCheckpoint(
@@ -1509,6 +1935,39 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       for (final field in receipt)
         if (field.label != 'Provider status') field,
       SwapPrototypeField(label: 'Provider status', value: providerStatus),
+    ];
+  }
+
+  String? _hardwareBroadcastNotice({String? status, String? message}) {
+    final normalizedStatus = status?.trim();
+    if (normalizedStatus == null ||
+        normalizedStatus.isEmpty ||
+        normalizedStatus == 'broadcasted') {
+      return null;
+    }
+    final trimmedMessage = message?.trim();
+    if (trimmedMessage != null && trimmedMessage.isNotEmpty) {
+      return trimmedMessage;
+    }
+    if (normalizedStatus == 'broadcast_unknown') {
+      return 'The transaction may have reached the network, but confirmation timed out. Check activity before trying again.';
+    }
+    if (normalizedStatus == 'broadcasted_storage_failed') {
+      return 'The transaction reached the network, but Vizor could not store it locally. Do not try again until sync or an explorer confirms the latest status.';
+    }
+    return null;
+  }
+
+  List<SwapPrototypeField> _receiptWithBroadcastNotice(
+    List<SwapPrototypeField> receipt,
+    String? notice,
+  ) {
+    final trimmedNotice = notice?.trim();
+    return [
+      for (final field in receipt)
+        if (field.label != 'Broadcast status') field,
+      if (trimmedNotice != null && trimmedNotice.isNotEmpty)
+        SwapPrototypeField(label: 'Broadcast status', value: trimmedNotice),
     ];
   }
 
