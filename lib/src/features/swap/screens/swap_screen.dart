@@ -200,6 +200,10 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     }
 
     void refreshStatus() {
+      final selected = ref.read(swapPrototypeProvider).selectedIntentOrNull;
+      if (selected == null || !_canRefreshIntentStatus(selected.status)) {
+        return;
+      }
       unawaited(swapNotifier.refreshSelectedIntentStatus());
     }
 
@@ -458,7 +462,10 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         title: 'Refresh Status',
         detail: selectedIntent?.statusLabel ?? 'No active swap',
         iconName: AppIcons.renew,
-        enabled: selectedIntent != null && !swapState.statusRefreshing,
+        enabled:
+            selectedIntent != null &&
+            _canRefreshIntentStatus(selectedIntent.status) &&
+            !swapState.statusRefreshing,
         onRun: () => runPaletteAction(() {
           _selectTab(_SwapPageTab.activity);
           refreshStatus();
@@ -690,6 +697,15 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                     state: swapState,
                     intent: activityDetailIntent,
                     liveFundsEnabled: liveFundsEnabled,
+                    onCopyText:
+                        ({
+                          required String text,
+                          required String toastMessage,
+                        }) => copySwapText(
+                          toastContext(),
+                          text: text,
+                          toastMessage: toastMessage,
+                        ),
                     onClose: _closeActivityDetail,
                     onRefreshStatus: refreshStatus,
                     onDepositTxHashChanged: swapNotifier.updateDepositTxHash,
@@ -2052,6 +2068,7 @@ class _SwapActivityStack extends StatelessWidget {
   const _SwapActivityStack({
     required this.state,
     required this.selectedIntent,
+    required this.onCopyText,
     required this.onRefreshStatus,
     required this.onDepositTxHashChanged,
     required this.onSubmitDepositTransaction,
@@ -2067,6 +2084,7 @@ class _SwapActivityStack extends StatelessWidget {
 
   final SwapPrototypeState state;
   final SwapPrototypeIntent selectedIntent;
+  final SwapSupportCopyText onCopyText;
   final VoidCallback onRefreshStatus;
   final ValueChanged<String> onDepositTxHashChanged;
   final VoidCallback onSubmitDepositTransaction;
@@ -2107,6 +2125,7 @@ class _SwapActivityStack extends StatelessWidget {
           intent: selectedIntent,
           plan: statusPlan,
           statusRefreshing: state.statusRefreshing,
+          canRefreshStatus: _canRefreshIntentStatus(selectedIntent.status),
           onRefreshStatus: onRefreshStatus,
           onCopyExplorerLink: onCopyExplorerLink,
           onRemoveIntent: onRemoveIntent,
@@ -2164,7 +2183,10 @@ class _SwapActivityStack extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
         ],
         if (showSupportDetails) ...[
-          _ActivitySupportDetailsSection(intent: selectedIntent),
+          _ActivitySupportDetailsSection(
+            intent: selectedIntent,
+            onCopyText: onCopyText,
+          ),
           const SizedBox(height: AppSpacing.xs),
         ],
       ],
@@ -2177,6 +2199,7 @@ class _SwapActivityDetailModal extends StatelessWidget {
     required this.state,
     required this.intent,
     required this.liveFundsEnabled,
+    required this.onCopyText,
     required this.onClose,
     required this.onRefreshStatus,
     required this.onDepositTxHashChanged,
@@ -2193,6 +2216,7 @@ class _SwapActivityDetailModal extends StatelessWidget {
   final SwapPrototypeState state;
   final SwapPrototypeIntent intent;
   final bool liveFundsEnabled;
+  final SwapSupportCopyText onCopyText;
   final VoidCallback onClose;
   final VoidCallback onRefreshStatus;
   final ValueChanged<String> onDepositTxHashChanged;
@@ -2280,6 +2304,7 @@ class _SwapActivityDetailModal extends StatelessWidget {
                       child: _SwapActivityStack(
                         state: state,
                         selectedIntent: intent,
+                        onCopyText: onCopyText,
                         onRefreshStatus: onRefreshStatus,
                         onDepositTxHashChanged: onDepositTxHashChanged,
                         onSubmitDepositTransaction: onSubmitDepositTransaction,
@@ -3828,11 +3853,16 @@ bool _showActivityReceipt(SwapIntentStatus status) {
   };
 }
 
+bool _canRefreshIntentStatus(SwapIntentStatus status) {
+  return status != SwapIntentStatus.complete;
+}
+
 class _ActiveSwapSummaryPanel extends StatelessWidget {
   const _ActiveSwapSummaryPanel({
     required this.intent,
     required this.plan,
     required this.statusRefreshing,
+    required this.canRefreshStatus,
     required this.onRefreshStatus,
     required this.onCopyExplorerLink,
     required this.onRemoveIntent,
@@ -3841,6 +3871,7 @@ class _ActiveSwapSummaryPanel extends StatelessWidget {
   final SwapPrototypeIntent intent;
   final _ActivityStatusPlan plan;
   final bool statusRefreshing;
+  final bool canRefreshStatus;
   final VoidCallback onRefreshStatus;
   final ValueChanged<SwapPrototypeIntent> onCopyExplorerLink;
   final VoidCallback onRemoveIntent;
@@ -3882,15 +3913,16 @@ class _ActiveSwapSummaryPanel extends StatelessWidget {
               leading: const AppIcon(AppIcons.link),
               child: const Text('Copy link'),
             ),
-            AppButton(
-              key: const ValueKey('swap_status_refresh_button'),
-              onPressed: statusRefreshing ? null : onRefreshStatus,
-              variant: AppButtonVariant.secondary,
-              size: AppButtonSize.medium,
-              minWidth: 124,
-              leading: const AppIcon(AppIcons.renew),
-              child: Text(statusRefreshing ? 'Refreshing' : 'Refresh'),
-            ),
+            if (canRefreshStatus)
+              AppButton(
+                key: const ValueKey('swap_status_refresh_button'),
+                onPressed: statusRefreshing ? null : onRefreshStatus,
+                variant: AppButtonVariant.secondary,
+                size: AppButtonSize.medium,
+                minWidth: 124,
+                leading: const AppIcon(AppIcons.renew),
+                child: Text(statusRefreshing ? 'Refreshing' : 'Refresh'),
+              ),
             AppButton(
               key: const ValueKey('swap_activity_remove_button'),
               onPressed: onRemoveIntent,
@@ -4521,9 +4553,13 @@ class _DepositTxHashDisclosureState extends State<_DepositTxHashDisclosure> {
 }
 
 class _ActivitySupportDetailsSection extends StatefulWidget {
-  const _ActivitySupportDetailsSection({required this.intent});
+  const _ActivitySupportDetailsSection({
+    required this.intent,
+    required this.onCopyText,
+  });
 
   final SwapPrototypeIntent intent;
+  final SwapSupportCopyText onCopyText;
 
   @override
   State<_ActivitySupportDetailsSection> createState() =>
@@ -4587,6 +4623,7 @@ class _ActivitySupportDetailsSectionState
               child: RedactedReceiptDrawer(
                 rows: widget.intent.receipt,
                 intent: widget.intent,
+                onCopyText: widget.onCopyText,
               ),
             ),
         ],
@@ -4766,6 +4803,10 @@ class _SwapComposerStack extends StatelessWidget {
   Widget build(BuildContext context) {
     final selectedIntent = state.selectedIntentOrNull;
     final activityMode = selectedTab == _SwapPageTab.activity;
+    final hasRefreshableIntents = state.intents.any(
+      (intent) => _canRefreshIntentStatus(intent.status),
+    );
+    final queueRefreshAction = hasRefreshableIntents ? onRefreshStatus : null;
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: activityMode ? 980 : 560),
       child: Column(
@@ -4806,7 +4847,7 @@ class _SwapComposerStack extends StatelessWidget {
                     selectedIntentId: selectedIntent?.id,
                     onIntentSelected: onIntentSelected,
                     statusRefreshing: state.statusRefreshing,
-                    onRefresh: onRefreshStatus,
+                    onRefresh: queueRefreshAction,
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   const _SwapActivityEmptyState(),
@@ -4818,7 +4859,7 @@ class _SwapComposerStack extends StatelessWidget {
                 selectedIntentId: selectedIntent.id,
                 onIntentSelected: onIntentSelected,
                 statusRefreshing: state.statusRefreshing,
-                onRefresh: onRefreshStatus,
+                onRefresh: queueRefreshAction,
               ),
             ],
           ],

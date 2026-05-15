@@ -14,7 +14,7 @@ String compactSwapAmountText(
   if (maxFractionDigits == 0) {
     return value.replaceAllMapped(
       RegExp(r'([~<>+\-]?)(\d+)\.(\d+)'),
-      (match) => '${match[1]}${match[2]}...',
+      (match) => '${match[1]}${match[2]}',
     );
   }
   final expression = RegExp(
@@ -22,6 +22,6 @@ String compactSwapAmountText(
   );
   return value.replaceAllMapped(
     expression,
-    (match) => '${match[1]}${match[2]}.${match[3]}...',
+    (match) => '${match[1]}${match[2]}.${match[3]}',
   );
 }

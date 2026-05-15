@@ -31,14 +31,15 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
-  test('compactSwapAmountText caps visible decimals at six places', () {
-    expect(compactSwapAmountText('~0.123456789 BTC'), '~0.123456... BTC');
+  test('compactSwapAmountText truncates visible decimals without ellipsis', () {
+    expect(compactSwapAmountText('~0.123456789 BTC'), '~0.123456 BTC');
     expect(compactSwapAmountText('12345.678901 USDC'), '12345.678901 USDC');
     expect(compactSwapAmountText('2 ZEC'), '2 ZEC');
     expect(
       compactSwapAmountText('1.1234567 ZEC -> ~2.7654321 USDC'),
-      '1.123456... ZEC -> ~2.765432... USDC',
+      '1.123456 ZEC -> ~2.765432 USDC',
     );
+    expect(compactSwapAmountText('~0.9 BTC', maxFractionDigits: 0), '~0 BTC');
   });
 
   testWidgets('sidebar Swap item opens the swap prototype route', (
@@ -1268,24 +1269,14 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey('swap_support_bundle_panel')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(find.text('Safe support summary'), findsOneWidget);
-    expect(find.text('Reveal full bundle'), findsOneWidget);
-    expect(find.text('Copy details'), findsNothing);
-    expect(find.text('t1refund-zec-deposit'), findsNothing);
-
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('swap_support_bundle_reveal_button')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('swap_support_bundle_reveal_button')),
-    );
-    await tester.pumpAndSettle();
+    expect(find.text('Reveal full bundle'), findsNothing);
+    expect(find.text('Copy details'), findsOneWidget);
+    expect(find.text('t1refund-zec-deposit'), findsWidgets);
 
     expect(find.text('Swap id'), findsNothing);
-    expect(find.text('Copy details'), findsOneWidget);
     final supportPanel = find.byKey(
       const ValueKey('swap_support_bundle_panel'),
     );
@@ -1332,6 +1323,13 @@ void main() {
     expect(clipboardWrites.single, isNot(contains('Refund to:')));
     expect(clipboardWrites.single, contains('Deposit address: t1refund'));
     expect(find.text('Support Details Copied'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_toast_overlay_host')),
+        matching: find.text('Support Details Copied'),
+      ),
+      findsOneWidget,
+    );
 
     await tester.ensureVisible(
       find.byKey(const ValueKey('swap_copy_detail_deposit_address')).first,
@@ -1345,6 +1343,13 @@ void main() {
     expect(clipboardWrites, hasLength(2));
     expect(clipboardWrites.last, 't1refund-zec-deposit');
     expect(find.text('Address Copied'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_toast_overlay_host')),
+        matching: find.text('Address Copied'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('desktop shortcuts switch swap tabs and refresh status', (
@@ -2703,11 +2708,15 @@ void main() {
     await _openActivityDetail(tester, '0xconfirming');
 
     expect(find.text('ZEC ready'), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('swap_status_refresh_button')));
-    await tester.pumpAndSettle();
-
-    expect(swapProvider.statusRequests, hasLength(1));
+    expect(
+      find.byKey(const ValueKey('swap_status_refresh_button')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_queue_refresh_button')),
+      findsNothing,
+    );
+    expect(swapProvider.statusRequests, isEmpty);
     expect(shieldingService.requests, isEmpty);
     expect(shieldingService.trackRequests, hasLength(1));
     expect(sessionStore.savedIntents.last.status, SwapIntentStatus.complete);
@@ -6066,14 +6075,6 @@ Future<void> _revealSupportBundle(WidgetTester tester) async {
   final bundle = find.byKey(const ValueKey('swap_support_bundle_panel'));
   if (bundle.evaluate().isNotEmpty) return;
   await _expandSupportDetails(tester);
-  await tester.ensureVisible(
-    find.byKey(const ValueKey('swap_support_bundle_reveal_button')),
-  );
-  await tester.pumpAndSettle();
-  await tester.tap(
-    find.byKey(const ValueKey('swap_support_bundle_reveal_button')),
-  );
-  await tester.pumpAndSettle();
 }
 
 Future<void> _tapDepositSubmit(WidgetTester tester) async {

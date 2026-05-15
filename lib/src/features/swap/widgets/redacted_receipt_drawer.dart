@@ -4,29 +4,26 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../models/swap_prototype_models.dart';
-import 'swap_copy_feedback.dart';
 
-class RedactedReceiptDrawer extends StatefulWidget {
+typedef SwapSupportCopyText =
+    void Function({required String text, required String toastMessage});
+
+class RedactedReceiptDrawer extends StatelessWidget {
   const RedactedReceiptDrawer({
     required this.rows,
     required this.intent,
+    required this.onCopyText,
     super.key,
   });
 
   final List<SwapPrototypeField> rows;
   final SwapPrototypeIntent intent;
-
-  @override
-  State<RedactedReceiptDrawer> createState() => _RedactedReceiptDrawerState();
-}
-
-class _RedactedReceiptDrawerState extends State<RedactedReceiptDrawer> {
-  var _fullBundleVisible = false;
+  final SwapSupportCopyText onCopyText;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final detailRows = _supportDetailRows(widget.rows, widget.intent);
+    final detailRows = _supportDetailRows(rows, intent);
     final summaryRows = _safeSupportSummaryRows(detailRows);
     final detailsText = supportDetailsText(detailRows);
     return Container(
@@ -48,7 +45,7 @@ class _RedactedReceiptDrawerState extends State<RedactedReceiptDrawer> {
           ),
           const SizedBox(height: AppSpacing.xxs),
           Text(
-            'No raw address values, memos, transaction hashes, or quote ids are shown until you reveal the full bundle.',
+            'Raw address values, memos, transaction hashes, and quote ids are shown below because you opened Support details.',
             style: AppTypography.bodyExtraSmall.copyWith(
               color: colors.text.secondary,
             ),
@@ -56,62 +53,48 @@ class _RedactedReceiptDrawerState extends State<RedactedReceiptDrawer> {
           const SizedBox(height: AppSpacing.xs),
           for (final row in summaryRows) _SafeSummaryRow(row: row),
           const SizedBox(height: AppSpacing.sm),
-          AppButton(
-            key: const ValueKey('swap_support_bundle_reveal_button'),
-            onPressed: () {
-              setState(() => _fullBundleVisible = !_fullBundleVisible);
-            },
-            variant: AppButtonVariant.secondary,
-            size: AppButtonSize.medium,
-            leading: const AppIcon(AppIcons.scroll),
-            trailing: AppIcon(
-              _fullBundleVisible ? AppIcons.arrowUpward : AppIcons.arrowDown,
+          Container(
+            key: const ValueKey('swap_support_bundle_panel'),
+            padding: const EdgeInsets.all(AppSpacing.xs),
+            decoration: BoxDecoration(
+              color: colors.background.raised,
+              border: Border.all(color: colors.border.subtle),
+              borderRadius: BorderRadius.circular(AppRadii.xSmall),
             ),
-            child: Text(
-              _fullBundleVisible ? 'Hide full bundle' : 'Reveal full bundle',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Details for support',
+                        style: AppTypography.labelMedium.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                    ),
+                    AppButton(
+                      key: const ValueKey('swap_copy_support_details_button'),
+                      onPressed: detailsText.isEmpty
+                          ? null
+                          : () => onCopyText(
+                              text: detailsText,
+                              toastMessage: 'Support Details Copied',
+                            ),
+                      variant: AppButtonVariant.secondary,
+                      size: AppButtonSize.small,
+                      leading: const AppIcon(AppIcons.copy),
+                      child: const Text('Copy details'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                for (final row in detailRows)
+                  _ReceiptRow(row: row, onCopyText: onCopyText),
+              ],
             ),
           ),
-          if (_fullBundleVisible) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Container(
-              key: const ValueKey('swap_support_bundle_panel'),
-              padding: const EdgeInsets.all(AppSpacing.xs),
-              decoration: BoxDecoration(
-                color: colors.background.raised,
-                border: Border.all(color: colors.border.subtle),
-                borderRadius: BorderRadius.circular(AppRadii.xSmall),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final row in detailRows) _ReceiptRow(row: row),
-                  const SizedBox(height: AppSpacing.sm),
-                  Wrap(
-                    spacing: AppSpacing.xs,
-                    runSpacing: AppSpacing.xs,
-                    children: [
-                      AppButton(
-                        key: const ValueKey('swap_copy_support_details_button'),
-                        onPressed: detailsText.isEmpty
-                            ? null
-                            : () {
-                                copySwapText(
-                                  context,
-                                  text: detailsText,
-                                  toastMessage: 'Support Details Copied',
-                                );
-                              },
-                        variant: AppButtonVariant.secondary,
-                        size: AppButtonSize.medium,
-                        leading: const AppIcon(AppIcons.copy),
-                        child: const Text('Copy details'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -306,9 +289,10 @@ class _SafeSummaryRow extends StatelessWidget {
 }
 
 class _ReceiptRow extends StatelessWidget {
-  const _ReceiptRow({required this.row});
+  const _ReceiptRow({required this.row, required this.onCopyText});
 
   final SwapPrototypeField row;
+  final SwapSupportCopyText onCopyText;
 
   @override
   Widget build(BuildContext context) {
@@ -346,7 +330,7 @@ class _ReceiptRow extends StatelessWidget {
           Expanded(child: Text(row.value, style: valueStyle)),
           if (copyable) ...[
             const SizedBox(width: AppSpacing.xs),
-            _ReceiptCopyButton(row: row),
+            _ReceiptCopyButton(row: row, onCopyText: onCopyText),
           ],
         ],
       ),
@@ -355,9 +339,10 @@ class _ReceiptRow extends StatelessWidget {
 }
 
 class _ReceiptCopyButton extends StatelessWidget {
-  const _ReceiptCopyButton({required this.row});
+  const _ReceiptCopyButton({required this.row, required this.onCopyText});
 
   final SwapPrototypeField row;
+  final SwapSupportCopyText onCopyText;
 
   @override
   Widget build(BuildContext context) {
@@ -370,13 +355,10 @@ class _ReceiptCopyButton extends StatelessWidget {
         child: GestureDetector(
           key: ValueKey('swap_copy_detail_${_supportRowKey(row.label)}'),
           behavior: HitTestBehavior.opaque,
-          onTap: () {
-            copySwapText(
-              context,
-              text: row.value,
-              toastMessage: _copyDetailToastMessage(row.label),
-            );
-          },
+          onTap: () => onCopyText(
+            text: row.value,
+            toastMessage: _copyDetailToastMessage(row.label),
+          ),
           child: Container(
             width: 30,
             height: 30,

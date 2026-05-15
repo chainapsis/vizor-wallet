@@ -66,11 +66,13 @@ class SwapQueuePanel extends StatelessWidget {
                   ),
                 ),
               ),
-              _QueueRefreshButton(
-                refreshing: statusRefreshing,
-                onTap: onRefresh,
-              ),
-              const SizedBox(width: AppSpacing.xs),
+              if (onRefresh != null || statusRefreshing) ...[
+                _QueueRefreshButton(
+                  refreshing: statusRefreshing,
+                  onTap: onRefresh,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+              ],
               _QueueCountChip(label: 'Open', count: openIntents.length),
               if (attentionIntents.isNotEmpty) ...[
                 const SizedBox(width: AppSpacing.xxs),
