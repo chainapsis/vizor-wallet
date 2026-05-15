@@ -11,6 +11,8 @@ include: package:flutter_lints/flutter.yaml
 
 analyzer:
   exclude:
+    # Cargokit build_tool is a vendored helper package with its own pubspec.
+    # Root `flutter analyze` cannot resolve its package-scoped dependencies.
     - rust_builder/cargokit/build_tool/**
 
 linter:
