@@ -271,10 +271,23 @@ struct TxOutput {
     from_account_uuid: Option<Vec<u8>>,
     to_account_uuid: Option<Vec<u8>>,
     to_address: Option<String>,
+    sent_to_address: Option<String>,
     to_key_scope: Option<i64>,
     value: u64,
     is_change: bool,
     memo: Option<Vec<u8>>,
+}
+
+impl TxOutput {
+    fn detail_address(&self, tx_kind: &str) -> Option<String> {
+        if tx_kind == "sent" {
+            self.sent_to_address
+                .clone()
+                .or_else(|| self.to_address.clone())
+        } else {
+            self.to_address.clone()
+        }
+    }
 }
 
 #[derive(Default, Clone)]
@@ -490,14 +503,14 @@ pub fn get_transaction_detail(
     let primary_address = if tx_kind == "sent" {
         visible_outputs
             .iter()
-            .find_map(|output| output.to_address.clone())
+            .find_map(|output| output.detail_address(tx_kind))
     } else {
         None
     };
     let outputs = visible_outputs
         .into_iter()
         .map(|output| TransactionDetailOutput {
-            address: output.to_address.clone(),
+            address: output.detail_address(tx_kind),
             amount_zatoshi: output.value,
             pool: output_pool_label(output.output_pool).to_string(),
         })
@@ -634,6 +647,18 @@ fn read_history_outputs(
             txo.to_account_uuid,
             txo.to_address,
             (
+                SELECT sn.to_address
+                FROM sent_notes sn
+                JOIN transactions st ON st.id_tx = sn.transaction_id
+                JOIN accounts from_acc ON from_acc.id = sn.from_account_id
+                WHERE st.txid = txo.txid
+                  AND from_acc.uuid = ?1
+                  AND sn.output_pool = txo.output_pool
+                  AND sn.output_index = txo.output_index
+                  AND sn.to_address IS NOT NULL
+                LIMIT 1
+            ) AS sent_to_address,
+            (
                 SELECT a.key_scope
                 FROM accounts acc
                 JOIN addresses a ON a.account_id = acc.id
@@ -668,10 +693,11 @@ fn read_history_outputs(
                 from_account_uuid: row.get(3)?,
                 to_account_uuid: row.get(4)?,
                 to_address: row.get(5)?,
-                to_key_scope: row.get(6)?,
-                value: row.get::<_, i64>(7)?.unsigned_abs(),
-                is_change: row.get(8)?,
-                memo: row.get(9)?,
+                sent_to_address: row.get(6)?,
+                to_key_scope: row.get(7)?,
+                value: row.get::<_, i64>(8)?.unsigned_abs(),
+                is_change: row.get(9)?,
+                memo: row.get(10)?,
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -699,6 +725,18 @@ fn read_outputs_for_tx(
             txo.from_account_uuid,
             txo.to_account_uuid,
             txo.to_address,
+            (
+                SELECT sn.to_address
+                FROM sent_notes sn
+                JOIN transactions st ON st.id_tx = sn.transaction_id
+                JOIN accounts from_acc ON from_acc.id = sn.from_account_id
+                WHERE st.txid = txo.txid
+                  AND from_acc.uuid = ?1
+                  AND sn.output_pool = txo.output_pool
+                  AND sn.output_index = txo.output_index
+                  AND sn.to_address IS NOT NULL
+                LIMIT 1
+            ) AS sent_to_address,
             (
                 SELECT a.key_scope
                 FROM accounts acc
@@ -732,10 +770,11 @@ fn read_outputs_for_tx(
                 from_account_uuid: row.get(3)?,
                 to_account_uuid: row.get(4)?,
                 to_address: row.get(5)?,
-                to_key_scope: row.get(6)?,
-                value: row.get::<_, i64>(7)?.unsigned_abs(),
-                is_change: row.get(8)?,
-                memo: row.get(9)?,
+                sent_to_address: row.get(6)?,
+                to_key_scope: row.get(7)?,
+                value: row.get::<_, i64>(8)?.unsigned_abs(),
+                is_change: row.get(9)?,
+                memo: row.get(10)?,
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -1268,8 +1307,19 @@ mod tests {
                  tx_index INTEGER
              );
              CREATE TABLE transactions (
-                 txid BLOB PRIMARY KEY,
+                 id_tx INTEGER PRIMARY KEY AUTOINCREMENT,
+                 txid BLOB NOT NULL UNIQUE,
                  created TEXT
+             );
+             CREATE TABLE sent_notes (
+                 transaction_id INTEGER NOT NULL,
+                 output_pool INTEGER NOT NULL,
+                 output_index INTEGER NOT NULL,
+                 from_account_id INTEGER NOT NULL,
+                 to_account_id INTEGER,
+                 to_address TEXT,
+                 value INTEGER NOT NULL,
+                 memo BLOB
              );
              CREATE TABLE v_tx_outputs (
                  txid BLOB NOT NULL,
@@ -1351,7 +1401,7 @@ mod tests {
         to_account: Option<uuid::Uuid>,
         value: i64,
         is_change: bool,
-    ) {
+    ) -> i64 {
         insert_output_with_address(
             db,
             txid,
@@ -1362,7 +1412,7 @@ mod tests {
             is_change,
             None,
             None,
-        );
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1376,7 +1426,7 @@ mod tests {
         is_change: bool,
         to_address: Option<&str>,
         to_key_scope: Option<i64>,
-    ) {
+    ) -> i64 {
         insert_output_with_address_and_memo(
             db,
             txid,
@@ -1388,7 +1438,7 @@ mod tests {
             to_address,
             to_key_scope,
             None,
-        );
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1403,7 +1453,7 @@ mod tests {
         to_address: Option<&str>,
         to_key_scope: Option<i64>,
         memo: Option<&[u8]>,
-    ) {
+    ) -> i64 {
         let conn = rusqlite::Connection::open(db.path()).unwrap();
         if let Some(account) = from_account {
             ensure_account_row(&conn, account);
@@ -1445,6 +1495,48 @@ mod tests {
                 to_address,
                 value,
                 is_change,
+                memo,
+            ],
+        )
+        .unwrap();
+        output_index
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_sent_note(
+        db: &NamedTempFile,
+        txid: &[u8],
+        output_pool: i64,
+        output_index: i64,
+        from_account: uuid::Uuid,
+        to_account: Option<uuid::Uuid>,
+        to_address: Option<&str>,
+        value: i64,
+        memo: Option<&[u8]>,
+    ) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        let transaction_id = conn
+            .query_row(
+                "SELECT id_tx FROM transactions WHERE txid = ?1",
+                rusqlite::params![txid],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
+        let from_account_id = ensure_account_row(&conn, from_account);
+        let to_account_id = to_account.map(|account| ensure_account_row(&conn, account));
+        conn.execute(
+            "INSERT INTO sent_notes (
+                 transaction_id, output_pool, output_index, from_account_id,
+                 to_account_id, to_address, value, memo
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                transaction_id,
+                output_pool,
+                output_index,
+                from_account_id,
+                to_account_id,
+                to_address,
+                value,
                 memo,
             ],
         )
@@ -2212,6 +2304,76 @@ mod tests {
         assert_eq!(got.outputs.len(), 1);
         assert_eq!(got.outputs[0].address.as_deref(), Some("t-recipient"));
         assert_eq!(got.outputs[0].amount_zatoshi, 100_000);
+        assert_eq!(got.outputs[0].pool, "transparent");
+    }
+
+    #[test]
+    fn detail_sent_to_own_transparent_receiver_uses_sent_note_address() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD8);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            None,
+            1,
+            Some(1_000_100),
+            -15_000,
+            6_980_000,
+            6_965_000,
+            false,
+            Some("2026-05-15T06:11:44Z"),
+        );
+        let recipient_output_index = insert_output_with_address(
+            &db,
+            &txid,
+            0,
+            Some(account),
+            Some(account),
+            1_200_000,
+            false,
+            Some("u-merged-own-transparent-receiver"),
+            Some(0),
+        );
+        insert_sent_note(
+            &db,
+            &txid,
+            0,
+            recipient_output_index,
+            account,
+            None,
+            Some("t-recipient"),
+            1_200_000,
+            None,
+        );
+        insert_output_with_address_and_memo(
+            &db,
+            &txid,
+            3,
+            Some(account),
+            Some(account),
+            5_765_000,
+            true,
+            None,
+            None,
+            Some(&[0xF6]),
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "sent",
+        )
+        .unwrap();
+
+        assert_eq!(got.primary_address.as_deref(), Some("t-recipient"));
+        assert_eq!(got.outputs.len(), 1);
+        assert_eq!(got.outputs[0].address.as_deref(), Some("t-recipient"));
+        assert_eq!(got.outputs[0].amount_zatoshi, 1_200_000);
         assert_eq!(got.outputs[0].pool, "transparent");
     }
 
