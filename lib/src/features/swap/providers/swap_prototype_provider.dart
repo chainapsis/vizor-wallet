@@ -124,9 +124,13 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
   }
 
   void selectExternalAsset(SwapAsset asset) {
-    if (!state.supportedExternalAssets.contains(asset)) return;
+    final supportedAsset = _supportedAssetFor(
+      asset,
+      state.supportedExternalAssets,
+    );
+    if (supportedAsset == null) return;
     _clearReviewState();
-    state = state.copyWith(externalAsset: asset, reviewVisible: false);
+    state = state.copyWith(externalAsset: supportedAsset, reviewVisible: false);
     unawaited(_persistDraft(_currentDraftSnapshot));
   }
 
@@ -163,9 +167,8 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
           if (asset != SwapAsset.zec) asset,
       ];
       if (supported.isEmpty) return;
-      final selected = supported.contains(state.externalAsset)
-          ? state.externalAsset
-          : supported.first;
+      final selected =
+          _supportedAssetFor(state.externalAsset, supported) ?? supported.first;
       final selectedChanged = selected != state.externalAsset;
       state = state.copyWith(
         supportedExternalAssets: supported,
@@ -1142,6 +1145,16 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         if (request.id == requestId) updated else request,
     ];
   }
+}
+
+SwapAsset? _supportedAssetFor(SwapAsset asset, List<SwapAsset> supported) {
+  for (final candidate in supported) {
+    if (candidate == asset) return candidate;
+  }
+  for (final candidate in supported) {
+    if (candidate.hasSameMarketAs(asset)) return candidate;
+  }
+  return null;
 }
 
 final swapPrototypeProvider =

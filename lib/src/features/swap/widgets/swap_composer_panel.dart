@@ -960,49 +960,53 @@ class _QuoteErrorBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
-      key: const ValueKey('swap_quote_error_banner'),
-      padding: const EdgeInsets.all(AppSpacing.xs),
-      decoration: BoxDecoration(
-        color: colors.text.destructive.withValues(alpha: 0.08),
-        border: Border.all(
-          color: colors.text.destructive.withValues(alpha: 0.28),
+    return Tooltip(
+      message: message,
+      child: Container(
+        key: const ValueKey('swap_quote_error_banner'),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: AppSpacing.xxs,
         ),
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AppIcon(AppIcons.warning, size: 18, color: colors.icon.destructive),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Quote unavailable',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.destructive,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  message,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: colors.text.primary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Check the connection and retry the quote.',
-                  style: AppTypography.bodyExtraSmall.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-              ],
-            ),
+        decoration: BoxDecoration(
+          color: colors.text.destructive.withValues(alpha: 0.08),
+          border: Border.all(
+            color: colors.text.destructive.withValues(alpha: 0.28),
           ),
-        ],
+          borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppIcon(AppIcons.warning, size: 16, color: colors.icon.destructive),
+            const SizedBox(width: AppSpacing.xxs),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Quote unavailable',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.destructive,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    message,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1201,7 +1205,7 @@ class _AssetMenuRow extends StatelessWidget {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
-        key: ValueKey('swap_asset_row_${asset.name}'),
+        key: ValueKey('swap_asset_row_${asset.identityKey}'),
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(

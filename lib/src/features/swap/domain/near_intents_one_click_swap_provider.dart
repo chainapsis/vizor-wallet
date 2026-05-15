@@ -445,14 +445,15 @@ class NearIntentsOneClickSwapProvider
 
     final preferredBlockchain = asset.preferredBlockchain;
     for (final token in tokens) {
-      if (_assetForToken(token) == asset &&
+      final tokenAsset = _assetForToken(token);
+      if (tokenAsset.hasSameMarketAs(asset) &&
           token.blockchain.toLowerCase() == preferredBlockchain) {
         return token;
       }
     }
 
     for (final token in tokens) {
-      if (_assetForToken(token) == asset) {
+      if (_assetForToken(token).hasSameMarketAs(asset)) {
         return token;
       }
     }
@@ -460,11 +461,11 @@ class NearIntentsOneClickSwapProvider
   }
 
   List<SwapAsset> _assetsFromTokens(List<_OneClickToken> tokens) {
-    final seen = <SwapAsset>{};
+    final seen = <String>{};
     final assets = <SwapAsset>[];
     for (final token in tokens) {
       final asset = _assetForToken(token);
-      if (seen.add(asset)) {
+      if (seen.add(asset.identityKey)) {
         assets.add(asset);
       }
     }
@@ -607,14 +608,22 @@ class _OneClickQuoteResponse {
     required this.quote,
   });
 
-  factory _OneClickQuoteResponse.fromJson(Map<String, dynamic> json) {
+  factory _OneClickQuoteResponse.fromJson(
+    Map<String, dynamic> json, {
+    String? fallbackCorrelationId,
+  }) {
     final request = json['quoteRequest'];
     final quote = json['quote'];
     if (request is! Map<String, dynamic> || quote is! Map<String, dynamic>) {
       throw const OneClickApiException('Malformed 1Click quote response');
     }
     return _OneClickQuoteResponse(
-      correlationId: _string(json, 'correlationId'),
+      correlationId:
+          _optionalString(json, 'correlationId') ??
+          fallbackCorrelationId ??
+          (throw const OneClickApiException(
+            'Missing string field: correlationId',
+          )),
       signature: _string(json, 'signature'),
       quoteRequest: _OneClickQuoteRequest.fromJson(request),
       quote: _OneClickQuote.fromJson(quote),
@@ -640,7 +649,10 @@ class _OneClickStatusResponse {
     }
     return _OneClickStatusResponse(
       status: _string(json, 'status'),
-      quoteResponse: _OneClickQuoteResponse.fromJson(quoteResponse),
+      quoteResponse: _OneClickQuoteResponse.fromJson(
+        quoteResponse,
+        fallbackCorrelationId: _optionalString(json, 'correlationId'),
+      ),
     );
   }
 

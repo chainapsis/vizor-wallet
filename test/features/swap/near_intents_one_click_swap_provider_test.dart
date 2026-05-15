@@ -206,9 +206,14 @@ void main() {
     final initial = await provider.loadPricingSnapshot();
     final refreshed = await provider.loadPricingSnapshot(forceRefresh: true);
 
-    expect(initial.supportedExternalAssets, contains(SwapAsset.usdc));
-    expect(initial.externalPerZec[SwapAsset.usdc], closeTo(540.62, 0.001));
-    expect(refreshed.externalPerZec[SwapAsset.usdc], closeTo(541.10, 0.001));
+    final initialUsdc = initial.supportedExternalAssets.singleWhere(
+      (asset) => asset.hasSameMarketAs(SwapAsset.usdc),
+    );
+    final refreshedUsdc = refreshed.supportedExternalAssets.singleWhere(
+      (asset) => asset.hasSameMarketAs(SwapAsset.usdc),
+    );
+    expect(initial.externalPerZec[initialUsdc], closeTo(540.62, 0.001));
+    expect(refreshed.externalPerZec[refreshedUsdc], closeTo(541.10, 0.001));
     expect(transport.requests, hasLength(2));
   });
 
@@ -236,7 +241,21 @@ void main() {
       );
 
       final supported = await provider.listSupportedExternalAssets();
-      expect(supported, containsAll([SwapAsset.usdc, SwapAsset.btc]));
+      expect(
+        supported,
+        containsAll([
+          isA<SwapAsset>().having(
+            (asset) => asset.hasSameMarketAs(SwapAsset.usdc),
+            'USDC market',
+            isTrue,
+          ),
+          isA<SwapAsset>().having(
+            (asset) => asset.hasSameMarketAs(SwapAsset.btc),
+            'BTC market',
+            isTrue,
+          ),
+        ]),
+      );
 
       final quote = await provider.quote(
         const SwapQuoteRequest(
@@ -253,6 +272,56 @@ void main() {
       expect(request.body?['destinationAsset'], 'nep141:btc.omft.near');
       expect(quote.pairText, 'ZEC -> BTC');
       expect(quote.receiveEstimateText, '~0.00096 BTC');
+    },
+  );
+
+  test(
+    'token list preserves exact asset id variants for the same market',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokensWithDuplicateEthUsdc),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:zec.omft.near',
+            destinationAsset: 'nep141:eth-usdc.secondary',
+            amountInFormatted: '1.5',
+            amountOutFormatted: '105.25',
+            minAmountOut: '104750000',
+            depositAddress: 't1deposit',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapProvider(transport: transport);
+
+      final supported = await provider.listSupportedExternalAssets();
+      final ethUsdcVariants = [
+        for (final asset in supported)
+          if (asset.symbol == 'USDC' && asset.chainTicker == 'eth') asset,
+      ];
+
+      expect(ethUsdcVariants, hasLength(2));
+      expect(ethUsdcVariants.map((asset) => asset.assetId), [
+        'nep141:usdc.example',
+        'nep141:eth-usdc.secondary',
+      ]);
+      expect(ethUsdcVariants.first, isNot(ethUsdcVariants.last));
+
+      await provider.quote(
+        SwapQuoteRequest(
+          direction: SwapDirection.zecToExternal,
+          externalAsset: ethUsdcVariants.last,
+          sellAmount: 1.5,
+          destination: '0xrecipient',
+          refundAddress: 't1refund',
+        ),
+      );
+
+      expect(
+        transport.requests.last.body?['destinationAsset'],
+        'nep141:eth-usdc.secondary',
+      );
     },
   );
 
@@ -292,6 +361,38 @@ void main() {
       expect(request.uri.queryParameters['depositMemo'], '123');
       expect(status.status, SwapIntentStatus.shieldingPending);
       expect(status.nextAction, 'Shield received ZEC into this wallet');
+    },
+  );
+
+  test(
+    'status accepts live response shape with top-level correlation id',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.get(
+          '/v0/status',
+          _quoteResponse(
+            originAsset: 'nep141:zec.omft.near',
+            destinationAsset: 'nep141:usdc.example',
+            amountInFormatted: '0.01',
+            amountOutFormatted: '5.249679',
+            minAmountOut: '5197182',
+            depositAddress: 't1live-deposit',
+            status: 'PENDING_DEPOSIT',
+            includeNestedCorrelationId: false,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapProvider(
+        transport: transport,
+        now: () => DateTime.utc(2026, 5, 7, 10, 2),
+      );
+
+      final status = await provider.getStatus('t1live-deposit');
+
+      expect(status.id, 't1live-deposit');
+      expect(status.status, SwapIntentStatus.awaitingDeposit);
+      expect(status.depositInstruction.address, 't1live-deposit');
     },
   );
 
@@ -544,6 +645,16 @@ const _tokensWithAdditionalAssets = [
   },
 ];
 
+const _tokensWithDuplicateEthUsdc = [
+  ..._tokens,
+  {
+    'assetId': 'nep141:eth-usdc.secondary',
+    'decimals': 6,
+    'blockchain': 'eth',
+    'symbol': 'USDC',
+  },
+];
+
 List<Map<String, Object?>> _tokensWithPrices(String zecPrice) {
   return [
     {
@@ -572,9 +683,10 @@ Map<String, Object?> _quoteResponse({
   required String depositAddress,
   required String? status,
   String? depositMemo,
+  bool includeNestedCorrelationId = true,
 }) {
   final quote = {
-    'correlationId': 'quote-1',
+    if (includeNestedCorrelationId) 'correlationId': 'quote-1',
     'timestamp': '2026-05-07T10:00:00Z',
     'signature': 'quote-signature',
     'quoteRequest': {

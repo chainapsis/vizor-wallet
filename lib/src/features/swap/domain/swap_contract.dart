@@ -194,6 +194,8 @@ class SwapAsset {
 
   double get mockExternalPerZec => _mockExternalPerZec;
 
+  String get identityKey => assetId ?? name;
+
   String get tokenIconAsset => 'assets/swap/tokens/$tokenIconKey.png';
 
   String get chainIconAsset => 'assets/swap/chains/$chainIconKey.png';
@@ -203,6 +205,10 @@ class SwapAsset {
   String get chainIconKey => _normalizeIconKey(chainTicker);
 
   bool get isNativeZec => this == zec;
+
+  bool hasSameMarketAs(SwapAsset other) {
+    return _marketKey == other._marketKey;
+  }
 
   SwapAsset _withAssetId(String assetId) {
     return SwapAsset._(
@@ -297,18 +303,17 @@ class SwapAsset {
 
   @override
   bool operator ==(Object other) {
-    return other is SwapAsset &&
-        symbol.toLowerCase() == other.symbol.toLowerCase() &&
-        chainTicker.toLowerCase() == other.chainTicker.toLowerCase() &&
-        decimals == other.decimals;
+    return other is SwapAsset && identityKey == other.identityKey;
   }
 
   @override
-  int get hashCode =>
-      Object.hash(symbol.toLowerCase(), chainTicker.toLowerCase(), decimals);
+  int get hashCode => identityKey.hashCode;
 
   @override
   String toString() => 'SwapAsset($symbol on $chainTicker)';
+
+  String get _marketKey =>
+      '${symbol.toLowerCase()}:${chainTicker.toLowerCase()}:$decimals';
 }
 
 const swapExternalAssets = <SwapAsset>[

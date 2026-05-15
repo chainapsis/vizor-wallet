@@ -2805,10 +2805,6 @@ void main() {
       find.textContaining('Could not load quote. Retry once.'),
       findsOneWidget,
     );
-    expect(
-      find.text('Check the connection and retry the quote.'),
-      findsOneWidget,
-    );
     expect(_fieldText(tester, 'swap_amount_field'), '1.5');
     expect(_fieldText(tester, 'swap_destination_field'), '0xrecipient');
   });
@@ -2954,7 +2950,7 @@ void main() {
   testWidgets('review quote blocks silent default t-address fallback', (
     tester,
   ) async {
-    await _setDesktopViewport(tester);
+    await _setViewport(tester, const Size(1180, 720));
     final swapProvider = _FakeSwapProvider();
 
     await tester.pumpWidget(
@@ -2996,6 +2992,7 @@ void main() {
       find.textContaining('Could not reserve a fresh wallet t-address.'),
       findsOneWidget,
     );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('review quote uses reserved rotating staging as ZEC recipient', (
