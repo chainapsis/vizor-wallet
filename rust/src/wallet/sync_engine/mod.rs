@@ -921,7 +921,7 @@ async fn run_sync_impl(
         }
 
         // Enhancement
-        run_enhancement(&mut client, &mut db, network).await?;
+        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
 
         // Post-batch auto-resubmit. Matches zcash-android-wallet-sdk's
         // lines 593/701 call sites (end of verify batch / end of

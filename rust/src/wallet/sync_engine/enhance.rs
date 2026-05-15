@@ -23,9 +23,10 @@
 //! (e.g. a newly-decrypted transaction may reveal additional parent
 //! transactions to enhance).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use tonic::{transport::Channel, Code, Status};
+use transparent::bundle::OutPoint;
 use zcash_client_backend::{
     data_api::{
         wallet::decrypt_and_store_transaction, TransactionDataRequest, TransactionStatus,
@@ -35,8 +36,9 @@ use zcash_client_backend::{
 };
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
+use zcash_protocol::value::{BalanceError, Zatoshis};
 
-use crate::wallet::db::with_wallet_db_write_lock;
+use crate::wallet::db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
 
 use super::{lwd, SyncError, WalletDatabase};
@@ -52,6 +54,7 @@ use super::{lwd, SyncError, WalletDatabase};
 pub(super) async fn run_enhancement(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
+    db_path: &str,
     network: WalletNetwork,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
@@ -106,6 +109,13 @@ pub(super) async fn run_enhancement(
                                         ) {
                                             log::error!(
                                                 "sync: decrypt_and_store_transaction failed: {e}"
+                                            );
+                                        }
+                                        if let Err(e) =
+                                            fill_missing_transparent_fee(client, db_path, &tx).await
+                                        {
+                                            log::warn!(
+                                                "sync: transparent fee enhancement failed for {txid_str}: {e}"
                                             );
                                         }
                                     }
@@ -165,17 +175,25 @@ pub(super) async fn run_enhancement(
                     match lwd::get_taddress_txids(client, addr_str, start, end.saturating_sub(1))
                         .await
                     {
-                        Ok(mut stream) => loop {
-                            match lwd::next_stream_message(&mut stream, "get_taddress_txids stream")
+                        Ok(mut stream) => {
+                            let mut fee_client = client.clone();
+                            loop {
+                                match lwd::next_stream_message(
+                                    &mut stream,
+                                    "get_taddress_txids stream",
+                                )
                                 .await
-                            {
-                                Ok(Some(raw)) => {
-                                    if !raw.data.is_empty() {
-                                        let mined_height =
-                                            mined_height_from_raw_height(raw.height)?;
-                                        match Transaction::read(&raw.data[..], BranchId::Sapling) {
-                                            Ok(tx) => {
-                                                if let Err(e) = with_wallet_db_write_lock(
+                                {
+                                    Ok(Some(raw)) => {
+                                        if !raw.data.is_empty() {
+                                            let mined_height =
+                                                mined_height_from_raw_height(raw.height)?;
+                                            match Transaction::read(
+                                                &raw.data[..],
+                                                BranchId::Sapling,
+                                            ) {
+                                                Ok(tx) => {
+                                                    if let Err(e) = with_wallet_db_write_lock(
                                                         "sync_engine.enhance.decrypt_and_store_transaction",
                                                         || {
                                                             decrypt_and_store_transaction(
@@ -190,25 +208,181 @@ pub(super) async fn run_enhancement(
                                                             "sync: decrypt_and_store_transaction (addr) failed: {e}"
                                                         );
                                                     }
-                                            }
-                                            Err(e) => {
-                                                log::warn!(
-                                                    "sync: Transaction::read (addr) failed: {e}"
-                                                )
+                                                    if let Err(e) = fill_missing_transparent_fee(
+                                                        &mut fee_client,
+                                                        db_path,
+                                                        &tx,
+                                                    )
+                                                    .await
+                                                    {
+                                                        log::warn!(
+                                                            "sync: transparent fee enhancement (addr) failed for {}: {e}",
+                                                            tx.txid()
+                                                        );
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    log::warn!(
+                                                        "sync: Transaction::read (addr) failed: {e}"
+                                                    )
+                                                }
                                             }
                                         }
                                     }
+                                    Ok(None) => break,
+                                    Err(e) => return Err(e),
                                 }
-                                Ok(None) => break,
-                                Err(e) => return Err(e),
                             }
-                        },
+                        }
                         Err(e) => return Err(e),
                     }
                 }
             }
         }
     }
+    Ok(())
+}
+
+async fn fill_missing_transparent_fee(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db_path: &str,
+    tx: &Transaction,
+) -> Result<(), SyncError> {
+    let Some(bundle) = tx.transparent_bundle() else {
+        return Ok(());
+    };
+    if bundle.vin.is_empty() || !stored_fee_is_missing(db_path, tx)? {
+        return Ok(());
+    }
+
+    let prevout_values = fetch_transparent_prevout_values(client, tx).await?;
+    if prevout_values.is_empty() {
+        return Ok(());
+    }
+
+    let Some(fee) = fee_from_prevout_values(tx, &prevout_values)
+        .map_err(|e| SyncError::parse(format!("transparent fee computation failed: {e:?}")))?
+    else {
+        return Ok(());
+    };
+
+    persist_fee_if_missing(db_path, tx, fee)
+}
+
+async fn fetch_transparent_prevout_values(
+    client: &mut CompactTxStreamerClient<Channel>,
+    tx: &Transaction,
+) -> Result<BTreeMap<OutPoint, Zatoshis>, SyncError> {
+    let Some(bundle) = tx.transparent_bundle() else {
+        return Ok(BTreeMap::new());
+    };
+
+    let mut prevout_values = BTreeMap::new();
+    for txin in &bundle.vin {
+        let outpoint = txin.prevout();
+        if is_null_outpoint(outpoint) {
+            return Ok(BTreeMap::new());
+        }
+        if prevout_values.contains_key(outpoint) {
+            continue;
+        }
+
+        let parent_raw = match lwd::get_transaction(client, outpoint.hash().to_vec()).await {
+            Ok(raw) => raw,
+            Err(e) => {
+                log::warn!(
+                    "sync: could not fetch transparent prevout {}:{} for fee on {}: {e}",
+                    hex::encode(outpoint.hash()),
+                    outpoint.n(),
+                    tx.txid()
+                );
+                return Ok(BTreeMap::new());
+            }
+        };
+        if parent_raw.data.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+
+        let parent_tx = match Transaction::read(&parent_raw.data[..], BranchId::Sapling) {
+            Ok(tx) => tx,
+            Err(e) => {
+                log::warn!(
+                    "sync: could not parse transparent prevout transaction {} for fee on {}: {e}",
+                    hex::encode(outpoint.hash()),
+                    tx.txid()
+                );
+                return Ok(BTreeMap::new());
+            }
+        };
+
+        let Some(parent_bundle) = parent_tx.transparent_bundle() else {
+            return Ok(BTreeMap::new());
+        };
+        let Ok(output_index) = usize::try_from(outpoint.n()) else {
+            return Ok(BTreeMap::new());
+        };
+        let Some(parent_output) = parent_bundle.vout.get(output_index) else {
+            return Ok(BTreeMap::new());
+        };
+
+        prevout_values.insert(outpoint.clone(), parent_output.value());
+    }
+
+    Ok(prevout_values)
+}
+
+fn stored_fee_is_missing(db_path: &str, tx: &Transaction) -> Result<bool, SyncError> {
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| SyncError::db(format!("open wallet DB for fee lookup: {e}")))?;
+    conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)
+        .map_err(|e| SyncError::db(format!("configure fee lookup busy timeout: {e}")))?;
+
+    let missing_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM transactions
+             WHERE txid = ?1
+             AND fee IS NULL",
+            rusqlite::params![tx.txid().as_ref()],
+            |row| row.get(0),
+        )
+        .map_err(|e| SyncError::db(format!("query transparent fee: {e}")))?;
+
+    Ok(missing_rows > 0)
+}
+
+fn is_null_outpoint(outpoint: &OutPoint) -> bool {
+    outpoint.hash() == &[0u8; 32] && outpoint.n() == u32::MAX
+}
+
+fn fee_from_prevout_values(
+    tx: &Transaction,
+    prevout_values: &BTreeMap<OutPoint, Zatoshis>,
+) -> Result<Option<Zatoshis>, BalanceError> {
+    tx.fee_paid(|outpoint| {
+        Ok::<Option<Zatoshis>, BalanceError>(prevout_values.get(outpoint).copied())
+    })
+}
+
+fn persist_fee_if_missing(db_path: &str, tx: &Transaction, fee: Zatoshis) -> Result<(), SyncError> {
+    let fee_zatoshi = i64::try_from(u64::from(fee))
+        .map_err(|_| SyncError::parse("transparent fee exceeded SQLite integer range"))?;
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| SyncError::db(format!("open wallet DB for fee update: {e}")))?;
+    conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)
+        .map_err(|e| SyncError::db(format!("configure fee update busy timeout: {e}")))?;
+
+    with_wallet_db_write_lock("sync_engine.enhance.persist_transparent_fee", || {
+        conn.execute(
+            "UPDATE transactions
+             SET fee = ?2
+             WHERE txid = ?1
+             AND fee IS NULL",
+            rusqlite::params![tx.txid().as_ref(), fee_zatoshi],
+        )
+        .map_err(|e| SyncError::db(format!("update transparent fee: {e}")))
+    })?;
+
     Ok(())
 }
 
@@ -271,6 +445,33 @@ mod tests {
                 GetTransactionErrorAction::RetryAsNetwork,
             );
         }
+    }
+
+    #[test]
+    fn transparent_fee_uses_exact_prevout_output_index() {
+        let tx_bytes = hex::decode(
+            "0400008085202f8901aee37187e843da597683c26c01457f5fd3b1a038996ef74dc8d60d483aaf395a000000006b483045022100874c70db77ea9e93f75cc83a9e141e17c8eb97588e29fe4e307631fdde4f162a02203493df62d648cd86a1189eaf9bcafc652bc14c5df02519d9e45e25b32aaffb5b012102106a2dcaaac2ae3b24358a03f4264e05db420c5b090399bc23885fa02fef7716ffffffff02764e1900000000001976a914fb451987556f7a19b726966ee6cff917e0bb3bfb88ac560ca400000000001976a9141634f5ff0b8f6603a17570436d6c12a91f4b1fed88ac00000000000000000000000000000000000000",
+        )
+        .unwrap();
+        let tx = Transaction::read(&tx_bytes[..], BranchId::Sapling).unwrap();
+        let prevout = tx.transparent_bundle().unwrap().vin[0].prevout().clone();
+        let input_value = Zatoshis::from_nonnegative_i64(12_449_548).unwrap();
+
+        let mut wrong_prevout_values = BTreeMap::new();
+        wrong_prevout_values.insert(OutPoint::new(*prevout.hash(), prevout.n() + 1), input_value);
+        assert_eq!(
+            fee_from_prevout_values(&tx, &wrong_prevout_values).unwrap(),
+            None
+        );
+
+        let mut prevout_values = BTreeMap::new();
+        prevout_values.insert(prevout, input_value);
+        assert_eq!(
+            fee_from_prevout_values(&tx, &prevout_values)
+                .unwrap()
+                .map(u64::from),
+            Some(40_000),
+        );
     }
 
     #[test]
