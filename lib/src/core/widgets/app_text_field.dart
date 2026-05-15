@@ -349,6 +349,7 @@ class _AppTextFieldState extends State<AppTextField> {
         : null;
 
     final textField = TextField(
+      key: _textFieldRegionKey,
       controller: _controller,
       focusNode: _focusNode,
       enabled: widget.enabled,
@@ -511,7 +512,6 @@ class _AppTextFieldState extends State<AppTextField> {
                               ),
                             Expanded(
                               child: Padding(
-                                key: _textFieldRegionKey,
                                 padding: const EdgeInsets.fromLTRB(
                                   AppSpacing.s,
                                   AppSpacing.s,
@@ -575,7 +575,6 @@ class _AppTextFieldState extends State<AppTextField> {
                               ),
                             Expanded(
                               child: Padding(
-                                key: _textFieldRegionKey,
                                 padding: EdgeInsets.only(
                                   left:
                                       widget.inputHorizontalPadding ??
@@ -629,7 +628,6 @@ class _AppTextFieldState extends State<AppTextField> {
                                 const SizedBox(width: AppSpacing.xs),
                               Expanded(
                                 child: Padding(
-                                  key: _textFieldRegionKey,
                                   padding: const EdgeInsets.only(bottom: 6),
                                   child: fieldInput,
                                 ),

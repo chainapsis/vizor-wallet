@@ -6,6 +6,85 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 
 void main() {
+  testWidgets('single-line padded input area wins over root unfocus', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    var rootTapCount = 0;
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      _ThemedHarness(
+        includeRootUnfocus: true,
+        onRootTap: () => rootTapCount += 1,
+        child: SizedBox(
+          width: 352,
+          child: AppTextField(
+            label: 'Send to',
+            controller: controller,
+            focusNode: focusNode,
+            hintText: 'Zcash address',
+            leading: const AppIcon(AppIcons.users),
+            showClearButton: true,
+          ),
+        ),
+      ),
+    );
+
+    final textFieldRect = tester.getRect(find.byType(TextField));
+
+    // This lands in the styled field padding below the actual EditableText.
+    // It used to be classified as "inside the TextField region", so the shell
+    // skipped its own focus fallback while the TextField itself never saw it.
+    await tester.tapAt(
+      Offset(textFieldRect.center.dx, textFieldRect.bottom + 3),
+    );
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isTrue);
+    expect(rootTapCount, isZero);
+  });
+
+  testWidgets('root unfocus still clears focus outside app text field', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    var rootTapCount = 0;
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      _ThemedHarness(
+        includeRootUnfocus: true,
+        onRootTap: () => rootTapCount += 1,
+        child: SizedBox(
+          width: 352,
+          child: AppTextField(
+            label: 'Send to',
+            controller: controller,
+            focusNode: focusNode,
+            hintText: 'Zcash address',
+            leading: const AppIcon(AppIcons.users),
+            showClearButton: true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pump();
+
+    expect(rootTapCount, 1);
+    expect(focusNode.hasFocus, isFalse);
+  });
+
   testWidgets('multiline clear button uses the Figma hit target', (
     tester,
   ) async {
@@ -222,17 +301,39 @@ void main() {
 }
 
 class _ThemedHarness extends StatelessWidget {
-  const _ThemedHarness({required this.child});
+  const _ThemedHarness({
+    required this.child,
+    this.includeRootUnfocus = false,
+    this.onRootTap,
+  });
 
   final Widget child;
+  final bool includeRootUnfocus;
+  final VoidCallback? onRootTap;
 
   @override
   Widget build(BuildContext context) {
+    final body = Center(child: child);
+
     return MaterialApp(
       theme: ThemeData(platform: TargetPlatform.macOS),
       home: AppTheme(
         data: AppThemeData.light,
-        child: Scaffold(body: Center(child: child)),
+        child: Scaffold(
+          body: includeRootUnfocus
+              ? GestureDetector(
+                  onTap: () {
+                    onRootTap?.call();
+                    final primary = FocusManager.instance.primaryFocus;
+                    if (primary != null && primary is! FocusScopeNode) {
+                      primary.unfocus();
+                    }
+                  },
+                  behavior: HitTestBehavior.translucent,
+                  child: body,
+                )
+              : body,
+        ),
       ),
     );
   }
