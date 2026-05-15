@@ -2051,6 +2051,78 @@ mod tests {
     }
 
     #[test]
+    fn history_preserves_mixed_pool_for_visible_self_outputs() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let self_tx = fake_txid(0xC6);
+
+        insert_history_tx(
+            &db,
+            account,
+            &self_tx,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -15_000,
+            6_115_000,
+            6_100_000,
+            false,
+            Some("2026-04-28T16:40:00Z"),
+        );
+        insert_output_with_address(
+            &db,
+            &self_tx,
+            0,
+            Some(account),
+            Some(account),
+            100_000,
+            true,
+            Some("t-self"),
+            Some(0),
+        );
+        insert_output_with_address(
+            &db,
+            &self_tx,
+            3,
+            Some(account),
+            Some(account),
+            1_000_000,
+            true,
+            Some("u-self"),
+            Some(0),
+        );
+        insert_output_with_address(
+            &db,
+            &self_tx,
+            3,
+            Some(account),
+            Some(account),
+            5_000_000,
+            true,
+            Some("u-change"),
+            Some(1),
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].txid_hex, hex::encode(self_tx));
+        assert_eq!(got[0].tx_kind, "sent");
+        assert_eq!(got[0].display_amount, 1_100_000);
+        assert_eq!(got[0].display_pool, "mixed");
+        assert_eq!(got[1].txid_hex, hex::encode(self_tx));
+        assert_eq!(got[1].tx_kind, "received");
+        assert_eq!(got[1].display_amount, 1_100_000);
+        assert_eq!(got[1].display_pool, "mixed");
+    }
+
+    #[test]
     fn history_hides_change_only_internal_tx() {
         let db = fresh_history_db();
         let account = test_account_uuid();
