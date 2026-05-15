@@ -14,6 +14,7 @@ import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/swap/models/swap_prototype_models.dart';
 import 'src/features/swap/providers/swap_prototype_provider.dart';
 import 'src/features/swap/providers/swap_deposit_sender.dart';
+import 'src/features/swap/providers/swap_max_amount_estimator.dart';
 import 'src/features/swap/providers/swap_session_store.dart';
 import 'src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'src/features/swap/screens/swap_screen.dart';
@@ -87,10 +88,25 @@ Future<void> main() async {
                     exposedAtHeight: BigInt.from(2500000),
                   );
                 },
+            releaseExchangeTransparentAddress:
+                ({
+                  required accountUuid,
+                  required address,
+                  required dbPath,
+                }) async {
+                  return false;
+                },
+            releaseUnusedExchangeTransparentAddresses:
+                ({required accountUuid, required dbPath}) async {
+                  return 0;
+                },
           ),
         ),
         swapIntentProvider.overrideWithValue(_PreviewSwapProvider()),
         swapDepositSenderProvider.overrideWithValue(_PreviewDepositSender()),
+        swapMaxAmountEstimatorProvider.overrideWithValue(
+          _PreviewMaxAmountEstimator(),
+        ),
         swapSessionStoreProvider.overrideWithValue(
           _PreviewSwapSessionStore(initialIntents: _previewIntents(scenario)),
         ),
@@ -317,11 +333,26 @@ class _PreviewSwapProvider implements SwapProvider {
 
 class _PreviewDepositSender implements SwapDepositSender {
   @override
+  Future<BigInt> estimateZecDepositFee({
+    required String accountUuid,
+    required SwapQuote quote,
+  }) async {
+    return BigInt.from(10000);
+  }
+
+  @override
   Future<String> sendZecDeposit({
     required String accountUuid,
     required SwapQuote quote,
   }) async {
     return 'zec-preview-txid';
+  }
+}
+
+class _PreviewMaxAmountEstimator implements SwapMaxAmountEstimator {
+  @override
+  Future<BigInt> estimateMaxZecSellAmount({required String accountUuid}) async {
+    return BigInt.from(1247900000);
   }
 }
 

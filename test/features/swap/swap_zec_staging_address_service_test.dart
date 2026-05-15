@@ -21,6 +21,18 @@ void main() {
                 }) async {
                   throw Exception('reservation unavailable');
                 },
+            releaseExchangeTransparentAddress:
+                ({
+                  required accountUuid,
+                  required address,
+                  required dbPath,
+                }) async {
+                  return false;
+                },
+            releaseUnusedExchangeTransparentAddresses:
+                ({required accountUuid, required dbPath}) async {
+                  return 0;
+                },
           ),
         ),
       ],
@@ -59,6 +71,18 @@ void main() {
                       exposedAtHeight: BigInt.from(2500000),
                     );
                   },
+              releaseExchangeTransparentAddress:
+                  ({
+                    required accountUuid,
+                    required address,
+                    required dbPath,
+                  }) async {
+                    return false;
+                  },
+              releaseUnusedExchangeTransparentAddresses:
+                  ({required accountUuid, required dbPath}) async {
+                    return 0;
+                  },
             ),
           ),
         ],
@@ -91,6 +115,64 @@ void main() {
         plan.reviewDeliveryValue,
         'reserved wallet receive address; shield prompt follows',
       );
+    },
+  );
+
+  test(
+    'retries reservation after releasing unused stale reservations',
+    () async {
+      var reserveAttempts = 0;
+      var releaseAttempts = 0;
+      final container = ProviderContainer(
+        overrides: [
+          swapZecStagingAddressServiceProvider.overrideWith(
+            (ref) => SwapZecStagingAddressService(
+              loadWalletDbPath: () async => 'wallet.db',
+              readNetwork: () => 'main',
+              reserveExchangeTransparentAddress:
+                  ({
+                    required accountUuid,
+                    required dbPath,
+                    required network,
+                  }) async {
+                    reserveAttempts++;
+                    if (reserveAttempts == 1) {
+                      throw Exception('ephemeral gap exhausted');
+                    }
+                    return rust_wallet.ExchangeTransparentAddressResult(
+                      address: 't1released-staging',
+                      transparentChildIndex: 0,
+                      exposedAtHeight: BigInt.from(2500000),
+                    );
+                  },
+              releaseExchangeTransparentAddress:
+                  ({
+                    required accountUuid,
+                    required address,
+                    required dbPath,
+                  }) async {
+                    return false;
+                  },
+              releaseUnusedExchangeTransparentAddresses:
+                  ({required accountUuid, required dbPath}) async {
+                    releaseAttempts++;
+                    expect(accountUuid, 'account-1');
+                    expect(dbPath, 'wallet.db');
+                    return 4;
+                  },
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final staging = await container
+          .read(swapZecStagingAddressServiceProvider)
+          .prepareForQuote(accountUuid: 'account-1');
+
+      expect(staging.address, 't1released-staging');
+      expect(reserveAttempts, 2);
+      expect(releaseAttempts, 1);
     },
   );
 }

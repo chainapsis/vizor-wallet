@@ -83,7 +83,7 @@ void main() {
     expect(result.stdout, contains('fvm flutter run'));
     expect(result.stdout, contains('String.fromEnvironment'));
     expect(result.stdout, contains('ZCASH_SWAP_1CLICK_JWT'));
-    expect(result.stdout, contains('ZCASH_SWAP_ENABLE_LIVE_FUNDS'));
+    expect(result.stdout, contains('ZCASH_SWAP_ENABLE_LIVE_FUNDS=false'));
     expect(result.stdout, contains('swap-one-click-live-app.sh -d macos'));
   });
 

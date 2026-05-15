@@ -157,6 +157,32 @@ Future<ExchangeTransparentAddressResult> reserveExchangeTransparentAddress({
   accountUuid: accountUuid,
 );
 
+/// Release an unused exchange-only transparent address reservation.
+///
+/// Returns false when the address is unknown, already unexposed, or has a
+/// wallet-observed transparent output.
+Future<bool> releaseExchangeTransparentAddress({
+  required String dbPath,
+  required String accountUuid,
+  required String address,
+}) => RustLib.instance.api.crateApiWalletReleaseExchangeTransparentAddress(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  address: address,
+);
+
+/// Release all unused exchange-only transparent address reservations.
+///
+/// Only addresses with no wallet-observed transparent outputs are released.
+Future<int> releaseUnusedExchangeTransparentAddresses({
+  required String dbPath,
+  required String accountUuid,
+}) => RustLib.instance.api
+    .crateApiWalletReleaseUnusedExchangeTransparentAddresses(
+      dbPath: dbPath,
+      accountUuid: accountUuid,
+    );
+
 /// Result of adding an account to an existing wallet.
 class AccountCreationResult {
   final String accountUuid;

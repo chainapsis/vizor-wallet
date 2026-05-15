@@ -989,6 +989,18 @@ pub fn set_transaction_status(
     })
 }
 
+pub fn check_transaction_mined(lightwalletd_url: String, txid_hex: String) -> Result<i64, String> {
+    catch(|| {
+        let txid = txid_hex.trim().to_lowercase();
+        let txid_bytes = hex::decode(&txid).map_err(|e| format!("Bad txid hex: {e}"))?;
+        if txid_bytes.len() != 32 {
+            return Err("TxId must be 32 bytes".to_string());
+        }
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        Ok(rt.block_on(wallet_sync::check_tx_mined(&lightwalletd_url, &txid_bytes)))
+    })
+}
+
 // ======================== Transaction History ========================
 
 pub struct TransactionInfo {

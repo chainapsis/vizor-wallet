@@ -420,6 +420,14 @@ Future<void> setTransactionStatus({
   status: status,
 );
 
+Future<PlatformInt64> checkTransactionMined({
+  required String lightwalletdUrl,
+  required String txidHex,
+}) => RustLib.instance.api.crateApiSyncCheckTransactionMined(
+  lightwalletdUrl: lightwalletdUrl,
+  txidHex: txidHex,
+);
+
 Future<List<TransactionInfo>> getTransactionHistory({
   required String dbPath,
   required String network,

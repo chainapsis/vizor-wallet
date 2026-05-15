@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
@@ -13,6 +14,8 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../providers/account_provider.dart';
+import '../../../providers/sync_provider.dart';
 import '../../send/models/send_prefill_args.dart';
 import '../models/swap_prototype_models.dart';
 import '../providers/swap_prototype_provider.dart';
@@ -48,6 +51,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
   late final ScrollController _scrollController;
   late final FocusNode _shortcutFocusNode;
   bool _commandPaletteOpen = false;
+  String? _removeIntentId;
 
   @override
   void initState() {
@@ -92,14 +96,32 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     });
   }
 
+  void _closeRemoveIntentDialog() {
+    setState(() => _removeIntentId = null);
+  }
+
   @override
   Widget build(BuildContext context) {
     final swapState = ref.watch(swapPrototypeProvider);
     final swapNotifier = ref.read(swapPrototypeProvider.notifier);
     final liveFundsEnabled = ref.watch(swapLiveFundsEnabledProvider);
+    final activeAccountUuid = ref.watch(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+    );
+    final sync = ref.watch(
+      syncProvider.select(
+        (value) =>
+            (value.value ?? SyncState()).scopedToAccount(activeAccountUuid),
+      ),
+    );
+    final zecAvailableText =
+        ZecAmount.fromZatoshi(
+          sync.spendableBalance,
+        ).pretty(denomStyle: ZecDenomStyle.upper).toString();
     final selectedIntent = swapState.selectedIntentOrNull;
     final reviewQuote = swapState.reviewQuote;
     final reviewAddressPlan = swapState.reviewAddressPlan;
+    final removeIntent = _intentById(swapState.intents, _removeIntentId);
     void startIntent() {
       unawaited(() async {
         final started = await swapNotifier.startIntent();
@@ -123,6 +145,19 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
 
     void retryShield() {
       unawaited(swapNotifier.retryShieldSelectedIntent());
+    }
+
+    void requestRemoveIntent() {
+      final intent = swapState.selectedIntentOrNull;
+      if (intent == null) return;
+      setState(() => _removeIntentId = intent.id);
+    }
+
+    void confirmRemoveIntent() {
+      final intentId = _removeIntentId;
+      if (intentId == null) return;
+      _closeRemoveIntentDialog();
+      unawaited(swapNotifier.removeIntent(intentId));
     }
 
     void stageExternalRequest() {
@@ -166,9 +201,10 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
       action();
     }
 
-    final activeReceiptText = selectedIntent == null
-        ? ''
-        : redactedReceiptText(selectedIntent.receipt);
+    final activeReceiptText =
+        selectedIntent == null
+            ? ''
+            : redactedReceiptText(selectedIntent.receipt);
     final activeDepositAddress = selectedIntent?.depositAddress;
     final selectedRequest = swapState.selectedRequestOrNull;
     final canReviewFreshQuote =
@@ -211,10 +247,11 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         detail: selectedIntent?.statusLabel ?? 'No active swap',
         iconName: AppIcons.renew,
         enabled: selectedIntent != null && !swapState.statusRefreshing,
-        onRun: () => runPaletteAction(() {
-          _selectTab(_SwapPageTab.activity);
-          refreshStatus();
-        }),
+        onRun:
+            () => runPaletteAction(() {
+              _selectTab(_SwapPageTab.activity);
+              refreshStatus();
+            }),
       ),
       _SwapCommandItem(
         id: 'copy_receipt',
@@ -222,9 +259,12 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         detail: 'Redacted activity evidence',
         iconName: AppIcons.copy,
         enabled: activeReceiptText.isNotEmpty,
-        onRun: () => runPaletteAction(() {
-          unawaited(Clipboard.setData(ClipboardData(text: activeReceiptText)));
-        }),
+        onRun:
+            () => runPaletteAction(() {
+              unawaited(
+                Clipboard.setData(ClipboardData(text: activeReceiptText)),
+              );
+            }),
       ),
       _SwapCommandItem(
         id: 'copy_deposit',
@@ -233,11 +273,12 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         iconName: AppIcons.copy,
         enabled:
             activeDepositAddress != null && activeDepositAddress.isNotEmpty,
-        onRun: () => runPaletteAction(() {
-          unawaited(
-            Clipboard.setData(ClipboardData(text: activeDepositAddress!)),
-          );
-        }),
+        onRun:
+            () => runPaletteAction(() {
+              unawaited(
+                Clipboard.setData(ClipboardData(text: activeDepositAddress!)),
+              );
+            }),
       ),
       _SwapCommandItem(
         id: 'review_fresh_quote',
@@ -301,13 +342,15 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final useWideLayout = constraints.maxWidth >= 1040;
-                  final viewportHeight = constraints.maxHeight.isFinite
-                      ? constraints.maxHeight
-                      : null;
+                  final viewportHeight =
+                      constraints.maxHeight.isFinite
+                          ? constraints.maxHeight
+                          : null;
                   final primary = _SwapComposerStack(
-                    selectedTab: _selectedTab == _SwapPageTab.activity
-                        ? _SwapPageTab.activity
-                        : _SwapPageTab.swap,
+                    selectedTab:
+                        _selectedTab == _SwapPageTab.activity
+                            ? _SwapPageTab.activity
+                            : _SwapPageTab.swap,
                     viewportHeight: viewportHeight,
                     state: swapState,
                     openCount: swapState.openIntentCount,
@@ -318,22 +361,56 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                     onToggleDirection: swapNotifier.toggleDirection,
                     onExternalAssetChanged: swapNotifier.selectExternalAsset,
                     onSlippageChanged: swapNotifier.updateSlippageBps,
+                    onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
                     onReviewQuote: swapNotifier.showReview,
                     onRefreshStatus: refreshStatus,
                     onDepositTxHashChanged: swapNotifier.updateDepositTxHash,
                     onSubmitDepositTransaction: submitDepositTransaction,
                     onReviewFreshQuote: reviewFreshQuote,
                     onRetryShield: retryShield,
+                    onRemoveIntent: requestRemoveIntent,
                     onIntentSelected: swapNotifier.selectIntent,
                     liveFundsEnabled: liveFundsEnabled,
+                    zecAvailableText: zecAvailableText,
                   );
 
-                  final requests = useWideLayout
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: _SwapRequestInboxStack(
+                  final requests =
+                      useWideLayout
+                          ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: _SwapRequestInboxStack(
+                                  state: swapState,
+                                  onImportTextChanged:
+                                      swapNotifier.updateRequestImportText,
+                                  onImportRequest:
+                                      swapNotifier.importExternalRequest,
+                                  onPasteRequest: importRequestFromClipboard,
+                                  onStageRequest: stageExternalRequest,
+                                  onOpenPayment: openPaymentRequest,
+                                  onRejectRequest:
+                                      swapNotifier
+                                          .rejectSelectedExternalRequest,
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.xs),
+                              SizedBox(
+                                width: 340,
+                                child: _SwapRequestListPanel(
+                                  requests: swapState.externalRequests,
+                                  selectedRequestId:
+                                      swapState.selectedRequestOrNull?.id,
+                                  onRequestSelected:
+                                      swapNotifier.selectExternalRequest,
+                                ),
+                              ),
+                            ],
+                          )
+                          : Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _SwapRequestInboxStack(
                                 state: swapState,
                                 onImportTextChanged:
                                     swapNotifier.updateRequestImportText,
@@ -345,45 +422,16 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                                 onRejectRequest:
                                     swapNotifier.rejectSelectedExternalRequest,
                               ),
-                            ),
-                            const SizedBox(width: AppSpacing.xs),
-                            SizedBox(
-                              width: 340,
-                              child: _SwapRequestListPanel(
+                              const SizedBox(height: AppSpacing.xs),
+                              _SwapRequestListPanel(
                                 requests: swapState.externalRequests,
                                 selectedRequestId:
                                     swapState.selectedRequestOrNull?.id,
                                 onRequestSelected:
                                     swapNotifier.selectExternalRequest,
                               ),
-                            ),
-                          ],
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _SwapRequestInboxStack(
-                              state: swapState,
-                              onImportTextChanged:
-                                  swapNotifier.updateRequestImportText,
-                              onImportRequest:
-                                  swapNotifier.importExternalRequest,
-                              onPasteRequest: importRequestFromClipboard,
-                              onStageRequest: stageExternalRequest,
-                              onOpenPayment: openPaymentRequest,
-                              onRejectRequest:
-                                  swapNotifier.rejectSelectedExternalRequest,
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
-                            _SwapRequestListPanel(
-                              requests: swapState.externalRequests,
-                              selectedRequestId:
-                                  swapState.selectedRequestOrNull?.id,
-                              onRequestSelected:
-                                  swapNotifier.selectExternalRequest,
-                            ),
-                          ],
-                        );
+                            ],
+                          );
 
                   return SingleChildScrollView(
                     controller: _scrollController,
@@ -417,6 +465,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                     quote: reviewQuote,
                     addressPlan: reviewAddressPlan,
                     expired: swapState.quoteExpired,
+                    starting: swapState.startSubmitting,
                     amountWarning: swapState.reviewAmountDifferenceWarning,
                     startError: swapState.statusError,
                     onReviewAgain: swapNotifier.showReview,
@@ -434,10 +483,33 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                 child: _SwapCommandPalette(commands: commandItems),
               ),
             ),
+          if (removeIntent != null)
+            AppPaneModalOverlay(
+              onDismiss: _closeRemoveIntentDialog,
+              child: Material(
+                type: MaterialType.transparency,
+                child: _RemoveSwapActivityModal(
+                  intent: removeIntent,
+                  onCancel: _closeRemoveIntentDialog,
+                  onConfirm: confirmRemoveIntent,
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
+}
+
+SwapPrototypeIntent? _intentById(
+  List<SwapPrototypeIntent> intents,
+  String? intentId,
+) {
+  if (intentId == null) return null;
+  for (final intent in intents) {
+    if (intent.id == intentId) return intent;
+  }
+  return null;
 }
 
 class _SwapReviewModalEntrance extends StatelessWidget {
@@ -460,6 +532,131 @@ class _SwapReviewModalEntrance extends StatelessWidget {
           child: Transform.translate(offset: Offset(dx, 0), child: child),
         );
       },
+    );
+  }
+}
+
+class _RemoveSwapActivityModal extends StatelessWidget {
+  const _RemoveSwapActivityModal({
+    required this.intent,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final SwapPrototypeIntent intent;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 460),
+      child: Container(
+        key: const ValueKey('swap_remove_intent_modal'),
+        margin: const EdgeInsets.all(AppSpacing.sm),
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: colors.background.base,
+          border: Border.all(color: colors.border.regular),
+          borderRadius: BorderRadius.circular(AppRadii.small),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: colors.background.raised,
+                    border: Border.all(color: colors.border.subtle),
+                    borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                  ),
+                  child: AppIcon(
+                    AppIcons.warning,
+                    size: AppIconSize.medium,
+                    color: colors.icon.warning,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Remove from activity?',
+                        style: AppTypography.headlineMedium.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        intent.pair,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'This removes the saved swap from this wallet and stops polling it. '
+              'If this wallet has not seen funds for its reserved ZEC address, the address is released for reuse.',
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.primary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              decoration: BoxDecoration(
+                color: colors.background.raised,
+                border: Border.all(color: colors.border.subtle),
+                borderRadius: BorderRadius.circular(AppRadii.xSmall),
+              ),
+              child: Text(
+                'This does not cancel the provider quote or recover sent funds. Remove it only if you did not send funds, or if you saved the deposit details elsewhere for support.',
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.warning,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    key: const ValueKey('swap_remove_intent_cancel_button'),
+                    onPressed: onCancel,
+                    variant: AppButtonVariant.secondary,
+                    size: AppButtonSize.medium,
+                    child: const Text('Keep'),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: AppButton(
+                    key: const ValueKey('swap_remove_intent_confirm_button'),
+                    onPressed: onConfirm,
+                    variant: AppButtonVariant.destructive,
+                    size: AppButtonSize.medium,
+                    child: const Text('Remove'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -645,33 +842,34 @@ class _SwapCommandPaletteState extends State<_SwapCommandPalette> {
             ),
             const SizedBox(height: AppSpacing.sm),
             Flexible(
-              child: commands.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.md,
-                      ),
-                      child: Text(
-                        'No matching commands',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.bodySmall.copyWith(
-                          color: colors.text.secondary,
+              child:
+                  commands.isEmpty
+                      ? Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.md,
                         ),
+                        child: Text(
+                          'No matching commands',
+                          textAlign: TextAlign.center,
+                          style: AppTypography.bodySmall.copyWith(
+                            color: colors.text.secondary,
+                          ),
+                        ),
+                      )
+                      : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: commands.length,
+                        separatorBuilder:
+                            (_, _) => const SizedBox(height: AppSpacing.xxs),
+                        itemBuilder: (context, index) {
+                          final command = commands[index];
+                          return _SwapCommandRow(
+                            command: command,
+                            selected: index == selectedIndex,
+                            onTap: command.enabled ? command.onRun : null,
+                          );
+                        },
                       ),
-                    )
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: commands.length,
-                      separatorBuilder: (_, _) =>
-                          const SizedBox(height: AppSpacing.xxs),
-                      itemBuilder: (context, index) {
-                        final command = commands[index];
-                        return _SwapCommandRow(
-                          command: command,
-                          selected: index == selectedIndex,
-                          onTap: command.enabled ? command.onRun : null,
-                        );
-                      },
-                    ),
             ),
           ],
         ),
@@ -729,9 +927,10 @@ class _SwapCommandRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.labelLarge.copyWith(
-                          color: enabled
-                              ? colors.text.accent
-                              : colors.text.secondary,
+                          color:
+                              enabled
+                                  ? colors.text.accent
+                                  : colors.text.secondary,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -750,9 +949,8 @@ class _SwapCommandRow extends StatelessWidget {
                 AppIcon(
                   AppIcons.arrowForwardIos,
                   size: 12,
-                  color: selected
-                      ? colors.icon.brandCrimson
-                      : colors.icon.muted,
+                  color:
+                      selected ? colors.icon.brandCrimson : colors.icon.muted,
                 ),
               ],
             ),
@@ -903,11 +1101,12 @@ class _SwapRequestInboxStack extends StatelessWidget {
                 Expanded(
                   child: AppButton(
                     key: const ValueKey('swap_request_primary_button'),
-                    onPressed: request.canStageSwap
-                        ? onStageRequest
-                        : request.canOpenPayment
-                        ? onOpenPayment
-                        : null,
+                    onPressed:
+                        request.canStageSwap
+                            ? onStageRequest
+                            : request.canOpenPayment
+                            ? onOpenPayment
+                            : null,
                     variant: AppButtonVariant.primary,
                     size: AppButtonSize.medium,
                     leading: const AppIcon(AppIcons.arrowForwardIos),
@@ -1017,9 +1216,10 @@ class _RequestImportPanelState extends State<_RequestImportPanel> {
             maxLines: 2,
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => widget.onImport(),
-            tone: widget.error == null
-                ? AppTextFieldTone.neutral
-                : AppTextFieldTone.destructive,
+            tone:
+                widget.error == null
+                    ? AppTextFieldTone.neutral
+                    : AppTextFieldTone.destructive,
             messageText: widget.error,
           ),
         ),
@@ -1128,13 +1328,15 @@ class _ExternalRequestRow extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(AppSpacing.xs),
           decoration: BoxDecoration(
-            color: selected
-                ? colors.state.selectedOpacity
-                : colors.background.base,
+            color:
+                selected
+                    ? colors.state.selectedOpacity
+                    : colors.background.base,
             border: Border.all(
-              color: selected
-                  ? colors.border.brandCrimsonStrong
-                  : colors.border.subtle,
+              color:
+                  selected
+                      ? colors.border.brandCrimsonStrong
+                      : colors.border.subtle,
             ),
             borderRadius: BorderRadius.circular(AppRadii.xSmall),
           ),
@@ -1149,9 +1351,8 @@ class _ExternalRequestRow extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelLarge.copyWith(
-                        color: selected
-                            ? colors.text.accent
-                            : colors.text.primary,
+                        color:
+                            selected ? colors.text.accent : colors.text.primary,
                       ),
                     ),
                   ),
@@ -1589,6 +1790,7 @@ class _SwapActivityStack extends StatelessWidget {
     required this.onSubmitDepositTransaction,
     required this.onReviewFreshQuote,
     required this.onRetryShield,
+    required this.onRemoveIntent,
     required this.liveFundsEnabled,
   });
 
@@ -1599,6 +1801,7 @@ class _SwapActivityStack extends StatelessWidget {
   final VoidCallback onSubmitDepositTransaction;
   final VoidCallback onReviewFreshQuote;
   final VoidCallback onRetryShield;
+  final VoidCallback onRemoveIntent;
   final bool liveFundsEnabled;
 
   @override
@@ -1610,6 +1813,7 @@ class _SwapActivityStack extends StatelessWidget {
     final resolution = _ActivityResolution.fromIntent(selectedIntent);
     final showDepositControls = _showDepositControls(selectedIntent.status);
     final showSupportDetails = _showActivityReceipt(selectedIntent.status);
+    final statusError = selectedIntent.statusError ?? state.statusError;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1618,10 +1822,11 @@ class _SwapActivityStack extends StatelessWidget {
           plan: statusPlan,
           statusRefreshing: state.statusRefreshing,
           onRefreshStatus: onRefreshStatus,
+          onRemoveIntent: onRemoveIntent,
         ),
-        if (state.statusError != null) ...[
+        if (statusError != null) ...[
           const SizedBox(height: AppSpacing.xs),
-          _ActivityStatusErrorPanel(message: state.statusError!),
+          _ActivityStatusErrorPanel(message: statusError),
         ],
         const SizedBox(height: AppSpacing.xs),
         if (resolution != null) ...[
@@ -1698,65 +1903,83 @@ class _ActivityStatusPlan {
 
   static _ActivityStatusPlan fromIntent(SwapPrototypeIntent intent) {
     final sourceSymbol = _pairSymbol(intent.pair, 0);
+    final receiveSymbol = _pairSymbol(intent.pair, 1);
+    final hasDepositTx = intent.depositTxHash?.trim().isNotEmpty ?? false;
 
     return switch (intent.status) {
       SwapIntentStatus.awaitingDeposit => _ActivityStatusPlan(
-        title: 'Send $sourceSymbol deposit',
-        detail: 'Use the one-time address, then submit the tx hash.',
-        iconName: AppIcons.link,
+        title: hasDepositTx ? '$sourceSymbol sent' : 'Send $sourceSymbol',
+        detail:
+            hasDepositTx
+                ? 'Waiting for the deposit to confirm.'
+                : 'Send once to the deposit address below.',
+        iconName: hasDepositTx ? AppIcons.eye : AppIcons.link,
         tone: _ActivityStatusPlanTone.action,
       ),
       SwapIntentStatus.awaitingExternalDeposit => _ActivityStatusPlan(
-        title: 'Send $sourceSymbol deposit',
-        detail: 'Use the source-chain address, then submit the tx hash.',
-        iconName: AppIcons.link,
+        title: hasDepositTx ? '$sourceSymbol sent' : 'Send $sourceSymbol',
+        detail:
+            hasDepositTx
+                ? 'Waiting for the source-chain deposit to confirm.'
+                : 'Send once to the source-chain deposit address below.',
+        iconName: hasDepositTx ? AppIcons.eye : AppIcons.link,
         tone: _ActivityStatusPlanTone.action,
       ),
-      SwapIntentStatus.depositObserved => const _ActivityStatusPlan(
-        title: 'Deposit received',
-        detail: 'Refresh until settlement advances.',
+      SwapIntentStatus.depositObserved => _ActivityStatusPlan(
+        title: '$sourceSymbol deposit confirmed',
+        detail: 'Preparing the $receiveSymbol delivery.',
         iconName: AppIcons.eye,
         tone: _ActivityStatusPlanTone.action,
       ),
-      SwapIntentStatus.processing => const _ActivityStatusPlan(
-        title: 'Swap is processing',
+      SwapIntentStatus.processing => _ActivityStatusPlan(
+        title: '$receiveSymbol delivery in progress',
         detail: 'No new approval is needed.',
         iconName: AppIcons.renew,
         tone: _ActivityStatusPlanTone.action,
       ),
-      SwapIntentStatus.incompleteDeposit => _ActivityStatusPlan(
-        title: 'Top up deposit',
-        detail: 'Send only the missing amount or wait for refund.',
+      SwapIntentStatus.providerStatusUnknown => _ActivityStatusPlan(
+        title: 'Checking provider status',
+        detail:
+            intent.providerStatusRaw == null
+                ? 'Refresh once. Keep the swap record open if it does not update.'
+                : 'Provider returned ${intent.providerStatusRaw}. Keep this record open.',
+        iconName: AppIcons.warning,
+        tone: _ActivityStatusPlanTone.warning,
+      ),
+      SwapIntentStatus.incompleteDeposit => const _ActivityStatusPlan(
+        title: 'Deposit needs attention',
+        detail: 'Top up the missing amount or wait for refund.',
         iconName: AppIcons.warning,
         tone: _ActivityStatusPlanTone.warning,
       ),
       SwapIntentStatus.shieldingPending => const _ActivityStatusPlan(
-        title: 'Shield ZEC in wallet',
-        detail: 'Close the transparent wallet balance.',
+        title: 'Shielding ZEC',
+        detail: 'Moving received ZEC into the wallet balance.',
         iconName: AppIcons.shieldKeyhole,
         tone: _ActivityStatusPlanTone.action,
       ),
       SwapIntentStatus.shieldingConfirming => const _ActivityStatusPlan(
-        title: 'Shielding is confirming',
-        detail: 'Wait for the shield transaction to confirm.',
+        title: 'Confirming shield',
+        detail: 'Waiting for the shield transaction to confirm.',
         iconName: AppIcons.shieldKeyhole,
         tone: _ActivityStatusPlanTone.action,
       ),
       SwapIntentStatus.shieldingFailed => const _ActivityStatusPlan(
-        title: 'Retry wallet shielding',
+        title: 'Shielding needs retry',
         detail: 'Do not resend external funds.',
         iconName: AppIcons.warning,
         tone: _ActivityStatusPlanTone.warning,
       ),
-      SwapIntentStatus.complete => const _ActivityStatusPlan(
-        title: 'Swap complete',
-        detail: 'Receipt is available for records.',
+      SwapIntentStatus.complete => _ActivityStatusPlan(
+        title:
+            receiveSymbol == 'ZEC' ? 'ZEC ready' : '$receiveSymbol delivered',
+        detail: 'The swap is complete.',
         iconName: AppIcons.checkCircle,
         tone: _ActivityStatusPlanTone.success,
       ),
       SwapIntentStatus.refunded => const _ActivityStatusPlan(
-        title: 'Refund sent',
-        detail: 'Verify the refund before retrying.',
+        title: 'Funds refunded',
+        detail: 'Check the refund transaction before retrying.',
         iconName: AppIcons.checkCircle,
         tone: _ActivityStatusPlanTone.success,
       ),
@@ -1767,7 +1990,7 @@ class _ActivityStatusPlan {
         tone: _ActivityStatusPlanTone.destructive,
       ),
       SwapIntentStatus.failed => const _ActivityStatusPlan(
-        title: 'Do not reuse this quote',
+        title: 'Swap failed',
         detail: 'Start a fresh quote when ready.',
         iconName: AppIcons.block,
         tone: _ActivityStatusPlanTone.destructive,
@@ -1801,13 +2024,13 @@ class _ActivityStatusPlanPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final color = switch (plan.tone) {
-      _ActivityStatusPlanTone.action ||
+      _ActivityStatusPlanTone.action => colors.text.accent,
       _ActivityStatusPlanTone.warning => colors.text.warning,
       _ActivityStatusPlanTone.success => colors.text.success,
       _ActivityStatusPlanTone.destructive => colors.text.destructive,
     };
     final iconColor = switch (plan.tone) {
-      _ActivityStatusPlanTone.action ||
+      _ActivityStatusPlanTone.action => colors.icon.accent,
       _ActivityStatusPlanTone.warning => colors.icon.warning,
       _ActivityStatusPlanTone.success => colors.icon.success,
       _ActivityStatusPlanTone.destructive => colors.icon.destructive,
@@ -1843,15 +2066,6 @@ class _ActivityStatusPlanPanel extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    intent.nextAction,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodySmall.copyWith(
-                      color: colors.text.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
                     plan.detail,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -1865,148 +2079,600 @@ class _ActivityStatusPlanPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.xs),
-        _ActivityMilestoneRail(status: intent.status, tone: plan.tone),
+        _ActivityRouteTracker(intent: intent, tone: plan.tone),
       ],
     );
   }
 }
 
-class _ActivityMilestoneRail extends StatelessWidget {
-  const _ActivityMilestoneRail({required this.status, required this.tone});
+class _ActivityRouteTracker extends StatelessWidget {
+  const _ActivityRouteTracker({required this.intent, required this.tone});
 
-  final SwapIntentStatus status;
-  final _ActivityStatusPlanTone tone;
-
-  @override
-  Widget build(BuildContext context) {
-    final states = _statesFor(status);
-    return Row(
-      children: [
-        for (var index = 0; index < states.length; index++) ...[
-          Expanded(
-            child: _ActivityMilestone(
-              label: const ['Deposit', 'Swap', 'Receive'][index],
-              state: states[index],
-              tone: tone,
-            ),
-          ),
-          if (index != states.length - 1) const SizedBox(width: AppSpacing.xxs),
-        ],
-      ],
-    );
-  }
-
-  List<_ActivityMilestoneState> _statesFor(SwapIntentStatus status) {
-    return switch (status) {
-      SwapIntentStatus.awaitingDeposit ||
-      SwapIntentStatus.awaitingExternalDeposit => const [
-        _ActivityMilestoneState.active,
-        _ActivityMilestoneState.pending,
-        _ActivityMilestoneState.pending,
-      ],
-      SwapIntentStatus.depositObserved || SwapIntentStatus.processing => const [
-        _ActivityMilestoneState.done,
-        _ActivityMilestoneState.active,
-        _ActivityMilestoneState.pending,
-      ],
-      SwapIntentStatus.incompleteDeposit => const [
-        _ActivityMilestoneState.warning,
-        _ActivityMilestoneState.pending,
-        _ActivityMilestoneState.pending,
-      ],
-      SwapIntentStatus.shieldingPending ||
-      SwapIntentStatus.shieldingConfirming => const [
-        _ActivityMilestoneState.done,
-        _ActivityMilestoneState.done,
-        _ActivityMilestoneState.active,
-      ],
-      SwapIntentStatus.shieldingFailed => const [
-        _ActivityMilestoneState.done,
-        _ActivityMilestoneState.done,
-        _ActivityMilestoneState.warning,
-      ],
-      SwapIntentStatus.complete || SwapIntentStatus.refunded => const [
-        _ActivityMilestoneState.done,
-        _ActivityMilestoneState.done,
-        _ActivityMilestoneState.done,
-      ],
-      SwapIntentStatus.expired || SwapIntentStatus.failed => const [
-        _ActivityMilestoneState.failed,
-        _ActivityMilestoneState.pending,
-        _ActivityMilestoneState.pending,
-      ],
-    };
-  }
-}
-
-enum _ActivityMilestoneState { pending, active, done, warning, failed }
-
-class _ActivityMilestone extends StatelessWidget {
-  const _ActivityMilestone({
-    required this.label,
-    required this.state,
-    required this.tone,
-  });
-
-  final String label;
-  final _ActivityMilestoneState state;
+  final SwapPrototypeIntent intent;
   final _ActivityStatusPlanTone tone;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final color = switch (state) {
-      _ActivityMilestoneState.done => colors.text.success,
-      _ActivityMilestoneState.failed => colors.text.destructive,
-      _ActivityMilestoneState.warning => colors.text.warning,
-      _ActivityMilestoneState.active => switch (tone) {
-        _ActivityStatusPlanTone.success => colors.text.success,
-        _ActivityStatusPlanTone.destructive => colors.text.destructive,
-        _ => colors.text.warning,
-      },
-      _ActivityMilestoneState.pending => colors.text.secondary,
-    };
-    final iconName = switch (state) {
-      _ActivityMilestoneState.done => AppIcons.checkCircle,
-      _ActivityMilestoneState.failed => AppIcons.block,
-      _ActivityMilestoneState.warning => AppIcons.warning,
-      _ActivityMilestoneState.active => AppIcons.renew,
-      _ActivityMilestoneState.pending => AppIcons.time,
-    };
+    final plan = _ActivityRoutePlan.fromIntent(intent);
+    return Semantics(
+      label: 'Swap progress: ${plan.semanticLabel}',
+      child: Container(
+        key: const ValueKey('swap_activity_route_tracker'),
+        padding: const EdgeInsets.all(AppSpacing.xs),
+        decoration: BoxDecoration(
+          color: colors.background.raised,
+          border: Border.all(color: colors.border.subtle),
+          borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Swap progress',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                _ActivityRouteStepCountChip(plan: plan, tone: tone),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            _ActivityRouteSegmentStrip(plan: plan, tone: tone),
+            const SizedBox(height: AppSpacing.xs),
+            _ActivityRouteFocusCard(plan: plan, tone: tone),
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var index = 0; index < plan.steps.length; index++)
+                  Expanded(
+                    child: _ActivityRouteStepView(
+                      key: ValueKey(
+                        'swap_activity_route_step_${index}_${plan.steps[index].state.name}',
+                      ),
+                      step: plan.steps[index],
+                      tone: tone,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivityRouteStepCountChip extends StatelessWidget {
+  const _ActivityRouteStepCountChip({required this.plan, required this.tone});
+
+  final _ActivityRoutePlan plan;
+  final _ActivityStatusPlanTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _activityRouteColor(context, plan.phaseState, tone);
     return Container(
+      key: const ValueKey('swap_activity_route_phase_chip'),
       padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xxs,
+        horizontal: AppSpacing.xs,
         vertical: AppSpacing.xxs,
       ),
       decoration: BoxDecoration(
-        color: state == _ActivityMilestoneState.pending
-            ? colors.background.base
-            : color.withValues(alpha: 0.08),
-        border: Border.all(
-          color: state == _ActivityMilestoneState.pending
-              ? colors.border.subtle
-              : color.withValues(alpha: 0.28),
-        ),
+        color: color.withValues(alpha: 0.1),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+      child: Text(
+        plan.stepCountLabel,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTypography.labelSmall.copyWith(color: color),
+      ),
+    );
+  }
+}
+
+class _ActivityRouteSegmentStrip extends StatelessWidget {
+  const _ActivityRouteSegmentStrip({required this.plan, required this.tone});
+
+  final _ActivityRoutePlan plan;
+  final _ActivityStatusPlanTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      children: [
+        for (var index = 0; index < plan.steps.length; index++) ...[
+          Expanded(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              height:
+                  plan.steps[index].state == _ActivityRouteStepState.active
+                      ? 7
+                      : 5,
+              decoration: BoxDecoration(
+                color: _activityRouteSegmentColor(
+                  context,
+                  plan.steps[index].state,
+                  tone,
+                ),
+                borderRadius: BorderRadius.circular(AppRadii.full),
+                border: Border.all(
+                  color:
+                      plan.steps[index].state == _ActivityRouteStepState.pending
+                          ? colors.border.subtle
+                          : _activityRouteColor(
+                            context,
+                            plan.steps[index].state,
+                            tone,
+                          ).withValues(alpha: 0.28),
+                ),
+              ),
+            ),
+          ),
+          if (index != plan.steps.length - 1)
+            const SizedBox(width: AppSpacing.xxs),
+        ],
+      ],
+    );
+  }
+}
+
+class _ActivityRouteFocusCard extends StatelessWidget {
+  const _ActivityRouteFocusCard({required this.plan, required this.tone});
+
+  final _ActivityRoutePlan plan;
+  final _ActivityStatusPlanTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final step = plan.activeStep;
+    final color = _activityRouteColor(context, step.state, tone);
+    final iconName = switch (step.state) {
+      _ActivityRouteStepState.done => AppIcons.checkCircle,
+      _ActivityRouteStepState.warning => AppIcons.warning,
+      _ActivityRouteStepState.failed => AppIcons.block,
+      _ => step.iconName,
+    };
+    return Container(
+      key: const ValueKey('swap_activity_current_step_card'),
+      padding: const EdgeInsets.all(AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppIcon(iconName, size: 13, color: color),
-          const SizedBox(width: 3),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: AppTypography.labelSmall.copyWith(color: color),
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (step.state == _ActivityRouteStepState.active)
+                  _ActivityActiveStepHalo(color: color),
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    border: Border.all(color: color.withValues(alpha: 0.32)),
+                    borderRadius: BorderRadius.circular(AppRadii.full),
+                  ),
+                  child: AppIcon(iconName, size: 14, color: color),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  plan.focusLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  plan.focusTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelLarge.copyWith(color: color),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  plan.focusDetail,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyExtraSmall.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _ActivityRouteStepView extends StatelessWidget {
+  const _ActivityRouteStepView({
+    required this.step,
+    required this.tone,
+    super.key,
+  });
+
+  final _ActivityRouteStep step;
+  final _ActivityStatusPlanTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = _activityRouteColor(context, step.state, tone);
+    final pending = step.state == _ActivityRouteStepState.pending;
+    final active = step.state == _ActivityRouteStepState.active;
+    final iconName = switch (step.state) {
+      _ActivityRouteStepState.done => AppIcons.check,
+      _ActivityRouteStepState.warning => AppIcons.warning,
+      _ActivityRouteStepState.failed => AppIcons.block,
+      _ => step.iconName,
+    };
+    return Column(
+      children: [
+        SizedBox(
+          width: 32,
+          height: 32,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (active) _ActivityActiveStepHalo(color: color),
+              Container(
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color:
+                      pending
+                          ? colors.background.base
+                          : color.withValues(alpha: 0.1),
+                  border: Border.all(
+                    color:
+                        pending
+                            ? colors.border.subtle
+                            : color.withValues(alpha: 0.34),
+                  ),
+                  borderRadius: BorderRadius.circular(AppRadii.full),
+                ),
+                child: AppIcon(
+                  iconName,
+                  size: 14,
+                  color: pending ? colors.icon.muted : color,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        Text(
+          step.label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: AppTypography.labelSmall.copyWith(
+            color: pending ? colors.text.secondary : color,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActivityActiveStepHalo extends StatelessWidget {
+  const _ActivityActiveStepHalo({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (reduceMotion) {
+      return Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(AppRadii.full),
+        ),
+      );
+    }
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.86, end: 1.08),
+      duration: const Duration(milliseconds: 520),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) {
+        final opacity = ((1.08 - value) / 0.22).clamp(0.0, 1.0).toDouble();
+        return Transform.scale(
+          scale: value,
+          child: Opacity(opacity: opacity, child: child),
+        );
+      },
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.34),
+          borderRadius: BorderRadius.circular(AppRadii.full),
+        ),
+      ),
+    );
+  }
+}
+
+Color _activityRouteSegmentColor(
+  BuildContext context,
+  _ActivityRouteStepState state,
+  _ActivityStatusPlanTone tone,
+) {
+  final colors = context.colors;
+  return switch (state) {
+    _ActivityRouteStepState.done => colors.text.success,
+    _ActivityRouteStepState.active ||
+    _ActivityRouteStepState.warning ||
+    _ActivityRouteStepState.failed => _activityRouteColor(
+      context,
+      state,
+      tone,
+    ).withValues(alpha: 0.72),
+    _ActivityRouteStepState.pending => colors.background.base,
+  };
+}
+
+class _ActivityRoutePlan {
+  const _ActivityRoutePlan({required this.steps});
+
+  factory _ActivityRoutePlan.fromIntent(SwapPrototypeIntent intent) {
+    final sourceSymbol = _ActivityStatusPlan._pairSymbol(intent.pair, 0);
+    final receiveSymbol = _ActivityStatusPlan._pairSymbol(intent.pair, 1);
+    final deliverLabel = receiveSymbol == 'ZEC' ? 'Shield ZEC' : 'Deliver';
+    final deliverDetail =
+        receiveSymbol == 'ZEC'
+            ? 'Wallet is shielding the received ZEC into your spendable balance.'
+            : 'Provider is sending funds to your destination address.';
+    final hasDepositTx = intent.depositTxHash?.trim().isNotEmpty ?? false;
+
+    final labels = ['Send $sourceSymbol', 'Confirm', 'Swap', deliverLabel];
+    final details = [
+      'Send the quoted amount to the one-time deposit address.',
+      'Waiting for the source chain and provider to recognize the deposit.',
+      'Provider is converting funds and preparing delivery.',
+      deliverDetail,
+    ];
+    final icons = [
+      AppIcons.link,
+      AppIcons.eye,
+      AppIcons.renew,
+      receiveSymbol == 'ZEC' ? AppIcons.shieldKeyhole : AppIcons.checkCircle,
+    ];
+    final states = switch (intent.status) {
+      SwapIntentStatus.awaitingDeposit ||
+      SwapIntentStatus.awaitingExternalDeposit =>
+        hasDepositTx
+            ? const [
+              _ActivityRouteStepState.done,
+              _ActivityRouteStepState.active,
+              _ActivityRouteStepState.pending,
+              _ActivityRouteStepState.pending,
+            ]
+            : const [
+              _ActivityRouteStepState.active,
+              _ActivityRouteStepState.pending,
+              _ActivityRouteStepState.pending,
+              _ActivityRouteStepState.pending,
+            ],
+      SwapIntentStatus.depositObserved || SwapIntentStatus.processing => const [
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.active,
+        _ActivityRouteStepState.pending,
+      ],
+      SwapIntentStatus.providerStatusUnknown => const [
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.warning,
+        _ActivityRouteStepState.active,
+        _ActivityRouteStepState.pending,
+      ],
+      SwapIntentStatus.incompleteDeposit =>
+        hasDepositTx
+            ? const [
+              _ActivityRouteStepState.done,
+              _ActivityRouteStepState.warning,
+              _ActivityRouteStepState.pending,
+              _ActivityRouteStepState.pending,
+            ]
+            : const [
+              _ActivityRouteStepState.warning,
+              _ActivityRouteStepState.pending,
+              _ActivityRouteStepState.pending,
+              _ActivityRouteStepState.pending,
+            ],
+      SwapIntentStatus.shieldingPending ||
+      SwapIntentStatus.shieldingConfirming => const [
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.active,
+      ],
+      SwapIntentStatus.shieldingFailed => const [
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.warning,
+      ],
+      SwapIntentStatus.complete => const [
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.done,
+      ],
+      SwapIntentStatus.refunded => const [
+        _ActivityRouteStepState.done,
+        _ActivityRouteStepState.warning,
+        _ActivityRouteStepState.pending,
+        _ActivityRouteStepState.pending,
+      ],
+      SwapIntentStatus.expired => const [
+        _ActivityRouteStepState.failed,
+        _ActivityRouteStepState.pending,
+        _ActivityRouteStepState.pending,
+        _ActivityRouteStepState.pending,
+      ],
+      SwapIntentStatus.failed =>
+        hasDepositTx
+            ? const [
+              _ActivityRouteStepState.done,
+              _ActivityRouteStepState.done,
+              _ActivityRouteStepState.failed,
+              _ActivityRouteStepState.pending,
+            ]
+            : const [
+              _ActivityRouteStepState.failed,
+              _ActivityRouteStepState.pending,
+              _ActivityRouteStepState.pending,
+              _ActivityRouteStepState.pending,
+            ],
+    };
+    return _ActivityRoutePlan(
+      steps: [
+        for (var index = 0; index < labels.length; index++)
+          _ActivityRouteStep(
+            label: labels[index],
+            detail: details[index],
+            state: states[index],
+            iconName: icons[index],
+          ),
+      ],
+    );
+  }
+
+  int get activeStepIndex {
+    final failedOrWarningIndex = steps.indexWhere(
+      (step) =>
+          step.state == _ActivityRouteStepState.failed ||
+          step.state == _ActivityRouteStepState.warning,
+    );
+    if (failedOrWarningIndex != -1) return failedOrWarningIndex;
+    final activeIndex = steps.indexWhere(
+      (step) => step.state == _ActivityRouteStepState.active,
+    );
+    if (activeIndex != -1) return activeIndex;
+    final lastDoneIndex = steps.lastIndexWhere(
+      (step) => step.state == _ActivityRouteStepState.done,
+    );
+    return lastDoneIndex == -1 ? 0 : lastDoneIndex;
+  }
+
+  _ActivityRouteStep get activeStep => steps[activeStepIndex];
+
+  int get completedStepCount =>
+      steps.where((step) => step.state == _ActivityRouteStepState.done).length;
+
+  String get stepCountLabel =>
+      isComplete
+          ? '${steps.length} of ${steps.length} complete'
+          : 'Step ${activeStepIndex + 1} of ${steps.length}';
+
+  String get focusLabel => isComplete ? 'Complete' : 'Current step';
+
+  String get focusTitle => isComplete ? 'Swap complete' : activeStep.label;
+
+  String get focusDetail =>
+      isComplete
+          ? 'All funds have reached the final destination.'
+          : activeStep.detail;
+
+  String get phaseLabel {
+    if (isComplete) return 'Complete';
+    final step = activeStep;
+    return step.state == _ActivityRouteStepState.active
+        ? 'Now: ${step.label}'
+        : step.state.label;
+  }
+
+  _ActivityRouteStepState get phaseState => activeStep.state;
+
+  String get semanticLabel =>
+      '$phaseLabel, $completedStepCount of ${steps.length} steps complete';
+
+  bool get isComplete =>
+      steps.every((step) => step.state == _ActivityRouteStepState.done);
+
+  final List<_ActivityRouteStep> steps;
+}
+
+class _ActivityRouteStep {
+  const _ActivityRouteStep({
+    required this.label,
+    required this.detail,
+    required this.state,
+    required this.iconName,
+  });
+
+  final String label;
+  final String detail;
+  final _ActivityRouteStepState state;
+  final String iconName;
+}
+
+enum _ActivityRouteStepState { pending, active, done, warning, failed }
+
+extension _ActivityRouteStepStateLabel on _ActivityRouteStepState {
+  String get label => switch (this) {
+    _ActivityRouteStepState.pending => 'Waiting',
+    _ActivityRouteStepState.active => 'Now',
+    _ActivityRouteStepState.done => 'Done',
+    _ActivityRouteStepState.warning => 'Check',
+    _ActivityRouteStepState.failed => 'Stopped',
+  };
+}
+
+Color _activityRouteColor(
+  BuildContext context,
+  _ActivityRouteStepState state,
+  _ActivityStatusPlanTone tone,
+) {
+  final colors = context.colors;
+  return switch (state) {
+    _ActivityRouteStepState.done => colors.text.success,
+    _ActivityRouteStepState.warning => colors.text.warning,
+    _ActivityRouteStepState.failed => colors.text.destructive,
+    _ActivityRouteStepState.active => switch (tone) {
+      _ActivityStatusPlanTone.warning => colors.text.warning,
+      _ActivityStatusPlanTone.destructive => colors.text.destructive,
+      _ => colors.text.accent,
+    },
+    _ActivityRouteStepState.pending => colors.text.secondary,
+  };
 }
 
 class _ActivityResolution {
@@ -2029,6 +2695,17 @@ class _ActivityResolution {
         iconName: AppIcons.warning,
         tone: _ActivityResolutionTone.warning,
         primaryAction: _ActivityResolutionAction.copyTopUpDetails,
+      ),
+      SwapIntentStatus.providerStatusUnknown => _ActivityResolution(
+        title: 'Status needs review',
+        message:
+            intent.providerStatusRaw == null
+                ? 'The provider status could not be interpreted.'
+                : 'The provider returned ${intent.providerStatusRaw}.',
+        detail:
+            'Do not resend funds. Refresh once and keep this activity item for support if the status does not move forward.',
+        iconName: AppIcons.warning,
+        tone: _ActivityResolutionTone.warning,
       ),
       SwapIntentStatus.refunded => _ActivityResolution(
         title: 'Refund complete',
@@ -2141,8 +2818,8 @@ class _ActivityResolutionPanel extends StatelessWidget {
     final depositAddress = intent.depositAddress;
     final shieldingRecoveryAddress =
         intent.status == SwapIntentStatus.shieldingFailed
-        ? (intent.oneClickRecipient ?? depositAddress)
-        : null;
+            ? (intent.oneClickRecipient ?? depositAddress)
+            : null;
     final actionEnabled =
         action == _ActivityResolutionAction.reviewFreshQuote ||
         action == _ActivityResolutionAction.retryShield ||
@@ -2202,31 +2879,33 @@ class _ActivityResolutionPanel extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     child: AppButton(
                       key: actionKey,
-                      onPressed: actionEnabled
-                          ? () {
-                              if (action ==
-                                      _ActivityResolutionAction
-                                          .copyTopUpDetails &&
-                                  depositAddress != null) {
-                                unawaited(
-                                  Clipboard.setData(
-                                    ClipboardData(
-                                      text: _topUpDetailsText(intent),
+                      onPressed:
+                          actionEnabled
+                              ? () {
+                                if (action ==
+                                        _ActivityResolutionAction
+                                            .copyTopUpDetails &&
+                                    depositAddress != null) {
+                                  unawaited(
+                                    Clipboard.setData(
+                                      ClipboardData(
+                                        text: _topUpDetailsText(intent),
+                                      ),
                                     ),
-                                  ),
-                                );
-                                return;
+                                  );
+                                  return;
+                                }
+                                if (action ==
+                                    _ActivityResolutionAction
+                                        .reviewFreshQuote) {
+                                  onReviewFreshQuote();
+                                }
+                                if (action ==
+                                    _ActivityResolutionAction.retryShield) {
+                                  onRetryShield();
+                                }
                               }
-                              if (action ==
-                                  _ActivityResolutionAction.reviewFreshQuote) {
-                                onReviewFreshQuote();
-                              }
-                              if (action ==
-                                  _ActivityResolutionAction.retryShield) {
-                                onRetryShield();
-                              }
-                            }
-                          : null,
+                              : null,
                       variant: AppButtonVariant.secondary,
                       size: AppButtonSize.medium,
                       leading: AppIcon(actionIcon),
@@ -2260,6 +2939,7 @@ bool _showDepositControls(SwapIntentStatus status) {
     SwapIntentStatus.complete ||
     SwapIntentStatus.refunded ||
     SwapIntentStatus.expired ||
+    SwapIntentStatus.providerStatusUnknown ||
     SwapIntentStatus.failed => false,
     _ => true,
   };
@@ -2272,6 +2952,7 @@ bool _showActivityReceipt(SwapIntentStatus status) {
     SwapIntentStatus.expired ||
     SwapIntentStatus.failed ||
     SwapIntentStatus.incompleteDeposit ||
+    SwapIntentStatus.providerStatusUnknown ||
     SwapIntentStatus.shieldingFailed => true,
     _ => false,
   };
@@ -2283,12 +2964,14 @@ class _ActiveSwapSummaryPanel extends StatelessWidget {
     required this.plan,
     required this.statusRefreshing,
     required this.onRefreshStatus,
+    required this.onRemoveIntent,
   });
 
   final SwapPrototypeIntent intent;
   final _ActivityStatusPlan plan;
   final bool statusRefreshing;
   final VoidCallback onRefreshStatus;
+  final VoidCallback onRemoveIntent;
 
   @override
   Widget build(BuildContext context) {
@@ -2302,7 +2985,6 @@ class _ActiveSwapSummaryPanel extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _SwapStatusBadge(status: intent.status),
-            _ActivityStageBadge(status: intent.status),
             AppButton(
               key: const ValueKey('swap_status_refresh_button'),
               onPressed: statusRefreshing ? null : onRefreshStatus,
@@ -2310,6 +2992,14 @@ class _ActiveSwapSummaryPanel extends StatelessWidget {
               size: AppButtonSize.small,
               leading: const AppIcon(AppIcons.renew),
               child: Text(statusRefreshing ? 'Refreshing' : 'Refresh'),
+            ),
+            AppButton(
+              key: const ValueKey('swap_activity_remove_button'),
+              onPressed: onRemoveIntent,
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.small,
+              leading: const AppIcon(AppIcons.cross),
+              child: const Text('Remove'),
             ),
           ],
         );
@@ -2358,6 +3048,7 @@ class _ActiveSwapTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final checkedLabel = _lastStatusCheckedLabel(intent.lastStatusCheckedAt);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2385,9 +3076,26 @@ class _ActiveSwapTitle extends StatelessWidget {
             color: colors.text.secondary,
           ),
         ),
+        if (checkedLabel != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            checkedLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelSmall.copyWith(color: colors.text.muted),
+          ),
+        ],
       ],
     );
   }
+}
+
+String? _lastStatusCheckedLabel(DateTime? checkedAt) {
+  if (checkedAt == null) return null;
+  final local = checkedAt.toLocal();
+  final hour = local.hour.toString().padLeft(2, '0');
+  final minute = local.minute.toString().padLeft(2, '0');
+  return 'Checked $hour:$minute';
 }
 
 class _SwapStatusBadge extends StatelessWidget {
@@ -2424,62 +3132,6 @@ class _SwapStatusBadge extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ActivityStageBadge extends StatelessWidget {
-  const _ActivityStageBadge({required this.status});
-
-  final SwapIntentStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final label = _activityStageLabel(status);
-    final color = switch (status) {
-      SwapIntentStatus.complete => colors.text.success,
-      SwapIntentStatus.failed ||
-      SwapIntentStatus.expired ||
-      SwapIntentStatus.refunded => colors.text.destructive,
-      SwapIntentStatus.incompleteDeposit ||
-      SwapIntentStatus.shieldingFailed => colors.text.warning,
-      _ => colors.text.accent,
-    };
-    return Container(
-      key: const ValueKey('swap_activity_stage_badge'),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: AppSpacing.xxs,
-      ),
-      decoration: BoxDecoration(
-        color: colors.background.raised,
-        border: Border.all(color: color.withValues(alpha: 0.24)),
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: AppTypography.labelMedium.copyWith(color: color),
-      ),
-    );
-  }
-}
-
-String _activityStageLabel(SwapIntentStatus status) {
-  return switch (status) {
-    SwapIntentStatus.awaitingDeposit ||
-    SwapIntentStatus.awaitingExternalDeposit => 'Step 1 of 3',
-    SwapIntentStatus.depositObserved ||
-    SwapIntentStatus.processing => 'Step 2 of 3',
-    SwapIntentStatus.incompleteDeposit => 'Needs attention',
-    SwapIntentStatus.shieldingPending ||
-    SwapIntentStatus.shieldingConfirming ||
-    SwapIntentStatus.shieldingFailed ||
-    SwapIntentStatus.complete => 'Step 3 of 3',
-    SwapIntentStatus.refunded => 'Refunded',
-    SwapIntentStatus.expired => 'Expired',
-    SwapIntentStatus.failed => 'Failed',
-  };
 }
 
 class _ActiveSwapTradeLine extends StatelessWidget {
@@ -2544,9 +3196,8 @@ class _ActiveTradeAmount extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Column(
-      crossAxisAlignment: alignEnd
-          ? CrossAxisAlignment.end
-          : CrossAxisAlignment.start,
+      crossAxisAlignment:
+          alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         Text(
           label,
@@ -2594,21 +3245,23 @@ class _ActivityDepositInstruction {
 
     final depositSymbol = direction.fromSymbol(externalAsset);
     final receiveSymbol = direction.toSymbol(externalAsset);
-    final deliveryLabel = direction.sendsZec
-        ? '$receiveSymbol destination'
-        : 'Receive address';
-    final deliveryValue = direction.sendsZec
-        ? intent.oneClickRecipient ?? 'external destination'
-        : intent.oneClickRecipient ??
-              'wallet receive address; shield prompt follows';
-    final depositAddressLabel = direction.sendsZec
-        ? '$depositSymbol deposit'
-        : '$depositSymbol source deposit';
+    final deliveryLabel =
+        direction.sendsZec ? '$receiveSymbol destination' : 'Receive address';
+    final deliveryValue =
+        direction.sendsZec
+            ? intent.oneClickRecipient ?? 'external destination'
+            : intent.oneClickRecipient ??
+                'wallet receive address; shield prompt follows';
+    final depositAddressLabel =
+        direction.sendsZec
+            ? '$depositSymbol deposit'
+            : '$depositSymbol source deposit';
 
     return _ActivityDepositInstruction(
-      sendLabel: direction.sendsZec
-          ? 'Send $depositSymbol'
-          : 'Send $depositSymbol from source chain',
+      sendLabel:
+          direction.sendsZec
+              ? 'Send $depositSymbol'
+              : 'Send $depositSymbol from source chain',
       depositSymbol: depositSymbol,
       depositAddressLabel: depositAddressLabel,
       address: depositAddress,
@@ -2801,9 +3454,10 @@ class _DepositTxHashDisclosureState extends State<_DepositTxHashDisclosure> {
     final colors = context.colors;
     final canSubmit =
         widget.state.canSubmitDepositTx && widget.liveFundsEnabled;
-    final submitLabel = widget.state.depositSubmitting
-        ? 'Submitting'
-        : widget.instruction.submitLabel;
+    final submitLabel =
+        widget.state.depositSubmitting
+            ? 'Submitting'
+            : widget.instruction.submitLabel;
     return Container(
       key: const ValueKey('swap_deposit_tx_hash_disclosure'),
       padding: const EdgeInsets.all(AppSpacing.xs),
@@ -2895,9 +3549,8 @@ class _DepositTxHashDisclosureState extends State<_DepositTxHashDisclosure> {
                     alignment: Alignment.centerRight,
                     child: AppButton(
                       key: const ValueKey('swap_deposit_submit_button'),
-                      onPressed: canSubmit
-                          ? widget.onSubmitDepositTransaction
-                          : null,
+                      onPressed:
+                          canSubmit ? widget.onSubmitDepositTransaction : null,
                       variant: AppButtonVariant.secondary,
                       size: AppButtonSize.medium,
                       leading: const AppIcon(AppIcons.link),
@@ -3065,18 +3718,18 @@ class _SwapPageTabButton extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
-                    color: selected
-                        ? colors.text.accent
-                        : colors.text.secondary,
+                    color:
+                        selected ? colors.text.accent : colors.text.secondary,
                   ),
                 ),
               ),
               if (badgeCount > 0) ...[
                 const SizedBox(width: AppSpacing.xxs),
                 Container(
-                  key: tab == _SwapPageTab.activity
-                      ? const ValueKey('swap_activity_open_count')
-                      : null,
+                  key:
+                      tab == _SwapPageTab.activity
+                          ? const ValueKey('swap_activity_open_count')
+                          : null,
                   height: 18,
                   constraints: const BoxConstraints(minWidth: 18),
                   alignment: Alignment.center,
@@ -3114,14 +3767,17 @@ class _SwapComposerStack extends StatelessWidget {
     required this.onToggleDirection,
     required this.onExternalAssetChanged,
     required this.onSlippageChanged,
+    required this.onUseMaxZecAmount,
     required this.onReviewQuote,
     required this.onRefreshStatus,
     required this.onDepositTxHashChanged,
     required this.onSubmitDepositTransaction,
     required this.onReviewFreshQuote,
     required this.onRetryShield,
+    required this.onRemoveIntent,
     required this.onIntentSelected,
     required this.liveFundsEnabled,
+    required this.zecAvailableText,
   });
 
   final _SwapPageTab selectedTab;
@@ -3135,14 +3791,17 @@ class _SwapComposerStack extends StatelessWidget {
   final VoidCallback onToggleDirection;
   final ValueChanged<SwapAsset> onExternalAssetChanged;
   final ValueChanged<int> onSlippageChanged;
+  final VoidCallback onUseMaxZecAmount;
   final VoidCallback onReviewQuote;
   final VoidCallback onRefreshStatus;
   final ValueChanged<String> onDepositTxHashChanged;
   final VoidCallback onSubmitDepositTransaction;
   final VoidCallback onReviewFreshQuote;
   final VoidCallback onRetryShield;
+  final VoidCallback onRemoveIntent;
   final ValueChanged<String> onIntentSelected;
   final bool liveFundsEnabled;
+  final String zecAvailableText;
 
   @override
   Widget build(BuildContext context) {
@@ -3171,6 +3830,8 @@ class _SwapComposerStack extends StatelessWidget {
                 onToggleDirection: onToggleDirection,
                 onExternalAssetChanged: onExternalAssetChanged,
                 onSlippageChanged: onSlippageChanged,
+                onUseMaxZecAmount: onUseMaxZecAmount,
+                zecAvailableText: zecAvailableText,
               ),
             ),
           ] else ...[
@@ -3191,6 +3852,7 @@ class _SwapComposerStack extends StatelessWidget {
                 onSubmitDepositTransaction: onSubmitDepositTransaction,
                 onReviewFreshQuote: onReviewFreshQuote,
                 onRetryShield: onRetryShield,
+                onRemoveIntent: onRemoveIntent,
                 liveFundsEnabled: liveFundsEnabled,
               ),
           ],
@@ -3232,11 +3894,7 @@ class _SwapComposerBody extends StatelessWidget {
     if (height == null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          child,
-          const SizedBox(height: AppSpacing.xs),
-          footer,
-        ],
+        children: [child, const SizedBox(height: AppSpacing.xs), footer],
       );
     }
 
@@ -3278,9 +3936,10 @@ class _SwapReviewFooter extends StatelessWidget {
           size: AppButtonSize.large,
           minWidth: constraints.maxWidth,
           leading: state.quoteLoading ? const AppIcon(AppIcons.loader) : null,
-          trailing: state.quoteLoading
-              ? null
-              : const AppIcon(AppIcons.arrowForwardIos),
+          trailing:
+              state.quoteLoading
+                  ? null
+                  : const AppIcon(AppIcons.arrowForwardIos),
           child: Text(state.quoteLoading ? 'Getting quote' : 'Review swap'),
         );
       },

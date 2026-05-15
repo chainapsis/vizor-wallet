@@ -153,6 +153,9 @@ class SwapPrototypeIntent {
     this.shieldTxHash,
     this.providerQuoteId,
     this.providerSignature,
+    this.providerStatusRaw,
+    this.lastStatusCheckedAt,
+    this.statusError,
     this.oneClickRecipient,
     this.oneClickRefundTo,
     this.depositDeadline,
@@ -177,6 +180,9 @@ class SwapPrototypeIntent {
   final String? shieldTxHash;
   final String? providerQuoteId;
   final String? providerSignature;
+  final String? providerStatusRaw;
+  final DateTime? lastStatusCheckedAt;
+  final String? statusError;
   final String? oneClickRecipient;
   final String? oneClickRefundTo;
   final DateTime? depositDeadline;
@@ -203,9 +209,13 @@ class SwapPrototypeIntent {
     String? shieldTxHash,
     String? providerQuoteId,
     String? providerSignature,
+    String? providerStatusRaw,
+    DateTime? lastStatusCheckedAt,
+    String? statusError,
     String? oneClickRecipient,
     String? oneClickRefundTo,
     DateTime? depositDeadline,
+    bool clearStatusError = false,
   }) {
     return SwapPrototypeIntent(
       id: id ?? this.id,
@@ -227,6 +237,9 @@ class SwapPrototypeIntent {
       shieldTxHash: shieldTxHash ?? this.shieldTxHash,
       providerQuoteId: providerQuoteId ?? this.providerQuoteId,
       providerSignature: providerSignature ?? this.providerSignature,
+      providerStatusRaw: providerStatusRaw ?? this.providerStatusRaw,
+      lastStatusCheckedAt: lastStatusCheckedAt ?? this.lastStatusCheckedAt,
+      statusError: clearStatusError ? null : statusError ?? this.statusError,
       oneClickRecipient: oneClickRecipient ?? this.oneClickRecipient,
       oneClickRefundTo: oneClickRefundTo ?? this.oneClickRefundTo,
       depositDeadline: depositDeadline ?? this.depositDeadline,
@@ -254,6 +267,9 @@ class SwapPrototypeState {
     this.quoteError,
     this.statusRefreshing = false,
     this.statusError,
+    this.startSubmitting = false,
+    this.maxAmountLoading = false,
+    this.maxAmountError,
     this.depositTxHashText = '',
     this.depositSubmitting = false,
     this.selectedIntentId,
@@ -279,6 +295,9 @@ class SwapPrototypeState {
   final String? quoteError;
   final bool statusRefreshing;
   final String? statusError;
+  final bool startSubmitting;
+  final bool maxAmountLoading;
+  final String? maxAmountError;
   final String depositTxHashText;
   final bool depositSubmitting;
   final String? selectedIntentId;
@@ -484,6 +503,9 @@ class SwapPrototypeState {
     String? quoteError,
     bool? statusRefreshing,
     String? statusError,
+    bool? startSubmitting,
+    bool? maxAmountLoading,
+    String? maxAmountError,
     String? depositTxHashText,
     bool? depositSubmitting,
     String? selectedIntentId,
@@ -492,6 +514,7 @@ class SwapPrototypeState {
     bool clearReview = false,
     bool clearQuoteError = false,
     bool clearStatusError = false,
+    bool clearMaxAmountError = false,
     bool clearSelectedIntent = false,
     bool clearSelectedRequest = false,
     bool clearRequestImportError = false,
@@ -519,6 +542,11 @@ class SwapPrototypeState {
       quoteError: clearQuoteError ? null : quoteError ?? this.quoteError,
       statusRefreshing: statusRefreshing ?? this.statusRefreshing,
       statusError: clearStatusError ? null : statusError ?? this.statusError,
+      startSubmitting: startSubmitting ?? this.startSubmitting,
+      maxAmountLoading: maxAmountLoading ?? this.maxAmountLoading,
+      maxAmountError: clearMaxAmountError
+          ? null
+          : maxAmountError ?? this.maxAmountError,
       depositTxHashText: depositTxHashText ?? this.depositTxHashText,
       depositSubmitting: depositSubmitting ?? this.depositSubmitting,
       selectedIntentId: clearSelectedIntent

@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_prototype_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_prototype_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_max_amount_estimator.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_shielding_service.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_session_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
@@ -23,6 +24,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_qr_panel.dar
 import 'package:zcash_wallet/src/features/swap/widgets/swap_queue_panel.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
+import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
@@ -36,17 +38,18 @@ void main() {
       routes: [
         GoRoute(
           path: '/home',
-          builder: (_, _) => AppDesktopShell(
-            sidebar: const AppMainSidebar(),
-            pane: AppDesktopPane(
-              child: Text(
-                'home route',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: AppThemeData.light.colors.text.primary,
+          builder:
+              (_, _) => AppDesktopShell(
+                sidebar: const AppMainSidebar(),
+                pane: AppDesktopPane(
+                  child: Text(
+                    'home route',
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: AppThemeData.light.colors.text.primary,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
         ),
         GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
         GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
@@ -210,6 +213,40 @@ void main() {
     expect(find.text('No saved requests'), findsOneWidget);
   });
 
+  testWidgets('ZEC swap composer shows live balance and applies max amount', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final maxEstimator = _FakeSwapMaxAmountEstimator(
+      maxZatoshi: BigInt.from(123390000),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+          ],
+        ),
+        seedPrototypeFixtures: false,
+        sessionStore: _FakeSwapSessionStore(),
+        spendableBalance: BigInt.from(123450000),
+        maxAmountEstimator: maxEstimator,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Available 1.2345 ZEC'), findsOneWidget);
+    expect(find.text('Available 12.48 ZEC'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('swap_max_amount_button')));
+    await tester.pumpAndSettle();
+
+    expect(maxEstimator.requests, ['account-1']);
+    expect(_fieldText(tester, 'swap_amount_field'), '1.2339');
+  });
+
   testWidgets('swap composer restores only the last attempted pair', (
     tester,
   ) async {
@@ -244,6 +281,48 @@ void main() {
     expect(find.text('NEAR'), findsWidgets);
     expect(find.text('Wallet staging'), findsNothing);
     expect(find.text('1.25%'), findsWidgets);
+  });
+
+  testWidgets('swap composer preserves the saved live asset chain', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    final baseUsdc = SwapAsset.live(
+      assetId: 'nep141:base-usdc.example',
+      symbol: 'USDC',
+      blockchain: 'base',
+      decimals: 6,
+    );
+    final sessionStore = _FakeSwapSessionStore(
+      initialDraft: SwapDraftSnapshot(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: baseUsdc,
+        slippageBps: 50,
+      ),
+    );
+    final swapProvider = _FakeSwapProvider(
+      supportedAssets: [SwapAsset.usdc, baseUsdc, SwapAsset.near],
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+          ],
+        ),
+        seedPrototypeFixtures: false,
+        sessionStore: sessionStore,
+        swapProvider: swapProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(sessionStore.loadDraftCount, 1);
+    expect(find.text('Add Base recipient'), findsOneWidget);
+    expect(find.text('Add Ethereum recipient'), findsNothing);
   });
 
   testWidgets('swap asset selector exposes multi-chain external assets', (
@@ -351,9 +430,10 @@ void main() {
     final selectorCursor = tester.widget<MouseRegion>(
       find
           .ancestor(
-            of: find
-                .byKey(const ValueKey('swap_external_asset_selector'))
-                .first,
+            of:
+                find
+                    .byKey(const ValueKey('swap_external_asset_selector'))
+                    .first,
             matching: find.byType(MouseRegion),
           )
           .first,
@@ -700,16 +780,26 @@ void main() {
     expect(find.text('Current swap'), findsOneWidget);
     expect(find.text('2.4000 ZEC'), findsOneWidget);
     expect(find.text('~168.42 USDC'), findsOneWidget);
-    expect(find.text('Wait for shielding confirmation'), findsWidgets);
     expect(
       find.byKey(const ValueKey('swap_activity_status_plan')),
       findsOneWidget,
     );
-    expect(find.text('Shield ZEC in wallet'), findsOneWidget);
-    expect(find.text('Close the transparent wallet balance.'), findsOneWidget);
-    expect(find.text('Deposit'), findsWidgets);
+    expect(find.text('Shielding ZEC'), findsOneWidget);
+    expect(
+      find.text('Moving received ZEC into the wallet balance.'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_activity_route_tracker')),
+      findsOneWidget,
+    );
+    expect(find.text('Swap progress'), findsOneWidget);
+    expect(find.text('Current step'), findsOneWidget);
+    expect(find.text('Step 4 of 4'), findsOneWidget);
+    expect(find.text('Send ZEC'), findsWidgets);
+    expect(find.text('Confirm'), findsWidgets);
     expect(find.text('Swap'), findsWidgets);
-    expect(find.text('Receive'), findsWidgets);
+    expect(find.text('Deliver'), findsWidgets);
     expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('swap_queue_title'))).dy,
@@ -765,7 +855,91 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(swapProvider.statusRequests, hasLength(1));
-    expect(find.text('Swap is processing'), findsWidgets);
+    expect(find.text('USDC delivery in progress'), findsWidgets);
+  });
+
+  testWidgets('activity can manually remove a pending saved swap', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final releasedAddresses = <String>[];
+    final sessionStore = _FakeSwapSessionStore(
+      initialIntents: [
+        _persistedExternalToZecIntent(
+          id: 'oversized-pending',
+          stagingAddress: 't1oversized-staging',
+        ),
+        _persistedExternalToZecIntent(
+          id: 'keep-pending',
+          stagingAddress: 't1keep-staging',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+          ],
+        ),
+        seedPrototypeFixtures: false,
+        sessionStore: sessionStore,
+        releaseExchangeTransparentAddress: ({
+          required accountUuid,
+          required address,
+          required dbPath,
+        }) async {
+          releasedAddresses.add(address);
+          return true;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('swap_queue_row_oversized-pending')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_queue_row_keep-pending')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('swap_activity_remove_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('swap_remove_intent_modal')),
+      findsOneWidget,
+    );
+    expect(find.text('Remove from activity?'), findsOneWidget);
+    expect(
+      find.textContaining('does not cancel the provider quote'),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('swap_remove_intent_confirm_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('swap_queue_row_oversized-pending')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_queue_row_keep-pending')),
+      findsOneWidget,
+    );
+    expect(sessionStore.savedIntents.map((intent) => intent.id), [
+      'keep-pending',
+    ]);
+    expect(releasedAddresses, ['t1oversized-staging']);
   });
 
   testWidgets('activity recovery bundle copies durable swap fields', (
@@ -902,7 +1076,7 @@ void main() {
     );
 
     expect(swapProvider.statusRequests, hasLength(1));
-    expect(find.text('Swap is processing'), findsWidgets);
+    expect(find.text('USDC delivery in progress'), findsWidgets);
 
     await _sendShortcut(
       tester,
@@ -1386,8 +1560,12 @@ void main() {
       findsNothing,
     );
     expect(find.text('Technical details'), findsNothing);
-    expect(find.text('Swap complete'), findsWidgets);
-    expect(find.text('Receipt is available for records.'), findsOneWidget);
+    expect(find.text('NEAR delivered'), findsWidgets);
+    expect(find.text('The swap is complete.'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_activity_route_step_3_done')),
+      findsOneWidget,
+    );
     expect(find.text('0.7500 ZEC'), findsOneWidget);
     expect(find.text('~37.8 NEAR'), findsOneWidget);
     expect(
@@ -1463,6 +1641,21 @@ void main() {
       find.byKey(const ValueKey('swap_queue_row_expired-swap')),
       findsOneWidget,
     );
+    final colors =
+        tester
+            .element(
+              find.byKey(
+                const ValueKey('swap_queue_progress_segment_complete_0'),
+              ),
+            )
+            .colors;
+    for (var index = 0; index < 3; index++) {
+      final segment = tester.widget<Container>(
+        find.byKey(ValueKey('swap_queue_progress_segment_complete_$index')),
+      );
+      final decoration = segment.decoration! as BoxDecoration;
+      expect(decoration.color, colors.text.success);
+    }
   });
 
   testWidgets('activity exposes incomplete, refunded, and failed scenarios', (
@@ -1502,7 +1695,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Incomplete deposit'), findsWidgets);
+    expect(find.text('Check deposit amount'), findsWidgets);
     expect(
       find.byKey(const ValueKey('swap_queue_group_failed')),
       findsOneWidget,
@@ -1526,9 +1719,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_resolution_panel')), findsOneWidget);
-    expect(find.text('Top up deposit'), findsOneWidget);
+    expect(find.text('Deposit needs attention'), findsOneWidget);
     expect(
-      find.text('Send only the missing amount or wait for refund.'),
+      find.text('Top up the missing amount or wait for refund.'),
       findsOneWidget,
     );
     expect(find.text('Resolve incomplete deposit'), findsOneWidget);
@@ -1567,8 +1760,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_resolution_panel')), findsOneWidget);
-    expect(find.text('Refund sent'), findsOneWidget);
-    expect(find.text('Verify the refund before retrying.'), findsOneWidget);
+    expect(find.text('Funds refunded'), findsOneWidget);
+    expect(
+      find.text('Check the refund transaction before retrying.'),
+      findsOneWidget,
+    );
     expect(find.text('Refund complete'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('swap_resolution_review_again_button')),
@@ -1592,7 +1788,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_resolution_panel')), findsOneWidget);
-    expect(find.text('Do not reuse this quote'), findsOneWidget);
+    expect(find.text('Swap failed'), findsOneWidget);
     expect(find.text('Start a fresh quote when ready.'), findsOneWidget);
     expect(find.text('Route failed'), findsOneWidget);
     expect(
@@ -1772,7 +1968,7 @@ void main() {
       );
       expect(find.text('Shielding pending'), findsWidgets);
       expect(find.text('Complete'), findsNothing);
-      expect(find.text('Shield ZEC in wallet'), findsOneWidget);
+      expect(find.text('Shielding ZEC'), findsOneWidget);
       expect(find.text('Technical details'), findsNothing);
     },
   );
@@ -1818,6 +2014,7 @@ void main() {
 
       expect(swapProvider.statusRequests, hasLength(1));
       expect(shieldingService.requests, hasLength(1));
+      expect(shieldingService.trackRequests, isEmpty);
       expect(
         shieldingService.requests.single.transparentAddress,
         't1shieldnowstaging',
@@ -1839,8 +2036,14 @@ void main() {
         'shield-txid-1',
       );
       expect(find.text('Shielding confirming'), findsWidgets);
-      expect(find.text('Shielding is confirming'), findsOneWidget);
+      expect(find.text('Confirming shield'), findsOneWidget);
       expect(find.text('Technical details'), findsNothing);
+
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pump();
+
+      expect(shieldingService.trackRequests, hasLength(1));
+      expect(shieldingService.trackRequests.single.txHash, 'shield-txid-1');
     },
   );
 
@@ -2287,56 +2490,52 @@ void main() {
   ) async {
     await _setViewport(tester, const Size(940, 720));
 
-    final longIntent =
-        _persistedIntent(
-          id: 'swap-long-provider-data',
-          txHash:
-              '0xdeposit-transaction-hash-with-a-very-long-source-chain-suffix-9876543210',
-          depositAddress:
+    final longIntent = _persistedIntent(
+      id: 'swap-long-provider-data',
+      txHash:
+          '0xdeposit-transaction-hash-with-a-very-long-source-chain-suffix-9876543210',
+      depositAddress:
+          '0xone-time-usdc-deposit-address-with-a-long-provider-suffix-abcdef1234567890',
+      status: SwapIntentStatus.awaitingExternalDeposit,
+      nextAction:
+          'Send the external deposit, then submit the source-chain transaction hash after confirmation.',
+    ).copyWith(
+      title: 'USDC to ZEC',
+      pair: 'USDC -> ZEC',
+      sellAmount: '12345.678901 USDC',
+      receiveEstimate: '~175.9421 ZEC',
+      direction: SwapDirection.externalToZec,
+      externalAsset: SwapAsset.usdc,
+      depositMemo:
+          'memo-with-a-long-routing-tag-and-provider-reference-9876543210',
+      oneClickRefundTo:
+          '0xrefund-address-with-a-very-long-source-chain-suffix-abcdef1234567890',
+      exposure: const [
+        SwapPrototypeField(
+          label: 'USDC source deposit',
+          value:
+              'one-time USDC address with source-chain routing metadata visible',
+        ),
+        SwapPrototypeField(
+          label: 'Refund path',
+          value:
+              'USDC refunds return to the long source-chain address entered during review',
+        ),
+      ],
+      receipt: const [
+        SwapPrototypeField(label: 'Swap id', value: 'swap-long-provider-data'),
+        SwapPrototypeField(
+          label: 'Deposit',
+          value:
               '0xone-time-usdc-deposit-address-with-a-long-provider-suffix-abcdef1234567890',
-          status: SwapIntentStatus.awaitingExternalDeposit,
-          nextAction:
-              'Send the external deposit, then submit the source-chain transaction hash after confirmation.',
-        ).copyWith(
-          title: 'USDC to ZEC',
-          pair: 'USDC -> ZEC',
-          sellAmount: '12345.678901 USDC',
-          receiveEstimate: '~175.9421 ZEC',
-          direction: SwapDirection.externalToZec,
-          externalAsset: SwapAsset.usdc,
-          depositMemo:
+        ),
+        SwapPrototypeField(
+          label: 'Memo',
+          value:
               'memo-with-a-long-routing-tag-and-provider-reference-9876543210',
-          oneClickRefundTo:
-              '0xrefund-address-with-a-very-long-source-chain-suffix-abcdef1234567890',
-          exposure: const [
-            SwapPrototypeField(
-              label: 'USDC source deposit',
-              value:
-                  'one-time USDC address with source-chain routing metadata visible',
-            ),
-            SwapPrototypeField(
-              label: 'Refund path',
-              value:
-                  'USDC refunds return to the long source-chain address entered during review',
-            ),
-          ],
-          receipt: const [
-            SwapPrototypeField(
-              label: 'Swap id',
-              value: 'swap-long-provider-data',
-            ),
-            SwapPrototypeField(
-              label: 'Deposit',
-              value:
-                  '0xone-time-usdc-deposit-address-with-a-long-provider-suffix-abcdef1234567890',
-            ),
-            SwapPrototypeField(
-              label: 'Memo',
-              value:
-                  'memo-with-a-long-routing-tag-and-provider-reference-9876543210',
-            ),
-          ],
-        );
+        ),
+      ],
+    );
 
     await tester.pumpWidget(
       _routerHarness(
@@ -2482,15 +2681,14 @@ void main() {
           .height,
       greaterThanOrEqualTo(54),
     );
-    final startButtonWidth = tester
-        .getSize(find.byKey(const ValueKey('swap_start_button')))
-        .width;
-    final cancelButtonWidth = tester
-        .getSize(find.byKey(const ValueKey('swap_review_cancel_button')))
-        .width;
-    final actionsWidth = tester
-        .getSize(find.byKey(const ValueKey('swap_review_actions')))
-        .width;
+    final startButtonWidth =
+        tester.getSize(find.byKey(const ValueKey('swap_start_button'))).width;
+    final cancelButtonWidth =
+        tester
+            .getSize(find.byKey(const ValueKey('swap_review_cancel_button')))
+            .width;
+    final actionsWidth =
+        tester.getSize(find.byKey(const ValueKey('swap_review_actions'))).width;
     expect(startButtonWidth, closeTo(cancelButtonWidth, 1));
     expect(
       startButtonWidth + cancelButtonWidth + AppSpacing.s,
@@ -2767,6 +2965,7 @@ void main() {
     tester,
   ) async {
     await _setDesktopViewport(tester);
+    final releasedAddresses = <String>[];
 
     await tester.pumpWidget(
       _routerHarness(
@@ -2777,6 +2976,14 @@ void main() {
           ],
         ),
         swapProvider: _FailingQuoteSwapProvider(),
+        releaseExchangeTransparentAddress: ({
+          required accountUuid,
+          required address,
+          required dbPath,
+        }) async {
+          releasedAddresses.add(address);
+          return true;
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -2807,6 +3014,7 @@ void main() {
     );
     expect(_fieldText(tester, 'swap_amount_field'), '1.5');
     expect(_fieldText(tester, 'swap_destination_field'), '0xrecipient');
+    expect(releasedAddresses, ['t1actualstaging']);
   });
 
   testWidgets('start failure stays on review and shows an inline error', (
@@ -2814,6 +3022,7 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     final swapProvider = _FailingStartSwapProvider();
+    final releasedAddresses = <String>[];
 
     await tester.pumpWidget(
       _routerHarness(
@@ -2825,6 +3034,14 @@ void main() {
         ),
         swapProvider: swapProvider,
         liveFundsEnabled: true,
+        releaseExchangeTransparentAddress: ({
+          required accountUuid,
+          required address,
+          required dbPath,
+        }) async {
+          releasedAddresses.add(address);
+          return true;
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -2853,6 +3070,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('swap_queue_title')), findsNothing);
+    expect(releasedAddresses, ['t1actualstaging']);
   });
 
   testWidgets('swap composer supports receiving ZEC from an external asset', (
@@ -2962,10 +3180,13 @@ void main() {
           ],
         ),
         swapProvider: swapProvider,
-        reserveExchangeTransparentAddress:
-            ({required accountUuid, required dbPath, required network}) async {
-              throw Exception('ephemeral gap exhausted');
-            },
+        reserveExchangeTransparentAddress: ({
+          required accountUuid,
+          required dbPath,
+          required network,
+        }) async {
+          throw Exception('ephemeral gap exhausted');
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -3010,17 +3231,20 @@ void main() {
           ],
         ),
         swapProvider: swapProvider,
-        reserveExchangeTransparentAddress:
-            ({required accountUuid, required dbPath, required network}) async {
-              expect(accountUuid, 'account-1');
-              expect(dbPath, 'wallet.db');
-              expect(network, 'main');
-              return rust_wallet.ExchangeTransparentAddressResult(
-                address: 't1rotatingstaging',
-                transparentChildIndex: 7,
-                exposedAtHeight: BigInt.from(2500000),
-              );
-            },
+        reserveExchangeTransparentAddress: ({
+          required accountUuid,
+          required dbPath,
+          required network,
+        }) async {
+          expect(accountUuid, 'account-1');
+          expect(dbPath, 'wallet.db');
+          expect(network, 'main');
+          return rust_wallet.ExchangeTransparentAddressResult(
+            address: 't1rotatingstaging',
+            transparentChildIndex: 7,
+            exposedAtHeight: BigInt.from(2500000),
+          );
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -3097,7 +3321,7 @@ void main() {
     expect(swapProvider.statusRequests.single.depositAddress, 't1live-deposit');
     expect(swapProvider.statusRequests.single.depositMemo, 'memo-live');
     expect(find.text('Processing'), findsWidgets);
-    expect(find.text('Swap is processing'), findsWidgets);
+    expect(find.text('USDC delivery in progress'), findsWidgets);
   });
 
   testWidgets('started swap can submit a deposit transaction hash', (
@@ -3160,7 +3384,7 @@ void main() {
     expect(swapProvider.submittedDeposits.single.txHash, 'zec-txid');
     expect(swapProvider.submittedDeposits.single.depositMemo, 'memo-live');
     expect(find.text('Deposit observed'), findsWidgets);
-    expect(find.text('Deposit detected'), findsWidgets);
+    expect(find.text('ZEC deposit confirmed'), findsWidgets);
   });
 
   testWidgets(
@@ -3178,18 +3402,17 @@ void main() {
             ],
           ),
           sessionStore: sessionStore,
-          reserveExchangeTransparentAddress:
-              ({
-                required accountUuid,
-                required dbPath,
-                required network,
-              }) async {
-                return rust_wallet.ExchangeTransparentAddressResult(
-                  address: 't1rotatingstaging',
-                  transparentChildIndex: 8,
-                  exposedAtHeight: BigInt.from(2500001),
-                );
-              },
+          reserveExchangeTransparentAddress: ({
+            required accountUuid,
+            required dbPath,
+            required network,
+          }) async {
+            return rust_wallet.ExchangeTransparentAddressResult(
+              address: 't1rotatingstaging',
+              transparentChildIndex: 8,
+              exposedAtHeight: BigInt.from(2500001),
+            );
+          },
         ),
       );
       await tester.pumpAndSettle();
@@ -3252,7 +3475,13 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Add tx hash'), findsOneWidget);
-      expect(find.text('Live submit disabled'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Add the deposit transaction hash to speed up status checks.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Live submit disabled'), findsNothing);
       expect(sessionStore.savedIntents, hasLength(1));
       expect(sessionStore.savedIntents.single.id, '0xlive-deposit');
       expect(sessionStore.savedIntents.single.depositAddress, '0xlive-deposit');
@@ -3270,7 +3499,7 @@ void main() {
     },
   );
 
-  testWidgets('live-funds gate blocks default ZEC auto deposit broadcast', (
+  testWidgets('live-funds gate can disable ZEC auto deposit broadcast', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -3289,6 +3518,7 @@ void main() {
         swapProvider: swapProvider,
         depositSender: depositSender,
         sessionStore: sessionStore,
+        liveFundsEnabled: false,
       ),
     );
     await tester.pumpAndSettle();
@@ -3395,23 +3625,147 @@ void main() {
     expect(find.text('Deposit observed'), findsWidgets);
     expect(find.text('zec-auto-txid'), findsWidgets);
   });
+
+  testWidgets('ZEC deposit preflight failure does not start a swap intent', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider();
+    final depositSender = _FakeSwapDepositSender(
+      preflightError: Exception(
+        'Propose failed: Insufficient balance (have 0, need 210000 including fee)',
+      ),
+    );
+    final sessionStore = _FakeSwapSessionStore();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+          ],
+        ),
+        swapProvider: swapProvider,
+        depositSender: depositSender,
+        sessionStore: sessionStore,
+        liveFundsEnabled: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '0.002',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0xrecipient',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+
+    expect(depositSender.preflightRequests, hasLength(1));
+    expect(depositSender.requests, isEmpty);
+    expect(swapProvider.startedQuotes, isEmpty);
+    expect(swapProvider.submittedDeposits, isEmpty);
+    expect(sessionStore.savedIntents, isEmpty);
+    expect(find.byKey(const ValueKey('swap_review_panel')), findsOneWidget);
+    expect(
+      find.textContaining('Could not send ZEC deposit. Retry once.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Insufficient balance'), findsOneWidget);
+  });
+
+  testWidgets('starting a ZEC swap ignores duplicate taps while in flight', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _DelayedStartSwapProvider();
+    final depositSender = _FakeSwapDepositSender();
+    final sessionStore = _FakeSwapSessionStore();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [
+            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+          ],
+        ),
+        swapProvider: swapProvider,
+        depositSender: depositSender,
+        sessionStore: sessionStore,
+        liveFundsEnabled: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0xrecipient',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pump();
+    expect(find.text('Starting'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+    await tester.pump();
+
+    expect(swapProvider.startedQuotes, hasLength(1));
+    expect(depositSender.requests, isEmpty);
+
+    swapProvider.completeStart();
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.startedQuotes, hasLength(1));
+    expect(depositSender.requests, hasLength(1));
+    expect(swapProvider.submittedDeposits, hasLength(1));
+  });
 }
 
 Widget _routerHarness(
   GoRouter router, {
   SwapProvider? swapProvider,
   SwapDepositSender? depositSender,
+  SwapMaxAmountEstimator? maxAmountEstimator,
   SwapShieldingService? shieldingService,
   SwapSessionStore? sessionStore,
+  BigInt? spendableBalance,
   Duration? statusPollInterval,
+  Duration? shieldStatusPollInterval,
   Duration? priceRefreshInterval,
   ReserveExchangeTransparentAddress? reserveExchangeTransparentAddress,
+  ReleaseExchangeTransparentAddress? releaseExchangeTransparentAddress,
+  ReleaseUnusedExchangeTransparentAddresses?
+  releaseUnusedExchangeTransparentAddresses,
   bool seedPrototypeFixtures = true,
-  bool liveFundsEnabled = false,
+  bool liveFundsEnabled = true,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap),
+      syncProvider.overrideWith(
+        () => _FakeSwapSyncNotifier(spendableBalance ?? BigInt.zero),
+      ),
       receiveAddressServiceProvider.overrideWith(
         _FakeReceiveAddressService.new,
       ),
@@ -3432,11 +3786,28 @@ Widget _routerHarness(
                   exposedAtHeight: BigInt.from(2500000),
                 );
               },
+          releaseExchangeTransparentAddress:
+              releaseExchangeTransparentAddress ??
+              ({
+                required accountUuid,
+                required address,
+                required dbPath,
+              }) async {
+                return false;
+              },
+          releaseUnusedExchangeTransparentAddresses:
+              releaseUnusedExchangeTransparentAddresses ??
+              ({required accountUuid, required dbPath}) async {
+                return 0;
+              },
         ),
       ),
       swapIntentProvider.overrideWithValue(swapProvider ?? _FakeSwapProvider()),
       swapDepositSenderProvider.overrideWithValue(
         depositSender ?? _FakeSwapDepositSender(),
+      ),
+      swapMaxAmountEstimatorProvider.overrideWithValue(
+        maxAmountEstimator ?? _FakeSwapMaxAmountEstimator(),
       ),
       swapShieldingServiceProvider.overrideWithValue(
         shieldingService ?? _FakeSwapShieldingService.notReady(),
@@ -3457,6 +3828,10 @@ Widget _routerHarness(
         ),
       if (statusPollInterval != null)
         swapStatusPollIntervalProvider.overrideWithValue(statusPollInterval),
+      if (shieldStatusPollInterval != null)
+        swapShieldStatusPollIntervalProvider.overrideWithValue(
+          shieldStatusPollInterval,
+        ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -3478,6 +3853,34 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
   @override
   Future<String> loadTransparentAddress({required String accountUuid}) async {
     return 't1actualstaging';
+  }
+}
+
+class _FakeSwapSyncNotifier extends SyncNotifier {
+  _FakeSwapSyncNotifier(this.spendableBalance);
+
+  final BigInt spendableBalance;
+
+  @override
+  Future<SyncState> build() async => SyncState(
+    accountUuid: 'account-1',
+    hasAccountScopedData: true,
+    spendableBalance: spendableBalance,
+    totalBalance: spendableBalance,
+  );
+}
+
+class _FakeSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
+  _FakeSwapMaxAmountEstimator({BigInt? maxZatoshi})
+    : maxZatoshi = maxZatoshi ?? BigInt.zero;
+
+  final BigInt maxZatoshi;
+  final requests = <String>[];
+
+  @override
+  Future<BigInt> estimateMaxZecSellAmount({required String accountUuid}) async {
+    requests.add(accountUuid);
+    return maxZatoshi;
   }
 }
 
@@ -3523,9 +3926,10 @@ class _FakeSwapProvider implements SwapProvider {
       providerSignature: 'sig-live',
       depositInstruction: SwapDepositInstruction(
         asset: estimate.sellAsset,
-        address: request.direction == SwapDirection.zecToExternal
-            ? 't1live-deposit'
-            : '0xlive-deposit',
+        address:
+            request.direction == SwapDirection.zecToExternal
+                ? 't1live-deposit'
+                : '0xlive-deposit',
         expiresInLabel: '07:12',
         reuseWarning: 'Do not reuse this address',
         memo: 'memo-live',
@@ -3670,6 +4074,26 @@ class _FailingStartSwapProvider extends _FakeSwapProvider {
   }
 }
 
+class _DelayedStartSwapProvider extends _FakeSwapProvider {
+  final _startGate = Completer<void>();
+
+  void completeStart() {
+    if (!_startGate.isCompleted) {
+      _startGate.complete();
+    }
+  }
+
+  @override
+  Future<SwapIntentSnapshot> startSwap(SwapQuote quote) async {
+    startedQuotes.add(quote);
+    await _startGate.future;
+    return SwapIntentSnapshot.fromQuote(
+      quote,
+      id: quote.depositInstruction.address,
+    );
+  }
+}
+
 class _LongQuoteSwapProvider extends _FakeSwapProvider {
   @override
   Future<SwapQuote> quote(SwapQuoteRequest request) async {
@@ -3806,7 +4230,28 @@ class _SubmittedDeposit {
 }
 
 class _FakeSwapDepositSender implements SwapDepositSender {
+  _FakeSwapDepositSender({this.preflightError});
+
+  final Object? preflightError;
+  final preflightRequests = <_DepositSendRequest>[];
   final requests = <_DepositSendRequest>[];
+
+  @override
+  Future<BigInt> estimateZecDepositFee({
+    required String accountUuid,
+    required SwapQuote quote,
+  }) async {
+    preflightRequests.add(
+      _DepositSendRequest(
+        accountUuid: accountUuid,
+        depositAddress: quote.depositInstruction.address,
+        sellAmountText: quote.sellAmountText,
+      ),
+    );
+    final error = preflightError;
+    if (error != null) throw error;
+    return BigInt.from(10000);
+  }
 
   @override
   Future<String> sendZecDeposit({

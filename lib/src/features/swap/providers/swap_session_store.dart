@@ -115,6 +115,11 @@ Map<String, Object?> _intentToJson(SwapPrototypeIntent intent) {
     'shieldTxHash': intent.shieldTxHash,
     'providerQuoteId': intent.providerQuoteId,
     'providerSignature': intent.providerSignature,
+    'providerStatusRaw': intent.providerStatusRaw,
+    'lastStatusCheckedAt': intent.lastStatusCheckedAt
+        ?.toUtc()
+        .toIso8601String(),
+    'statusError': intent.statusError,
     'oneClickRecipient': intent.oneClickRecipient,
     'oneClickRefundTo': intent.oneClickRefundTo,
     'depositDeadline': intent.depositDeadline?.toUtc().toIso8601String(),
@@ -146,6 +151,9 @@ SwapPrototypeIntent _intentFromJson(Map<String, dynamic> json) {
     shieldTxHash: _optionalString(json['shieldTxHash']),
     providerQuoteId: _optionalString(json['providerQuoteId']),
     providerSignature: _optionalString(json['providerSignature']),
+    providerStatusRaw: _optionalString(json['providerStatusRaw']),
+    lastStatusCheckedAt: _optionalDateTime(json['lastStatusCheckedAt']),
+    statusError: _optionalString(json['statusError']),
     oneClickRecipient: _optionalString(json['oneClickRecipient']),
     oneClickRefundTo: _optionalString(json['oneClickRefundTo']),
     depositDeadline: _optionalDateTime(json['depositDeadline']),

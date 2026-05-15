@@ -303,3 +303,29 @@ pub fn reserve_exchange_transparent_address(
         })
     })
 }
+
+/// Release an unused exchange-only transparent address reservation.
+///
+/// Returns false when the address is unknown, already unexposed, or has a
+/// wallet-observed transparent output.
+pub fn release_exchange_transparent_address(
+    db_path: String,
+    account_uuid: String,
+    address: String,
+) -> Result<bool, String> {
+    catch(|| {
+        exchange_address::release_exchange_transparent_address(&db_path, &account_uuid, &address)
+    })
+}
+
+/// Release all unused exchange-only transparent address reservations.
+///
+/// Only addresses with no wallet-observed transparent outputs are released.
+pub fn release_unused_exchange_transparent_addresses(
+    db_path: String,
+    account_uuid: String,
+) -> Result<u32, String> {
+    catch(|| {
+        exchange_address::release_unused_exchange_transparent_addresses(&db_path, &account_uuid)
+    })
+}

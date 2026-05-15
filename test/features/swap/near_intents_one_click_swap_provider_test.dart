@@ -276,6 +276,44 @@ void main() {
   );
 
   test(
+    'quote serializes 24-decimal NEAR amounts without range errors',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:wrap.near',
+            destinationAsset: 'nep141:zec.omft.near',
+            amountInFormatted: '0.01',
+            amountOutFormatted: '0.0002',
+            minAmountOut: '19900',
+            depositAddress: 'near-deposit',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapProvider(transport: transport);
+
+      final quote = await provider.quote(
+        const SwapQuoteRequest(
+          direction: SwapDirection.externalToZec,
+          externalAsset: SwapAsset.near,
+          sellAmount: 0.01,
+          destination: 't1rotating-zec-recipient',
+          refundAddress: 'rowan.near',
+        ),
+      );
+
+      final request = transport.requests.last;
+      expect(request.body?['amount'], '10000000000000000000000');
+      expect(request.body?['originAsset'], 'nep141:wrap.near');
+      expect(request.body?['destinationAsset'], 'nep141:zec.omft.near');
+      expect(quote.pairText, 'NEAR -> ZEC');
+    },
+  );
+
+  test(
     'token list preserves exact asset id variants for the same market',
     () async {
       final transport = _FakeOneClickTransport([
@@ -392,7 +430,39 @@ void main() {
 
       expect(status.id, 't1live-deposit');
       expect(status.status, SwapIntentStatus.awaitingDeposit);
+      expect(status.providerStatusRaw, 'PENDING_DEPOSIT');
       expect(status.depositInstruction.address, 't1live-deposit');
+    },
+  );
+
+  test(
+    'unknown 1Click status is exposed instead of hidden as processing',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.get(
+          '/v0/status',
+          _quoteResponse(
+            originAsset: 'nep141:zec.omft.near',
+            destinationAsset: 'nep141:usdc.example',
+            amountInFormatted: '1',
+            amountOutFormatted: '70',
+            minAmountOut: '69650000',
+            depositAddress: 't1deposit',
+            status: 'AWAITING_SOLVER',
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapProvider(transport: transport);
+
+      final status = await provider.getStatus('t1deposit');
+
+      expect(status.status, SwapIntentStatus.providerStatusUnknown);
+      expect(status.providerStatusRaw, 'AWAITING_SOLVER');
+      expect(
+        status.nextAction,
+        'Provider returned a status this wallet does not recognize',
+      );
     },
   );
 

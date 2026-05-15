@@ -18,6 +18,8 @@ class SwapComposerPanel extends StatefulWidget {
     required this.onToggleDirection,
     required this.onExternalAssetChanged,
     required this.onSlippageChanged,
+    required this.onUseMaxZecAmount,
+    required this.zecAvailableText,
     super.key,
   });
 
@@ -28,6 +30,8 @@ class SwapComposerPanel extends StatefulWidget {
   final VoidCallback onToggleDirection;
   final ValueChanged<SwapAsset> onExternalAssetChanged;
   final ValueChanged<int> onSlippageChanged;
+  final VoidCallback onUseMaxZecAmount;
+  final String zecAvailableText;
 
   @override
   State<SwapComposerPanel> createState() => _SwapComposerPanelState();
@@ -159,7 +163,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
           const SizedBox(height: AppSpacing.xs),
           _SwapAmountTile(
             label: 'You pay',
-            helper: sendsZec ? 'Available 12.48 ZEC' : 'External source',
+            helper: sendsZec ? 'Shielded ZEC' : 'External source',
             tone: _SwapAmountTileTone.input,
             amount: _SwapAmountInput(
               controller: _amountController,
@@ -173,7 +177,12 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
                     onTap: _toggleAssetPicker,
                   ),
             footer: sendsZec
-                ? null
+                ? _SwapMaxAmountFooter(
+                    availableText: widget.zecAvailableText,
+                    loading: state.maxAmountLoading,
+                    errorText: state.maxAmountError,
+                    onTap: widget.onUseMaxZecAmount,
+                  )
                 : _InlineAddressField(
                     label: '${state.externalAsset.symbol} refund',
                     hint: 'Refund address on ${state.externalAsset.chainLabel}',
@@ -501,6 +510,77 @@ class _SwapAmountInput extends StatelessWidget {
         hintText: '0.00',
         hintStyle: valueStyle.copyWith(color: colors.text.disabled),
       ),
+    );
+  }
+}
+
+class _SwapMaxAmountFooter extends StatelessWidget {
+  const _SwapMaxAmountFooter({
+    required this.availableText,
+    required this.loading,
+    required this.errorText,
+    required this.onTap,
+  });
+
+  final String availableText;
+  final bool loading;
+  final String? errorText;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final hasError = errorText != null;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            hasError ? errorText! : 'Available $availableText',
+            key: const ValueKey('swap_available_balance'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodySmall.copyWith(
+              color: hasError ? colors.text.destructive : colors.text.secondary,
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        MouseRegion(
+          cursor: loading ? SystemMouseCursors.basic : SystemMouseCursors.click,
+          child: GestureDetector(
+            key: const ValueKey('swap_max_amount_button'),
+            behavior: HitTestBehavior.opaque,
+            onTap: loading ? null : onTap,
+            child: Container(
+              height: 26,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: colors.background.brandCrimsonAlpha,
+                border: Border.all(color: colors.border.subtle),
+                borderRadius: BorderRadius.circular(AppRadii.full),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppIcon(
+                    loading ? AppIcons.loader : AppIcons.zcash,
+                    size: 13,
+                    color: colors.icon.brandCrimson,
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  Text(
+                    'Max',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: colors.text.brandCrimson,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

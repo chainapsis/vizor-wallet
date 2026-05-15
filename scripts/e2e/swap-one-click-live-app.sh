@@ -21,7 +21,7 @@ Required:
 Optional:
   ZCASH_SWAP_1CLICK_BASE_URL
   ZCASH_SWAP_1CLICK_REFERRAL
-  ZCASH_SWAP_ENABLE_LIVE_FUNDS=true   opt in to live wallet deposit paths
+  ZCASH_SWAP_ENABLE_LIVE_FUNDS=false  disable live wallet deposit paths
 
 No-history setup:
   printf 'ZCASH_SWAP_1CLICK_JWT: '
@@ -33,9 +33,6 @@ Examples:
   scripts/e2e/swap-one-click-live-app.sh -d macos
 
   scripts/e2e/swap-one-click-live-app.sh -d "iPhone 16 Pro"
-
-  ZCASH_SWAP_ENABLE_LIVE_FUNDS=true \
-    scripts/e2e/swap-one-click-live-app.sh -d macos
 USAGE
 }
 
@@ -85,11 +82,11 @@ if [[ -n "${ZCASH_SWAP_1CLICK_REFERRAL:-}" ]]; then
   args+=("--dart-define=ZCASH_SWAP_1CLICK_REFERRAL=$ZCASH_SWAP_1CLICK_REFERRAL")
 fi
 
-if [[ "${ZCASH_SWAP_ENABLE_LIVE_FUNDS:-false}" == "true" ]]; then
-  args+=("--dart-define=ZCASH_SWAP_ENABLE_LIVE_FUNDS=true")
+if [[ -n "${ZCASH_SWAP_ENABLE_LIVE_FUNDS:-}" ]]; then
+  args+=("--dart-define=ZCASH_SWAP_ENABLE_LIVE_FUNDS=$ZCASH_SWAP_ENABLE_LIVE_FUNDS")
 fi
 
 echo "running Flutter app with 1Click live quote config"
 echo "JWT configured: yes"
-echo "live funds enabled: ${ZCASH_SWAP_ENABLE_LIVE_FUNDS:-false}"
+echo "live funds enabled: ${ZCASH_SWAP_ENABLE_LIVE_FUNDS:-true}"
 exec fvm "${args[@]}"

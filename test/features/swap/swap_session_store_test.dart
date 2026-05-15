@@ -56,6 +56,9 @@ void main() {
       shieldTxHash: 'shield-txid',
       providerQuoteId: 'quote-1',
       providerSignature: 'quote-signature',
+      providerStatusRaw: 'PROCESSING',
+      lastStatusCheckedAt: DateTime.utc(2026, 5, 7, 10, 30),
+      statusError: 'temporary status refresh failure',
       oneClickRecipient: '0xrecipient',
       oneClickRefundTo: 't1refund',
       depositDeadline: DateTime.utc(2026, 5, 7, 12),
@@ -75,6 +78,12 @@ void main() {
     expect(restored.single.shieldTxHash, 'shield-txid');
     expect(restored.single.providerQuoteId, 'quote-1');
     expect(restored.single.providerSignature, 'quote-signature');
+    expect(restored.single.providerStatusRaw, 'PROCESSING');
+    expect(
+      restored.single.lastStatusCheckedAt,
+      DateTime.utc(2026, 5, 7, 10, 30),
+    );
+    expect(restored.single.statusError, 'temporary status refresh failure');
     expect(restored.single.oneClickRecipient, '0xrecipient');
     expect(restored.single.oneClickRefundTo, 't1refund');
     expect(restored.single.depositDeadline, DateTime.utc(2026, 5, 7, 12));

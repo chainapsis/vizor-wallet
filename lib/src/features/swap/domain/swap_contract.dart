@@ -425,6 +425,7 @@ enum SwapIntentStatus {
   awaitingExternalDeposit,
   depositObserved,
   processing,
+  providerStatusUnknown,
   incompleteDeposit,
   shieldingPending,
   shieldingConfirming,
@@ -449,6 +450,7 @@ extension SwapIntentStatusLabels on SwapIntentStatus {
     SwapIntentStatus.awaitingExternalDeposit => 'Awaiting external deposit',
     SwapIntentStatus.depositObserved => 'Deposit observed',
     SwapIntentStatus.processing => 'Processing',
+    SwapIntentStatus.providerStatusUnknown => 'Checking status',
     SwapIntentStatus.incompleteDeposit => 'Incomplete deposit',
     SwapIntentStatus.shieldingPending => 'Shielding pending',
     SwapIntentStatus.shieldingConfirming => 'Shielding confirming',
@@ -622,6 +624,7 @@ class SwapIntentSnapshot {
     required this.status,
     required this.nextAction,
     required this.depositInstruction,
+    this.providerStatusRaw,
   });
 
   factory SwapIntentSnapshot.fromQuote(
@@ -652,6 +655,7 @@ class SwapIntentSnapshot {
   final SwapIntentStatus status;
   final String nextAction;
   final SwapDepositInstruction depositInstruction;
+  final String? providerStatusRaw;
 }
 
 class SwapPricingSnapshot {

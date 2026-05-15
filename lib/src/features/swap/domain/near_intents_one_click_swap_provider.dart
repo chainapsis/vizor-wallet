@@ -329,6 +329,7 @@ class NearIntentsOneClickSwapProvider
       status: status,
       nextAction: _nextAction(status, quote),
       depositInstruction: quote.depositInstruction,
+      providerStatusRaw: response.status,
     );
   }
 
@@ -742,11 +743,60 @@ double _parseAmount(String value, String fieldName) {
 }
 
 String _toBaseUnits(double amount, int decimals) {
-  final fixed = amount.toStringAsFixed(decimals);
-  final parts = fixed.split('.');
-  final whole = parts.first;
-  final fraction = parts.length == 1 ? '' : parts[1].padRight(decimals, '0');
-  final raw = '$whole$fraction'.replaceFirst(RegExp(r'^0+(?=\d)'), '');
+  if (!amount.isFinite || amount < 0) {
+    throw const OneClickApiException('Invalid quote amount');
+  }
+  if (decimals < 0) {
+    throw const OneClickApiException('Invalid token decimals');
+  }
+  return _decimalStringToBaseUnits(amount.toString(), decimals);
+}
+
+String _decimalStringToBaseUnits(String value, int decimals) {
+  var normalized = value.trim().toLowerCase();
+  if (normalized.startsWith('+')) {
+    normalized = normalized.substring(1);
+  }
+  if (normalized.startsWith('-') || normalized.isEmpty) {
+    throw const OneClickApiException('Invalid quote amount');
+  }
+
+  final exponentParts = normalized.split('e');
+  if (exponentParts.length > 2 || exponentParts.first.isEmpty) {
+    throw const OneClickApiException('Invalid quote amount');
+  }
+  final exponent = exponentParts.length == 2
+      ? int.tryParse(exponentParts[1])
+      : 0;
+  if (exponent == null) {
+    throw const OneClickApiException('Invalid quote amount');
+  }
+
+  final mantissa = exponentParts.first;
+  final decimalPointCount = '.'.allMatches(mantissa).length;
+  if (decimalPointCount > 1) {
+    throw const OneClickApiException('Invalid quote amount');
+  }
+  final pointIndex = mantissa.indexOf('.');
+  final fractionalDigits = pointIndex == -1
+      ? 0
+      : mantissa.length - pointIndex - 1;
+  var digits = mantissa.replaceAll('.', '');
+  if (digits.isEmpty || !RegExp(r'^\d+$').hasMatch(digits)) {
+    throw const OneClickApiException('Invalid quote amount');
+  }
+
+  final decimalPlaces = fractionalDigits - exponent;
+  final shift = decimals - decimalPlaces;
+  if (shift >= 0) {
+    digits = digits.padRight(digits.length + shift, '0');
+  } else {
+    final keepLength = digits.length + shift;
+    if (keepLength <= 0) return '0';
+    digits = digits.substring(0, keepLength);
+  }
+
+  final raw = digits.replaceFirst(RegExp(r'^0+(?=\d)'), '');
   return raw.isEmpty ? '0' : raw;
 }
 
@@ -829,7 +879,7 @@ SwapIntentStatus _statusFromOneClick(
           : SwapIntentStatus.complete,
     'REFUNDED' => SwapIntentStatus.refunded,
     'FAILED' => SwapIntentStatus.failed,
-    _ => SwapIntentStatus.processing,
+    _ => SwapIntentStatus.providerStatusUnknown,
   };
 }
 
@@ -849,6 +899,8 @@ String _nextAction(SwapIntentStatus status, SwapQuote quote) {
       'Send ${quote.sellAsset.symbol} to the one-time deposit address',
     SwapIntentStatus.depositObserved => 'Deposit detected',
     SwapIntentStatus.processing => 'Swap is processing',
+    SwapIntentStatus.providerStatusUnknown =>
+      'Provider returned a status this wallet does not recognize',
     SwapIntentStatus.incompleteDeposit => 'Deposit is below the quoted amount',
     SwapIntentStatus.shieldingPending => 'Shield received ZEC into this wallet',
     SwapIntentStatus.shieldingConfirming =>

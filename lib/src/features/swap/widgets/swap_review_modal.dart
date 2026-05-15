@@ -15,6 +15,7 @@ class SwapReviewModal extends StatelessWidget {
     required this.quote,
     required this.addressPlan,
     required this.expired,
+    required this.starting,
     required this.amountWarning,
     required this.startError,
     required this.onReviewAgain,
@@ -26,6 +27,7 @@ class SwapReviewModal extends StatelessWidget {
   final SwapQuote quote;
   final SwapAddressPlan addressPlan;
   final bool expired;
+  final bool starting;
   final String? amountWarning;
   final String? startError;
   final VoidCallback onReviewAgain;
@@ -131,6 +133,7 @@ class SwapReviewModal extends StatelessWidget {
               const SizedBox(height: AppSpacing.sm),
               _ReviewActions(
                 expired: expired,
+                starting: starting,
                 onCancelReview: onCancelReview,
                 onReviewAgain: onReviewAgain,
                 onStartIntent: onStartIntent,
@@ -730,12 +733,14 @@ class _ReviewNotice extends StatelessWidget {
 class _ReviewActions extends StatelessWidget {
   const _ReviewActions({
     required this.expired,
+    required this.starting,
     required this.onCancelReview,
     required this.onReviewAgain,
     required this.onStartIntent,
   });
 
   final bool expired;
+  final bool starting;
   final VoidCallback onCancelReview;
   final VoidCallback onReviewAgain;
   final VoidCallback onStartIntent;
@@ -795,10 +800,12 @@ class _ReviewActions extends StatelessWidget {
         Expanded(
           child: _ReviewActionButton(
             buttonKey: const ValueKey('swap_start_button'),
-            onPressed: onStartIntent,
+            onPressed: starting ? null : onStartIntent,
             variant: AppButtonVariant.primary,
-            trailing: const AppIcon(AppIcons.arrowForwardIos),
-            child: const Text('Start swap'),
+            trailing: starting
+                ? const AppIcon(AppIcons.loader)
+                : const AppIcon(AppIcons.arrowForwardIos),
+            child: Text(starting ? 'Starting' : 'Start swap'),
           ),
         ),
       ],
