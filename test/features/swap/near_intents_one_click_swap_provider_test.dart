@@ -685,6 +685,110 @@ void main() {
     }
   });
 
+  test('captures NEAR Intents hashes from status swap details', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokens),
+      _FakeResponse.get(
+        '/v0/status',
+        _quoteResponse(
+          originAsset: 'nep141:zec.omft.near',
+          destinationAsset: 'nep141:usdc.example',
+          amountInFormatted: '1',
+          amountOutFormatted: '70',
+          minAmountOut: '69650000',
+          depositAddress: 'status-deposit',
+          status: 'PROCESSING',
+          swapDetails: {
+            'intentHashes': ['intent-hash-1'],
+            'nearTxHashes': ['near-tx-hash-1'],
+          },
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapProvider(
+      transport: transport,
+      now: () => DateTime.utc(2026, 5, 7, 10, 2),
+    );
+
+    final status = await provider.getStatus('status-deposit');
+
+    expect(status.nearIntentHash, 'intent-hash-1');
+    expect(status.nearTransactionHash, 'near-tx-hash-1');
+  });
+
+  test(
+    'captures snake-case NEAR Intents hashes from status swap details',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.get(
+          '/v0/status',
+          _quoteResponse(
+            originAsset: 'nep141:zec.omft.near',
+            destinationAsset: 'nep141:usdc.example',
+            amountInFormatted: '1',
+            amountOutFormatted: '70',
+            minAmountOut: '69650000',
+            depositAddress: 'status-deposit',
+            status: 'PROCESSING',
+            swapDetails: {
+              'intent_hashes': ['intent-hash-snake'],
+              'near_tx_hashes': ['near-tx-hash-snake'],
+            },
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapProvider(
+        transport: transport,
+        now: () => DateTime.utc(2026, 5, 7, 10, 2),
+      );
+
+      final status = await provider.getStatus('status-deposit');
+
+      expect(status.nearIntentHash, 'intent-hash-snake');
+      expect(status.nearTransactionHash, 'near-tx-hash-snake');
+    },
+  );
+
+  test(
+    'captures nested NEAR swap transaction hashes from status details',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokens),
+        _FakeResponse.get(
+          '/v0/status',
+          _quoteResponse(
+            originAsset: 'nep141:zec.omft.near',
+            destinationAsset: 'nep141:usdc.example',
+            amountInFormatted: '1',
+            amountOutFormatted: '70',
+            minAmountOut: '69650000',
+            depositAddress: 'status-deposit',
+            status: 'PROCESSING',
+            swapDetails: {
+              'intentHashes': ['intent-hash-1'],
+              'nearDepositTransactions': [
+                {'txHash': 'near-deposit-tx-hash'},
+              ],
+              'nearSwapTransactions': [
+                {'txHash': 'near-swap-tx-hash'},
+              ],
+            },
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapProvider(
+        transport: transport,
+        now: () => DateTime.utc(2026, 5, 7, 10, 2),
+      );
+
+      final status = await provider.getStatus('status-deposit');
+
+      expect(status.nearIntentHash, 'intent-hash-1');
+      expect(status.nearTransactionHash, 'near-swap-tx-hash');
+    },
+  );
+
   test('pending deposit becomes expired after the deposit deadline', () async {
     final transport = _FakeOneClickTransport([
       _FakeResponse.get('/v0/tokens', _tokens),
@@ -825,6 +929,7 @@ Map<String, Object?> _quoteResponse({
   required String? status,
   String? depositMemo,
   bool includeNestedCorrelationId = true,
+  Map<String, Object?>? swapDetails,
 }) {
   final quote = {
     if (includeNestedCorrelationId) 'correlationId': 'quote-1',
@@ -867,7 +972,7 @@ Map<String, Object?> _quoteResponse({
     'quoteResponse': quote,
     'status': status,
     'updatedAt': '2026-05-07T10:02:00Z',
-    'swapDetails': <String, Object?>{},
+    'swapDetails': swapDetails ?? <String, Object?>{},
   };
 }
 
