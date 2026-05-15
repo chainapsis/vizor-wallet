@@ -6,6 +6,43 @@ import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_text_field.dart';
 
 void main() {
+  testWidgets('single-line padded input area focuses on the first tap', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      _ThemedHarness(
+        child: SizedBox(
+          width: 352,
+          child: AppTextField(
+            label: 'Send to',
+            controller: controller,
+            focusNode: focusNode,
+            hintText: 'Zcash address',
+            leading: const AppIcon(AppIcons.users),
+            showClearButton: true,
+          ),
+        ),
+      ),
+    );
+
+    final textFieldRect = tester.getRect(find.byType(TextField));
+
+    // This lands in the styled field padding below the actual EditableText.
+    // It used to be classified as "inside the TextField region", so the shell
+    // skipped its own focus fallback while the TextField itself never saw it.
+    await tester.tapAt(
+      Offset(textFieldRect.center.dx, textFieldRect.bottom + 3),
+    );
+    await tester.pump();
+
+    expect(focusNode.hasFocus, isTrue);
+  });
+
   testWidgets('multiline clear button uses the Figma hit target', (
     tester,
   ) async {
