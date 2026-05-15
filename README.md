@@ -140,6 +140,108 @@ fvm flutter analyze
 cd rust && cargo test
 ```
 
+The experimental NEAR Intents swap provider can be pointed at a specific
+1Click deployment during local runs:
+
+```bash
+fvm flutter run \
+  --dart-define=ZCASH_SWAP_1CLICK_BASE_URL=https://1click.chaindefuser.com \
+  --dart-define=ZCASH_SWAP_1CLICK_JWT="$ZCASH_SWAP_1CLICK_JWT" \
+  --dart-define=ZCASH_SWAP_1CLICK_REFERRAL=<referral-if-used>
+```
+
+`ZCASH_SWAP_1CLICK_JWT` in `~/.zshenv` is available to the shell, but the
+Flutter app reads it through `String.fromEnvironment`; pass it with
+`--dart-define` when launching the app. Reviewing a quote calls the live 1Click
+quote API and can return a real one-time deposit instruction. It does not move
+funds by itself, and live ZEC auto-deposit remains disabled unless the app is
+built with `--dart-define=ZCASH_SWAP_ENABLE_LIVE_FUNDS=true`.
+
+For local app validation, use the wrapper so the shell JWT is forwarded into
+the Flutter build:
+
+```bash
+scripts/e2e/swap-one-click-live-app.sh -d macos
+```
+
+For UI-only inspection without wallet bootstrap or a live 1Click provider:
+
+```bash
+fvm flutter run -d web-server -t lib/swap_preview.dart
+```
+
+For native desktop inspection, the preview entrypoint also accepts initial tab
+and fixture overrides:
+
+```bash
+fvm flutter run -d macos -t lib/swap_preview.dart \
+  --dart-define=ZCASH_SWAP_PREVIEW_TAB=requests \
+  --dart-define=ZCASH_SWAP_PREVIEW_SCENARIO=long
+```
+
+`ZCASH_SWAP_PREVIEW_TAB` accepts `swap`, `activity`, or `requests`.
+`ZCASH_SWAP_PREVIEW_SCENARIO=long` loads long provider addresses, memos, and
+amounts for overflow checks.
+
+For provider live-run validation without opening the wallet UI. The probe
+always loads the 1Click token list first. Token-list checks can run without a
+JWT. Dry quote and status checks should use the wrapper script so the Dart
+probe reads the JWT from the environment instead of a CLI argument. Set
+`ZCASH_SWAP_1CLICK_JWT` in the environment before the quote/status runs.
+
+```bash
+scripts/e2e/swap-one-click-live-validation.sh --help
+
+scripts/e2e/swap-one-click-live-validation.sh --tokens-only
+
+printf 'ZCASH_SWAP_1CLICK_JWT: '
+read -r -s ZCASH_SWAP_1CLICK_JWT
+printf '\n'
+export ZCASH_SWAP_1CLICK_JWT
+
+ZCASH_SWAP_PROBE_DIRECTION=zec-to-external \
+ZCASH_SWAP_PROBE_ASSET=USDC \
+ZCASH_SWAP_PROBE_USDC_CHAIN=eth \
+ZCASH_SWAP_PROBE_AMOUNT=0.01 \
+ZCASH_SWAP_PROBE_DESTINATION=<external-recipient> \
+ZCASH_SWAP_PROBE_REFUND=<zec-refund-address> \
+  scripts/e2e/swap-one-click-live-validation.sh
+
+ZCASH_SWAP_PROBE_DIRECTION=external-to-zec \
+ZCASH_SWAP_PROBE_ASSET=USDC \
+ZCASH_SWAP_PROBE_USDC_CHAIN=eth \
+ZCASH_SWAP_PROBE_AMOUNT=10 \
+ZCASH_SWAP_PROBE_DESTINATION=<zec-staging-recipient> \
+ZCASH_SWAP_PROBE_REFUND=<external-refund-address> \
+  scripts/e2e/swap-one-click-live-validation.sh
+
+ZCASH_SWAP_PROBE_STATUS_DEPOSIT=<deposit-address> \
+  scripts/e2e/swap-one-click-live-validation.sh
+```
+
+Set `ZCASH_SWAP_PROBE_ASSET` to `USDC`, `ETH`, `BTC`, `SOL`, `USDT`,
+`DAI`, `WBTC`, `NEAR`, or `DOGE` to validate a non-ZEC route leg. ZEC remains
+fixed as the other leg.
+For any asset shown by `--tokens-only`, set `ZCASH_SWAP_PROBE_ASSET_ID` to the
+exact 1Click asset id printed beside that token.
+
+A successful full live-run ends with:
+
+```text
+validation summary: tokens=ok quote=ok status=ok
+```
+
+Quote-only and status-only runs intentionally report `skipped` for the omitted
+path. If the provider returns a deposit memo for the quote, pass it back to the
+status check as `ZCASH_SWAP_PROBE_STATUS_MEMO`.
+
+USDC exists on multiple 1Click chains. The provider defaults to Ethereum USDC
+to match the prototype copy. For live probes, set
+`ZCASH_SWAP_PROBE_USDC_CHAIN=eth|base|arb|near` or pass the exact
+`ZCASH_SWAP_PROBE_USDC_ASSET_ID` when validating another chain. This override
+only applies to USDC. Prefer the generic `ZCASH_SWAP_PROBE_ASSET_ID` when
+validating an arbitrary provider-listed asset.
+
 After changing Rust API files in `rust/src/api/`, regenerate bindings from the
 repo root:
 
