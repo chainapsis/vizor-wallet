@@ -103,6 +103,8 @@ flutter:
     - assets/illustrations/
     - assets/profile_pictures/
     - assets/icons/
+    - assets/swap/tokens/
+    - assets/swap/chains/
 
   fonts:
     - family: Manrope
