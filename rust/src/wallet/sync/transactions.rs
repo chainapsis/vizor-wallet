@@ -275,7 +275,6 @@ struct TxOutput {
     transparent_receiver_address: Option<String>,
     to_key_scope: Option<i64>,
     value: u64,
-    is_change: bool,
     memo: Option<Vec<u8>>,
 }
 
@@ -669,7 +668,6 @@ fn read_history_outputs(
                 LIMIT 1
             ) AS to_key_scope,
             txo.value,
-            txo.is_change,
             txo.memo
         FROM v_tx_outputs txo
         JOIN (
@@ -696,8 +694,7 @@ fn read_history_outputs(
                 transparent_receiver_address: row.get(7)?,
                 to_key_scope: row.get(8)?,
                 value: row.get::<_, i64>(9)?.unsigned_abs(),
-                is_change: row.get(10)?,
-                memo: row.get(11)?,
+                memo: row.get(10)?,
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -762,7 +759,6 @@ fn read_outputs_for_tx(
                 LIMIT 1
             ) AS to_key_scope,
             txo.value,
-            txo.is_change,
             txo.memo
         FROM v_tx_outputs txo
         WHERE txo.txid = ?2
@@ -787,8 +783,7 @@ fn read_outputs_for_tx(
                 transparent_receiver_address: row.get(7)?,
                 to_key_scope: row.get(8)?,
                 value: row.get::<_, i64>(9)?.unsigned_abs(),
-                is_change: row.get(10)?,
-                memo: row.get(11)?,
+                memo: row.get(10)?,
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -871,18 +866,17 @@ fn output_pool_label(output_pool: i64) -> &'static str {
 }
 
 fn is_user_visible_self_output(output: &TxOutput) -> bool {
-    if output.is_change {
-        return false;
-    }
+    let has_external_or_foreign_scope = matches!(output.to_key_scope, Some(0) | Some(-1));
 
     match output.output_pool {
         // Transparent self outputs are user-visible only when they land on a
         // normal external/foreign receiver. Internal and ephemeral receivers
         // are change/funding mechanics.
-        0 => matches!(output.to_key_scope, Some(0) | Some(-1)),
-        // Shielded explicit self-sends preserve the recipient address in
-        // sent_notes. Wallet-internal change does not.
-        2 | 3 => output.to_address.is_some() || matches!(output.to_key_scope, Some(0) | Some(-1)),
+        0 => has_external_or_foreign_scope,
+        // `is_change` is best-effort for wallet-owned outputs and can also be
+        // set on explicit self-transfers. Treat external/foreign receivers and
+        // sent-note recipients as visible; keep internal change hidden.
+        2 | 3 => has_external_or_foreign_scope || output.sent_to_address.is_some(),
         _ => false,
     }
 }
@@ -2021,7 +2015,7 @@ mod tests {
             Some(account),
             Some(account),
             1_000_000,
-            false,
+            true,
             Some("u-self"),
             Some(0),
         );
@@ -2617,7 +2611,7 @@ mod tests {
             Some(account),
             Some(account),
             1_000_000,
-            false,
+            true,
             Some("u-self"),
             Some(0),
             Some(b"self memo"),
