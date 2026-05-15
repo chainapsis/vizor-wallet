@@ -29,6 +29,31 @@ void main() {
     expect(updatedName, 'J');
   });
 
+  testWidgets('allows submitting twenty user-perceived characters', (
+    tester,
+  ) async {
+    var updatedName = '';
+    final name = List.filled(20, '😀').join();
+
+    await tester.pumpWidget(
+      _AccountNameModalHarness(
+        onUpdate: (name) async {
+          updatedName = name;
+        },
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField), name);
+    await tester.pump();
+
+    expect(find.text('Use up to 20 characters.'), findsNothing);
+
+    await tester.tap(find.text('Update'));
+    await tester.pump();
+
+    expect(updatedName, name);
+  });
+
   testWidgets('does not show the length warning for an empty name', (
     tester,
   ) async {
@@ -51,6 +76,32 @@ void main() {
     await tester.pump();
 
     expect(find.text('Use up to 20 characters.'), findsOneWidget);
+  });
+
+  testWidgets('does not submit empty or overlong names', (tester) async {
+    var updateCount = 0;
+
+    await tester.pumpWidget(
+      _AccountNameModalHarness(
+        onUpdate: (_) async {
+          updateCount += 1;
+        },
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField), '   ');
+    await tester.pump();
+    await tester.tap(find.text('Update'));
+    await tester.pump();
+
+    expect(updateCount, 0);
+
+    await tester.enterText(find.byType(TextField), '123456789012345678901');
+    await tester.pump();
+    await tester.tap(find.text('Update'));
+    await tester.pump();
+
+    expect(updateCount, 0);
   });
 }
 
