@@ -654,7 +654,18 @@ fn read_history_outputs(
             txo.from_account_uuid,
             txo.to_account_uuid,
             txo.to_address,
-            NULL AS sent_to_address,
+            (
+                SELECT sn.to_address
+                FROM sent_notes sn
+                JOIN transactions st ON st.id_tx = sn.transaction_id
+                JOIN accounts from_acc ON from_acc.id = sn.from_account_id
+                WHERE st.txid = txo.txid
+                  AND from_acc.uuid = ?1
+                  AND sn.output_pool = txo.output_pool
+                  AND sn.output_index = txo.output_index
+                  AND sn.to_address IS NOT NULL
+                LIMIT 1
+            ) AS sent_to_address,
             NULL AS transparent_receiver_address,
             (
                 SELECT a.key_scope
@@ -2029,6 +2040,67 @@ mod tests {
             true,
             Some("u-change"),
             Some(1),
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].txid_hex, hex::encode(self_tx));
+        assert_eq!(got[0].tx_kind, "sent");
+        assert_eq!(got[0].display_amount, 1_000_000);
+        assert_eq!(got[0].display_pool, "shielded");
+        assert_eq!(got[1].txid_hex, hex::encode(self_tx));
+        assert_eq!(got[1].tx_kind, "received");
+        assert_eq!(got[1].display_amount, 1_000_000);
+        assert_eq!(got[1].display_pool, "shielded");
+    }
+
+    #[test]
+    fn history_uses_sent_note_when_self_send_key_scope_is_unresolved() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let self_tx = fake_txid(0xC7);
+
+        insert_history_tx(
+            &db,
+            account,
+            &self_tx,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -15_000,
+            1_015_000,
+            1_000_000,
+            false,
+            Some("2026-04-28T16:36:00Z"),
+        );
+        let output_index = insert_output_with_address(
+            &db,
+            &self_tx,
+            3,
+            Some(account),
+            Some(account),
+            1_000_000,
+            true,
+            Some("u-self-unresolved"),
+            None,
+        );
+        insert_sent_note(
+            &db,
+            &self_tx,
+            3,
+            output_index,
+            account,
+            Some(account),
+            Some("u-self-unresolved"),
+            1_000_000,
+            None,
         );
 
         let got = get_transaction_history(
