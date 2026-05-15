@@ -52,6 +52,18 @@ void main() {
     expect(find.text('Send'), findsOneWidget);
   });
 
+  testWidgets('uses Swap when transaction details are pushed from swap', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_backResolverHarness(initialLocation: '/swap'));
+    await tester.pump();
+
+    await tester.tap(find.text('Open Swap Tx'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Swap'), findsOneWidget);
+  });
+
   testWidgets('keeps send status pinned to Home', (tester) async {
     await tester.pumpWidget(_backResolverHarness(initialLocation: '/send'));
     await tester.pump();
@@ -93,6 +105,18 @@ Widget _backResolverHarness({required String initialLocation}) {
       GoRoute(
         path: '/activity/tx/:txid',
         builder: (_, _) => const AppRouteBackLink(),
+      ),
+      GoRoute(
+        path: '/swap',
+        builder: (_, _) => const Column(
+          children: [
+            AppRouteBackLink(),
+            _PushRouteButton(
+              label: 'Open Swap Tx',
+              location: '/activity/tx/swap-tx',
+            ),
+          ],
+        ),
       ),
       GoRoute(
         path: '/send',

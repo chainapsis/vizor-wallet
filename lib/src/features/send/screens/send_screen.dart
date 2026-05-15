@@ -26,10 +26,13 @@ import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../models/send_prefill_args.dart';
 import 'send_review_screen.dart';
 
 class SendScreen extends ConsumerStatefulWidget {
-  const SendScreen({super.key});
+  const SendScreen({super.key, this.prefill});
+
+  final SendPrefillArgs? prefill;
 
   @override
   ConsumerState<SendScreen> createState() => _SendScreenState();
@@ -51,10 +54,11 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     final spendableBalance = sync.spendableBalance;
 
     return _SendComposeBody(
-      key: ValueKey(activeAccountUuid),
+      key: ValueKey('$activeAccountUuid:${widget.prefill?.fingerprint ?? ''}'),
       walletAsync: walletAsync,
       activeAccountUuid: activeAccountUuid,
       spendableBalance: spendableBalance,
+      prefill: widget.prefill,
     );
   }
 }
@@ -65,11 +69,13 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     required this.walletAsync,
     required this.activeAccountUuid,
     required this.spendableBalance,
+    this.prefill,
   });
 
   final AsyncValue<WalletState> walletAsync;
   final String? activeAccountUuid;
   final BigInt spendableBalance;
+  final SendPrefillArgs? prefill;
 
   @override
   ConsumerState<_SendComposeBody> createState() => _SendComposeBodyState();
@@ -174,6 +180,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   @override
   void initState() {
     super.initState();
+    _applyPrefill(widget.prefill);
     _memoController.addListener(_handleMemoChanged);
     _addressFocusNode.addListener(_handleFieldVisualStateChanged);
     _amountFocusNode.addListener(_handleFieldVisualStateChanged);
@@ -181,6 +188,23 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
+    });
+  }
+
+  void _applyPrefill(SendPrefillArgs? prefill) {
+    if (prefill == null) return;
+    _addressController.text = prefill.address;
+    if (prefill.amountText != null) {
+      _amountController.text = prefill.amountText!;
+      _amountError = null;
+    }
+    if (prefill.memoText != null && prefill.memoText!.isNotEmpty) {
+      _memoController.text = prefill.memoText!;
+      _messageExpanded = true;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_validateAddress());
     });
   }
 
@@ -224,7 +248,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       if (_isMaxMode) {
         _scheduleMaxEstimate(immediate: true);
       } else if (_amountController.text.trim().isNotEmpty) {
-        _validateAmount();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _validateAmount();
+        });
       }
     }
   }
@@ -772,6 +799,10 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (widget.prefill != null) ...[
+                          _SendPrefillNotice(prefill: widget.prefill!),
+                          const SizedBox(height: AppSpacing.xs),
+                        ],
                         AppTextField(
                           key: const ValueKey('send_address_field'),
                           label: 'Send to',
@@ -958,6 +989,65 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         ),
       ),
     );
+  }
+}
+
+class _SendPrefillNotice extends StatelessWidget {
+  const _SendPrefillNotice({required this.prefill});
+
+  final SendPrefillArgs prefill;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      key: const ValueKey('send_prefill_notice'),
+      padding: const EdgeInsets.all(AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: colors.background.raised,
+        border: Border.all(color: colors.border.subtle),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppIcon(AppIcons.importWallet, size: 18, color: colors.icon.muted),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Imported request',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _prefillDetail,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyExtraSmall.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String get _prefillDetail {
+    final pieces = [
+      prefill.source,
+      if (prefill.label != null && prefill.label!.isNotEmpty) prefill.label!,
+      if (prefill.message != null && prefill.message!.isNotEmpty)
+        prefill.message!,
+    ];
+    return pieces.join(' / ');
   }
 }
 

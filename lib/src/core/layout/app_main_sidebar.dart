@@ -125,6 +125,14 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
+                    key: const ValueKey('sidebar_swap_button'),
+                    label: 'Swap',
+                    iconName: AppIcons.renew,
+                    active: _matches('/swap'),
+                    onTap: _matches('/swap') ? null : () => context.go('/swap'),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
                     key: const ValueKey('sidebar_receive_button'),
                     label: 'Receive',
                     iconName: AppIcons.arrowDownCircle,

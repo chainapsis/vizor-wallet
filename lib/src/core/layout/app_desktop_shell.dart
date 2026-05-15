@@ -22,16 +22,23 @@ class AppDesktopShell extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(width: sidebarWidth, child: sidebar),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(child: pane),
-            ],
-          ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final hideSidebar = constraints.maxWidth < 640;
+            return Padding(
+              padding: const EdgeInsets.all(AppSpacing.xs),
+              child: hideSidebar
+                  ? pane
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(width: sidebarWidth, child: sidebar),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(child: pane),
+                      ],
+                    ),
+            );
+          },
         ),
       ),
     );

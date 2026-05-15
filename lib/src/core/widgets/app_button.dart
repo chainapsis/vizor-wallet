@@ -155,6 +155,7 @@ class AppButton extends StatefulWidget {
     this.leading,
     this.trailing,
     this.minWidth,
+    this.height,
     this.iconGap,
     this.focusRingColor,
     this.focusNode,
@@ -183,6 +184,10 @@ class AppButton extends StatefulWidget {
   /// intrinsic — content drives size. Callers opt in to a floor when a
   /// specific screen or layout demands a consistent button width.
   final double? minWidth;
+
+  /// Optional visual height override for screen-specific CTA treatment.
+  /// Defaults to the design-system size token height.
+  final double? height;
 
   /// Optional gap between the label and any leading/trailing icon. Defaults
   /// to the size token's gap.
@@ -226,6 +231,7 @@ class _AppButtonState extends State<AppButton> {
       AppButtonSize.medium => _mediumSizing,
       AppButtonSize.small => _smallSizing,
     };
+    final height = widget.height ?? sizing.height;
     final isGhost = widget.variant == AppButtonVariant.ghost;
 
     final disabled = colors.button.disabled;
@@ -295,7 +301,7 @@ class _AppButtonState extends State<AppButton> {
       child: AnimatedContainer(
         duration: isGhost ? Duration.zero : const Duration(milliseconds: 120),
         curve: Curves.easeOut,
-        height: sizing.height,
+        height: height,
         decoration: ShapeDecoration(
           color: currentBg,
           shape: StadiumBorder(

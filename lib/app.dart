@@ -34,7 +34,9 @@ import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
+import 'src/features/receive/models/receive_prefill_args.dart';
 import 'src/features/receive/screens/receive_screen.dart';
+import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
 import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
@@ -43,6 +45,7 @@ import 'src/features/settings/screens/settings_screen.dart';
 import 'src/features/settings/screens/settings_change_password_screen.dart';
 import 'src/features/settings/screens/settings_endpoint_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
+import 'src/features/swap/screens/swap_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
@@ -480,7 +483,14 @@ final _routerProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
-      GoRoute(path: '/send', builder: (_, _) => const SendScreen()),
+      GoRoute(
+        path: '/send',
+        builder: (_, state) {
+          final extra = state.extra;
+          return SendScreen(prefill: extra is SendPrefillArgs ? extra : null);
+        },
+      ),
+      GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
       GoRoute(
         path: '/send/review',
         builder: (_, state) {
@@ -504,7 +514,15 @@ final _routerProvider = Provider<GoRouter>((ref) {
           return SendStatusScreen(args: args);
         },
       ),
-      GoRoute(path: '/receive', builder: (_, _) => const ReceiveScreen()),
+      GoRoute(
+        path: '/receive',
+        builder: (_, state) {
+          final extra = state.extra;
+          return ReceiveScreen(
+            prefill: extra is ReceivePrefillArgs ? extra : null,
+          );
+        },
+      ),
       GoRoute(path: '/accounts', builder: (_, _) => const AccountsScreen()),
       GoRoute(
         path: '/import-keystone',
