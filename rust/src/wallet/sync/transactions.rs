@@ -1887,11 +1887,11 @@ mod tests {
             Some(account),
             Some(account),
             1_000_000,
-            true,
+            false,
             Some("u-self"),
             Some(0),
         );
-        insert_output(
+        insert_output_with_address(
             &db,
             &self_tx,
             3,
@@ -1899,6 +1899,8 @@ mod tests {
             Some(account),
             16_237_101,
             true,
+            Some("u-change"),
+            Some(1),
         );
 
         let got = get_transaction_history(
@@ -1939,7 +1941,7 @@ mod tests {
             false,
             Some("2026-04-28T15:43:00Z"),
         );
-        insert_output(
+        insert_output_with_address(
             &db,
             &change_only_tx,
             3,
@@ -1947,8 +1949,10 @@ mod tests {
             Some(account),
             7_242_102,
             true,
+            Some("u-change-1"),
+            Some(1),
         );
-        insert_output(
+        insert_output_with_address(
             &db,
             &change_only_tx,
             3,
@@ -1956,6 +1960,8 @@ mod tests {
             Some(account),
             10_000_000,
             true,
+            Some("u-change-2"),
+            Some(1),
         );
 
         let got = get_transaction_history(
@@ -2014,6 +2020,73 @@ mod tests {
     }
 
     #[test]
+    fn history_sent_to_transparent_excludes_shielded_change() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xC5);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -15_000,
+            1_265_000,
+            1_150_000,
+            false,
+            Some("2026-04-28T16:45:00Z"),
+        );
+        insert_output_with_address(
+            &db,
+            &txid,
+            0,
+            Some(account),
+            Some(account),
+            150_000,
+            false,
+            Some("t-ephemeral"),
+            Some(2),
+        );
+        insert_output_with_address(
+            &db,
+            &txid,
+            3,
+            Some(account),
+            Some(account),
+            1_000_000,
+            true,
+            Some("u-change"),
+            Some(1),
+        );
+        insert_output_with_address(
+            &db,
+            &txid,
+            0,
+            Some(account),
+            None,
+            100_000,
+            false,
+            Some("t-recipient"),
+            None,
+        );
+
+        let got = get_transaction_history(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            None,
+            &account.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].tx_kind, "sent");
+        assert_eq!(got[0].display_amount, 100_000);
+        assert_eq!(got[0].display_pool, "transparent");
+    }
+
+    #[test]
     fn detail_sent_row_returns_recipient_address_and_memo() {
         let db = fresh_history_db();
         let account = test_account_uuid();
@@ -2062,6 +2135,75 @@ mod tests {
         assert_eq!(got.outputs[0].address.as_deref(), Some("u-recipient"));
         assert_eq!(got.outputs[0].amount_zatoshi, 1_000_000);
         assert_eq!(got.outputs[0].pool, "shielded");
+    }
+
+    #[test]
+    fn detail_sent_to_transparent_prefers_external_recipient_over_shielded_change() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD7);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            -15_000,
+            1_265_000,
+            1_150_000,
+            false,
+            Some("2026-04-28T17:05:00Z"),
+        );
+        insert_output_with_address(
+            &db,
+            &txid,
+            0,
+            Some(account),
+            Some(account),
+            150_000,
+            false,
+            Some("t-ephemeral"),
+            Some(2),
+        );
+        insert_output_with_address(
+            &db,
+            &txid,
+            3,
+            Some(account),
+            Some(account),
+            1_000_000,
+            true,
+            Some("u-change"),
+            Some(1),
+        );
+        insert_output_with_address(
+            &db,
+            &txid,
+            0,
+            Some(account),
+            None,
+            100_000,
+            false,
+            Some("t-recipient"),
+            None,
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "sent",
+        )
+        .unwrap();
+
+        assert_eq!(got.primary_address.as_deref(), Some("t-recipient"));
+        assert_eq!(got.outputs.len(), 1);
+        assert_eq!(got.outputs[0].address.as_deref(), Some("t-recipient"));
+        assert_eq!(got.outputs[0].amount_zatoshi, 100_000);
+        assert_eq!(got.outputs[0].pool, "transparent");
     }
 
     #[test]
@@ -2189,12 +2331,22 @@ mod tests {
             Some(account),
             Some(account),
             1_000_000,
-            true,
+            false,
             Some("u-self"),
             Some(0),
             Some(b"self memo"),
         );
-        insert_output(&db, &txid, 3, Some(account), Some(account), 500_000, true);
+        insert_output_with_address(
+            &db,
+            &txid,
+            3,
+            Some(account),
+            Some(account),
+            500_000,
+            true,
+            Some("u-change"),
+            Some(1),
+        );
 
         let sent = get_transaction_detail(
             db.path().to_str().unwrap(),
@@ -2250,8 +2402,8 @@ mod tests {
             Some(account),
             1_000_000,
             true,
-            None,
-            None,
+            Some("u-change"),
+            Some(1),
             Some(&[0xF6]),
         );
 
