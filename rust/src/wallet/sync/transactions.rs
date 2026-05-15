@@ -273,6 +273,7 @@ struct TxOutput {
     to_address: Option<String>,
     to_key_scope: Option<i64>,
     value: u64,
+    is_change: bool,
     memo: Option<Vec<u8>>,
 }
 
@@ -644,6 +645,7 @@ fn read_history_outputs(
                 LIMIT 1
             ) AS to_key_scope,
             txo.value,
+            txo.is_change,
             txo.memo
         FROM v_tx_outputs txo
         JOIN (
@@ -668,7 +670,8 @@ fn read_history_outputs(
                 to_address: row.get(5)?,
                 to_key_scope: row.get(6)?,
                 value: row.get::<_, i64>(7)?.unsigned_abs(),
-                memo: row.get(8)?,
+                is_change: row.get(8)?,
+                memo: row.get(9)?,
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -708,6 +711,7 @@ fn read_outputs_for_tx(
                 LIMIT 1
             ) AS to_key_scope,
             txo.value,
+            txo.is_change,
             txo.memo
         FROM v_tx_outputs txo
         WHERE txo.txid = ?2
@@ -730,7 +734,8 @@ fn read_outputs_for_tx(
                 to_address: row.get(5)?,
                 to_key_scope: row.get(6)?,
                 value: row.get::<_, i64>(7)?.unsigned_abs(),
-                memo: row.get(8)?,
+                is_change: row.get(8)?,
+                memo: row.get(9)?,
             })
         })
         .map_err(|e| format!("Query error: {e}"))?;
@@ -813,6 +818,10 @@ fn output_pool_label(output_pool: i64) -> &'static str {
 }
 
 fn is_user_visible_self_output(output: &TxOutput) -> bool {
+    if output.is_change {
+        return false;
+    }
+
     match output.output_pool {
         // Transparent self outputs are user-visible only when they land on a
         // normal external/foreign receiver. Internal and ephemeral receivers
