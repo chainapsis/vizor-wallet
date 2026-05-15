@@ -236,7 +236,7 @@ class _Content extends StatelessWidget {
           children: [
             const _MainWelcomeContent(),
             const SizedBox(height: AppSpacing.base),
-            const _LegalFooter(),
+            // const _LegalFooter(),
           ],
         ),
       ),
@@ -397,81 +397,81 @@ class _OrDividerLine extends StatelessWidget {
   }
 }
 
-class _LegalFooter extends StatelessWidget {
-  const _LegalFooter();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    // Body uses `text.muted` per Figma. Link emphasis uses
-    // `text.secondary` as the closest semantic token to Figma's
-    // hardcoded `#4D5252` — in light mode the token resolves to
-    // `#626767`, one step lighter than the literal, but this preserves
-    // legibility in dark mode where the literal would disappear into
-    // the background.
-    final bodyStyle = AppTypography.bodySmall.copyWith(
-      color: colors.text.muted,
-    );
-    final linkStyle = AppTypography.bodySmall.copyWith(
-      color: colors.text.secondary,
-      decoration: TextDecoration.underline,
-      decorationColor: colors.text.secondary,
-    );
-
-    return Text.rich(
-      TextSpan(
-        children: [
-          const TextSpan(text: 'By using Vizor you agree to our '),
-          WidgetSpan(
-            alignment: PlaceholderAlignment.baseline,
-            baseline: TextBaseline.alphabetic,
-            child: _LegalFooterLink(
-              label: 'Terms',
-              style: linkStyle,
-              onTap: () => context.push('/terms'),
-            ),
-          ),
-          const TextSpan(text: ' and '),
-          WidgetSpan(
-            alignment: PlaceholderAlignment.baseline,
-            baseline: TextBaseline.alphabetic,
-            child: _LegalFooterLink(
-              label: 'Privacy',
-              style: linkStyle,
-              onTap: () => context.push('/privacy'),
-            ),
-          ),
-        ],
-        style: bodyStyle,
-      ),
-      textAlign: TextAlign.center,
-    );
-  }
-}
-
-class _LegalFooterLink extends StatelessWidget {
-  const _LegalFooterLink({
-    required this.label,
-    required this.style,
-    required this.onTap,
-  });
-
-  final String label;
-  final TextStyle style;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      link: true,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: Text(label, style: style),
-        ),
-      ),
-    );
-  }
-}
+// class _LegalFooter extends StatelessWidget {
+//   const _LegalFooter();
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     final colors = context.colors;
+//     // Body uses `text.muted` per Figma. Link emphasis uses
+//     // `text.secondary` as the closest semantic token to Figma's
+//     // hardcoded `#4D5252` — in light mode the token resolves to
+//     // `#626767`, one step lighter than the literal, but this preserves
+//     // legibility in dark mode where the literal would disappear into
+//     // the background.
+//     final bodyStyle = AppTypography.bodySmall.copyWith(
+//       color: colors.text.muted,
+//     );
+//     final linkStyle = AppTypography.bodySmall.copyWith(
+//       color: colors.text.secondary,
+//       decoration: TextDecoration.underline,
+//       decorationColor: colors.text.secondary,
+//     );
+//
+//     return Text.rich(
+//       TextSpan(
+//         children: [
+//           const TextSpan(text: 'By using Vizor you agree to our '),
+//           WidgetSpan(
+//             alignment: PlaceholderAlignment.baseline,
+//             baseline: TextBaseline.alphabetic,
+//             child: _LegalFooterLink(
+//               label: 'Terms',
+//               style: linkStyle,
+//               onTap: () => context.push('/terms'),
+//             ),
+//           ),
+//           const TextSpan(text: ' and '),
+//           WidgetSpan(
+//             alignment: PlaceholderAlignment.baseline,
+//             baseline: TextBaseline.alphabetic,
+//             child: _LegalFooterLink(
+//               label: 'Privacy',
+//               style: linkStyle,
+//               onTap: () => context.push('/privacy'),
+//             ),
+//           ),
+//         ],
+//         style: bodyStyle,
+//       ),
+//       textAlign: TextAlign.center,
+//     );
+//   }
+// }
+//
+// class _LegalFooterLink extends StatelessWidget {
+//   const _LegalFooterLink({
+//     required this.label,
+//     required this.style,
+//     required this.onTap,
+//   });
+//
+//   final String label;
+//   final TextStyle style;
+//   final VoidCallback onTap;
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Semantics(
+//       link: true,
+//       child: MouseRegion(
+//         cursor: SystemMouseCursors.click,
+//         child: GestureDetector(
+//           behavior: HitTestBehavior.opaque,
+//           onTap: onTap,
+//           child: Text(label, style: style),
+//         ),
+//       ),
+//     );
+//   }
+// }
