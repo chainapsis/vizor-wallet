@@ -4398,6 +4398,23 @@ void main() {
     final swapProvider = _FakeSwapProvider();
     final depositSender = _FakeSwapDepositSender();
     final sessionStore = _FakeSwapSessionStore();
+    final clipboardWrites = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final args = call.arguments as Map<Object?, Object?>;
+          clipboardWrites.add(args['text']! as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
 
     await tester.pumpWidget(
       _routerHarness(
@@ -4457,10 +4474,35 @@ void main() {
     );
     expect(sessionStore.savedIntents.single.oneClickRecipient, '0xrecipient');
     expect(
+      sessionStore.savedIntents.single.receipt,
+      contains(
+        isA<SwapPrototypeField>()
+            .having((field) => field.label, 'label', 'USDC recipient')
+            .having((field) => field.value, 'value', '0xrecipient'),
+      ),
+    );
+    expect(
       sessionStore.savedIntents.single.oneClickRefundTo,
       't1actualstaging',
     );
     expect(find.text('Send ZEC'), findsWidgets);
+    expect(find.text('USDC recipient'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('swap_activity_external_recipient_value')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('swap_copy_usdc_recipient')),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('swap_copy_usdc_recipient')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('swap_copy_usdc_recipient')));
+    await tester.pumpAndSettle();
+    expect(clipboardWrites.last, '0xrecipient');
+    expect(find.text('Address Copied'), findsOneWidget);
     expect(find.text('t1live-deposit'), findsWidgets);
     expect(find.text('ZEC deposit tx hash'), findsOneWidget);
     expect(find.text('Submit ZEC deposit'), findsOneWidget);

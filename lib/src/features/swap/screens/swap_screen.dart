@@ -4075,6 +4075,7 @@ class _ActiveSwapTradeLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final recipient = _externalRecipientSummary(intent);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.xs,
@@ -4085,31 +4086,99 @@ class _ActiveSwapTradeLine extends StatelessWidget {
         border: Border.all(color: colors.border.subtle),
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: _ActiveTradeAmount(
-              label: 'You send',
-              value: intent.sellAmount,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: _ActiveTradeAmount(
+                  label: 'You send',
+                  value: intent.sellAmount,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+                child: AppIcon(
+                  AppIcons.arrowForwardIos,
+                  size: 14,
+                  color: colors.icon.muted,
+                ),
+              ),
+              Expanded(
+                child: _ActiveTradeAmount(
+                  label: 'You receive',
+                  value: intent.receiveEstimate,
+                  alignEnd: true,
+                ),
+              ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-            child: AppIcon(
-              AppIcons.arrowForwardIos,
-              size: 14,
-              color: colors.icon.muted,
-            ),
-          ),
-          Expanded(
-            child: _ActiveTradeAmount(
-              label: 'You receive',
-              value: intent.receiveEstimate,
-              alignEnd: true,
-            ),
-          ),
+          if (recipient != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            _ExternalRecipientLine(recipient: recipient),
+          ],
         ],
       ),
+    );
+  }
+}
+
+class _ExternalRecipientSummary {
+  const _ExternalRecipientSummary({required this.label, required this.value});
+
+  final String label;
+  final String value;
+}
+
+_ExternalRecipientSummary? _externalRecipientSummary(
+  SwapPrototypeIntent intent,
+) {
+  if (intent.direction != SwapDirection.zecToExternal) return null;
+  final recipient = intent.oneClickRecipient?.trim();
+  if (recipient == null || recipient.isEmpty) return null;
+  final symbol =
+      intent.externalAsset?.symbol ??
+      _ActivityStatusPlan._pairSymbol(intent.pair, 1);
+  return _ExternalRecipientSummary(
+    label: '$symbol recipient',
+    value: recipient,
+  );
+}
+
+class _ExternalRecipientLine extends StatelessWidget {
+  const _ExternalRecipientLine({required this.recipient});
+
+  final _ExternalRecipientSummary recipient;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      key: const ValueKey('swap_activity_external_recipient_line'),
+      children: [
+        AppIcon(AppIcons.user, size: 14, color: colors.icon.muted),
+        const SizedBox(width: AppSpacing.xxs),
+        Text(
+          recipient.label,
+          style: AppTypography.labelMedium.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: Text(
+            recipient.value,
+            key: const ValueKey('swap_activity_external_recipient_value'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.end,
+            style: AppTypography.codeSmall.copyWith(color: colors.text.primary),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        _CopyValueButton(label: recipient.label, value: recipient.value),
+      ],
     );
   }
 }
@@ -4703,7 +4772,9 @@ String _copyValueToastMessage(String label) {
   if (normalized.isEmpty) return 'Copied to Clipboard';
   final lower = normalized.toLowerCase();
   if (lower == 'memo') return 'Memo Copied';
-  if (lower.contains('address') || lower.contains('deposit')) {
+  if (lower.contains('address') ||
+      lower.contains('recipient') ||
+      lower.contains('deposit')) {
     return 'Address Copied';
   }
   return 'Copied to Clipboard';

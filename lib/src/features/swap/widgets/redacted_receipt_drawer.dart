@@ -161,6 +161,13 @@ List<SwapPrototypeField> _supportDetailRows(
     'Provider quote',
     intent.providerQuoteId ?? receiptValue('Provider quote'),
   );
+  if (intent.direction == SwapDirection.zecToExternal) {
+    final symbol = intent.externalAsset?.symbol ?? 'External';
+    add(
+      '$symbol recipient',
+      intent.oneClickRecipient ?? receiptValue('$symbol recipient'),
+    );
+  }
   add('Deposit address', intent.depositAddress);
   add('Deposit memo', intent.depositMemo ?? receiptValue('Memo'));
   add('Deposit tx', intent.depositTxHash ?? receiptValue('Deposit tx'));

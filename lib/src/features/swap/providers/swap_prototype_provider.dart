@@ -1633,6 +1633,11 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
             label: 'Provider quote',
             value: quote.providerQuoteId!,
           ),
+        if (sendsZec)
+          SwapPrototypeField(
+            label: '$externalSymbol recipient',
+            value: addressPlan.oneClickRecipient,
+          ),
         SwapPrototypeField(
           label: sendsZec ? 'ZEC deposit' : '$externalSymbol source deposit',
           value: quote.depositInstruction.address,
