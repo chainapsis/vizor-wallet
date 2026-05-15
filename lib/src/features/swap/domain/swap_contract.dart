@@ -646,6 +646,8 @@ class SwapIntentSnapshot {
     required this.nextAction,
     required this.depositInstruction,
     this.providerStatusRaw,
+    this.nearIntentHash,
+    this.nearTransactionHash,
   });
 
   factory SwapIntentSnapshot.fromQuote(
@@ -677,6 +679,8 @@ class SwapIntentSnapshot {
   final String nextAction;
   final SwapDepositInstruction depositInstruction;
   final String? providerStatusRaw;
+  final String? nearIntentHash;
+  final String? nearTransactionHash;
 }
 
 class SwapPricingSnapshot {

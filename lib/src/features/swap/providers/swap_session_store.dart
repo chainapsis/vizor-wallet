@@ -131,6 +131,8 @@ Map<String, Object?> _intentToJson(SwapPrototypeIntent intent) {
     'providerQuoteId': intent.providerQuoteId,
     'providerSignature': intent.providerSignature,
     'providerStatusRaw': intent.providerStatusRaw,
+    'nearIntentHash': intent.nearIntentHash,
+    'nearTransactionHash': intent.nearTransactionHash,
     'lastStatusCheckedAt': intent.lastStatusCheckedAt
         ?.toUtc()
         .toIso8601String(),
@@ -168,6 +170,8 @@ SwapPrototypeIntent _intentFromJson(Map<String, dynamic> json) {
     providerQuoteId: _optionalString(json['providerQuoteId']),
     providerSignature: _optionalString(json['providerSignature']),
     providerStatusRaw: _optionalString(json['providerStatusRaw']),
+    nearIntentHash: _optionalString(json['nearIntentHash']),
+    nearTransactionHash: _optionalString(json['nearTransactionHash']),
     lastStatusCheckedAt: _optionalDateTime(json['lastStatusCheckedAt']),
     statusError: _optionalString(json['statusError']),
     oneClickRecipient: _optionalString(json['oneClickRecipient']),

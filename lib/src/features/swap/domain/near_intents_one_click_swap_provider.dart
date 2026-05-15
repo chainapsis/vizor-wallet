@@ -333,6 +333,8 @@ class NearIntentsOneClickSwapProvider
       nextAction: _nextAction(status, quote),
       depositInstruction: quote.depositInstruction,
       providerStatusRaw: response.status,
+      nearIntentHash: response.swapDetails?.intentHash,
+      nearTransactionHash: response.swapDetails?.nearTransactionHash,
     );
   }
 
@@ -644,6 +646,7 @@ class _OneClickStatusResponse {
   const _OneClickStatusResponse({
     required this.status,
     required this.quoteResponse,
+    this.swapDetails,
   });
 
   factory _OneClickStatusResponse.fromJson(Map<String, dynamic> json) {
@@ -651,17 +654,41 @@ class _OneClickStatusResponse {
     if (quoteResponse is! Map<String, dynamic>) {
       throw const OneClickApiException('Malformed 1Click status response');
     }
+    final swapDetails = json['swapDetails'] ?? json['swap_details'];
     return _OneClickStatusResponse(
       status: _string(json, 'status'),
       quoteResponse: _OneClickQuoteResponse.fromJson(
         quoteResponse,
         fallbackCorrelationId: _optionalString(json, 'correlationId'),
       ),
+      swapDetails: swapDetails is Map<String, dynamic>
+          ? _OneClickSwapDetails.fromJson(swapDetails)
+          : null,
     );
   }
 
   final String status;
   final _OneClickQuoteResponse quoteResponse;
+  final _OneClickSwapDetails? swapDetails;
+}
+
+class _OneClickSwapDetails {
+  const _OneClickSwapDetails({this.intentHash, this.nearTransactionHash});
+
+  factory _OneClickSwapDetails.fromJson(Map<String, dynamic> json) {
+    return _OneClickSwapDetails(
+      intentHash: _firstOptionalString(json, 'intentHashes', 'intent_hashes'),
+      nearTransactionHash:
+          _firstOptionalString(json, 'nearTxHashes', 'near_tx_hashes') ??
+          _firstTransactionHash(json, 'nearSwapTransactions') ??
+          _firstTransactionHash(json, 'near_swap_transactions') ??
+          _firstTransactionHash(json, 'nearDepositTransactions') ??
+          _firstTransactionHash(json, 'near_deposit_transactions'),
+    );
+  }
+
+  final String? intentHash;
+  final String? nearTransactionHash;
 }
 
 const _dryRunDepositAddress = 'dry-run-preview';
@@ -708,6 +735,42 @@ String? _optionalString(Map<String, dynamic> json, String key) {
     return value.toString();
   }
   throw OneClickApiException('Invalid string field: $key');
+}
+
+String? _firstOptionalString(
+  Map<String, dynamic> json,
+  String camelKey,
+  String snakeKey,
+) {
+  final value = json[camelKey] ?? json[snakeKey];
+  if (value == null) return null;
+  if (value is String) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+  if (value is List) {
+    for (final item in value) {
+      if (item == null) continue;
+      final string = item is String ? item : item.toString();
+      final trimmed = string.trim();
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    return null;
+  }
+  return null;
+}
+
+String? _firstTransactionHash(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! List) return null;
+  for (final item in value) {
+    if (item is! Map) continue;
+    final txHash = item['txHash'] ?? item['tx_hash'];
+    if (txHash is! String) continue;
+    final trimmed = txHash.trim();
+    if (trimmed.isNotEmpty) return trimmed;
+  }
+  return null;
 }
 
 int _int(Map<String, dynamic> json, String key) {

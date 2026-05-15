@@ -19,6 +19,7 @@ import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../send/models/send_prefill_args.dart';
+import '../domain/near_intents_explorer.dart';
 import '../models/swap_prototype_models.dart';
 import '../providers/swap_prototype_provider.dart';
 import '../widgets/redacted_receipt_drawer.dart';
@@ -153,7 +154,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         if (intentId != null) {
           setState(() => _activityDetailIntentId = intentId);
         }
-        showAppToast(toastContext(), 'Swap Request Created');
+        showAppToast(toastContext(), 'Swap created in Activity');
       }());
     }
 
@@ -173,6 +174,20 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
 
     void retryShield() {
       unawaited(swapNotifier.retryShieldSelectedIntent());
+    }
+
+    void copyNearIntentsExplorerLink(SwapPrototypeIntent intent) {
+      final uri = nearIntentsExplorerUri(
+        nearIntentHash: intent.nearIntentHash,
+        depositTxHash: intent.depositTxHash,
+        depositAddress: intent.depositAddress ?? intent.id,
+      );
+      if (uri == null) return;
+      copySwapText(
+        toastContext(),
+        text: uri.toString(),
+        toastMessage: 'Explorer Link Copied',
+      );
     }
 
     void requestRemoveIntent() {
@@ -530,6 +545,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                     onSubmitDepositTransaction: submitDepositTransaction,
                     onReviewFreshQuote: reviewFreshQuote,
                     onRetryShield: retryShield,
+                    onCopyExplorerLink: copyNearIntentsExplorerLink,
                     onRemoveIntent: requestRemoveIntent,
                   ),
                 ),
@@ -1878,6 +1894,7 @@ class _SwapActivityStack extends StatelessWidget {
     required this.onSubmitDepositTransaction,
     required this.onReviewFreshQuote,
     required this.onRetryShield,
+    required this.onCopyExplorerLink,
     required this.onRemoveIntent,
     required this.liveFundsEnabled,
   });
@@ -1889,6 +1906,7 @@ class _SwapActivityStack extends StatelessWidget {
   final VoidCallback onSubmitDepositTransaction;
   final VoidCallback onReviewFreshQuote;
   final VoidCallback onRetryShield;
+  final ValueChanged<SwapPrototypeIntent> onCopyExplorerLink;
   final VoidCallback onRemoveIntent;
   final bool liveFundsEnabled;
 
@@ -1910,6 +1928,7 @@ class _SwapActivityStack extends StatelessWidget {
           plan: statusPlan,
           statusRefreshing: state.statusRefreshing,
           onRefreshStatus: onRefreshStatus,
+          onCopyExplorerLink: onCopyExplorerLink,
           onRemoveIntent: onRemoveIntent,
         ),
         if (statusError != null) ...[
@@ -1956,6 +1975,7 @@ class _SwapActivityDetailModal extends StatelessWidget {
     required this.onSubmitDepositTransaction,
     required this.onReviewFreshQuote,
     required this.onRetryShield,
+    required this.onCopyExplorerLink,
     required this.onRemoveIntent,
   });
 
@@ -1968,6 +1988,7 @@ class _SwapActivityDetailModal extends StatelessWidget {
   final VoidCallback onSubmitDepositTransaction;
   final VoidCallback onReviewFreshQuote;
   final VoidCallback onRetryShield;
+  final ValueChanged<SwapPrototypeIntent> onCopyExplorerLink;
   final VoidCallback onRemoveIntent;
 
   @override
@@ -2004,7 +2025,7 @@ class _SwapActivityDetailModal extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Activity detail',
+                              'Swap progress',
                               key: const ValueKey('swap_activity_detail_title'),
                               style: AppTypography.headlineSmall.copyWith(
                                 color: colors.text.accent,
@@ -2050,6 +2071,7 @@ class _SwapActivityDetailModal extends StatelessWidget {
                         onSubmitDepositTransaction: onSubmitDepositTransaction,
                         onReviewFreshQuote: onReviewFreshQuote,
                         onRetryShield: onRetryShield,
+                        onCopyExplorerLink: onCopyExplorerLink,
                         onRemoveIntent: onRemoveIntent,
                         liveFundsEnabled: liveFundsEnabled,
                       ),
@@ -2259,14 +2281,14 @@ class _ActivityStatusPlan {
         tone: _ActivityStatusPlanTone.warning,
       ),
       SwapIntentStatus.shieldingPending => const _ActivityStatusPlan(
-        title: 'Shielding ZEC',
-        detail: 'Moving received ZEC into the wallet balance.',
+        title: 'Making ZEC spendable',
+        detail: 'Shielding received ZEC into your spendable balance.',
         iconName: AppIcons.shieldKeyhole,
         tone: _ActivityStatusPlanTone.action,
       ),
       SwapIntentStatus.shieldingConfirming => const _ActivityStatusPlan(
-        title: 'Confirming shield',
-        detail: 'Waiting for the shield transaction to confirm.',
+        title: 'Confirming spendable ZEC',
+        detail: 'Waiting for the shield transaction before ZEC is spendable.',
         iconName: AppIcons.shieldKeyhole,
         tone: _ActivityStatusPlanTone.action,
       ),
@@ -3042,9 +3064,9 @@ class _ActivityRoutePlan {
   factory _ActivityRoutePlan.fromIntent(SwapPrototypeIntent intent) {
     final sourceSymbol = _ActivityStatusPlan._pairSymbol(intent.pair, 0);
     final receiveSymbol = _ActivityStatusPlan._pairSymbol(intent.pair, 1);
-    final deliverLabel = receiveSymbol == 'ZEC' ? 'Shield ZEC' : 'Deliver';
+    final deliverLabel = receiveSymbol == 'ZEC' ? 'Make spendable' : 'Deliver';
     final deliverDetail = receiveSymbol == 'ZEC'
-        ? 'Wallet is shielding the received ZEC into your spendable balance.'
+        ? 'Wallet is shielding received ZEC into your spendable balance.'
         : 'Provider is sending funds to your destination address.';
     final hasDepositTx = intent.depositTxHash?.trim().isNotEmpty ?? false;
 
@@ -3578,8 +3600,12 @@ bool _showActivityReceipt(SwapIntentStatus status) {
     SwapIntentStatus.refunded ||
     SwapIntentStatus.expired ||
     SwapIntentStatus.failed ||
+    SwapIntentStatus.depositObserved ||
+    SwapIntentStatus.processing ||
     SwapIntentStatus.incompleteDeposit ||
     SwapIntentStatus.providerStatusUnknown ||
+    SwapIntentStatus.shieldingPending ||
+    SwapIntentStatus.shieldingConfirming ||
     SwapIntentStatus.shieldingFailed => true,
     _ => false,
   };
@@ -3591,6 +3617,7 @@ class _ActiveSwapSummaryPanel extends StatelessWidget {
     required this.plan,
     required this.statusRefreshing,
     required this.onRefreshStatus,
+    required this.onCopyExplorerLink,
     required this.onRemoveIntent,
   });
 
@@ -3598,6 +3625,7 @@ class _ActiveSwapSummaryPanel extends StatelessWidget {
   final _ActivityStatusPlan plan;
   final bool statusRefreshing;
   final VoidCallback onRefreshStatus;
+  final ValueChanged<SwapPrototypeIntent> onCopyExplorerLink;
   final VoidCallback onRemoveIntent;
 
   @override
@@ -3605,7 +3633,7 @@ class _ActiveSwapSummaryPanel extends StatelessWidget {
     final colors = context.colors;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 440;
+        final compact = constraints.maxWidth < 560;
         final checkedLabel = statusRefreshing
             ? 'Checking now'
             : _lastStatusCheckedLabel(intent.lastStatusCheckedAt) ??
@@ -3614,11 +3642,29 @@ class _ActiveSwapSummaryPanel extends StatelessWidget {
           label: checkedLabel,
           active: statusRefreshing,
         );
+        final explorerUri = nearIntentsExplorerUri(
+          nearIntentHash: intent.nearIntentHash,
+          depositTxHash: intent.depositTxHash,
+          depositAddress: intent.depositAddress ?? intent.id,
+        );
         final statusActions = Wrap(
           spacing: AppSpacing.xs,
           runSpacing: AppSpacing.xs,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            AppButton(
+              key: const ValueKey(
+                'swap_activity_copy_near_intents_explorer_button',
+              ),
+              onPressed: explorerUri == null
+                  ? null
+                  : () => onCopyExplorerLink(intent),
+              variant: AppButtonVariant.secondary,
+              size: AppButtonSize.medium,
+              minWidth: 116,
+              leading: const AppIcon(AppIcons.link),
+              child: const Text('Copy link'),
+            ),
             AppButton(
               key: const ValueKey('swap_status_refresh_button'),
               onPressed: statusRefreshing ? null : onRefreshStatus,

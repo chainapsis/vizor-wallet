@@ -30,7 +30,7 @@ class SwapQueuePanel extends StatelessWidget {
     final colors = context.colors;
     final openIntents = [
       for (final intent in intents)
-        if (!intent.status.isTerminal) intent,
+        if (_isQueueOpenStatus(intent.status)) intent,
     ];
     final completedIntents = [
       for (final intent in intents)
@@ -38,10 +38,7 @@ class SwapQueuePanel extends StatelessWidget {
     ];
     final attentionIntents = [
       for (final intent in intents)
-        if (intent.status == SwapIntentStatus.failed ||
-            intent.status == SwapIntentStatus.expired ||
-            intent.status == SwapIntentStatus.refunded)
-          intent,
+        if (_isQueueAttentionStatus(intent.status)) intent,
     ];
     final groups = [
       _QueueGroup(id: 'open', label: 'Open', intents: openIntents),
@@ -227,11 +224,9 @@ class _QueueRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               _QueueStatusGlyph(
-                intentId: intent.id,
                 status: intent.status,
                 color: statusColor,
                 selected: selected,
-                live: live,
               ),
               const SizedBox(width: AppSpacing.xs),
               _QueueAssetPair(intent: intent, selected: selected),
@@ -265,7 +260,7 @@ class _QueueRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xs),
-                    _QueueProgressSegments(status: intent.status),
+                    _QueueProgressSegments(intent: intent),
                     const SizedBox(height: AppSpacing.xxs),
                     _QueueAmountFlow(intent: intent),
                   ],
@@ -342,18 +337,14 @@ class _QueueAssetPair extends StatelessWidget {
 
 class _QueueStatusGlyph extends StatelessWidget {
   const _QueueStatusGlyph({
-    required this.intentId,
     required this.status,
     required this.color,
     required this.selected,
-    required this.live,
   });
 
-  final String intentId;
   final SwapIntentStatus status;
   final Color color;
   final bool selected;
-  final bool live;
 
   @override
   Widget build(BuildContext context) {
@@ -371,11 +362,6 @@ class _QueueStatusGlyph extends StatelessWidget {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                if (live)
-                  _QueueLivePulse(
-                    key: ValueKey('swap_queue_live_pulse_$intentId'),
-                    color: color,
-                  ),
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
                   curve: Curves.easeOutCubic,
@@ -412,49 +398,6 @@ class _QueueStatusGlyph extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _QueueLivePulse extends StatelessWidget {
-  const _QueueLivePulse({required this.color, super.key});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final reduceMotion =
-        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    if (reduceMotion) {
-      return Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(AppRadii.full),
-        ),
-      );
-    }
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0.9, end: 1.14),
-      duration: const Duration(milliseconds: 760),
-      curve: Curves.easeOutCubic,
-      builder: (context, value, child) {
-        final opacity = ((1.14 - value) / 0.24).clamp(0.0, 1.0).toDouble();
-        return Transform.scale(
-          scale: value,
-          child: Opacity(opacity: opacity, child: child),
-        );
-      },
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.16),
-          border: Border.all(color: color.withValues(alpha: 0.24)),
-          borderRadius: BorderRadius.circular(AppRadii.full),
-        ),
       ),
     );
   }
@@ -510,9 +453,9 @@ class _QueueCountChip extends StatelessWidget {
 }
 
 class _QueueProgressSegments extends StatefulWidget {
-  const _QueueProgressSegments({required this.status});
+  const _QueueProgressSegments({required this.intent});
 
-  final SwapIntentStatus status;
+  final SwapPrototypeIntent intent;
 
   @override
   State<_QueueProgressSegments> createState() => _QueueProgressSegmentsState();
@@ -525,7 +468,7 @@ class _QueueProgressSegmentsState extends State<_QueueProgressSegments> {
   @override
   void initState() {
     super.initState();
-    _displayProgressIndex = _queueProgressIndex(widget.status);
+    _displayProgressIndex = _queueProgressIndex(widget.intent);
   }
 
   @override
@@ -549,9 +492,9 @@ class _QueueProgressSegmentsState extends State<_QueueProgressSegments> {
   void _syncDisplayProgress() {
     final reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    final targetIndex = _queueProgressIndex(widget.status);
+    final targetIndex = _queueProgressIndex(widget.intent);
     if (reduceMotion ||
-        !_queueCanAnimateProgress(widget.status) ||
+        !_queueCanAnimateProgress(widget.intent.status) ||
         targetIndex <= _displayProgressIndex) {
       _advanceTimer?.cancel();
       _advanceTimer = null;
@@ -577,8 +520,8 @@ class _QueueProgressSegmentsState extends State<_QueueProgressSegments> {
 
   void _advanceDisplayProgress() {
     if (!mounted) return;
-    final targetIndex = _queueProgressIndex(widget.status);
-    if (!_queueCanAnimateProgress(widget.status) ||
+    final targetIndex = _queueProgressIndex(widget.intent);
+    if (!_queueCanAnimateProgress(widget.intent.status) ||
         targetIndex <= _displayProgressIndex) {
       _advanceTimer?.cancel();
       _advanceTimer = null;
@@ -599,7 +542,7 @@ class _QueueProgressSegmentsState extends State<_QueueProgressSegments> {
   @override
   Widget build(BuildContext context) {
     final states = _queueSegmentStatesForDisplay(
-      widget.status,
+      widget.intent,
       _displayProgressIndex,
     );
     return Row(
@@ -607,7 +550,7 @@ class _QueueProgressSegmentsState extends State<_QueueProgressSegments> {
         for (var index = 0; index < states.length; index++) ...[
           Expanded(
             child: _QueueProgressSegment(
-              status: widget.status,
+              status: widget.intent.status,
               index: index,
               state: states[index],
             ),
@@ -716,7 +659,26 @@ Color _statusColor(BuildContext context, SwapIntentStatus status) {
     SwapIntentStatus.failed ||
     SwapIntentStatus.expired ||
     SwapIntentStatus.refunded => colors.text.destructive,
-    _ => colors.text.warning,
+    SwapIntentStatus.providerStatusUnknown ||
+    SwapIntentStatus.incompleteDeposit ||
+    SwapIntentStatus.shieldingFailed => colors.text.warning,
+    _ => colors.text.accent,
+  };
+}
+
+bool _isQueueOpenStatus(SwapIntentStatus status) {
+  return !status.isTerminal && !_isQueueAttentionStatus(status);
+}
+
+bool _isQueueAttentionStatus(SwapIntentStatus status) {
+  return switch (status) {
+    SwapIntentStatus.providerStatusUnknown ||
+    SwapIntentStatus.incompleteDeposit ||
+    SwapIntentStatus.shieldingFailed ||
+    SwapIntentStatus.refunded ||
+    SwapIntentStatus.expired ||
+    SwapIntentStatus.failed => true,
+    _ => false,
   };
 }
 
@@ -778,15 +740,24 @@ String _queueStatusIcon(SwapIntentStatus status) {
 
 enum _QueueSegmentState { pending, active, success, warning, destructive }
 
-List<_QueueSegmentState> _queueSegmentStates(SwapIntentStatus status) {
+List<_QueueSegmentState> _queueSegmentStates(SwapPrototypeIntent intent) {
+  final status = intent.status;
   return switch (status) {
     SwapIntentStatus.awaitingDeposit ||
-    SwapIntentStatus.awaitingExternalDeposit => const [
-      _QueueSegmentState.active,
-      _QueueSegmentState.pending,
-      _QueueSegmentState.pending,
-      _QueueSegmentState.pending,
-    ],
+    SwapIntentStatus.awaitingExternalDeposit =>
+      _hasDepositTx(intent)
+          ? const [
+              _QueueSegmentState.success,
+              _QueueSegmentState.active,
+              _QueueSegmentState.pending,
+              _QueueSegmentState.pending,
+            ]
+          : const [
+              _QueueSegmentState.active,
+              _QueueSegmentState.pending,
+              _QueueSegmentState.pending,
+              _QueueSegmentState.pending,
+            ],
     SwapIntentStatus.depositObserved || SwapIntentStatus.processing => const [
       _QueueSegmentState.success,
       _QueueSegmentState.success,
@@ -840,15 +811,15 @@ List<_QueueSegmentState> _queueSegmentStates(SwapIntentStatus status) {
 }
 
 List<_QueueSegmentState> _queueSegmentStatesForDisplay(
-  SwapIntentStatus status,
+  SwapPrototypeIntent intent,
   int progressIndex,
 ) {
-  if (!_queueCanAnimateProgress(status) ||
-      progressIndex >= _queueProgressIndex(status)) {
-    return _queueSegmentStates(status);
+  if (!_queueCanAnimateProgress(intent.status) ||
+      progressIndex >= _queueProgressIndex(intent)) {
+    return _queueSegmentStates(intent);
   }
   final clampedIndex = progressIndex.clamp(0, 4).toInt();
-  if (clampedIndex >= 4) return _queueSegmentStates(status);
+  if (clampedIndex >= 4) return _queueSegmentStates(intent);
   return [
     for (var index = 0; index < 4; index++)
       index < clampedIndex
@@ -872,10 +843,11 @@ bool _queueCanAnimateProgress(SwapIntentStatus status) {
   };
 }
 
-int _queueProgressIndex(SwapIntentStatus status) {
+int _queueProgressIndex(SwapPrototypeIntent intent) {
+  final status = intent.status;
   return switch (status) {
     SwapIntentStatus.awaitingDeposit ||
-    SwapIntentStatus.awaitingExternalDeposit => 0,
+    SwapIntentStatus.awaitingExternalDeposit => _hasDepositTx(intent) ? 1 : 0,
     SwapIntentStatus.depositObserved || SwapIntentStatus.processing => 2,
     SwapIntentStatus.shieldingPending ||
     SwapIntentStatus.shieldingConfirming => 3,
@@ -886,6 +858,15 @@ int _queueProgressIndex(SwapIntentStatus status) {
     SwapIntentStatus.shieldingFailed => 3,
     SwapIntentStatus.expired || SwapIntentStatus.failed => 0,
   };
+}
+
+bool _isAwaitingDepositStatus(SwapIntentStatus status) {
+  return status == SwapIntentStatus.awaitingDeposit ||
+      status == SwapIntentStatus.awaitingExternalDeposit;
+}
+
+bool _hasDepositTx(SwapPrototypeIntent intent) {
+  return intent.depositTxHash?.trim().isNotEmpty ?? false;
 }
 
 Color _queueSegmentColor(BuildContext context, _QueueSegmentState state) {
@@ -900,6 +881,9 @@ Color _queueSegmentColor(BuildContext context, _QueueSegmentState state) {
 }
 
 String _queueActionLabel(SwapPrototypeIntent intent) {
+  if (_isAwaitingDepositStatus(intent.status) && _hasDepositTx(intent)) {
+    return 'Confirming deposit';
+  }
   return switch (intent.status) {
     SwapIntentStatus.awaitingDeposit ||
     SwapIntentStatus.awaitingExternalDeposit => 'Waiting for deposit',

@@ -57,6 +57,8 @@ void main() {
       providerQuoteId: 'quote-1',
       providerSignature: 'quote-signature',
       providerStatusRaw: 'PROCESSING',
+      nearIntentHash: 'intent-hash-1',
+      nearTransactionHash: 'near-tx-hash-1',
       lastStatusCheckedAt: DateTime.utc(2026, 5, 7, 10, 30),
       statusError: 'temporary status refresh failure',
       oneClickRecipient: '0xrecipient',
@@ -81,6 +83,8 @@ void main() {
     expect(restored.single.providerQuoteId, 'quote-1');
     expect(restored.single.providerSignature, 'quote-signature');
     expect(restored.single.providerStatusRaw, 'PROCESSING');
+    expect(restored.single.nearIntentHash, 'intent-hash-1');
+    expect(restored.single.nearTransactionHash, 'near-tx-hash-1');
     expect(
       restored.single.lastStatusCheckedAt,
       DateTime.utc(2026, 5, 7, 10, 30),

@@ -6,7 +6,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../models/swap_prototype_models.dart';
 import 'swap_copy_feedback.dart';
 
-class RedactedReceiptDrawer extends StatelessWidget {
+class RedactedReceiptDrawer extends StatefulWidget {
   const RedactedReceiptDrawer({
     required this.rows,
     required this.intent,
@@ -17,12 +17,20 @@ class RedactedReceiptDrawer extends StatelessWidget {
   final SwapPrototypeIntent intent;
 
   @override
+  State<RedactedReceiptDrawer> createState() => _RedactedReceiptDrawerState();
+}
+
+class _RedactedReceiptDrawerState extends State<RedactedReceiptDrawer> {
+  var _fullBundleVisible = false;
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final supportRows = _supportRows(rows);
-    final receiptText = redactedReceiptText(supportRows);
-    final recoveryBundleCopyText = recoveryBundleText(intent);
+    final detailRows = _supportDetailRows(widget.rows, widget.intent);
+    final summaryRows = _safeSupportSummaryRows(detailRows);
+    final detailsText = supportDetailsText(detailRows);
     return Container(
+      key: const ValueKey('swap_support_safe_summary_panel'),
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
         color: colors.background.base,
@@ -33,58 +41,89 @@ class RedactedReceiptDrawer extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Receipt',
-            style: AppTypography.headlineSmall.copyWith(
+            'Safe support summary',
+            style: AppTypography.labelMedium.copyWith(
               color: colors.text.accent,
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          for (final row in supportRows) _ReceiptRow(row: row),
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xs,
-            children: [
-              AppButton(
-                key: const ValueKey('swap_copy_redacted_receipt_button'),
-                onPressed:
-                    receiptText.isEmpty
-                        ? null
-                        : () {
-                          copySwapText(
-                            context,
-                            text: receiptText,
-                            toastMessage: 'Receipt Copied',
-                          );
-                        },
-                variant: AppButtonVariant.secondary,
-                size: AppButtonSize.medium,
-                leading: const AppIcon(AppIcons.copy),
-                child: const Text('Copy redacted receipt'),
-              ),
-              AppButton(
-                key: const ValueKey('swap_copy_recovery_bundle_button'),
-                onPressed:
-                    recoveryBundleCopyText.isEmpty
-                        ? null
-                        : () {
-                          copySwapText(
-                            context,
-                            text: recoveryBundleCopyText,
-                            toastMessage: 'Recovery Bundle Copied',
-                          );
-                        },
-                variant: AppButtonVariant.secondary,
-                size: AppButtonSize.medium,
-                leading: const AppIcon(AppIcons.scroll),
-                child: const Text('Copy recovery'),
-              ),
-            ],
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'No raw address values, memos, transaction hashes, or quote ids are shown until you reveal the full bundle.',
+            style: AppTypography.bodyExtraSmall.copyWith(
+              color: colors.text.secondary,
+            ),
           ),
+          const SizedBox(height: AppSpacing.xs),
+          for (final row in summaryRows) _SafeSummaryRow(row: row),
+          const SizedBox(height: AppSpacing.sm),
+          AppButton(
+            key: const ValueKey('swap_support_bundle_reveal_button'),
+            onPressed: () {
+              setState(() => _fullBundleVisible = !_fullBundleVisible);
+            },
+            variant: AppButtonVariant.secondary,
+            size: AppButtonSize.medium,
+            leading: const AppIcon(AppIcons.scroll),
+            trailing: AppIcon(
+              _fullBundleVisible ? AppIcons.arrowUpward : AppIcons.arrowDown,
+            ),
+            child: Text(
+              _fullBundleVisible ? 'Hide full bundle' : 'Reveal full bundle',
+            ),
+          ),
+          if (_fullBundleVisible) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Container(
+              key: const ValueKey('swap_support_bundle_panel'),
+              padding: const EdgeInsets.all(AppSpacing.xs),
+              decoration: BoxDecoration(
+                color: colors.background.raised,
+                border: Border.all(color: colors.border.subtle),
+                borderRadius: BorderRadius.circular(AppRadii.xSmall),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final row in detailRows) _ReceiptRow(row: row),
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    children: [
+                      AppButton(
+                        key: const ValueKey('swap_copy_support_details_button'),
+                        onPressed: detailsText.isEmpty
+                            ? null
+                            : () {
+                                copySwapText(
+                                  context,
+                                  text: detailsText,
+                                  toastMessage: 'Support Details Copied',
+                                );
+                              },
+                        variant: AppButtonVariant.secondary,
+                        size: AppButtonSize.medium,
+                        leading: const AppIcon(AppIcons.copy),
+                        child: const Text('Copy details'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
+String supportDetailsText(List<SwapPrototypeField> rows) {
+  final fields = rows
+      .where((row) => row.value.trim().isNotEmpty)
+      .map((row) => '${row.label}: ${row.value}');
+  if (fields.isEmpty) return '';
+  return ['Support details', ...fields].join('\n');
 }
 
 String redactedReceiptText(List<SwapPrototypeField> rows) {
@@ -95,42 +134,6 @@ String redactedReceiptText(List<SwapPrototypeField> rows) {
   return ['Receipt scope: redacted status evidence', ...fields].join('\n');
 }
 
-String recoveryBundleText(SwapPrototypeIntent intent) {
-  final fields = <SwapPrototypeField>[
-    SwapPrototypeField(label: 'Swap service', value: intent.provider),
-    SwapPrototypeField(label: 'Pair', value: intent.pair),
-    SwapPrototypeField(label: 'Status', value: intent.statusLabel),
-    SwapPrototypeField(label: 'Next action', value: intent.nextAction),
-    if (intent.depositAddress != null)
-      SwapPrototypeField(
-        label: 'Deposit address',
-        value: intent.depositAddress!,
-      ),
-    if (intent.depositMemo != null)
-      SwapPrototypeField(label: 'Deposit memo', value: intent.depositMemo!),
-    if (intent.depositTxHash != null)
-      SwapPrototypeField(label: 'Deposit tx', value: intent.depositTxHash!),
-    if (intent.providerQuoteId != null)
-      SwapPrototypeField(
-        label: 'Provider quote',
-        value: intent.providerQuoteId!,
-      ),
-    if (intent.oneClickRecipient != null)
-      SwapPrototypeField(label: 'Recipient', value: intent.oneClickRecipient!),
-    if (intent.oneClickRefundTo != null)
-      SwapPrototypeField(
-        label: 'Refund address',
-        value: intent.oneClickRefundTo!,
-      ),
-  ];
-
-  final lines = fields
-      .where((field) => field.value.trim().isNotEmpty)
-      .map((field) => '${field.label}: ${field.value}');
-  if (lines.isEmpty) return '';
-  return ['Recovery scope: local support bundle', ...lines].join('\n');
-}
-
 List<SwapPrototypeField> _supportRows(List<SwapPrototypeField> rows) {
   return [
     for (final row in rows)
@@ -138,9 +141,168 @@ List<SwapPrototypeField> _supportRows(List<SwapPrototypeField> rows) {
   ];
 }
 
+List<SwapPrototypeField> _supportDetailRows(
+  List<SwapPrototypeField> rows,
+  SwapPrototypeIntent intent,
+) {
+  final fields = <SwapPrototypeField>[];
+  final receiptRows = _supportRows(rows);
+
+  void add(String label, String? rawValue) {
+    final value = rawValue?.trim();
+    if (value == null || value.isEmpty) return;
+    final candidate = SwapPrototypeField(label: label, value: value);
+    if (_isNoisySupportRow(candidate)) return;
+    if (_hasSupportField(fields, candidate)) return;
+    fields.add(candidate);
+  }
+
+  String? receiptValue(String label) {
+    final normalized = label.trim().toLowerCase();
+    for (final row in receiptRows) {
+      if (row.label.trim().toLowerCase() == normalized) {
+        return row.value;
+      }
+    }
+    return null;
+  }
+
+  final showShieldStagingAddress = switch (intent.status) {
+    SwapIntentStatus.shieldingPending ||
+    SwapIntentStatus.shieldingConfirming ||
+    SwapIntentStatus.shieldingFailed => true,
+    _ => false,
+  };
+
+  add(
+    'Provider quote',
+    intent.providerQuoteId ?? receiptValue('Provider quote'),
+  );
+  add('Deposit address', intent.depositAddress);
+  add('Deposit memo', intent.depositMemo ?? receiptValue('Memo'));
+  add('Deposit tx', intent.depositTxHash ?? receiptValue('Deposit tx'));
+  if (showShieldStagingAddress) {
+    add(
+      'Shield staging address',
+      intent.oneClickRecipient ?? receiptValue('Receive address'),
+    );
+  }
+  add('Shield tx', intent.shieldTxHash ?? receiptValue('Shield tx'));
+  add('Shield fee', receiptValue('Shield fee'));
+  add('Intent hash', intent.nearIntentHash);
+
+  return fields;
+}
+
+bool _hasSupportField(
+  List<SwapPrototypeField> rows,
+  SwapPrototypeField candidate,
+) {
+  final label = candidate.label.trim().toLowerCase();
+  final value = candidate.value.trim();
+  return rows.any((row) {
+    final rowLabel = row.label.trim().toLowerCase();
+    final rowValue = row.value.trim();
+    return rowLabel == label || (value.length > 8 && rowValue == value);
+  });
+}
+
 bool _isNoisySupportRow(SwapPrototypeField row) {
   final label = row.label.trim().toLowerCase();
   return label == 'swap id' || label == 'shared fields';
+}
+
+List<SwapPrototypeField> _safeSupportSummaryRows(
+  List<SwapPrototypeField> rows,
+) {
+  final fields = <SwapPrototypeField>[];
+
+  bool hasLabel(String needle) {
+    final lowerNeedle = needle.toLowerCase();
+    return rows.any((row) => row.label.toLowerCase().contains(lowerNeedle));
+  }
+
+  void add(String label, String value) {
+    fields.add(SwapPrototypeField(label: label, value: value));
+  }
+
+  if (hasLabel('provider') || hasLabel('intent')) {
+    add('Provider', 'Reference ids available for support');
+  }
+  if (hasLabel('deposit')) {
+    final parts = <String>[];
+    if (hasLabel('deposit address')) parts.add('address');
+    if (hasLabel('deposit memo')) parts.add('memo');
+    if (hasLabel('deposit tx')) parts.add('transaction');
+    add(
+      'Deposit',
+      parts.isEmpty
+          ? 'Tracking fields available'
+          : '${parts.join(', ')} recorded',
+    );
+  }
+  if (hasLabel('shield')) {
+    final parts = <String>[];
+    if (hasLabel('shield staging')) parts.add('staging address');
+    if (hasLabel('shield tx')) parts.add('transaction');
+    if (hasLabel('shield fee')) parts.add('fee');
+    add(
+      'Shielding',
+      parts.isEmpty
+          ? 'Wallet shielding fields available'
+          : '${parts.join(', ')} recorded',
+    );
+  }
+  if (fields.isEmpty) {
+    add('Support', 'No support fields recorded yet');
+  }
+
+  return fields;
+}
+
+class _SafeSummaryRow extends StatelessWidget {
+  const _SafeSummaryRow({required this.row});
+
+  final SwapPrototypeField row;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.xxs),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xxs,
+      ),
+      decoration: BoxDecoration(
+        color: colors.background.raised,
+        border: Border.all(color: colors.border.subtle),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 88,
+            child: Text(
+              row.label,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text(
+              row.value,
+              style: AppTypography.bodyExtraSmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ReceiptRow extends StatelessWidget {
@@ -151,30 +313,139 @@ class _ReceiptRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+    final emphasized = _isHighSignalSupportRow(row);
+    final copyable = _isCopyableSupportRow(row);
+    final technical = _isTechnicalSupportRow(row);
+    final valueStyle =
+        (technical ? AppTypography.codeSmall : AppTypography.bodySmall)
+            .copyWith(color: colors.text.primary);
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.xs),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: emphasized ? colors.background.raised : colors.background.base,
+        border: emphasized ? Border.all(color: colors.border.subtle) : null,
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
-            width: 88,
+            width: 108,
             child: Text(
               row.label,
               style: AppTypography.labelMedium.copyWith(
-                color: colors.text.secondary,
+                color: emphasized ? colors.text.accent : colors.text.secondary,
               ),
             ),
           ),
-          Expanded(
-            child: Text(
-              row.value,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.primary,
-              ),
-            ),
-          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(child: Text(row.value, style: valueStyle)),
+          if (copyable) ...[
+            const SizedBox(width: AppSpacing.xs),
+            _ReceiptCopyButton(row: row),
+          ],
         ],
       ),
     );
   }
+}
+
+class _ReceiptCopyButton extends StatelessWidget {
+  const _ReceiptCopyButton({required this.row});
+
+  final SwapPrototypeField row;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      label: 'Copy ${row.label}',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          key: ValueKey('swap_copy_detail_${_supportRowKey(row.label)}'),
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            copySwapText(
+              context,
+              text: row.value,
+              toastMessage: _copyDetailToastMessage(row.label),
+            );
+          },
+          child: Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: colors.background.base,
+              border: Border.all(color: colors.border.subtle),
+              borderRadius: BorderRadius.circular(AppRadii.xSmall),
+            ),
+            child: AppIcon(AppIcons.copy, size: 14, color: colors.icon.muted),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+bool _isCopyableSupportRow(SwapPrototypeField row) {
+  final label = row.label.trim().toLowerCase();
+  final value = row.value.trim();
+  if (value.isEmpty) return false;
+  return label.contains('address') ||
+      label.contains('memo') ||
+      label.contains('tx') ||
+      label.contains('quote') ||
+      label.contains('recipient') ||
+      label.contains('refund') ||
+      label.contains('deposit') ||
+      label.contains('explorer') ||
+      value.startsWith('http://') ||
+      value.startsWith('https://');
+}
+
+bool _isHighSignalSupportRow(SwapPrototypeField row) {
+  final label = row.label.trim().toLowerCase();
+  return label.contains('address') ||
+      label.contains('recipient') ||
+      label.contains('refund') ||
+      label.contains('tx') ||
+      label.contains('explorer');
+}
+
+bool _isTechnicalSupportRow(SwapPrototypeField row) {
+  final label = row.label.trim().toLowerCase();
+  final value = row.value.trim();
+  return label.contains('address') ||
+      label.contains('memo') ||
+      label.contains('tx') ||
+      label.contains('quote') ||
+      label.contains('explorer') ||
+      value.startsWith('http://') ||
+      value.startsWith('https://');
+}
+
+String _supportRowKey(String label) {
+  return label.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_');
+}
+
+String _copyDetailToastMessage(String label) {
+  final lower = label.trim().toLowerCase();
+  if (lower.contains('explorer')) return 'Explorer Link Copied';
+  if (lower.contains('tx')) return 'Transaction Copied';
+  if (lower.contains('quote')) return 'Quote Copied';
+  if (lower.contains('memo')) return 'Memo Copied';
+  if (lower.contains('address') ||
+      lower.contains('recipient') ||
+      lower.contains('refund') ||
+      lower.contains('deposit')) {
+    return 'Address Copied';
+  }
+  return 'Copied to Clipboard';
 }

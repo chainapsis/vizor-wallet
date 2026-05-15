@@ -135,6 +135,7 @@ class SwapReviewModal extends StatelessWidget {
               _ReviewActions(
                 expired: expired,
                 starting: starting,
+                sendsZec: quote.direction.sendsZec,
                 onCancelReview: onCancelReview,
                 onReviewAgain: onReviewAgain,
                 onStartIntent: onStartIntent,
@@ -789,6 +790,7 @@ class _ReviewActions extends StatelessWidget {
   const _ReviewActions({
     required this.expired,
     required this.starting,
+    required this.sendsZec,
     required this.onCancelReview,
     required this.onReviewAgain,
     required this.onStartIntent,
@@ -796,12 +798,16 @@ class _ReviewActions extends StatelessWidget {
 
   final bool expired;
   final bool starting;
+  final bool sendsZec;
   final VoidCallback onCancelReview;
   final VoidCallback onReviewAgain;
   final VoidCallback onStartIntent;
 
   @override
   Widget build(BuildContext context) {
+    final startLabel = sendsZec ? 'Send ZEC deposit' : 'Start swap';
+    final startingLabel = sendsZec ? 'Sending' : 'Starting';
+
     if (expired) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -857,10 +863,12 @@ class _ReviewActions extends StatelessWidget {
             buttonKey: const ValueKey('swap_start_button'),
             onPressed: starting ? null : onStartIntent,
             variant: AppButtonVariant.primary,
-            trailing: starting
+            trailing: sendsZec
+                ? null
+                : starting
                 ? const AppIcon(AppIcons.loader)
                 : const AppIcon(AppIcons.arrowForwardIos),
-            child: Text(starting ? 'Starting' : 'Start swap'),
+            child: Text(starting ? startingLabel : startLabel),
           ),
         ),
       ],
@@ -894,7 +902,7 @@ class _ReviewActionButton extends StatelessWidget {
           key: buttonKey,
           onPressed: onPressed,
           variant: variant,
-          size: AppButtonSize.large,
+          size: AppButtonSize.medium,
           height: _reviewActionHeight,
           minWidth: slotWidth.isFinite ? slotWidth : null,
           leading: leading,

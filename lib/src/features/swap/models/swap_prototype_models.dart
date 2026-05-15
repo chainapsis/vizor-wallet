@@ -154,6 +154,8 @@ class SwapPrototypeIntent {
     this.providerQuoteId,
     this.providerSignature,
     this.providerStatusRaw,
+    this.nearIntentHash,
+    this.nearTransactionHash,
     this.lastStatusCheckedAt,
     this.statusError,
     this.oneClickRecipient,
@@ -182,6 +184,8 @@ class SwapPrototypeIntent {
   final String? providerQuoteId;
   final String? providerSignature;
   final String? providerStatusRaw;
+  final String? nearIntentHash;
+  final String? nearTransactionHash;
   final DateTime? lastStatusCheckedAt;
   final String? statusError;
   final String? oneClickRecipient;
@@ -212,6 +216,8 @@ class SwapPrototypeIntent {
     String? providerQuoteId,
     String? providerSignature,
     String? providerStatusRaw,
+    String? nearIntentHash,
+    String? nearTransactionHash,
     DateTime? lastStatusCheckedAt,
     String? statusError,
     String? oneClickRecipient,
@@ -241,6 +247,8 @@ class SwapPrototypeIntent {
       providerQuoteId: providerQuoteId ?? this.providerQuoteId,
       providerSignature: providerSignature ?? this.providerSignature,
       providerStatusRaw: providerStatusRaw ?? this.providerStatusRaw,
+      nearIntentHash: nearIntentHash ?? this.nearIntentHash,
+      nearTransactionHash: nearTransactionHash ?? this.nearTransactionHash,
       lastStatusCheckedAt: lastStatusCheckedAt ?? this.lastStatusCheckedAt,
       statusError: clearStatusError ? null : statusError ?? this.statusError,
       oneClickRecipient: oneClickRecipient ?? this.oneClickRecipient,
