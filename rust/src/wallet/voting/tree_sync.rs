@@ -212,11 +212,14 @@ pub fn clear_tree_sync_session(db_path: &str, wallet_id: &str) -> Result<usize, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::prelude::*;
+    use pasta_curves::Fp;
     use std::{
         io::{Read, Write},
         net::TcpListener,
         thread,
     };
+    use vote_commitment_tree::{MemoryTreeServer, MerkleHashVote};
 
     const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
@@ -281,7 +284,7 @@ mod tests {
         state::init_voting_round(&db, &test_round_params(), None).unwrap();
         db.setup_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
-        let server = start_tree_server(1, vec![fp_one_base64()], 3);
+        let server = start_tree_server(1, vec![1], 2);
 
         let height = sync_commitment_tree(
             db_path.to_str().unwrap(),
@@ -340,6 +343,23 @@ mod tests {
     }
 
     #[test]
+    fn sync_commitment_tree_happy_path_accepts_paginated_leaves() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let server = start_tree_server(2, vec![1, 2], 3);
+
+        let height = sync_commitment_tree(
+            db_path.to_str().unwrap(),
+            "wallet-paginated-sync",
+            ROUND_ID,
+            &server,
+        )
+        .unwrap();
+
+        assert_eq!(height, 2);
+    }
+
+    #[test]
     fn generate_van_witness_reports_missing_bundle_before_sync_requirement() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
@@ -369,7 +389,16 @@ mod tests {
         assert!(err.contains("bundle_index 1 is out of range for 1 voting bundles"));
     }
 
-    fn start_tree_server(height: u32, leaves: Vec<String>, expected_requests: usize) -> String {
+    #[derive(Clone)]
+    struct MockTreeBlock {
+        height: u32,
+        start_index: u64,
+        leaf: String,
+        root: String,
+    }
+
+    fn start_tree_server(height: u32, leaf_values: Vec<u64>, expected_requests: usize) -> String {
+        let (latest_root, blocks) = mock_tree_blocks(&leaf_values);
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         thread::spawn(move || {
@@ -383,7 +412,7 @@ mod tests {
                     .next()
                     .and_then(|line| line.split_whitespace().nth(1))
                     .unwrap_or("/");
-                let body = tree_response_body(path, height, &leaves);
+                let body = tree_response_body(path, height, &latest_root, &blocks);
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     body.len(),
@@ -395,24 +424,48 @@ mod tests {
         url
     }
 
-    fn tree_response_body(path: &str, height: u32, leaves: &[String]) -> String {
+    fn tree_response_body(
+        path: &str,
+        height: u32,
+        latest_root: &Option<String>,
+        blocks: &[MockTreeBlock],
+    ) -> String {
         if path.ends_with("/latest") {
-            format!(
-                r#"{{"tree":{{"next_index":{},"height":{}}}}}"#,
-                leaves.len(),
-                height
-            )
+            match latest_root {
+                Some(root) => format!(
+                    r#"{{"tree":{{"next_index":{},"root":"{}","height":{}}}}}"#,
+                    blocks.len(),
+                    root,
+                    height
+                ),
+                None => format!(
+                    r#"{{"tree":{{"next_index":{},"height":{}}}}}"#,
+                    blocks.len(),
+                    height
+                ),
+            }
         } else if path.contains("/leaves?") {
-            if height == 0 {
+            if height == 0 || blocks.is_empty() {
                 r#"{"blocks":[]}"#.to_string()
             } else {
-                let leaves_json = leaves
+                let from_height = query_u32(path, "from_height").unwrap_or(0);
+                let to_height = query_u32(path, "to_height").unwrap_or(height);
+                // Return one block per response when more data remains, matching
+                // the paginated tree API exposed by zcash_voting 0.6.x.
+                let Some(block) = blocks
                     .iter()
-                    .map(|leaf| format!(r#""{leaf}""#))
-                    .collect::<Vec<_>>()
-                    .join(",");
+                    .find(|block| block.height >= from_height && block.height <= to_height)
+                else {
+                    return r#"{"blocks":[]}"#.to_string();
+                };
+                let next_from_height = blocks
+                    .iter()
+                    .find(|next| next.height > block.height && next.height <= to_height)
+                    .map(|next| format!(r#","next_from_height":{}"#, next.height))
+                    .unwrap_or_default();
                 format!(
-                    r#"{{"blocks":[{{"height":{height},"start_index":0,"leaves":[{leaves_json}]}}]}}"#
+                    r#"{{"blocks":[{{"height":{},"start_index":{},"leaves":["{}"],"root":"{}"}}]{}}}"#,
+                    block.height, block.start_index, block.leaf, block.root, next_from_height
                 )
             }
         } else {
@@ -420,9 +473,43 @@ mod tests {
         }
     }
 
-    fn fp_one_base64() -> String {
-        // Little-endian canonical encoding of Pallas Fp::from(1).
-        "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string()
+    fn mock_tree_blocks(leaf_values: &[u64]) -> (Option<String>, Vec<MockTreeBlock>) {
+        if leaf_values.is_empty() {
+            return (None, vec![]);
+        }
+
+        let mut server = MemoryTreeServer::empty();
+        let mut blocks = Vec::with_capacity(leaf_values.len());
+        for (index, value) in leaf_values.iter().copied().enumerate() {
+            let height = u32::try_from(index + 1).unwrap();
+            server.append(Fp::from(value)).unwrap();
+            server.checkpoint(height).unwrap();
+            let root = server.root_at_height(height).unwrap();
+            blocks.push(MockTreeBlock {
+                height,
+                start_index: u64::try_from(index).unwrap(),
+                leaf: fp_base64(value),
+                root: fp_base64_from_fp(root),
+            });
+        }
+
+        let latest_root = blocks.last().map(|block| block.root.clone());
+        (latest_root, blocks)
+    }
+
+    fn query_u32(path: &str, key: &str) -> Option<u32> {
+        path.split('?').nth(1)?.split('&').find_map(|pair| {
+            let (name, value) = pair.split_once('=')?;
+            (name == key).then(|| value.parse().ok()).flatten()
+        })
+    }
+
+    fn fp_base64(value: u64) -> String {
+        fp_base64_from_fp(Fp::from(value))
+    }
+
+    fn fp_base64_from_fp(value: Fp) -> String {
+        BASE64_STANDARD.encode(MerkleHashVote::from_fp(value).to_bytes())
     }
 
     fn test_round_params() -> zcash_voting::VotingRoundParams {
