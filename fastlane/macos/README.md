@@ -51,7 +51,7 @@ VIZOR_MACOS_FLAVORS=mainnet,testnet bundle exec fastlane mac release
 - `RELEASE_TAG`
 
 stable release 태그(`release/v1.2.3`)에서는 아래도 필요합니다. prerelease 태그
-(`release/v1.2.3-rc.0`, `release/v1.2.3-internal.1`)에서는 Sparkle을
+(`release/v1.2.3-rc.0`, `release/v1.2.3-internal.0`)에서는 Sparkle을
 건너뛰므로 필요하지 않습니다.
 
 - `SPARKLE_PUBLIC_ED_KEY_MAINNET`
@@ -80,8 +80,8 @@ stable release 태그(`release/v1.2.3`)에서는 아래도 필요합니다. prer
 - release display version은 `RELEASE_TAG`에서 파싱하고, build number는 `RELEASE_BUILD_NUMBER`만 사용합니다. `pubspec.yaml`의 `version`은 macOS release 산출물 버전으로 사용하지 않습니다.
 - GitHub Release asset 파일명에는 버전을 넣지 않습니다. mainnet은 `Vizor-macos.dmg`, testnet은 `Vizor-Testnet-macos.dmg`를 사용합니다.
 - 랜딩 페이지의 최신 macOS 다운로드 링크는 `https://github.com/chainapsis/vizor-wallet/releases/latest/download/Vizor-macos.dmg`처럼 고정 asset 이름을 가리킵니다.
-- `release/v1.2.3-rc.0` 또는 `release/v1.2.3-internal.1` 같은 prerelease 태그는 release DMG를 만들지만 Sparkle appcast/delta 업로드는 건너뜁니다.
-- `release/v1.2.3-internal.1`은 내부 테스트용 public GitHub prerelease입니다. DMG asset은 업로드되지만 `appcast.xml`, `appcast-testnet.xml`, `.delta` asset은 업로드되지 않아 기존 앱의 Sparkle 자동 업데이트 대상이 되지 않습니다.
+- `release/v1.2.3-rc.0` 또는 `release/v1.2.3-internal.0` 같은 prerelease 태그는 release DMG를 만들지만 Sparkle appcast/delta 업로드는 건너뜁니다.
+- `release/v1.2.3-internal.0`은 내부 테스트용 public GitHub prerelease입니다. DMG asset은 업로드되지만 `appcast.xml`, `appcast-testnet.xml`, `.delta` asset은 업로드되지 않아 기존 앱의 Sparkle 자동 업데이트 대상이 되지 않습니다.
 - `GITHUB_RELEASE_PRERELEASE`가 설정된 경우 태그에서 계산한 prerelease 여부와 일치해야 합니다.
 - `SPARKLE_PUBLIC_ED_KEY_MAINNET` / `SPARKLE_PUBLIC_ED_KEY_TESTNET`은 stable release에서 flavor별 앱 `Info.plist`에 주입되는 공개 Ed25519 키입니다. stable 앱은 `SUVerifyUpdateBeforeExtraction`과 `SURequireSignedFeed`도 켜서 update archive를 extraction 전에 검증하고 appcast/release notes signing을 요구합니다.
 - `SPARKLE_PRIVATE_ED_KEY_MAINNET` / `SPARKLE_PRIVATE_ED_KEY_TESTNET`은 stable release에서 flavor별 appcast/delta, signed feed, release notes 서명에 쓰는 비밀 Ed25519 키입니다.
