@@ -192,47 +192,6 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     return '${months[value.month]} ${value.day}, ${value.year} $hh:$mm';
   }
 
-  List<TextSpan> _addressSpans(BuildContext context, String line) {
-    final colors = context.colors;
-    if (!widget.args.isShielded || line.length < 8) {
-      return [
-        TextSpan(
-          text: line,
-          style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
-        ),
-      ];
-    }
-    final prefix = line.substring(0, 7);
-    final suffix = line.length > 8 ? line.substring(line.length - 8) : '';
-    final middle = line.substring(prefix.length, line.length - suffix.length);
-    return [
-      TextSpan(
-        text: prefix,
-        style: AppTypography.bodyMedium.copyWith(
-          color: colors.text.brandCrimson,
-        ),
-      ),
-      TextSpan(
-        text: middle,
-        style: AppTypography.bodyMedium.copyWith(color: colors.text.accent),
-      ),
-      if (suffix.isNotEmpty)
-        TextSpan(
-          text: suffix,
-          style: AppTypography.bodyMedium.copyWith(
-            color: colors.text.brandCrimson,
-          ),
-        ),
-    ];
-  }
-
-  List<String> _splitAddress() {
-    final address = widget.args.address.trim();
-    if (address.length <= 16) return [address];
-    final midpoint = (address.length / 2).ceil();
-    return [address.substring(0, midpoint), address.substring(midpoint)];
-  }
-
   Future<bool> _showSaplingParamsDialog() {
     if (!mounted) return Future.value(false);
 
@@ -541,7 +500,6 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final addressLines = _splitAddress();
     final receiptPhase = switch (_phase) {
       _SendStatusPhase.sending => TransactionReceiptPhase.sending,
       _SendStatusPhase.pendingBroadcast => TransactionReceiptPhase.pending,
@@ -604,27 +562,16 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                                     ),
                                     primaryBlock: TransactionReceiptBlockData(
                                       title: 'To',
-                                      child: useFailedReceiptLayout
-                                          ? TransactionReceiptAddressText(
-                                              address: widget.args.address,
-                                              highlightEdges:
-                                                  widget.args.isShielded,
-                                            )
-                                          : Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                for (final line in addressLines)
-                                                  RichText(
-                                                    text: TextSpan(
-                                                      children: _addressSpans(
-                                                        context,
-                                                        line,
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
+                                      child: TransactionReceiptAddressText(
+                                        address: widget.args.address,
+                                        highlightEdges: widget.args.isShielded,
+                                        compact:
+                                            !useFailedReceiptLayout &&
+                                            widget.args.isShielded,
+                                        highlightColor: useFailedReceiptLayout
+                                            ? null
+                                            : context.colors.text.brandCrimson,
+                                      ),
                                       onCopy: useFailedReceiptLayout
                                           ? () => unawaited(
                                               _copyRecipientAddress(),
