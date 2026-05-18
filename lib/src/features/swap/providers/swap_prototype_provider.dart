@@ -17,17 +17,11 @@ import 'swap_zec_staging_address_service.dart';
 
 const _oneClickBaseUrl = String.fromEnvironment(
   'ZCASH_SWAP_1CLICK_BASE_URL',
-  defaultValue: 'https://1click.chaindefuser.com',
+  defaultValue: 'https://config-lambda.keplr.app/api/near-intents/1click',
 );
-const _oneClickJwt = String.fromEnvironment('ZCASH_SWAP_1CLICK_JWT');
-const _oneClickReferral = String.fromEnvironment('ZCASH_SWAP_1CLICK_REFERRAL');
 
 final swapIntentProvider = Provider<SwapProvider>((ref) {
-  return NearIntentsOneClickSwapProvider(
-    baseUri: Uri.parse(_oneClickBaseUrl),
-    bearerToken: _oneClickJwt.isEmpty ? null : _oneClickJwt,
-    referral: _oneClickReferral.isEmpty ? null : _oneClickReferral,
-  );
+  return NearIntentsOneClickSwapProvider(baseUri: Uri.parse(_oneClickBaseUrl));
 });
 
 final swapStatusPollIntervalProvider = Provider<Duration>((ref) {

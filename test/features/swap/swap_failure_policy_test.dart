@@ -5,14 +5,14 @@ import 'package:zcash_wallet/src/features/swap/domain/near_intents_one_click_swa
 import 'package:zcash_wallet/src/features/swap/providers/swap_failure_policy.dart';
 
 void main() {
-  test('credential failures point at the configured JWT', () {
+  test('credential failures are shown as temporary service issues', () {
     final message = swapFailureMessage(
       SwapFailureOperation.quote,
       const OneClickApiException('unauthorized', statusCode: 401),
     );
 
     expect(message, contains('Could not load quote.'));
-    expect(message, contains('ZCASH_SWAP_1CLICK_JWT'));
+    expect(message, contains('temporarily unavailable'));
   });
 
   test('status 404 asks the user to verify deposit details', () {

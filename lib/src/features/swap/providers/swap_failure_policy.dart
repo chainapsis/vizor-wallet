@@ -46,7 +46,7 @@ String _oneClickRecovery(
 ) {
   final statusCode = error.statusCode;
   if (statusCode == 401 || statusCode == 403) {
-    return 'The swap service rejected the configured credential. Check ZCASH_SWAP_1CLICK_JWT before retrying.';
+    return 'The swap service is temporarily unavailable. Retry later.';
   }
   if (_isUnsupportedAssetError(error)) {
     return switch (operation) {
