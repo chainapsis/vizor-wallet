@@ -57,6 +57,10 @@ void main() {
     await tester.pumpWidget(_welcomeScreen(showBackButton: true));
 
     expect(find.text('Back'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('welcome_endpoint_settings_button')),
+      findsNothing,
+    );
   });
 
   testWidgets('Back returns to the pushed accounts route', (tester) async {

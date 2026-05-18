@@ -199,18 +199,19 @@ class _Pane extends StatelessWidget {
               top: AppSpacing.md,
               child: _BackRow(),
             ),
-          Positioned(
-            right: AppSpacing.md,
-            top: AppSpacing.md,
-            child: _WelcomeIconButton(
-              key: const ValueKey('welcome_endpoint_settings_button'),
-              icon: AppIcons.cog,
-              tooltip: 'Endpoint settings',
-              semanticLabel: 'Endpoint settings',
-              onTap: onShowEndpointSettings,
+          if (!showBackButton)
+            Positioned(
+              right: AppSpacing.md,
+              top: AppSpacing.md,
+              child: _WelcomeIconButton(
+                key: const ValueKey('welcome_endpoint_settings_button'),
+                icon: AppIcons.cog,
+                tooltip: 'Endpoint settings',
+                semanticLabel: 'Endpoint settings',
+                onTap: onShowEndpointSettings,
+              ),
             ),
-          ),
-          if (showEndpointSettings)
+          if (!showBackButton && showEndpointSettings)
             AppPaneModalOverlay(
               borderRadius: BorderRadius.circular(AppRadii.xSmall),
               onDismiss: onDismissEndpointSettings,
