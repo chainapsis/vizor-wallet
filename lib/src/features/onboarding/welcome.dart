@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show Colors, Scaffold, Tooltip;
+import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../core/widgets/app_pane_modal_overlay.dart';
+import '../../core/widgets/app_tooltip.dart';
 import '../settings/widgets/custom_endpoint_settings_panel.dart';
 import 'shared/onboarding_welcome_art.dart';
 
@@ -252,7 +253,7 @@ class _WelcomeIconButtonState extends State<_WelcomeIconButton> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Tooltip(
+    return AppTooltip(
       message: widget.tooltip,
       child: Semantics(
         button: true,

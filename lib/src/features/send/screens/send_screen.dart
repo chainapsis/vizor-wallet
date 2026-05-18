@@ -20,6 +20,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -1051,14 +1052,9 @@ class _SendMaxBalanceControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isDark = context.appTheme == AppThemeData.dark;
     final maxLabel = Text(
       'Max: $spendableText',
       style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
-    );
-    final tooltipTextStyle = AppTypography.bodySmall.copyWith(
-      color: isDark ? colors.text.accent : colors.text.inverse,
-      letterSpacing: 0,
     );
 
     return Row(
@@ -1079,29 +1075,15 @@ class _SendMaxBalanceControl extends StatelessWidget {
           ),
         ),
         const SizedBox(width: AppSpacing.xxs),
-        Tooltip(
+        AppTooltip(
           richMessage: TextSpan(
-            style: tooltipTextStyle,
             children: [
               TextSpan(
                 text: _tooltipTitle,
-                style: tooltipTextStyle.copyWith(fontWeight: FontWeight.bold),
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               const TextSpan(text: '\n\n$_tooltipBody'),
             ],
-          ),
-          waitDuration: const Duration(milliseconds: 350),
-          showDuration: const Duration(seconds: 8),
-          preferBelow: false,
-          constraints: const BoxConstraints(maxWidth: 340),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s,
-            vertical: AppSpacing.xs,
-          ),
-          decoration: BoxDecoration(
-            color: isDark ? colors.surface.tooltip : colors.background.inverse,
-            borderRadius: BorderRadius.circular(AppRadii.xSmall),
-            border: isDark ? Border.all(color: colors.border.regular) : null,
           ),
           child: SizedBox(
             width: 18,
