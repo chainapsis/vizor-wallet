@@ -1,7 +1,7 @@
 use ff::PrimeField;
 use pasta_curves::pallas;
 use rusqlite::{named_params, Connection, OptionalExtension};
-use voting_circuits::delegation::imt::ImtProofData;
+use voting_circuits::delegation::ImtProofData;
 
 use crate::storage::{KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord};
 use crate::types::{NoteInfo, ShareDelegationRecord, VotingError, VotingRoundParams, WitnessData};

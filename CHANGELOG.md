@@ -4,6 +4,16 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.9.0
+
+## Changed
+- Bumped `voting-circuits` to `0.5.0` and updated callers to use its public
+  re-exports and upstream circuit key caches.
+- Bumped `vote-commitment-tree` to `0.3.0` and
+  `vote-commitment-tree-client` to `0.5.0`.
+- Removed local wallet-side test/helpers that duplicated vote-commitment and
+  El Gamal internals now owned by `voting-circuits`.
+
 # 0.8.1
 
 ## Fixed

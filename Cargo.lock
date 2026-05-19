@@ -1076,6 +1076,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2141,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "vote-commitment-tree"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "ff",
@@ -2159,7 +2168,7 @@ dependencies = [
 
 [[package]]
 name = "vote-commitment-tree-client"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64",
  "bytes",
@@ -2180,9 +2189,9 @@ dependencies = [
 
 [[package]]
 name = "voting-circuits"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0436d69b5884ca107db3de1be5e3e92981a35cd15dbfc6919361316a5dfa8e89"
+checksum = "a24eb3e3d2f7cf35c35703a4fff509323d2cba670e5e23099322bbd3ad410d9e"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -2191,6 +2200,7 @@ dependencies = [
  "halo2_poseidon",
  "halo2_proofs",
  "incrementalmerkletree",
+ "itertools",
  "lazy_static",
  "orchard",
  "pasta_curves",
@@ -2481,7 +2491,7 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "blake2b_simd",

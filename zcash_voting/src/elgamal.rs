@@ -91,7 +91,6 @@ fn decode_pallas_point(bytes: &[u8], name: &str) -> Result<pallas::Point, Voting
 mod tests {
     use super::*;
     use ff::Field;
-    use group::{Curve, Group};
     use pasta_curves::arithmetic::CurveAffine;
 
     /// Generate a random El Gamal keypair: (sk, pk) where pk = sk * G.
@@ -131,60 +130,24 @@ mod tests {
     }
 
     #[test]
-    fn test_spend_auth_g_consistency() {
-        let g_affine = voting_circuits::vote_proof::spend_auth_g_affine();
-        let g = pallas::Point::from(g_affine);
-
-        // SpendAuthG must not be the identity.
-        assert!(!bool::from(g.is_identity()));
-
-        // Verify it matches the value used by the circuit helper.
-        let g_from_circuit = {
-            // Encrypt value=1 with known randomness=1 via the circuit helper,
-            // then C1 should equal G (since r=1 → C1 = 1*G = G).
-            let r = pallas::Base::one();
-            let v = pallas::Base::one();
-            let pk = pallas::Point::identity(); // pk=0 simplifies C2
-            let (c1_x, _c2_x, _c1_y, _c2_y) =
-                voting_circuits::vote_proof::elgamal_encrypt(v, r, pk);
-            c1_x
-        };
-
-        // Our G's x-coordinate should match.
-        let our_g_x = *g.to_affine().coordinates().unwrap().x();
-        assert_eq!(our_g_x, g_from_circuit);
-    }
-
-    #[test]
-    fn test_cross_validation_with_circuit_helper() {
-        // Use deterministic "randomness" by manually encrypting with known scalar.
+    fn test_encryption_formula_matches_returned_randomness() {
         let g = pallas::Point::from(voting_circuits::vote_proof::spend_auth_g_affine());
         let (_, pk) = keygen();
+        let pk_bytes = pk.to_bytes().to_vec();
 
         let share_value = 42u64;
-        let r_scalar = pallas::Scalar::from(7u64);
-        let v_scalar = pallas::Scalar::from(share_value);
+        let share = encrypt_shares(&[share_value], &pk_bytes).unwrap().remove(0);
 
-        // Our encryption.
-        let c1 = g * r_scalar;
-        let c2 = g * v_scalar + pk * r_scalar;
-        let c1_x = *c1.to_affine().coordinates().unwrap().x();
-        let c2_x = *c2.to_affine().coordinates().unwrap().x();
+        let mut r_arr = [0u8; 32];
+        r_arr.copy_from_slice(&share.randomness);
+        let r = pallas::Scalar::from_repr(r_arr).unwrap();
+        let v = pallas::Scalar::from(share_value);
 
-        let c1_y = *c1.to_affine().coordinates().unwrap().y();
-        let c2_y = *c2.to_affine().coordinates().unwrap().y();
-
-        // Circuit helper encryption.
-        // It uses pallas::Base for randomness and value, and calls base_to_scalar internally.
-        let r_base = pallas::Base::from(7u64);
-        let v_base = pallas::Base::from(share_value);
-        let (circuit_c1_x, circuit_c2_x, circuit_c1_y, circuit_c2_y) =
-            voting_circuits::vote_proof::elgamal_encrypt(v_base, r_base, pk);
-
-        assert_eq!(c1_x, circuit_c1_x, "C1.x must match circuit helper");
-        assert_eq!(c2_x, circuit_c2_x, "C2.x must match circuit helper");
-        assert_eq!(c1_y, circuit_c1_y, "C1.y must match circuit helper");
-        assert_eq!(c2_y, circuit_c2_y, "C2.y must match circuit helper");
+        assert_eq!(decode_pallas_point(&share.c1, "c1").unwrap(), g * r);
+        assert_eq!(
+            decode_pallas_point(&share.c2, "c2").unwrap(),
+            g * v + pk * r
+        );
     }
 
     #[test]

@@ -1,15 +1,15 @@
 use std::collections::HashMap;
-use std::sync::OnceLock;
 
 use ff::PrimeField;
 use halo2_proofs::{
+    pasta::EqAffine,
     plonk,
     poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},
 };
 use incrementalmerkletree::Hashable;
 use orchard::{
-    keys::{Diversifier, FullViewingKey, Scope},
+    keys::{Diversifier, FullViewingKey, Scope, SpendValidatingKey},
     note::{RandomSeed, Rho},
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
@@ -18,9 +18,8 @@ use orchard::{
 use pasta_curves::{pallas, vesta};
 use rand::rngs::OsRng;
 use voting_circuits::delegation::{
-    builder::{build_delegation_bundle, PrecomputedRandomness, RealNoteInput},
-    circuit::Circuit as DelegationCircuit,
-    imt::{ImtError, ImtProofData, ImtProvider},
+    build_delegation_bundle, delegation_cached_keys, ImtError, ImtProofData, ImtProvider,
+    PrecomputedRandomness, RealNoteInput,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::Network;
@@ -29,50 +28,6 @@ use crate::types::{
     ct_option_to_result, validate_32_bytes, DelegationProofResult, NoteInfo, ProofProgressReporter,
     VotingError, WitnessData,
 };
-
-/// Circuit size parameter. Matches the value used in delegation builder/circuit tests.
-const K: u32 = 14;
-
-// Cached proving key — keygen is deterministic and expensive (~5 min on simulator,
-// ~30s on device). Compute once per process and reuse for all subsequent proofs.
-static DELEGATION_PK_CACHE: OnceLock<(Params<vesta::Affine>, plonk::ProvingKey<vesta::Affine>)> =
-    OnceLock::new();
-
-fn compute_delegation_proving_key() -> (Params<vesta::Affine>, plonk::ProvingKey<vesta::Affine>) {
-    let params = Params::new(K);
-    let vk = plonk::keygen_vk(&params, &DelegationCircuit::default())
-        .expect("delegation keygen_vk: circuit is valid");
-    let pk = plonk::keygen_pk(&params, vk, &DelegationCircuit::default())
-        .expect("delegation keygen_pk: circuit is valid");
-    (params, pk)
-}
-
-fn get_delegation_proving_key() -> &'static (Params<vesta::Affine>, plonk::ProvingKey<vesta::Affine>)
-{
-    DELEGATION_PK_CACHE.get_or_init(|| {
-        // Delegation keygen can be stack-hungry with larger circuits.
-        // Run it on a dedicated thread with an explicit large stack to avoid
-        // simulator/runtime crashes caused by stack exhaustion.
-        const KEYGEN_STACK_BYTES: usize = 64 * 1024 * 1024;
-        std::thread::Builder::new()
-            .name("delegation-keygen".to_string())
-            .stack_size(KEYGEN_STACK_BYTES)
-            .spawn(compute_delegation_proving_key)
-            .expect("spawn delegation keygen thread")
-            .join()
-            .expect("delegation keygen thread panicked")
-    })
-}
-
-/// Warm the process-lifetime delegation proving-key cache.
-pub fn warm_delegation_proving_key() {
-    let _ = get_delegation_proving_key();
-}
-
-/// Warm the process-lifetime ZKP #1 proving key cache.
-pub fn warm_proving_cache() {
-    warm_delegation_proving_key();
-}
 
 // ================================================================
 // PIR-backed IMT Provider
@@ -290,6 +245,36 @@ fn parse_merkle_path(witness: &WitnessData) -> Result<MerklePath, VotingError> {
 // Main entry point
 // ================================================================
 
+// 64 MiB matches the existing proof/key warm-up threads and gives Halo2
+// synthesis/keygen enough headroom on simulator builds with smaller defaults.
+const DELEGATION_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+type DelegationKeys = (
+    Params<EqAffine>,
+    plonk::ProvingKey<EqAffine>,
+    plonk::VerifyingKey<EqAffine>,
+);
+
+fn delegation_cached_keys_large_stack() -> Result<&'static DelegationKeys, VotingError> {
+    // Defense in depth: warm_proving_caches() should normally populate this,
+    // but cold callers still get large-stack keygen if warm-up was skipped.
+    std::thread::Builder::new()
+        .name("delegation-key-cache".to_string())
+        .stack_size(DELEGATION_STACK_BYTES)
+        .spawn(|| {
+            delegation_cached_keys().map_err(|e| VotingError::ProofFailed {
+                message: format!("delegation key generation failed: {e}"),
+            })
+        })
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to spawn delegation key cache thread: {e}"),
+        })?
+        .join()
+        .map_err(|_| VotingError::Internal {
+            message: "delegation key cache thread panicked".to_string(),
+        })?
+}
+
 /// Build and prove the delegation ZKP (#1).
 ///
 /// Constructs the circuit from wallet notes, Merkle witnesses, and
@@ -477,8 +462,8 @@ pub fn build_and_prove_delegation(
 
     progress.on_progress(0.1);
 
-    // Use the process-lifetime cached proving key (keygen runs once, then is reused).
-    let (params, pk) = get_delegation_proving_key();
+    // Fill the downstream cache on a large-stack thread when warm-up was missed.
+    let (params, pk, _vk) = delegation_cached_keys_large_stack()?;
 
     progress.on_progress(0.5);
 
@@ -487,11 +472,10 @@ pub fn build_and_prove_delegation(
     let instance_vec = bundle.instance.to_halo2_instance();
     let circuit = bundle.circuit;
     let proof_instance = instance_vec.clone();
-    const PROVING_STACK_BYTES: usize = 64 * 1024 * 1024;
     let proof_bytes = std::thread::scope(|scope| -> Result<Vec<u8>, VotingError> {
         let handle = std::thread::Builder::new()
             .name("delegation-prove".to_string())
-            .stack_size(PROVING_STACK_BYTES)
+            .stack_size(DELEGATION_STACK_BYTES)
             .spawn_scoped(scope, move || -> Result<Vec<u8>, VotingError> {
                 let instance_refs: Vec<&[vesta::Scalar]> = vec![proof_instance.as_slice()];
                 let mut local_rng = OsRng;
@@ -527,7 +511,8 @@ pub fn build_and_prove_delegation(
         .collect();
 
     // Extract named outputs from the instance.
-    let rk_bytes: [u8; 32] = bundle.instance.rk.clone().into();
+    let ak: SpendValidatingKey = fvk.clone().into();
+    let rk_bytes: [u8; 32] = (&ak.randomize(&alpha)).into();
 
     Ok(DelegationProofResult {
         proof: proof_bytes,
@@ -558,7 +543,7 @@ mod tests {
         keys::Scope, note::commitment::ExtractedNoteCommitment, note::Rho, tree::MerkleHashOrchard,
         value::NoteValue, NOTE_COMMITMENT_TREE_DEPTH as TEST_TREE_DEPTH,
     };
-    use voting_circuits::delegation::imt::IMT_DEPTH as TEST_IMT_DEPTH;
+    use voting_circuits::delegation::IMT_DEPTH as TEST_IMT_DEPTH;
 
     struct TestReporter {
         count: Arc<AtomicU32>,
