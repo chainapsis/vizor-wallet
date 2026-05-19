@@ -10,7 +10,7 @@ void main() {
             'd6e03b5276de779d532791a82a28da7fb6b60524bf5996f4d7629cd794682c01',
         txidOrder: ZcashExplorerTxidOrder.protocol,
       ).toString(),
-      'https://mainnet.zcashexplorer.app/transactions/'
+      'https://cipherscan.app/tx/'
       '012c6894d79c62d7f49659bf2405b6b67fda282aa89127539d77de76523be0d6',
     );
   });
@@ -23,7 +23,7 @@ void main() {
             '6088ad5facf418b825ab83b421af13a444173627b56d626f586976b9a9c8733b',
         txidOrder: ZcashExplorerTxidOrder.protocol,
       ).toString(),
-      'https://testnet.zcashexplorer.app/transactions/'
+      'https://testnet.cipherscan.app/tx/'
       '3b73c8a9b97669586f626db527361744a413af21b483ab25b818f4ac5fad8860',
     );
   });
@@ -36,7 +36,7 @@ void main() {
             '6088ad5facf418b825ab83b421af13a444173627b56d626f586976b9a9c8733b',
         txidOrder: ZcashExplorerTxidOrder.protocol,
       ).toString(),
-      'https://testnet.zcashexplorer.app/transactions/'
+      'https://testnet.cipherscan.app/tx/'
       '3b73c8a9b97669586f626db527361744a413af21b483ab25b818f4ac5fad8860',
     );
   });
@@ -49,7 +49,7 @@ void main() {
             '1f9180542beb73685e309ec65d023df3e308c2eed26aafa056ea81e078d57a47',
         txidOrder: ZcashExplorerTxidOrder.protocol,
       ).toString(),
-      'https://mainnet.zcashexplorer.app/transactions/'
+      'https://cipherscan.app/tx/'
       '477ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
     );
   });
@@ -62,7 +62,7 @@ void main() {
             '477ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
         txidOrder: ZcashExplorerTxidOrder.display,
       ).toString(),
-      'https://mainnet.zcashexplorer.app/transactions/'
+      'https://cipherscan.app/tx/'
       '477ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
     );
   });
@@ -75,7 +75,7 @@ void main() {
             'zz7ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
         txidOrder: ZcashExplorerTxidOrder.protocol,
       ).toString(),
-      'https://mainnet.zcashexplorer.app/transactions/'
+      'https://cipherscan.app/tx/'
       'zz7ad578e081ea56a0af6ad2eec208e3f33d025dc69e305e6873eb2b5480911f',
     );
   });
