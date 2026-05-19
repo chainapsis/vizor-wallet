@@ -2678,7 +2678,15 @@ mod tests {
         }
     }
 
+    struct MockTreeBlock {
+        height: u32,
+        start_index: usize,
+        leaf: String,
+        root: String,
+    }
+
     fn start_tree_server(height: u32, leaves: Vec<String>, expected_requests: usize) -> String {
+        let (latest_root, blocks) = mock_tree_blocks(&leaves);
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         thread::spawn(move || {
@@ -2692,7 +2700,7 @@ mod tests {
                     .next()
                     .and_then(|line| line.split_whitespace().nth(1))
                     .unwrap_or("/");
-                let body = tree_response_body(path, height, &leaves);
+                let body = tree_response_body(path, height, latest_root.as_deref(), &blocks);
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     body.len(),
@@ -2704,29 +2712,82 @@ mod tests {
         url
     }
 
-    fn tree_response_body(path: &str, height: u32, leaves: &[String]) -> String {
+    fn tree_response_body(
+        path: &str,
+        height: u32,
+        latest_root: Option<&str>,
+        blocks: &[MockTreeBlock],
+    ) -> String {
         if path.ends_with("/latest") {
-            format!(
-                r#"{{"tree":{{"next_index":{},"height":{}}}}}"#,
-                leaves.len(),
-                height
-            )
+            match latest_root {
+                Some(root) => format!(
+                    r#"{{"tree":{{"next_index":{},"root":"{}","height":{}}}}}"#,
+                    blocks.len(),
+                    root,
+                    height
+                ),
+                None => format!(
+                    r#"{{"tree":{{"next_index":{},"height":{}}}}}"#,
+                    blocks.len(),
+                    height
+                ),
+            }
         } else if path.contains("/leaves?") {
-            if height == 0 {
+            if height == 0 || blocks.is_empty() {
                 r#"{"blocks":[]}"#.to_string()
             } else {
-                let leaves_json = leaves
+                let from_height = query_u32(path, "from_height").unwrap_or(0);
+                let to_height = query_u32(path, "to_height").unwrap_or(height);
+                let Some(block) = blocks
                     .iter()
-                    .map(|leaf| format!(r#""{leaf}""#))
-                    .collect::<Vec<_>>()
-                    .join(",");
+                    .find(|block| block.height >= from_height && block.height <= to_height)
+                else {
+                    return r#"{"blocks":[],"next_from_height":0}"#.to_string();
+                };
+                let next_from_height = blocks
+                    .iter()
+                    .find(|next| next.height > block.height && next.height <= to_height)
+                    .map(|next| format!(r#","next_from_height":{}"#, next.height))
+                    .unwrap_or_default();
                 format!(
-                    r#"{{"blocks":[{{"height":{height},"start_index":0,"leaves":[{leaves_json}]}}]}}"#
+                    r#"{{"blocks":[{{"height":{},"start_index":{},"leaves":["{}"],"root":"{}"}}]{}}}"#,
+                    block.height, block.start_index, block.leaf, block.root, next_from_height
                 )
             }
         } else {
             r#"{"tree":null}"#.to_string()
         }
+    }
+
+    fn mock_tree_blocks(leaves: &[String]) -> (Option<String>, Vec<MockTreeBlock>) {
+        let mut server = vote_commitment_tree::MemoryTreeServer::empty();
+        let mut blocks = Vec::new();
+
+        for (idx, leaf_b64) in leaves.iter().enumerate() {
+            let leaf_bytes = BASE64_STANDARD.decode(leaf_b64).unwrap();
+            let leaf_bytes: [u8; 32] = leaf_bytes.try_into().unwrap();
+            let leaf = vote_commitment_tree::MerkleHashVote::from_bytes(&leaf_bytes).unwrap();
+            let height = (idx + 1) as u32;
+            server.append(leaf.inner()).unwrap();
+            server.checkpoint(height).unwrap();
+            let root = vote_commitment_tree::MerkleHashVote::from_fp(server.root());
+            blocks.push(MockTreeBlock {
+                height,
+                start_index: idx,
+                leaf: leaf_b64.clone(),
+                root: BASE64_STANDARD.encode(root.to_bytes()),
+            });
+        }
+
+        let latest_root = blocks.last().map(|block| block.root.clone());
+        (latest_root, blocks)
+    }
+
+    fn query_u32(path: &str, key: &str) -> Option<u32> {
+        path.split('?').nth(1)?.split('&').find_map(|pair| {
+            let (name, value) = pair.split_once('=')?;
+            (name == key).then(|| value.parse().ok()).flatten()
+        })
     }
 
     fn fp_one_base64() -> String {

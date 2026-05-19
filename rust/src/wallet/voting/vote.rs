@@ -688,6 +688,8 @@ mod tests {
         let json = commitment_bundle_recovery_json(&commitment, &payloads, &[0x99; 64]).unwrap();
 
         workflow::store_signed_vote_commitment(&db, "round-1", 0, 1, &json).unwrap();
+        db.store_commitment_bundle("round-1", 0, 1, &json, 42)
+            .unwrap();
         let (stored_json, stored_position) =
             db.get_commitment_bundle("round-1", 0, 1).unwrap().unwrap();
         let stored: serde_json::Value = serde_json::from_str(&stored_json).unwrap();
@@ -706,7 +708,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(stored_position, 0);
+        assert_eq!(stored_position, 42);
         assert_eq!(stored_payload["tree_position"], 42);
         assert_eq!(
             stored_payload["all_enc_shares"].as_array().unwrap().len(),

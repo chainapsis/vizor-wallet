@@ -451,7 +451,7 @@ mod tests {
                 let from_height = query_u32(path, "from_height").unwrap_or(0);
                 let to_height = query_u32(path, "to_height").unwrap_or(height);
                 // Return one block per response when more data remains, matching
-                // the paginated tree API exposed by zcash_voting 0.6.x.
+                // the paginated tree API exposed by zcash_voting tree sync.
                 let Some(block) = blocks
                     .iter()
                     .find(|block| block.height >= from_height && block.height <= to_height)
