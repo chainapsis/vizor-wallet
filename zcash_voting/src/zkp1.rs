@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use ff::PrimeField;
 use halo2_proofs::{
+    pasta::EqAffine,
     plonk,
+    poly::commitment::Params,
     transcript::{Blake2bWrite, Challenge255},
 };
 use incrementalmerkletree::Hashable;
@@ -243,6 +245,36 @@ fn parse_merkle_path(witness: &WitnessData) -> Result<MerklePath, VotingError> {
 // Main entry point
 // ================================================================
 
+// 64 MiB matches the existing proof/key warm-up threads and gives Halo2
+// synthesis/keygen enough headroom on simulator builds with smaller defaults.
+const DELEGATION_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+type DelegationKeys = (
+    Params<EqAffine>,
+    plonk::ProvingKey<EqAffine>,
+    plonk::VerifyingKey<EqAffine>,
+);
+
+fn delegation_cached_keys_large_stack() -> Result<&'static DelegationKeys, VotingError> {
+    // Defense in depth: warm_proving_caches() should normally populate this,
+    // but cold callers still get large-stack keygen if warm-up was skipped.
+    std::thread::Builder::new()
+        .name("delegation-key-cache".to_string())
+        .stack_size(DELEGATION_STACK_BYTES)
+        .spawn(|| {
+            delegation_cached_keys().map_err(|e| VotingError::ProofFailed {
+                message: format!("delegation key generation failed: {e}"),
+            })
+        })
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to spawn delegation key cache thread: {e}"),
+        })?
+        .join()
+        .map_err(|_| VotingError::Internal {
+            message: "delegation key cache thread panicked".to_string(),
+        })?
+}
+
 /// Build and prove the delegation ZKP (#1).
 ///
 /// Constructs the circuit from wallet notes, Merkle witnesses, and
@@ -430,10 +462,8 @@ pub fn build_and_prove_delegation(
 
     progress.on_progress(0.1);
 
-    // Use the downstream process-lifetime cached keys.
-    let (params, pk, _vk) = delegation_cached_keys().map_err(|e| VotingError::ProofFailed {
-        message: format!("delegation key generation failed: {e}"),
-    })?;
+    // Fill the downstream cache on a large-stack thread when warm-up was missed.
+    let (params, pk, _vk) = delegation_cached_keys_large_stack()?;
 
     progress.on_progress(0.5);
 
@@ -442,11 +472,10 @@ pub fn build_and_prove_delegation(
     let instance_vec = bundle.instance.to_halo2_instance();
     let circuit = bundle.circuit;
     let proof_instance = instance_vec.clone();
-    const PROVING_STACK_BYTES: usize = 64 * 1024 * 1024;
     let proof_bytes = std::thread::scope(|scope| -> Result<Vec<u8>, VotingError> {
         let handle = std::thread::Builder::new()
             .name("delegation-prove".to_string())
-            .stack_size(PROVING_STACK_BYTES)
+            .stack_size(DELEGATION_STACK_BYTES)
             .spawn_scoped(scope, move || -> Result<Vec<u8>, VotingError> {
                 let instance_refs: Vec<&[vesta::Scalar]> = vec![proof_instance.as_slice()];
                 let mut local_rng = OsRng;
