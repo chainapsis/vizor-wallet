@@ -31,6 +31,11 @@ fn gov_null_domain_tag() -> pallas::Base {
     string_domain_tag(b"governance nullifier")
 }
 
+/// Domain tag for the signed-note rho binding used by delegation proofs.
+fn rho_binding_domain_tag() -> pallas::Base {
+    string_domain_tag(b"delegation rho binding")
+}
+
 /// Encode a short ASCII domain tag as a little-endian Pallas field element.
 fn string_domain_tag(tag: &[u8]) -> pallas::Base {
     assert!(
@@ -159,9 +164,9 @@ pub fn construct_van(
 
 /// Compute constrained rho (spec §1.3.4.1, condition 3).
 ///
-/// `rho_signed = Poseidon(cmx_1, cmx_2, cmx_3, cmx_4, cmx_5, van_comm, vote_round_id)`
+/// `rho_signed = Poseidon("delegation rho binding", cmx_1, cmx_2, cmx_3, cmx_4, cmx_5, van_comm, vote_round_id)`
 ///
-/// ConstantLength<7>, matching `orchard/src/delegation/circuit.rs:rho_binding_hash`.
+/// ConstantLength<8>, matching `voting-circuits/src/delegation/circuit.rs:rho_binding_hash`.
 pub fn compute_rho_binding(
     cmx_1: &[u8],
     cmx_2: &[u8],
@@ -179,8 +184,16 @@ pub fn compute_rho_binding(
     let gc = bytes_to_fp(van_comm)?;
     let vri = bytes_to_fp(vote_round_id)?;
 
-    let rho = poseidon::Hash::<_, P128Pow5T3, ConstantLength<7>, 3, 2>::init()
-        .hash([c1, c2, c3, c4, c5, gc, vri]);
+    let rho = poseidon::Hash::<_, P128Pow5T3, ConstantLength<8>, 3, 2>::init().hash([
+        rho_binding_domain_tag(),
+        c1,
+        c2,
+        c3,
+        c4,
+        c5,
+        gc,
+        vri,
+    ]);
 
     Ok(fp_to_bytes(rho))
 }
@@ -413,6 +426,35 @@ mod tests {
     }
 
     #[test]
+    fn test_compute_rho_binding_is_domain_tagged() {
+        let cmx1 = [0x01u8; 32];
+        let cmx2 = [0x02u8; 32];
+        let cmx3 = [0x03u8; 32];
+        let cmx4 = [0x04u8; 32];
+        let cmx5 = [0x0Au8; 32];
+        let gov = [0x05u8; 32];
+        let vri = [0x06u8; 32];
+
+        let tagged = compute_rho_binding(&cmx1, &cmx2, &cmx3, &cmx4, &cmx5, &gov, &vri).unwrap();
+        let raw_seven_input = poseidon::Hash::<_, P128Pow5T3, ConstantLength<7>, 3, 2>::init()
+            .hash([
+                bytes_to_fp(&cmx1).unwrap(),
+                bytes_to_fp(&cmx2).unwrap(),
+                bytes_to_fp(&cmx3).unwrap(),
+                bytes_to_fp(&cmx4).unwrap(),
+                bytes_to_fp(&cmx5).unwrap(),
+                bytes_to_fp(&gov).unwrap(),
+                bytes_to_fp(&vri).unwrap(),
+            ]);
+
+        assert_ne!(
+            tagged,
+            fp_to_bytes(raw_seven_input),
+            "rho binding must include the voting-circuits domain tag"
+        );
+    }
+
+    #[test]
     fn test_known_answer_rho_binding() {
         let cmx1 = [0x01u8; 32];
         let cmx2 = [0x02u8; 32];
@@ -428,9 +470,9 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                0x36, 0xfe, 0x8d, 0x03, 0x0e, 0xb6, 0xe2, 0xe6, 0x89, 0xc3, 0x31, 0x1a, 0x9f, 0x45,
-                0x17, 0xb8, 0x31, 0xb5, 0x46, 0xe6, 0xbc, 0x2f, 0x4e, 0xe2, 0x62, 0x7c, 0x86, 0xbe,
-                0x7a, 0x80, 0x67, 0x1e,
+                0x62, 0x76, 0x3c, 0x45, 0x19, 0x33, 0xc1, 0x12, 0x1a, 0xb2, 0xcb, 0x49, 0xa1, 0x50,
+                0xbf, 0xfb, 0xd7, 0x9e, 0x1c, 0x3f, 0x1f, 0x5e, 0x3d, 0x96, 0x0d, 0xf4, 0xd4, 0xee,
+                0x66, 0xcf, 0x64, 0x11,
             ],
             "rho_binding known-answer regression"
         );
