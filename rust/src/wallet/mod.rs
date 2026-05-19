@@ -1,5 +1,4 @@
 pub(crate) mod db;
-pub(crate) mod exchange_address;
 pub mod keys;
 pub mod keystone;
 pub mod network;

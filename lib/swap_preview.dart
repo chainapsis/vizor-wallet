@@ -20,7 +20,6 @@ import 'src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'src/features/swap/screens/swap_screen.dart';
 import 'src/providers/account_models.dart';
 import 'src/providers/receive_address_provider.dart';
-import 'src/rust/api/wallet.dart' as rust_wallet;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -74,35 +73,9 @@ Future<void> main() async {
         ),
         swapZecStagingAddressServiceProvider.overrideWith(
           (ref) => SwapZecStagingAddressService(
-            loadWalletDbPath: () async => 'wallet.db',
-            readNetwork: () => 'main',
             loadShieldedAddress: ({required accountUuid}) async {
               return 'u1preview-shielded-recipient';
             },
-            reserveExchangeTransparentAddress:
-                ({
-                  required accountUuid,
-                  required dbPath,
-                  required network,
-                }) async {
-                  return rust_wallet.ExchangeTransparentAddressResult(
-                    address: 't1previewrotatingstaging',
-                    transparentChildIndex: 7,
-                    exposedAtHeight: BigInt.from(2500000),
-                  );
-                },
-            releaseExchangeTransparentAddress:
-                ({
-                  required accountUuid,
-                  required address,
-                  required dbPath,
-                }) async {
-                  return false;
-                },
-            releaseUnusedExchangeTransparentAddresses:
-                ({required accountUuid, required dbPath}) async {
-                  return 0;
-                },
           ),
         ),
         swapIntentProvider.overrideWithValue(_PreviewSwapProvider()),

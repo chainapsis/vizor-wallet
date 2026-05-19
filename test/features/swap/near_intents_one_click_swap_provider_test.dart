@@ -35,7 +35,7 @@ void main() {
         externalAsset: SwapAsset.usdc,
         sellAmount: 1.5,
         destination: '0xrecipient',
-        refundAddress: 't1refund',
+        refundAddress: 'u1refund',
       ),
     );
 
@@ -46,7 +46,7 @@ void main() {
     expect(request.body?['amount'], '150000000');
     expect(request.body?['originAsset'], 'nep141:zec.omft.near');
     expect(request.body?['destinationAsset'], 'nep141:usdc.example');
-    expect(request.body?['refundTo'], 't1refund');
+    expect(request.body?['refundTo'], 'u1refund');
     expect(request.body?['recipient'], '0xrecipient');
     expect(request.body?['deadline'], '2026-05-07T10:10:00Z');
     expect(request.body?['referral'], 'rowan');
@@ -138,7 +138,7 @@ void main() {
         externalAsset: SwapAsset.usdc,
         sellAmount: 1.5,
         destination: '0xrecipient',
-        refundAddress: 't1refund',
+        refundAddress: 'u1refund',
       ),
     );
 
@@ -203,7 +203,7 @@ void main() {
         externalAsset: baseUsdc,
         sellAmount: 1.5,
         destination: '0xrecipient',
-        refundAddress: 't1refund',
+        refundAddress: 'u1refund',
       ),
     );
 
@@ -280,7 +280,7 @@ void main() {
           externalAsset: SwapAsset.btc,
           sellAmount: 1.5,
           destination: 'bc1recipient',
-          refundAddress: 't1refund',
+          refundAddress: 'u1refund',
         ),
       );
 
@@ -317,7 +317,7 @@ void main() {
           direction: SwapDirection.externalToZec,
           externalAsset: SwapAsset.near,
           sellAmount: 0.01,
-          destination: 't1rotating-zec-recipient',
+          destination: 'u1shielded-zec-recipient',
           refundAddress: 'rowan.near',
         ),
       );
@@ -356,7 +356,7 @@ void main() {
           externalAsset: SwapAsset.near,
           sellAmount: 0.12345678901234568,
           sellAmountText: '0.123456789012345678901234',
-          destination: 't1rotating-zec-recipient',
+          destination: 'u1shielded-zec-recipient',
           refundAddress: 'rowan.near',
         ),
       );
@@ -407,7 +407,7 @@ void main() {
           externalAsset: ethUsdcVariants.last,
           sellAmount: 1.5,
           destination: '0xrecipient',
-          refundAddress: 't1refund',
+          refundAddress: 'u1refund',
         ),
       );
 
@@ -573,7 +573,7 @@ void main() {
           externalAsset: SwapAsset.usdc,
           sellAmount: 1.5,
           destination: '0xrecipient',
-          refundAddress: 't1refund',
+          refundAddress: 'u1refund',
         ),
       ),
       throwsA(
@@ -597,7 +597,7 @@ void main() {
           externalAsset: SwapAsset.usdc,
           sellAmount: 1.5,
           destination: '0xrecipient',
-          refundAddress: 't1refund',
+          refundAddress: 'u1refund',
         ),
       ),
       throwsA(

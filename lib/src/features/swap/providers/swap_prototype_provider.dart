@@ -79,7 +79,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         if (previous != null) {
           unawaited(_persistCurrentIntents(accountUuid: previous));
         }
-        _clearAccountScopedTransientState(previousAccountUuid: previous);
+        _clearAccountScopedTransientState();
         unawaited(
           _restorePersistedIntents(accountUuid: next, replaceExisting: true),
         );
@@ -295,9 +295,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     final userExternalAddress = state.destinationText;
     final generation = ++_quoteGeneration;
     final draft = _currentDraftSnapshot;
-    SwapAddressPlan? reservedAddressPlan;
 
-    _releaseCurrentReviewReservation();
     state = state.copyWith(
       reviewVisible: false,
       quoteLoading: true,
@@ -309,13 +307,12 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       await _persistDraft(draft);
       final stagingAddress = await ref
           .read(swapZecStagingAddressServiceProvider)
-          .prepareForQuote(accountUuid: accountUuid, direction: direction);
+          .prepareForQuote(accountUuid: accountUuid);
       final addressPlan = stagingAddress.toAddressPlan(
         direction: direction,
         externalAsset: externalAsset,
         userExternalAddress: userExternalAddress,
       );
-      reservedAddressPlan = addressPlan;
       final quote = await ref
           .read(swapIntentProvider)
           .quote(
@@ -326,21 +323,9 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
             ),
           );
       if (generation != _quoteGeneration) {
-        unawaited(
-          _releaseAddressReservation(
-            accountUuid: accountUuid,
-            addressPlan: addressPlan,
-          ),
-        );
         return;
       }
       if (!_isAccountActive(accountUuid)) {
-        unawaited(
-          _releaseAddressReservation(
-            accountUuid: accountUuid,
-            addressPlan: addressPlan,
-          ),
-        );
         return;
       }
 
@@ -354,15 +339,6 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         clearQuoteError: true,
       );
     } catch (e) {
-      final addressPlan = reservedAddressPlan;
-      if (addressPlan != null) {
-        unawaited(
-          _releaseAddressReservation(
-            accountUuid: accountUuid,
-            addressPlan: addressPlan,
-          ),
-        );
-      }
       if (generation != _quoteGeneration) return;
       state = state.copyWith(
         reviewVisible: false,
@@ -394,7 +370,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         'Swap: start blocked; active account changed '
         'review=$reviewAccountUuid active=$accountUuid',
       );
-      _clearReviewState(reservationAccountUuid: reviewAccountUuid);
+      _clearReviewState();
       state = state.copyWith(
         startSubmitting: false,
         statusError:
@@ -451,12 +427,6 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       log(
         'Swap: start failed quote=${_shortSwapValue(quote.providerQuoteId)} '
         'error=$e',
-      );
-      unawaited(
-        _releaseAddressReservation(
-          accountUuid: accountUuid,
-          addressPlan: addressPlan,
-        ),
       );
       state = state.copyWith(
         startSubmitting: false,
@@ -560,7 +530,6 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
   }
 
   Future<void> removeIntent(String intentId) async {
-    final removedIntent = _intentById(intentId);
     final remaining = [
       for (final intent in state.intents)
         if (intent.id != intentId) intent,
@@ -584,9 +553,6 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       clearSelectedIntent: nextSelectedId == null,
       clearStatusError: true,
     );
-    if (removedIntent != null) {
-      await _releaseIntentReservation(removedIntent);
-    }
     await _persistCurrentIntents();
   }
 
@@ -1216,14 +1182,8 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     }
   }
 
-  void _clearReviewState({
-    bool releaseReviewReservation = true,
-    String? reservationAccountUuid,
-  }) {
+  void _clearReviewState() {
     _quoteGeneration++;
-    if (releaseReviewReservation) {
-      _releaseCurrentReviewReservation(accountUuid: reservationAccountUuid);
-    }
     state = state.copyWith(
       reviewVisible: false,
       quoteLoading: false,
@@ -1234,24 +1194,8 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     );
   }
 
-  void _releaseCurrentReviewReservation({String? accountUuid}) {
-    final scopedAccountUuid =
-        accountUuid ??
-        state.reviewAccountUuid ??
-        ref.read(accountProvider).value?.activeAccountUuid;
-    final addressPlan = state.reviewAddressPlan;
-    if (scopedAccountUuid == null || addressPlan == null) return;
-    unawaited(
-      _releaseAddressReservation(
-        accountUuid: scopedAccountUuid,
-        addressPlan: addressPlan,
-      ),
-    );
-  }
-
-  void _clearAccountScopedTransientState({String? previousAccountUuid}) {
+  void _clearAccountScopedTransientState() {
     _quoteGeneration++;
-    _releaseCurrentReviewReservation(accountUuid: previousAccountUuid);
     state = state.copyWith(
       reviewVisible: false,
       quoteLoading: false,
@@ -1266,39 +1210,6 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       clearMaxAmountError: true,
       clearSelectedIntent: true,
     );
-  }
-
-  Future<bool> _releaseAddressReservation({
-    required String accountUuid,
-    required SwapAddressPlan addressPlan,
-  }) async {
-    if (!addressPlan.zecStagingIsRotating) return false;
-    return ref
-        .read(swapZecStagingAddressServiceProvider)
-        .releaseReservation(
-          accountUuid: accountUuid,
-          address: addressPlan.walletTransparentAddress,
-        );
-  }
-
-  Future<void> _releaseIntentReservation(SwapPrototypeIntent intent) async {
-    if (intent.depositTxHash != null || intent.shieldTxHash != null) return;
-    final accountUuid = _accountUuidForIntent(intent);
-    final address = _walletReservationAddressForIntent(intent);
-    if (accountUuid == null || address == null || address.trim().isEmpty) {
-      return;
-    }
-    await ref
-        .read(swapZecStagingAddressServiceProvider)
-        .releaseReservation(accountUuid: accountUuid, address: address);
-  }
-
-  String? _walletReservationAddressForIntent(SwapPrototypeIntent intent) {
-    return switch (intent.direction) {
-      SwapDirection.zecToExternal => intent.oneClickRefundTo,
-      null => null,
-      SwapDirection.externalToZec => null,
-    };
   }
 
   Future<void> _restorePersistedIntents({
@@ -1588,8 +1499,8 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
           label: sendsZec ? 'Refund path monitored' : 'Shielded receive',
           state: SwapPrototypeStepState.pending,
           evidence: sendsZec
-              ? 'Wallet t-address is used only if a refund arrives'
-              : '${addressPlan.zecStagingLabel}; ${addressPlan.zecShieldingLabel} follows',
+              ? 'Wallet unified address is used only if a refund arrives'
+              : addressPlan.deliverySummary,
         ),
       ],
       exposure: [
@@ -1604,9 +1515,9 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
           value: '0 previous uses',
         ),
         SwapPrototypeField(
-          label: sendsZec ? 'Transparent window' : 'ZEC destination',
+          label: sendsZec ? 'Refund path' : 'ZEC destination',
           value: sendsZec
-              ? 'opens only if refund arrives; shield prompt follows'
+              ? 'wallet unified address'
               : addressPlan.deliverySummary,
         ),
         SwapPrototypeField(

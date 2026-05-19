@@ -46,7 +46,7 @@ void main() {
       ],
       receipt: const [
         SwapPrototypeField(label: 'Swap id', value: 't1deposit'),
-        SwapPrototypeField(label: 'Refund to', value: 't1refund'),
+        SwapPrototypeField(label: 'Refund to', value: 'u1refund'),
       ],
       direction: SwapDirection.zecToExternal,
       externalAsset: SwapAsset.usdc,
@@ -62,7 +62,7 @@ void main() {
       lastStatusCheckedAt: DateTime.utc(2026, 5, 7, 10, 30),
       statusError: 'temporary status refresh failure',
       oneClickRecipient: '0xrecipient',
-      oneClickRefundTo: 't1refund',
+      oneClickRefundTo: 'u1refund',
       depositDeadline: DateTime.utc(2026, 5, 7, 12),
       accountUuid: 'account-1',
     );
@@ -91,11 +91,11 @@ void main() {
     );
     expect(restored.single.statusError, 'temporary status refresh failure');
     expect(restored.single.oneClickRecipient, '0xrecipient');
-    expect(restored.single.oneClickRefundTo, 't1refund');
+    expect(restored.single.oneClickRefundTo, 'u1refund');
     expect(restored.single.depositDeadline, DateTime.utc(2026, 5, 7, 12));
     expect(restored.single.status, SwapIntentStatus.processing);
     expect(restored.single.steps.single.label, 'Deposit observed');
-    expect(restored.single.receipt.last.value, 't1refund');
+    expect(restored.single.receipt.last.value, 'u1refund');
   });
 
   test('keeps persisted swap sessions scoped to their account', () async {

@@ -146,43 +146,6 @@ Future<String> getTransparentAddress({
   accountUuid: accountUuid,
 );
 
-/// Reserve a one-time transparent staging address for exchange deposits.
-Future<ExchangeTransparentAddressResult> reserveExchangeTransparentAddress({
-  required String dbPath,
-  required String network,
-  required String accountUuid,
-}) => RustLib.instance.api.crateApiWalletReserveExchangeTransparentAddress(
-  dbPath: dbPath,
-  network: network,
-  accountUuid: accountUuid,
-);
-
-/// Release an unused exchange-only transparent address reservation.
-///
-/// Returns false when the address is unknown, already unexposed, or has a
-/// wallet-observed transparent output.
-Future<bool> releaseExchangeTransparentAddress({
-  required String dbPath,
-  required String accountUuid,
-  required String address,
-}) => RustLib.instance.api.crateApiWalletReleaseExchangeTransparentAddress(
-  dbPath: dbPath,
-  accountUuid: accountUuid,
-  address: address,
-);
-
-/// Release all unused exchange-only transparent address reservations.
-///
-/// Only addresses with no wallet-observed transparent outputs are released.
-Future<int> releaseUnusedExchangeTransparentAddresses({
-  required String dbPath,
-  required String accountUuid,
-}) => RustLib.instance.api
-    .crateApiWalletReleaseUnusedExchangeTransparentAddresses(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-    );
-
 /// Result of adding an account to an existing wallet.
 class AccountCreationResult {
   final String accountUuid;
@@ -235,34 +198,6 @@ class AccountInfo {
           name == other.name &&
           unifiedAddress == other.unifiedAddress &&
           isSeedAnchor == other.isSeedAnchor;
-}
-
-/// Exchange-only transparent address reserved from the ephemeral key scope.
-class ExchangeTransparentAddressResult {
-  final String address;
-  final int transparentChildIndex;
-  final BigInt exposedAtHeight;
-
-  const ExchangeTransparentAddressResult({
-    required this.address,
-    required this.transparentChildIndex,
-    required this.exposedAtHeight,
-  });
-
-  @override
-  int get hashCode =>
-      address.hashCode ^
-      transparentChildIndex.hashCode ^
-      exposedAtHeight.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ExchangeTransparentAddressResult &&
-          runtimeType == other.runtimeType &&
-          address == other.address &&
-          transparentChildIndex == other.transparentChildIndex &&
-          exposedAtHeight == other.exposedAtHeight;
 }
 
 /// Result of wallet creation, containing the mnemonic, unified address, and account UUID.

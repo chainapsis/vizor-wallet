@@ -28,7 +28,6 @@ import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
-import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
   test('compactSwapAmountText truncates visible decimals without ellipsis', () {
@@ -273,7 +272,6 @@ void main() {
   testWidgets('account switch cancels in-flight quote review', (tester) async {
     await _setDesktopViewport(tester);
     final swapProvider = _DelayedQuoteSwapProvider();
-    final releasedReservations = <String>[];
     final accountNotifier = _FakeSwapAccountNotifier(
       _twoAccountBootstrap.initialAccountState,
     );
@@ -290,11 +288,6 @@ void main() {
         accountNotifier: () => accountNotifier,
         swapProvider: swapProvider,
         seedPrototypeFixtures: false,
-        releaseExchangeTransparentAddress:
-            ({required accountUuid, required address, required dbPath}) async {
-              releasedReservations.add('$accountUuid:$address');
-              return true;
-            },
       ),
     );
     await tester.pumpAndSettle();
@@ -324,7 +317,6 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_review_panel')), findsNothing);
     expect(swapProvider.startedQuotes, isEmpty);
-    expect(releasedReservations, ['account-1:t1actualstaging']);
   });
 
   testWidgets('account switch closes open swap activity detail', (
@@ -1242,7 +1234,6 @@ void main() {
     tester,
   ) async {
     await _setDesktopViewport(tester);
-    final releasedAddresses = <String>[];
     final sessionStore = _FakeSwapSessionStore(
       initialIntents: [
         _persistedExternalToZecIntent(
@@ -1266,11 +1257,6 @@ void main() {
         ),
         seedPrototypeFixtures: false,
         sessionStore: sessionStore,
-        releaseExchangeTransparentAddress:
-            ({required accountUuid, required address, required dbPath}) async {
-              releasedAddresses.add(address);
-              return true;
-            },
       ),
     );
     await tester.pumpAndSettle();
@@ -1318,7 +1304,6 @@ void main() {
     expect(sessionStore.savedIntents.map((intent) => intent.id), [
       'keep-pending',
     ]);
-    expect(releasedAddresses, isEmpty);
   });
 
   testWidgets('activity recovery bundle copies durable swap fields', (
@@ -2498,7 +2483,7 @@ void main() {
   });
 
   testWidgets(
-    'restored external-to-ZEC swap keeps staging address after status refresh',
+    'restored external-to-ZEC swap keeps wallet UA after status refresh',
     (tester) async {
       await _setDesktopViewport(tester);
       final swapProvider = _LongExternalStatusSwapProvider();
@@ -2506,7 +2491,7 @@ void main() {
         initialIntents: [
           _persistedExternalToZecIntent(
             id: '0xpersisted-usdc-deposit',
-            stagingAddress: 't1persistedrotatingstaging',
+            stagingAddress: 'u1persistedrecipient',
           ),
         ],
       );
@@ -2536,7 +2521,7 @@ void main() {
       );
       expect(
         sessionStore.savedIntents.single.oneClickRecipient,
-        't1persistedrotatingstaging',
+        'u1persistedrecipient',
       );
       expect(
         sessionStore.savedIntents.single.oneClickRefundTo,
@@ -2545,7 +2530,7 @@ void main() {
 
       await _openActivityDetail(tester, '0xpersisted-usdc-deposit');
 
-      expect(find.text('t1persistedrotatingstaging'), findsWidgets);
+      expect(find.text('u1persistedrecipient'), findsWidgets);
       expect(find.text('Send USDC'), findsWidgets);
       expect(
         find.byKey(const ValueKey('swap_activity_deposit_qr_panel')),
@@ -3347,7 +3332,7 @@ void main() {
       expect(request.sellAmount, 1.5);
       expect(request.sellAmountText, '1.5');
       expect(request.destination, '0xrecipient');
-      expect(request.refundAddress, 't1actualstaging');
+      expect(request.refundAddress, 'u1actualshieldedrecipient');
 
       expect(find.byKey(const ValueKey('swap_review_panel')), findsOneWidget);
       expect(find.text('Live quote'), findsOneWidget);
@@ -3538,7 +3523,6 @@ void main() {
     tester,
   ) async {
     await _setDesktopViewport(tester);
-    final releasedAddresses = <String>[];
 
     await tester.pumpWidget(
       _routerHarness(
@@ -3549,11 +3533,6 @@ void main() {
           ],
         ),
         swapProvider: _FailingQuoteSwapProvider(),
-        releaseExchangeTransparentAddress:
-            ({required accountUuid, required address, required dbPath}) async {
-              releasedAddresses.add(address);
-              return true;
-            },
       ),
     );
     await tester.pumpAndSettle();
@@ -3583,7 +3562,6 @@ void main() {
     );
     expect(_fieldText(tester, 'swap_amount_field'), '1.5');
     expect(_fieldText(tester, 'swap_destination_field'), '0xrecipient');
-    expect(releasedAddresses, ['t1actualstaging']);
   });
 
   testWidgets('start failure stays on review and shows an inline error', (
@@ -3591,7 +3569,6 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     final swapProvider = _FailingStartSwapProvider();
-    final releasedAddresses = <String>[];
 
     await tester.pumpWidget(
       _routerHarness(
@@ -3603,11 +3580,6 @@ void main() {
         ),
         swapProvider: swapProvider,
         liveFundsEnabled: true,
-        releaseExchangeTransparentAddress:
-            ({required accountUuid, required address, required dbPath}) async {
-              releasedAddresses.add(address);
-              return true;
-            },
       ),
     );
     await tester.pumpAndSettle();
@@ -3636,7 +3608,6 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('swap_queue_title')), findsNothing);
-    expect(releasedAddresses, ['t1actualstaging']);
   });
 
   testWidgets('swap composer supports receiving ZEC from an external asset', (
@@ -3683,11 +3654,7 @@ void main() {
     expect(find.byKey(const ValueKey('swap_address_summary')), findsOneWidget);
     expect(find.text('Refund only'), findsWidgets);
     expect(find.text('ZEC delivery'), findsNothing);
-    expect(find.text('t1wallet-shield-prompt-staging'), findsNothing);
-    expect(
-      find.text('ZEC lands on current wallet t-address; shield prompt follows'),
-      findsNothing,
-    );
+    expect(find.text('u1wallet-refund-preview'), findsNothing);
     expect(find.text('USDC source deposit'), findsNothing);
     expect(find.text('ZEC staging'), findsNothing);
     expect(
@@ -3745,7 +3712,7 @@ void main() {
     expect(_fieldText(tester, 'swap_destination_field'), isEmpty);
   });
 
-  testWidgets('review quote blocks missing ZEC refund reservation', (
+  testWidgets('review quote blocks when wallet UA cannot be loaded', (
     tester,
   ) async {
     await _setViewport(tester, const Size(1180, 720));
@@ -3760,10 +3727,9 @@ void main() {
           ],
         ),
         swapProvider: swapProvider,
-        reserveExchangeTransparentAddress:
-            ({required accountUuid, required dbPath, required network}) async {
-              throw Exception('ephemeral gap exhausted');
-            },
+        loadShieldedAddress: ({required accountUuid}) async {
+          throw Exception('shielded address unavailable');
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -3795,7 +3761,6 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     final swapProvider = _FakeSwapProvider();
-    var transparentReservations = 0;
 
     await tester.pumpWidget(
       _routerHarness(
@@ -3806,15 +3771,6 @@ void main() {
           ],
         ),
         swapProvider: swapProvider,
-        reserveExchangeTransparentAddress:
-            ({required accountUuid, required dbPath, required network}) async {
-              transparentReservations++;
-              return rust_wallet.ExchangeTransparentAddressResult(
-                address: 't1rotatingstaging',
-                transparentChildIndex: 7,
-                exposedAtHeight: BigInt.from(2500000),
-              );
-            },
       ),
     );
     await tester.pumpAndSettle();
@@ -3837,7 +3793,6 @@ void main() {
 
     expect(swapProvider.requests, hasLength(1));
     expect(swapProvider.requests.single.direction, SwapDirection.externalToZec);
-    expect(transparentReservations, 0);
     expect(
       swapProvider.requests.single.destination,
       'u1actualshieldedrecipient',
@@ -3993,18 +3948,6 @@ void main() {
             ],
           ),
           sessionStore: sessionStore,
-          reserveExchangeTransparentAddress:
-              ({
-                required accountUuid,
-                required dbPath,
-                required network,
-              }) async {
-                return rust_wallet.ExchangeTransparentAddressResult(
-                  address: 't1rotatingstaging',
-                  transparentChildIndex: 8,
-                  exposedAtHeight: BigInt.from(2500001),
-                );
-              },
         ),
       );
       await tester.pumpAndSettle();
@@ -4082,10 +4025,6 @@ void main() {
       expect(find.text('u1actualshieldedrecipient'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('swap_open_receive_staging_button')),
-        findsNothing,
-      );
-      expect(
-        find.text('wallet receive address; shield prompt follows'),
         findsNothing,
       );
       expect(
@@ -4260,7 +4199,7 @@ void main() {
     );
     expect(
       sessionStore.savedIntents.single.oneClickRefundTo,
-      't1actualstaging',
+      'u1actualshieldedrecipient',
     );
     expect(find.text('Send ZEC'), findsWidgets);
     expect(find.text('USDC recipient'), findsWidgets);
@@ -4917,10 +4856,7 @@ Widget _routerHarness(
   Duration? statusPollInterval,
   Duration? shieldStatusPollInterval,
   Duration? priceRefreshInterval,
-  ReserveExchangeTransparentAddress? reserveExchangeTransparentAddress,
-  ReleaseExchangeTransparentAddress? releaseExchangeTransparentAddress,
-  ReleaseUnusedExchangeTransparentAddresses?
-  releaseUnusedExchangeTransparentAddresses,
+  LoadShieldedAddress? loadShieldedAddress,
   bool seedPrototypeFixtures = true,
   bool liveFundsEnabled = true,
   AppBootstrapState? bootstrap,
@@ -4940,49 +4876,22 @@ Widget _routerHarness(
       ),
       swapZecStagingAddressServiceProvider.overrideWith(
         (ref) => SwapZecStagingAddressService(
-          loadWalletDbPath: () async => 'wallet.db',
-          readNetwork: () => 'main',
-          loadShieldedAddress: ({required accountUuid}) {
-            final receiveAddressService = ref.read(
-              receiveAddressServiceProvider,
-            );
-            if (ref
-                .read(accountProvider.notifier)
-                .isHardwareAccount(accountUuid)) {
-              return receiveAddressService.loadShieldedAddress(
-                accountUuid: accountUuid,
-              );
-            }
-            return receiveAddressService.renewShieldedAddress(
-              accountUuid: accountUuid,
-            );
-          },
-          reserveExchangeTransparentAddress:
-              reserveExchangeTransparentAddress ??
-              ({
-                required accountUuid,
-                required dbPath,
-                required network,
-              }) async {
-                return rust_wallet.ExchangeTransparentAddressResult(
-                  address: 't1actualstaging',
-                  transparentChildIndex: 7,
-                  exposedAtHeight: BigInt.from(2500000),
+          loadShieldedAddress:
+              loadShieldedAddress ??
+              ({required accountUuid}) {
+                final receiveAddressService = ref.read(
+                  receiveAddressServiceProvider,
                 );
-              },
-          releaseExchangeTransparentAddress:
-              releaseExchangeTransparentAddress ??
-              ({
-                required accountUuid,
-                required address,
-                required dbPath,
-              }) async {
-                return false;
-              },
-          releaseUnusedExchangeTransparentAddresses:
-              releaseUnusedExchangeTransparentAddresses ??
-              ({required accountUuid, required dbPath}) async {
-                return 0;
+                if (ref
+                    .read(accountProvider.notifier)
+                    .isHardwareAccount(accountUuid)) {
+                  return receiveAddressService.loadShieldedAddress(
+                    accountUuid: accountUuid,
+                  );
+                }
+                return receiveAddressService.renewShieldedAddress(
+                  accountUuid: accountUuid,
+                );
               },
         ),
       ),
@@ -5168,7 +5077,7 @@ class _FakeSwapProvider implements SwapProvider {
         externalAsset: SwapAsset.usdc,
         sellAmount: 1.5,
         destination: '0xrecipient',
-        refundAddress: 't1actualstaging',
+        refundAddress: 'u1actualshieldedrecipient',
       ),
     );
     final base = SwapIntentSnapshot.fromQuote(statusQuote, id: intentId);
@@ -5213,7 +5122,7 @@ class _FakeSwapProvider implements SwapProvider {
         externalAsset: SwapAsset.usdc,
         sellAmount: 1.5,
         destination: '0xrecipient',
-        refundAddress: 't1actualstaging',
+        refundAddress: 'u1actualshieldedrecipient',
       ),
     );
     final base = SwapIntentSnapshot.fromQuote(statusQuote, id: depositAddress);
@@ -5251,7 +5160,7 @@ class _AwaitingSubmitSwapProvider extends _FakeSwapProvider {
         externalAsset: SwapAsset.usdc,
         sellAmount: 1.5,
         destination: '0xrecipient',
-        refundAddress: 't1actualstaging',
+        refundAddress: 'u1actualshieldedrecipient',
       ),
     );
     final base = SwapIntentSnapshot.fromQuote(statusQuote, id: depositAddress);
@@ -5841,7 +5750,7 @@ SwapPrototypeIntent _persistedIntent({
     providerQuoteId: 'quote-1',
     providerSignature: 'quote-signature',
     oneClickRecipient: '0xrecipient',
-    oneClickRefundTo: 't1refund',
+    oneClickRefundTo: 'u1refund',
     accountUuid: accountUuid,
   );
 }

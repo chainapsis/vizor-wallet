@@ -2,7 +2,7 @@ use std::panic;
 
 use secrecy::ExposeSecret;
 
-use crate::wallet::{exchange_address, keys};
+use crate::wallet::keys;
 
 /// Result of wallet creation, containing the mnemonic, unified address, and account UUID.
 pub struct WalletCreationResult {
@@ -29,13 +29,6 @@ pub struct AccountInfo {
     pub name: String,
     pub unified_address: String,
     pub is_seed_anchor: bool,
-}
-
-/// Exchange-only transparent address reserved from the ephemeral key scope.
-pub struct ExchangeTransparentAddressResult {
-    pub address: String,
-    pub transparent_child_index: u32,
-    pub exposed_at_height: u64,
 }
 
 /// Catches panics and converts them to Result<T, String>.
@@ -279,53 +272,5 @@ pub fn get_transparent_address(
     catch(|| {
         let network = keys::parse_network(&network)?;
         keys::get_transparent_address_from_db(&db_path, network, account_uuid.as_deref())
-    })
-}
-
-/// Reserve a one-time transparent staging address for exchange deposits.
-pub fn reserve_exchange_transparent_address(
-    db_path: String,
-    network: String,
-    account_uuid: String,
-) -> Result<ExchangeTransparentAddressResult, String> {
-    catch(|| {
-        let network = keys::parse_network(&network)?;
-        let reserved = exchange_address::reserve_exchange_transparent_address(
-            &db_path,
-            network,
-            &account_uuid,
-        )?;
-
-        Ok(ExchangeTransparentAddressResult {
-            address: reserved.address,
-            transparent_child_index: reserved.transparent_child_index,
-            exposed_at_height: reserved.exposed_at_height,
-        })
-    })
-}
-
-/// Release an unused exchange-only transparent address reservation.
-///
-/// Returns false when the address is unknown, already unexposed, or has a
-/// wallet-observed transparent output.
-pub fn release_exchange_transparent_address(
-    db_path: String,
-    account_uuid: String,
-    address: String,
-) -> Result<bool, String> {
-    catch(|| {
-        exchange_address::release_exchange_transparent_address(&db_path, &account_uuid, &address)
-    })
-}
-
-/// Release all unused exchange-only transparent address reservations.
-///
-/// Only addresses with no wallet-observed transparent outputs are released.
-pub fn release_unused_exchange_transparent_addresses(
-    db_path: String,
-    account_uuid: String,
-) -> Result<u32, String> {
-    catch(|| {
-        exchange_address::release_unused_exchange_transparent_addresses(&db_path, &account_uuid)
     })
 }

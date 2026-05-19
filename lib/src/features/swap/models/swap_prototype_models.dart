@@ -363,7 +363,7 @@ class SwapPrototypeState {
   }
 
   String get walletZecPreviewAddress => direction.sendsZec
-      ? 't1wallet-shield-prompt-staging'
+      ? 'u1wallet-refund-preview'
       : 'u1wallet-shielded-preview';
 
   double? get sellAmount {
@@ -381,12 +381,9 @@ class SwapPrototypeState {
       externalAsset: externalAsset,
       userExternalAddress: destinationText,
       walletZecAddress: walletZecPreviewAddress,
-      zecStagingAddressPolicy: direction.sendsZec
-          ? SwapZecStagingAddressPolicy.currentWalletTransparentAddress
-          : SwapZecStagingAddressPolicy.rotatingWalletUnifiedAddress,
-      zecShieldingPolicy: direction.sendsZec
-          ? SwapZecShieldingPolicy.promptAfterArrival
-          : SwapZecShieldingPolicy.notRequired,
+      zecStagingAddressPolicy:
+          SwapZecStagingAddressPolicy.rotatingWalletUnifiedAddress,
+      zecShieldingPolicy: SwapZecShieldingPolicy.notRequired,
     );
   }
 
@@ -876,10 +873,7 @@ const previewSwapIntents = <SwapPrototypeIntent>[
       ),
     ],
     exposure: [
-      SwapPrototypeField(
-        label: 'Transparent window',
-        value: 'closed after refund',
-      ),
+      SwapPrototypeField(label: 'Refund path', value: 'wallet unified address'),
       SwapPrototypeField(label: 'Third-party data', value: 'refund status'),
     ],
     receipt: [
@@ -892,7 +886,7 @@ const previewSwapIntents = <SwapPrototypeIntent>[
     externalAsset: SwapAsset.usdc,
     depositAddress: 't1refund-zec-deposit',
     oneClickRecipient: '0xusdc-recipient-refund',
-    oneClickRefundTo: 't1refund-source',
+    oneClickRefundTo: 'u1wallet-refund-source',
   ),
   SwapPrototypeIntent(
     id: 'swap-failed',
