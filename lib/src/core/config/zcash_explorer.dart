@@ -16,14 +16,11 @@ Uri zcashExplorerTransactionUri({
 }) {
   final network = zcashNetworkFromName(networkName);
   final host = switch (network) {
-    ZcashNetwork.mainnet => 'mainnet.zcashexplorer.app',
-    ZcashNetwork.testnet => 'testnet.zcashexplorer.app',
-    ZcashNetwork.regtest => 'testnet.zcashexplorer.app',
+    ZcashNetwork.mainnet => 'cipherscan.app',
+    ZcashNetwork.testnet => 'testnet.cipherscan.app',
+    ZcashNetwork.regtest => 'testnet.cipherscan.app',
   };
-  return Uri.https(
-    host,
-    '/transactions/${_explorerTxidHex(txidHex, txidOrder)}',
-  );
+  return Uri.https(host, '/tx/${_explorerTxidHex(txidHex, txidOrder)}');
 }
 
 String _explorerTxidHex(String txidHex, ZcashExplorerTxidOrder txidOrder) {
