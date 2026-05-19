@@ -68,7 +68,7 @@ thiserror = "2"
 # `Rho::from_nf_old`).
 subtle = "2.6"
 orchard = { version = "=0.13.1", features = ["unstable-voting-circuits"] }
-voting-circuits = { version = "0.4.2", features = ["share-reveal"] }
+voting-circuits = { git = "https://github.com/valargroup/voting-circuits.git", rev = "4c94389f1caab3bba1853b8d3f0c84e308b5cef2" }
 nonempty = "0.11"
 zip32 = "0.2"
 incrementalmerkletree = "0.8"

@@ -14,7 +14,7 @@ use orchard::{
     value::NoteValue,
 };
 use pasta_curves::pallas;
-use voting_circuits::delegation::imt::ImtProofData;
+use voting_circuits::delegation::ImtProofData;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::Network;
 
@@ -182,8 +182,8 @@ fn precomputed_randomness_from_stored(
     rseed_signed: &[u8],
     rseed_output: &[u8],
     bundle_index: u32,
-) -> Result<voting_circuits::delegation::builder::PrecomputedRandomness, VotingError> {
-    use voting_circuits::delegation::builder::{PaddedNoteData, PrecomputedRandomness};
+) -> Result<voting_circuits::delegation::PrecomputedRandomness, VotingError> {
+    use voting_circuits::delegation::{PaddedNoteData, PrecomputedRandomness};
 
     let expected_padded_count = 5usize.saturating_sub(notes_len);
     if padded_secrets.len() != expected_padded_count {

@@ -36,12 +36,16 @@ pub fn warm_proving_caches() {
         std::thread::Builder::new()
             .name("voting-delegation-cache-warmup".to_string())
             .stack_size(KEYGEN_STACK_BYTES)
-            .spawn(zkp1::warm_delegation_proving_key)
+            .spawn(|| {
+                let _ = voting_circuits::delegation::warm_delegation_keys();
+            })
             .expect("spawn delegation proving cache warm-up thread"),
         std::thread::Builder::new()
             .name("voting-vote-proof-cache-warmup".to_string())
             .stack_size(KEYGEN_STACK_BYTES)
-            .spawn(voting_circuits::vote_proof::warm_vote_proof_keys)
+            .spawn(|| {
+                let _ = voting_circuits::vote_proof::warm_vote_proof_keys();
+            })
             .expect("spawn vote proof cache warm-up thread"),
     ];
 

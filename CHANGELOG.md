@@ -4,6 +4,15 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# Unreleased
+
+## Changed
+- Pinned `voting-circuits` to the audited git revision
+  `4c94389f1caab3bba1853b8d3f0c84e308b5cef2` and updated callers to use its
+  public re-exports and upstream circuit key caches.
+- Removed local wallet-side test/helpers that duplicated vote-commitment and
+  El Gamal internals now owned by `voting-circuits`.
+
 # 0.8.1
 
 ## Fixed
