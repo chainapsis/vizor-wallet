@@ -35,6 +35,7 @@ import 'src/features/onboarding/keystone/keystone_wallet_birthday_screen.dart';
 import 'src/features/onboarding/lost_password_screen.dart';
 import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
+import 'src/features/onboarding/storage_unavailable_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -77,7 +78,10 @@ Future<Widget> buildBootstrappedZcashWalletApp({
   List<Override> overrides = const [],
 }) async {
   final bootstrap = await loadAppBootstrap();
-  return buildZcashWalletApp(bootstrap: bootstrap, overrides: overrides);
+  return BootstrappedZcashWalletApp(
+    initialBootstrap: bootstrap,
+    overrides: overrides,
+  );
 }
 
 Widget buildZcashWalletApp({
@@ -87,10 +91,54 @@ Widget buildZcashWalletApp({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap),
+      appBootstrapRetryProvider.overrideWithValue(() async {}),
       ...overrides,
     ],
     child: const ZcashWalletApp(),
   );
+}
+
+class BootstrappedZcashWalletApp extends StatefulWidget {
+  const BootstrappedZcashWalletApp({
+    required this.initialBootstrap,
+    this.overrides = const [],
+    super.key,
+  });
+
+  final AppBootstrapState initialBootstrap;
+  final List<Override> overrides;
+
+  @override
+  State<BootstrappedZcashWalletApp> createState() =>
+      _BootstrappedZcashWalletAppState();
+}
+
+class _BootstrappedZcashWalletAppState
+    extends State<BootstrappedZcashWalletApp> {
+  late AppBootstrapState _bootstrap = widget.initialBootstrap;
+  var _scopeGeneration = 0;
+
+  Future<void> _reloadBootstrap() async {
+    final bootstrap = await loadAppBootstrap();
+    if (!mounted) return;
+    setState(() {
+      _bootstrap = bootstrap;
+      _scopeGeneration += 1;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ProviderScope(
+      key: ValueKey(_scopeGeneration),
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap),
+        appBootstrapRetryProvider.overrideWithValue(_reloadBootstrap),
+        ...widget.overrides,
+      ],
+      child: const ZcashWalletApp(),
+    );
+  }
 }
 
 Future<void> runZcashWalletApp() async {
@@ -118,6 +166,12 @@ final _routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final walletAsync = ref.read(walletProvider);
       final security = ref.read(appSecurityProvider);
+      final isStorageUnavailable =
+          state.matchedLocation == '/storage-unavailable';
+
+      if (bootstrap.hasBlockingFailure) {
+        return isStorageUnavailable ? null : '/storage-unavailable';
+      }
 
       // Don't redirect on error — let the error screen show instead of onboarding
       if (walletAsync.hasError) return null;
@@ -143,6 +197,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
         'requiresUnlock=$requiresUnlock, isOnboarding=$isOnboarding',
       );
 
+      if (isStorageUnavailable) {
+        if (!hasWallet) return '/welcome';
+        return requiresUnlock ? '/unlock' : '/home';
+      }
       if (!hasWallet && isUnlockFlow) return '/welcome';
       if (!hasWallet && !isOnboarding && !isPublicLegal) return '/welcome';
       if (!hasWallet && state.matchedLocation == '/add-account') {
@@ -163,6 +221,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         redirect: (_, _) {
+          if (bootstrap.hasBlockingFailure) return '/storage-unavailable';
           final walletAsync = ref.read(walletProvider);
           final security = ref.read(appSecurityProvider);
           if (walletAsync.hasError) return '/home'; // home shows error state
@@ -173,6 +232,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
           if (!isUnlocked) return '/unlock';
           return '/home';
         },
+      ),
+      GoRoute(
+        path: '/storage-unavailable',
+        builder: (_, _) => const StorageUnavailableScreen(),
       ),
       // Onboarding-route transitions. Desktop acrylic visibly stutters
       // through a snapped page swap, so each route gets a custom
