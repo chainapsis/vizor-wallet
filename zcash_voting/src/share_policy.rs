@@ -266,9 +266,12 @@ pub fn share_submission_target_count(server_count: usize) -> usize {
 /// Select initial helper targets from a caller-provided server order.
 ///
 /// Callers that want random distribution should shuffle `server_urls` before
-/// calling this function. The selector itself stays deterministic for tests and
-/// FFI bindings.
-pub fn select_share_submission_targets(server_urls: &[String], target_count: usize) -> Vec<String> {
+/// calling this function, matching the current iOS helper selection behavior.
+/// The selector itself stays deterministic for tests and FFI bindings.
+pub fn select_share_submission_targets_from_order(
+    server_urls: &[String],
+    target_count: usize,
+) -> Vec<String> {
     server_urls
         .iter()
         .take(target_count.min(server_urls.len()))
@@ -279,7 +282,9 @@ pub fn select_share_submission_targets(server_urls: &[String], target_count: usi
 /// Plan the timing and initial helper targets for a share delegation.
 ///
 /// Missing `last_moment_buffer_seconds` means there is no delayed-share window,
-/// so the returned plan uses `submit_at = 0`.
+/// so the returned plan uses `submit_at = 0`. `server_urls` is treated as a
+/// caller-provided order. To match current iOS behavior, shuffle the candidate
+/// server list before calling this helper.
 pub fn plan_share_submission(
     server_urls: &[String],
     now_seconds: u64,
@@ -289,7 +294,7 @@ pub fn plan_share_submission(
     random_unit: f64,
 ) -> Result<ShareSubmissionPlan, VotingError> {
     let target_count = share_submission_target_count(server_urls.len());
-    let target_servers = select_share_submission_targets(server_urls, target_count);
+    let target_servers = select_share_submission_targets_from_order(server_urls, target_count);
     let submit_at = scheduled_share_submit_at(
         now_seconds,
         vote_end_time_seconds,
@@ -305,22 +310,45 @@ pub fn plan_share_submission(
     })
 }
 
-/// Return resubmission order with untried helpers before helpers already used.
-pub fn resubmission_server_order(
+/// Return resubmission order from separately ordered helper groups.
+///
+/// The returned order always tries untried helpers before helpers that already
+/// received the share. To match current iOS behavior, shuffle each group before
+/// calling this helper.
+pub fn resubmission_server_order_from_groups(
+    untried_server_urls: &[String],
+    already_sent_server_urls: &[String],
+) -> Vec<String> {
+    untried_server_urls
+        .iter()
+        .chain(already_sent_server_urls.iter())
+        .cloned()
+        .collect()
+}
+
+/// Return resubmission order from configured helper order and already-sent set.
+///
+/// This preserves the configured order within each group. It is useful for
+/// deterministic tests and callers that intentionally manage ordering outside
+/// the crate. To match current iOS behavior exactly, split and shuffle the
+/// untried and already-sent groups separately, then call
+/// `resubmission_server_order_from_groups`.
+pub fn resubmission_server_order_from_configured_order(
     configured_server_urls: &[String],
     sent_to_urls: &[String],
 ) -> Vec<String> {
     let sent: HashSet<&str> = sent_to_urls.iter().map(String::as_str).collect();
-    configured_server_urls
+    let untried: Vec<String> = configured_server_urls
         .iter()
         .filter(|server| !sent.contains(server.as_str()))
-        .chain(
-            configured_server_urls
-                .iter()
-                .filter(|server| sent.contains(server.as_str())),
-        )
         .cloned()
-        .collect()
+        .collect();
+    let already_sent: Vec<String> = configured_server_urls
+        .iter()
+        .filter(|server| sent.contains(server.as_str()))
+        .cloned()
+        .collect();
+    resubmission_server_order_from_groups(&untried, &already_sent)
 }
 
 fn min_second(current: Option<u64>, candidate: u64) -> Option<u64> {
@@ -523,7 +551,42 @@ mod tests {
     }
 
     #[test]
-    fn resubmission_order_tries_untried_helpers_first() {
+    fn share_submission_target_selection_uses_caller_server_order() {
+        let servers = vec![
+            "https://three.example.com".to_string(),
+            "https://one.example.com".to_string(),
+            "https://two.example.com".to_string(),
+        ];
+
+        assert_eq!(
+            select_share_submission_targets_from_order(&servers, 2),
+            vec![
+                "https://three.example.com".to_string(),
+                "https://one.example.com".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn resubmission_order_tries_ordered_untried_helpers_first() {
+        let untried = vec![
+            "https://untried-two.example.com".to_string(),
+            "https://untried-one.example.com".to_string(),
+        ];
+        let already_sent = vec!["https://already.example.com".to_string()];
+
+        assert_eq!(
+            resubmission_server_order_from_groups(&untried, &already_sent),
+            vec![
+                "https://untried-two.example.com".to_string(),
+                "https://untried-one.example.com".to_string(),
+                "https://already.example.com".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn resubmission_order_from_configured_order_preserves_group_order() {
         let configured = vec![
             "https://already.example.com".to_string(),
             "https://untried.example.com".to_string(),
@@ -531,7 +594,7 @@ mod tests {
         let sent = vec!["https://already.example.com".to_string()];
 
         assert_eq!(
-            resubmission_server_order(&configured, &sent),
+            resubmission_server_order_from_configured_order(&configured, &sent),
             vec![
                 "https://untried.example.com".to_string(),
                 "https://already.example.com".to_string()
