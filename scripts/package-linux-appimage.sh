@@ -165,6 +165,7 @@ sed -i \
   -e "s/^Name=.*/Name=$APP_NAME/" \
   -e "s/^Exec=.*/Exec=AppRun/" \
   -e "s/^Icon=.*/Icon=$APP_ID/" \
+  -e "s/^Categories=.*/Categories=Office;Finance;/" \
   -e "s/^StartupWMClass=.*/StartupWMClass=$APP_ID/" \
   "$DESKTOP_FILE"
 cp "$DESKTOP_FILE" "$APPDIR_APPLICATIONS_DIR/$APP_ID.desktop"
@@ -175,6 +176,7 @@ cat > "$APPDIR/AppRun" <<APPRUN
 set -euo pipefail
 
 APPDIR="\${APPDIR:-\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)}"
+export XDG_DATA_DIRS="\${APPDIR}/usr/share:\${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 export LD_LIBRARY_PATH="\${APPDIR}/usr/bin/lib:\${APPDIR}/usr/lib:\${LD_LIBRARY_PATH:-}"
 export GST_PLUGIN_SYSTEM_PATH_1_0="\${APPDIR}/usr/lib/gstreamer-1.0"
 export GST_PLUGIN_PATH_1_0="\${APPDIR}/usr/lib/gstreamer-1.0"
@@ -268,6 +270,12 @@ copy_gstreamer_runtime() {
   done
 }
 
+install_appimage_root_icon() {
+  rm -f "$APPDIR/$APP_ID.png" "$APPDIR/.DirIcon"
+  cp "$BUNDLE_DIR/data/icons/hicolor/256x256/apps/$APP_ID.png" "$APPDIR/$APP_ID.png"
+  ln -s "$APP_ID.png" "$APPDIR/.DirIcon"
+}
+
 export APPIMAGE_EXTRACT_AND_RUN=1
 
 "$LINUXDEPLOY_BIN" \
@@ -275,6 +283,8 @@ export APPIMAGE_EXTRACT_AND_RUN=1
   --executable "$PAYLOAD_DIR/$BINARY_NAME" \
   --desktop-file "$DESKTOP_FILE" \
   --icon-file "$APPDIR/$APP_ID.png"
+
+install_appimage_root_icon
 
 copy_gstreamer_runtime
 

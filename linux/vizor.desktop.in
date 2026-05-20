@@ -5,5 +5,5 @@ Comment=Self-custody Zcash wallet
 Exec=@BINARY_NAME@
 Icon=@APPLICATION_ID@
 Terminal=false
-Categories=Finance;Utility;
+Categories=Office;Finance;
 StartupWMClass=@APPLICATION_ID@
