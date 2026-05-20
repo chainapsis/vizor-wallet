@@ -537,13 +537,12 @@ mod tests {
     use std::sync::Arc;
 
     use ff::Field;
-    use halo2_gadgets::poseidon::primitives::{self as poseidon, ConstantLength};
     use incrementalmerkletree::{Hashable, Level};
     use orchard::{
         keys::Scope, note::commitment::ExtractedNoteCommitment, note::Rho, tree::MerkleHashOrchard,
         value::NoteValue, NOTE_COMMITMENT_TREE_DEPTH as TEST_TREE_DEPTH,
     };
-    use voting_circuits::delegation::IMT_DEPTH as TEST_IMT_DEPTH;
+    use voting_circuits::delegation::SpacedLeafImtProvider;
 
     struct TestReporter {
         count: Arc<AtomicU32>,
@@ -552,144 +551,6 @@ mod tests {
     impl ProofProgressReporter for TestReporter {
         fn on_progress(&self, _progress: f64) {
             self.count.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    // ================================================================
-    // Test-only IMT (replicates SpacedLeafImtProvider logic)
-    // ================================================================
-
-    /// Poseidon hash of 2 field elements (same as orchard's poseidon_hash_2).
-    fn poseidon2(a: pallas::Base, b: pallas::Base) -> pallas::Base {
-        poseidon::Hash::<pallas::Base, poseidon::P128Pow5T3, ConstantLength<2>, 3, 2>::init()
-            .hash([a, b])
-    }
-
-    /// Poseidon hash of 3 field elements (K=2 punctured-range leaf commitment).
-    fn poseidon3(a: pallas::Base, b: pallas::Base, c: pallas::Base) -> pallas::Base {
-        poseidon::Hash::<pallas::Base, poseidon::P128Pow5T3, ConstantLength<3>, 3, 2>::init()
-            .hash([a, b, c])
-    }
-
-    /// Precomputed empty subtree hashes for the test IMT.
-    fn empty_imt_hashes() -> Vec<pallas::Base> {
-        let empty_leaf = poseidon3(
-            pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
-        );
-        let mut hashes = vec![empty_leaf];
-        for _ in 1..=TEST_IMT_DEPTH {
-            let prev = *hashes.last().unwrap();
-            hashes.push(poseidon2(prev, prev));
-        }
-        hashes
-    }
-
-    /// K=2 punctured-range IMT for testing — generates valid non-membership proofs
-    /// as `ImtProofData` structs for `build_and_prove_delegation`.
-    ///
-    /// Each leaf stores three sorted nullifier boundaries `[nf_lo, nf_mid, nf_hi]`.
-    /// Non-membership is proven by showing `nf_lo < value < nf_hi` and `value != nf_mid`.
-    struct TestImt {
-        root: pallas::Base,
-        /// `[nf_lo, nf_mid, nf_hi]` per leaf.
-        leaves: Vec<[pallas::Base; 3]>,
-        subtree_levels: Vec<Vec<pallas::Base>>,
-    }
-
-    impl TestImt {
-        fn new() -> Self {
-            let step = pallas::Base::from(2u64).pow([249, 0, 0, 0]);
-            let empties = empty_imt_hashes();
-
-            // Sentinels at k * 2^249 for k in 0..=32, plus p-1.
-            // This matches the production sentinel layout from pir-export.
-            let mut sentinels: Vec<pallas::Base> =
-                (0u64..=32).map(|k| step * pallas::Base::from(k)).collect();
-            sentinels.push(-pallas::Base::one()); // p - 1
-            sentinels.sort();
-            sentinels.dedup();
-            // Ensure odd count for K=2 punctured-range construction.
-            if sentinels.len() % 2 == 0 {
-                sentinels.insert(1, pallas::Base::from(2u64));
-            }
-
-            // Build punctured ranges: each triple [nf_lo, nf_mid, nf_hi] from
-            // consecutive sentinel pairs with the middle sentinel as nf_mid.
-            let n = sentinels.len();
-            let num_ranges = (n - 1) / 2;
-            let mut leaves = Vec::with_capacity(num_ranges);
-            for i in 0..num_ranges {
-                let nf_lo = sentinels[2 * i];
-                let nf_mid = sentinels[2 * i + 1];
-                let nf_hi = sentinels[2 * i + 2];
-                leaves.push([nf_lo, nf_mid, nf_hi]);
-            }
-
-            // Build 32-leaf subtree. Each leaf is Poseidon3(nf_lo, nf_mid, nf_hi).
-            let empty_leaf_hash = poseidon3(
-                pallas::Base::zero(),
-                pallas::Base::zero(),
-                pallas::Base::zero(),
-            );
-            let mut level0 = vec![empty_leaf_hash; 32];
-            for (k, [lo, mid, hi]) in leaves.iter().enumerate() {
-                level0[k] = poseidon3(*lo, *mid, *hi);
-            }
-
-            let mut subtree_levels = vec![level0];
-            for _ in 1..=5 {
-                let prev = subtree_levels.last().unwrap();
-                let mut current = Vec::with_capacity(prev.len() / 2);
-                for j in 0..(prev.len() / 2) {
-                    current.push(poseidon2(prev[2 * j], prev[2 * j + 1]));
-                }
-                subtree_levels.push(current);
-            }
-
-            // Hash subtree root up through levels 5..29 with empty siblings.
-            let mut root = subtree_levels[5][0];
-            for l in 5..TEST_IMT_DEPTH {
-                root = poseidon2(root, empties[l]);
-            }
-
-            TestImt {
-                root,
-                leaves,
-                subtree_levels,
-            }
-        }
-
-        /// Generate an IMT non-membership proof for the given nullifier.
-        fn proof(&self, nf: pallas::Base) -> ImtProofData {
-            // Find the punctured range containing this nullifier:
-            // nf_lo < nf < nf_hi and nf != nf_mid.
-            let k = self
-                .leaves
-                .iter()
-                .position(|[lo, mid, hi]| *lo < nf && nf < *hi && nf != *mid)
-                .expect("nullifier must fall in some punctured range");
-
-            let empties = empty_imt_hashes();
-
-            // Build 29-level Merkle path (pure siblings).
-            let mut path = [pallas::Base::zero(); TEST_IMT_DEPTH];
-            let mut idx = k;
-            for l in 0..5 {
-                path[l] = self.subtree_levels[l][idx ^ 1];
-                idx >>= 1;
-            }
-            for l in 5..TEST_IMT_DEPTH {
-                path[l] = empties[l];
-            }
-
-            ImtProofData {
-                root: self.root,
-                nf_bounds: self.leaves[k],
-                leaf_pos: k as u32,
-                path,
-            }
         }
     }
 
@@ -706,24 +567,26 @@ mod tests {
     #[cfg(feature = "client-pir")]
     #[test]
     fn validate_and_convert_pir_proof_accepts_valid_proof() {
-        let imt = TestImt::new();
-        let nf = imt.leaves[0][0] + pallas::Base::one();
-        let proof = raw_pir_proof(imt.proof(nf));
+        let imt = SpacedLeafImtProvider::new();
+        let nf = pallas::Base::one();
+        let root = imt.root();
+        let proof = raw_pir_proof(imt.non_membership_proof(nf).unwrap());
 
-        let converted = validate_and_convert_pir_proof(proof, nf, imt.root).unwrap();
+        let converted = validate_and_convert_pir_proof(proof, nf, root).unwrap();
 
-        assert_eq!(converted.root, imt.root);
+        assert_eq!(converted.root, root);
     }
 
     #[cfg(feature = "client-pir")]
     #[test]
     fn validate_and_convert_pir_proof_rejects_unverified_path() {
-        let imt = TestImt::new();
-        let nf = imt.leaves[0][0] + pallas::Base::one();
-        let proof = raw_pir_proof(imt.proof(nf));
-        let boundary_value = imt.leaves[0][0];
+        let imt = SpacedLeafImtProvider::new();
+        let nf = pallas::Base::one();
+        let root = imt.root();
+        let proof = raw_pir_proof(imt.non_membership_proof(nf).unwrap());
+        let boundary_value = pallas::Base::zero();
 
-        let err = validate_and_convert_pir_proof(proof, boundary_value, imt.root).unwrap_err();
+        let err = validate_and_convert_pir_proof(proof, boundary_value, root).unwrap_err();
 
         assert!(
             err.to_string().contains("PIR proof verification failed"),
@@ -734,10 +597,10 @@ mod tests {
     #[cfg(feature = "client-pir")]
     #[test]
     fn validate_and_convert_pir_proof_rejects_wrong_root() {
-        let imt = TestImt::new();
-        let nf = imt.leaves[0][0] + pallas::Base::one();
-        let proof = raw_pir_proof(imt.proof(nf));
-        let wrong_root = imt.root + pallas::Base::one();
+        let imt = SpacedLeafImtProvider::new();
+        let nf = pallas::Base::one();
+        let proof = raw_pir_proof(imt.non_membership_proof(nf).unwrap());
+        let wrong_root = imt.root() + pallas::Base::one();
 
         let err = validate_and_convert_pir_proof(proof, nf, wrong_root).unwrap_err();
 
@@ -892,13 +755,13 @@ mod tests {
         println!("Building IMT proofs...");
 
         // 5. Build IMT non-membership proofs
-        let imt = TestImt::new();
+        let imt = SpacedLeafImtProvider::new();
         let imt_proofs: Vec<ImtProofData> = notes
             .iter()
             .map(|note| {
                 let nf_bytes = note.nullifier(&fvk).to_bytes();
                 let nf_base: pallas::Base = pallas::Base::from_repr(nf_bytes).unwrap();
-                imt.proof(nf_base)
+                imt.non_membership_proof(nf_base).unwrap()
             })
             .collect();
 

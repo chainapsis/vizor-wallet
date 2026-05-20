@@ -4,6 +4,16 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.10.0
+
+## Changed
+- Bumped `voting-circuits` to `0.6.0` and removed the workspace patch override,
+  so the SDK uses the published circuit crate for delegation proof generation.
+- Updated wallet-side governance derivations to call the circuit crate's
+  canonical helpers for nullifier domains, governance nullifiers, VAN
+  commitments, and rho bindings. This is a breaking cryptographic derivation
+  change for delegation proof compatibility.
+
 # 0.9.2
 
 ## Fixed
