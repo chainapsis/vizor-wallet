@@ -5,6 +5,3 @@ members = [
     "vote-commitment-tree-client",
 ]
 resolver = "2"
-
-[patch.crates-io]
-voting-circuits = { git = "https://github.com/valargroup/voting-circuits", rev = "0a1283057f7aa12a4c91d8c7fb4bd7035123909b" }

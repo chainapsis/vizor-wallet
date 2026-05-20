@@ -1,57 +1,16 @@
 use ff::PrimeField;
-use halo2_gadgets::poseidon::primitives::{self as poseidon, ConstantLength, P128Pow5T3};
 use pasta_curves::pallas;
+use voting_circuits::delegation::{
+    derive_nullifier_domain, gov_null_hash, rho_binding_hash, van_commitment_hash,
+};
 
 use crate::types::VotingError;
-
-/// Maximum proposal authority — the default for a fresh delegation.
-/// Bitmask where each bit authorizes voting on the corresponding proposal.
-/// Full authority is 2^16 - 1 = 65535. Only bits 1–15 are usable (proposal
-/// IDs are 1-indexed); bit 0 is the circuit sentinel, permanently set.
-pub(crate) const MAX_PROPOSAL_AUTHORITY: u64 = 65535;
 
 /// Ballot divisor in zatoshi.
 ///
 /// Must match `delegation::circuit::BALLOT_DIVISOR`. One ballot is this many
 /// zatoshi, and bundle weights are quantized down to this boundary.
 pub const BALLOT_DIVISOR: u64 = 12_500_000;
-
-/// Domain tag for Vote Authority Notes.
-/// Prepended as the first Poseidon input in van_comm for domain separation.
-pub(crate) const DOMAIN_VAN: u64 = 0;
-
-/// Protocol identifier for governance authorization, encoded as a little-endian
-/// Pallas field element. Used to derive the nullifier domain for this application.
-fn gov_auth_domain_tag() -> pallas::Base {
-    string_domain_tag(b"governance authorization")
-}
-
-/// Domain tag for governance alternate nullifiers.
-fn gov_null_domain_tag() -> pallas::Base {
-    string_domain_tag(b"governance nullifier")
-}
-
-/// Domain tag for the signed-note rho binding used by delegation proofs.
-fn rho_binding_domain_tag() -> pallas::Base {
-    string_domain_tag(b"delegation rho binding")
-}
-
-/// Encode a short ASCII domain tag as a little-endian Pallas field element.
-fn string_domain_tag(tag: &[u8]) -> pallas::Base {
-    assert!(
-        tag.len() < 32 && tag.is_ascii(),
-        "domain tags must be short ASCII strings"
-    );
-    let mut bytes = [0u8; 32];
-    bytes[..tag.len()].copy_from_slice(tag);
-    pallas::Base::from_repr(bytes).unwrap()
-}
-
-/// Poseidon hash of two field elements (ConstantLength<2>, width 3, rate 2).
-/// Matches `orchard/src/delegation/imt.rs:poseidon_hash_2`.
-fn poseidon_hash_2(a: pallas::Base, b: pallas::Base) -> pallas::Base {
-    poseidon::Hash::<_, P128Pow5T3, ConstantLength<2>, 3, 2>::init().hash([a, b])
-}
 
 /// Derive the nullifier domain for a voting round (ZIP §Nullifier Domains).
 ///
@@ -60,7 +19,7 @@ fn poseidon_hash_2(a: pallas::Base, b: pallas::Base) -> pallas::Base {
 /// Matches `voting-circuits/src/delegation/imt.rs:derive_nullifier_domain`.
 pub fn compute_nullifier_domain(vote_round_id: &[u8]) -> Result<Vec<u8>, VotingError> {
     let vri_fp = bytes_to_fp(vote_round_id)?;
-    let dom = poseidon_hash_2(gov_auth_domain_tag(), vri_fp);
+    let dom = derive_nullifier_domain(vri_fp);
     Ok(fp_to_bytes(dom))
 }
 
@@ -82,10 +41,10 @@ fn fp_to_bytes(fp: pallas::Base) -> Vec<u8> {
 
 /// Derive alternate nullifier (ZIP §Alternate Nullifier Derivation).
 ///
-/// `nf_dom = Poseidon("governance nullifier", nk, dom, nf^old)`
+/// `nf_dom = Poseidon(nk, dom, nf^old)`
 ///
 /// where `dom` is the nullifier domain (see [`compute_nullifier_domain`]).
-/// Single Poseidon call with ConstantLength<4> (2 permutations at rate=2).
+/// Single Poseidon call with ConstantLength<3> (2 permutations at rate=2).
 /// Matches `voting-circuits/src/delegation/imt.rs:gov_null_hash`.
 pub fn derive_gov_nullifier(
     nk: &[u8],
@@ -96,12 +55,7 @@ pub fn derive_gov_nullifier(
     let dom_fp = bytes_to_fp(dom)?;
     let nf_fp = bytes_to_fp(note_nullifier)?;
 
-    let gov_null = poseidon::Hash::<_, P128Pow5T3, ConstantLength<4>, 3, 2>::init().hash([
-        gov_null_domain_tag(),
-        nk_fp,
-        dom_fp,
-        nf_fp,
-    ]);
+    let gov_null = gov_null_hash(nk_fp, dom_fp, nf_fp);
 
     Ok(fp_to_bytes(gov_null))
 }
@@ -110,14 +64,12 @@ pub fn derive_gov_nullifier(
 ///
 /// ```text
 /// num_ballots = total_weight / BALLOT_DIVISOR
-/// van_comm_core = Poseidon(DOMAIN_VAN, g_d_new_x, pk_d_new_x, num_ballots, vote_round_id, MAX_PROPOSAL_AUTHORITY)
-/// van_comm = Poseidon(van_comm_core, van_comm_rand)
+/// van_comm = van_commitment_hash(g_d_new_x, pk_d_new_x, num_ballots, vote_round_id, van_comm_rand)
 /// ```
 ///
 /// The VAN hashes `num_ballots` (ballot count after floor-division by
 /// BALLOT_DIVISOR), NOT the raw zatoshi `total_weight`.
 ///
-/// First hash is ConstantLength<6>, second is ConstantLength<2>.
 /// Matches `orchard/src/delegation/circuit.rs:van_commitment_hash`.
 pub fn construct_van(
     g_d_new_x: &[u8],
@@ -141,32 +93,16 @@ pub fn construct_van(
     let vri = bytes_to_fp(vote_round_id)?;
     let rcm = bytes_to_fp(van_comm_rand)?;
 
-    // Step 1: Hash the 6 core VAN fields into a single digest (ConstantLength<6>).
-    // This binds the VAN to a specific hotkey address (g_d, pk_d), ballot count,
-    // voting round, and full proposal authority. DOMAIN_VAN=0 provides domain
-    // separation from Vote Commitments (DOMAIN_VC=1) in the shared commitment tree.
-    let van_comm_core = poseidon::Hash::<_, P128Pow5T3, ConstantLength<6>, 3, 2>::init().hash([
-        pallas::Base::from(DOMAIN_VAN),
-        g_d,
-        pk_d,
-        num_ballots_base,
-        vri,
-        pallas::Base::from(MAX_PROPOSAL_AUTHORITY),
-    ]);
-
-    // Step 2: Fold in the blinding factor (ConstantLength<2>).
-    // van_comm_rand hides the VAN preimage so observers can't brute-force
-    // the hotkey or ballot count from the on-chain commitment.
-    let van_comm = poseidon_hash_2(van_comm_core, rcm);
+    let van_comm = van_commitment_hash(g_d, pk_d, num_ballots_base, vri, rcm);
 
     Ok(fp_to_bytes(van_comm))
 }
 
 /// Compute constrained rho (spec §1.3.4.1, condition 3).
 ///
-/// `rho_signed = Poseidon("delegation rho binding", cmx_1, cmx_2, cmx_3, cmx_4, cmx_5, van_comm, vote_round_id)`
+/// `rho_signed = Poseidon(cmx_1, cmx_2, cmx_3, cmx_4, cmx_5, van_comm, vote_round_id)`
 ///
-/// ConstantLength<8>, matching `voting-circuits/src/delegation/circuit.rs:rho_binding_hash`.
+/// ConstantLength<7>, matching `voting-circuits/src/delegation/circuit.rs:rho_binding_hash`.
 pub fn compute_rho_binding(
     cmx_1: &[u8],
     cmx_2: &[u8],
@@ -184,16 +120,7 @@ pub fn compute_rho_binding(
     let gc = bytes_to_fp(van_comm)?;
     let vri = bytes_to_fp(vote_round_id)?;
 
-    let rho = poseidon::Hash::<_, P128Pow5T3, ConstantLength<8>, 3, 2>::init().hash([
-        rho_binding_domain_tag(),
-        c1,
-        c2,
-        c3,
-        c4,
-        c5,
-        gc,
-        vri,
-    ]);
+    let rho = rho_binding_hash(c1, c2, c3, c4, c5, gc, vri);
 
     Ok(fp_to_bytes(rho))
 }
@@ -201,6 +128,7 @@ pub fn compute_rho_binding(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use halo2_gadgets::poseidon::primitives::{self as poseidon, ConstantLength, P128Pow5T3};
 
     #[test]
     fn test_derive_gov_nullifier_deterministic() {
@@ -230,13 +158,13 @@ mod tests {
     }
 
     #[test]
-    fn test_derive_gov_nullifier_is_domain_tagged() {
+    fn test_derive_gov_nullifier_matches_circuit_shape() {
         let nk = [0x01u8; 32];
         let vri = [0x02u8; 32];
         let nf = [0x03u8; 32];
         let dom = compute_nullifier_domain(&vri).unwrap();
 
-        let tagged = derive_gov_nullifier(&nk, &dom, &nf).unwrap();
+        let actual = derive_gov_nullifier(&nk, &dom, &nf).unwrap();
         let raw_three_input = poseidon::Hash::<_, P128Pow5T3, ConstantLength<3>, 3, 2>::init()
             .hash([
                 bytes_to_fp(&nk).unwrap(),
@@ -244,10 +172,10 @@ mod tests {
                 bytes_to_fp(&nf).unwrap(),
             ]);
 
-        assert_ne!(
-            tagged,
+        assert_eq!(
+            actual,
             fp_to_bytes(raw_three_input),
-            "governance nullifiers must include the voting-circuits domain tag"
+            "governance nullifiers must match voting-circuits' three-input shape"
         );
     }
 
@@ -338,9 +266,9 @@ mod tests {
 
         let result = derive_gov_nullifier(&nk, &dom, &nf).unwrap();
         // Formula: dom = Poseidon("governance authorization", vri),
-        // then gov_null = Poseidon("governance nullifier", nk, dom, nf).
+        // then gov_null = Poseidon(nk, dom, nf).
         let expected =
-            hex::decode("1802353bdf71910a86644c87495da3ee281ab2017c6c5bdcff965d80d5709427")
+            hex::decode("996e97b7ba33cd031e1d561596c3ac5cace4d4a27f83a51457a63ccf2145ee1a")
                 .unwrap();
         assert_eq!(
             result, expected,
@@ -426,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_rho_binding_is_domain_tagged() {
+    fn test_compute_rho_binding_matches_circuit_shape() {
         let cmx1 = [0x01u8; 32];
         let cmx2 = [0x02u8; 32];
         let cmx3 = [0x03u8; 32];
@@ -447,10 +375,10 @@ mod tests {
                 bytes_to_fp(&vri).unwrap(),
             ]);
 
-        assert_ne!(
+        assert_eq!(
             tagged,
             fp_to_bytes(raw_seven_input),
-            "rho binding must include the voting-circuits domain tag"
+            "rho binding must match voting-circuits' seven-input shape"
         );
     }
 
@@ -470,9 +398,9 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                0x62, 0x76, 0x3c, 0x45, 0x19, 0x33, 0xc1, 0x12, 0x1a, 0xb2, 0xcb, 0x49, 0xa1, 0x50,
-                0xbf, 0xfb, 0xd7, 0x9e, 0x1c, 0x3f, 0x1f, 0x5e, 0x3d, 0x96, 0x0d, 0xf4, 0xd4, 0xee,
-                0x66, 0xcf, 0x64, 0x11,
+                0x36, 0xfe, 0x8d, 0x03, 0x0e, 0xb6, 0xe2, 0xe6, 0x89, 0xc3, 0x31, 0x1a, 0x9f, 0x45,
+                0x17, 0xb8, 0x31, 0xb5, 0x46, 0xe6, 0xbc, 0x2f, 0x4e, 0xe2, 0x62, 0x7c, 0x86, 0xbe,
+                0x7a, 0x80, 0x67, 0x1e,
             ],
             "rho_binding known-answer regression"
         );
