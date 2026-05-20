@@ -19,11 +19,33 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
+static void register_icon_theme_paths() {
+  GtkIconTheme* icon_theme = gtk_icon_theme_get_default();
+
+  g_autofree gchar* exe_path = g_file_read_link("/proc/self/exe", nullptr);
+  if (exe_path != nullptr) {
+    g_autofree gchar* exe_dir = g_path_get_dirname(exe_path);
+    g_autofree gchar* bundled_icons =
+        g_build_filename(exe_dir, "data", "icons", nullptr);
+    if (g_file_test(bundled_icons, G_FILE_TEST_IS_DIR)) {
+      gtk_icon_theme_append_search_path(icon_theme, bundled_icons);
+    }
+  }
+
+  if (g_file_test(APP_ICON_THEME_PATH, G_FILE_TEST_IS_DIR)) {
+    gtk_icon_theme_append_search_path(icon_theme, APP_ICON_THEME_PATH);
+  }
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+  register_icon_theme_paths();
+  gtk_window_set_default_icon_name(APP_ICON_NAME);
+
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  gtk_window_set_icon_name(window, APP_ICON_NAME);
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu

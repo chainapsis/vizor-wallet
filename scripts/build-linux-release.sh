@@ -91,6 +91,7 @@ case "$BUILD_MODE" in
 esac
 
 FVM_BIN="${FVM_BIN:-fvm}"
+export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-2}"
 
 cleanup() {
   rm -f "$OVERRIDES_PATH"

@@ -96,9 +96,22 @@ install(CODE "
 
 set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib")
+set(APP_DESKTOP_FILE "${PROJECT_BINARY_DIR}/${APPLICATION_ID}.desktop")
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/vizor.desktop.in" "${APP_DESKTOP_FILE}" @ONLY)
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
+
+install(FILES "${APP_DESKTOP_FILE}"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}/applications"
+  COMPONENT Runtime)
+
+foreach(icon_size 16 32 48 64 256)
+  install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/icons/hicolor/${icon_size}x${icon_size}/apps/${APPLICATION_ID}.png"
+    DESTINATION "${INSTALL_BUNDLE_DATA_DIR}/icons/hicolor/${icon_size}x${icon_size}/apps"
+    COMPONENT Runtime)
+endforeach()
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)

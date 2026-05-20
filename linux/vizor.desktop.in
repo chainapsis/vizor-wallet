@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=@APP_DISPLAY_NAME@
+Comment=Self-custody Zcash wallet
+Exec=@BINARY_NAME@
+Icon=@APPLICATION_ID@
+Terminal=false
+Categories=Finance;Utility;
+StartupWMClass=@APPLICATION_ID@
