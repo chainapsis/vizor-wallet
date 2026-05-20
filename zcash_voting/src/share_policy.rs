@@ -192,12 +192,18 @@ pub fn summarize_share_tracking(
 
 /// Plan the delayed helper submission time for an initial share delegation.
 ///
+/// `vote_end_time_seconds` is required because callers should only schedule
+/// share submission for an active voting session. `last_moment_buffer_seconds`
+/// is optional because some round timing data cannot produce a delayed-share
+/// window. When the buffer is missing, or when `single_share` is true, this
+/// returns 0 and the share should be submitted immediately.
+///
 /// `random_unit` must be a finite sample in or near the `[0, 1)` range. Values
 /// outside that range are clamped so FFI callers cannot accidentally schedule
 /// after the deadline.
 pub fn scheduled_share_submit_at(
     now_seconds: u64,
-    vote_end_time_seconds: Option<u64>,
+    vote_end_time_seconds: u64,
     last_moment_buffer_seconds: Option<u64>,
     single_share: bool,
     random_unit: f64,
@@ -206,9 +212,6 @@ pub fn scheduled_share_submit_at(
         return Ok(0);
     }
 
-    let Some(vote_end_time_seconds) = vote_end_time_seconds else {
-        return Ok(0);
-    };
     let Some(last_moment_buffer_seconds) = last_moment_buffer_seconds else {
         return Ok(0);
     };
@@ -255,10 +258,13 @@ pub fn select_share_submission_targets(server_urls: &[String], target_count: usi
 }
 
 /// Plan the timing and initial helper targets for a share delegation.
+///
+/// Missing `last_moment_buffer_seconds` means there is no delayed-share window,
+/// so the returned plan uses `submit_at = 0`.
 pub fn plan_share_submission(
     server_urls: &[String],
     now_seconds: u64,
-    vote_end_time_seconds: Option<u64>,
+    vote_end_time_seconds: u64,
     last_moment_buffer_seconds: Option<u64>,
     single_share: bool,
     random_unit: f64,
@@ -325,27 +331,22 @@ mod tests {
 
     #[test]
     fn scheduled_submit_at_samples_before_deadline() {
-        let submit_at =
-            scheduled_share_submit_at(1_000, Some(2_000), Some(100), false, 0.5).unwrap();
+        let submit_at = scheduled_share_submit_at(1_000, 2_000, Some(100), false, 0.5).unwrap();
         assert_eq!(submit_at, 1_450);
     }
 
     #[test]
     fn scheduled_submit_at_is_immediate_without_a_delay_window() {
         assert_eq!(
-            scheduled_share_submit_at(1_000, Some(2_000), Some(100), true, f64::NAN).unwrap(),
+            scheduled_share_submit_at(1_000, 2_000, Some(100), true, f64::NAN).unwrap(),
             0
         );
         assert_eq!(
-            scheduled_share_submit_at(1_000, None, Some(100), false, f64::NAN).unwrap(),
+            scheduled_share_submit_at(1_000, 2_000, None, false, f64::NAN).unwrap(),
             0
         );
         assert_eq!(
-            scheduled_share_submit_at(1_000, Some(2_000), None, false, f64::NAN).unwrap(),
-            0
-        );
-        assert_eq!(
-            scheduled_share_submit_at(1_950, Some(2_000), Some(100), false, f64::NAN).unwrap(),
+            scheduled_share_submit_at(1_950, 2_000, Some(100), false, f64::NAN).unwrap(),
             0
         );
     }
@@ -353,19 +354,17 @@ mod tests {
     #[test]
     fn scheduled_submit_at_rejects_non_finite_random_unit_for_delay_window() {
         assert!(matches!(
-            scheduled_share_submit_at(1_000, Some(2_000), Some(100), false, f64::NAN),
+            scheduled_share_submit_at(1_000, 2_000, Some(100), false, f64::NAN),
             Err(VotingError::InvalidInput { .. })
         ));
     }
 
     #[test]
     fn scheduled_submit_at_clamps_random_unit() {
-        let submit_at =
-            scheduled_share_submit_at(1_000, Some(2_000), Some(100), false, 1.5).unwrap();
+        let submit_at = scheduled_share_submit_at(1_000, 2_000, Some(100), false, 1.5).unwrap();
         assert_eq!(submit_at, 1_899);
 
-        let submit_at =
-            scheduled_share_submit_at(1_000, Some(2_000), Some(100), false, -1.0).unwrap();
+        let submit_at = scheduled_share_submit_at(1_000, 2_000, Some(100), false, -1.0).unwrap();
         assert_eq!(submit_at, 1_000);
     }
 
@@ -469,8 +468,7 @@ mod tests {
             "https://three.example.com".to_string(),
         ];
 
-        let plan =
-            plan_share_submission(&servers, 1_000, Some(2_000), Some(100), false, 0.0).unwrap();
+        let plan = plan_share_submission(&servers, 1_000, 2_000, Some(100), false, 0.0).unwrap();
 
         assert_eq!(plan.submit_at, 1_000);
         assert_eq!(plan.target_count, 2);
