@@ -214,8 +214,8 @@ pub fn summarize_share_tracking(
 /// `vote_end_time_seconds` is required because callers should only schedule
 /// share submission for an active voting session. `last_moment_buffer_seconds`
 /// is optional because some round timing data cannot produce a delayed-share
-/// window. When the buffer is missing, or when `single_share` is true, this
-/// returns 0 and the share should be submitted immediately.
+/// window. When the buffer is missing or zero, or when `single_share` is true,
+/// this returns 0 and the share should be submitted immediately.
 ///
 /// `random_unit` must be a finite sample in or near the `[0, 1)` range. Values
 /// outside that range are clamped so FFI callers cannot accidentally schedule
@@ -234,6 +234,9 @@ pub fn scheduled_share_submit_at(
     let Some(last_moment_buffer_seconds) = last_moment_buffer_seconds else {
         return Ok(0);
     };
+    if last_moment_buffer_seconds == 0 {
+        return Ok(0);
+    }
 
     let deadline = vote_end_time_seconds.saturating_sub(last_moment_buffer_seconds);
     if deadline <= now_seconds {
@@ -266,8 +269,8 @@ pub fn share_submission_target_count(server_count: usize) -> usize {
 /// Select initial helper targets from a caller-provided server order.
 ///
 /// Callers that want random distribution should shuffle `server_urls` before
-/// calling this function, matching the current iOS helper selection behavior.
-/// The selector itself stays deterministic for tests and FFI bindings.
+/// calling this function. The selector itself stays deterministic for tests and
+/// FFI bindings.
 pub fn select_share_submission_targets_from_order(
     server_urls: &[String],
     target_count: usize,
@@ -281,10 +284,10 @@ pub fn select_share_submission_targets_from_order(
 
 /// Plan the timing and initial helper targets for a share delegation.
 ///
-/// Missing `last_moment_buffer_seconds` means there is no delayed-share window,
-/// so the returned plan uses `submit_at = 0`. `server_urls` is treated as a
-/// caller-provided order. To match current iOS behavior, shuffle the candidate
-/// server list before calling this helper.
+/// Missing or zero `last_moment_buffer_seconds` means there is no delayed-share
+/// window, so the returned plan uses `submit_at = 0`. `server_urls` is treated
+/// as a caller-provided order. Callers that want random distribution should
+/// shuffle the candidate server list before calling this helper.
 pub fn plan_share_submission(
     server_urls: &[String],
     now_seconds: u64,
@@ -313,8 +316,8 @@ pub fn plan_share_submission(
 /// Return resubmission order from separately ordered helper groups.
 ///
 /// The returned order always tries untried helpers before helpers that already
-/// received the share. To match current iOS behavior, shuffle each group before
-/// calling this helper.
+/// received the share. Callers that want random distribution should shuffle
+/// each group before calling this helper.
 pub fn resubmission_server_order_from_groups(
     untried_server_urls: &[String],
     already_sent_server_urls: &[String],
@@ -330,8 +333,8 @@ pub fn resubmission_server_order_from_groups(
 ///
 /// This preserves the configured order within each group. It is useful for
 /// deterministic tests and callers that intentionally manage ordering outside
-/// the crate. To match current iOS behavior exactly, split and shuffle the
-/// untried and already-sent groups separately, then call
+/// the crate. Callers that want random distribution should split and shuffle
+/// the untried and already-sent groups separately, then call
 /// `resubmission_server_order_from_groups`.
 pub fn resubmission_server_order_from_configured_order(
     configured_server_urls: &[String],
@@ -390,6 +393,10 @@ mod tests {
         );
         assert_eq!(
             scheduled_share_submit_at(1_000, 2_000, None, false, f64::NAN).unwrap(),
+            0
+        );
+        assert_eq!(
+            scheduled_share_submit_at(1_000, 2_000, Some(0), false, f64::NAN).unwrap(),
             0
         );
         assert_eq!(
@@ -467,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn next_tracking_delay_matches_ios_minimum_and_future_cap() {
+    fn next_tracking_delay_applies_minimum_and_future_cap() {
         let shares = vec![share(0, 100), share(200, 100)];
         let policy = ShareTimingPolicy::default();
 
