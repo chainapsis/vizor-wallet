@@ -277,7 +277,7 @@ pub fn scheduled_share_submit_at(
 /// `submit_at_random_bytes` must contain at least
 /// `share_submit_at_random_bytes_required(...)` bytes from a cryptographically
 /// secure RNG. No bytes are needed when the share should be submitted
-/// immediately.
+/// immediately, and callers may pass 8 bytes unconditionally for simplicity.
 pub fn scheduled_share_submit_at_from_entropy(
     now_seconds: u64,
     vote_end_time_seconds: u64,
@@ -375,7 +375,7 @@ pub fn resubmission_server_order_random_bytes_required(
 ///
 /// `random_bytes` must contain at least
 /// `share_server_order_random_bytes_required(server_urls.len())` bytes from a
-/// cryptographically secure RNG.
+/// cryptographically secure RNG. Extra bytes are ignored.
 pub fn shuffled_share_server_order(
     server_urls: &[String],
     random_bytes: &[u8],
@@ -445,7 +445,9 @@ pub fn select_share_submission_targets_from_order(
 ///
 /// Missing or zero `last_moment_buffer_seconds` means there is no delayed-share
 /// window, so the returned plan uses `submit_at = 0`. Helper targets are chosen
-/// from a randomized server order using `server_random_bytes`.
+/// from a randomized server order using `server_random_bytes`. Callers can use
+/// `share_submit_at_random_bytes_required` and
+/// `share_server_order_random_bytes_required` to size the entropy inputs.
 pub fn plan_share_submission(
     server_urls: &[String],
     now_seconds: u64,
@@ -545,6 +547,8 @@ pub fn resubmission_server_order_from_groups(
 /// The configured server list is split into untried and already-sent groups.
 /// Each group is shuffled separately using `server_random_bytes`, then the
 /// shuffled untried group is followed by the shuffled already-sent group.
+/// Callers can use `resubmission_server_order_random_bytes_required` to size
+/// the entropy input.
 pub fn resubmission_server_order(
     configured_server_urls: &[String],
     sent_to_urls: &[String],
