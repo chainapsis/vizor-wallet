@@ -4,10 +4,12 @@ project(runner LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "zcash_wallet")
+set(APP_IDENTIFIER "vizor")
+set(APP_DISPLAY_NAME "Vizor")
+set(BINARY_NAME "${APP_IDENTIFIER}")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.keplr.zcash_wallet")
+set(APPLICATION_ID "com.keplr.${APP_IDENTIFIER}")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
