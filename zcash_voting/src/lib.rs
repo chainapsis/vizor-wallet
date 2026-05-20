@@ -6,7 +6,6 @@ pub mod hotkey;
 #[cfg(any(feature = "client-pir", feature = "client-tree-sync"))]
 mod http_transport;
 pub mod note_bundling;
-mod padding;
 pub mod pir_snapshot;
 pub mod share_policy;
 pub mod share_tracking;

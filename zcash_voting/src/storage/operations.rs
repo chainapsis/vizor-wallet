@@ -13,11 +13,10 @@ use orchard::{
     note::{RandomSeed, Rho},
 };
 use pasta_curves::pallas;
-use voting_circuits::delegation::ImtProofData;
+use voting_circuits::delegation::{synthetic_padding_note_parts, ImtProofData};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::Network;
 
-use crate::padding::synthetic_padding_note_parts;
 use crate::storage::queries;
 use crate::storage::{
     KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord, VotingDb,
@@ -160,11 +159,12 @@ fn padded_nullifiers_for_circuit(
                 message: format!("padded[{i_pad}] rseed is not valid for the stored rho"),
             }
         })?;
-        out.push(
-            synthetic_padding_note_parts(&fvk, i_slot, rho, rseed)?
-                .nullifier
-                .to_vec(),
-        );
+        let parts = synthetic_padding_note_parts(&fvk, i_slot, rho, rseed).map_err(|e| {
+            VotingError::Internal {
+                message: format!("synthetic padding slot {i_slot}: {e}"),
+            }
+        })?;
+        out.push(parts.nullifier.to_vec());
     }
     Ok(out)
 }

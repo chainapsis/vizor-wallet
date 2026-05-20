@@ -12,21 +12,21 @@ use orchard::pczt::Zip32Derivation;
 use orchard::tree::{MerkleHashOrchard, MerklePath};
 use orchard::value::NoteValue;
 use orchard::{Address, Anchor};
+use voting_circuits::delegation::synthetic_padding_note_parts;
 use zcash_primitives::transaction::builder::PcztParts;
 use zcash_primitives::transaction::TxVersion;
 use zcash_protocol::consensus::{BlockHeight, BranchId, Network};
 use zip32::Scope;
 
+use crate::governance;
+use crate::types::{
+    validate_notes, validate_round_params, GovernancePczt, NoteInfo, VotingError, VotingRoundParams,
+};
+
 /// Orchard Merkle tree depth (32 levels).
 const MERKLE_DEPTH: usize = 32;
 const MAX_PCZT_LAYOUT_ATTEMPTS: usize = 32;
 const ZIP32_MAINNET_COIN_TYPE: u32 = 133;
-
-use crate::governance;
-use crate::padding::synthetic_padding_note_parts;
-use crate::types::{
-    validate_notes, validate_round_params, GovernancePczt, NoteInfo, VotingError, VotingRoundParams,
-};
 
 /// Orchard key diversification personalization for DiversifyHash^Orchard.
 const ORCHARD_GD_PERSONALIZATION: &str = "z.cash:Orchard-gd";
@@ -257,7 +257,11 @@ pub fn build_governance_pczt(
         for i in n_real..5 {
             let rho = random_rho(&mut rng);
             let (rseed, rseed_bytes) = random_rseed(&mut rng, &rho);
-            let parts = synthetic_padding_note_parts(&fvk, i, rho, rseed)?;
+            let parts = synthetic_padding_note_parts(&fvk, i, rho, rseed).map_err(|e| {
+                VotingError::Internal {
+                    message: format!("synthetic padding slot {i}: {e}"),
+                }
+            })?;
             let gov_null = governance::derive_gov_nullifier(nk_bytes, &dom, &parts.nullifier)?;
             padded_cmx.push(parts.cmx.to_vec());
             gov_nullifiers.push(gov_null);
