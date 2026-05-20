@@ -176,8 +176,20 @@ build_flavor() {
   (
     cd "$ROOT_DIR"
     "$FVM_BIN" flutter pub get
-    "$FVM_BIN" flutter build linux "--$BUILD_MODE" \
+    flutter_args=(
+      flutter build linux "--$BUILD_MODE"
       --dart-define="ZCASH_DEFAULT_NETWORK=$ZCASH_DEFAULT_NETWORK"
+    )
+    if [[ -n "${VIZOR_RELEASE_VERSION:-}" ]]; then
+      flutter_args+=(
+        --dart-define="VIZOR_RELEASE_VERSION=$VIZOR_RELEASE_VERSION"
+        --build-name "$VIZOR_RELEASE_VERSION"
+      )
+    fi
+    if [[ -n "${VIZOR_RELEASE_BUILD_NUMBER:-}" ]]; then
+      flutter_args+=(--build-number "$VIZOR_RELEASE_BUILD_NUMBER")
+    fi
+    "$FVM_BIN" "${flutter_args[@]}"
   )
 
   local bundle_dir
