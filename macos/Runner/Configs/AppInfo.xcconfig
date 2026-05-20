@@ -19,4 +19,4 @@ MACOS_APP_ICON_FILE = AppIcon
 #include? "FlavorOverrides.xcconfig"
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.zcash. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 Space Explorers Inc. All rights reserved.
