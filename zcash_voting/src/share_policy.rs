@@ -52,7 +52,7 @@ pub struct ShareSubmissionPlan {
     pub submit_at: u64,
     /// Number of helpers each share should reach.
     pub target_count: u64,
-    /// Deterministic targets selected from the caller-provided server order.
+    /// Helper targets selected for initial share submission.
     pub target_servers: Vec<String>,
 }
 
@@ -266,11 +266,93 @@ pub fn share_submission_target_count(server_count: usize) -> usize {
     }
 }
 
+/// Return the number of random bytes needed to shuffle a server list.
+///
+/// The bytes should come from a cryptographically secure RNG. The crate owns the
+/// shuffle policy, while SDKs only provide entropy from their platform RNG.
+pub fn share_server_order_random_bytes_required(server_count: usize) -> usize {
+    server_count
+        .saturating_sub(1)
+        .saturating_mul(std::mem::size_of::<u64>())
+}
+
+/// Return the random bytes needed for `resubmission_server_order`.
+pub fn resubmission_server_order_random_bytes_required(
+    configured_server_urls: &[String],
+    sent_to_urls: &[String],
+) -> usize {
+    let sent: HashSet<&str> = sent_to_urls.iter().map(String::as_str).collect();
+    let untried_count = configured_server_urls
+        .iter()
+        .filter(|server| !sent.contains(server.as_str()))
+        .count();
+    let already_sent_count = configured_server_urls
+        .iter()
+        .filter(|server| sent.contains(server.as_str()))
+        .count();
+    share_server_order_random_bytes_required(untried_count)
+        .saturating_add(share_server_order_random_bytes_required(already_sent_count))
+}
+
+/// Return a randomized helper-server order using caller-provided entropy.
+///
+/// `random_bytes` must contain at least
+/// `share_server_order_random_bytes_required(server_urls.len())` bytes from a
+/// cryptographically secure RNG.
+pub fn shuffled_share_server_order(
+    server_urls: &[String],
+    random_bytes: &[u8],
+) -> Result<Vec<String>, VotingError> {
+    let needed = share_server_order_random_bytes_required(server_urls.len());
+    if random_bytes.len() < needed {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "server_random_bytes must contain at least {needed} bytes for {} servers",
+                server_urls.len()
+            ),
+        });
+    }
+
+    let mut ordered = server_urls.to_vec();
+    let mut offset = 0usize;
+    for index in (1..ordered.len()).rev() {
+        let mut sample_bytes = [0u8; 8];
+        sample_bytes.copy_from_slice(&random_bytes[offset..offset + 8]);
+        offset += 8;
+
+        let sample = u64::from_le_bytes(sample_bytes);
+        let swap_index = (sample % ((index + 1) as u64)) as usize;
+        ordered.swap(index, swap_index);
+    }
+    Ok(ordered)
+}
+
+/// Select initial helper targets from a randomized server order.
+///
+/// Prefer this helper for production submission paths. It owns the privacy
+/// sensitive randomization policy and only asks callers to provide CSPRNG bytes.
+pub fn select_share_submission_targets(
+    server_urls: &[String],
+    target_count: usize,
+    server_random_bytes: &[u8],
+) -> Result<Vec<String>, VotingError> {
+    let target_count = target_count.min(server_urls.len());
+    if target_count == 0 {
+        return Ok(Vec::new());
+    }
+
+    let randomized_order = shuffled_share_server_order(server_urls, server_random_bytes)?;
+    Ok(select_share_submission_targets_from_order(
+        &randomized_order,
+        target_count,
+    ))
+}
+
 /// Select initial helper targets from a caller-provided server order.
 ///
-/// Callers that want random distribution should shuffle `server_urls` before
-/// calling this function. The selector itself stays deterministic for tests and
-/// FFI bindings.
+/// This is deterministic for tests and callers that have already made an
+/// explicit ordering decision. Production submission paths should prefer
+/// `select_share_submission_targets`.
 pub fn select_share_submission_targets_from_order(
     server_urls: &[String],
     target_count: usize,
@@ -285,10 +367,37 @@ pub fn select_share_submission_targets_from_order(
 /// Plan the timing and initial helper targets for a share delegation.
 ///
 /// Missing or zero `last_moment_buffer_seconds` means there is no delayed-share
-/// window, so the returned plan uses `submit_at = 0`. `server_urls` is treated
-/// as a caller-provided order. Callers that want random distribution should
-/// shuffle the candidate server list before calling this helper.
+/// window, so the returned plan uses `submit_at = 0`. Helper targets are chosen
+/// from a randomized server order using `server_random_bytes`.
 pub fn plan_share_submission(
+    server_urls: &[String],
+    now_seconds: u64,
+    vote_end_time_seconds: u64,
+    last_moment_buffer_seconds: Option<u64>,
+    single_share: bool,
+    random_unit: f64,
+    server_random_bytes: &[u8],
+) -> Result<ShareSubmissionPlan, VotingError> {
+    let target_count = share_submission_target_count(server_urls.len());
+    let target_servers =
+        select_share_submission_targets(server_urls, target_count, server_random_bytes)?;
+    plan_share_submission_with_targets(
+        target_count,
+        target_servers,
+        now_seconds,
+        vote_end_time_seconds,
+        last_moment_buffer_seconds,
+        single_share,
+        random_unit,
+    )
+}
+
+/// Plan share submission using a caller-provided helper order.
+///
+/// This is deterministic for tests and callers that have already made an
+/// explicit ordering decision. Production submission paths should prefer
+/// `plan_share_submission`.
+pub fn plan_share_submission_from_order(
     server_urls: &[String],
     now_seconds: u64,
     vote_end_time_seconds: u64,
@@ -298,6 +407,26 @@ pub fn plan_share_submission(
 ) -> Result<ShareSubmissionPlan, VotingError> {
     let target_count = share_submission_target_count(server_urls.len());
     let target_servers = select_share_submission_targets_from_order(server_urls, target_count);
+    plan_share_submission_with_targets(
+        target_count,
+        target_servers,
+        now_seconds,
+        vote_end_time_seconds,
+        last_moment_buffer_seconds,
+        single_share,
+        random_unit,
+    )
+}
+
+fn plan_share_submission_with_targets(
+    target_count: usize,
+    target_servers: Vec<String>,
+    now_seconds: u64,
+    vote_end_time_seconds: u64,
+    last_moment_buffer_seconds: Option<u64>,
+    single_share: bool,
+    random_unit: f64,
+) -> Result<ShareSubmissionPlan, VotingError> {
     let submit_at = scheduled_share_submit_at(
         now_seconds,
         vote_end_time_seconds,
@@ -316,8 +445,9 @@ pub fn plan_share_submission(
 /// Return resubmission order from separately ordered helper groups.
 ///
 /// The returned order always tries untried helpers before helpers that already
-/// received the share. Callers that want random distribution should shuffle
-/// each group before calling this helper.
+/// received the share. This is deterministic for tests and callers that have
+/// already made an explicit ordering decision. Production resubmission paths
+/// should prefer `resubmission_server_order`.
 pub fn resubmission_server_order_from_groups(
     untried_server_urls: &[String],
     already_sent_server_urls: &[String],
@@ -329,13 +459,58 @@ pub fn resubmission_server_order_from_groups(
         .collect()
 }
 
+/// Return randomized resubmission order with untried helpers first.
+///
+/// The configured server list is split into untried and already-sent groups.
+/// Each group is shuffled separately using `server_random_bytes`, then the
+/// shuffled untried group is followed by the shuffled already-sent group.
+pub fn resubmission_server_order(
+    configured_server_urls: &[String],
+    sent_to_urls: &[String],
+    server_random_bytes: &[u8],
+) -> Result<Vec<String>, VotingError> {
+    let sent: HashSet<&str> = sent_to_urls.iter().map(String::as_str).collect();
+    let untried: Vec<String> = configured_server_urls
+        .iter()
+        .filter(|server| !sent.contains(server.as_str()))
+        .cloned()
+        .collect();
+    let already_sent: Vec<String> = configured_server_urls
+        .iter()
+        .filter(|server| sent.contains(server.as_str()))
+        .cloned()
+        .collect();
+
+    let untried_bytes = share_server_order_random_bytes_required(untried.len());
+    let already_sent_bytes = share_server_order_random_bytes_required(already_sent.len());
+    let needed =
+        resubmission_server_order_random_bytes_required(configured_server_urls, sent_to_urls);
+    if server_random_bytes.len() < needed {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "server_random_bytes must contain at least {needed} bytes for resubmission order"
+            ),
+        });
+    }
+
+    let randomized_untried =
+        shuffled_share_server_order(&untried, &server_random_bytes[..untried_bytes])?;
+    let randomized_already_sent = shuffled_share_server_order(
+        &already_sent,
+        &server_random_bytes[untried_bytes..untried_bytes + already_sent_bytes],
+    )?;
+    Ok(resubmission_server_order_from_groups(
+        &randomized_untried,
+        &randomized_already_sent,
+    ))
+}
+
 /// Return resubmission order from configured helper order and already-sent set.
 ///
 /// This preserves the configured order within each group. It is useful for
-/// deterministic tests and callers that intentionally manage ordering outside
-/// the crate. Callers that want random distribution should split and shuffle
-/// the untried and already-sent groups separately, then call
-/// `resubmission_server_order_from_groups`.
+/// deterministic tests and callers that have already made an explicit ordering
+/// decision. Production resubmission paths should prefer
+/// `resubmission_server_order`.
 pub fn resubmission_server_order_from_configured_order(
     configured_server_urls: &[String],
     sent_to_urls: &[String],
@@ -377,6 +552,13 @@ mod tests {
             submit_at,
             created_at,
         }
+    }
+
+    fn random_bytes(samples: &[u64]) -> Vec<u8> {
+        samples
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect()
     }
 
     #[test]
@@ -537,14 +719,104 @@ mod tests {
     }
 
     #[test]
-    fn share_submission_plan_uses_caller_server_order() {
+    fn helper_order_random_bytes_required_matches_shuffle_steps() {
+        assert_eq!(share_server_order_random_bytes_required(0), 0);
+        assert_eq!(share_server_order_random_bytes_required(1), 0);
+        assert_eq!(share_server_order_random_bytes_required(3), 16);
+    }
+
+    #[test]
+    fn resubmission_order_random_bytes_required_matches_group_shuffles() {
+        let configured = vec![
+            "https://already-one.example.com".to_string(),
+            "https://untried-one.example.com".to_string(),
+            "https://untried-two.example.com".to_string(),
+            "https://already-two.example.com".to_string(),
+        ];
+        let sent = vec![
+            "https://already-one.example.com".to_string(),
+            "https://already-two.example.com".to_string(),
+        ];
+
+        assert_eq!(
+            resubmission_server_order_random_bytes_required(&configured, &sent),
+            16
+        );
+    }
+
+    #[test]
+    fn randomized_helper_order_uses_entropy() {
         let servers = vec![
             "https://one.example.com".to_string(),
             "https://two.example.com".to_string(),
             "https://three.example.com".to_string(),
         ];
 
-        let plan = plan_share_submission(&servers, 1_000, 2_000, Some(100), false, 0.0).unwrap();
+        let ordered = shuffled_share_server_order(&servers, &random_bytes(&[1, 0])).unwrap();
+
+        assert_eq!(
+            ordered,
+            vec![
+                "https://three.example.com".to_string(),
+                "https://one.example.com".to_string(),
+                "https://two.example.com".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn randomized_helper_order_rejects_missing_entropy() {
+        let servers = vec![
+            "https://one.example.com".to_string(),
+            "https://two.example.com".to_string(),
+        ];
+
+        assert!(matches!(
+            shuffled_share_server_order(&servers, &[]),
+            Err(VotingError::InvalidInput { .. })
+        ));
+    }
+
+    #[test]
+    fn share_submission_plan_randomizes_target_servers() {
+        let servers = vec![
+            "https://one.example.com".to_string(),
+            "https://two.example.com".to_string(),
+            "https://three.example.com".to_string(),
+        ];
+
+        let plan = plan_share_submission(
+            &servers,
+            1_000,
+            2_000,
+            Some(100),
+            false,
+            0.0,
+            &random_bytes(&[1, 0]),
+        )
+        .unwrap();
+
+        assert_eq!(plan.submit_at, 1_000);
+        assert_eq!(plan.target_count, 2);
+        assert_eq!(
+            plan.target_servers,
+            vec![
+                "https://three.example.com".to_string(),
+                "https://one.example.com".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn share_submission_plan_from_order_uses_caller_server_order() {
+        let servers = vec![
+            "https://one.example.com".to_string(),
+            "https://two.example.com".to_string(),
+            "https://three.example.com".to_string(),
+        ];
+
+        let plan = plan_share_submission_from_order(&servers, 1_000, 2_000, Some(100), false, 0.0)
+            .unwrap();
 
         assert_eq!(plan.submit_at, 1_000);
         assert_eq!(plan.target_count, 2);
@@ -575,6 +847,23 @@ mod tests {
     }
 
     #[test]
+    fn randomized_share_submission_target_selection_uses_entropy() {
+        let servers = vec![
+            "https://one.example.com".to_string(),
+            "https://two.example.com".to_string(),
+            "https://three.example.com".to_string(),
+        ];
+
+        assert_eq!(
+            select_share_submission_targets(&servers, 2, &random_bytes(&[1, 0])).unwrap(),
+            vec![
+                "https://three.example.com".to_string(),
+                "https://one.example.com".to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn resubmission_order_tries_ordered_untried_helpers_first() {
         let untried = vec![
             "https://untried-two.example.com".to_string(),
@@ -590,6 +879,43 @@ mod tests {
                 "https://already.example.com".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn randomized_resubmission_order_shuffles_groups_separately() {
+        let configured = vec![
+            "https://already-one.example.com".to_string(),
+            "https://untried-one.example.com".to_string(),
+            "https://untried-two.example.com".to_string(),
+            "https://already-two.example.com".to_string(),
+        ];
+        let sent = vec![
+            "https://already-one.example.com".to_string(),
+            "https://already-two.example.com".to_string(),
+        ];
+
+        assert_eq!(
+            resubmission_server_order(&configured, &sent, &random_bytes(&[0, 0])).unwrap(),
+            vec![
+                "https://untried-two.example.com".to_string(),
+                "https://untried-one.example.com".to_string(),
+                "https://already-two.example.com".to_string(),
+                "https://already-one.example.com".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn randomized_resubmission_order_rejects_missing_entropy() {
+        let configured = vec![
+            "https://untried-one.example.com".to_string(),
+            "https://untried-two.example.com".to_string(),
+        ];
+
+        assert!(matches!(
+            resubmission_server_order(&configured, &[], &[]),
+            Err(VotingError::InvalidInput { .. })
+        ));
     }
 
     #[test]
