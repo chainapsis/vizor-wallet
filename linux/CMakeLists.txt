@@ -11,6 +11,10 @@ set(BINARY_NAME "${APP_IDENTIFIER}")
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
 set(APPLICATION_ID "com.keplr.${APP_IDENTIFIER}")
 
+# Build scripts can provide per-flavor Linux identity overrides here. Keep this
+# generated file out of version control.
+include("${CMAKE_CURRENT_SOURCE_DIR}/FlavorOverrides.cmake" OPTIONAL)
+
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
 cmake_policy(SET CMP0063 NEW)
