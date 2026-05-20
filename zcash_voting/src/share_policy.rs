@@ -443,6 +443,9 @@ pub fn select_share_submission_targets_from_order(
 
 /// Plan the timing and initial helper targets for a share delegation.
 ///
+/// `server_urls` must not be empty. Missing helpers are a configuration error
+/// for initial delegation, not a successful zero-target plan.
+///
 /// Missing or zero `last_moment_buffer_seconds` means there is no delayed-share
 /// window, so the returned plan uses `submit_at = 0`. Helper targets are chosen
 /// from a randomized server order using `server_random_bytes`. Callers can use
@@ -457,6 +460,7 @@ pub fn plan_share_submission(
     submit_at_random_bytes: &[u8],
     server_random_bytes: &[u8],
 ) -> Result<ShareSubmissionPlan, VotingError> {
+    require_share_servers(server_urls)?;
     let target_count = share_submission_target_count(server_urls.len());
     let target_servers =
         select_share_submission_targets(server_urls, target_count, server_random_bytes)?;
@@ -477,6 +481,9 @@ pub fn plan_share_submission(
 
 /// Plan share submission using a caller-provided helper order.
 ///
+/// `server_urls` must not be empty. Missing helpers are a configuration error
+/// for initial delegation, not a successful zero-target plan.
+///
 /// This is deterministic for tests and callers that have already made an
 /// explicit ordering decision. Production submission paths should prefer
 /// `plan_share_submission`.
@@ -488,6 +495,7 @@ pub fn plan_share_submission_from_order(
     single_share: bool,
     random_unit: f64,
 ) -> Result<ShareSubmissionPlan, VotingError> {
+    require_share_servers(server_urls)?;
     let target_count = share_submission_target_count(server_urls.len());
     let target_servers = select_share_submission_targets_from_order(server_urls, target_count);
     plan_share_submission_with_targets(
@@ -523,6 +531,16 @@ fn plan_share_submission_with_targets(
         target_count: target_count as u64,
         target_servers,
     })
+}
+
+fn require_share_servers(server_urls: &[String]) -> Result<(), VotingError> {
+    if server_urls.is_empty() {
+        return Err(VotingError::InvalidInput {
+            message: "server_urls must not be empty".to_string(),
+        });
+    }
+
+    Ok(())
 }
 
 /// Return resubmission order from separately ordered helper groups.
@@ -935,6 +953,26 @@ mod tests {
                 "https://one.example.com".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn share_submission_plan_rejects_empty_server_list() {
+        assert!(matches!(
+            plan_share_submission(
+                &[],
+                1_000,
+                2_000,
+                Some(100),
+                false,
+                &random_bytes(&[1u64 << 63]),
+                &[]
+            ),
+            Err(VotingError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            plan_share_submission_from_order(&[], 1_000, 2_000, Some(100), false, 0.0),
+            Err(VotingError::InvalidInput { .. })
+        ));
     }
 
     #[test]
