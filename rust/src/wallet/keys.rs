@@ -693,6 +693,7 @@ mod tests {
             db_path_str,
             WalletNetwork::Main,
             &uuid,
+            crate::wallet::sync::AddressRequestKind::Shielded,
         )
         .unwrap();
 
@@ -710,6 +711,82 @@ mod tests {
                 .unwrap()
                 .unified_address
         );
+    }
+
+    #[test]
+    fn test_get_next_available_address_rotates_keystone_style_imported_account() {
+        use zcash_address::unified::{Encoding, Fvk, Ufvk};
+        use zcash_protocol::consensus::NetworkType;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+        let account_index = zip32::AccountId::ZERO;
+        let usk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            seed.expose_secret(),
+            account_index,
+        )
+        .unwrap();
+        let full_ufvk = usk.to_unified_full_viewing_key();
+        let orchard_fvk = full_ufvk.orchard().unwrap().to_bytes();
+        let transparent_fvk = full_ufvk
+            .transparent()
+            .unwrap()
+            .serialize()
+            .try_into()
+            .unwrap();
+        let keystone_style_ufvk =
+            Ufvk::try_from_items(vec![Fvk::Orchard(orchard_fvk), Fvk::P2pkh(transparent_fvk)])
+                .unwrap()
+                .encode(&NetworkType::Main);
+        let seed_fingerprint = SeedFingerprint::from_seed(seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+
+        let (uuid, default_address) = import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Keystone",
+            &keystone_style_ufvk,
+            &seed_fingerprint,
+            u32::from(account_index),
+            None,
+        )
+        .unwrap();
+
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000).unwrap();
+        let shielded_error = crate::wallet::sync::get_next_available_address(
+            db_path_str,
+            WalletNetwork::Main,
+            &uuid,
+            crate::wallet::sync::AddressRequestKind::Shielded,
+        )
+        .unwrap_err();
+        assert!(shielded_error.contains("Sapling"));
+
+        let renewed_address = crate::wallet::sync::get_next_available_address(
+            db_path_str,
+            WalletNetwork::Main,
+            &uuid,
+            crate::wallet::sync::AddressRequestKind::Orchard,
+        )
+        .unwrap();
+
+        assert_ne!(default_address, renewed_address);
+        assert_eq!(
+            renewed_address,
+            get_address_from_db(db_path_str, WalletNetwork::Main, Some(&uuid)).unwrap()
+        );
+
+        let za = zcash_address::ZcashAddress::try_from_encoded(&renewed_address).unwrap();
+        let debug = format!("{:?}", za);
+        assert!(debug.contains("Orchard"));
+        assert!(!debug.contains("Sapling"));
+        assert!(!debug.contains("P2pkh"));
     }
 
     #[test]

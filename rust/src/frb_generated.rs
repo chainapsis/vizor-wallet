@@ -1243,6 +1243,7 @@ fn wire__crate__api__sync__get_next_available_address_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
+            let api_address_request = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -1250,6 +1251,7 @@ fn wire__crate__api__sync__get_next_available_address_impl(
                         api_db_path,
                         api_network,
                         api_account_uuid,
+                        api_address_request,
                     )?;
                     Ok(output_ok)
                 })())

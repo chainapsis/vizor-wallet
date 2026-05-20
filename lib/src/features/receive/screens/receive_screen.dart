@@ -267,9 +267,6 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       }
     });
 
-    final accountState = ref.watch(accountProvider).value;
-    final canRenewShieldedAddress =
-        accountState?.activeAccount?.isHardware != true;
     final address = _selectedAddress;
     final isShielded = _selectedType == _ReceiveAddressType.shielded;
     final isLoadingSelectedAddress = isShielded
@@ -291,11 +288,8 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
               errorText: selectedErrorText,
               isLoading: isLoadingSelectedAddress,
               isRenewingShielded: _isRenewingShielded,
-              canRenewShieldedAddress: canRenewShieldedAddress,
               onTypeChanged: _selectAddressType,
-              onRenewShielded: isShielded && canRenewShieldedAddress
-                  ? _renewShieldedAddress
-                  : null,
+              onRenewShielded: isShielded ? _renewShieldedAddress : null,
               onCopy: _copySelectedAddress,
               onShowHelp: () => _showAddressInfo(_selectedType),
             ),
@@ -304,7 +298,6 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                 onDismiss: _dismissAddressInfo,
                 child: _ReceiveInfoDialog(
                   type: infoDialogType,
-                  canRenewShieldedAddress: canRenewShieldedAddress,
                   onClose: _dismissAddressInfo,
                 ),
               ),
@@ -322,7 +315,6 @@ class _ReceivePane extends StatelessWidget {
     required this.errorText,
     required this.isLoading,
     required this.isRenewingShielded,
-    required this.canRenewShieldedAddress,
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onCopy,
@@ -334,7 +326,6 @@ class _ReceivePane extends StatelessWidget {
   final String? errorText;
   final bool isLoading;
   final bool isRenewingShielded;
-  final bool canRenewShieldedAddress;
   final ValueChanged<_ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onCopy;
@@ -366,7 +357,6 @@ class _ReceivePane extends StatelessWidget {
                           address: address,
                           isLoading: isLoading,
                           isRenewingShielded: isRenewingShielded,
-                          canRenewShieldedAddress: canRenewShieldedAddress,
                           onTypeChanged: onTypeChanged,
                           onRenewShielded: onRenewShielded,
                           onShowHelp: onShowHelp,
@@ -414,7 +404,6 @@ class _ReceiveMainContent extends StatelessWidget {
     required this.address,
     required this.isLoading,
     required this.isRenewingShielded,
-    required this.canRenewShieldedAddress,
     required this.onTypeChanged,
     required this.onRenewShielded,
     required this.onShowHelp,
@@ -424,7 +413,6 @@ class _ReceiveMainContent extends StatelessWidget {
   final String address;
   final bool isLoading;
   final bool isRenewingShielded;
-  final bool canRenewShieldedAddress;
   final ValueChanged<_ReceiveAddressType> onTypeChanged;
   final VoidCallback? onRenewShielded;
   final VoidCallback onShowHelp;
@@ -506,7 +494,6 @@ class _ReceiveMainContent extends StatelessWidget {
                             address: address,
                             renewing: isRenewingShielded,
                             metrics: metrics,
-                            canRenewShieldedAddress: canRenewShieldedAddress,
                             onRenew: onRenewShielded,
                             onShowHelp: onShowHelp,
                           ),
@@ -775,7 +762,6 @@ class _ReceiveQrBlock extends StatelessWidget {
     required this.address,
     required this.renewing,
     required this.metrics,
-    required this.canRenewShieldedAddress,
     required this.onRenew,
     required this.onShowHelp,
     super.key,
@@ -785,7 +771,6 @@ class _ReceiveQrBlock extends StatelessWidget {
   final String address;
   final bool renewing;
   final _ReceiveQrMetrics metrics;
-  final bool canRenewShieldedAddress;
   final VoidCallback? onRenew;
   final VoidCallback onShowHelp;
 
@@ -815,7 +800,7 @@ class _ReceiveQrBlock extends StatelessWidget {
                     type: type,
                   ),
                 ),
-                if (_isShielded && canRenewShieldedAddress)
+                if (_isShielded)
                   Positioned(
                     top: metrics.renewTop,
                     child: _RenewButton(
@@ -1302,14 +1287,9 @@ class _CopyAddressButton extends StatelessWidget {
 }
 
 class _ReceiveInfoDialog extends StatelessWidget {
-  const _ReceiveInfoDialog({
-    required this.type,
-    required this.canRenewShieldedAddress,
-    required this.onClose,
-  });
+  const _ReceiveInfoDialog({required this.type, required this.onClose});
 
   final _ReceiveAddressType type;
-  final bool canRenewShieldedAddress;
   final VoidCallback onClose;
 
   bool get _isShielded => type == _ReceiveAddressType.shielded;
@@ -1318,36 +1298,23 @@ class _ReceiveInfoDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final items = _isShielded
-        ? canRenewShieldedAddress
-              ? const [
-                  _InfoItemData(
-                    iconName: AppIcons.lock,
-                    text:
-                        'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
-                  ),
-                  _InfoItemData(
-                    iconName: AppIcons.renew,
-                    text:
-                        'A new Zcash Shielded address is generated only when you click the Renew button.',
-                  ),
-                  _InfoItemData(
-                    iconName: AppIcons.wallet,
-                    text:
-                        'Each new address is a diversified address derived from the same key. They all receive to the same wallet.',
-                  ),
-                ]
-              : const [
-                  _InfoItemData(
-                    iconName: AppIcons.lock,
-                    text:
-                        'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
-                  ),
-                  _InfoItemData(
-                    iconName: AppIcons.keystone,
-                    text:
-                        "Keystone accounts use one fixed shielded address, so Renew isn't available.",
-                  ),
-                ]
+        ? const [
+            _InfoItemData(
+              iconName: AppIcons.lock,
+              text:
+                  'Tx details - sender, receiver, and amount - are encrypted on-chain & hidden.',
+            ),
+            _InfoItemData(
+              iconName: AppIcons.renew,
+              text:
+                  'A new Zcash Shielded address is generated only when you click the Renew button.',
+            ),
+            _InfoItemData(
+              iconName: AppIcons.wallet,
+              text:
+                  'Each new address is a diversified address derived from the same key. They all receive to the same wallet.',
+            ),
+          ]
         : [
             const _InfoItemData(
               iconName: AppIcons.unlock,

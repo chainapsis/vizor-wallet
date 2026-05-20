@@ -64,7 +64,8 @@ pub(crate) use send::ShieldTransparentStatus;
 pub use transactions::{
     check_tx_mined, decrypt_and_store_transaction, get_next_available_address,
     get_pending_transactions, get_transaction_data_requests, get_transaction_detail,
-    get_transaction_history, get_wallet_balance, set_transaction_status,
+    get_transaction_history, get_wallet_balance, parse_address_request_kind,
+    set_transaction_status, AddressRequestKind,
 };
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{
