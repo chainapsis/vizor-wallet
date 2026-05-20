@@ -12,6 +12,12 @@ pub const SHARE_MIN_OVERDUE_THRESHOLD_SECONDS: u64 = 30;
 pub const SHARE_MAX_OVERDUE_THRESHOLD_SECONDS: u64 = 60 * 60;
 /// Seconds near the vote end when resubmission should stop.
 pub const SHARE_RESUBMIT_CUTOFF_SECONDS: u64 = 10;
+/// Seconds between polls when all remaining shares are ready but unconfirmed.
+pub const SHARE_READY_POLL_INTERVAL_SECONDS: u64 = 15;
+/// Maximum seconds to wait for a future share to become ready.
+pub const SHARE_FUTURE_CHECK_MAX_DELAY_SECONDS: u64 = 30;
+/// Minimum seconds to sleep before the next tracking poll.
+pub const SHARE_MIN_TRACKING_DELAY_SECONDS: u64 = 3;
 
 /// Pure timing knobs for helper-share scheduling and recovery.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +26,9 @@ pub struct ShareTimingPolicy {
     pub min_overdue_threshold_seconds: u64,
     pub max_overdue_threshold_seconds: u64,
     pub resubmit_cutoff_seconds: u64,
+    pub ready_poll_interval_seconds: u64,
+    pub future_check_max_delay_seconds: u64,
+    pub min_tracking_delay_seconds: u64,
 }
 
 impl Default for ShareTimingPolicy {
@@ -29,6 +38,9 @@ impl Default for ShareTimingPolicy {
             min_overdue_threshold_seconds: SHARE_MIN_OVERDUE_THRESHOLD_SECONDS,
             max_overdue_threshold_seconds: SHARE_MAX_OVERDUE_THRESHOLD_SECONDS,
             resubmit_cutoff_seconds: SHARE_RESUBMIT_CUTOFF_SECONDS,
+            ready_poll_interval_seconds: SHARE_READY_POLL_INTERVAL_SECONDS,
+            future_check_max_delay_seconds: SHARE_FUTURE_CHECK_MAX_DELAY_SECONDS,
+            min_tracking_delay_seconds: SHARE_MIN_TRACKING_DELAY_SECONDS,
         }
     }
 }
@@ -123,36 +135,43 @@ pub fn should_resubmit_share(
         && vote_end_time_seconds > now_seconds.saturating_add(policy.resubmit_cutoff_seconds)
 }
 
-/// Return the next delay before polling share status again.
+/// Return the next delay after a share-status polling pass completes.
 ///
-/// Returns `None` when all shares are confirmed. Returns `Some(0)` when at
-/// least one status check or retry is already due.
+/// This mirrors the current wallet polling cadence. If any unconfirmed share is
+/// still before its status-check grace time, the delay is the soonest future
+/// check time capped by `future_check_max_delay_seconds`. If every unconfirmed
+/// share is already ready, the delay is `ready_poll_interval_seconds` so callers
+/// do not tight-loop on past check times. The returned delay is always at least
+/// `min_tracking_delay_seconds`.
 pub fn next_tracking_delay_seconds(
     shares: &[ShareDelegationRecord],
     now_seconds: u64,
-    vote_end_time_seconds: Option<u64>,
     policy: ShareTimingPolicy,
 ) -> Option<u64> {
     let mut next_second: Option<u64> = None;
+    let mut has_unconfirmed = false;
 
     for share in shares.iter().filter(|share| !share.confirmed) {
+        has_unconfirmed = true;
         let base_time = share_recovery_base_time(share);
         let check_at = base_time.saturating_add(policy.status_check_grace_seconds);
-        next_second = min_second(next_second, check_at);
-
-        if let Some(vote_end_time_seconds) = vote_end_time_seconds {
-            let retry_at = base_time.saturating_add(overdue_threshold_seconds(
-                share,
-                vote_end_time_seconds,
-                policy,
-            ));
-            if vote_end_time_seconds > retry_at.saturating_add(policy.resubmit_cutoff_seconds) {
-                next_second = min_second(next_second, retry_at);
-            }
+        if check_at > now_seconds {
+            next_second = min_second(next_second, check_at);
         }
     }
 
-    next_second.map(|next| next.saturating_sub(now_seconds))
+    if !has_unconfirmed {
+        return None;
+    }
+
+    let delay_seconds = match next_second {
+        Some(next) => next
+            .saturating_sub(now_seconds)
+            .min(policy.future_check_max_delay_seconds),
+        None => policy.ready_poll_interval_seconds,
+    };
+
+    Some(delay_seconds.max(policy.min_tracking_delay_seconds))
 }
 
 /// Summarize share tracking state using the same precedence as wallet UIs.
@@ -412,17 +431,39 @@ mod tests {
     }
 
     #[test]
-    fn next_tracking_delay_uses_status_and_retry_times() {
+    fn next_tracking_delay_uses_future_check_times() {
         let shares = vec![share(0, 100), share(200, 100)];
         let policy = ShareTimingPolicy::default();
 
+        assert_eq!(next_tracking_delay_seconds(&shares, 105, policy), Some(5));
+    }
+
+    #[test]
+    fn next_tracking_delay_matches_ios_minimum_and_future_cap() {
+        let shares = vec![share(0, 100), share(200, 100)];
+        let policy = ShareTimingPolicy::default();
+
+        assert_eq!(next_tracking_delay_seconds(&shares, 109, policy), Some(3));
+        assert_eq!(next_tracking_delay_seconds(&shares, 111, policy), Some(30));
+    }
+
+    #[test]
+    fn next_tracking_delay_uses_ready_poll_interval_for_ready_pending_shares() {
+        let shares = vec![share(0, 100)];
+        let policy = ShareTimingPolicy::default();
+
+        assert_eq!(next_tracking_delay_seconds(&shares, 130, policy), Some(15));
+        assert_eq!(next_tracking_delay_seconds(&shares, 131, policy), Some(15));
+    }
+
+    #[test]
+    fn next_tracking_delay_stops_when_all_shares_are_confirmed() {
+        let mut confirmed = share(0, 100);
+        confirmed.confirmed = true;
+
         assert_eq!(
-            next_tracking_delay_seconds(&shares, 105, Some(320), policy),
-            Some(5)
-        );
-        assert_eq!(
-            next_tracking_delay_seconds(&shares, 130, Some(320), policy),
-            Some(0)
+            next_tracking_delay_seconds(&[confirmed], 130, ShareTimingPolicy::default()),
+            None
         );
     }
 
