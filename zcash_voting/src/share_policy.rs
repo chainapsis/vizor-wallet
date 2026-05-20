@@ -18,6 +18,8 @@ pub const SHARE_READY_POLL_INTERVAL_SECONDS: u64 = 15;
 pub const SHARE_FUTURE_CHECK_MAX_DELAY_SECONDS: u64 = 30;
 /// Minimum seconds to sleep before the next tracking poll.
 pub const SHARE_MIN_TRACKING_DELAY_SECONDS: u64 = 3;
+/// Random bytes needed to sample an initial delayed share submission time.
+pub const SHARE_SUBMIT_AT_RANDOM_BYTES: usize = 8;
 
 /// Pure timing knobs for helper-share scheduling and recovery.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -209,17 +211,41 @@ pub fn summarize_share_tracking(
     summary
 }
 
-/// Plan the delayed helper submission time for an initial share delegation.
+/// Return the random bytes needed to sample a delayed share submission time.
 ///
 /// `vote_end_time_seconds` is required because callers should only schedule
 /// share submission for an active voting session. `last_moment_buffer_seconds`
 /// is optional because some round timing data cannot produce a delayed-share
 /// window. When the buffer is missing or zero, or when `single_share` is true,
-/// this returns 0 and the share should be submitted immediately.
+/// no random bytes are needed because the share should be submitted
+/// immediately.
+pub fn share_submit_at_random_bytes_required(
+    now_seconds: u64,
+    vote_end_time_seconds: u64,
+    last_moment_buffer_seconds: Option<u64>,
+    single_share: bool,
+) -> usize {
+    if delayed_share_window_seconds(
+        now_seconds,
+        vote_end_time_seconds,
+        last_moment_buffer_seconds,
+        single_share,
+    )
+    .is_some()
+    {
+        SHARE_SUBMIT_AT_RANDOM_BYTES
+    } else {
+        0
+    }
+}
+
+/// Plan the delayed helper submission time from a caller-provided random unit.
 ///
-/// `random_unit` must be a finite sample in or near the `[0, 1)` range. Values
-/// outside that range are clamped so FFI callers cannot accidentally schedule
-/// after the deadline.
+/// This is useful for deterministic tests and FFI callers that already expose a
+/// random sample in or near the `[0, 1)` range. Production submission paths can
+/// use `scheduled_share_submit_at_from_entropy` to keep sampling policy inside
+/// the crate. Values outside `[0, 1)` are clamped so callers cannot accidentally
+/// schedule after the deadline.
 pub fn scheduled_share_submit_at(
     now_seconds: u64,
     vote_end_time_seconds: u64,
@@ -227,31 +253,82 @@ pub fn scheduled_share_submit_at(
     single_share: bool,
     random_unit: f64,
 ) -> Result<u64, VotingError> {
-    if single_share {
-        return Ok(0);
-    }
-
-    let Some(last_moment_buffer_seconds) = last_moment_buffer_seconds else {
+    let Some(window_seconds) = delayed_share_window_seconds(
+        now_seconds,
+        vote_end_time_seconds,
+        last_moment_buffer_seconds,
+        single_share,
+    ) else {
         return Ok(0);
     };
-    if last_moment_buffer_seconds == 0 {
-        return Ok(0);
-    }
-
-    let deadline = vote_end_time_seconds.saturating_sub(last_moment_buffer_seconds);
-    if deadline <= now_seconds {
-        return Ok(0);
-    }
     if !random_unit.is_finite() {
         return Err(VotingError::InvalidInput {
             message: "random_unit must be finite".to_string(),
         });
     }
 
-    let window_seconds = deadline - now_seconds;
     let clamped = random_unit.clamp(0.0, 0.999_999_999);
     let delay_seconds = (clamped * window_seconds as f64).floor() as u64;
     Ok(now_seconds.saturating_add(delay_seconds))
+}
+
+/// Plan the delayed helper submission time using caller-provided entropy.
+///
+/// `submit_at_random_bytes` must contain at least
+/// `share_submit_at_random_bytes_required(...)` bytes from a cryptographically
+/// secure RNG. No bytes are needed when the share should be submitted
+/// immediately.
+pub fn scheduled_share_submit_at_from_entropy(
+    now_seconds: u64,
+    vote_end_time_seconds: u64,
+    last_moment_buffer_seconds: Option<u64>,
+    single_share: bool,
+    submit_at_random_bytes: &[u8],
+) -> Result<u64, VotingError> {
+    let Some(window_seconds) = delayed_share_window_seconds(
+        now_seconds,
+        vote_end_time_seconds,
+        last_moment_buffer_seconds,
+        single_share,
+    ) else {
+        return Ok(0);
+    };
+    if submit_at_random_bytes.len() < SHARE_SUBMIT_AT_RANDOM_BYTES {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "submit_at_random_bytes must contain at least {SHARE_SUBMIT_AT_RANDOM_BYTES} bytes"
+            ),
+        });
+    }
+
+    let mut sample_bytes = [0u8; 8];
+    sample_bytes.copy_from_slice(&submit_at_random_bytes[..8]);
+    let sample = u64::from_le_bytes(sample_bytes);
+    let delay_seconds = ((sample as u128 * window_seconds as u128) >> 64) as u64;
+    Ok(now_seconds.saturating_add(delay_seconds))
+}
+
+fn delayed_share_window_seconds(
+    now_seconds: u64,
+    vote_end_time_seconds: u64,
+    last_moment_buffer_seconds: Option<u64>,
+    single_share: bool,
+) -> Option<u64> {
+    if single_share {
+        return None;
+    }
+
+    let last_moment_buffer_seconds = last_moment_buffer_seconds?;
+    if last_moment_buffer_seconds == 0 {
+        return None;
+    }
+
+    let deadline = vote_end_time_seconds.saturating_sub(last_moment_buffer_seconds);
+    if deadline <= now_seconds {
+        return None;
+    }
+
+    Some(deadline - now_seconds)
 }
 
 /// Return how many helpers should receive each initial share.
@@ -375,21 +452,25 @@ pub fn plan_share_submission(
     vote_end_time_seconds: u64,
     last_moment_buffer_seconds: Option<u64>,
     single_share: bool,
-    random_unit: f64,
+    submit_at_random_bytes: &[u8],
     server_random_bytes: &[u8],
 ) -> Result<ShareSubmissionPlan, VotingError> {
     let target_count = share_submission_target_count(server_urls.len());
     let target_servers =
         select_share_submission_targets(server_urls, target_count, server_random_bytes)?;
-    plan_share_submission_with_targets(
-        target_count,
-        target_servers,
+    let submit_at = scheduled_share_submit_at_from_entropy(
         now_seconds,
         vote_end_time_seconds,
         last_moment_buffer_seconds,
         single_share,
-        random_unit,
-    )
+        submit_at_random_bytes,
+    )?;
+
+    Ok(ShareSubmissionPlan {
+        submit_at,
+        target_count: target_count as u64,
+        target_servers,
+    })
 }
 
 /// Plan share submission using a caller-provided helper order.
@@ -568,6 +649,39 @@ mod tests {
     }
 
     #[test]
+    fn scheduled_submit_at_entropy_requirement_matches_delay_window() {
+        assert_eq!(
+            share_submit_at_random_bytes_required(1_000, 2_000, Some(100), false),
+            SHARE_SUBMIT_AT_RANDOM_BYTES
+        );
+        assert_eq!(
+            share_submit_at_random_bytes_required(1_000, 2_000, Some(100), true),
+            0
+        );
+        assert_eq!(
+            share_submit_at_random_bytes_required(1_000, 2_000, None, false),
+            0
+        );
+        assert_eq!(
+            share_submit_at_random_bytes_required(1_950, 2_000, Some(100), false),
+            0
+        );
+    }
+
+    #[test]
+    fn scheduled_submit_at_from_entropy_samples_before_deadline() {
+        let submit_at = scheduled_share_submit_at_from_entropy(
+            1_000,
+            2_000,
+            Some(100),
+            false,
+            &random_bytes(&[1u64 << 63]),
+        )
+        .unwrap();
+        assert_eq!(submit_at, 1_450);
+    }
+
+    #[test]
     fn scheduled_submit_at_is_immediate_without_a_delay_window() {
         assert_eq!(
             scheduled_share_submit_at(1_000, 2_000, Some(100), true, f64::NAN).unwrap(),
@@ -585,12 +699,24 @@ mod tests {
             scheduled_share_submit_at(1_950, 2_000, Some(100), false, f64::NAN).unwrap(),
             0
         );
+        assert_eq!(
+            scheduled_share_submit_at_from_entropy(1_000, 2_000, Some(100), true, &[]).unwrap(),
+            0
+        );
     }
 
     #[test]
     fn scheduled_submit_at_rejects_non_finite_random_unit_for_delay_window() {
         assert!(matches!(
             scheduled_share_submit_at(1_000, 2_000, Some(100), false, f64::NAN),
+            Err(VotingError::InvalidInput { .. })
+        ));
+    }
+
+    #[test]
+    fn scheduled_submit_at_from_entropy_rejects_missing_entropy_for_delay_window() {
+        assert!(matches!(
+            scheduled_share_submit_at_from_entropy(1_000, 2_000, Some(100), false, &[]),
             Err(VotingError::InvalidInput { .. })
         ));
     }
@@ -791,12 +917,12 @@ mod tests {
             2_000,
             Some(100),
             false,
-            0.0,
+            &random_bytes(&[1u64 << 63]),
             &random_bytes(&[1, 0]),
         )
         .unwrap();
 
-        assert_eq!(plan.submit_at, 1_000);
+        assert_eq!(plan.submit_at, 1_450);
         assert_eq!(plan.target_count, 2);
         assert_eq!(
             plan.target_servers,
