@@ -9,7 +9,7 @@ set(APP_DISPLAY_NAME "Vizor")
 set(BINARY_NAME "${APP_IDENTIFIER}")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.keplr.${APP_IDENTIFIER}")
+set(APPLICATION_ID "app.keplr.${APP_IDENTIFIER}")
 
 # Build scripts can provide per-flavor Linux identity overrides here. Keep this
 # generated file out of version control.

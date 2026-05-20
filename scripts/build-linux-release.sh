@@ -116,7 +116,7 @@ load_flavor_metadata() {
       APP_IDENTIFIER="vizor"
       APP_DISPLAY_NAME="Vizor"
       BINARY_NAME="vizor"
-      APPLICATION_ID="com.keplr.vizor"
+      APPLICATION_ID="app.keplr.vizor"
       ZCASH_DEFAULT_NETWORK="main"
       ARTIFACT_NAME="Vizor-linux"
       ;;
@@ -124,7 +124,7 @@ load_flavor_metadata() {
       APP_IDENTIFIER="vizor-testnet"
       APP_DISPLAY_NAME="Vizor Testnet"
       BINARY_NAME="vizor-testnet"
-      APPLICATION_ID="com.keplr.vizor.testnet"
+      APPLICATION_ID="app.keplr.vizor.testnet"
       ZCASH_DEFAULT_NETWORK="test"
       ARTIFACT_NAME="Vizor-Testnet-linux"
       ;;
