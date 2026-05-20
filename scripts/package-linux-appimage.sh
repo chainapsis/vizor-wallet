@@ -170,6 +170,22 @@ sed -i \
 cp "$DESKTOP_FILE" "$APPDIR_APPLICATIONS_DIR/$APP_ID.desktop"
 cp "$BUNDLE_DIR/data/icons/hicolor/256x256/apps/$APP_ID.png" "$APPDIR/$APP_ID.png"
 
+cat > "$APPDIR/AppRun" <<APPRUN
+#!/usr/bin/env bash
+set -euo pipefail
+
+APPDIR="\${APPDIR:-\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)}"
+export LD_LIBRARY_PATH="\${APPDIR}/usr/bin/lib:\${APPDIR}/usr/lib:\${LD_LIBRARY_PATH:-}"
+export GST_PLUGIN_SYSTEM_PATH_1_0="\${APPDIR}/usr/lib/gstreamer-1.0"
+export GST_PLUGIN_PATH_1_0="\${APPDIR}/usr/lib/gstreamer-1.0"
+if [[ -x "\${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" ]]; then
+  export GST_PLUGIN_SCANNER="\${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
+fi
+
+exec "\${APPDIR}/usr/bin/${BINARY_NAME}" "\$@"
+APPRUN
+chmod +x "$APPDIR/AppRun"
+
 should_skip_dependency() {
   local path="$1"
   local base
@@ -262,30 +278,18 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 
 copy_gstreamer_runtime
 
-cat > "$APPDIR/AppRun" <<APPRUN
-#!/usr/bin/env bash
-set -euo pipefail
-
-APPDIR="\${APPDIR:-\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)}"
-export LD_LIBRARY_PATH="\${APPDIR}/usr/bin/lib:\${APPDIR}/usr/lib:\${LD_LIBRARY_PATH:-}"
-export GST_PLUGIN_SYSTEM_PATH_1_0="\${APPDIR}/usr/lib/gstreamer-1.0"
-export GST_PLUGIN_PATH_1_0="\${APPDIR}/usr/lib/gstreamer-1.0"
-if [[ -x "\${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" ]]; then
-  export GST_PLUGIN_SCANNER="\${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
-fi
-
-exec "\${APPDIR}/usr/bin/${BINARY_NAME}" "\$@"
-APPRUN
-chmod +x "$APPDIR/AppRun"
-
 rm -f "$OUTPUT" "$OUTPUT.zsync" "$OUTPUT.sha256" "$OUTPUT.asc"
 
-"$APPIMAGETOOL_BIN" \
-  --sign \
-  --sign-key "$SIGN_KEY" \
-  -u "$UPDATE_INFO" \
-  "$APPDIR" \
-  "$OUTPUT"
+OUTPUT_BASENAME="$(basename "$OUTPUT")"
+(
+  cd "$OUTPUT_DIR"
+  "$APPIMAGETOOL_BIN" \
+    --sign \
+    --sign-key "$SIGN_KEY" \
+    -u "$UPDATE_INFO" \
+    "$APPDIR" \
+    "$OUTPUT_BASENAME"
+)
 
 chmod +x "$OUTPUT"
 
@@ -307,7 +311,7 @@ gpg "${GPG_ARGS[@]}" --detach-sign --output "$OUTPUT.asc" "$OUTPUT"
   sha256sum -c "$(basename "$OUTPUT").sha256"
 )
 
-"$OUTPUT" --appimage-signature >/dev/null
+env -u APPIMAGE_EXTRACT_AND_RUN "$OUTPUT" --appimage-signature >/dev/null
 gpg --batch --verify "$OUTPUT.asc" "$OUTPUT"
 
 echo "AppImage written to $OUTPUT"
