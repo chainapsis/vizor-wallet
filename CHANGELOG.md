@@ -4,6 +4,13 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.9.1
+
+## Added
+- Added pure `share_policy`, `pir_snapshot`, and `note_bundling` APIs so wallet
+  SDKs can share helper-share timing, exact PIR snapshot selection, and note
+  bundle planning logic instead of reimplementing it in each app.
+
 # 0.9.0
 
 ## Changed
