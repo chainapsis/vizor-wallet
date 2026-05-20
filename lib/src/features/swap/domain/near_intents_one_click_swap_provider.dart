@@ -172,17 +172,20 @@ class NearIntentsOneClickSwapProvider
       tokens,
       operation: 'quote',
     );
+    final amountToken = request.mode == SwapQuoteMode.exactInput
+        ? sellToken
+        : receiveToken;
 
     final body = <String, Object?>{
       'dry': request.dryRun,
-      'swapType': 'EXACT_INPUT',
+      'swapType': request.mode.oneClickSwapType,
       'slippageTolerance': request.slippageBps ?? slippageBps,
       'originAsset': sellToken.assetId,
       'depositType': 'ORIGIN_CHAIN',
       'destinationAsset': receiveToken.assetId,
       'amount': _toBaseUnits(
-        request.sellAmountText ?? request.sellAmount.toString(),
-        sellToken.decimals,
+        request.amountText ?? request.amount.toString(),
+        amountToken.decimals,
       ),
       'refundTo': request.refundAddress!.trim(),
       'refundType': 'ORIGIN_CHAIN',
@@ -206,6 +209,7 @@ class NearIntentsOneClickSwapProvider
       quoteResponse,
       direction: request.direction,
       externalAsset: request.externalAsset,
+      mode: request.mode,
       sellToken: sellToken,
       receiveToken: receiveToken,
     );
@@ -314,14 +318,23 @@ class NearIntentsOneClickSwapProvider
         ? SwapDirection.zecToExternal
         : SwapDirection.externalToZec;
     final externalAsset = sellAsset == SwapAsset.zec ? receiveAsset : sellAsset;
+    final sellToken = _requireToken(sellAsset, tokens, operation: 'status');
     final quote = _quoteFromOneClick(
       response.quoteResponse,
       direction: direction,
       externalAsset: externalAsset,
-      sellToken: _requireToken(sellAsset, tokens, operation: 'status'),
+      mode: request.mode,
+      sellToken: sellToken,
       receiveToken: _requireToken(receiveAsset, tokens, operation: 'status'),
     );
     final status = _statusFromOneClick(response.status, quote, _now());
+    final statusRefundInfo = _statusRefundInfo(
+      response.swapDetails,
+      sellAsset: sellAsset,
+      sellToken: sellToken,
+    );
+    final providerRefundInfo =
+        quote.providerRefundInfo?.merge(statusRefundInfo) ?? statusRefundInfo;
 
     return SwapIntentSnapshot(
       id: quote.depositInstruction.address,
@@ -335,6 +348,9 @@ class NearIntentsOneClickSwapProvider
       providerStatusRaw: response.status,
       nearIntentHash: response.swapDetails?.intentHash,
       nearTransactionHash: response.swapDetails?.nearTransactionHash,
+      originChainTxHash: response.swapDetails?.originChainTxHash,
+      destinationChainTxHash: response.swapDetails?.destinationChainTxHash,
+      providerRefundInfo: providerRefundInfo,
     );
   }
 
@@ -342,6 +358,7 @@ class NearIntentsOneClickSwapProvider
     _OneClickQuoteResponse response, {
     required SwapDirection direction,
     required SwapAsset externalAsset,
+    required SwapQuoteMode mode,
     required _OneClickToken sellToken,
     required _OneClickToken receiveToken,
   }) {
@@ -355,20 +372,22 @@ class NearIntentsOneClickSwapProvider
         : _baseUnitsToDecimal(quote.minAmountOut!, receiveToken.decimals);
     final minimumReceiveAmount =
         double.tryParse(minReceiveText) ?? receiveAmount * 0.995;
-    final quoteExpiresAt = _parseIsoDateTime(quote.timeWhenInactive);
-    final depositDeadline = _parseIsoDateTime(
-      quote.deadline ?? response.quoteRequest.deadline,
+    final userDeadline = response.quoteRequest.deadline;
+    final quoteExpiresAt = _parseIsoDateTime(
+      userDeadline ?? quote.timeWhenInactive,
     );
-    final quoteExpiryLabel = _expiryLabel(quote.timeWhenInactive);
-    final depositExpiryLabel = _expiryLabel(
-      quote.deadline ?? response.quoteRequest.deadline,
+    final depositDeadline = _parseIsoDateTime(userDeadline);
+    final quoteExpiryLabel = _expiryLabel(
+      userDeadline ?? quote.timeWhenInactive,
     );
+    final depositExpiryLabel = _expiryLabel(userDeadline);
 
     return SwapQuote(
       direction: direction,
       sellAsset: sellAsset,
       receiveAsset: receiveAsset,
       externalAsset: externalAsset,
+      mode: mode,
       sellAmount: sellAmount,
       receiveAmount: receiveAmount,
       minimumReceiveAmount: minimumReceiveAmount,
@@ -389,7 +408,7 @@ class NearIntentsOneClickSwapProvider
       sellAmountTextOverride:
           '${_trimDecimal(quote.amountInFormatted)} ${sellAsset.symbol}',
       receiveEstimateTextOverride:
-          '~${_trimDecimal(quote.amountOutFormatted)} ${receiveAsset.symbol}',
+          '${_trimDecimal(quote.amountOutFormatted)} ${receiveAsset.symbol}',
       minimumReceiveTextOverride:
           '${_trimDecimal(minReceiveText)} ${receiveAsset.symbol}',
       rateTextOverride: _rateText(
@@ -398,11 +417,89 @@ class NearIntentsOneClickSwapProvider
         receiveAsset: receiveAsset,
         receiveAmount: receiveAmount,
       ),
+      providerRefundInfo: _quoteRefundInfo(
+        quote,
+        sellAsset: sellAsset,
+        sellToken: sellToken,
+      ),
     );
   }
 
+  SwapProviderRefundInfo? _quoteRefundInfo(
+    _OneClickQuote quote, {
+    required SwapAsset sellAsset,
+    required _OneClickToken sellToken,
+  }) {
+    final info = SwapProviderRefundInfo(
+      minimumDepositText: _baseUnitAmountText(
+        quote.minAmountIn,
+        asset: sellAsset,
+        token: sellToken,
+      ),
+      refundFeeText: _baseUnitAmountText(
+        quote.refundFee,
+        asset: sellAsset,
+        token: sellToken,
+      ),
+    );
+    return info.hasAny ? info : null;
+  }
+
+  SwapProviderRefundInfo? _statusRefundInfo(
+    _OneClickSwapDetails? details, {
+    required SwapAsset sellAsset,
+    required _OneClickToken sellToken,
+  }) {
+    if (details == null) return null;
+    final info = SwapProviderRefundInfo(
+      depositedAmountText: _statusAmountText(
+        formatted: details.depositedAmountFormatted,
+        baseUnits: details.depositedAmount,
+        asset: sellAsset,
+        token: sellToken,
+      ),
+      refundedAmountText: _statusAmountText(
+        formatted: details.refundedAmountFormatted,
+        baseUnits: details.refundedAmount,
+        asset: sellAsset,
+        token: sellToken,
+      ),
+      refundFeeText: _baseUnitAmountText(
+        details.refundFee,
+        asset: sellAsset,
+        token: sellToken,
+      ),
+      refundReason: _cleanOptionalText(details.refundReason),
+    );
+    return info.hasAny ? info : null;
+  }
+
+  String? _baseUnitAmountText(
+    String? value, {
+    required SwapAsset asset,
+    required _OneClickToken token,
+  }) {
+    final raw = _cleanOptionalText(value);
+    if (raw == null || !_isIntegerAmount(raw)) return null;
+    final amount = _trimDecimal(_baseUnitsToDecimal(raw, token.decimals));
+    return '$amount ${asset.symbol}';
+  }
+
+  String? _statusAmountText({
+    required String? formatted,
+    required String? baseUnits,
+    required SwapAsset asset,
+    required _OneClickToken token,
+  }) {
+    final formattedValue = _cleanOptionalText(formatted);
+    if (formattedValue != null && double.tryParse(formattedValue) != null) {
+      return '${_trimDecimal(formattedValue)} ${asset.symbol}';
+    }
+    return _baseUnitAmountText(baseUnits, asset: asset, token: token);
+  }
+
   void _validateQuoteRequest(SwapQuoteRequest request) {
-    if (request.sellAmount <= 0 || !request.sellAmount.isFinite) {
+    if (request.amount <= 0 || !request.amount.isFinite) {
       throw const OneClickApiException('Swap amount must be greater than zero');
     }
     if (request.destination.trim().isEmpty) {
@@ -558,6 +655,7 @@ class _OneClickQuoteRequest {
   const _OneClickQuoteRequest({
     required this.originAsset,
     required this.destinationAsset,
+    required this.mode,
     this.deadline,
   });
 
@@ -565,12 +663,14 @@ class _OneClickQuoteRequest {
     return _OneClickQuoteRequest(
       originAsset: _string(json, 'originAsset'),
       destinationAsset: _string(json, 'destinationAsset'),
+      mode: _oneClickSwapMode(_optionalString(json, 'swapType')),
       deadline: _optionalString(json, 'deadline'),
     );
   }
 
   final String originAsset;
   final String destinationAsset;
+  final SwapQuoteMode mode;
   final String? deadline;
 }
 
@@ -578,32 +678,38 @@ class _OneClickQuote {
   const _OneClickQuote({
     required this.amountInFormatted,
     required this.amountOutFormatted,
+    this.minAmountIn,
     this.minAmountOut,
     this.depositAddress,
     this.depositMemo,
     this.deadline,
     this.timeWhenInactive,
+    this.refundFee,
   });
 
   factory _OneClickQuote.fromJson(Map<String, dynamic> json) {
     return _OneClickQuote(
       amountInFormatted: _string(json, 'amountInFormatted'),
       amountOutFormatted: _string(json, 'amountOutFormatted'),
+      minAmountIn: _optionalString(json, 'minAmountIn'),
       minAmountOut: _optionalString(json, 'minAmountOut'),
       depositAddress: _optionalString(json, 'depositAddress'),
       depositMemo: _optionalString(json, 'depositMemo'),
       deadline: _optionalString(json, 'deadline'),
       timeWhenInactive: _optionalString(json, 'timeWhenInactive'),
+      refundFee: _optionalString(json, 'refundFee'),
     );
   }
 
   final String amountInFormatted;
   final String amountOutFormatted;
+  final String? minAmountIn;
   final String? minAmountOut;
   final String? depositAddress;
   final String? depositMemo;
   final String? deadline;
   final String? timeWhenInactive;
+  final String? refundFee;
 }
 
 class _OneClickQuoteResponse {
@@ -673,7 +779,18 @@ class _OneClickStatusResponse {
 }
 
 class _OneClickSwapDetails {
-  const _OneClickSwapDetails({this.intentHash, this.nearTransactionHash});
+  const _OneClickSwapDetails({
+    this.intentHash,
+    this.nearTransactionHash,
+    this.refundedAmount,
+    this.refundedAmountFormatted,
+    this.refundFee,
+    this.refundReason,
+    this.depositedAmount,
+    this.depositedAmountFormatted,
+    this.originChainTxHash,
+    this.destinationChainTxHash,
+  });
 
   factory _OneClickSwapDetails.fromJson(Map<String, dynamic> json) {
     return _OneClickSwapDetails(
@@ -684,11 +801,34 @@ class _OneClickSwapDetails {
           _firstTransactionHash(json, 'near_swap_transactions') ??
           _firstTransactionHash(json, 'nearDepositTransactions') ??
           _firstTransactionHash(json, 'near_deposit_transactions'),
+      refundedAmount: _optionalString(json, 'refundedAmount'),
+      refundedAmountFormatted: _optionalString(json, 'refundedAmountFormatted'),
+      refundFee: _optionalString(json, 'refundFee'),
+      refundReason: _optionalString(json, 'refundReason'),
+      depositedAmount: _optionalString(json, 'depositedAmount'),
+      depositedAmountFormatted: _optionalString(
+        json,
+        'depositedAmountFormatted',
+      ),
+      originChainTxHash:
+          _firstChainTxHash(json, 'originChainTxHashes') ??
+          _firstChainTxHash(json, 'origin_chain_tx_hashes'),
+      destinationChainTxHash:
+          _firstChainTxHash(json, 'destinationChainTxHashes') ??
+          _firstChainTxHash(json, 'destination_chain_tx_hashes'),
     );
   }
 
   final String? intentHash;
   final String? nearTransactionHash;
+  final String? refundedAmount;
+  final String? refundedAmountFormatted;
+  final String? refundFee;
+  final String? refundReason;
+  final String? depositedAmount;
+  final String? depositedAmountFormatted;
+  final String? originChainTxHash;
+  final String? destinationChainTxHash;
 }
 
 const _dryRunDepositAddress = 'dry-run-preview';
@@ -737,6 +877,19 @@ String? _optionalString(Map<String, dynamic> json, String key) {
   throw OneClickApiException('Invalid string field: $key');
 }
 
+String? _cleanOptionalText(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty || trimmed.startsWith('<')) {
+    return null;
+  }
+  return trimmed;
+}
+
+bool _isIntegerAmount(String value) {
+  final normalized = value.startsWith('-') ? value.substring(1) : value;
+  return normalized.isNotEmpty && RegExp(r'^\d+$').hasMatch(normalized);
+}
+
 String? _firstOptionalString(
   Map<String, dynamic> json,
   String camelKey,
@@ -771,6 +924,29 @@ String? _firstTransactionHash(Map<String, dynamic> json, String key) {
     if (trimmed.isNotEmpty) return trimmed;
   }
   return null;
+}
+
+String? _firstChainTxHash(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! List) return null;
+  for (final item in value) {
+    if (item is Map) {
+      final raw = item['hash'] ?? item['txHash'] ?? item['tx_hash'];
+      final hash = raw is String ? raw.trim() : raw?.toString().trim();
+      if (hash != null && hash.isNotEmpty) return hash;
+      continue;
+    }
+    final hash = item?.toString().trim();
+    if (hash != null && hash.isNotEmpty) return hash;
+  }
+  return null;
+}
+
+SwapQuoteMode _oneClickSwapMode(String? value) {
+  return switch (value?.trim().toUpperCase()) {
+    'EXACT_OUTPUT' => SwapQuoteMode.exactOutput,
+    _ => SwapQuoteMode.exactInput,
+  };
 }
 
 int _int(Map<String, dynamic> json, String key) {

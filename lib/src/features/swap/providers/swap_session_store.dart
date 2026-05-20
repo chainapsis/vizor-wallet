@@ -142,6 +142,9 @@ Map<String, Object?> _intentToJson(SwapPrototypeIntent intent) {
     'providerStatusRaw': intent.providerStatusRaw,
     'nearIntentHash': intent.nearIntentHash,
     'nearTransactionHash': intent.nearTransactionHash,
+    'originChainTxHash': intent.originChainTxHash,
+    'destinationChainTxHash': intent.destinationChainTxHash,
+    'providerRefundInfo': _providerRefundInfoToJson(intent.providerRefundInfo),
     'lastStatusCheckedAt': intent.lastStatusCheckedAt
         ?.toUtc()
         .toIso8601String(),
@@ -180,6 +183,9 @@ SwapPrototypeIntent _intentFromJson(Map<String, dynamic> json) {
     providerStatusRaw: _optionalString(json['providerStatusRaw']),
     nearIntentHash: _optionalString(json['nearIntentHash']),
     nearTransactionHash: _optionalString(json['nearTransactionHash']),
+    originChainTxHash: _optionalString(json['originChainTxHash']),
+    destinationChainTxHash: _optionalString(json['destinationChainTxHash']),
+    providerRefundInfo: _providerRefundInfoFromJson(json['providerRefundInfo']),
     lastStatusCheckedAt: _optionalDateTime(json['lastStatusCheckedAt']),
     statusError: _optionalString(json['statusError']),
     oneClickRecipient: _optionalString(json['oneClickRecipient']),
@@ -187,6 +193,29 @@ SwapPrototypeIntent _intentFromJson(Map<String, dynamic> json) {
     depositDeadline: _optionalDateTime(json['depositDeadline']),
     accountUuid: _optionalString(json['accountUuid']),
   );
+}
+
+Map<String, Object?>? _providerRefundInfoToJson(SwapProviderRefundInfo? info) {
+  if (info == null || !info.hasAny) return null;
+  return {
+    'minimumDepositText': info.minimumDepositText,
+    'refundFeeText': info.refundFeeText,
+    'depositedAmountText': info.depositedAmountText,
+    'refundedAmountText': info.refundedAmountText,
+    'refundReason': info.refundReason,
+  };
+}
+
+SwapProviderRefundInfo? _providerRefundInfoFromJson(Object? value) {
+  if (value is! Map) return null;
+  final info = SwapProviderRefundInfo(
+    minimumDepositText: _optionalString(value['minimumDepositText']),
+    refundFeeText: _optionalString(value['refundFeeText']),
+    depositedAmountText: _optionalString(value['depositedAmountText']),
+    refundedAmountText: _optionalString(value['refundedAmountText']),
+    refundReason: _optionalString(value['refundReason']),
+  );
+  return info.hasAny ? info : null;
 }
 
 Map<String, Object?> _stepToJson(SwapPrototypeStep step) {

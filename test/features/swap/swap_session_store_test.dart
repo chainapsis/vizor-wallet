@@ -27,7 +27,7 @@ void main() {
       title: 'ZEC to USDC',
       pair: 'ZEC -> USDC',
       sellAmount: '1.5000 ZEC',
-      receiveEstimate: '~105.25 USDC',
+      receiveEstimate: '105.25 USDC',
       provider: 'NEAR Intents',
       status: SwapIntentStatus.processing,
       nextAction: 'Swap is processing',
@@ -58,6 +58,15 @@ void main() {
       providerStatusRaw: 'PROCESSING',
       nearIntentHash: 'intent-hash-1',
       nearTransactionHash: 'near-tx-hash-1',
+      originChainTxHash: 'origin-chain-tx-1',
+      destinationChainTxHash: 'destination-chain-tx-1',
+      providerRefundInfo: const SwapProviderRefundInfo(
+        minimumDepositText: '1.485 ZEC',
+        refundFeeText: '0.0001 ZEC',
+        depositedAmountText: '1.5 ZEC',
+        refundedAmountText: '0.01 ZEC',
+        refundReason: 'UNUSED_INPUT',
+      ),
       lastStatusCheckedAt: DateTime.utc(2026, 5, 7, 10, 30),
       statusError: 'temporary status refresh failure',
       oneClickRecipient: '0xrecipient',
@@ -83,6 +92,13 @@ void main() {
     expect(restored.single.providerStatusRaw, 'PROCESSING');
     expect(restored.single.nearIntentHash, 'intent-hash-1');
     expect(restored.single.nearTransactionHash, 'near-tx-hash-1');
+    expect(restored.single.originChainTxHash, 'origin-chain-tx-1');
+    expect(restored.single.destinationChainTxHash, 'destination-chain-tx-1');
+    expect(restored.single.providerRefundInfo?.minimumDepositText, '1.485 ZEC');
+    expect(restored.single.providerRefundInfo?.refundFeeText, '0.0001 ZEC');
+    expect(restored.single.providerRefundInfo?.depositedAmountText, '1.5 ZEC');
+    expect(restored.single.providerRefundInfo?.refundedAmountText, '0.01 ZEC');
+    expect(restored.single.providerRefundInfo?.refundReason, 'UNUSED_INPUT');
     expect(
       restored.single.lastStatusCheckedAt,
       DateTime.utc(2026, 5, 7, 10, 30),
@@ -179,7 +195,7 @@ SwapPrototypeIntent _minimalIntent({
     title: 'ZEC to USDC',
     pair: 'ZEC -> USDC',
     sellAmount: '1.0000 ZEC',
-    receiveEstimate: '~100.00 USDC',
+    receiveEstimate: '100.00 USDC',
     provider: 'NEAR Intents',
     status: SwapIntentStatus.processing,
     nextAction: 'Processing',

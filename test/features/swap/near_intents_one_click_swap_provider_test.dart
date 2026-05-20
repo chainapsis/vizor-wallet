@@ -43,6 +43,8 @@ void main() {
     expect(request.method, 'POST');
     expect(request.uri.path, '/v0/quote');
     expect(request.headers['authorization'], 'Bearer jwt-token');
+    expect(request.body?['dry'], isFalse);
+    expect(request.body?['swapType'], 'EXACT_INPUT');
     expect(request.body?['amount'], '150000000');
     expect(request.body?['originAsset'], 'nep141:zec.omft.near');
     expect(request.body?['destinationAsset'], 'nep141:usdc.example');
@@ -55,14 +57,67 @@ void main() {
     expect(quote.providerSignature, 'quote-signature');
     expect(quote.pairText, 'ZEC -> USDC');
     expect(quote.sellAmountText, '1.5 ZEC');
-    expect(quote.receiveEstimateText, '~105.25 USDC');
+    expect(quote.receiveEstimateText, '105.25 USDC');
     expect(quote.minimumReceiveText, '104.75 USDC');
     expect(quote.rateText, '1 ZEC = 70.17 USDC');
     expect(quote.depositInstruction.address, 't1deposit');
     expect(quote.depositInstruction.memo, 'memo-7');
-    expect(quote.quoteExpiresAt, DateTime.utc(2026, 5, 7, 10, 8));
+    expect(quote.quoteExpiresAt, DateTime.utc(2026, 5, 7, 12));
     expect(quote.depositInstruction.deadline, DateTime.utc(2026, 5, 7, 12));
   });
+
+  test(
+    'quote posts exact-output payload using receive asset decimals',
+    () async {
+      final transport = _FakeOneClickTransport([
+        _FakeResponse.get('/v0/tokens', _tokensWithNearUsdcFirst),
+        _FakeResponse.post(
+          '/v0/quote',
+          _quoteResponse(
+            originAsset: 'nep141:zec.omft.near',
+            destinationAsset: 'nep141:usdc.example',
+            swapType: 'EXACT_OUTPUT',
+            amountInFormatted: '1.5',
+            amountOutFormatted: '105.25',
+            minAmountIn: '148500000',
+            minAmountOut: '104750000',
+            refundFee: '10000',
+            depositAddress: 'dry-run-preview',
+            status: null,
+          ),
+        ),
+      ]);
+      final provider = NearIntentsOneClickSwapProvider(
+        transport: transport,
+        now: () => DateTime.utc(2026, 5, 7, 10),
+      );
+
+      final quote = await provider.quote(
+        const SwapQuoteRequest(
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          mode: SwapQuoteMode.exactOutput,
+          amount: 105.25,
+          amountText: '105.25',
+          destination: '0xrecipient',
+          refundAddress: 'u1refund',
+          dryRun: true,
+        ),
+      );
+
+      final request = transport.requests.last;
+      expect(request.body?['dry'], isTrue);
+      expect(request.body?['swapType'], 'EXACT_OUTPUT');
+      expect(request.body?['amount'], '105250000');
+      expect(request.body?['originAsset'], 'nep141:zec.omft.near');
+      expect(request.body?['destinationAsset'], 'nep141:usdc.example');
+      expect(quote.sellAmountText, '1.5 ZEC');
+      expect(quote.receiveEstimateText, '105.25 USDC');
+      expect(quote.mode, SwapQuoteMode.exactOutput);
+      expect(quote.providerRefundInfo?.minimumDepositText, '1.485 ZEC');
+      expect(quote.providerRefundInfo?.refundFeeText, '0.0001 ZEC');
+    },
+  );
 
   test('quote flips asset ids for external asset into ZEC', () async {
     final transport = _FakeOneClickTransport([
@@ -103,7 +158,7 @@ void main() {
     expect(request.body?['refundTo'], '0xexternal-refund');
     expect(request.body?['recipient'], 'u1fresh-shielded-recipient');
     expect(quote.pairText, 'USDC -> ZEC');
-    expect(quote.receiveEstimateText, '~2 ZEC');
+    expect(quote.receiveEstimateText, '2 ZEC');
     expect(quote.rateText, '1 USDC = 0.0143 ZEC');
     expect(intent.id, '0xexternal-deposit');
     expect(intent.status, SwapIntentStatus.awaitingExternalDeposit);
@@ -288,7 +343,7 @@ void main() {
       expect(request.body?['originAsset'], 'nep141:zec.omft.near');
       expect(request.body?['destinationAsset'], 'nep141:btc.omft.near');
       expect(quote.pairText, 'ZEC -> BTC');
-      expect(quote.receiveEstimateText, '~0.00096 BTC');
+      expect(quote.receiveEstimateText, '0.00096 BTC');
     },
   );
 
@@ -716,6 +771,44 @@ void main() {
     expect(status.nearTransactionHash, 'near-tx-hash-1');
   });
 
+  test('captures provider refund amounts from status swap details', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokens),
+      _FakeResponse.get(
+        '/v0/status',
+        _quoteResponse(
+          originAsset: 'nep141:zec.omft.near',
+          destinationAsset: 'nep141:usdc.example',
+          swapType: 'EXACT_OUTPUT',
+          amountInFormatted: '1.5',
+          amountOutFormatted: '70',
+          minAmountIn: '148500000',
+          minAmountOut: '69650000',
+          depositAddress: 'status-deposit',
+          status: 'REFUNDED',
+          swapDetails: {
+            'depositedAmountFormatted': '1.5',
+            'refundedAmountFormatted': '0.01',
+            'refundFee': '47000',
+            'refundReason': 'UNUSED_INPUT',
+          },
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapProvider(
+      transport: transport,
+      now: () => DateTime.utc(2026, 5, 7, 10, 2),
+    );
+
+    final status = await provider.getStatus('status-deposit');
+
+    expect(status.providerRefundInfo?.minimumDepositText, '1.485 ZEC');
+    expect(status.providerRefundInfo?.refundFeeText, '0.00047 ZEC');
+    expect(status.providerRefundInfo?.depositedAmountText, '1.5 ZEC');
+    expect(status.providerRefundInfo?.refundedAmountText, '0.01 ZEC');
+    expect(status.providerRefundInfo?.refundReason, 'UNUSED_INPUT');
+  });
+
   test(
     'captures snake-case NEAR Intents hashes from status swap details',
     () async {
@@ -767,6 +860,12 @@ void main() {
             status: 'PROCESSING',
             swapDetails: {
               'intentHashes': ['intent-hash-1'],
+              'originChainTxHashes': [
+                {'hash': 'origin-chain-tx-hash'},
+              ],
+              'destinationChainTxHashes': [
+                {'hash': 'destination-chain-tx-hash'},
+              ],
               'nearDepositTransactions': [
                 {'txHash': 'near-deposit-tx-hash'},
               ],
@@ -786,6 +885,8 @@ void main() {
 
       expect(status.nearIntentHash, 'intent-hash-1');
       expect(status.nearTransactionHash, 'near-swap-tx-hash');
+      expect(status.originChainTxHash, 'origin-chain-tx-hash');
+      expect(status.destinationChainTxHash, 'destination-chain-tx-hash');
     },
   );
 
@@ -801,6 +902,7 @@ void main() {
           amountOutFormatted: '70',
           minAmountOut: '69650000',
           depositAddress: 'expired-deposit',
+          quoteDeadline: '2026-05-10T12:00:00Z',
           status: 'PENDING_DEPOSIT',
         ),
       ),
@@ -919,13 +1021,19 @@ List<Map<String, Object?>> _tokensWithPrices(String zecPrice) {
 Map<String, Object?> _quoteResponse({
   required String originAsset,
   required String destinationAsset,
+  String swapType = 'EXACT_INPUT',
   required String amountInFormatted,
   required String amountOutFormatted,
   required String minAmountOut,
   required String depositAddress,
   required String? status,
   String? depositMemo,
+  String? minAmountIn,
   bool includeNestedCorrelationId = true,
+  String? refundFee,
+  String quoteRequestDeadline = '2026-05-07T12:00:00Z',
+  String quoteDeadline = '2026-05-07T12:00:00Z',
+  String timeWhenInactive = '2026-05-07T10:08:00Z',
   Map<String, Object?>? swapDetails,
 }) {
   final quote = {
@@ -934,7 +1042,7 @@ Map<String, Object?> _quoteResponse({
     'signature': 'quote-signature',
     'quoteRequest': {
       'dry': false,
-      'swapType': 'EXACT_INPUT',
+      'swapType': swapType,
       'slippageTolerance': 100,
       'originAsset': originAsset,
       'depositType': 'ORIGIN_CHAIN',
@@ -944,19 +1052,21 @@ Map<String, Object?> _quoteResponse({
       'refundType': 'ORIGIN_CHAIN',
       'recipient': 'recipient-address',
       'recipientType': 'DESTINATION_CHAIN',
-      'deadline': '2026-05-07T12:00:00Z',
+      'deadline': quoteRequestDeadline,
     },
     'quote': {
       'amountIn': '100000000',
       'amountInFormatted': amountInFormatted,
+      'minAmountIn': ?minAmountIn,
       'amountOut': '105250000',
       'amountOutFormatted': amountOutFormatted,
       'minAmountOut': minAmountOut,
       'timeEstimate': 120,
       'depositAddress': depositAddress,
       'depositMemo': depositMemo,
-      'deadline': '2026-05-07T12:00:00Z',
-      'timeWhenInactive': '2026-05-07T10:08:00Z',
+      'deadline': quoteDeadline,
+      'timeWhenInactive': timeWhenInactive,
+      'refundFee': ?refundFee,
     },
   };
 
