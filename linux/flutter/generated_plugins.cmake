@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   desktop_window_bootstrap
   flutter_secure_storage_linux
+  mobile_scanner
   screen_retriever_linux
   url_launcher_linux
   window_manager

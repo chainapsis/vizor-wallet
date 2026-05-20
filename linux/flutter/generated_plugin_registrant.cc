@@ -8,6 +8,7 @@
 
 #include <desktop_window_bootstrap/desktop_window_bootstrap_plugin.h>
 #include <flutter_secure_storage_linux/flutter_secure_storage_linux_plugin.h>
+#include <mobile_scanner/mobile_scanner_plugin.h>
 #include <screen_retriever_linux/screen_retriever_linux_plugin.h>
 #include <url_launcher_linux/url_launcher_plugin.h>
 #include <window_manager/window_manager_plugin.h>
@@ -19,6 +20,9 @@ void fl_register_plugins(FlPluginRegistry* registry) {
   g_autoptr(FlPluginRegistrar) flutter_secure_storage_linux_registrar =
       fl_plugin_registry_get_registrar_for_plugin(registry, "FlutterSecureStorageLinuxPlugin");
   flutter_secure_storage_linux_plugin_register_with_registrar(flutter_secure_storage_linux_registrar);
+  g_autoptr(FlPluginRegistrar) mobile_scanner_registrar =
+      fl_plugin_registry_get_registrar_for_plugin(registry, "MobileScannerPlugin");
+  mobile_scanner_plugin_register_with_registrar(mobile_scanner_registrar);
   g_autoptr(FlPluginRegistrar) screen_retriever_linux_registrar =
       fl_plugin_registry_get_registrar_for_plugin(registry, "ScreenRetrieverLinuxPlugin");
   screen_retriever_linux_plugin_register_with_registrar(screen_retriever_linux_registrar);

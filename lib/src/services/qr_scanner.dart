@@ -18,7 +18,7 @@ CameraFacing get _defaultFacing =>
 
 CameraFacing get defaultQrScannerFacing => _defaultFacing;
 
-/// QR scanner abstraction. Uses mobile_scanner on macOS/iOS/Android.
+/// QR scanner abstraction. Uses mobile_scanner on mobile and desktop.
 class QrScanner {
   QrScanner._();
 
@@ -27,7 +27,10 @@ class QrScanner {
   static const scanWindowUpdateThreshold = 8.0;
 
   static bool get isAvailable =>
-      Platform.isIOS || Platform.isAndroid || Platform.isMacOS;
+      Platform.isIOS ||
+      Platform.isAndroid ||
+      Platform.isLinux ||
+      Platform.isMacOS;
 
   static Rect? scanWindowFor(Size layoutSize) {
     if (!layoutSize.width.isFinite ||
