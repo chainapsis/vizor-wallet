@@ -2491,7 +2491,7 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "blake2b_simd",
@@ -2516,6 +2516,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sinsemilla",
  "subtle",
  "thiserror 2.0.18",
  "tokio",

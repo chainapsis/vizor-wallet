@@ -7,7 +7,7 @@ use subtle::CtOption;
 
 use orchard::builder::{Builder, BundleType};
 use orchard::keys::FullViewingKey;
-use orchard::note::{ExtractedNoteCommitment, RandomSeed, Rho};
+use orchard::note::{RandomSeed, Rho};
 use orchard::pczt::Zip32Derivation;
 use orchard::tree::{MerkleHashOrchard, MerklePath};
 use orchard::value::NoteValue;
@@ -23,6 +23,7 @@ const MAX_PCZT_LAYOUT_ATTEMPTS: usize = 32;
 const ZIP32_MAINNET_COIN_TYPE: u32 = 133;
 
 use crate::governance;
+use crate::padding::synthetic_padding_note_parts;
 use crate::types::{
     validate_notes, validate_round_params, GovernancePczt, NoteInfo, VotingError, VotingRoundParams,
 };
@@ -247,23 +248,20 @@ pub fn build_governance_pczt(
     }
 
     // Padded note generation (also collect rho+rseed for ZCA-74 randomness threading).
-    // These must match the delegation circuit builder exactly: unused note slots
-    // are zero-value notes at address index 1000+i.
+    // These must match the delegation circuit builder's synthetic padding slots.
     let mut padded_cmx: Vec<Vec<u8>> = Vec::new();
     let mut dummy_nullifiers: Vec<Vec<u8>> = Vec::new();
     let mut padded_note_secrets: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
     let n_real = notes.len();
     if n_real < 5 {
         for i in n_real..5 {
-            let pad_addr = fvk.address_at(1000u32 + i as u32, Scope::External);
             let rho = random_rho(&mut rng);
-            let (pad_note, rseed_bytes) = make_note(pad_addr, NoteValue::ZERO, rho, &mut rng)?;
-            let cmx: ExtractedNoteCommitment = pad_note.commitment().into();
-            let real_nf = pad_note.nullifier(&fvk);
-            let gov_null = governance::derive_gov_nullifier(nk_bytes, &dom, &real_nf.to_bytes())?;
-            padded_cmx.push(cmx.to_bytes().to_vec());
+            let (rseed, rseed_bytes) = random_rseed(&mut rng, &rho);
+            let parts = synthetic_padding_note_parts(&fvk, i, rho, rseed)?;
+            let gov_null = governance::derive_gov_nullifier(nk_bytes, &dom, &parts.nullifier)?;
+            padded_cmx.push(parts.cmx.to_vec());
             gov_nullifiers.push(gov_null);
-            dummy_nullifiers.push(real_nf.to_bytes().to_vec());
+            dummy_nullifiers.push(parts.nullifier.to_vec());
             // Store rho + rseed for this padded note so Phase 2 can reconstruct it
             let rho_bytes: [u8; 32] = rho.to_bytes();
             padded_note_secrets.push((rho_bytes.to_vec(), rseed_bytes.to_vec()));
@@ -860,7 +858,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_governance_pczt_padded_slots_match_circuit_zero_value_notes() {
+    fn test_build_governance_pczt_padded_slots_match_synthetic_circuit_slots() {
         let note = mock_note();
         let params = mock_params();
         let fvk_bytes = mock_fvk_bytes();
@@ -890,20 +888,16 @@ mod tests {
 
         for (i_pad, (rho_bytes, rseed_bytes)) in result.padded_note_secrets.iter().enumerate() {
             let i_slot = 1 + i_pad;
-            let pad_addr = fvk.address_at((1000 + i_slot) as u32, Scope::External);
             let rho_arr: [u8; 32] = rho_bytes.as_slice().try_into().unwrap();
             let rseed_arr: [u8; 32] = rseed_bytes.as_slice().try_into().unwrap();
             let rho = Rho::from_bytes(&rho_arr).unwrap();
             let rseed = RandomSeed::from_bytes(rseed_arr, &rho).unwrap();
-            let pad_note =
-                orchard::Note::from_parts(pad_addr, NoteValue::ZERO, rho, rseed).unwrap();
-            let cmx: ExtractedNoteCommitment = pad_note.commitment().into();
-            let nf = pad_note.nullifier(&fvk);
+            let parts = synthetic_padding_note_parts(&fvk, i_slot, rho, rseed).unwrap();
             let gov_null =
-                crate::governance::derive_gov_nullifier(nk_bytes, &dom, &nf.to_bytes()).unwrap();
+                crate::governance::derive_gov_nullifier(nk_bytes, &dom, &parts.nullifier).unwrap();
 
-            assert_eq!(result.padded_cmx[i_pad], cmx.to_bytes().to_vec());
-            assert_eq!(result.dummy_nullifiers[i_pad], nf.to_bytes().to_vec());
+            assert_eq!(result.padded_cmx[i_pad], parts.cmx.to_vec());
+            assert_eq!(result.dummy_nullifiers[i_pad], parts.nullifier.to_vec());
             assert_eq!(result.gov_nullifiers[i_slot], gov_null);
         }
 

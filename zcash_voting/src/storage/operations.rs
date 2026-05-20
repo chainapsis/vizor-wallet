@@ -9,15 +9,15 @@ use std::collections::HashMap;
 
 use ff::PrimeField;
 use orchard::{
-    keys::{FullViewingKey, Scope},
-    note::{Note, RandomSeed, Rho},
-    value::NoteValue,
+    keys::FullViewingKey,
+    note::{RandomSeed, Rho},
 };
 use pasta_curves::pallas;
 use voting_circuits::delegation::ImtProofData;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::Network;
 
+use crate::padding::synthetic_padding_note_parts;
 use crate::storage::queries;
 use crate::storage::{
     KeystoneSignatureRecord, RoundPhase, RoundState, RoundSummary, VoteRecord, VotingDb,
@@ -88,13 +88,8 @@ fn nullifier_imt_root_to_base(bytes: &[u8]) -> Result<pallas::Base, VotingError>
     })
 }
 
-/// Derive the padded-slot nullifiers the way the delegation circuit builder
-/// does: `Note::from_parts(fvk.address_at(1000+i, External), NoteValue::ZERO,
-/// rho, rseed)` then `note.nullifier(&fvk)`.
-///
-/// The `dummy_nullifiers` DB column is populated from these same zero-value
-/// padded notes. This helper recomputes from the stored rho/rseed pairs so PIR
-/// precompute and proof generation share the exact circuit-side derivation.
+/// Derive padded-slot nullifiers with the same synthetic padding points used by
+/// the delegation circuit builder.
 #[cfg(feature = "client-pir")]
 fn padded_nullifiers_for_circuit(
     notes: &[NoteInfo],
@@ -137,7 +132,6 @@ fn padded_nullifiers_for_circuit(
     let mut out = Vec::with_capacity(padded_secrets.len());
     for (i_pad, (rho_bytes, rseed_bytes)) in padded_secrets.iter().enumerate() {
         let i_slot = n_real + i_pad;
-        let pad_addr = fvk.address_at((1000 + i_slot) as u32, Scope::External);
         let rho_arr: [u8; 32] =
             rho_bytes
                 .as_slice()
@@ -166,11 +160,11 @@ fn padded_nullifiers_for_circuit(
                 message: format!("padded[{i_pad}] rseed is not valid for the stored rho"),
             }
         })?;
-        let pad_note: Note = Option::from(Note::from_parts(pad_addr, NoteValue::ZERO, rho, rseed))
-            .ok_or_else(|| VotingError::Internal {
-                message: format!("padded[{i_pad}] note construction failed"),
-            })?;
-        out.push(pad_note.nullifier(&fvk).to_bytes().to_vec());
+        out.push(
+            synthetic_padding_note_parts(&fvk, i_slot, rho, rseed)?
+                .nullifier
+                .to_vec(),
+        );
     }
     Ok(out)
 }
@@ -1529,6 +1523,75 @@ mod tests {
         };
 
         assert!(err.to_string().contains("rseed_signed"), "{err}");
+    }
+
+    #[cfg(feature = "client-pir")]
+    #[test]
+    fn test_padded_pir_nullifiers_match_persisted_dummy_nullifiers() {
+        use orchard::{
+            keys::{FullViewingKey, SpendingKey},
+            note::Rho,
+            value::NoteValue,
+        };
+        use rand::rngs::OsRng;
+        use zcash_keys::keys::UnifiedSpendingKey;
+        use zcash_protocol::consensus::TEST_NETWORK;
+        use zip32::{AccountId, Scope};
+
+        let seed = [0x42u8; 32];
+        let account = AccountId::try_from(0u32).unwrap();
+        let usk = UnifiedSpendingKey::from_seed(&TEST_NETWORK, &seed, account).unwrap();
+        let ufvk = usk.to_unified_full_viewing_key();
+        let fvk = ufvk.orchard().unwrap().clone();
+        let address = fvk.address_at(0u32, Scope::External);
+
+        let mut rng = OsRng;
+        let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None);
+        let note = orchard::Note::new(
+            address,
+            NoteValue::from_raw(13_000_000),
+            Rho::from_nf_old(parent_note.nullifier(&fvk)),
+            &mut rng,
+        );
+        let note_info =
+            NoteInfo::from_orchard_note(&note, 7, Scope::External, &ufvk, &TEST_NETWORK).unwrap();
+
+        let db = test_db();
+        db.init_round(&test_params(), None).unwrap();
+        db.setup_bundles(ROUND_ID, &[note_info.clone()]).unwrap();
+
+        let hotkey_sk = SpendingKey::from_bytes([0x43; 32]).expect("valid spending key");
+        let hotkey_fvk = FullViewingKey::from(&hotkey_sk);
+        let hotkey_raw_address = hotkey_fvk
+            .address_at(0u32, Scope::External)
+            .to_raw_address_bytes()
+            .to_vec();
+        let seed_fingerprint = [0x42u8; 32];
+
+        let result = db
+            .build_governance_pczt(
+                ROUND_ID,
+                0,
+                &[note_info.clone()],
+                &fvk.to_bytes().to_vec(),
+                &hotkey_raw_address,
+                0xC8E71055,
+                1,
+                &seed_fingerprint,
+                0,
+                "test-round",
+                0,
+            )
+            .unwrap();
+
+        let conn = db.conn();
+        let stored_dummy = queries::load_dummy_nullifiers(&conn, ROUND_ID, W, 0).unwrap();
+        let padded_secrets = queries::load_padded_note_secrets(&conn, ROUND_ID, W, 0).unwrap();
+        let pir_nullifiers =
+            padded_nullifiers_for_circuit(&[note_info], &padded_secrets, 0).unwrap();
+
+        assert_eq!(stored_dummy, result.dummy_nullifiers);
+        assert_eq!(pir_nullifiers, result.dummy_nullifiers);
     }
 
     #[test]
