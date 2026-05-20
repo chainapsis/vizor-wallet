@@ -6,7 +6,9 @@ project(runner LANGUAGES CXX)
 # the on-disk name of your application.
 set(APP_IDENTIFIER "vizor")
 set(APP_DISPLAY_NAME "Vizor")
-set(BINARY_NAME "${APP_IDENTIFIER}")
+# Flutter tool reads BINARY_NAME without evaluating CMake variable expansion
+# when launching `flutter run`, so keep the default executable name literal.
+set(BINARY_NAME "vizor")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
 set(APPLICATION_ID "app.keplr.${APP_IDENTIFIER}")
