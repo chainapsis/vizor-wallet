@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -8,6 +10,7 @@ import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'src/app_bootstrap.dart';
 import 'src/core/layout/app_layout.dart';
 import 'src/core/motion/onboarding_motion.dart';
+import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
 import 'src/core/widgets/network_fallback_toast.dart';
@@ -591,27 +594,43 @@ class ZcashWalletApp extends ConsumerWidget {
           // (buttons, TextFields) win the gesture arena first, keeping
           // focused buttons focused when re-clicked.
           child: _RpcEndpointFailoverToastListener(
-            child: DesktopWindowTitlebarSafeArea(
-              child: GestureDetector(
-                onTap: () {
-                  // Leaf-only: skip when the primary focus is a
-                  // `FocusScopeNode` rather than a concrete `FocusNode`.
-                  // Unfocusing the scope itself strips the scope's
-                  // "most-recently-focused child" memory, which leaves the
-                  // next Tab with no deterministic starting point.
-                  final primary = FocusManager.instance.primaryFocus;
-                  if (primary != null && primary is! FocusScopeNode) {
-                    primary.unfocus();
-                  }
-                },
-                behavior: HitTestBehavior.translucent,
-                child: child!,
+            child: _LinuxOpaqueWindowBackground(
+              child: DesktopWindowTitlebarSafeArea(
+                child: GestureDetector(
+                  onTap: () {
+                    // Leaf-only: skip when the primary focus is a
+                    // `FocusScopeNode` rather than a concrete `FocusNode`.
+                    // Unfocusing the scope itself strips the scope's
+                    // "most-recently-focused child" memory, which leaves the
+                    // next Tab with no deterministic starting point.
+                    final primary = FocusManager.instance.primaryFocus;
+                    if (primary != null && primary is! FocusScopeNode) {
+                      primary.unfocus();
+                    }
+                  },
+                  behavior: HitTestBehavior.translucent,
+                  child: child!,
+                ),
               ),
             ),
           ),
         );
       },
     );
+  }
+}
+
+class _LinuxOpaqueWindowBackground extends StatelessWidget {
+  const _LinuxOpaqueWindowBackground({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.linux) {
+      return child;
+    }
+    return ColoredBox(color: context.colors.background.ground, child: child);
   }
 }
 
