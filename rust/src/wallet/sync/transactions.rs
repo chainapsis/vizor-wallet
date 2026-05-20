@@ -97,15 +97,11 @@ pub fn get_next_available_address(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
+    address_request: AddressRequestKind,
 ) -> Result<String, String> {
-    use zcash_keys::keys::{ReceiverRequirement, UnifiedAddressRequest};
     let account_id = parse_account_uuid(account_uuid)?;
-    let req = UnifiedAddressRequest::custom(
-        ReceiverRequirement::Require,
-        ReceiverRequirement::Require,
-        ReceiverRequirement::Omit,
-    )
-    .map_err(|_| "bad request")?;
+    let req = address_request.to_unified_address_request()?;
+
     let (ua, _) = with_wallet_db_write_lock("transactions.get_next_available_address", || {
         let mut db = open_wallet_db(db_path, network)?;
         db.get_next_available_address(account_id, req)
@@ -113,6 +109,46 @@ pub fn get_next_available_address(
             .ok_or_else(|| "No address available".to_string())
     })?;
     Ok(ua.encode(&network))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AddressRequestKind {
+    Shielded,
+    Orchard,
+}
+
+pub fn parse_address_request_kind(request: &str) -> Result<AddressRequestKind, String> {
+    match request {
+        "shielded" => Ok(AddressRequestKind::Shielded),
+        "orchard" => Ok(AddressRequestKind::Orchard),
+        _ => Err(format!(
+            "Unsupported address request '{request}'. Expected 'shielded' or 'orchard'."
+        )),
+    }
+}
+
+impl AddressRequestKind {
+    fn to_unified_address_request(self) -> Result<zcash_keys::keys::UnifiedAddressRequest, String> {
+        match self {
+            AddressRequestKind::Shielded => shielded_address_request(),
+            AddressRequestKind::Orchard => Ok(orchard_address_request()),
+        }
+    }
+}
+
+fn shielded_address_request() -> Result<zcash_keys::keys::UnifiedAddressRequest, String> {
+    use zcash_keys::keys::{ReceiverRequirement, UnifiedAddressRequest};
+
+    UnifiedAddressRequest::custom(
+        ReceiverRequirement::Require,
+        ReceiverRequirement::Require,
+        ReceiverRequirement::Omit,
+    )
+    .map_err(|_| "bad shielded address request".to_string())
+}
+
+fn orchard_address_request() -> zcash_keys::keys::UnifiedAddressRequest {
+    zcash_keys::keys::UnifiedAddressRequest::ORCHARD
 }
 
 // ======================== Transaction Enhancement Requests ========================

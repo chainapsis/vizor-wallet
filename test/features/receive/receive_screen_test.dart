@@ -32,7 +32,7 @@ void main() {
     expect(_findAppIcon(AppIcons.renew), findsOneWidget);
   });
 
-  testWidgets('hides shielded renew button for hardware accounts', (
+  testWidgets('shows shielded renew button for hardware accounts', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -44,7 +44,32 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(_findAppIcon(AppIcons.renew), findsNothing);
+    expect(_findAppIcon(AppIcons.renew), findsOneWidget);
+  });
+
+  testWidgets('renews shielded address for hardware accounts', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    late _RecordingReceiveAddressService service;
+    await tester.pumpWidget(
+      _receiveHarness(
+        bootstrap: _hardwareBootstrap,
+        receiveAddressService: (ref) {
+          service = _RecordingReceiveAddressService(ref);
+          return service;
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(_findAppIcon(AppIcons.renew));
+    await tester.pump();
+
+    expect(service.renewedAccountUuid, 'account-1');
   });
 
   testWidgets('uses Keystone shielded help copy for hardware accounts', (
@@ -65,11 +90,11 @@ void main() {
     expect(find.text('Shielded Address'), findsOneWidget);
     expect(
       find.text(
-        "Keystone accounts use one fixed shielded address, so Renew isn't available.",
+        'A new Zcash Shielded address is generated only when you click the Renew button.',
       ),
       findsOneWidget,
     );
-    expect(find.textContaining('Renew button'), findsNothing);
+    expect(find.textContaining('fixed shielded address'), findsNothing);
   });
 
   testWidgets('receive info modal does not block sidebar navigation', (
@@ -284,6 +309,8 @@ final _hardwareBootstrap = AppBootstrapState(
 
 const _shieldedAddress =
     'u1testshieldedaddress000000000000000000000000000000000000000000000000000';
+const _renewedShieldedAddress =
+    'u1testrenewedshieldedaddress0000000000000000000000000000000000000000000';
 const _accountOneAddress = 'u1accountone-stale';
 const _accountTwoAddress = 'u1accounttwo-current';
 
@@ -311,6 +338,18 @@ class _FakeReceiveAddressService extends ReceiveAddressService {
   @override
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     return _shieldedAddress;
+  }
+}
+
+class _RecordingReceiveAddressService extends _FakeReceiveAddressService {
+  _RecordingReceiveAddressService(super.ref);
+
+  String? renewedAccountUuid;
+
+  @override
+  Future<String> renewShieldedAddress({required String accountUuid}) async {
+    renewedAccountUuid = accountUuid;
+    return _renewedShieldedAddress;
   }
 }
 

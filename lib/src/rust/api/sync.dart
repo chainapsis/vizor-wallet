@@ -354,10 +354,12 @@ Future<String> getNextAvailableAddress({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required String addressRequest,
 }) => RustLib.instance.api.crateApiSyncGetNextAvailableAddress(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+  addressRequest: addressRequest,
 );
 
 Future<List<TxDataRequest>> getTransactionDataRequests({

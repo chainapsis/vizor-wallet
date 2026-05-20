@@ -878,10 +878,12 @@ pub fn get_next_available_address(
     db_path: String,
     network: String,
     account_uuid: String,
+    address_request: String,
 ) -> Result<String, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        wallet_sync::get_next_available_address(&db_path, network, &account_uuid)
+        let address_request = wallet_sync::parse_address_request_kind(&address_request)?;
+        wallet_sync::get_next_available_address(&db_path, network, &account_uuid, address_request)
     })
 }
 
