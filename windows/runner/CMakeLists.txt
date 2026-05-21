@@ -32,6 +32,18 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 
+if(DEFINED ENV{VIZOR_UPDATE_FEED_PUBLIC_KEY_B64})
+  target_compile_definitions(${BINARY_NAME} PRIVATE "VIZOR_UPDATE_FEED_PUBLIC_KEY_B64=\"$ENV{VIZOR_UPDATE_FEED_PUBLIC_KEY_B64}\"")
+else()
+  target_compile_definitions(${BINARY_NAME} PRIVATE "VIZOR_UPDATE_FEED_PUBLIC_KEY_B64=\"\"")
+endif()
+if(DEFINED ENV{VIZOR_UPDATE_GITHUB_REPO_URL})
+  target_compile_definitions(${BINARY_NAME} PRIVATE "VIZOR_UPDATE_GITHUB_REPO_URL=\"$ENV{VIZOR_UPDATE_GITHUB_REPO_URL}\"")
+endif()
+if(DEFINED ENV{VIZOR_UPDATE_RELEASE_BASE_URL})
+  target_compile_definitions(${BINARY_NAME} PRIVATE "VIZOR_UPDATE_RELEASE_BASE_URL=\"$ENV{VIZOR_UPDATE_RELEASE_BASE_URL}\"")
+endif()
+
 set(VELOPACK_LIBC_VERSION "0.0.1589-ga2c5a97")
 set(VELOPACK_LIBC_SHA256 "6c0cf30be1ff8e37d904458c9c00cc61a5276521fc708cfebbe96615777da38c")
 set(VELOPACK_LIBC_URL "https://github.com/velopack/velopack/releases/download/${VELOPACK_LIBC_VERSION}/velopack_libc_${VELOPACK_LIBC_VERSION}.zip")
@@ -62,9 +74,12 @@ set(VELOPACK_LIBC_IMPLIB "${VELOPACK_LIBC_ROOT}/lib/velopack_libc_win_x64_msvc.d
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "advapi32.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "bcrypt.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "crypt32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "shell32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "version.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "winhttp.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "${VELOPACK_LIBC_IMPLIB}")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 target_include_directories(${BINARY_NAME} PRIVATE "${VELOPACK_LIBC_ROOT}/include")
