@@ -321,6 +321,9 @@ if (Test-Path $cmakeCache) {
 }
 
 & $fvmExe @flutterBuildArgs
+if ($LASTEXITCODE -ne 0) {
+  throw "Flutter Windows release build failed with exit code $LASTEXITCODE."
+}
 
 if (-not (Test-Path $mainExe)) {
   throw "Windows release build did not produce $mainExe"
@@ -346,6 +349,9 @@ if ($Msi) {
 }
 
 & $vpkExe @packArgs
+if ($LASTEXITCODE -ne 0) {
+  throw "Velopack packaging failed with exit code $LASTEXITCODE."
+}
 
 if (-not [string]::IsNullOrWhiteSpace($UpdateFeedSigningKey)) {
   $releaseFeedPath = Join-Path $resolvedOutputDir "releases.$Channel.json"
