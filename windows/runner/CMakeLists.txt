@@ -72,7 +72,7 @@ target_include_directories(${BINARY_NAME} PRIVATE "${VELOPACK_LIBC_ROOT}/include
 add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
     "${VELOPACK_LIBC_DLL}"
-    "$<TARGET_FILE_DIR:${BINARY_NAME}>"
+    "$<TARGET_FILE_DIR:${BINARY_NAME}>/velopack_libc.dll"
 )
 
 # Run the Flutter tool portions of the build. This must not be removed.
