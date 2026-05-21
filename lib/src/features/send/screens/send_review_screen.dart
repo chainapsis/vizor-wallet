@@ -37,6 +37,7 @@ class SendReviewArgs {
     required this.feeZatoshi,
     required this.needsSaplingParams,
     this.memo,
+    this.resolvedName,
   });
 
   final BigInt proposalId;
@@ -48,8 +49,10 @@ class SendReviewArgs {
   final BigInt feeZatoshi;
   final bool needsSaplingParams;
   final String? memo;
+  final String? resolvedName;
 
   bool get isShielded => addressType == 'unified' || addressType == 'sapling';
+  String get recipientLabel => resolvedName != null ? 'To: $resolvedName' : 'To';
 }
 
 class KeystoneBroadcastArgs {
@@ -578,7 +581,7 @@ class _SendReviewReceiptCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _SendReviewFieldTitle(
-                  label: 'To',
+                  label: args.recipientLabel,
                   rightLabel: _SendReviewCopyAction(onTap: onCopyAddress),
                 ),
                 const SizedBox(height: AppSpacing.xs),

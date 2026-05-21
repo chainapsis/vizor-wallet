@@ -561,7 +561,7 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                                       widget.args.amountZatoshi,
                                     ),
                                     primaryBlock: TransactionReceiptBlockData(
-                                      title: 'To',
+                                      title: widget.args.recipientLabel,
                                       child: TransactionReceiptAddressText(
                                         address: widget.args.address,
                                         highlightEdges: widget.args.isShielded,

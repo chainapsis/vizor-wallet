@@ -712,6 +712,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
           addressType: _addressType,
           amountZatoshi: amountZatoshi,
           feeZatoshi: proposal.feeZatoshi,
+          resolvedName: _resolvedName,
           memo: memo.isNotEmpty ? memo : null,
           needsSaplingParams: proposal.needsSaplingParams,
         ),
