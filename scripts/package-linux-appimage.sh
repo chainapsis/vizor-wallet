@@ -303,7 +303,7 @@ OUTPUT_BASENAME="$(basename "$OUTPUT")"
     "$APPDIR"
     "$OUTPUT_BASENAME"
   )
-  "$APPIMAGETOOL_BIN" "${appimagetool_args[@]}"
+  ARCH="$ARCH" "$APPIMAGETOOL_BIN" "${appimagetool_args[@]}"
 )
 
 chmod +x "$OUTPUT"

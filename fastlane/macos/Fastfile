@@ -955,26 +955,6 @@ platform :mac do
     sh("xcrun stapler staple #{shell_escape(metadata[:dmg_path])}")
   end
 
-  private_lane :upload_github_release do |options|
-    flavors = options[:flavors] || macos_release_flavors
-    metadata_items = flavors.map { |flavor| release_metadata(flavor: flavor) }
-    metadata = metadata_items.first
-    extra_assets = Array((lane_context[:SPARKLE_RELEASE_ASSETS] || [])).compact
-    assets = metadata_items.map { |item| item[:dmg_path] } + extra_assets
-
-    set_github_release(
-      repository_name: ENV.fetch("RELEASE_REPOSITORY"),
-      api_bearer: ENV.fetch("GITHUB_TOKEN"),
-      tag_name: metadata[:tag],
-      name: metadata[:release_name],
-      commitish: ENV.fetch("RELEASE_COMMITISH"),
-      is_draft: false,
-      is_prerelease: metadata.fetch(:is_prerelease),
-      is_generate_release_notes: true,
-      upload_assets: assets
-    )
-  end
-
   desc "Build the macOS release app bundle"
   lane :build do |options|
     metadata = release_metadata(flavor: single_macos_release_flavor(options))
@@ -1041,7 +1021,7 @@ platform :mac do
     end
   end
 
-  desc "Build, notarize, package, and upload the macOS release"
+  desc "Build, notarize, and package macOS release assets"
   lane :release do
     flavors = macos_release_flavors
     metadata_items = flavors.map { |flavor| release_metadata(flavor: flavor) }
@@ -1061,6 +1041,6 @@ platform :mac do
       lane_context[:SPARKLE_RELEASE_ASSETS] += collect_sparkle_assets!(metadata) if sparkle_enabled_for_release?(metadata)
     end
 
-    upload_github_release(flavors: flavors)
+    UI.message("macOS release assets are ready under #{metadata_items.first[:dist_dir]}")
   end
 end

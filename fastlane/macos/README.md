@@ -18,7 +18,10 @@ bundle exec fastlane mac release
 4. flavor별 `.dmg` 생성
 5. flavor별 `.dmg` Developer ID code sign + notarize + staple
 6. stable release면 flavor별 Sparkle appcast/delta 생성
-7. GitHub Release에 모든 flavor/Sparkle asset 업로드
+7. 산출물을 `dist/macos` 아래에 준비
+
+GitHub Release 생성, asset 업로드, draft publish는 deployment repo의
+`Release` workflow가 담당합니다.
 
 Flavor별 앱 이름, bundle id, 기본 네트워크, macOS 앱 아이콘은
 `fastlane/macos/Fastfile`의 `MACOS_RELEASE_FLAVOR_CONFIGS`에서 선택합니다.
@@ -43,7 +46,6 @@ VIZOR_MACOS_FLAVORS=mainnet,testnet bundle exec fastlane mac release
 - `APP_STORE_CONNECT_API_KEY_JSON`
 - `GITHUB_TOKEN`
 - `RELEASE_REPOSITORY`
-- `RELEASE_COMMITISH`
 - `RELEASE_BUILD_NUMBER`
 
 태그 기반 워크플로우가 아니면 아래도 필요합니다.
@@ -78,7 +80,7 @@ stable release 태그(`release/v1.2.3`)에서는 아래도 필요합니다. prer
 - `MATCH_READONLY=false`로 돌리면 fastlane은 `match` write 모드로 동작합니다. 이때는 `APP_STORE_CONNECT_API_KEY_JSON`이 준비돼 있어야 하며, git commit identity는 deployment workflow가 설정합니다.
 - `MATCH_READONLY=false`일 때 testnet Bundle ID(`com.keplr.vizor.testnet`)가 없으면 fastlane이 App Store Connect API로 먼저 생성한 뒤 Developer ID provisioning profile을 생성합니다.
 - release display version은 `RELEASE_TAG`에서 파싱하고, build number는 `RELEASE_BUILD_NUMBER`만 사용합니다. `pubspec.yaml`의 `version`은 macOS release 산출물 버전으로 사용하지 않습니다.
-- GitHub Release asset 파일명에는 버전을 넣지 않습니다. mainnet은 `Vizor-macos.dmg`, testnet은 `Vizor-Testnet-macos.dmg`를 사용합니다.
+- GitHub Release asset 파일명에는 버전을 넣지 않습니다. mainnet은 `Vizor-macos.dmg`, testnet은 `Vizor-Testnet-macos.dmg`를 사용합니다. 이 lane은 asset을 업로드하지 않고 deployment workflow가 draft release에 업로드합니다.
 - 랜딩 페이지의 최신 macOS 다운로드 링크는 `https://github.com/chainapsis/vizor-wallet/releases/latest/download/Vizor-macos.dmg`처럼 고정 asset 이름을 가리킵니다.
 - `release/v1.2.3-rc.0` 또는 `release/v1.2.3-internal.1` 같은 prerelease 태그는 release DMG를 만들지만 Sparkle appcast/delta 업로드는 건너뜁니다.
 - `release/v1.2.3-internal.1`은 내부 테스트용 public GitHub prerelease입니다. DMG asset은 업로드되지만 `appcast.xml`, `appcast-testnet.xml`, `.delta` asset은 업로드되지 않아 기존 앱의 Sparkle 자동 업데이트 대상이 되지 않습니다.
