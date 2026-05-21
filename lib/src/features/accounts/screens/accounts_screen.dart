@@ -21,6 +21,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../../providers/zns_provider.dart';
 import '../widgets/account_name_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';
 import '../widgets/account_remove_modal.dart';
@@ -71,6 +72,19 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     await ref.read(accountProvider.notifier).renameAccount(uuid, name);
     if (!mounted) return;
     _closeModal();
+    unawaited(_checkZnsEasterEgg(uuid, name));
+  }
+
+  Future<void> _checkZnsEasterEgg(String uuid, String name) async {
+    final owned = await ref.read(znsResolverProvider).isOwnedByAccount(name, uuid);
+    if (!mounted || !owned) return;
+    final account = ref.read(accountProvider).value?.accounts
+        .where((a) => a.uuid == uuid)
+        .firstOrNull;
+    if (account == null) return;
+    final currentId = account.profilePictureId;
+    if (currentId.startsWith('zns-')) return;
+    await ref.read(accountProvider.notifier).updateProfilePicture(uuid, 'zns-$currentId');
   }
 
   Future<void> _updateProfilePicture(

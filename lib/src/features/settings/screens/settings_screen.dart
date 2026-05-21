@@ -13,8 +13,11 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import 'dart:async';
+
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/zns_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 import '../../accounts/widgets/account_name_modal.dart';
 import '../../accounts/widgets/account_profile_picture_modal.dart';
@@ -54,6 +57,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await ref.read(accountProvider.notifier).renameAccount(accountUuid, name);
     if (!mounted) return;
     _closeModal();
+    unawaited(_checkZnsEasterEgg(accountUuid, name));
+  }
+
+  Future<void> _checkZnsEasterEgg(String accountUuid, String name) async {
+    final owned = await ref.read(znsResolverProvider).isOwnedByAccount(name, accountUuid);
+    if (!mounted || !owned) return;
+    final account = ref.read(accountProvider).value?.activeAccount;
+    if (account == null) return;
+    final currentId = account.profilePictureId;
+    if (currentId.startsWith('zns-')) return;
+    await ref.read(accountProvider.notifier).updateProfilePicture(accountUuid, 'zns-$currentId');
   }
 
   Future<void> _updateTheme(ThemeMode mode) async {
