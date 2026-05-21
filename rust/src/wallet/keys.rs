@@ -616,6 +616,43 @@ pub fn wallet_exists(db_path: &str) -> bool {
     Path::new(db_path).exists()
 }
 
+pub fn is_address_from_account(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    address: &str,
+) -> Result<bool, String> {
+    use zcash_client_backend::encoding::AddressCodec;
+    use zcash_keys::address::UnifiedAddress;
+
+    let account_id = parse_account_uuid(account_uuid)?;
+    let db = open_wallet_db_for_read_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)?;
+
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("Failed to get account: {e}"))?
+        .ok_or_else(|| "Account not found".to_string())?;
+
+    let ufvk = account
+        .ufvk()
+        .ok_or_else(|| "Account has no UFVK".to_string())?;
+
+    let orchard_fvk = match ufvk.orchard() {
+        Some(fvk) => fvk,
+        None => return Ok(false),
+    };
+
+    let ua = UnifiedAddress::decode(&network, address)
+        .map_err(|e| format!("Failed to decode address: {e}"))?;
+
+    let orchard_receiver = match ua.orchard() {
+        Some(r) => r,
+        None => return Ok(false),
+    };
+
+    Ok(orchard_fvk.scope_for_address(orchard_receiver).is_some())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

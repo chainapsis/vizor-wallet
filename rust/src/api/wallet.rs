@@ -252,6 +252,21 @@ pub fn validate_mnemonic(mnemonic: String) -> bool {
     keys::mnemonic_to_seed(&mnemonic).is_ok()
 }
 
+/// Check whether a Unified Address belongs to a given account.
+/// Uses the account's Orchard FVK: extracts the diversifier from the address
+/// and verifies [ivk] × d == pk_d. Returns false if the UA has no Orchard receiver.
+pub fn is_address_from_account(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    address: String,
+) -> Result<bool, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        keys::is_address_from_account(&db_path, network, &account_uuid, &address)
+    })
+}
+
 /// Get the transparent address for a specific account (or first account if uuid is None).
 pub fn get_transparent_address(
     db_path: String,
