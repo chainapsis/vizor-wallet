@@ -241,11 +241,12 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 
   static String? _extractZnsName(String input) {
-    const suffixes = ['.zcash', '.zec'];
-    for (final suffix in suffixes) {
-      if (input.endsWith(suffix)) {
-        final bare = input.substring(0, input.length - suffix.length);
-        return isValidName(bare) ? bare : null;
+    const znsProtocols = ['.zcash', '.zec'];
+    final normalized = input.toLowerCase();
+    for (final protocol in znsProtocols) {
+      if (normalized.endsWith(protocol)) {
+        final normalizedName = normalized.substring(0, normalized.length - protocol.length);
+        return isValidName(normalizedName) ? normalizedName : null;
       }
     }
     return null;
