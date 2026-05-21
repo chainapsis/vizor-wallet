@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/services.dart';
@@ -87,7 +88,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
     final endpointLabel = ref.watch(rpcEndpointProvider).hostPort;
-    final updateState = ref.watch(windowsUpdateProvider);
+    final updateState = Platform.isWindows
+        ? ref.watch(windowsUpdateProvider)
+        : null;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -105,7 +108,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: _themeLabel(themeMode),
-                updateLabel: _updateLabel(updateState),
+                updateLabel: updateState == null
+                    ? null
+                    : _updateLabel(updateState),
                 onSeedPhrase: () => context.push('/settings/secret-passphrase'),
                 onChangePassword: () =>
                     context.push('/settings/change-password'),
@@ -117,7 +122,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ? () => _showModal(_SettingsModalType.profilePicture)
                     : null,
                 onTheme: () => _showModal(_SettingsModalType.theme),
-                onUpdates: () => _showModal(_SettingsModalType.updates),
+                onUpdates: updateState == null
+                    ? null
+                    : () => _showModal(_SettingsModalType.updates),
               ),
             ),
             if (_activeModal != null)
@@ -201,14 +208,14 @@ class _SettingsPane extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
-  final String updateLabel;
+  final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
   final VoidCallback onEndpoint;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
-  final VoidCallback onUpdates;
+  final VoidCallback? onUpdates;
 
   @override
   Widget build(BuildContext context) {
@@ -288,14 +295,14 @@ class _SettingsList extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
-  final String updateLabel;
+  final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
   final VoidCallback onEndpoint;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
-  final VoidCallback onUpdates;
+  final VoidCallback? onUpdates;
 
   @override
   Widget build(BuildContext context) {
@@ -351,13 +358,15 @@ class _SettingsList extends StatelessWidget {
               value: themeLabel,
               onTap: onTheme,
             ),
-            const _SettingsRowDivider(),
-            _SettingsRow(
-              iconName: AppIcons.sync,
-              label: 'Updates',
-              value: updateLabel,
-              onTap: onUpdates,
-            ),
+            if (updateLabel != null && onUpdates != null) ...[
+              const _SettingsRowDivider(),
+              _SettingsRow(
+                iconName: AppIcons.sync,
+                label: 'Updates',
+                value: updateLabel!,
+                onTap: onUpdates,
+              ),
+            ],
           ],
         ),
       ],
