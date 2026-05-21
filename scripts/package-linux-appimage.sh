@@ -24,11 +24,11 @@ Required:
   --app-id <id>             Linux application id, e.g. app.keplr.vizor.
   --app-name <name>         Display name.
   --binary-name <name>      Executable name inside the bundle.
-  --update-info <info>      AppImage update information.
   --sign-key <key-id>       GPG key id for AppImage signing.
 
 Optional:
   --arch <arch>             AppImage architecture. Default: x86_64.
+  --update-info <info>      AppImage update information. Enables zsync output.
   -h, --help                Show this help.
 
 Environment:
@@ -130,7 +130,6 @@ require_value "--output" "$OUTPUT"
 require_value "--app-id" "$APP_ID"
 require_value "--app-name" "$APP_NAME"
 require_value "--binary-name" "$BINARY_NAME"
-require_value "--update-info" "$UPDATE_INFO"
 require_value "--sign-key" "$SIGN_KEY"
 
 BUNDLE_DIR="$(cd "$BUNDLE_DIR" && pwd)"
@@ -293,17 +292,23 @@ rm -f "$OUTPUT" "$OUTPUT.zsync" "$OUTPUT.sha256" "$OUTPUT.asc"
 OUTPUT_BASENAME="$(basename "$OUTPUT")"
 (
   cd "$OUTPUT_DIR"
-  "$APPIMAGETOOL_BIN" \
-    --sign \
-    --sign-key "$SIGN_KEY" \
-    -u "$UPDATE_INFO" \
-    "$APPDIR" \
+  appimagetool_args=(
+    --sign
+    --sign-key "$SIGN_KEY"
+  )
+  if [[ -n "$UPDATE_INFO" ]]; then
+    appimagetool_args+=(-u "$UPDATE_INFO")
+  fi
+  appimagetool_args+=(
+    "$APPDIR"
     "$OUTPUT_BASENAME"
+  )
+  "$APPIMAGETOOL_BIN" "${appimagetool_args[@]}"
 )
 
 chmod +x "$OUTPUT"
 
-if [[ ! -f "$OUTPUT.zsync" ]]; then
+if [[ -n "$UPDATE_INFO" && ! -f "$OUTPUT.zsync" ]]; then
   echo "Expected zsync output at $OUTPUT.zsync" >&2
   exit 1
 fi
@@ -325,6 +330,8 @@ env -u APPIMAGE_EXTRACT_AND_RUN "$OUTPUT" --appimage-signature >/dev/null
 gpg --batch --verify "$OUTPUT.asc" "$OUTPUT"
 
 echo "AppImage written to $OUTPUT"
-echo "zsync written to $OUTPUT.zsync"
+if [[ -n "$UPDATE_INFO" ]]; then
+  echo "zsync written to $OUTPUT.zsync"
+fi
 echo "sha256 written to $OUTPUT.sha256"
 echo "detached signature written to $OUTPUT.asc"

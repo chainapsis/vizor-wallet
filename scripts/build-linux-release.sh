@@ -25,6 +25,11 @@ Options:
 Environment:
   VIZOR_LINUX_FLAVOR             Single flavor when no --flavor is provided.
   VIZOR_LINUX_FLAVORS            Comma-separated flavors when no --flavor is provided.
+  VIZOR_RELEASE_BUILD_NAME       Native build name. Defaults to VIZOR_RELEASE_VERSION.
+  VIZOR_RELEASE_BUILD_NUMBER     Native build number and Dart release build number.
+  VIZOR_RELEASE_ARCH             Release arch used by update metadata.
+  VIZOR_RELEASE_REPOSITORY       owner/name repository for update metadata.
+  VIZOR_UPDATE_CHECK_ENABLED     true only for builds that should check updates.
   FVM_BIN                        fvm executable path. Default: fvm.
 
 Default flavors: mainnet,testnet
@@ -179,15 +184,23 @@ build_flavor() {
     flutter_args=(
       flutter build linux "--$BUILD_MODE"
       --dart-define="ZCASH_DEFAULT_NETWORK=$ZCASH_DEFAULT_NETWORK"
+      --dart-define="VIZOR_RELEASE_FLAVOR=${VIZOR_RELEASE_FLAVOR:-$flavor}"
+      --dart-define="VIZOR_RELEASE_ARCH=${VIZOR_RELEASE_ARCH:-}"
+      --dart-define="VIZOR_RELEASE_REPOSITORY=${VIZOR_RELEASE_REPOSITORY:-}"
+      --dart-define="VIZOR_UPDATE_CHECK_ENABLED=${VIZOR_UPDATE_CHECK_ENABLED:-false}"
     )
     if [[ -n "${VIZOR_RELEASE_VERSION:-}" ]]; then
+      release_build_name="${VIZOR_RELEASE_BUILD_NAME:-$VIZOR_RELEASE_VERSION}"
       flutter_args+=(
         --dart-define="VIZOR_RELEASE_VERSION=$VIZOR_RELEASE_VERSION"
-        --build-name "$VIZOR_RELEASE_VERSION"
+        --build-name "$release_build_name"
       )
     fi
     if [[ -n "${VIZOR_RELEASE_BUILD_NUMBER:-}" ]]; then
-      flutter_args+=(--build-number "$VIZOR_RELEASE_BUILD_NUMBER")
+      flutter_args+=(
+        --dart-define="VIZOR_RELEASE_BUILD_NUMBER=$VIZOR_RELEASE_BUILD_NUMBER"
+        --build-number "$VIZOR_RELEASE_BUILD_NUMBER"
+      )
     fi
     "$FVM_BIN" "${flutter_args[@]}"
   )

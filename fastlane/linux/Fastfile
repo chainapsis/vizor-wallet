@@ -1,6 +1,7 @@
 fastlane_version "2.220.0"
 
 require "fileutils"
+require "json"
 require "tempfile"
 require "tmpdir"
 require_relative "../common/release"
@@ -11,14 +12,16 @@ LINUX_RELEASE_FLAVOR_CONFIGS = {
     artifact_name: "Vizor-linux",
     app_id: "app.keplr.vizor",
     binary_name: "vizor",
-    zcash_default_network: "main"
+    zcash_default_network: "main",
+    update_feed_asset_name: "linux-update.json"
   },
   "testnet" => {
     app_name: "Vizor Testnet",
     artifact_name: "Vizor-Testnet-linux",
     app_id: "app.keplr.vizor.testnet",
     binary_name: "vizor-testnet",
-    zcash_default_network: "test"
+    zcash_default_network: "test",
+    update_feed_asset_name: "linux-update-testnet.json"
   }
 }.freeze
 
@@ -70,11 +73,14 @@ def linux_release_metadata(flavor: "mainnet")
   asset_version = tag_info.fetch(:asset_version)
   build_number = VizorRelease.release_build_number
   arch = linux_release_arch
+  update_enabled = !tag_info.fetch(:is_prerelease)
   dist_dir = File.join(VizorRelease.workspace_root, "dist", "linux")
   appimage_dir = File.join(dist_dir, "appimage")
+  update_dir = File.join(dist_dir, "update", flavor)
   appimage_asset_name = "#{flavor_config.fetch(:artifact_name)}-#{arch}.AppImage"
   appimage_path = File.join(appimage_dir, appimage_asset_name)
   zsync_asset_name = "#{appimage_asset_name}.zsync"
+  update_feed_asset_name = flavor_config.fetch(:update_feed_asset_name)
   release_repository = ENV.fetch("RELEASE_REPOSITORY")
   repository_owner, repository_name = release_repository.split("/", 2)
   UI.user_error!("RELEASE_REPOSITORY must be in owner/name form") if repository_owner.to_s.empty? || repository_name.to_s.empty?
@@ -91,6 +97,7 @@ def linux_release_metadata(flavor: "mainnet")
     asset_version: asset_version,
     is_prerelease: tag_info.fetch(:is_prerelease),
     is_internal: tag_info.fetch(:is_internal),
+    update_enabled: update_enabled,
     build_number: build_number,
     tag: tag,
     release_name: ENV["RELEASE_NAME"] || tag,
@@ -102,7 +109,9 @@ def linux_release_metadata(flavor: "mainnet")
     zsync_path: "#{appimage_path}.zsync",
     sha256_path: "#{appimage_path}.sha256",
     asc_path: "#{appimage_path}.asc",
-    update_info: "gh-releases-zsync|#{repository_owner}|#{repository_name}|latest|#{zsync_asset_name}"
+    update_feed_path: File.join(update_dir, update_feed_asset_name),
+    update_feed_asset_name: update_feed_asset_name,
+    update_info: update_enabled ? "gh-releases-zsync|#{repository_owner}|#{repository_name}|latest|#{zsync_asset_name}" : nil
   }
 end
 
@@ -163,13 +172,18 @@ def linux_import_appimage_gpg_key!
   sh("gpg --batch --list-secret-keys #{VizorRelease.shell_escape(key_id)}")
 end
 
+def linux_update_enabled_for_release?(metadata)
+  metadata.fetch(:update_enabled)
+end
+
 def linux_appimage_assets(metadata)
-  [
+  assets = [
     metadata.fetch(:appimage_path),
-    metadata.fetch(:zsync_path),
     metadata.fetch(:sha256_path),
     metadata.fetch(:asc_path)
   ]
+  assets.insert(1, metadata.fetch(:zsync_path)) if linux_update_enabled_for_release?(metadata)
+  assets
 end
 
 def linux_verify_appimage_outputs!(metadata)
@@ -177,6 +191,65 @@ def linux_verify_appimage_outputs!(metadata)
     UI.user_error!("Missing Linux release asset #{path}") unless File.exist?(path)
   end
   UI.user_error!("AppImage is not executable: #{metadata[:appimage_path]}") unless File.executable?(metadata.fetch(:appimage_path))
+end
+
+def linux_release_page_url(metadata)
+  VizorRelease.github_release_page_url(
+    repository: ENV.fetch("RELEASE_REPOSITORY"),
+    tag: metadata.fetch(:tag)
+  )
+end
+
+def linux_release_download_url(metadata, asset_name)
+  VizorRelease.github_release_download_url(
+    repository: ENV.fetch("RELEASE_REPOSITORY"),
+    tag: metadata.fetch(:tag),
+    asset_name: asset_name
+  )
+end
+
+def linux_update_feed_assets(metadata)
+  return [] unless linux_update_enabled_for_release?(metadata)
+
+  [metadata.fetch(:update_feed_path)]
+end
+
+def linux_release_assets(metadata)
+  linux_appimage_assets(metadata) + linux_update_feed_assets(metadata)
+end
+
+def linux_write_update_feed!(metadata)
+  path = metadata.fetch(:update_feed_path)
+  unless linux_update_enabled_for_release?(metadata)
+    FileUtils.rm_f(path)
+    return
+  end
+
+  linux_verify_appimage_outputs!(metadata)
+
+  asset = {
+    appImage: linux_release_download_url(metadata, metadata.fetch(:appimage_asset_name)),
+    sha256: linux_release_download_url(metadata, File.basename(metadata.fetch(:sha256_path))),
+    signature: linux_release_download_url(metadata, File.basename(metadata.fetch(:asc_path))),
+    zsync: linux_release_download_url(metadata, File.basename(metadata.fetch(:zsync_path)))
+  }
+
+  feed = {
+    schemaVersion: 1,
+    platform: "linux",
+    flavor: metadata.fetch(:flavor),
+    version: metadata.fetch(:version),
+    assetVersion: metadata.fetch(:asset_version),
+    buildNumber: Integer(metadata.fetch(:build_number)),
+    releaseTag: metadata.fetch(:tag),
+    releaseUrl: linux_release_page_url(metadata),
+    assets: {
+      metadata.fetch(:arch) => asset
+    }
+  }
+
+  FileUtils.mkdir_p(File.dirname(path))
+  File.write(path, "#{JSON.pretty_generate(feed)}\n")
 end
 
 platform :linux do
@@ -191,7 +264,12 @@ platform :linux do
     command = [
       "cd #{VizorRelease.shell_escape(VizorRelease.workspace_root)} &&",
       "VIZOR_RELEASE_VERSION=#{VizorRelease.shell_escape(metadata[:asset_version])}",
+      "VIZOR_RELEASE_BUILD_NAME=#{VizorRelease.shell_escape(metadata[:version])}",
       "VIZOR_RELEASE_BUILD_NUMBER=#{VizorRelease.shell_escape(metadata[:build_number])}",
+      "VIZOR_RELEASE_FLAVOR=#{VizorRelease.shell_escape(metadata[:flavor])}",
+      "VIZOR_RELEASE_ARCH=#{VizorRelease.shell_escape(metadata[:arch])}",
+      "VIZOR_RELEASE_REPOSITORY=#{VizorRelease.shell_escape(ENV.fetch("RELEASE_REPOSITORY"))}",
+      "VIZOR_UPDATE_CHECK_ENABLED=#{linux_update_enabled_for_release?(metadata) ? "true" : "false"}",
       "#{VizorRelease.shell_escape(build_script_path)}",
       "--flavor", VizorRelease.shell_escape(metadata[:flavor]),
       "--build-mode", "release",
@@ -217,18 +295,24 @@ platform :linux do
       "--app-name", VizorRelease.shell_escape(metadata[:app_name]),
       "--binary-name", VizorRelease.shell_escape(metadata[:binary_name]),
       "--arch", VizorRelease.shell_escape(metadata[:arch]),
-      "--update-info", VizorRelease.shell_escape(metadata[:update_info]),
       "--sign-key", VizorRelease.shell_escape(ENV.fetch("LINUX_APPIMAGE_GPG_KEY_ID"))
-    ].join(" ")
-    sh(command)
+    ]
+    if linux_update_enabled_for_release?(metadata)
+      command += ["--update-info", VizorRelease.shell_escape(metadata.fetch(:update_info))]
+    end
+    sh(command.join(" "))
     linux_verify_appimage_outputs!(metadata)
+    linux_write_update_feed!(metadata)
   end
 
   private_lane :upload_github_release do |options|
     flavors = options[:flavors] || linux_release_flavors
     metadata_items = flavors.map { |flavor| linux_release_metadata(flavor: flavor) }
     metadata = metadata_items.first
-    assets = metadata_items.flat_map { |item| linux_appimage_assets(item) }
+    assets = metadata_items.flat_map { |item| linux_release_assets(item) }
+    assets.each do |path|
+      UI.user_error!("Missing Linux release asset #{path}") unless File.exist?(path)
+    end
 
     set_github_release(
       repository_name: ENV.fetch("RELEASE_REPOSITORY"),

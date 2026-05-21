@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
@@ -6,6 +8,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:go_router/go_router.dart';
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_bootstrap.dart';
 import 'src/core/layout/app_layout.dart';
@@ -49,6 +52,7 @@ import 'src/features/settings/screens/settings_endpoint_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
+import 'src/providers/linux_update_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
@@ -656,23 +660,25 @@ class ZcashWalletApp extends ConsumerWidget {
           // events over empty regions while descendant GestureDetectors
           // (buttons, TextFields) win the gesture arena first, keeping
           // focused buttons focused when re-clicked.
-          child: _RpcEndpointFailoverToastListener(
-            child: _LinuxOpaqueWindowBackground(
-              child: DesktopWindowTitlebarSafeArea(
-                child: GestureDetector(
-                  onTap: () {
-                    // Leaf-only: skip when the primary focus is a
-                    // `FocusScopeNode` rather than a concrete `FocusNode`.
-                    // Unfocusing the scope itself strips the scope's
-                    // "most-recently-focused child" memory, which leaves the
-                    // next Tab with no deterministic starting point.
-                    final primary = FocusManager.instance.primaryFocus;
-                    if (primary != null && primary is! FocusScopeNode) {
-                      primary.unfocus();
-                    }
-                  },
-                  behavior: HitTestBehavior.translucent,
-                  child: child!,
+          child: _LinuxUpdateNoticeListener(
+            child: _RpcEndpointFailoverToastListener(
+              child: _LinuxOpaqueWindowBackground(
+                child: DesktopWindowTitlebarSafeArea(
+                  child: GestureDetector(
+                    onTap: () {
+                      // Leaf-only: skip when the primary focus is a
+                      // `FocusScopeNode` rather than a concrete `FocusNode`.
+                      // Unfocusing the scope itself strips the scope's
+                      // "most-recently-focused child" memory, which leaves the
+                      // next Tab with no deterministic starting point.
+                      final primary = FocusManager.instance.primaryFocus;
+                      if (primary != null && primary is! FocusScopeNode) {
+                        primary.unfocus();
+                      }
+                    },
+                    behavior: HitTestBehavior.translucent,
+                    child: child!,
+                  ),
                 ),
               ),
             ),
@@ -681,6 +687,52 @@ class ZcashWalletApp extends ConsumerWidget {
       },
     );
   }
+}
+
+class _LinuxUpdateNoticeListener extends ConsumerWidget {
+  const _LinuxUpdateNoticeListener({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<AsyncValue<LinuxUpdateInfo?>>(linuxUpdateProvider, (
+      previous,
+      next,
+    ) {
+      final update = next.asData?.value;
+      if (update == null) return;
+
+      final previousUpdate = previous?.asData?.value;
+      if (previousUpdate?.buildNumber == update.buildNumber) return;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        if (messenger == null) return;
+
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Vizor ${update.assetVersion} is available.'),
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: 'View Release',
+              onPressed: () => unawaited(_openLinuxUpdateRelease(update)),
+            ),
+          ),
+        );
+      });
+    });
+
+    return child;
+  }
+}
+
+Future<void> _openLinuxUpdateRelease(LinuxUpdateInfo update) async {
+  final uri = Uri.tryParse(update.releaseUrl);
+  if (uri == null) return;
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 class _LinuxOpaqueWindowBackground extends StatelessWidget {
