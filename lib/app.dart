@@ -11,8 +11,11 @@ import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 import 'src/app_bootstrap.dart';
 import 'src/core/layout/app_layout.dart';
 import 'src/core/motion/onboarding_motion.dart';
+import 'src/core/theme/app_theme.dart';
 import 'src/core/theme/app_theme_host.dart';
 import 'src/core/theme/legacy_material_theme.dart';
+import 'src/core/widgets/app_button.dart';
+import 'src/core/widgets/app_icon.dart';
 import 'src/core/widgets/network_fallback_toast.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
@@ -602,22 +605,25 @@ class ZcashWalletApp extends ConsumerWidget {
           // (buttons, TextFields) win the gesture arena first, keeping
           // focused buttons focused when re-clicked.
           child: _WindowsUpdateStartupCheck(
-            child: _RpcEndpointFailoverToastListener(
-              child: DesktopWindowTitlebarSafeArea(
-                child: GestureDetector(
-                  onTap: () {
-                    // Leaf-only: skip when the primary focus is a
-                    // `FocusScopeNode` rather than a concrete `FocusNode`.
-                    // Unfocusing the scope itself strips the scope's
-                    // "most-recently-focused child" memory, which leaves the
-                    // next Tab with no deterministic starting point.
-                    final primary = FocusManager.instance.primaryFocus;
-                    if (primary != null && primary is! FocusScopeNode) {
-                      primary.unfocus();
-                    }
-                  },
-                  behavior: HitTestBehavior.translucent,
-                  child: child!,
+            child: _WindowsUpdatePromptHost(
+              router: router,
+              child: _RpcEndpointFailoverToastListener(
+                child: DesktopWindowTitlebarSafeArea(
+                  child: GestureDetector(
+                    onTap: () {
+                      // Leaf-only: skip when the primary focus is a
+                      // `FocusScopeNode` rather than a concrete `FocusNode`.
+                      // Unfocusing the scope itself strips the scope's
+                      // "most-recently-focused child" memory, which leaves the
+                      // next Tab with no deterministic starting point.
+                      final primary = FocusManager.instance.primaryFocus;
+                      if (primary != null && primary is! FocusScopeNode) {
+                        primary.unfocus();
+                      }
+                    },
+                    behavior: HitTestBehavior.translucent,
+                    child: child!,
+                  ),
                 ),
               ),
             ),
@@ -651,6 +657,375 @@ class _WindowsUpdateStartupCheckState
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+class _WindowsUpdatePromptHost extends ConsumerStatefulWidget {
+  const _WindowsUpdatePromptHost({required this.router, required this.child});
+
+  final GoRouter router;
+  final Widget child;
+
+  @override
+  ConsumerState<_WindowsUpdatePromptHost> createState() =>
+      _WindowsUpdatePromptHostState();
+}
+
+class _WindowsUpdatePromptHostState
+    extends ConsumerState<_WindowsUpdatePromptHost> {
+  final Set<String> _dismissedPromptKeys = {};
+
+  @override
+  void initState() {
+    super.initState();
+    widget.router.routerDelegate.addListener(_handleRouteChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _WindowsUpdatePromptHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.router == widget.router) return;
+    oldWidget.router.routerDelegate.removeListener(_handleRouteChanged);
+    widget.router.routerDelegate.addListener(_handleRouteChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.router.routerDelegate.removeListener(_handleRouteChanged);
+    super.dispose();
+  }
+
+  void _handleRouteChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  String get _currentPath {
+    return widget.router.routerDelegate.currentConfiguration.uri.path;
+  }
+
+  bool _canShowForCurrentRoute() {
+    final path = _currentPath;
+    if (path == '/unlock' ||
+        path == '/welcome' ||
+        path == '/add-account' ||
+        path == '/lost-password' ||
+        path.startsWith('/onboarding/') ||
+        path.startsWith('/import') ||
+        path.startsWith('/import-keystone') ||
+        path.startsWith('/send') ||
+        path.startsWith('/settings/secret-passphrase') ||
+        path.startsWith('/settings/change-password')) {
+      return false;
+    }
+    return true;
+  }
+
+  String _promptKey(WindowsUpdateState state) {
+    return '${state.status.name}:${state.availableVersion}';
+  }
+
+  bool _shouldShowPrompt(WindowsUpdateState state) {
+    if (!_canShowForCurrentRoute()) return false;
+    if (!state.supported) return false;
+    final visibleStatus = switch (state.status) {
+      WindowsUpdateStatus.available ||
+      WindowsUpdateStatus.downloading ||
+      WindowsUpdateStatus.ready ||
+      WindowsUpdateStatus.applying => true,
+      _ => false,
+    };
+    if (!visibleStatus) return false;
+    return !_dismissedPromptKeys.contains(_promptKey(state));
+  }
+
+  void _dismiss(WindowsUpdateState state) {
+    setState(() {
+      _dismissedPromptKeys.add(_promptKey(state));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(windowsUpdateProvider);
+    final showPrompt = _shouldShowPrompt(state);
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        Positioned(
+          left: AppSpacing.base,
+          right: AppSpacing.base,
+          bottom: AppSpacing.base,
+          child: IgnorePointer(
+            ignoring: !showPrompt,
+            child: Align(
+              alignment: Alignment.bottomRight,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  final position = Tween<Offset>(
+                    begin: const Offset(0, 0.25),
+                    end: Offset.zero,
+                  ).animate(animation);
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(position: position, child: child),
+                  );
+                },
+                child: showPrompt
+                    ? _WindowsUpdatePrompt(
+                        key: ValueKey(_promptKey(state)),
+                        state: state,
+                        onDownload: () {
+                          unawaited(
+                            ref
+                                .read(windowsUpdateProvider.notifier)
+                                .downloadUpdate(),
+                          );
+                        },
+                        onRestart: () {
+                          unawaited(
+                            ref
+                                .read(windowsUpdateProvider.notifier)
+                                .applyUpdateAndRestart(),
+                          );
+                        },
+                        onLater: () => _dismiss(state),
+                      )
+                    : const SizedBox.shrink(
+                        key: ValueKey('empty-windows-update-prompt'),
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WindowsUpdatePrompt extends StatelessWidget {
+  const _WindowsUpdatePrompt({
+    required this.state,
+    required this.onDownload,
+    required this.onRestart,
+    required this.onLater,
+    super.key,
+  });
+
+  final WindowsUpdateState state;
+  final VoidCallback onDownload;
+  final VoidCallback onRestart;
+  final VoidCallback onLater;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final action = _primaryAction();
+
+    return DefaultTextStyle.merge(
+      style: const TextStyle(decoration: TextDecoration.none),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 424),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.small),
+            border: Border.all(
+              color: isDark ? colors.border.subtle : colors.border.regular,
+            ),
+            boxShadow: isDark
+                ? null
+                : const [
+                    BoxShadow(
+                      color: Color(0x1A000000),
+                      offset: Offset(0, 4),
+                      blurRadius: 12,
+                    ),
+                  ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.s),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _WindowsUpdatePromptIcon(status: state.status),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _title(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: colors.text.accent,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _message(),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.bodySmall.copyWith(
+                              color: colors.text.secondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (state.status == WindowsUpdateStatus.downloading) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  _WindowsUpdatePromptProgress(
+                    progress: state.downloadProgress,
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.s),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (_canDismiss()) ...[
+                      AppButton(
+                        onPressed: onLater,
+                        variant: AppButtonVariant.ghost,
+                        size: AppButtonSize.small,
+                        child: const Text('Later'),
+                      ),
+                      const SizedBox(width: AppSpacing.xxs),
+                    ],
+                    AppButton(
+                      onPressed: action.onPressed,
+                      variant: AppButtonVariant.primary,
+                      size: AppButtonSize.small,
+                      child: Text(action.label),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _title() {
+    return switch (state.status) {
+      WindowsUpdateStatus.available =>
+        'Update ${state.availableVersion} available',
+      WindowsUpdateStatus.downloading => 'Downloading update',
+      WindowsUpdateStatus.ready => 'Update ready',
+      WindowsUpdateStatus.applying => 'Restarting Vizor',
+      _ => 'Update available',
+    };
+  }
+
+  String _message() {
+    return switch (state.status) {
+      WindowsUpdateStatus.available => 'Download now or keep working.',
+      WindowsUpdateStatus.downloading =>
+        '${state.downloadProgress}% downloaded.',
+      WindowsUpdateStatus.ready => 'Restart when you are ready.',
+      WindowsUpdateStatus.applying => 'Applying after Vizor closes.',
+      _ => '',
+    };
+  }
+
+  bool _canDismiss() {
+    return state.status == WindowsUpdateStatus.available ||
+        state.status == WindowsUpdateStatus.ready;
+  }
+
+  _WindowsUpdatePromptAction _primaryAction() {
+    return switch (state.status) {
+      WindowsUpdateStatus.available => _WindowsUpdatePromptAction(
+        label: 'Download',
+        onPressed: onDownload,
+      ),
+      WindowsUpdateStatus.ready => _WindowsUpdatePromptAction(
+        label: 'Restart',
+        onPressed: onRestart,
+      ),
+      WindowsUpdateStatus.downloading => const _WindowsUpdatePromptAction(
+        label: 'Downloading',
+      ),
+      WindowsUpdateStatus.applying => const _WindowsUpdatePromptAction(
+        label: 'Restarting',
+      ),
+      _ => const _WindowsUpdatePromptAction(label: 'Update'),
+    };
+  }
+}
+
+class _WindowsUpdatePromptAction {
+  const _WindowsUpdatePromptAction({required this.label, this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+}
+
+class _WindowsUpdatePromptIcon extends StatelessWidget {
+  const _WindowsUpdatePromptIcon({required this.status});
+
+  final WindowsUpdateStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: colors.background.neutralSubtleOpacity,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: AppIcon(
+        status == WindowsUpdateStatus.ready ? AppIcons.check : AppIcons.sync,
+        size: 16,
+        color: colors.icon.accent,
+      ),
+    );
+  }
+}
+
+class _WindowsUpdatePromptProgress extends StatelessWidget {
+  const _WindowsUpdatePromptProgress({required this.progress});
+
+  final int progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      height: 4,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: colors.background.neutralSubtleOpacity,
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+      alignment: Alignment.centerLeft,
+      child: FractionallySizedBox(
+        widthFactor: progress.clamp(0, 100) / 100,
+        heightFactor: 1,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: colors.background.inverse),
+        ),
+      ),
+    );
+  }
 }
 
 class _RpcEndpointFailoverToastListener extends StatelessWidget {
