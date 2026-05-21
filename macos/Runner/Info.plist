@@ -22,10 +22,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Vizor uses the camera to scan Keystone QR codes.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Vizor uses the camera to scan Keystone QR codes.</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
@@ -36,9 +36,9 @@
 	<true/>
 	<key>SUFeedURL</key>
 	<string>https://github.com/chainapsis/vizor-wallet/releases/latest/download/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string></string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>3600</integer>
+	<key>SUPublicEDKey</key>
+	<string></string>
 </dict>
 </plist>

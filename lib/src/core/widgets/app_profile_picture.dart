@@ -3,8 +3,6 @@ import 'package:flutter/widgets.dart';
 import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
 
-const _kZnsGold = Color(0xFFFFB800);
-
 enum AppProfilePictureSize {
   medium(24, AppRadii.xSmall),
   large(32, AppRadii.small),
@@ -36,7 +34,7 @@ class AppProfilePicture extends StatelessWidget {
       height: size.dimension,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: isZns ? _kZnsGold : context.colors.background.raised,
+        color: isZns ? const Color(0xFFD4A843) : context.colors.background.raised,
         borderRadius: BorderRadius.circular(size.radius),
       ),
       child: Image.asset(
