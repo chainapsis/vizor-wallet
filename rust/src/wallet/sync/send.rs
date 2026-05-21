@@ -110,6 +110,10 @@ pub(crate) struct SendMaxEstimateResult {
 
 pub(crate) struct ShieldTransparentResult {
     pub txids: String,
+    pub status: String,
+    pub broadcasted_count: u32,
+    pub total_count: u32,
+    pub message: Option<String>,
     pub fee_zatoshi: u64,
     pub shielded_zatoshi: u64,
 }
@@ -459,14 +463,11 @@ pub(crate) async fn shield_transparent_balance(
     )?;
 
     let txids: Vec<TxId> = txids.iter().cloned().collect();
-    let txids = broadcast_created_transactions(db_path, lightwalletd_url, &txids, "shield")
-        .await
-        .into_legacy_result()?;
-    Ok(ShieldTransparentResult {
-        txids,
-        fee_zatoshi,
-        shielded_zatoshi,
-    })
+    Ok(
+        broadcast_created_transactions(db_path, lightwalletd_url, &txids, "shield")
+            .await
+            .into_shield_transparent_result(fee_zatoshi, shielded_zatoshi),
+    )
 }
 
 /// Execute a previously proposed transfer, then broadcast to the
@@ -783,13 +784,19 @@ impl CreatedBroadcastResult {
         }
     }
 
-    fn into_legacy_result(self) -> Result<String, String> {
-        if self.status == Self::BROADCASTED {
-            Ok(self.txids)
-        } else {
-            Err(self
-                .message
-                .unwrap_or_else(|| "Broadcast did not complete".to_string()))
+    fn into_shield_transparent_result(
+        self,
+        fee_zatoshi: u64,
+        shielded_zatoshi: u64,
+    ) -> ShieldTransparentResult {
+        ShieldTransparentResult {
+            txids: self.txids,
+            status: self.status.to_string(),
+            broadcasted_count: self.broadcasted_count,
+            total_count: self.total_count,
+            message: self.message,
+            fee_zatoshi,
+            shielded_zatoshi,
         }
     }
 }
@@ -1232,6 +1239,26 @@ mod tests {
 
     fn receiver(value: u64, scope: TransparentKeyScope) -> (TransparentKeyScope, Balance) {
         (scope, balance(value))
+    }
+
+    #[test]
+    fn shield_result_preserves_pending_broadcast_status() {
+        let result = CreatedBroadcastResult {
+            txids: "abc123".to_string(),
+            status: CreatedBroadcastResult::PENDING_BROADCAST,
+            broadcasted_count: 0,
+            total_count: 1,
+            message: Some("Broadcast could not start".to_string()),
+        }
+        .into_shield_transparent_result(10_000, 90_000);
+
+        assert_eq!(result.txids, "abc123");
+        assert_eq!(result.status, CreatedBroadcastResult::PENDING_BROADCAST);
+        assert_eq!(result.broadcasted_count, 0);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.message.as_deref(), Some("Broadcast could not start"));
+        assert_eq!(result.fee_zatoshi, 10_000);
+        assert_eq!(result.shielded_zatoshi, 90_000);
     }
 
     #[test]

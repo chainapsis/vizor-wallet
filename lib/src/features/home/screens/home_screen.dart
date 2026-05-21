@@ -34,6 +34,15 @@ import '../widgets/keystone_shield_signing_overlay.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
 const _shieldErrorTooltipGap = AppSpacing.xxs;
+const shieldBalancePendingBroadcastMessage =
+    'Shielding queued for retry. Check Activity.';
+
+String? shieldBalanceBroadcastStatusMessage(
+  rust_sync.ShieldTransparentResult result,
+) {
+  if (result.status == 'broadcasted') return null;
+  return shieldBalancePendingBroadcastMessage;
+}
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -160,13 +169,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       result = await resultFuture;
       log(
         'HomeScreen: shielded transparent balance txids=${result.txids} '
+        'status=${result.status} '
+        'broadcasted=${result.broadcastedCount}/${result.totalCount} '
         'fee=${result.feeZatoshi} shielded=${result.shieldedZatoshi}',
       );
+
+      final broadcastStatusMessage = shieldBalanceBroadcastStatusMessage(
+        result,
+      );
+      final broadcastDetailMessage = result.message?.trim();
+      if (broadcastStatusMessage != null &&
+          broadcastDetailMessage != null &&
+          broadcastDetailMessage.isNotEmpty) {
+        final switched = await ref
+            .read(rpcEndpointFailoverProvider.notifier)
+            .switchToFallbackFor(
+              broadcastDetailMessage,
+              endpoint: attemptedEndpoint,
+              operation: 'shield transparent balance broadcast',
+            );
+        if (switched) {
+          unawaited(ref.read(syncProvider.notifier).restartSync());
+        }
+      }
 
       try {
         await ref.read(syncProvider.notifier).refreshAfterSend();
       } catch (e) {
         log('HomeScreen: refreshAfterSend after shielding failed: $e');
+      }
+
+      if (broadcastStatusMessage != null) {
+        if (!mounted) return;
+        setState(() {
+          _shieldBalanceError = broadcastStatusMessage;
+          _shieldBalanceErrorDetail = null;
+        });
       }
     } catch (e, st) {
       log('HomeScreen: shield transparent balance failed: $e\n$st');
@@ -217,6 +255,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   String? _shieldBalanceErrorDetails(Object error) {
     final message = error.toString().trim();
+    final lower = message.toLowerCase();
+    if (lower.contains('broadcast') || lower.contains('sendtransaction')) {
+      return null;
+    }
     return message.isEmpty ? null : message;
   }
 
