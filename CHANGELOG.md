@@ -4,6 +4,26 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.10.1
+
+## Security
+- Exact-pinned the Valar-owned voting dependency surface and related PIR/tree
+  transitives used by the client features. `zcash_voting` now directly
+  constrains `pir-client`, `pir-types`, `valar-spiral-rs`, `valar-ypir`,
+  `imt-tree`, `voting-circuits`, `vote-commitment-tree`, and
+  `vote-commitment-tree-client`.
+- Bumped `vote-commitment-tree` to `0.3.1` and
+  `vote-commitment-tree-client` to `0.5.1` for publishable manifest-only pin
+  releases.
+
+## Notes
+- This is a supply-chain pin tightening release with no functional code
+  changes.
+- Scope is intentionally limited to the Valar-owned runtime voting dependency
+  surface and its PIR/tree transitives. Upstream and dev-only dependency
+  movement should be handled through lockfile review/CI policy rather than this
+  manifest-only pinning release.
+
 # 0.10.0
 
 ## Changed

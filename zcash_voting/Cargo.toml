@@ -1,6 +1,6 @@
 [package]
 name = "zcash_voting"
-version = "0.10.0"
+version = "0.10.1"
 edition = "2021"
 description = "Client-side library for Zcash shielded voting: ZKP delegation and vote-commitment proofs (Halo 2), ElGamal encryption, governance PCZT construction, Merkle witness generation, and SQLite round-state persistence."
 license = "MIT OR Apache-2.0"
@@ -11,9 +11,32 @@ readme = "README.md"
 default = []
 # PIR client surface for fetching IMT non-membership proofs over direct
 # Hyper/Rustls HTTP.
-client-pir = ["dep:pir-client", "dep:bytes", "dep:http", "dep:http-body-util", "dep:hyper", "dep:hyper-rustls", "dep:hyper-util"]
+client-pir = [
+    "dep:imt-tree",
+    "dep:pir-client",
+    "dep:pir-types",
+    "dep:valar-spiral-rs",
+    "dep:valar-ypir",
+    "dep:bytes",
+    "dep:http",
+    "dep:http-body-util",
+    "dep:hyper",
+    "dep:hyper-rustls",
+    "dep:hyper-util",
+]
 # Vote commitment tree HTTP sync surface for VAN witness generation.
-client-tree-sync = ["dep:vote-commitment-tree", "dep:vote-commitment-tree-client", "dep:bytes", "dep:http", "dep:http-body-util", "dep:hyper", "dep:hyper-rustls", "dep:hyper-util", "dep:tokio"]
+client-tree-sync = [
+    "dep:imt-tree",
+    "dep:vote-commitment-tree",
+    "dep:vote-commitment-tree-client",
+    "dep:bytes",
+    "dep:http",
+    "dep:http-body-util",
+    "dep:hyper",
+    "dep:hyper-rustls",
+    "dep:hyper-util",
+    "dep:tokio",
+]
 # Backwards-compatible aggregate for consumers that already enable `client`.
 client = ["client-pir", "client-tree-sync"]
 # Downstream test-only helpers for setting up persisted voting state without
@@ -41,7 +64,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # PIR (private nullifier exclusion proofs).
-pir-client = { version = "0.2.0", default-features = false, optional = true }
+pir-client = { version = "=0.2.0", default-features = false, optional = true }
+# Supply-chain pins for the Valar-owned PIR/tree dependency surface. These
+# direct optional dependencies constrain the versions Cargo may resolve when
+# the client features are enabled; they do not change whether upstream build
+# scripts execute.
+pir-types = { version = "=0.1.0", default-features = false, optional = true }
+valar-spiral-rs = { version = "=0.5.2", default-features = false, optional = true }
+valar-ypir = { version = "=0.1.5", default-features = false, optional = true }
+imt-tree = { version = "=0.1.1", optional = true }
 
 # Direct Hyper/Rustls HTTP transport. Behind `client-pir` and `client-tree-sync`.
 bytes = { version = "1", optional = true }
@@ -53,8 +84,8 @@ hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 
 # Vote commitment tree (VAN witness generation). Behind `client-tree-sync`.
-vote-commitment-tree = { path = "../vote-commitment-tree", version = "0.3", optional = true }
-vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "0.5", features = ["http"], optional = true }
+vote-commitment-tree = { path = "../vote-commitment-tree", version = "=0.3.1", optional = true }
+vote-commitment-tree-client = { path = "../vote-commitment-tree-client", version = "=0.5.1", features = ["http"], optional = true }
 
 # Storage
 rusqlite = { version = "0.37", features = ["bundled"] }
@@ -69,7 +100,7 @@ thiserror = "2"
 # `Rho::from_nf_old`).
 subtle = "2.6"
 orchard = { version = "=0.13.1", features = ["unstable-voting-circuits"] }
-voting-circuits = "0.6.0"
+voting-circuits = "=0.6.0"
 nonempty = "0.11"
 zip32 = "0.2"
 incrementalmerkletree = "0.8"
