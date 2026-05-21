@@ -13,6 +13,11 @@ class ZnsResolver {
     return registration?.address;
   }
 
+  Future<String?> reverseResolve(String address) async {
+    final registrations = await _zns.resolveAddress(address);
+    return registrations.isEmpty ? null : '${registrations.first.name}.zcash';
+  }
+
   void close() => _zns.close();
 }
 
