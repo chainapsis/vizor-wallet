@@ -146,6 +146,8 @@ String _newSendFlowId() {
   ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 }
 
+enum _ZnsStatus { resolving, notFound, networkError }
+
 class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldOverlayReserve = 20.0;
   static const _singleLineFieldGap = AppSpacing.xs;
@@ -172,6 +174,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   _MaxQuote? _maxQuote;
   Timer? _maxDebounceTimer;
   Timer? _znsDebounceTimer;
+  _ZnsStatus? _znsStatus;
+  String? _resolvedName;
   int _addressSeq = 0;
   int _maxSeq = 0;
   int _validateSeq = 0;
@@ -277,7 +281,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
 
   void _scheduleZnsResolution(String name, int seq) {
     _znsDebounceTimer?.cancel();
-    setState(() => _addressType = 'zns_resolving');
+    setState(() => _znsStatus = _ZnsStatus.resolving);
     _znsDebounceTimer = Timer(
       _znsDebounceDuration,
       () => unawaited(_resolveZnsName(name, seq)),
@@ -290,17 +294,19 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       final resolvedUa = await ref.read(znsResolverProvider).resolveName(name);
       if (!mounted || seq != _addressSeq) return;
       if (resolvedUa == null) {
-        setState(() => _addressType = 'zns_not_found');
+        setState(() => _znsStatus = _ZnsStatus.notFound);
         _handleAddressValidationSettled();
         return;
       }
+      final resolvedName = _addressController.text.trim();
       _addressController.text = resolvedUa;
       _handleAddressChanged();
+      setState(() => _resolvedName = resolvedName);
     } catch (e) {
       log('Send: ZNS resolution error: $e');
       if (!mounted || seq != _addressSeq) return;
       setState(() {
-        _addressType = 'error';
+        _znsStatus = _ZnsStatus.networkError;
         _error = 'Could not reach ZNS. Check your connection.';
       });
       _handleAddressValidationSettled();
@@ -321,6 +327,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     _znsDebounceTimer?.cancel();
     setState(() {
       _addressType = '';
+      _znsStatus = null;
+      _resolvedName = null;
       _error = null;
       if (_isMaxMode) {
         _validateSeq++;
@@ -356,8 +364,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _addressType.isNotEmpty &&
       _addressType != 'invalid' &&
       _addressType != 'error' &&
-      _addressType != 'zns_resolving' &&
-      _addressType != 'zns_not_found';
+      _znsStatus == null;
 
   bool get _isShieldedAddress =>
       _addressType == 'unified' || _addressType == 'sapling';
@@ -747,37 +754,53 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         ? colors.icon.success
         : null;
 
-    final addressTone = switch (_addressType) {
-      'unified' || 'sapling' => AppTextFieldTone.success,
-      'invalid' || 'error' || 'zns_not_found' => AppTextFieldTone.destructive,
-      _ => AppTextFieldTone.neutral,
+    final addressTone = switch (_znsStatus) {
+      _ZnsStatus.notFound || _ZnsStatus.networkError => AppTextFieldTone.destructive,
+      _ZnsStatus.resolving => AppTextFieldTone.neutral,
+      null => switch (_addressType) {
+        'unified' || 'sapling' => AppTextFieldTone.success,
+        'invalid' || 'error' => AppTextFieldTone.destructive,
+        _ => AppTextFieldTone.neutral,
+      },
     };
-    final addressMessage = switch (_addressType) {
-      'unified' || 'sapling' => 'Shielded Address',
-      'transparent' => 'Transparent Address',
-      'invalid' => 'Invalid address',
-      'error' => 'Address validation failed',
-      'zns_resolving' => 'Resolving...',
-      'zns_not_found' => 'Name not found',
-      _ => null,
+    var addressMessage = switch (_znsStatus) {
+      _ZnsStatus.resolving => 'Resolving...',
+      _ZnsStatus.notFound => 'Zcash Name · Not Found',
+      _ZnsStatus.networkError => 'Could not reach ZNS',
+      null => switch (_addressType) {
+        'unified' || 'sapling' => 'Shielded Address',
+        'transparent' => 'Transparent Address',
+        'invalid' => 'Invalid address',
+        'error' => 'Address validation failed',
+        _ => null,
+      },
     };
-    final addressMessageIcon = switch (_addressType) {
-      'unified' || 'sapling' => AppIcon(
-        AppIcons.shieldKeyhole,
-        size: 16,
-        color: colors.icon.success,
-      ),
-      'invalid' || 'error' || 'zns_not_found' => AppIcon(
+    if (_resolvedName != null) addressMessage = 'Zcash Name · $addressMessage';
+    final addressMessageIcon = switch (_znsStatus) {
+      _ZnsStatus.notFound || _ZnsStatus.networkError => AppIcon(
         AppIcons.warning,
         size: 16,
         color: colors.text.destructive,
       ),
-      'transparent' => AppIcon(
-        AppIcons.transparentBalance,
-        size: 16,
-        color: colors.icon.muted,
-      ),
-      _ => null,
+      _ZnsStatus.resolving => null,
+      null => switch (_addressType) {
+        'unified' || 'sapling' => AppIcon(
+          AppIcons.shieldKeyhole,
+          size: 16,
+          color: colors.icon.success,
+        ),
+        'invalid' || 'error' => AppIcon(
+          AppIcons.warning,
+          size: 16,
+          color: colors.text.destructive,
+        ),
+        'transparent' => AppIcon(
+          AppIcons.transparentBalance,
+          size: 16,
+          color: colors.icon.muted,
+        ),
+        _ => null,
+      },
     };
     final addressMessageStyle = switch (_addressType) {
       'transparent' => AppTypography.labelMedium.copyWith(
@@ -834,6 +857,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                         AppTextField(
                           key: const ValueKey('send_address_field'),
                           label: 'Send to',
+                          rightLabel: _resolvedName,
                           tone: addressTone,
                           focusNode: _addressFocusNode,
                           controller: _addressController,
@@ -857,6 +881,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                             _znsDebounceTimer?.cancel();
                             setState(() {
                               _addressType = '';
+                              _znsStatus = null;
+                              _resolvedName = null;
                               _error = null;
                               if (_isMaxMode) {
                                 _validateSeq++;
