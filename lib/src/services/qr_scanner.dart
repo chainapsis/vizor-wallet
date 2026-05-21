@@ -30,7 +30,8 @@ class QrScanner {
       Platform.isIOS ||
       Platform.isAndroid ||
       Platform.isLinux ||
-      Platform.isMacOS;
+      Platform.isMacOS ||
+      Platform.isWindows;
 
   static Rect? scanWindowFor(Size layoutSize) {
     if (!layoutSize.width.isFinite ||

@@ -1,0 +1,197 @@
+fastlane_version "2.220.0"
+
+require "fileutils"
+require_relative "../common/release"
+
+WINDOWS_RELEASE_FLAVOR_CONFIGS = {
+  "mainnet" => {
+    pack_id: "com.keplr.vizor",
+    pack_title: "Vizor",
+    channel: "win-x64-mainnet",
+    network: "mainnet"
+  },
+  "testnet" => {
+    pack_id: "com.keplr.vizor.testnet",
+    pack_title: "Vizor Testnet",
+    channel: "win-x64-testnet",
+    network: "testnet"
+  }
+}.freeze
+
+DEFAULT_WINDOWS_RELEASE_FLAVORS = ["mainnet", "testnet"].freeze
+
+def normalize_windows_release_flavor(flavor)
+  normalized = flavor.to_s.strip.downcase
+  return "mainnet" if normalized == "main"
+  return "testnet" if normalized == "test"
+  return normalized if WINDOWS_RELEASE_FLAVOR_CONFIGS.key?(normalized)
+
+  UI.user_error!("Unsupported Windows release flavor: #{flavor}. Expected one of: #{WINDOWS_RELEASE_FLAVOR_CONFIGS.keys.join(", ")}")
+end
+
+def windows_release_flavors
+  raw = ENV["VIZOR_WINDOWS_FLAVORS"].to_s.strip
+  if raw.empty?
+    single_flavor = ENV["VIZOR_WINDOWS_FLAVOR"].to_s.strip
+    return [normalize_windows_release_flavor(single_flavor)] unless single_flavor.empty?
+
+    return DEFAULT_WINDOWS_RELEASE_FLAVORS
+  end
+
+  flavors = raw.split(",").map(&:strip).reject(&:empty?)
+  UI.user_error!("VIZOR_WINDOWS_FLAVORS must include at least one flavor") if flavors.empty?
+  flavors.map { |flavor| normalize_windows_release_flavor(flavor) }.uniq
+end
+
+def single_windows_release_flavor(options = {})
+  raw = options[:flavor] || ENV["VIZOR_WINDOWS_FLAVOR"]
+  raw = raw.to_s.strip
+  raw.empty? ? "mainnet" : normalize_windows_release_flavor(raw)
+end
+
+def windows_cmd_quote(value)
+  value = value.to_s
+  "\"#{value.gsub('"', '\"')}\""
+end
+
+def windows_release_metadata(flavor: "mainnet")
+  flavor = normalize_windows_release_flavor(flavor)
+  flavor_config = WINDOWS_RELEASE_FLAVOR_CONFIGS.fetch(flavor)
+  tag = VizorRelease.release_tag
+  tag_info = VizorRelease.release_tag_info(tag)
+  VizorRelease.assert_prerelease_env_matches!(tag_info, tag)
+
+  version = tag_info.fetch(:base_version)
+  asset_version = tag_info.fetch(:asset_version)
+  channel = flavor_config.fetch(:channel)
+  pack_id = flavor_config.fetch(:pack_id)
+  output_dir_arg = File.join("dist", "windows", "velopack", flavor)
+  dist_dir = File.join(VizorRelease.workspace_root, "dist", "windows")
+  velopack_dir = File.join(dist_dir, "velopack")
+  output_dir = File.join(VizorRelease.workspace_root, output_dir_arg)
+  release_repository = ENV.fetch("RELEASE_REPOSITORY")
+
+  {
+    flavor: flavor,
+    pack_id: pack_id,
+    pack_title: flavor_config.fetch(:pack_title),
+    network: flavor_config.fetch(:network),
+    channel: channel,
+    version: version,
+    asset_version: asset_version,
+    is_prerelease: tag_info.fetch(:is_prerelease),
+    update_enabled: !tag_info.fetch(:is_prerelease),
+    build_number: VizorRelease.release_build_number,
+    tag: tag,
+    release_name: ENV["RELEASE_NAME"] || tag,
+    dist_dir: dist_dir,
+    velopack_dir: velopack_dir,
+    output_dir_arg: output_dir_arg,
+    output_dir: output_dir,
+    update_repository_url: "https://github.com/#{release_repository}",
+    setup_asset_name: "#{pack_id}-#{channel}-Setup.exe",
+    nupkg_asset_name: "#{pack_id}-#{asset_version}-#{channel}-full.nupkg",
+    feed_asset_name: "releases.#{channel}.json",
+    feed_signature_asset_name: "releases.#{channel}.json.sig",
+    releases_asset_name: "RELEASES-#{channel}",
+    assets_asset_name: "assets.#{channel}.json"
+  }
+end
+
+def windows_package_script_path
+  File.join(VizorRelease.workspace_root, "scripts", "package-windows-velopack.ps1")
+end
+
+def windows_release_assets(metadata)
+  assets = [
+    metadata.fetch(:setup_asset_name),
+    metadata.fetch(:nupkg_asset_name),
+    metadata.fetch(:feed_asset_name),
+    metadata.fetch(:releases_asset_name),
+    metadata.fetch(:assets_asset_name)
+  ]
+  assets << metadata.fetch(:feed_signature_asset_name) if metadata.fetch(:update_enabled)
+  assets
+end
+
+def windows_validate_update_feed_environment!(metadata_items)
+  return unless metadata_items.any? { |metadata| metadata.fetch(:update_enabled) }
+
+  signing_key = ENV["VIZOR_UPDATE_FEED_SIGNING_KEY_B64"].to_s.strip
+  UI.user_error!("VIZOR_UPDATE_FEED_SIGNING_KEY_B64 is required for stable Windows release builds") if signing_key.empty?
+end
+
+def with_windows_update_environment(update_enabled:)
+  previous_signing_key = ENV["VIZOR_UPDATE_FEED_SIGNING_KEY_B64"]
+  previous_public_key = ENV["VIZOR_UPDATE_FEED_PUBLIC_KEY_B64"]
+  previous_release_base_url = ENV["VIZOR_UPDATE_RELEASE_BASE_URL"]
+
+  ENV["VIZOR_UPDATE_RELEASE_BASE_URL"] = ""
+  unless update_enabled
+    ENV["VIZOR_UPDATE_FEED_SIGNING_KEY_B64"] = ""
+    ENV["VIZOR_UPDATE_FEED_PUBLIC_KEY_B64"] = ""
+  end
+
+  yield
+ensure
+  previous_signing_key.nil? ? ENV.delete("VIZOR_UPDATE_FEED_SIGNING_KEY_B64") : ENV["VIZOR_UPDATE_FEED_SIGNING_KEY_B64"] = previous_signing_key
+  previous_public_key.nil? ? ENV.delete("VIZOR_UPDATE_FEED_PUBLIC_KEY_B64") : ENV["VIZOR_UPDATE_FEED_PUBLIC_KEY_B64"] = previous_public_key
+  previous_release_base_url.nil? ? ENV.delete("VIZOR_UPDATE_RELEASE_BASE_URL") : ENV["VIZOR_UPDATE_RELEASE_BASE_URL"] = previous_release_base_url
+end
+
+def windows_verify_velopack_outputs!(metadata)
+  output_dir = metadata.fetch(:output_dir)
+  UI.user_error!("Missing Windows Velopack output directory at #{output_dir}") unless File.directory?(output_dir)
+
+  windows_release_assets(metadata).each do |asset_name|
+    path = File.join(output_dir, asset_name)
+    UI.user_error!("Missing Windows release asset #{path}") unless File.exist?(path)
+    UI.user_error!("Windows release asset is empty: #{path}") if File.size(path).zero?
+  end
+end
+
+platform :windows do
+  desc "Build and package one Windows Velopack release"
+  lane :package do |options|
+    metadata = windows_release_metadata(flavor: single_windows_release_flavor(options))
+    script_path = windows_package_script_path
+    UI.user_error!("Missing Windows Velopack packaging script at #{script_path}") unless File.exist?(script_path)
+
+    FileUtils.rm_rf(metadata.fetch(:output_dir))
+    FileUtils.mkdir_p(metadata.fetch(:output_dir))
+
+    command = [
+      "powershell.exe",
+      "-NoProfile",
+      "-ExecutionPolicy", "Bypass",
+      "-File", windows_cmd_quote(script_path),
+      "-Network", windows_cmd_quote(metadata.fetch(:network)),
+      "-Version", windows_cmd_quote(metadata.fetch(:asset_version)),
+      "-OutputDir", windows_cmd_quote(metadata.fetch(:output_dir_arg)),
+      "-UpdateRepositoryUrl", windows_cmd_quote(metadata.fetch(:update_repository_url))
+    ]
+
+    unless metadata.fetch(:update_enabled)
+      command += [
+        "-UpdateFeedSigningKey", windows_cmd_quote(""),
+        "-UpdateFeedPublicKey", windows_cmd_quote("")
+      ]
+    end
+
+    with_windows_update_environment(update_enabled: metadata.fetch(:update_enabled)) do
+      sh(command.join(" "))
+    end
+    windows_verify_velopack_outputs!(metadata)
+  end
+
+  desc "Build Windows Velopack release assets"
+  lane :release do
+    flavors = windows_release_flavors
+    metadata_items = flavors.map { |flavor| windows_release_metadata(flavor: flavor) }
+
+    windows_validate_update_feed_environment!(metadata_items)
+    metadata_items.each { |metadata| package(flavor: metadata[:flavor]) }
+
+    UI.message("Windows Velopack release assets are ready under #{metadata_items.first[:velopack_dir]}")
+  end
+end

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
@@ -215,9 +216,28 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     if (state.error?.errorCode == MobileScannerErrorCode.permissionDenied) {
       return _CameraAccessStatus.denied;
     }
-    if (state.hasCameraPermission) return _CameraAccessStatus.active;
+    if (state.error != null && !state.isRunning) {
+      return _CameraAccessStatus.unavailable;
+    }
+    if (state.hasCameraPermission && state.isRunning) {
+      return _CameraAccessStatus.active;
+    }
     return _CameraAccessStatus.requesting;
   }
+
+  String _cameraUnavailableDescription(MobileScannerState state) {
+    final message = state.error?.errorDetails?.message;
+    if (message != null && message.isNotEmpty) return message;
+    return 'No camera could be opened. Check that a camera is connected and not in use by another app.';
+  }
+
+  String get _cameraDeniedTitle => Platform.isWindows
+      ? 'Enable Windows camera access'
+      : "You've denied the Camera access";
+
+  String get _cameraDeniedDescription => Platform.isWindows
+      ? 'Turn on Camera access and Let desktop apps access your camera in Windows Settings.'
+      : 'Request again, or enable manually\nin the System settings.';
 
   Future<void> _retryCameraStart({required bool openSettingsOnDenied}) async {
     if (!QrScanner.isAvailable || _controller.value.isStarting) return;
@@ -383,14 +403,37 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                               .inverse,
                                         ),
                                       if (accessStatus ==
+                                          _CameraAccessStatus.unavailable)
+                                        _CameraPermissionPrompt(
+                                          icon: AppIcons.cameraDenied,
+                                          title: 'Camera unavailable',
+                                          description:
+                                              _cameraUnavailableDescription(
+                                                scannerState,
+                                              ),
+                                          iconStyle:
+                                              _CameraPermissionIconStyle.raised,
+                                          action: AppButton(
+                                            onPressed: () => unawaited(
+                                              _retryCameraStart(
+                                                openSettingsOnDenied: false,
+                                              ),
+                                            ),
+                                            variant: AppButtonVariant.secondary,
+                                            size: AppButtonSize.medium,
+                                            minWidth: 96,
+                                            leading: const AppIcon(
+                                              AppIcons.renew,
+                                            ),
+                                            child: const Text('Try again'),
+                                          ),
+                                        ),
+                                      if (accessStatus ==
                                           _CameraAccessStatus.denied)
                                         _CameraPermissionPrompt(
                                           icon: AppIcons.cameraDenied,
-                                          title:
-                                              "You've denied the Camera access",
-                                          description:
-                                              'Request again, or enable manually\n'
-                                              'in the System settings.',
+                                          title: _cameraDeniedTitle,
+                                          description: _cameraDeniedDescription,
                                           iconStyle:
                                               _CameraPermissionIconStyle.raised,
                                           action: AppButton(
