@@ -236,6 +236,8 @@ copy_gstreamer_runtime() {
 
   mkdir -p "$plugin_destination_dir" "$scanner_destination_dir"
 
+  local copied_convert_plugin="false"
+  local copied_scale_plugin="false"
   local plugin
   for plugin in \
     libgstapp.so \
@@ -243,14 +245,33 @@ copy_gstreamer_runtime() {
     libgstcoreelements.so \
     libgstpipewire.so \
     libgstvideo4linux2.so \
+    libgstvideoconvert.so \
     libgstvideoconvertscale.so \
+    libgstvideoscale.so \
     libgstximagesrc.so; do
     local source_path="$plugin_source_dir/$plugin"
     if [[ -f "$source_path" ]]; then
       cp -L "$source_path" "$plugin_destination_dir/$plugin"
       copy_dependencies_for "$source_path"
+      case "$plugin" in
+        libgstvideoconvert.so)
+          copied_convert_plugin="true"
+          ;;
+        libgstvideoconvertscale.so)
+          copied_convert_plugin="true"
+          copied_scale_plugin="true"
+          ;;
+        libgstvideoscale.so)
+          copied_scale_plugin="true"
+          ;;
+      esac
     fi
   done
+
+  if [[ "$copied_convert_plugin" != "true" || "$copied_scale_plugin" != "true" ]]; then
+    echo "Missing GStreamer videoconvert/videoscale plugins in $plugin_source_dir" >&2
+    exit 1
+  fi
 
   if [[ -f "$scanner_source" ]]; then
     cp -L "$scanner_source" "$scanner_destination_dir/gst-plugin-scanner"
