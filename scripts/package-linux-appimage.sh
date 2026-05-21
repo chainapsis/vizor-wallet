@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
 BUNDLE_DIR=""
 OUTPUT=""
 APP_ID=""
@@ -204,7 +202,8 @@ copy_dependency() {
   [[ -f "$path" ]] || return 0
   should_skip_dependency "$path" && return 0
 
-  local destination="$APPDIR_LIB_DIR/$(basename "$path")"
+  local destination
+  destination="$APPDIR_LIB_DIR/$(basename "$path")"
   if [[ ! -e "$destination" ]]; then
     cp -L "$path" "$destination"
   fi
@@ -337,9 +336,11 @@ fi
 PASSPHRASE="${LINUX_APPIMAGE_GPG_PASSPHRASE:-${APPIMAGETOOL_SIGN_PASSPHRASE:-}}"
 GPG_ARGS=(--batch --yes --armor --local-user "$SIGN_KEY")
 if [[ -n "$PASSPHRASE" ]]; then
-  GPG_ARGS+=(--pinentry-mode loopback --passphrase "$PASSPHRASE")
+  GPG_ARGS+=(--pinentry-mode loopback --passphrase-fd 0)
+  printf '%s\n' "$PASSPHRASE" | gpg "${GPG_ARGS[@]}" --detach-sign --output "$OUTPUT.asc" "$OUTPUT"
+else
+  gpg "${GPG_ARGS[@]}" --detach-sign --output "$OUTPUT.asc" "$OUTPUT"
 fi
-gpg "${GPG_ARGS[@]}" --detach-sign --output "$OUTPUT.asc" "$OUTPUT"
 
 (
   cd "$OUTPUT_DIR"
