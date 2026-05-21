@@ -18,7 +18,7 @@ CameraFacing get _defaultFacing =>
 
 CameraFacing get defaultQrScannerFacing => _defaultFacing;
 
-/// QR scanner abstraction. Uses mobile_scanner on macOS/Windows/iOS/Android.
+/// QR scanner abstraction. Uses mobile_scanner on mobile and desktop.
 class QrScanner {
   QrScanner._();
 
@@ -29,6 +29,7 @@ class QrScanner {
   static bool get isAvailable =>
       Platform.isIOS ||
       Platform.isAndroid ||
+      Platform.isLinux ||
       Platform.isMacOS ||
       Platform.isWindows;
 

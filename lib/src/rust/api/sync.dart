@@ -354,10 +354,12 @@ Future<String> getNextAvailableAddress({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required String addressRequest,
 }) => RustLib.instance.api.crateApiSyncGetNextAvailableAddress(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+  addressRequest: addressRequest,
 );
 
 Future<List<TxDataRequest>> getTransactionDataRequests({
@@ -857,18 +859,32 @@ class ShieldTransparentPcztResult {
 
 class ShieldTransparentResult {
   final String txids;
+  final String status;
+  final int broadcastedCount;
+  final int totalCount;
+  final String? message;
   final BigInt feeZatoshi;
   final BigInt shieldedZatoshi;
 
   const ShieldTransparentResult({
     required this.txids,
+    required this.status,
+    required this.broadcastedCount,
+    required this.totalCount,
+    this.message,
     required this.feeZatoshi,
     required this.shieldedZatoshi,
   });
 
   @override
   int get hashCode =>
-      txids.hashCode ^ feeZatoshi.hashCode ^ shieldedZatoshi.hashCode;
+      txids.hashCode ^
+      status.hashCode ^
+      broadcastedCount.hashCode ^
+      totalCount.hashCode ^
+      message.hashCode ^
+      feeZatoshi.hashCode ^
+      shieldedZatoshi.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -876,6 +892,10 @@ class ShieldTransparentResult {
       other is ShieldTransparentResult &&
           runtimeType == other.runtimeType &&
           txids == other.txids &&
+          status == other.status &&
+          broadcastedCount == other.broadcastedCount &&
+          totalCount == other.totalCount &&
+          message == other.message &&
           feeZatoshi == other.feeZatoshi &&
           shieldedZatoshi == other.shieldedZatoshi;
 }

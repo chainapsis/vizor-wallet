@@ -29,6 +29,14 @@ final appBootstrapProvider = Provider<AppBootstrapState>((_) {
   throw StateError('appBootstrapProvider must be overridden in main()');
 });
 
+typedef AppBootstrapRetry = Future<void> Function();
+
+final appBootstrapRetryProvider = Provider<AppBootstrapRetry>((_) {
+  return () async {};
+});
+
+enum AppBootstrapFailureKind { secureStorageUnavailable, startupFailure }
+
 class AppBootstrapState {
   const AppBootstrapState({
     required this.initialLocation,
@@ -41,6 +49,8 @@ class AppBootstrapState {
     required this.isPasswordConfigured,
     required this.isUnlocked,
     required this.passwordRotationRecoveryFailed,
+    this.failureKind,
+    this.failureMessage,
   });
 
   final String initialLocation;
@@ -53,9 +63,12 @@ class AppBootstrapState {
   final bool isPasswordConfigured;
   final bool isUnlocked;
   final bool passwordRotationRecoveryFailed;
+  final AppBootstrapFailureKind? failureKind;
+  final String? failureMessage;
 
   bool get hasWallet => initialAccountState.hasAccounts;
   bool get requiresUnlock => hasWallet && !isUnlocked;
+  bool get hasBlockingFailure => failureKind != null;
 
   static final empty = AppBootstrapState(
     initialLocation: '/welcome',
@@ -68,6 +81,24 @@ class AppBootstrapState {
     isPasswordConfigured: false,
     isUnlocked: false,
     passwordRotationRecoveryFailed: false,
+  );
+
+  static AppBootstrapState blocked({
+    required AppBootstrapFailureKind failureKind,
+    required String failureMessage,
+  }) => AppBootstrapState(
+    initialLocation: '/storage-unavailable',
+    initialAccountState: AccountState(),
+    initialSyncSnapshot: AppSyncSnapshot.empty,
+    network: kZcashDefaultNetworkName,
+    rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
+    themeMode: ThemeMode.system,
+    privacyModeEnabled: false,
+    isPasswordConfigured: false,
+    isUnlocked: false,
+    passwordRotationRecoveryFailed: false,
+    failureKind: failureKind,
+    failureMessage: failureMessage,
   );
 }
 
@@ -163,6 +194,8 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       // sticky journal visible to the UI instead of silently clearing it.
       passwordRotationRecoveryFailed = true;
       log('bootstrap: unsafe password rotation recovery state: $e');
+    } on SecureStorageUnavailableException {
+      rethrow;
     } catch (e) {
       log('bootstrap: failed to recover password rotation: $e');
     }
@@ -257,9 +290,19 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       isUnlocked: isUnlocked,
       passwordRotationRecoveryFailed: passwordRotationRecoveryFailed,
     );
+  } on SecureStorageUnavailableException catch (e) {
+    log('bootstrap: secure storage unavailable: $e');
+    return AppBootstrapState.blocked(
+      failureKind: AppBootstrapFailureKind.secureStorageUnavailable,
+      failureMessage:
+          'Vizor needs access to secure storage before it can open your wallet.',
+    );
   } catch (e) {
-    log('bootstrap: failed, falling back to welcome: $e');
-    return AppBootstrapState.empty;
+    log('bootstrap: failed, blocking startup: $e');
+    return AppBootstrapState.blocked(
+      failureKind: AppBootstrapFailureKind.startupFailure,
+      failureMessage: 'Vizor could not load its startup state.',
+    );
   }
 }
 
@@ -328,6 +371,8 @@ Future<RpcEndpointConfig> _readRpcEndpointConfig(
       storedUrl: storedUrl,
       storedPresetId: storedPreset,
     );
+  } on SecureStorageUnavailableException {
+    rethrow;
   } catch (e) {
     log('bootstrap: failed to read RPC endpoint: $e');
     return defaultRpcEndpointConfig(network);
@@ -337,6 +382,8 @@ Future<RpcEndpointConfig> _readRpcEndpointConfig(
 Future<ThemeMode> _readThemeMode(AppSecureStore storage) async {
   try {
     return _decodeThemeMode(await storage.readString(kThemeModeKey));
+  } on SecureStorageUnavailableException {
+    rethrow;
   } catch (e) {
     log('bootstrap: failed to read theme mode: $e');
     return ThemeMode.system;
@@ -354,6 +401,8 @@ ThemeMode _decodeThemeMode(String? raw) {
 Future<bool> _readPrivacyModeEnabled(AppSecureStore storage) async {
   try {
     return (await storage.readString(kPrivacyModeEnabledKey)) == 'true';
+  } on SecureStorageUnavailableException {
+    rethrow;
   } catch (e) {
     log('bootstrap: failed to read privacy mode: $e');
     return false;

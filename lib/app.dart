@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:go_router/go_router.dart';
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_bootstrap.dart';
 import 'src/core/layout/app_layout.dart';
@@ -38,6 +41,7 @@ import 'src/features/onboarding/keystone/keystone_wallet_birthday_screen.dart';
 import 'src/features/onboarding/lost_password_screen.dart';
 import 'src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'src/features/onboarding/shared/set_password_screen.dart';
+import 'src/features/onboarding/storage_unavailable_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/receive/screens/receive_screen.dart';
@@ -51,6 +55,7 @@ import 'src/features/settings/screens/settings_endpoint_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
+import 'src/providers/linux_update_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
@@ -83,7 +88,10 @@ Future<Widget> buildBootstrappedZcashWalletApp({
   List<Override> overrides = const [],
 }) async {
   final bootstrap = await loadAppBootstrap();
-  return buildZcashWalletApp(bootstrap: bootstrap, overrides: overrides);
+  return BootstrappedZcashWalletApp(
+    initialBootstrap: bootstrap,
+    overrides: overrides,
+  );
 }
 
 Widget buildZcashWalletApp({
@@ -93,10 +101,54 @@ Widget buildZcashWalletApp({
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap),
+      appBootstrapRetryProvider.overrideWithValue(() async {}),
       ...overrides,
     ],
     child: const ZcashWalletApp(),
   );
+}
+
+class BootstrappedZcashWalletApp extends StatefulWidget {
+  const BootstrappedZcashWalletApp({
+    required this.initialBootstrap,
+    this.overrides = const [],
+    super.key,
+  });
+
+  final AppBootstrapState initialBootstrap;
+  final List<Override> overrides;
+
+  @override
+  State<BootstrappedZcashWalletApp> createState() =>
+      _BootstrappedZcashWalletAppState();
+}
+
+class _BootstrappedZcashWalletAppState
+    extends State<BootstrappedZcashWalletApp> {
+  late AppBootstrapState _bootstrap = widget.initialBootstrap;
+  var _scopeGeneration = 0;
+
+  Future<void> _reloadBootstrap() async {
+    final bootstrap = await loadAppBootstrap();
+    if (!mounted) return;
+    setState(() {
+      _bootstrap = bootstrap;
+      _scopeGeneration += 1;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ProviderScope(
+      key: ValueKey(_scopeGeneration),
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap),
+        appBootstrapRetryProvider.overrideWithValue(_reloadBootstrap),
+        ...widget.overrides,
+      ],
+      child: const ZcashWalletApp(),
+    );
+  }
 }
 
 Future<void> runZcashWalletApp() async {
@@ -129,6 +181,12 @@ final _routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final walletAsync = ref.read(walletProvider);
       final security = ref.read(appSecurityProvider);
+      final isStorageUnavailable =
+          state.matchedLocation == '/storage-unavailable';
+
+      if (bootstrap.hasBlockingFailure) {
+        return isStorageUnavailable ? null : '/storage-unavailable';
+      }
 
       // Don't redirect on error — let the error screen show instead of onboarding
       if (walletAsync.hasError) return null;
@@ -154,6 +212,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
         'requiresUnlock=$requiresUnlock, isOnboarding=$isOnboarding',
       );
 
+      if (isStorageUnavailable) {
+        if (!hasWallet) return '/welcome';
+        return requiresUnlock ? '/unlock' : '/home';
+      }
       if (!hasWallet && isUnlockFlow) return '/welcome';
       if (!hasWallet && !isOnboarding && !isPublicLegal) return '/welcome';
       if (!hasWallet && state.matchedLocation == '/add-account') {
@@ -174,6 +236,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         redirect: (_, _) {
+          if (bootstrap.hasBlockingFailure) return '/storage-unavailable';
           final walletAsync = ref.read(walletProvider);
           final security = ref.read(appSecurityProvider);
           if (walletAsync.hasError) return '/home'; // home shows error state
@@ -184,6 +247,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
           if (!isUnlocked) return '/unlock';
           return '/home';
         },
+      ),
+      GoRoute(
+        path: '/storage-unavailable',
+        builder: (_, _) => const StorageUnavailableScreen(),
       ),
       // Onboarding-route transitions. Desktop acrylic visibly stutters
       // through a snapped page swap, so each route gets a custom
@@ -604,25 +671,29 @@ class ZcashWalletApp extends ConsumerWidget {
           // events over empty regions while descendant GestureDetectors
           // (buttons, TextFields) win the gesture arena first, keeping
           // focused buttons focused when re-clicked.
-          child: _WindowsUpdateStartupCheck(
-            child: _WindowsUpdatePromptHost(
-              router: router,
-              child: _RpcEndpointFailoverToastListener(
-                child: DesktopWindowTitlebarSafeArea(
-                  child: GestureDetector(
-                    onTap: () {
-                      // Leaf-only: skip when the primary focus is a
-                      // `FocusScopeNode` rather than a concrete `FocusNode`.
-                      // Unfocusing the scope itself strips the scope's
-                      // "most-recently-focused child" memory, which leaves the
-                      // next Tab with no deterministic starting point.
-                      final primary = FocusManager.instance.primaryFocus;
-                      if (primary != null && primary is! FocusScopeNode) {
-                        primary.unfocus();
-                      }
-                    },
-                    behavior: HitTestBehavior.translucent,
-                    child: child!,
+          child: _LinuxUpdateNoticeListener(
+            child: _WindowsUpdateStartupCheck(
+              child: _WindowsUpdatePromptHost(
+                router: router,
+                child: _RpcEndpointFailoverToastListener(
+                  child: _LinuxOpaqueWindowBackground(
+                    child: DesktopWindowTitlebarSafeArea(
+                      child: GestureDetector(
+                        onTap: () {
+                          // Leaf-only: skip when the primary focus is a
+                          // `FocusScopeNode` rather than a concrete `FocusNode`.
+                          // Unfocusing the scope itself strips the scope's
+                          // "most-recently-focused child" memory, which leaves the
+                          // next Tab with no deterministic starting point.
+                          final primary = FocusManager.instance.primaryFocus;
+                          if (primary != null && primary is! FocusScopeNode) {
+                            primary.unfocus();
+                          }
+                        },
+                        behavior: HitTestBehavior.translucent,
+                        child: child!,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -1025,6 +1096,66 @@ class _WindowsUpdatePromptProgress extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _LinuxUpdateNoticeListener extends ConsumerWidget {
+  const _LinuxUpdateNoticeListener({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<AsyncValue<LinuxUpdateInfo?>>(linuxUpdateProvider, (
+      previous,
+      next,
+    ) {
+      final update = next.asData?.value;
+      if (update == null) return;
+
+      final previousUpdate = previous?.asData?.value;
+      if (previousUpdate?.buildNumber == update.buildNumber) return;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        if (messenger == null) return;
+
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Vizor ${update.assetVersion} is available.'),
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: 'View Release',
+              onPressed: () => unawaited(_openLinuxUpdateRelease(update)),
+            ),
+          ),
+        );
+      });
+    });
+
+    return child;
+  }
+}
+
+Future<void> _openLinuxUpdateRelease(LinuxUpdateInfo update) async {
+  final uri = Uri.tryParse(update.releaseUrl);
+  if (uri == null) return;
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
+class _LinuxOpaqueWindowBackground extends StatelessWidget {
+  const _LinuxOpaqueWindowBackground({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.linux) {
+      return child;
+    }
+    return ColoredBox(color: context.colors.background.ground, child: child);
   }
 }
 

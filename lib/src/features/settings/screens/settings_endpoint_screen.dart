@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart'
     show Scrollbar, ScrollbarTheme, ScrollbarThemeData;
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,10 +11,10 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/rpc_endpoint_latency_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../widgets/custom_endpoint_settings_panel.dart';
 
 class SettingsEndpointScreen extends ConsumerStatefulWidget {
   const SettingsEndpointScreen({super.key});
@@ -257,7 +256,7 @@ class _SettingsEndpointPane extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
-                  _CurrentEndpointText(
+                  CurrentEndpointText(
                     current: current,
                     latencyState: latencyState,
                   ),
@@ -302,47 +301,6 @@ class _SettingsEndpointPane extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _CurrentEndpointText extends StatelessWidget {
-  const _CurrentEndpointText({
-    required this.current,
-    required this.latencyState,
-  });
-
-  final RpcEndpointConfig current;
-  final RpcEndpointLatencyState latencyState;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final preset = findRpcEndpointPresetByUrl(
-      current.normalizedLightwalletdUrl,
-      networkName: current.networkName,
-    );
-    final latency = latencyState.sampleForUrl(
-      current.normalizedLightwalletdUrl,
-    );
-    final suffix = [
-      if (latency != null) latency.label,
-      if (preset?.isDefault ?? false) '(Default)',
-    ].join(' ');
-
-    return Text.rich(
-      TextSpan(
-        text: 'Current: ',
-        children: [
-          TextSpan(
-            text: current.hostPort,
-            style: TextStyle(color: colors.text.brandCrimson),
-          ),
-          if (suffix.isNotEmpty) TextSpan(text: ' $suffix'),
-        ],
-      ),
-      textAlign: TextAlign.center,
-      style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
     );
   }
 }
@@ -415,7 +373,7 @@ class _EndpointSelector extends StatelessWidget {
                     AppSpacing.sm,
                     AppSpacing.xs,
                   ),
-                  child: _CustomEndpointForm(
+                  child: CustomEndpointForm(
                     controller: customController,
                     messageText: customMessageText,
                     onChanged: onCustomChanged,
@@ -691,83 +649,6 @@ class _PresetIndicator extends StatelessWidget {
               ),
             )
           : null,
-    );
-  }
-}
-
-class _CustomEndpointForm extends StatelessWidget {
-  const _CustomEndpointForm({
-    required this.controller,
-    required this.messageText,
-    required this.onChanged,
-    required this.onSubmit,
-  });
-
-  final TextEditingController controller;
-  final String? messageText;
-  final ValueChanged<String> onChanged;
-  final Future<void> Function() onSubmit;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            height: 86,
-            child: AppTextField(
-              label: 'Custom Endpoint',
-              hintText: '<hostname>:<port>',
-              controller: controller,
-              autofocus: true,
-              leading: const AppIcon(AppIcons.endpoint),
-              leadingSlotWidth: 32,
-              trailingSlotWidth: 40,
-              inputHorizontalPadding: AppSpacing.s,
-              keyboardType: TextInputType.url,
-              textInputAction: TextInputAction.done,
-              messageText: messageText,
-              tone: messageText == null
-                  ? AppTextFieldTone.neutral
-                  : AppTextFieldTone.destructive,
-              onChanged: onChanged,
-              onSubmitted: (_) => onSubmit(),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AppIcon(AppIcons.book, size: 20, color: colors.icon.accent),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text.rich(
-                  TextSpan(
-                    text:
-                        "If the endpoint is configured wrong, your wallet won't "
-                        'be able to sync with the Zcash network.\n',
-                    children: [
-                      TextSpan(
-                        text:
-                            "The wallet will show the balance from the last "
-                            "time it was successfully connected. It won't "
-                            'show any $kZcashDefaultCurrencyTicker you recently received.',
-                        style: TextStyle(color: colors.text.primary),
-                      ),
-                    ],
-                  ),
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.accent,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 }

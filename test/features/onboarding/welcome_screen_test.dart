@@ -2,7 +2,7 @@ import 'dart:ui' show Size;
 
 import 'package:flutter/material.dart' show MaterialApp, TextButton;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
-import 'package:flutter/widgets.dart' show Text, Widget;
+import 'package:flutter/widgets.dart' show Text, ValueKey, Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -20,6 +20,36 @@ void main() {
     expect(find.text('Back'), findsNothing);
   });
 
+  testWidgets('shows endpoint settings on first wallet creation entry', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen());
+
+    expect(
+      find.byKey(const ValueKey('welcome_endpoint_settings_button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('opens endpoint settings modal from welcome', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen());
+
+    await tester.tap(
+      find.byKey(const ValueKey('welcome_endpoint_settings_button')),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('welcome_endpoint_settings_modal')),
+      findsOneWidget,
+    );
+    expect(find.text('Endpoint'), findsOneWidget);
+    expect(find.text('Custom Endpoint'), findsOneWidget);
+    expect(find.text('Update'), findsOneWidget);
+  });
+
   testWidgets('shows Back when adding an account to an existing wallet', (
     tester,
   ) async {
@@ -27,6 +57,10 @@ void main() {
     await tester.pumpWidget(_welcomeScreen(showBackButton: true));
 
     expect(find.text('Back'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('welcome_endpoint_settings_button')),
+      findsNothing,
+    );
   });
 
   testWidgets('Back returns to the pushed accounts route', (tester) async {

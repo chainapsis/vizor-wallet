@@ -7,6 +7,9 @@ import '../../core/layout/app_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
+import '../../core/widgets/app_pane_modal_overlay.dart';
+import '../../core/widgets/app_tooltip.dart';
+import '../settings/widgets/custom_endpoint_settings_panel.dart';
 import 'shared/onboarding_welcome_art.dart';
 
 /// Welcome-specific button width. The redesigned Figma CTA stack is 256 dp
@@ -36,6 +39,8 @@ class WelcomeScreen extends ConsumerStatefulWidget {
 }
 
 class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
+  bool _showEndpointSettings = false;
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +66,17 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
           padding: const EdgeInsets.all(AppSpacing.xs),
           child: _Pane(
             showBackButton: widget.showBackButton,
+            showEndpointSettings: _showEndpointSettings,
+            onShowEndpointSettings: () {
+              setState(() {
+                _showEndpointSettings = true;
+              });
+            },
+            onDismissEndpointSettings: () {
+              setState(() {
+                _showEndpointSettings = false;
+              });
+            },
             child: const _Content(),
           ),
         ),
@@ -104,10 +120,19 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 /// team decided it adds no depth in the transparent-window + acrylic
 /// context the app actually runs in.
 class _Pane extends StatelessWidget {
-  const _Pane({required this.child, required this.showBackButton});
+  const _Pane({
+    required this.child,
+    required this.showBackButton,
+    required this.showEndpointSettings,
+    required this.onShowEndpointSettings,
+    required this.onDismissEndpointSettings,
+  });
 
   final Widget child;
   final bool showBackButton;
+  final bool showEndpointSettings;
+  final VoidCallback onShowEndpointSettings;
+  final VoidCallback onDismissEndpointSettings;
 
   /// Fixed foreground design-canvas dimensions pulled from Figma's Welcome BG
   /// frame (node 1300:34883). The 1080 × 720 desktop window leaves a
@@ -175,9 +200,103 @@ class _Pane extends StatelessWidget {
               top: AppSpacing.md,
               child: _BackRow(),
             ),
+          if (!showBackButton)
+            Positioned(
+              right: AppSpacing.md,
+              top: AppSpacing.md,
+              child: _WelcomeIconButton(
+                key: const ValueKey('welcome_endpoint_settings_button'),
+                icon: AppIcons.cog,
+                tooltip: 'Endpoint settings',
+                semanticLabel: 'Endpoint settings',
+                onTap: onShowEndpointSettings,
+              ),
+            ),
+          if (!showBackButton && showEndpointSettings)
+            AppPaneModalOverlay(
+              borderRadius: BorderRadius.circular(AppRadii.xSmall),
+              onDismiss: onDismissEndpointSettings,
+              child: CustomEndpointSettingsPanel(
+                key: const ValueKey('welcome_endpoint_settings_modal'),
+                restartSyncAfterUpdate: false,
+                onClose: onDismissEndpointSettings,
+                onUpdated: onDismissEndpointSettings,
+              ),
+            ),
         ],
       ),
     );
+  }
+}
+
+class _WelcomeIconButton extends StatefulWidget {
+  const _WelcomeIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.semanticLabel,
+    required this.onTap,
+    super.key,
+  });
+
+  final String icon;
+  final String tooltip;
+  final String semanticLabel;
+  final VoidCallback onTap;
+
+  @override
+  State<_WelcomeIconButton> createState() => _WelcomeIconButtonState();
+}
+
+class _WelcomeIconButtonState extends State<_WelcomeIconButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return AppTooltip(
+      message: widget.tooltip,
+      child: Semantics(
+        button: true,
+        label: widget.semanticLabel,
+        child: ExcludeSemantics(
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => _setHovered(true),
+            onExit: (_) => _setHovered(false),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onTap,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: _hovered
+                      ? colors.button.ghost.bgHover
+                      : colors.background.ground.withValues(alpha: 0),
+                  shape: BoxShape.circle,
+                ),
+                child: SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: Center(
+                    child: AppIcon(
+                      widget.icon,
+                      size: AppIconSize.medium,
+                      color: colors.icon.accent,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _setHovered(bool hovered) {
+    if (_hovered == hovered) return;
+    setState(() {
+      _hovered = hovered;
+    });
   }
 }
 

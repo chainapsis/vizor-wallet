@@ -1,6 +1,6 @@
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../../core/account_name_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_profile_picture.dart';
@@ -27,8 +27,6 @@ class AccountNameModal extends StatefulWidget {
 class _AccountNameModalState extends State<AccountNameModal> {
   static const _fieldHeight = 86.0;
   static const _buttonWidth = 280.0;
-  static const _minNameLength = 5;
-  static const _maxNameLength = 20;
 
   final _controller = TextEditingController();
   bool _isSubmitting = false;
@@ -36,9 +34,7 @@ class _AccountNameModalState extends State<AccountNameModal> {
 
   String get _trimmedName => _controller.text.trim();
 
-  bool get _isLengthValid =>
-      _trimmedName.length >= _minNameLength &&
-      _trimmedName.length <= _maxNameLength;
+  bool get _isLengthValid => isAccountNameLengthValid(_trimmedName);
 
   bool get _canUpdate =>
       !_isSubmitting &&
@@ -47,8 +43,10 @@ class _AccountNameModalState extends State<AccountNameModal> {
 
   String? get _messageText {
     if (_submitError != null) return _submitError;
-    if (_controller.text.isEmpty || _isLengthValid) return null;
-    return 'Use 5-20 characters.';
+    if (accountNameCharacterLength(_trimmedName) <= kAccountNameMaxCharacters) {
+      return null;
+    }
+    return kAccountNameLengthMessage;
   }
 
   @override
@@ -102,20 +100,17 @@ class _AccountNameModalState extends State<AccountNameModal> {
             height: _fieldHeight,
             child: AppTextField(
               label: 'New Account Name',
-              hintText: '5-20 Characters',
+              hintText:
+                  '$kAccountNameMinCharacters-$kAccountNameMaxCharacters Characters',
               controller: _controller,
               autofocus: true,
               enabled: !_isSubmitting,
               trailingSlotWidth: 40,
               inputHorizontalPadding: AppSpacing.s,
-              inputFormatters: [
-                LengthLimitingTextInputFormatter(_maxNameLength),
-              ],
               messageText: _messageText,
-              tone:
-                  _messageText == null
-                      ? AppTextFieldTone.neutral
-                      : AppTextFieldTone.destructive,
+              tone: _messageText == null
+                  ? AppTextFieldTone.neutral
+                  : AppTextFieldTone.destructive,
               onChanged: (_) => _handleChanged(),
               onSubmitted: (_) => _submit(),
             ),
@@ -160,7 +155,11 @@ class _AccountNameModalCard extends StatelessWidget {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [header, const SizedBox(height: AppSpacing.md), child],
+        children: [
+          header,
+          const SizedBox(height: AppSpacing.md),
+          child,
+        ],
       ),
     );
   }

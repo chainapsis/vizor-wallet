@@ -31,6 +31,7 @@ dependencies:
   flutter:
     sdk: flutter
 
+  characters: ^1.4.1
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
@@ -48,11 +49,11 @@ dependencies:
   mobile_scanner:
     git:
       url: https://github.com/chainapsis/mobile_scanner.git
-      ref: 80c523a219d4237ff2ff9c59ce2412891108f334
+      ref: 7932282afb502abfac2f5f9fc860491372e56eda
   desktop_window_bootstrap:
     git:
       url: https://github.com/chainapsis/desktop_window_bootstrap.git
-      ref: 4b4c6ba9ab23864d5b16694eef110bbbb50d28ab
+      ref: 01beee7
   crypto: ^3.0.7
   flutter_foreground_task: ^9.2.1
   window_manager: ^0.5.1

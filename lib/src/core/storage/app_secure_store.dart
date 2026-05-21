@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart'
         defaultTargetPlatform,
         kIsWeb,
         visibleForTesting;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../config/network_config.dart';
@@ -36,6 +37,19 @@ class PasswordRotationRecoveryFailedException implements Exception {
   @override
   String toString() =>
       'Password rotation rollback failed; automatic recovery is unsafe.';
+}
+
+class SecureStorageUnavailableException implements Exception {
+  const SecureStorageUnavailableException({
+    required this.operation,
+    required this.cause,
+  });
+
+  final String operation;
+  final Object cause;
+
+  @override
+  String toString() => 'Secure storage unavailable during $operation: $cause';
 }
 
 class AppSecureStore {
@@ -121,7 +135,7 @@ class AppSecureStore {
   }
 
   Future<String?> readString(String key) async {
-    return _storage.read(key: key);
+    return _runStorageOperation('read "$key"', () => _storage.read(key: key));
   }
 
   Future<String?> readSecretStringWithOptions(
@@ -130,7 +144,10 @@ class AppSecureStore {
   }) {
     return _secretMutationLock.run(() async {
       if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
-      final raw = await _storage.read(key: key);
+      final raw = await _runStorageOperation(
+        'read secret "$key"',
+        () => _storage.read(key: key),
+      );
       return _decryptStoredSecretString(
         raw,
         key: key,
@@ -146,7 +163,10 @@ class AppSecureStore {
     return _secretMutationLock.run(() async {
       if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
       final key = _accountMnemonicKey(accountUuid);
-      final raw = await _mnemonicStorage.read(key: key);
+      final raw = await _runStorageOperation(
+        'read account mnemonic "$accountUuid"',
+        () => _mnemonicStorage.read(key: key),
+      );
       return _decryptStoredSecretString(
         raw,
         key: key,
@@ -162,7 +182,10 @@ class AppSecureStore {
     return _secretMutationLock.run(() async {
       if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
       final key = _accountMnemonicKey(accountUuid);
-      final raw = await _mnemonicStorage.read(key: key);
+      final raw = await _runStorageOperation(
+        'read account mnemonic bytes "$accountUuid"',
+        () => _mnemonicStorage.read(key: key),
+      );
       return _decryptStoredSecretBytes(
         raw,
         key: key,
@@ -172,20 +195,30 @@ class AppSecureStore {
   }
 
   Future<void> writeString(String key, String value) async {
-    await _storage.write(key: key, value: value);
+    await _runStorageOperation(
+      'write "$key"',
+      () => _storage.write(key: key, value: value),
+    );
   }
 
   Future<void> writeSecretString(String key, String value) {
     return _secretMutationLock.run(() async {
-      await _storage.write(key: key, value: await _encryptSecretString(value));
+      await _runStorageOperation(
+        'write secret "$key"',
+        () async =>
+            _storage.write(key: key, value: await _encryptSecretString(value)),
+      );
     });
   }
 
   Future<void> writeAccountMnemonic(String accountUuid, String mnemonic) {
     return _secretMutationLock.run(() async {
-      await _mnemonicStorage.write(
-        key: _accountMnemonicKey(accountUuid),
-        value: await _encryptSecretString(mnemonic),
+      await _runStorageOperation(
+        'write account mnemonic "$accountUuid"',
+        () async => _mnemonicStorage.write(
+          key: _accountMnemonicKey(accountUuid),
+          value: await _encryptSecretString(mnemonic),
+        ),
       );
     });
   }
@@ -193,38 +226,53 @@ class AppSecureStore {
   Future<void> delete(String key) async {
     if (key.startsWith(_accountMnemonicKeyPrefix)) {
       await _secretMutationLock.run(() async {
-        await _mnemonicStorage.delete(key: key);
+        await _runStorageOperation(
+          'delete account mnemonic "$key"',
+          () => _mnemonicStorage.delete(key: key),
+        );
         await _deleteLegacyAccountMnemonicBestEffort(key);
       });
       return;
     }
-    await _storage.delete(key: key);
+    await _runStorageOperation(
+      'delete "$key"',
+      () => _storage.delete(key: key),
+    );
   }
 
   Future<void> deleteAccountMnemonic(String accountUuid) {
     final key = _accountMnemonicKey(accountUuid);
     return _secretMutationLock.run(() async {
-      await _mnemonicStorage.delete(key: key);
+      await _runStorageOperation(
+        'delete account mnemonic "$accountUuid"',
+        () => _mnemonicStorage.delete(key: key),
+      );
       await _deleteLegacyAccountMnemonicBestEffort(key);
     });
   }
 
   Future<void> deleteAll() {
     return _secretMutationLock.run(() async {
-      await _storage.deleteAll();
+      await _runStorageOperation('delete all', _storage.deleteAll);
       if (!identical(_mnemonicStorage, _storage)) {
-        await _mnemonicStorage.deleteAll();
+        await _runStorageOperation(
+          'delete all account mnemonics',
+          _mnemonicStorage.deleteAll,
+        );
       }
       _sessionPassword = null;
     });
   }
 
   Future<String?> readPlain(String key) {
-    return _storage.read(key: key);
+    return _runStorageOperation('read "$key"', () => _storage.read(key: key));
   }
 
   Future<void> writePlain(String key, String value) {
-    return _storage.write(key: key, value: value);
+    return _runStorageOperation(
+      'write "$key"',
+      () => _storage.write(key: key, value: value),
+    );
   }
 
   Future<bool> isPasswordConfigured() async {
@@ -292,7 +340,10 @@ class AppSecureStore {
           'Failed to migrate account mnemonics before password rotation.',
         );
       }
-      final storedValues = await _mnemonicStorage.readAll();
+      final storedValues = await _runStorageOperation(
+        'read all account mnemonics',
+        _mnemonicStorage.readAll,
+      );
       final rotatedSecrets = <_PasswordRotationEntry>[];
       final rollbackSecrets = <_PasswordRotationRollbackEntry>[];
 
@@ -380,9 +431,18 @@ class AppSecureStore {
 
   Future<void> clearPasswordConfiguration() {
     return _secretMutationLock.run(() async {
-      await _storage.delete(key: _passwordVerifierSaltKey);
-      await _storage.delete(key: _passwordVerifierKey);
-      await _storage.delete(key: _passwordRotationInProgressKey);
+      await _runStorageOperation(
+        'delete password verifier salt',
+        () => _storage.delete(key: _passwordVerifierSaltKey),
+      );
+      await _runStorageOperation(
+        'delete password verifier',
+        () => _storage.delete(key: _passwordVerifierKey),
+      );
+      await _runStorageOperation(
+        'delete password rotation record',
+        () => _storage.delete(key: _passwordRotationInProgressKey),
+      );
       clearSessionPassword();
     });
   }
@@ -442,6 +502,22 @@ class AppSecureStore {
 
   void clearSessionPassword() {
     _sessionPassword = null;
+  }
+
+  Future<T> _runStorageOperation<T>(
+    String operation,
+    Future<T> Function() body,
+  ) async {
+    try {
+      return await body();
+    } on SecureStorageUnavailableException {
+      rethrow;
+    } on PlatformException catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        SecureStorageUnavailableException(operation: operation, cause: error),
+        stackTrace,
+      );
+    }
   }
 
   bool _shouldSkipLockedSecretRead(bool requireUnlockedSession) {
@@ -533,16 +609,25 @@ class AppSecureStore {
       return _AccountMnemonicMigrationResult.complete;
     }
 
-    final legacyValues = await _storage.readAll();
+    final legacyValues = await _runStorageOperation(
+      'read legacy secure storage values',
+      _storage.readAll,
+    );
     var mnemonicsAvailable = true;
     var legacyCleanupComplete = true;
     for (final entry in legacyValues.entries) {
       if (!_isAccountMnemonicKey(entry.key)) continue;
 
       try {
-        final existing = await _mnemonicStorage.read(key: entry.key);
+        final existing = await _runStorageOperation(
+          'read migrated account mnemonic "${entry.key}"',
+          () => _mnemonicStorage.read(key: entry.key),
+        );
         if (existing == null) {
-          await _mnemonicStorage.write(key: entry.key, value: entry.value);
+          await _runStorageOperation(
+            'write migrated account mnemonic "${entry.key}"',
+            () => _mnemonicStorage.write(key: entry.key, value: entry.value),
+          );
         }
       } catch (error, stackTrace) {
         mnemonicsAvailable = false;
@@ -555,7 +640,10 @@ class AppSecureStore {
       }
 
       try {
-        await _storage.delete(key: entry.key);
+        await _runStorageOperation(
+          'delete legacy account mnemonic "${entry.key}"',
+          () => _storage.delete(key: entry.key),
+        );
       } catch (error, stackTrace) {
         legacyCleanupComplete = false;
         debugPrint(
@@ -587,7 +675,10 @@ class AppSecureStore {
       return;
     }
     try {
-      await _storage.delete(key: key);
+      await _runStorageOperation(
+        'delete legacy account mnemonic "$key"',
+        () => _storage.delete(key: key),
+      );
     } catch (error, stackTrace) {
       debugPrint(
         'AppSecureStore: failed to delete legacy account mnemonic "$key": '
@@ -661,7 +752,10 @@ class AppSecureStore {
     _PasswordRotationRecord rotation,
   ) async {
     for (final entry in rotation.entries) {
-      await _mnemonicStorage.write(key: entry.key, value: entry.rotatedValue);
+      await _runStorageOperation(
+        'write rotated account mnemonic "${entry.key}"',
+        () => _mnemonicStorage.write(key: entry.key, value: entry.rotatedValue),
+      );
     }
     await writePlain(_passwordVerifierSaltKey, rotation.newVerifierSalt);
     await writePlain(_passwordVerifierKey, rotation.newVerifier);
@@ -673,9 +767,12 @@ class AppSecureStore {
   ) async {
     try {
       for (final entry in rollback.entries) {
-        await _mnemonicStorage.write(
-          key: entry.key,
-          value: entry.originalValue,
+        await _runStorageOperation(
+          'restore account mnemonic "${entry.key}"',
+          () => _mnemonicStorage.write(
+            key: entry.key,
+            value: entry.originalValue,
+          ),
         );
       }
       if (rollback.oldVerifierSalt == null) {

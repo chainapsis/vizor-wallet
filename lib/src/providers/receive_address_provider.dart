@@ -25,6 +25,15 @@ class ReceiveAddressBusyException implements Exception {
   }
 }
 
+enum ReceiveAddressRequest {
+  shielded('shielded'),
+  orchard('orchard');
+
+  const ReceiveAddressRequest(this.wireName);
+
+  final String wireName;
+}
+
 class ReceiveAddressService {
   ReceiveAddressService(this._ref);
 
@@ -85,6 +94,10 @@ class ReceiveAddressService {
   Future<String> renewShieldedAddress({required String accountUuid}) async {
     final dbPath = await getWalletDbPath();
     final network = _network;
+    final accountNotifier = _ref.read(accountProvider.notifier);
+    final addressRequest = accountNotifier.isHardwareAccount(accountUuid)
+        ? ReceiveAddressRequest.orchard
+        : ReceiveAddressRequest.shielded;
 
     final address = await _withDatabaseLockRetry(
       operationName: 'renew shielded receive address',
@@ -92,12 +105,11 @@ class ReceiveAddressService {
         dbPath: dbPath,
         network: network,
         accountUuid: accountUuid,
+        addressRequest: addressRequest.wireName,
       ),
     );
 
-    _ref
-        .read(accountProvider.notifier)
-        .updateActiveAddressForAccount(accountUuid, address);
+    accountNotifier.updateActiveAddressForAccount(accountUuid, address);
     return address;
   }
 

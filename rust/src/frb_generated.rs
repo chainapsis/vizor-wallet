@@ -1243,6 +1243,7 @@ fn wire__crate__api__sync__get_next_available_address_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
+            let api_address_request = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -1250,6 +1251,7 @@ fn wire__crate__api__sync__get_next_available_address_impl(
                         api_db_path,
                         api_network,
                         api_account_uuid,
+                        api_address_request,
                     )?;
                     Ok(output_ok)
                 })())
@@ -3119,10 +3121,18 @@ impl SseDecode for crate::api::sync::ShieldTransparentResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_txids = <String>::sse_decode(deserializer);
+        let mut var_status = <String>::sse_decode(deserializer);
+        let mut var_broadcastedCount = <u32>::sse_decode(deserializer);
+        let mut var_totalCount = <u32>::sse_decode(deserializer);
+        let mut var_message = <Option<String>>::sse_decode(deserializer);
         let mut var_feeZatoshi = <u64>::sse_decode(deserializer);
         let mut var_shieldedZatoshi = <u64>::sse_decode(deserializer);
         return crate::api::sync::ShieldTransparentResult {
             txids: var_txids,
+            status: var_status,
+            broadcasted_count: var_broadcastedCount,
+            total_count: var_totalCount,
+            message: var_message,
             fee_zatoshi: var_feeZatoshi,
             shielded_zatoshi: var_shieldedZatoshi,
         };
@@ -3891,6 +3901,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ShieldTransparentResult
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.txids.into_into_dart().into_dart(),
+            self.status.into_into_dart().into_dart(),
+            self.broadcasted_count.into_into_dart().into_dart(),
+            self.total_count.into_into_dart().into_dart(),
+            self.message.into_into_dart().into_dart(),
             self.fee_zatoshi.into_into_dart().into_dart(),
             self.shielded_zatoshi.into_into_dart().into_dart(),
         ]
@@ -4524,6 +4538,10 @@ impl SseEncode for crate::api::sync::ShieldTransparentResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.txids, serializer);
+        <String>::sse_encode(self.status, serializer);
+        <u32>::sse_encode(self.broadcasted_count, serializer);
+        <u32>::sse_encode(self.total_count, serializer);
+        <Option<String>>::sse_encode(self.message, serializer);
         <u64>::sse_encode(self.fee_zatoshi, serializer);
         <u64>::sse_encode(self.shielded_zatoshi, serializer);
     }

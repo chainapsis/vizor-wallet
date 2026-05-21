@@ -603,6 +603,10 @@ pub struct SendMaxEstimateResult {
 
 pub struct ShieldTransparentResult {
     pub txids: String,
+    pub status: String,
+    pub broadcasted_count: u32,
+    pub total_count: u32,
+    pub message: Option<String>,
     pub fee_zatoshi: u64,
     pub shielded_zatoshi: u64,
 }
@@ -835,6 +839,10 @@ pub fn shield_transparent_balance(
         ))?;
         Ok(ShieldTransparentResult {
             txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
             fee_zatoshi: r.fee_zatoshi,
             shielded_zatoshi: r.shielded_zatoshi,
         })
@@ -866,6 +874,10 @@ pub fn shield_transparent_balance_with_macos_stored_mnemonic(
         ))?;
         Ok(ShieldTransparentResult {
             txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
             fee_zatoshi: r.fee_zatoshi,
             shielded_zatoshi: r.shielded_zatoshi,
         })
@@ -878,10 +890,12 @@ pub fn get_next_available_address(
     db_path: String,
     network: String,
     account_uuid: String,
+    address_request: String,
 ) -> Result<String, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        wallet_sync::get_next_available_address(&db_path, network, &account_uuid)
+        let address_request = wallet_sync::parse_address_request_kind(&address_request)?;
+        wallet_sync::get_next_available_address(&db_path, network, &account_uuid, address_request)
     })
 }
 

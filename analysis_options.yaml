@@ -11,6 +11,7 @@ include: package:flutter_lints/flutter.yaml
 
 analyzer:
   exclude:
+    - build/**
     - rust_builder/cargokit/build_tool/**
 
 linter:

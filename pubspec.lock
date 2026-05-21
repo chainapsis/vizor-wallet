@@ -106,7 +106,7 @@ packages:
     source: hosted
     version: "8.12.5"
   characters:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: characters
       sha256: faf38497bda5ead2a8c7615f4f7939df04333478bf32e4173fcb06d428b5716b
@@ -205,8 +205,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "4b4c6ba9ab23864d5b16694eef110bbbb50d28ab"
-      resolved-ref: "4b4c6ba9ab23864d5b16694eef110bbbb50d28ab"
+      ref: "01beee7"
+      resolved-ref: "01beee7c6ab94877bafe10503abb0f6cfb2e4686"
       url: "https://github.com/chainapsis/desktop_window_bootstrap.git"
     source: git
     version: "0.0.1"
@@ -588,8 +588,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "80c523a219d4237ff2ff9c59ce2412891108f334"
-      resolved-ref: "80c523a219d4237ff2ff9c59ce2412891108f334"
+      ref: "7932282afb502abfac2f5f9fc860491372e56eda"
+      resolved-ref: "7932282afb502abfac2f5f9fc860491372e56eda"
       url: "https://github.com/chainapsis/mobile_scanner.git"
     source: git
     version: "7.2.0"

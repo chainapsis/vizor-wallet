@@ -1,0 +1,257 @@
+fastlane_version "2.220.0"
+
+require "fileutils"
+require "tempfile"
+require "tmpdir"
+require_relative "../common/release"
+
+LINUX_RELEASE_FLAVOR_CONFIGS = {
+  "mainnet" => {
+    app_name: "Vizor",
+    artifact_name: "Vizor-linux",
+    app_id: "app.keplr.vizor",
+    binary_name: "vizor",
+    zcash_default_network: "main"
+  },
+  "testnet" => {
+    app_name: "Vizor Testnet",
+    artifact_name: "Vizor-Testnet-linux",
+    app_id: "app.keplr.vizor.testnet",
+    binary_name: "vizor-testnet",
+    zcash_default_network: "test"
+  }
+}.freeze
+
+DEFAULT_LINUX_RELEASE_FLAVORS = ["mainnet", "testnet"].freeze
+DEFAULT_LINUX_RELEASE_ARCH = "x86_64".freeze
+
+def normalize_linux_release_flavor(flavor)
+  normalized = flavor.to_s.strip.downcase
+  return "mainnet" if normalized == "main"
+  return "testnet" if normalized == "test"
+  return normalized if LINUX_RELEASE_FLAVOR_CONFIGS.key?(normalized)
+
+  UI.user_error!("Unsupported Linux release flavor: #{flavor}. Expected one of: #{LINUX_RELEASE_FLAVOR_CONFIGS.keys.join(", ")}")
+end
+
+def linux_release_flavors
+  raw = ENV["VIZOR_LINUX_FLAVORS"].to_s.strip
+  if raw.empty?
+    single_flavor = ENV["VIZOR_LINUX_FLAVOR"].to_s.strip
+    return [normalize_linux_release_flavor(single_flavor)] unless single_flavor.empty?
+
+    return DEFAULT_LINUX_RELEASE_FLAVORS
+  end
+
+  flavors = raw.split(",").map(&:strip).reject(&:empty?)
+  UI.user_error!("VIZOR_LINUX_FLAVORS must include at least one flavor") if flavors.empty?
+  flavors.map { |flavor| normalize_linux_release_flavor(flavor) }.uniq
+end
+
+def single_linux_release_flavor(options = {})
+  raw = options[:flavor] || ENV["VIZOR_LINUX_FLAVOR"]
+  raw = raw.to_s.strip
+  raw.empty? ? "mainnet" : normalize_linux_release_flavor(raw)
+end
+
+def linux_release_arch
+  arch = ENV["VIZOR_LINUX_ARCH"].to_s.strip
+  arch.empty? ? DEFAULT_LINUX_RELEASE_ARCH : arch
+end
+
+def linux_release_metadata(flavor: "mainnet")
+  flavor = normalize_linux_release_flavor(flavor)
+  flavor_config = LINUX_RELEASE_FLAVOR_CONFIGS.fetch(flavor)
+  tag = VizorRelease.release_tag
+  tag_info = VizorRelease.release_tag_info(tag)
+  VizorRelease.assert_prerelease_env_matches!(tag_info, tag)
+
+  version = tag_info.fetch(:base_version)
+  asset_version = tag_info.fetch(:asset_version)
+  build_number = VizorRelease.release_build_number
+  arch = linux_release_arch
+  update_enabled = !tag_info.fetch(:is_prerelease)
+  dist_dir = File.join(VizorRelease.workspace_root, "dist", "linux")
+  appimage_dir = File.join(dist_dir, "appimage")
+  appimage_asset_name = "#{flavor_config.fetch(:artifact_name)}-#{arch}.AppImage"
+  appimage_path = File.join(appimage_dir, appimage_asset_name)
+  zsync_asset_name = "#{appimage_asset_name}.zsync"
+  release_repository = ENV.fetch("RELEASE_REPOSITORY")
+  repository_owner, repository_name = release_repository.split("/", 2)
+  UI.user_error!("RELEASE_REPOSITORY must be in owner/name form") if repository_owner.to_s.empty? || repository_name.to_s.empty?
+
+  {
+    flavor: flavor,
+    app_name: flavor_config.fetch(:app_name),
+    artifact_name: flavor_config.fetch(:artifact_name),
+    app_id: flavor_config.fetch(:app_id),
+    binary_name: flavor_config.fetch(:binary_name),
+    zcash_default_network: flavor_config.fetch(:zcash_default_network),
+    arch: arch,
+    version: version,
+    asset_version: asset_version,
+    is_prerelease: tag_info.fetch(:is_prerelease),
+    is_internal: tag_info.fetch(:is_internal),
+    update_enabled: update_enabled,
+    build_number: build_number,
+    tag: tag,
+    release_name: ENV["RELEASE_NAME"] || tag,
+    dist_dir: dist_dir,
+    bundle_dir: File.join(dist_dir, flavor_config.fetch(:artifact_name)),
+    appimage_dir: appimage_dir,
+    appimage_path: appimage_path,
+    appimage_asset_name: appimage_asset_name,
+    zsync_path: "#{appimage_path}.zsync",
+    sha256_path: "#{appimage_path}.sha256",
+    asc_path: "#{appimage_path}.asc",
+    update_info: update_enabled ? "gh-releases-zsync|#{repository_owner}|#{repository_name}|latest|#{zsync_asset_name}" : nil
+  }
+end
+
+def linux_package_script_path
+  File.join(VizorRelease.workspace_root, "scripts", "package-linux-appimage.sh")
+end
+
+def linux_verify_bundle_metadata!(metadata)
+  bundle_dir = metadata.fetch(:bundle_dir)
+  binary_path = File.join(bundle_dir, metadata.fetch(:binary_name))
+  desktop_path = File.join(bundle_dir, "data", "applications", "#{metadata.fetch(:app_id)}.desktop")
+  icon_path = File.join(bundle_dir, "data", "icons", "hicolor", "256x256", "apps", "#{metadata.fetch(:app_id)}.png")
+
+  UI.user_error!("Missing Linux bundle at #{bundle_dir}") unless File.directory?(bundle_dir)
+  UI.user_error!("Missing executable #{binary_path}") unless File.executable?(binary_path)
+  UI.user_error!("Missing desktop file #{desktop_path}") unless File.exist?(desktop_path)
+  UI.user_error!("Missing icon #{icon_path}") unless File.exist?(icon_path)
+
+  desktop = File.read(desktop_path)
+  {
+    "Name=#{metadata.fetch(:app_name)}" => "desktop name",
+    "Exec=#{metadata.fetch(:binary_name)}" => "desktop executable",
+    "Icon=#{metadata.fetch(:app_id)}" => "desktop icon",
+    "StartupWMClass=#{metadata.fetch(:app_id)}" => "desktop StartupWMClass"
+  }.each do |expected, description|
+    UI.user_error!("Expected #{description} #{expected.inspect} in #{desktop_path}") unless desktop.include?(expected)
+  end
+end
+
+def linux_validate_signing_environment!
+  ENV.fetch("LINUX_APPIMAGE_GPG_PRIVATE_KEY")
+  ENV.fetch("LINUX_APPIMAGE_GPG_KEY_ID")
+end
+
+def linux_with_gnupg_home
+  Dir.mktmpdir("vizor-linux-gnupg") do |gnupg_home|
+    FileUtils.chmod(0o700, gnupg_home)
+    previous_gnupg_home = ENV["GNUPGHOME"]
+    previous_passphrase = ENV["APPIMAGETOOL_SIGN_PASSPHRASE"]
+    ENV["GNUPGHOME"] = gnupg_home
+    ENV["APPIMAGETOOL_SIGN_PASSPHRASE"] = ENV["LINUX_APPIMAGE_GPG_PASSPHRASE"].to_s
+    yield
+  ensure
+    previous_gnupg_home.nil? ? ENV.delete("GNUPGHOME") : ENV["GNUPGHOME"] = previous_gnupg_home
+    previous_passphrase.nil? ? ENV.delete("APPIMAGETOOL_SIGN_PASSPHRASE") : ENV["APPIMAGETOOL_SIGN_PASSPHRASE"] = previous_passphrase
+  end
+end
+
+def linux_import_appimage_gpg_key!
+  key = ENV.fetch("LINUX_APPIMAGE_GPG_PRIVATE_KEY")
+  Tempfile.create(["linux-appimage-private-key", ".asc"]) do |private_key_file|
+    private_key_file.write(key)
+    private_key_file.flush
+    sh("gpg --batch --import #{VizorRelease.shell_escape(private_key_file.path)}")
+  end
+
+  key_id = ENV.fetch("LINUX_APPIMAGE_GPG_KEY_ID")
+  sh("gpg --batch --list-secret-keys #{VizorRelease.shell_escape(key_id)}")
+end
+
+def linux_update_enabled_for_release?(metadata)
+  metadata.fetch(:update_enabled)
+end
+
+def linux_appimage_assets(metadata)
+  assets = [
+    metadata.fetch(:appimage_path),
+    metadata.fetch(:sha256_path),
+    metadata.fetch(:asc_path)
+  ]
+  assets.insert(1, metadata.fetch(:zsync_path)) if linux_update_enabled_for_release?(metadata)
+  assets
+end
+
+def linux_verify_appimage_outputs!(metadata)
+  linux_appimage_assets(metadata).each do |path|
+    UI.user_error!("Missing Linux release asset #{path}") unless File.exist?(path)
+  end
+  UI.user_error!("AppImage is not executable: #{metadata[:appimage_path]}") unless File.executable?(metadata.fetch(:appimage_path))
+end
+
+platform :linux do
+  desc "Build one Linux release bundle"
+  lane :build do |options|
+    metadata = linux_release_metadata(flavor: single_linux_release_flavor(options))
+    FileUtils.mkdir_p(metadata[:dist_dir])
+
+    build_script_path = File.join(VizorRelease.workspace_root, "scripts", "build-linux-release.sh")
+    UI.user_error!("Missing Linux build script at #{build_script_path}") unless File.executable?(build_script_path)
+
+    command = [
+      "cd #{VizorRelease.shell_escape(VizorRelease.workspace_root)} &&",
+      "VIZOR_RELEASE_VERSION=#{VizorRelease.shell_escape(metadata[:asset_version])}",
+      "VIZOR_RELEASE_BUILD_NAME=#{VizorRelease.shell_escape(metadata[:version])}",
+      "VIZOR_RELEASE_BUILD_NUMBER=#{VizorRelease.shell_escape(metadata[:build_number])}",
+      "VIZOR_RELEASE_FLAVOR=#{VizorRelease.shell_escape(metadata[:flavor])}",
+      "VIZOR_RELEASE_ARCH=#{VizorRelease.shell_escape(metadata[:arch])}",
+      "VIZOR_RELEASE_REPOSITORY=#{VizorRelease.shell_escape(ENV.fetch("RELEASE_REPOSITORY"))}",
+      "VIZOR_UPDATE_CHECK_ENABLED=#{linux_update_enabled_for_release?(metadata) ? "true" : "false"}",
+      "#{VizorRelease.shell_escape(build_script_path)}",
+      "--flavor", VizorRelease.shell_escape(metadata[:flavor]),
+      "--build-mode", "release",
+      "--no-archive"
+    ].join(" ")
+    sh(command)
+    linux_verify_bundle_metadata!(metadata)
+  end
+
+  desc "Package one Linux release bundle into a signed AppImage"
+  lane :package do |options|
+    metadata = linux_release_metadata(flavor: single_linux_release_flavor(options))
+    build(flavor: metadata[:flavor]) unless options[:skip_build]
+
+    FileUtils.mkdir_p(metadata[:appimage_dir])
+    UI.user_error!("Missing AppImage packaging script at #{linux_package_script_path}") unless File.executable?(linux_package_script_path)
+
+    command = [
+      VizorRelease.shell_escape(linux_package_script_path),
+      "--bundle-dir", VizorRelease.shell_escape(metadata[:bundle_dir]),
+      "--output", VizorRelease.shell_escape(metadata[:appimage_path]),
+      "--app-id", VizorRelease.shell_escape(metadata[:app_id]),
+      "--app-name", VizorRelease.shell_escape(metadata[:app_name]),
+      "--binary-name", VizorRelease.shell_escape(metadata[:binary_name]),
+      "--arch", VizorRelease.shell_escape(metadata[:arch]),
+      "--sign-key", VizorRelease.shell_escape(ENV.fetch("LINUX_APPIMAGE_GPG_KEY_ID"))
+    ]
+    if linux_update_enabled_for_release?(metadata)
+      command += ["--update-info", VizorRelease.shell_escape(metadata.fetch(:update_info))]
+    end
+    sh(command.join(" "))
+    linux_verify_appimage_outputs!(metadata)
+  end
+
+  desc "Build, sign, and package Linux AppImage release assets"
+  lane :release do
+    flavors = linux_release_flavors
+    metadata_items = flavors.map { |flavor| linux_release_metadata(flavor: flavor) }
+
+    linux_validate_signing_environment!
+
+    linux_with_gnupg_home do
+      linux_import_appimage_gpg_key!
+      metadata_items.each do |metadata|
+        package(flavor: metadata[:flavor])
+      end
+    end
+
+    UI.message("Linux release assets are ready under #{metadata_items.first[:dist_dir]}")
+  end
+end

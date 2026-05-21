@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
+import '../core/account_name_policy.dart';
 import '../core/config/network_config.dart';
 import '../core/profile_pictures.dart';
 import '../core/storage/app_secure_store.dart';
@@ -296,13 +297,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   /// Rename an account.
   Future<void> renameAccount(String uuid, String newName) async {
+    validateAccountName(newName);
+    final normalizedName = normalizeAccountName(newName);
     final prev = state.value ?? const AccountState();
     final updated = prev.accounts
-        .map((a) => a.uuid == uuid ? a.copyWith(name: newName) : a)
+        .map((a) => a.uuid == uuid ? a.copyWith(name: normalizedName) : a)
         .toList();
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
-    log('renameAccount: $uuid → $newName');
+    log('renameAccount: $uuid → $normalizedName');
   }
 
   /// Update an account profile picture.
