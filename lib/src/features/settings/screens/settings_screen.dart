@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -16,6 +18,7 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
+import '../../../providers/windows_update_provider.dart';
 import '../../accounts/widgets/account_name_modal.dart';
 import '../../accounts/widgets/account_profile_picture_modal.dart';
 
@@ -31,7 +34,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-enum _SettingsModalType { accountName, profilePicture, theme }
+enum _SettingsModalType { accountName, profilePicture, theme, updates }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   _SettingsModalType? _activeModal;
@@ -84,6 +87,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
     final endpointLabel = ref.watch(rpcEndpointProvider).hostPort;
+    final updateState = ref.watch(windowsUpdateProvider);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -101,19 +105,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: _themeLabel(themeMode),
+                updateLabel: _updateLabel(updateState),
                 onSeedPhrase: () => context.push('/settings/secret-passphrase'),
-                onChangePassword:
-                    () => context.push('/settings/change-password'),
+                onChangePassword: () =>
+                    context.push('/settings/change-password'),
                 onEndpoint: () => context.push('/settings/endpoint'),
-                onAccountName:
-                    hasActiveAccount
-                        ? () => _showModal(_SettingsModalType.accountName)
-                        : null,
-                onProfilePicture:
-                    hasActiveAccount
-                        ? () => _showModal(_SettingsModalType.profilePicture)
-                        : null,
+                onAccountName: hasActiveAccount
+                    ? () => _showModal(_SettingsModalType.accountName)
+                    : null,
+                onProfilePicture: hasActiveAccount
+                    ? () => _showModal(_SettingsModalType.profilePicture)
+                    : null,
                 onTheme: () => _showModal(_SettingsModalType.theme),
+                onUpdates: () => _showModal(_SettingsModalType.updates),
               ),
             ),
             if (_activeModal != null)
@@ -137,6 +141,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onCancel: _closeModal,
                     onUpdate: _updateTheme,
                   ),
+                  _SettingsModalType.updates => _WindowsUpdateModal(
+                    onCancel: _closeModal,
+                  ),
                 },
               ),
           ],
@@ -156,6 +163,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   static String _profilePictureLabel(String profilePictureId) {
     return findProfilePictureOption(profilePictureId)?.label ?? 'Custom';
   }
+
+  static String _updateLabel(WindowsUpdateState state) {
+    if (!state.supported) return 'Unavailable';
+    return switch (state.status) {
+      WindowsUpdateStatus.checking => 'Checking',
+      WindowsUpdateStatus.available => 'Available',
+      WindowsUpdateStatus.downloading => '${state.downloadProgress}%',
+      WindowsUpdateStatus.ready => 'Restart',
+      WindowsUpdateStatus.applying => 'Applying',
+      WindowsUpdateStatus.failed => 'Failed',
+      WindowsUpdateStatus.noUpdate => 'Up to date',
+      _ => 'Check',
+    };
+  }
 }
 
 class _SettingsPane extends StatelessWidget {
@@ -165,12 +186,14 @@ class _SettingsPane extends StatelessWidget {
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
+    required this.updateLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
     required this.onEndpoint,
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onTheme,
+    required this.onUpdates,
   });
 
   final String accountName;
@@ -178,12 +201,14 @@ class _SettingsPane extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
+  final String updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
   final VoidCallback onEndpoint;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
+  final VoidCallback onUpdates;
 
   @override
   Widget build(BuildContext context) {
@@ -220,12 +245,14 @@ class _SettingsPane extends StatelessWidget {
                         activeAccountIsHardware: activeAccountIsHardware,
                         endpointLabel: endpointLabel,
                         themeLabel: themeLabel,
+                        updateLabel: updateLabel,
                         onSeedPhrase: onSeedPhrase,
                         onChangePassword: onChangePassword,
                         onEndpoint: onEndpoint,
                         onAccountName: onAccountName,
                         onProfilePicture: onProfilePicture,
                         onTheme: onTheme,
+                        onUpdates: onUpdates,
                       ),
                     ],
                   ),
@@ -246,12 +273,14 @@ class _SettingsList extends StatelessWidget {
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
+    required this.updateLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
     required this.onEndpoint,
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onTheme,
+    required this.onUpdates,
   });
 
   final String accountName;
@@ -259,12 +288,14 @@ class _SettingsList extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
+  final String updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
   final VoidCallback onEndpoint;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
+  final VoidCallback onUpdates;
 
   @override
   Widget build(BuildContext context) {
@@ -320,6 +351,13 @@ class _SettingsList extends StatelessWidget {
               value: themeLabel,
               onTap: onTheme,
             ),
+            const _SettingsRowDivider(),
+            _SettingsRow(
+              iconName: AppIcons.sync,
+              label: 'Updates',
+              value: updateLabel,
+              onTap: onUpdates,
+            ),
           ],
         ),
       ],
@@ -347,7 +385,11 @@ class _SettingsModalCard extends StatelessWidget {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [header, const SizedBox(height: AppSpacing.md), child],
+        children: [
+          header,
+          const SizedBox(height: AppSpacing.md),
+          child,
+        ],
       ),
     );
   }
@@ -469,33 +511,30 @@ class _ThemeModalState extends State<_ThemeModal> {
                 iconName: AppIcons.monitor,
                 label: 'System (Auto)',
                 selected: _selectedMode == ThemeMode.system,
-                onTap:
-                    () => setState(() {
-                      _submitError = null;
-                      _selectedMode = ThemeMode.system;
-                    }),
+                onTap: () => setState(() {
+                  _submitError = null;
+                  _selectedMode = ThemeMode.system;
+                }),
               ),
               const SizedBox(height: AppSpacing.xs),
               _ThemeOptionCard(
                 iconName: AppIcons.day,
                 label: 'Light Mode',
                 selected: _selectedMode == ThemeMode.light,
-                onTap:
-                    () => setState(() {
-                      _submitError = null;
-                      _selectedMode = ThemeMode.light;
-                    }),
+                onTap: () => setState(() {
+                  _submitError = null;
+                  _selectedMode = ThemeMode.light;
+                }),
               ),
               const SizedBox(height: AppSpacing.xs),
               _ThemeOptionCard(
                 iconName: AppIcons.night,
                 label: 'Dark Mode',
                 selected: _selectedMode == ThemeMode.dark,
-                onTap:
-                    () => setState(() {
-                      _submitError = null;
-                      _selectedMode = ThemeMode.dark;
-                    }),
+                onTap: () => setState(() {
+                  _submitError = null;
+                  _selectedMode = ThemeMode.dark;
+                }),
               ),
             ],
           ),
@@ -524,6 +563,209 @@ class _ThemeModalState extends State<_ThemeModal> {
             child: const Text('Cancel'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _WindowsUpdateModal extends ConsumerWidget {
+  const _WindowsUpdateModal({required this.onCancel});
+
+  static const _buttonWidth = 280.0;
+
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(windowsUpdateProvider);
+    final primary = _primaryAction(ref, state);
+
+    return _SettingsModalCard(
+      header: const _ModalHeader(
+        leading: _ModalUtilityIcon(iconName: AppIcons.sync),
+        title: 'Updates',
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _UpdateInfoRow(label: 'Current', value: state.currentVersion),
+          if (state.availableVersion.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            _UpdateInfoRow(label: 'Available', value: state.availableVersion),
+          ],
+          const SizedBox(height: AppSpacing.s),
+          Text(
+            _statusText(state),
+            textAlign: TextAlign.center,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.bodyMedium.copyWith(
+              color: state.status == WindowsUpdateStatus.failed
+                  ? context.colors.text.destructive
+                  : context.colors.text.secondary,
+            ),
+          ),
+          if (state.status == WindowsUpdateStatus.downloading) ...[
+            const SizedBox(height: AppSpacing.s),
+            _UpdateProgressBar(progress: state.downloadProgress),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            onPressed: primary.onPressed,
+            variant: AppButtonVariant.primary,
+            minWidth: _buttonWidth,
+            child: Text(primary.label),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          AppButton(
+            onPressed: state.isBusy ? null : onCancel,
+            variant: AppButtonVariant.ghost,
+            minWidth: _buttonWidth,
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static _UpdatePrimaryAction _primaryAction(
+    WidgetRef ref,
+    WindowsUpdateState state,
+  ) {
+    if (!state.supported) {
+      return const _UpdatePrimaryAction(label: 'Check for updates');
+    }
+    return switch (state.status) {
+      WindowsUpdateStatus.checking => const _UpdatePrimaryAction(
+        label: 'Checking...',
+      ),
+      WindowsUpdateStatus.downloading => const _UpdatePrimaryAction(
+        label: 'Downloading...',
+      ),
+      WindowsUpdateStatus.applying => const _UpdatePrimaryAction(
+        label: 'Restarting...',
+      ),
+      WindowsUpdateStatus.available => _UpdatePrimaryAction(
+        label: 'Download update',
+        onPressed: () {
+          unawaited(ref.read(windowsUpdateProvider.notifier).downloadUpdate());
+        },
+      ),
+      WindowsUpdateStatus.ready => _UpdatePrimaryAction(
+        label: 'Restart to update',
+        onPressed: () {
+          unawaited(
+            ref.read(windowsUpdateProvider.notifier).applyUpdateAndRestart(),
+          );
+        },
+      ),
+      WindowsUpdateStatus.failed => _UpdatePrimaryAction(
+        label: 'Try again',
+        onPressed: () {
+          unawaited(ref.read(windowsUpdateProvider.notifier).checkForUpdates());
+        },
+      ),
+      _ => _UpdatePrimaryAction(
+        label: 'Check for updates',
+        onPressed: () {
+          unawaited(ref.read(windowsUpdateProvider.notifier).checkForUpdates());
+        },
+      ),
+    };
+  }
+
+  static String _statusText(WindowsUpdateState state) {
+    if (!state.supported) {
+      return 'Updates are available in the installed Windows app.';
+    }
+    return switch (state.status) {
+      WindowsUpdateStatus.checking => 'Checking for updates.',
+      WindowsUpdateStatus.noUpdate => 'Vizor is up to date.',
+      WindowsUpdateStatus.available =>
+        'Version ${state.availableVersion} is available.',
+      WindowsUpdateStatus.downloading =>
+        'Downloading ${state.downloadProgress}%.',
+      WindowsUpdateStatus.ready =>
+        'Version ${state.availableVersion} is ready.',
+      WindowsUpdateStatus.applying => 'Restarting Vizor.',
+      WindowsUpdateStatus.failed =>
+        state.message.isEmpty ? "Couldn't check for updates." : state.message,
+      _ => 'Ready to check for updates.',
+    };
+  }
+}
+
+class _UpdatePrimaryAction {
+  const _UpdatePrimaryAction({required this.label, this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+}
+
+class _UpdateInfoRow extends StatelessWidget {
+  const _UpdateInfoRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 280,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelMedium.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text(
+              value.isEmpty ? '-' : value,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: AppTypography.labelLarge.copyWith(
+                color: context.colors.text.accent,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UpdateProgressBar extends StatelessWidget {
+  const _UpdateProgressBar({required this.progress});
+
+  final int progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final factor = progress.clamp(0, 100) / 100;
+
+    return Container(
+      width: 280,
+      height: 4,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: colors.background.neutralSubtleOpacity,
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+      alignment: Alignment.centerLeft,
+      child: FractionallySizedBox(
+        widthFactor: factor,
+        heightFactor: 1,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: colors.background.inverse),
+        ),
       ),
     );
   }
@@ -606,22 +848,20 @@ class _ThemeOptionIndicator extends StatelessWidget {
       width: 16,
       height: 16,
       decoration: BoxDecoration(
-        color:
-            selected
-                ? colors.background.inverse
-                : colors.background.neutralSubtleOpacity,
+        color: selected
+            ? colors.background.inverse
+            : colors.background.neutralSubtleOpacity,
         shape: BoxShape.circle,
       ),
-      child:
-          selected
-              ? Center(
-                child: AppIcon(
-                  AppIcons.check,
-                  size: 12,
-                  color: colors.background.ground,
-                ),
-              )
-              : null,
+      child: selected
+          ? Center(
+              child: AppIcon(
+                AppIcons.check,
+                size: 12,
+                color: colors.background.ground,
+              ),
+            )
+          : null,
     );
   }
 }
@@ -735,10 +975,9 @@ class _SettingsRowState extends State<_SettingsRow> {
           height: 40,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           decoration: BoxDecoration(
-            color:
-                isInteractive && _hovered
-                    ? _settingsRowHoverBackgroundColor(context)
-                    : null,
+            color: isInteractive && _hovered
+                ? _settingsRowHoverBackgroundColor(context)
+                : null,
             borderRadius: BorderRadius.circular(AppRadii.xSmall),
           ),
           child: Row(

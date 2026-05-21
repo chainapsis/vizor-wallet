@@ -1,9 +1,12 @@
 [CmdletBinding()]
 param(
   [string]$Version = "",
-  [string]$PackId = "com.keplr.vizor.dev",
-  [string]$PackTitle = "Vizor Dev",
-  [string]$OutputDir = "build\velopack",
+  [ValidateSet("mainnet", "testnet")]
+  [string]$Network = "mainnet",
+  [string]$PackId = "",
+  [string]$PackTitle = "",
+  [string]$Channel = "",
+  [string]$OutputDir = "",
   [switch]$Msi,
   [switch]$Clean
 )
@@ -81,9 +84,36 @@ $vpkExe = Resolve-Command `
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
   $Version = Get-PubspecVersion
-  if ($PackId.EndsWith(".dev") -and $Version -notmatch '-') {
-    $Version = "$Version-dev.1"
+}
+
+if ($Network -eq "mainnet") {
+  if ([string]::IsNullOrWhiteSpace($PackId)) {
+    $PackId = "com.keplr.vizor"
   }
+  if ([string]::IsNullOrWhiteSpace($PackTitle)) {
+    $PackTitle = "Vizor"
+  }
+  if ([string]::IsNullOrWhiteSpace($Channel)) {
+    $Channel = "win-x64-mainnet"
+  }
+  if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+    $OutputDir = "build\velopack\mainnet"
+  }
+  $NetworkDartDefine = "main"
+} else {
+  if ([string]::IsNullOrWhiteSpace($PackId)) {
+    $PackId = "com.keplr.vizor.testnet"
+  }
+  if ([string]::IsNullOrWhiteSpace($PackTitle)) {
+    $PackTitle = "Vizor Testnet"
+  }
+  if ([string]::IsNullOrWhiteSpace($Channel)) {
+    $Channel = "win-x64-testnet"
+  }
+  if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+    $OutputDir = "build\velopack\testnet"
+  }
+  $NetworkDartDefine = "test"
 }
 
 $packDir = Join-Path $repoRoot "build\windows\x64\runner\Release"
@@ -104,7 +134,16 @@ if ($Clean) {
   }
 }
 
-& $fvmExe flutter build windows --release
+$flutterBuildArgs = @(
+  "flutter",
+  "build",
+  "windows",
+  "--release",
+  "--dart-define=ZCASH_DEFAULT_NETWORK=$NetworkDartDefine",
+  "--dart-define=VIZOR_RELEASE_VERSION=$Version"
+)
+
+& $fvmExe @flutterBuildArgs
 
 if (-not (Test-Path $mainExe)) {
   throw "Windows release build did not produce $mainExe"
@@ -115,6 +154,7 @@ $packArgs = @(
   "--packId", $PackId,
   "--packTitle", $PackTitle,
   "--packVersion", $Version,
+  "--channel", $Channel,
   "--packDir", $packDir,
   "--mainExe", "Vizor.exe",
   "--outputDir", $resolvedOutputDir,
@@ -130,4 +170,4 @@ if ($Msi) {
 
 & $vpkExe @packArgs
 
-Write-Host "Velopack package created in $resolvedOutputDir"
+Write-Host "Velopack $Network package created in $resolvedOutputDir"

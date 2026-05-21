@@ -11,6 +11,7 @@ add_executable(${BINARY_NAME} WIN32
   "main.cpp"
   "utils.cpp"
   "velopack_uninstall.cpp"
+  "velopack_update.cpp"
   "win32_window.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
@@ -31,6 +32,32 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 
+set(VELOPACK_LIBC_VERSION "0.0.1589-ga2c5a97")
+set(VELOPACK_LIBC_SHA256 "6c0cf30be1ff8e37d904458c9c00cc61a5276521fc708cfebbe96615777da38c")
+set(VELOPACK_LIBC_URL "https://github.com/velopack/velopack/releases/download/${VELOPACK_LIBC_VERSION}/velopack_libc_${VELOPACK_LIBC_VERSION}.zip")
+set(VELOPACK_LIBC_ROOT "${CMAKE_BINARY_DIR}/velopack_libc_${VELOPACK_LIBC_VERSION}")
+set(VELOPACK_LIBC_ARCHIVE "${CMAKE_BINARY_DIR}/velopack_libc_${VELOPACK_LIBC_VERSION}.zip")
+
+if(NOT EXISTS "${VELOPACK_LIBC_ROOT}/include/Velopack.h")
+  file(DOWNLOAD
+    "${VELOPACK_LIBC_URL}"
+    "${VELOPACK_LIBC_ARCHIVE}"
+    EXPECTED_HASH "SHA256=${VELOPACK_LIBC_SHA256}"
+  )
+  file(MAKE_DIRECTORY "${VELOPACK_LIBC_ROOT}")
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E tar xzf "${VELOPACK_LIBC_ARCHIVE}"
+    WORKING_DIRECTORY "${VELOPACK_LIBC_ROOT}"
+    RESULT_VARIABLE VELOPACK_EXTRACT_RESULT
+  )
+  if(NOT VELOPACK_EXTRACT_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to extract Velopack libc archive.")
+  endif()
+endif()
+
+set(VELOPACK_LIBC_DLL "${VELOPACK_LIBC_ROOT}/lib/velopack_libc_win_x64_msvc.dll")
+set(VELOPACK_LIBC_IMPLIB "${VELOPACK_LIBC_ROOT}/lib/velopack_libc_win_x64_msvc.dll.lib")
+
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
@@ -38,7 +65,15 @@ target_link_libraries(${BINARY_NAME} PRIVATE "advapi32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "shell32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "version.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "${VELOPACK_LIBC_IMPLIB}")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
+target_include_directories(${BINARY_NAME} PRIVATE "${VELOPACK_LIBC_ROOT}/include")
+
+add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    "${VELOPACK_LIBC_DLL}"
+    "$<TARGET_FILE_DIR:${BINARY_NAME}>"
+)
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)

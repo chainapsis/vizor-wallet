@@ -51,6 +51,7 @@ import 'src/providers/app_security_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
+import 'src/providers/windows_update_provider.dart';
 import 'src/rust/frb_generated.dart';
 
 void log(String message) => debugPrint('[zcash] $message');
@@ -600,22 +601,24 @@ class ZcashWalletApp extends ConsumerWidget {
           // events over empty regions while descendant GestureDetectors
           // (buttons, TextFields) win the gesture arena first, keeping
           // focused buttons focused when re-clicked.
-          child: _RpcEndpointFailoverToastListener(
-            child: DesktopWindowTitlebarSafeArea(
-              child: GestureDetector(
-                onTap: () {
-                  // Leaf-only: skip when the primary focus is a
-                  // `FocusScopeNode` rather than a concrete `FocusNode`.
-                  // Unfocusing the scope itself strips the scope's
-                  // "most-recently-focused child" memory, which leaves the
-                  // next Tab with no deterministic starting point.
-                  final primary = FocusManager.instance.primaryFocus;
-                  if (primary != null && primary is! FocusScopeNode) {
-                    primary.unfocus();
-                  }
-                },
-                behavior: HitTestBehavior.translucent,
-                child: child!,
+          child: _WindowsUpdateStartupCheck(
+            child: _RpcEndpointFailoverToastListener(
+              child: DesktopWindowTitlebarSafeArea(
+                child: GestureDetector(
+                  onTap: () {
+                    // Leaf-only: skip when the primary focus is a
+                    // `FocusScopeNode` rather than a concrete `FocusNode`.
+                    // Unfocusing the scope itself strips the scope's
+                    // "most-recently-focused child" memory, which leaves the
+                    // next Tab with no deterministic starting point.
+                    final primary = FocusManager.instance.primaryFocus;
+                    if (primary != null && primary is! FocusScopeNode) {
+                      primary.unfocus();
+                    }
+                  },
+                  behavior: HitTestBehavior.translucent,
+                  child: child!,
+                ),
               ),
             ),
           ),
@@ -623,6 +626,31 @@ class ZcashWalletApp extends ConsumerWidget {
       },
     );
   }
+}
+
+class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {
+  const _WindowsUpdateStartupCheck({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_WindowsUpdateStartupCheck> createState() =>
+      _WindowsUpdateStartupCheckState();
+}
+
+class _WindowsUpdateStartupCheckState
+    extends ConsumerState<_WindowsUpdateStartupCheck> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(ref.read(windowsUpdateProvider.notifier).checkOnStartup());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _RpcEndpointFailoverToastListener extends StatelessWidget {

@@ -32,6 +32,8 @@ class FlutterWindow : public Win32Window {
 
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       camera_permission_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      velopack_update_channel_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

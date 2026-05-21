@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "velopack_update.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -45,6 +46,8 @@ bool FlutterWindow::OnCreate() {
             SW_SHOWNORMAL));
         result->Success(flutter::EncodableValue(shell_result > 32));
       });
+  velopack_update_channel_ =
+      CreateVelopackUpdateChannel(flutter_controller_->engine()->messenger());
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
@@ -63,6 +66,7 @@ bool FlutterWindow::OnCreate() {
 void FlutterWindow::OnDestroy() {
   if (flutter_controller_) {
     camera_permission_channel_.reset();
+    velopack_update_channel_.reset();
     flutter_controller_ = nullptr;
   }
 
