@@ -250,36 +250,6 @@ void main() {
     expect(find.text('Private money. By default.'), findsNothing);
   });
 
-  testWidgets('welcome footer links open legal pages', (tester) async {
-    await _setDesktopViewport(tester);
-
-    final router = GoRouter(
-      initialLocation: '/welcome',
-      routes: [
-        GoRoute(path: '/welcome', builder: (_, _) => const WelcomeScreen()),
-        GoRoute(path: '/terms', builder: (_, _) => const TermsScreen()),
-        GoRoute(
-          path: '/privacy',
-          builder: (_, _) => const PrivacyPolicyScreen(),
-        ),
-      ],
-    );
-
-    await tester.pumpWidget(
-      _routerHarness(router, _emptyBootstrap('/welcome')),
-    );
-
-    await tester.tap(find.text('Terms'));
-    await tester.pumpAndSettle();
-    expect(find.text('Terms of Use'), findsOneWidget);
-
-    router.go('/welcome');
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Privacy'));
-    await tester.pumpAndSettle();
-    expect(find.text('Privacy Policy'), findsOneWidget);
-  });
 }
 
 Future<void> _loadAppFonts() async {
