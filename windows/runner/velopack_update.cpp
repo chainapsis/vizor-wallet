@@ -25,7 +25,7 @@
 #include <vector>
 
 #ifndef VIZOR_UPDATE_GITHUB_REPO_URL
-#define VIZOR_UPDATE_GITHUB_REPO_URL "https://github.com/chainapsis/zcash-wallet"
+#define VIZOR_UPDATE_GITHUB_REPO_URL "https://github.com/chainapsis/vizor-wallet"
 #endif
 
 #ifndef VIZOR_UPDATE_FEED_PUBLIC_KEY_B64
