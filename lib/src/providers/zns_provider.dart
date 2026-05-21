@@ -7,6 +7,7 @@ class ZnsResolver {
   ZnsResolver(this._zns);
 
   final ZNS _zns;
+  final _nameCache = <String, String?>{};
 
   Future<String?> resolveName(String name) async {
     final registration = await _zns.resolveName(name);
@@ -14,8 +15,11 @@ class ZnsResolver {
   }
 
   Future<String?> reverseResolve(String address) async {
+    if (_nameCache.containsKey(address)) return _nameCache[address];
     final registrations = await _zns.resolveAddress(address);
-    return registrations.isEmpty ? null : '${registrations.first.name}.zcash';
+    final name = registrations.isEmpty ? null : '${registrations.first.name}.zcash';
+    _nameCache[address] = name;
+    return name;
   }
 
   void close() => _zns.close();
