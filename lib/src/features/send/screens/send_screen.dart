@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:zcashname_sdk/zcashname_sdk.dart' show isValidName;
 
 import '../../../../main.dart' show log;
@@ -858,7 +859,28 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                         AppTextField(
                           key: const ValueKey('send_address_field'),
                           label: 'Send to',
-                          rightLabel: _resolvedName,
+                          rightSlot: _resolvedName != null
+                              ? MouseRegion(
+                                  cursor: SystemMouseCursors.click,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () {
+                                      final bare = _extractZnsName(_resolvedName!);
+                                      if (bare == null) return;
+                                      launchUrl(
+                                        Uri.parse('https://www.zcashnames.com/explorer?name=$bare'),
+                                        mode: LaunchMode.externalApplication,
+                                      );
+                                    },
+                                    child: Text(
+                                      _resolvedName!,
+                                      style: AppTypography.labelMedium.copyWith(
+                                        color: colors.text.accent,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : null,
                           tone: addressTone,
                           focusNode: _addressFocusNode,
                           controller: _addressController,
