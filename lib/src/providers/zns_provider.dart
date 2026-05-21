@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zcashname_sdk/zcashname_sdk.dart';
 
+import '../rust/api/wallet.dart' as rust_wallet;
+import '../core/storage/wallet_paths.dart';
 import 'rpc_endpoint_provider.dart';
 
 class ZnsResolver {
@@ -8,6 +10,11 @@ class ZnsResolver {
 
   final ZNS _zns;
   final _nameCache = <String, String?>{};
+
+  String get _networkName => switch (_zns.network) {
+    Network.mainnet => 'main',
+    Network.testnet => 'test',
+  };
 
   Future<String?> resolveName(String name) async {
     final registration = await _zns.resolveName(name);
@@ -20,6 +27,18 @@ class ZnsResolver {
     final name = registrations.isEmpty ? null : '${registrations.first.name}.zcash';
     _nameCache[address] = name;
     return name;
+  }
+
+  Future<bool> isOwnedByAccount(String name, String accountUuid) async {
+    final ua = await resolveName(name);
+    if (ua == null) return false;
+    final dbPath = await getWalletDbPath();
+    return rust_wallet.isAddressFromAccount(
+      dbPath: dbPath,
+      network: _networkName,
+      accountUuid: accountUuid,
+      address: ua,
+    );
   }
 
   void close() => _zns.close();
