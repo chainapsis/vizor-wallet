@@ -19,6 +19,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/zns_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../send/widgets/transaction_receipt_view.dart';
 
@@ -54,6 +55,8 @@ class _ActivityTransactionStatusScreenState
   String? _error;
   String? _activeAccountUuid;
   bool _messageExpanded = false;
+  String? _znsName;
+  int _znsSeq = 0;
 
   @override
   void initState() {
@@ -65,6 +68,7 @@ class _ActivityTransactionStatusScreenState
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
       unawaited(_loadTransaction(showLoading: _transaction == null));
+      _triggerZnsLookup(widget.args.initialDetail?.primaryAddress);
     });
   }
 
@@ -140,6 +144,7 @@ class _ActivityTransactionStatusScreenState
         }
         _isLoading = false;
       });
+      if (tx != null) _triggerZnsLookup(detail?.primaryAddress);
     } catch (e, st) {
       log('ActivityTransactionStatus: transaction load failed: $e\n$st');
       if (!mounted) return;
@@ -213,6 +218,23 @@ class _ActivityTransactionStatusScreenState
     if (expected == actual) return true;
     return (expected == 'receiving' && actual == 'received') ||
         (expected == 'received' && actual == 'receiving');
+  }
+
+  void _triggerZnsLookup(String? address) {
+    if (address == null || address.isEmpty) return;
+    final seq = ++_znsSeq;
+    setState(() => _znsName = null);
+    unawaited(_resolveZnsName(address, seq));
+  }
+
+  Future<void> _resolveZnsName(String address, int seq) async {
+    try {
+      final name = await ref.read(znsResolverProvider).reverseResolve(address);
+      if (!mounted || seq != _znsSeq) return;
+      setState(() => _znsName = name);
+    } catch (e) {
+      log('ActivityTransactionStatus: ZNS reverse lookup failed: $e');
+    }
   }
 
   Future<void> _copyTransactionHash() async {
@@ -352,6 +374,7 @@ class _ActivityTransactionStatusScreenState
     BuildContext context, {
     required String title,
     required String address,
+    String? znsName,
     bool useFailedReceiptLayout = false,
     bool compactAddress = false,
   }) {
@@ -360,13 +383,27 @@ class _ActivityTransactionStatusScreenState
     return TransactionReceiptBlockData(
       title: title,
       onCopy: () => unawaited(_copyText(trimmedAddress, 'Address Copied')),
-      child: TransactionReceiptAddressText(
-        address: trimmedAddress,
-        highlightEdges: _shouldHighlightAddressEdges(trimmedAddress),
-        compact: compactAddress,
-        highlightColor: useFailedReceiptLayout
-            ? colors.text.destructive
-            : colors.text.success,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (znsName != null) ...[
+            Text(
+              znsName,
+              style: AppTypography.labelMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+          ],
+          TransactionReceiptAddressText(
+            address: trimmedAddress,
+            highlightEdges: _shouldHighlightAddressEdges(trimmedAddress),
+            compact: compactAddress,
+            highlightColor: useFailedReceiptLayout
+                ? colors.text.destructive
+                : colors.text.success,
+          ),
+        ],
       ),
     );
   }
@@ -390,6 +427,7 @@ class _ActivityTransactionStatusScreenState
         context,
         title: 'To',
         address: primaryAddress,
+        znsName: _znsName,
         useFailedReceiptLayout: useFailedReceiptLayout,
         compactAddress: compactAddress,
       );
