@@ -6,6 +6,13 @@ project(Vizor LANGUAGES CXX)
 # the on-disk name of your application.
 set(BINARY_NAME "Vizor")
 
+if(DEFINED ENV{VIZOR_WINDOWS_STORAGE_PREFIX} AND NOT "$ENV{VIZOR_WINDOWS_STORAGE_PREFIX}" STREQUAL "")
+  set(VIZOR_WINDOWS_STORAGE_PREFIX "$ENV{VIZOR_WINDOWS_STORAGE_PREFIX}")
+else()
+  set(VIZOR_WINDOWS_STORAGE_PREFIX "Vizor")
+endif()
+set(STORAGE_PREFIX "${VIZOR_WINDOWS_STORAGE_PREFIX}")
+
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)

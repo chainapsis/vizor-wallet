@@ -18,6 +18,29 @@ add_executable(${BINARY_NAME} WIN32
   "runner.exe.manifest"
 )
 
+function(vizor_env_or_default OUTPUT_NAME ENV_NAME DEFAULT_VALUE)
+  if(DEFINED ENV{${ENV_NAME}} AND NOT "$ENV{${ENV_NAME}}" STREQUAL "")
+    set(VALUE "$ENV{${ENV_NAME}}")
+  else()
+    set(VALUE "${DEFAULT_VALUE}")
+  endif()
+  string(REPLACE "\\" "\\\\" VALUE "${VALUE}")
+  string(REPLACE "\"" "\\\"" VALUE "${VALUE}")
+  set(${OUTPUT_NAME} "${VALUE}" PARENT_SCOPE)
+endfunction()
+
+vizor_env_or_default(VIZOR_WINDOWS_COMPANY_NAME VIZOR_WINDOWS_COMPANY_NAME "com.keplr")
+vizor_env_or_default(VIZOR_WINDOWS_FILE_DESCRIPTION VIZOR_WINDOWS_FILE_DESCRIPTION "Vizor")
+vizor_env_or_default(VIZOR_WINDOWS_INTERNAL_NAME VIZOR_WINDOWS_INTERNAL_NAME "Vizor")
+vizor_env_or_default(VIZOR_WINDOWS_LEGAL_COPYRIGHT VIZOR_WINDOWS_LEGAL_COPYRIGHT "Copyright (C) 2026 com.keplr. All rights reserved.")
+vizor_env_or_default(VIZOR_WINDOWS_ORIGINAL_FILENAME VIZOR_WINDOWS_ORIGINAL_FILENAME "Vizor.exe")
+vizor_env_or_default(VIZOR_WINDOWS_PRODUCT_NAME VIZOR_WINDOWS_PRODUCT_NAME "Vizor")
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/resource_values.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/resource_values.h"
+  @ONLY
+)
+
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
@@ -31,6 +54,7 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
+target_compile_definitions(${BINARY_NAME} PRIVATE "VIZOR_WINDOWS_STORAGE_PREFIX=\"${VIZOR_WINDOWS_STORAGE_PREFIX}\"")
 
 if(DEFINED ENV{VIZOR_UPDATE_FEED_PUBLIC_KEY_B64})
   target_compile_definitions(${BINARY_NAME} PRIVATE "VIZOR_UPDATE_FEED_PUBLIC_KEY_B64=\"$ENV{VIZOR_UPDATE_FEED_PUBLIC_KEY_B64}\"")
@@ -82,6 +106,7 @@ target_link_libraries(${BINARY_NAME} PRIVATE "version.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "winhttp.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "${VELOPACK_LIBC_IMPLIB}")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
+target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_include_directories(${BINARY_NAME} PRIVATE "${VELOPACK_LIBC_ROOT}/include")
 
 add_custom_command(TARGET ${BINARY_NAME} POST_BUILD

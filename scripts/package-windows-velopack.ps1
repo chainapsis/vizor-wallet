@@ -248,6 +248,7 @@ if ($Network -eq "mainnet") {
     $OutputDir = "build\velopack\mainnet"
   }
   $NetworkDartDefine = "main"
+  $WindowsStoragePrefix = "Vizor"
 } else {
   if ([string]::IsNullOrWhiteSpace($PackId)) {
     $PackId = "com.keplr.vizor.testnet"
@@ -262,7 +263,16 @@ if ($Network -eq "mainnet") {
     $OutputDir = "build\velopack\testnet"
   }
   $NetworkDartDefine = "test"
+  $WindowsStoragePrefix = "VizorTestnet"
 }
+
+$env:VIZOR_WINDOWS_COMPANY_NAME = "com.keplr"
+$env:VIZOR_WINDOWS_FILE_DESCRIPTION = $PackTitle
+$env:VIZOR_WINDOWS_INTERNAL_NAME = $PackTitle
+$env:VIZOR_WINDOWS_LEGAL_COPYRIGHT = "Copyright (C) 2026 com.keplr. All rights reserved."
+$env:VIZOR_WINDOWS_ORIGINAL_FILENAME = "Vizor.exe"
+$env:VIZOR_WINDOWS_PRODUCT_NAME = $PackTitle
+$env:VIZOR_WINDOWS_STORAGE_PREFIX = $WindowsStoragePrefix
 
 if (-not [string]::IsNullOrWhiteSpace($UpdateFeedSigningKey)) {
   $env:VIZOR_UPDATE_FEED_SIGNING_KEY_B64 = $UpdateFeedSigningKey.Trim()

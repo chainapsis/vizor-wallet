@@ -17,8 +17,15 @@
 
 namespace {
 
-constexpr wchar_t kSecureStoragePrefix[] =
-    L"Vizor_VGhpcyBpcyB0aGUgcHJlZml4IGZv_";
+#ifndef VIZOR_WINDOWS_STORAGE_PREFIX
+#define VIZOR_WINDOWS_STORAGE_PREFIX "Vizor"
+#endif
+
+#define VIZOR_WIDEN2(value) L##value
+#define VIZOR_WIDEN(value) VIZOR_WIDEN2(value)
+
+constexpr wchar_t kSecureStoragePrefix[] = VIZOR_WIDEN(
+    VIZOR_WINDOWS_STORAGE_PREFIX) L"_VGhpcyBpcyB0aGUgcHJlZml4IGZv_";
 
 std::wstring ToLower(std::wstring value) {
   std::transform(value.begin(), value.end(), value.begin(),

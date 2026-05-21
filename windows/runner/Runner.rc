@@ -2,6 +2,7 @@
 //
 #pragma code_page(65001)
 #include "resource.h"
+#include "resource_values.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
 /////////////////////////////////////////////////////////////////////////////
@@ -89,13 +90,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.keplr" "\0"
-            VALUE "FileDescription", "Vizor" "\0"
+            VALUE "CompanyName", VIZOR_WINDOWS_COMPANY_NAME "\0"
+            VALUE "FileDescription", VIZOR_WINDOWS_FILE_DESCRIPTION "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "Vizor" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.keplr. All rights reserved." "\0"
-            VALUE "OriginalFilename", "Vizor.exe" "\0"
-            VALUE "ProductName", "Vizor" "\0"
+            VALUE "InternalName", VIZOR_WINDOWS_INTERNAL_NAME "\0"
+            VALUE "LegalCopyright", VIZOR_WINDOWS_LEGAL_COPYRIGHT "\0"
+            VALUE "OriginalFilename", VIZOR_WINDOWS_ORIGINAL_FILENAME "\0"
+            VALUE "ProductName", VIZOR_WINDOWS_PRODUCT_NAME "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
