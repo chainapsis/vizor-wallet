@@ -33,8 +33,11 @@ class RegtestLightwalletdProxy
   grpc.Server? _server;
   _ProxyMode _mode = _ProxyMode.healthy;
   int? _slowHeight;
+  int _sendTransactionFailuresRemaining = 0;
+  int _failedSendTransactionCount = 0;
 
   String get url => 'http://127.0.0.1:$listenPort';
+  int get failedSendTransactionCount => _failedSendTransactionCount;
 
   Future<void> start() async {
     _server = grpc.Server.create(services: [this]);
@@ -65,6 +68,14 @@ class RegtestLightwalletdProxy
   void setDown() {
     _mode = _ProxyMode.down;
     _log('primary proxy mode=down');
+  }
+
+  void failNextSendTransactions(int count) {
+    if (count < 0) {
+      throw ArgumentError.value(count, 'count', 'must not be negative');
+    }
+    _sendTransactionFailuresRemaining = count;
+    _log('primary proxy will fail next $count SendTransaction call(s)');
   }
 
   void _throwIfDown() {
@@ -152,6 +163,15 @@ class RegtestLightwalletdProxy
     service.RawTransaction request,
   ) {
     _throwIfDown();
+    if (_sendTransactionFailuresRemaining > 0) {
+      _sendTransactionFailuresRemaining -= 1;
+      _failedSendTransactionCount += 1;
+      _log(
+        'primary proxy forced SendTransaction failure '
+        '(failed=$_failedSendTransactionCount)',
+      );
+      throw grpc.GrpcError.unavailable('forced SendTransaction failure');
+    }
     return _client.sendTransaction(request);
   }
 
