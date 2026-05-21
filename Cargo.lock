@@ -2150,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "vote-commitment-tree"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "ff",
@@ -2168,7 +2168,7 @@ dependencies = [
 
 [[package]]
 name = "vote-commitment-tree-client"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "bytes",
@@ -2491,7 +2491,7 @@ dependencies = [
 
 [[package]]
 name = "zcash_voting"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "blake2b_simd",
@@ -2506,12 +2506,14 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
+ "imt-tree",
  "incrementalmerkletree",
  "nonempty",
  "orchard",
  "pasta_curves",
  "pczt",
  "pir-client",
+ "pir-types",
  "rand",
  "rusqlite",
  "serde",
@@ -2520,6 +2522,8 @@ dependencies = [
  "subtle",
  "thiserror 2.0.18",
  "tokio",
+ "valar-spiral-rs",
+ "valar-ypir",
  "vote-commitment-tree",
  "vote-commitment-tree-client",
  "voting-circuits",
