@@ -9,13 +9,16 @@ import 'package:go_router/go_router.dart';
 import 'src/app_bootstrap.dart';
 import 'src/core/config/rpc_endpoint_config.dart';
 import 'src/core/theme/app_theme.dart';
+import 'src/features/activity/screens/activity_screen.dart';
+import 'src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'src/features/receive/models/receive_prefill_args.dart';
 import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/swap/models/swap_prototype_models.dart';
 import 'src/features/swap/providers/swap_prototype_provider.dart';
 import 'src/features/swap/providers/swap_deposit_sender.dart';
 import 'src/features/swap/providers/swap_max_amount_estimator.dart';
-import 'src/features/swap/providers/swap_session_store.dart';
+import 'src/features/swap/providers/swap_activity_store.dart';
+import 'src/features/swap/providers/swap_draft_store.dart';
 import 'src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'src/features/swap/screens/swap_screen.dart';
 import 'src/providers/account_models.dart';
@@ -24,14 +27,21 @@ import 'src/providers/receive_address_provider.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final params = Uri.base.queryParameters;
-  final initialTab = _previewInitialTab(params);
   final scenario = _previewScenario(params);
+  final previewSwapStore = _PreviewSwapStore(
+    initialIntents: _previewIntents(scenario),
+  );
   final router = GoRouter(
     initialLocation: '/swap',
     routes: [
+      GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+      GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),
       GoRoute(
-        path: '/swap',
-        builder: (_, _) => SwapScreen(initialTab: initialTab),
+        path: '/activity/swap/:swapId',
+        builder: (_, state) => SwapActivityDetailScreen(
+          swapIntentId: state.pathParameters['swapId'] ?? '',
+          autoSignZecDeposit: state.uri.queryParameters['sign'] == 'zecDeposit',
+        ),
       ),
       GoRoute(
         path: '/send',
@@ -83,9 +93,8 @@ Future<void> main() async {
         swapMaxAmountEstimatorProvider.overrideWithValue(
           _PreviewMaxAmountEstimator(),
         ),
-        swapSessionStoreProvider.overrideWithValue(
-          _PreviewSwapSessionStore(initialIntents: _previewIntents(scenario)),
-        ),
+        swapActivityStoreProvider.overrideWithValue(previewSwapStore),
+        swapDraftStoreProvider.overrideWithValue(previewSwapStore),
         swapStatusPollIntervalProvider.overrideWithValue(
           const Duration(minutes: 10),
         ),
@@ -98,16 +107,6 @@ Future<void> main() async {
       ),
     ),
   );
-}
-
-SwapScreenInitialTab _previewInitialTab(Map<String, String> params) {
-  const tabOverride = String.fromEnvironment('ZCASH_SWAP_PREVIEW_TAB');
-  final tab = tabOverride.isNotEmpty ? tabOverride : params['tab'];
-  return switch (tab) {
-    'activity' => SwapScreenInitialTab.activity,
-    'requests' => SwapScreenInitialTab.requests,
-    _ => SwapScreenInitialTab.swap,
-  };
 }
 
 String _previewScenario(Map<String, String> params) {
@@ -334,26 +333,29 @@ class _PreviewMaxAmountEstimator implements SwapMaxAmountEstimator {
   }
 }
 
-class _PreviewSwapSessionStore implements SwapSessionStore {
-  _PreviewSwapSessionStore({required List<SwapPrototypeIntent> initialIntents})
-    : _intents = [...initialIntents];
+class _PreviewSwapStore implements SwapActivityStore, SwapDraftStore {
+  _PreviewSwapStore({List<SwapPrototypeIntent> initialIntents = const []})
+    : _records = [
+        for (final intent in initialIntents)
+          SwapIntentRecord.fromIntent(intent),
+      ];
 
-  List<SwapPrototypeIntent> _intents;
+  List<SwapIntentRecord> _records;
   SwapDraftSnapshot? _draft;
 
   @override
-  Future<List<SwapPrototypeIntent>> loadIntents({
+  Future<List<SwapIntentRecord>> loadRecords({
     required String accountUuid,
   }) async {
-    return _intents;
+    return _records;
   }
 
   @override
-  Future<void> saveIntents({
+  Future<void> saveRecords({
     required String accountUuid,
-    required List<SwapPrototypeIntent> intents,
+    required List<SwapIntentRecord> records,
   }) async {
-    _intents = [...intents];
+    _records = [...records];
   }
 
   @override

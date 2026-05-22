@@ -23,6 +23,7 @@ import 'src/core/widgets/app_icon.dart';
 import 'src/core/widgets/network_fallback_toast.dart';
 import 'src/features/activity/screens/activity_screen.dart';
 import 'src/features/activity/screens/activity_transaction_status_screen.dart';
+import 'src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
 import 'src/features/about/screens/about_screen.dart';
@@ -543,6 +544,20 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
       GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
       GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),
+      GoRoute(
+        path: '/activity/swap/:swapId',
+        builder: (_, state) {
+          final swapId = state.pathParameters['swapId'];
+          if (swapId == null || swapId.isEmpty) {
+            return const ActivityScreen();
+          }
+          return SwapActivityDetailScreen(
+            swapIntentId: swapId,
+            autoSignZecDeposit:
+                state.uri.queryParameters['sign'] == 'zecDeposit',
+          );
+        },
+      ),
       GoRoute(
         path: '/activity/tx/:txid',
         builder: (_, state) {

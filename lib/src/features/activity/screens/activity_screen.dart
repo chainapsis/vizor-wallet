@@ -19,8 +19,11 @@ import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../swap/models/swap_prototype_models.dart';
+import '../../swap/providers/swap_prototype_provider.dart';
 import '../activity_row_mapper.dart';
 import '../models/activity_row_data.dart';
+import '../swap_activity_row_mapper.dart';
 import '../widgets/activity_table.dart';
 import 'activity_transaction_status_screen.dart';
 
@@ -168,6 +171,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     unawaited(_pushTransactionStatus(transaction));
   }
 
+  void _openSwapStatus(SwapIntentRecord record) {
+    context.push(
+      Uri(path: '/activity/swap/${Uri.encodeComponent(record.id)}').toString(),
+    );
+  }
+
   Future<void> _pushTransactionStatus(
     rust_sync.TransactionInfo transaction,
   ) async {
@@ -241,6 +250,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 
     final syncState = ref.watch(syncProvider).value;
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final swapState = ref.watch(swapPrototypeProvider);
     final sync = (syncState ?? SyncState()).scopedToAccount(accountUuid);
     final hasSyncForActiveAccount =
         syncState?.hasDataForAccount(accountUuid) ?? false;
@@ -253,35 +263,54 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         (hasSyncForActiveAccount
             ? sync.recentTransactions
             : const <rust_sync.TransactionInfo>[]);
-    final transactionsAfterFirstPage = math.max(
-      0,
-      transactions.length - _activityRowsPerPage,
-    );
-    final totalPages =
-        1 + (transactionsAfterFirstPage / _activityRowsPerPage).ceil();
-    final currentPage = math.min(math.max(_currentPage, 1), totalPages);
-    final firstTxIndex = currentPage == 1
-        ? 0
-        : _activityRowsPerPage + ((currentPage - 2) * _activityRowsPerPage);
-    const transactionCount = _activityRowsPerPage;
-    final pageTransactions = transactions
-        .skip(firstTxIndex)
-        .take(transactionCount);
-    final canRenderRows =
+    final canRenderTransactions =
         accountUuid != null &&
         (loadedTransactions != null || hasSyncForActiveAccount);
-    final rows = !canRenderRows
-        ? const <ActivityRowData>[]
-        : pageTransactions
-              .map(
-                (tx) => buildTransactionActivityRow(
-                  context: context,
-                  transaction: tx,
-                  privacyModeEnabled: privacyModeEnabled,
-                  onTap: () => _openTransactionStatus(tx),
-                ),
-              )
-              .toList(growable: false);
+    final swapRecords = accountUuid == null
+        ? const <SwapIntentRecord>[]
+        : [
+            for (final intent in swapState.intents)
+              if (intent.accountUuid == accountUuid)
+                SwapIntentRecord.fromIntent(intent),
+          ];
+    final entries = <_ActivityEntry>[
+      if (canRenderTransactions)
+        for (final tx in transactions)
+          _ActivityEntry(
+            timestamp: _transactionActivityTimestamp(tx),
+            row: buildTransactionActivityRow(
+              context: context,
+              transaction: tx,
+              privacyModeEnabled: privacyModeEnabled,
+              onTap: () => _openTransactionStatus(tx),
+            ),
+          ),
+      for (final record in swapRecords)
+        _ActivityEntry(
+          timestamp: record.activityTimestamp,
+          row: buildSwapActivityRow(
+            context: context,
+            record: record,
+            privacyModeEnabled: privacyModeEnabled,
+            onTap: () => _openSwapStatus(record),
+          ),
+        ),
+    ]..sort(_compareActivityEntries);
+    final entriesAfterFirstPage = math.max(
+      0,
+      entries.length - _activityRowsPerPage,
+    );
+    final totalPages =
+        1 + (entriesAfterFirstPage / _activityRowsPerPage).ceil();
+    final currentPage = math.min(math.max(_currentPage, 1), totalPages);
+    final firstEntryIndex = currentPage == 1
+        ? 0
+        : _activityRowsPerPage + ((currentPage - 2) * _activityRowsPerPage);
+    final rows = entries
+        .skip(firstEntryIndex)
+        .take(_activityRowsPerPage)
+        .map((entry) => entry.row)
+        .toList(growable: false);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -330,8 +359,13 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                       ),
                       child: _ActivityPane(
                         rows: rows,
-                        isLoading: _isLoading && !canRenderRows,
-                        errorText: loadedTransactions == null ? _error : null,
+                        isLoading:
+                            _isLoading &&
+                            !canRenderTransactions &&
+                            rows.isEmpty,
+                        errorText: rows.isEmpty && loadedTransactions == null
+                            ? _error
+                            : null,
                         currentPage: currentPage,
                         totalPages: totalPages,
                         onPageChanged: _setPage,
@@ -420,4 +454,26 @@ class _ActivityPane extends StatelessWidget {
       ],
     );
   }
+}
+
+class _ActivityEntry {
+  const _ActivityEntry({required this.timestamp, required this.row});
+
+  final DateTime? timestamp;
+  final ActivityRowData row;
+}
+
+int _compareActivityEntries(_ActivityEntry a, _ActivityEntry b) {
+  final aTime = a.timestamp;
+  final bTime = b.timestamp;
+  if (aTime == null && bTime == null) return 0;
+  if (aTime == null) return 1;
+  if (bTime == null) return -1;
+  return bTime.compareTo(aTime);
+}
+
+DateTime? _transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
+  final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
+  if (seconds <= BigInt.zero) return null;
+  return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
 }

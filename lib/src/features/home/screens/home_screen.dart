@@ -30,6 +30,9 @@ import '../../activity/activity_row_mapper.dart';
 import '../../activity/models/activity_row_data.dart';
 import '../../activity/screens/activity_transaction_status_screen.dart';
 import '../../activity/widgets/activity_table.dart';
+import '../../activity/swap_activity_row_mapper.dart';
+import '../../swap/models/swap_prototype_models.dart';
+import '../../swap/providers/swap_prototype_provider.dart';
 import '../widgets/keystone_shield_signing_overlay.dart';
 
 const _shieldErrorTooltipIconSize = 14.0;
@@ -579,19 +582,52 @@ class _HomePaneState extends ConsumerState<_HomePane> {
   }
 
   List<ActivityRowData> _activityRows(BuildContext context) {
-    if (!widget.hasActivitySyncData) {
-      return const [];
-    }
-    return buildActivityRows(
-      context: context,
-      transactions: widget.sync.recentTransactions.take(_recentActivityLimit),
-      privacyModeEnabled: widget.privacyModeEnabled,
-      onTransactionTap: _openTransactionStatus,
-    );
+    final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final swapState = ref.watch(swapPrototypeProvider);
+    final swapRecords = accountUuid == null
+        ? const <SwapIntentRecord>[]
+        : [
+            for (final intent in swapState.intents)
+              if (intent.accountUuid == accountUuid)
+                SwapIntentRecord.fromIntent(intent),
+          ];
+    final entries = <_HomeActivityEntry>[
+      if (widget.hasActivitySyncData)
+        for (final tx in widget.sync.recentTransactions)
+          _HomeActivityEntry(
+            timestamp: _transactionActivityTimestamp(tx),
+            row: buildTransactionActivityRow(
+              context: context,
+              transaction: tx,
+              privacyModeEnabled: widget.privacyModeEnabled,
+              onTap: () => _openTransactionStatus(tx),
+            ),
+          ),
+      for (final record in swapRecords)
+        _HomeActivityEntry(
+          timestamp: record.activityTimestamp,
+          row: buildSwapActivityRow(
+            context: context,
+            record: record,
+            privacyModeEnabled: widget.privacyModeEnabled,
+            onTap: () => _openSwapStatus(record),
+          ),
+        ),
+    ]..sort(_compareHomeActivityEntries);
+    return entries
+        .take(_recentActivityLimit)
+        .map((entry) => entry.row)
+        .toList(growable: false);
   }
 
   void _openTransactionStatus(rust_sync.TransactionInfo transaction) {
     unawaited(_pushTransactionStatus(transaction));
+  }
+
+  void _openSwapStatus(SwapIntentRecord record) {
+    context.push(
+      Uri(path: '/activity/swap/${Uri.encodeComponent(record.id)}').toString(),
+    );
   }
 
   Future<void> _pushTransactionStatus(
@@ -638,6 +674,28 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       return null;
     }
   }
+}
+
+class _HomeActivityEntry {
+  const _HomeActivityEntry({required this.timestamp, required this.row});
+
+  final DateTime? timestamp;
+  final ActivityRowData row;
+}
+
+int _compareHomeActivityEntries(_HomeActivityEntry a, _HomeActivityEntry b) {
+  final aTime = a.timestamp;
+  final bTime = b.timestamp;
+  if (aTime == null && bTime == null) return 0;
+  if (aTime == null) return 1;
+  if (bTime == null) return -1;
+  return bTime.compareTo(aTime);
+}
+
+DateTime? _transactionActivityTimestamp(rust_sync.TransactionInfo tx) {
+  final seconds = tx.blockTime > BigInt.zero ? tx.blockTime : tx.createdTime;
+  if (seconds <= BigInt.zero) return null;
+  return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000);
 }
 
 class _HomeBalanceCard extends StatefulWidget {

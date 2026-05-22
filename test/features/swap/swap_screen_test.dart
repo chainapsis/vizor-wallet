@@ -11,15 +11,18 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/swap/domain/near_intents_one_click_swap_provider.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_intent_presentation_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_prototype_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_hardware_signing_service.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_prototype_provider.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_max_amount_estimator.dart';
-import 'package:zcash_wallet/src/features/swap/providers/swap_session_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_draft_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
+import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
+import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_qr_panel.dart';
@@ -74,14 +77,11 @@ void main() {
           ),
         ),
         GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
-        GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+        _swapRoute(),
+        _swapActivityRoute(),
         GoRoute(
           path: '/receive',
           builder: (_, _) => const Text('receive route'),
-        ),
-        GoRoute(
-          path: '/activity',
-          builder: (_, _) => const Text('activity route'),
         ),
         GoRoute(path: '/settings', builder: (_, _) => const Text('settings')),
         GoRoute(path: '/about', builder: (_, _) => const Text('about route')),
@@ -103,9 +103,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
@@ -165,19 +163,13 @@ void main() {
       greaterThan(ticketRect.bottom + AppSpacing.xs),
     );
     expect(982 - reviewButtonRect.bottom, lessThanOrEqualTo(32));
+    expect(find.byKey(const ValueKey('swap_ticket_tabs')), findsNothing);
     expect(
       find.byKey(const ValueKey('swap_activity_open_count')),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(find.byKey(const ValueKey('swap_ticket_tabs')), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_page_tab_activity')), findsNothing);
     expect(find.byKey(const ValueKey('swap_page_tab_requests')), findsNothing);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_activity_open_count')),
-        matching: find.text('3'),
-      ),
-      findsOneWidget,
-    );
     expect(find.text('Privacy check'), findsNothing);
     expect(
       find.byKey(const ValueKey('swap_privacy_scope_provider')),
@@ -205,12 +197,10 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         seedPrototypeFixtures: false,
-        sessionStore: _FakeSwapSessionStore(),
+        sessionStore: _FakeSwapPersistenceStore(),
       ),
     );
     await tester.pumpAndSettle();
@@ -218,35 +208,25 @@ void main() {
     expect(find.byKey(const ValueKey('swap_compact_ticket')), findsOneWidget);
     expect(find.text('Current swap'), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
 
-    expect(
-      find.byKey(const ValueKey('swap_activity_empty_state')),
-      findsOneWidget,
-    );
-    expect(find.text('No swap activity yet'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('swap_queue_empty_state')),
-      findsOneWidget,
-    );
+    expect(find.text('No activity yet'), findsOneWidget);
     expect(find.text('Recovery receipt'), findsNothing);
 
-    await _openRequestsSurface(tester);
+    await _openSwapSurface(tester);
 
-    expect(find.text('No request selected'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('swap_request_empty_state')),
-      findsOneWidget,
+      find.byKey(const ValueKey('swap_request_inbox_panel')),
+      findsNothing,
     );
-    expect(find.text('No saved requests'), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_request_list_panel')), findsNothing);
   });
 
   testWidgets('swap activity ignores sessions from another account', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
-    final sessionStore = _FakeSwapSessionStore(
+    final sessionStore = _FakeSwapPersistenceStore(
       initialIntents: [
         _persistedIntent(
           id: 't1other-account',
@@ -260,9 +240,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         seedPrototypeFixtures: false,
         sessionStore: sessionStore,
@@ -272,10 +250,9 @@ void main() {
 
     expect(sessionStore.loadedAccounts, ['account-1']);
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
 
-    expect(find.text('No swap activity yet'), findsOneWidget);
+    expect(find.text('No activity yet'), findsOneWidget);
     expect(find.text('other-account-txid'), findsNothing);
   });
 
@@ -290,9 +267,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         bootstrap: _twoAccountBootstrap,
         accountNotifier: () => accountNotifier,
@@ -333,7 +308,7 @@ void main() {
     tester,
   ) async {
     await _setDesktopViewport(tester);
-    final sessionStore = _FakeSwapSessionStore(
+    final sessionStore = _FakeSwapPersistenceStore(
       initialIntents: [
         _persistedIntent(
           id: 'account-one-swap',
@@ -355,9 +330,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         bootstrap: _twoAccountBootstrap,
         accountNotifier: () => accountNotifier,
@@ -367,37 +340,32 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
     await _openActivityDetail(tester, 'account-one-swap');
     expect(
-      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      find.byKey(const ValueKey('swap_activity_detail_page')),
       findsOneWidget,
     );
 
     final container = ProviderScope.containerOf(
-      tester.element(find.byType(SwapScreen)),
+      tester.element(find.byType(AppDesktopShell).first),
       listen: false,
     );
     await container.read(accountProvider.notifier).switchAccount('account-2');
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
     expect(
-      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      find.byKey(const ValueKey('swap_activity_detail_page')),
       findsNothing,
     );
-    expect(
-      find.byKey(const ValueKey('swap_queue_row_account-two-swap')),
-      findsOneWidget,
-    );
+    expect(find.text('Swap ZEC to USDC'), findsWidgets);
 
     await container.read(accountProvider.notifier).switchAccount('account-1');
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text('Swap ZEC to USDC'), findsWidgets);
     expect(
-      find.byKey(const ValueKey('swap_queue_row_account-one-swap')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      find.byKey(const ValueKey('swap_activity_detail_page')),
       findsNothing,
     );
   });
@@ -414,12 +382,10 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         seedPrototypeFixtures: false,
-        sessionStore: _FakeSwapSessionStore(),
+        sessionStore: _FakeSwapPersistenceStore(),
         spendableBalance: BigInt.from(123450000),
         maxAmountEstimator: maxEstimator,
       ),
@@ -446,9 +412,7 @@ void main() {
         _routerHarness(
           GoRouter(
             initialLocation: '/swap',
-            routes: [
-              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-            ],
+            routes: [_swapRoute(), _swapActivityRoute()],
           ),
           seedPrototypeFixtures: false,
           spendableBalance: BigInt.from(100000000),
@@ -483,7 +447,7 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
 
-    final sessionStore = _FakeSwapSessionStore(
+    final sessionStore = _FakeSwapPersistenceStore(
       initialDraft: const SwapDraftSnapshot(
         direction: SwapDirection.externalToZec,
         externalAsset: SwapAsset.near,
@@ -495,9 +459,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         seedPrototypeFixtures: false,
         sessionStore: sessionStore,
@@ -525,7 +487,7 @@ void main() {
       blockchain: 'base',
       decimals: 6,
     );
-    final sessionStore = _FakeSwapSessionStore(
+    final sessionStore = _FakeSwapPersistenceStore(
       initialDraft: SwapDraftSnapshot(
         direction: SwapDirection.zecToExternal,
         externalAsset: baseUsdc,
@@ -540,9 +502,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         seedPrototypeFixtures: false,
         sessionStore: sessionStore,
@@ -590,9 +550,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
@@ -642,9 +600,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
       ),
@@ -678,9 +634,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
@@ -720,15 +674,13 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     final swapProvider = _FakeSwapProvider();
-    final sessionStore = _FakeSwapSessionStore();
+    final sessionStore = _FakeSwapPersistenceStore();
 
     await tester.pumpWidget(
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         seedPrototypeFixtures: false,
@@ -771,15 +723,13 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     final swapProvider = _FakeSwapProvider();
-    final sessionStore = _FakeSwapSessionStore();
+    final sessionStore = _FakeSwapPersistenceStore();
 
     await tester.pumpWidget(
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         seedPrototypeFixtures: false,
@@ -828,9 +778,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         seedPrototypeFixtures: false,
@@ -868,9 +816,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         seedPrototypeFixtures: false,
@@ -910,9 +856,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         seedPrototypeFixtures: false,
@@ -953,9 +897,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         seedPrototypeFixtures: false,
@@ -1003,42 +945,30 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
 
-    expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('swap_queue_row_swap-8f29')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('swap_queue_asset_pair_swap-8f29')),
-      findsOneWidget,
-    );
+    expect(find.text('Swap ZEC to USDC'), findsWidgets);
     expect(
       find.byKey(const ValueKey('swap_active_summary_panel')),
       findsNothing,
     );
     expect(
-      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      find.byKey(const ValueKey('swap_activity_detail_page')),
       findsNothing,
     );
-    expect(find.text('Swapping through provider'), findsOneWidget);
     expect(find.text('You pay'), findsNothing);
     expect(find.text('Privacy check'), findsNothing);
 
     await _openActivityDetail(tester, 'swap-8f29');
 
     expect(
-      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      find.byKey(const ValueKey('swap_activity_detail_page')),
       findsOneWidget,
     );
     expect(
@@ -1051,11 +981,6 @@ void main() {
       find.byKey(const ValueKey('swap_activity_detail_asset_pair')),
       findsOneWidget,
     );
-    final closeSize = tester.getSize(
-      find.byKey(const ValueKey('swap_activity_detail_close_button')),
-    );
-    expect(closeSize.width, greaterThanOrEqualTo(132));
-    expect(closeSize.height, greaterThanOrEqualTo(44));
     expect(
       find.byKey(const ValueKey('swap_active_summary_panel')),
       findsOneWidget,
@@ -1102,7 +1027,6 @@ void main() {
     expect(find.text('Confirm'), findsWidgets);
     expect(find.text('Swap'), findsWidgets);
     expect(find.text('Deliver'), findsWidgets);
-    expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
     expect(find.text('Technical details'), findsNothing);
     expect(find.text('Status timeline'), findsNothing);
     expect(find.text('Receipt'), findsNothing);
@@ -1116,11 +1040,10 @@ void main() {
     );
     expect(find.text('Copy redacted receipt'), findsNothing);
 
-    await tester.tapAt(const Offset(16, 16));
-    await tester.pumpAndSettle();
+    await _closeActivityDetail(tester);
 
     expect(
-      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      find.byKey(const ValueKey('swap_activity_detail_page')),
       findsNothing,
     );
   });
@@ -1135,26 +1058,28 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
 
-    expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
+    expect(find.byType(ActivityScreen), findsOneWidget);
     expect(find.text('Privacy check'), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('swap_queue_refresh_button')));
+    await _openActivityDetail(tester, 'swap-8f29');
+
+    await tester.tap(find.byKey(const ValueKey('swap_status_refresh_button')));
     await tester.pumpAndSettle();
 
     expect(swapProvider.statusRequests, hasLength(1));
-    expect(find.text('Swapping through provider'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('swap_activity_detail_page')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('activity route tracker stages skipped status transitions', (
@@ -1179,7 +1104,7 @@ void main() {
         ),
       ),
     );
-    final sessionStore = _FakeSwapSessionStore(
+    final sessionStore = _FakeSwapPersistenceStore(
       initialIntents: [
         _persistedIntent(
           id: 'jump-deposit',
@@ -1194,9 +1119,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         seedPrototypeFixtures: false,
         swapProvider: swapProvider,
@@ -1205,8 +1128,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
     await _openActivityDetail(tester, 'jump-deposit');
 
     expect(
@@ -1242,7 +1164,7 @@ void main() {
     tester,
   ) async {
     await _setDesktopViewport(tester);
-    final sessionStore = _FakeSwapSessionStore(
+    final sessionStore = _FakeSwapPersistenceStore(
       initialIntents: [
         _persistedExternalToZecIntent(
           id: 'oversized-pending',
@@ -1259,9 +1181,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         seedPrototypeFixtures: false,
         sessionStore: sessionStore,
@@ -1269,17 +1189,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
 
-    expect(
-      find.byKey(const ValueKey('swap_queue_row_oversized-pending')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('swap_queue_row_keep-pending')),
-      findsOneWidget,
-    );
+    expect(find.text('Swap USDC to ZEC'), findsNWidgets(2));
 
     await _openActivityDetail(tester, 'oversized-pending');
 
@@ -1299,16 +1211,12 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('swap_remove_intent_confirm_button')),
     );
-    await tester.pumpAndSettle();
+    await _pumpUntilAbsent(
+      tester,
+      find.byKey(const ValueKey('swap_remove_intent_modal')),
+    );
 
-    expect(
-      find.byKey(const ValueKey('swap_queue_row_oversized-pending')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey('swap_queue_row_keep-pending')),
-      findsOneWidget,
-    );
+    expect(find.text('Swap USDC to ZEC'), findsOneWidget);
     expect(sessionStore.savedIntents.map((intent) => intent.id), [
       'keep-pending',
     ]);
@@ -1344,28 +1252,20 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
 
     expect(
       find.byKey(const ValueKey('swap_receipt_scope_panel')),
       findsNothing,
     );
 
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('swap_queue_row_swap-refund')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_queue_row_swap-refund')));
-    await tester.pumpAndSettle();
+    await _openActivityDetail(tester, 'swap-refund');
 
     expect(
       find.byKey(const ValueKey('swap_support_details_section')),
@@ -1475,7 +1375,7 @@ void main() {
     );
   });
 
-  testWidgets('desktop shortcuts switch swap tabs and refresh status', (
+  testWidgets('desktop shortcuts open swap activity and refresh status', (
     tester,
   ) async {
     await _setDesktopViewport(tester);
@@ -1485,9 +1385,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
       ),
@@ -1497,35 +1395,23 @@ void main() {
     await _sendShortcut(
       tester,
       LogicalKeyboardKey.metaLeft,
-      LogicalKeyboardKey.digit2,
-    );
-
-    expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
-    expect(find.text('Privacy check'), findsNothing);
-
-    await _sendShortcut(
-      tester,
-      LogicalKeyboardKey.metaLeft,
       LogicalKeyboardKey.keyR,
     );
 
     expect(swapProvider.statusRequests, hasLength(1));
-    expect(find.text('Swapping through provider'), findsWidgets);
-
-    await _sendShortcut(
-      tester,
-      LogicalKeyboardKey.controlLeft,
-      LogicalKeyboardKey.digit3,
-    );
-
-    expect(find.text('Request inbox'), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap_queue_title')), findsNothing);
 
     await _sendShortcut(
       tester,
       LogicalKeyboardKey.metaLeft,
-      LogicalKeyboardKey.digit1,
+      LogicalKeyboardKey.digit2,
     );
 
+    expect(find.byType(ActivityScreen), findsOneWidget);
+    expect(find.text('In progress'), findsWidgets);
+    expect(find.text('Privacy check'), findsNothing);
+
+    await _openSwapSurface(tester);
     expect(find.text('You pay'), findsOneWidget);
   });
 
@@ -1553,9 +1439,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
@@ -1581,11 +1465,14 @@ void main() {
     );
 
     await tester.tap(find.byKey(const ValueKey('swap_command_open_activity')));
-    await tester.pumpAndSettle();
+    await _pumpUntilAbsent(
+      tester,
+      find.byKey(const ValueKey('swap_command_palette')),
+    );
 
     expect(find.byKey(const ValueKey('swap_command_palette')), findsNothing);
-    expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
 
+    await _openSwapSurface(tester);
     await _sendShortcut(
       tester,
       LogicalKeyboardKey.metaLeft,
@@ -1612,353 +1499,6 @@ void main() {
     expect(find.text('Receipt Copied'), findsOneWidget);
   });
 
-  testWidgets('command palette imports clipboard payment requests', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.getData') {
-          return {
-            'text': 'zcash:u1clipboarddestination?amount=0.75&message=Desk',
-          };
-        }
-        return null;
-      },
-    );
-    addTearDown(() {
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        null,
-      );
-    });
-
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await _sendShortcut(
-      tester,
-      LogicalKeyboardKey.metaLeft,
-      LogicalKeyboardKey.keyK,
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_command_palette_query')),
-      'clipboard',
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(
-      find.byKey(const ValueKey('swap_command_import_clipboard_request')),
-    );
-    await tester.pump(const Duration(milliseconds: 50));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const ValueKey('swap_command_palette')), findsNothing);
-    expect(find.text('Request inbox'), findsOneWidget);
-    expect(find.text('Zcash payment request'), findsWidgets);
-    expect(find.text('Review payment of 0.75 ZEC'), findsWidgets);
-  });
-
-  testWidgets('requests tab renders inbox and isolates unsupported connectors', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await _openRequestsSurface(tester);
-
-    expect(
-      find.byKey(const ValueKey('swap_request_inbox_panel')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('swap_request_list_panel')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('swap_page_tab_requests')), findsNothing);
-    expect(find.text('Request inbox'), findsOneWidget);
-    expect(find.text('Pasted request'), findsWidgets);
-    expect(find.text('Stage 0.2500 ZEC for USDC delivery'), findsWidgets);
-    expect(find.text('Receive ZEC from USDC'), findsWidgets);
-    expect(find.text('Send ZEC request'), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(const ValueKey('swap_request_row_request-walletconnect')),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Pairing request'), findsWidgets);
-    expect(find.text('Unsupported'), findsWidgets);
-    expect(find.text('WalletConnect (blocked)'), findsOneWidget);
-    expect(find.text('Connector disabled'), findsOneWidget);
-    expect(
-      find.text(
-        'Swap does not open long-lived dapp sessions. Import explicit payment or swap requests instead.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Account reveal'), findsOneWidget);
-    expect(find.text('blocked'), findsWidgets);
-  });
-
-  testWidgets('request inbox stages swap requests into the composer', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await _openRequestsSurface(tester);
-    await tester.tap(find.byKey(const ValueKey('swap_request_primary_button')));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const ValueKey('swap_request_inbox_panel')),
-      findsNothing,
-    );
-    expect(find.text('ZEC -> USDC'), findsNothing);
-    expect(_fieldText(tester, 'swap_amount_field'), '0.2500');
-    expect(
-      _fieldText(tester, 'swap_destination_field'),
-      '0xrequest-usdc-recipient',
-    );
-    expect(find.text('Recipient'), findsOneWidget);
-
-    await _openRequestsSurface(tester);
-
-    expect(find.text('Accepted'), findsWidgets);
-  });
-
-  testWidgets('request inbox stages external asset requests into ZEC receive', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await _openRequestsSurface(tester);
-    await tester.tap(
-      find.byKey(const ValueKey('swap_request_row_request-receive-zec-usdc')),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Receive ZEC request'), findsOneWidget);
-    expect(
-      find.text(
-        'Stage the quote, then send USDC to a one-time source-chain address. ZEC arrives directly at this wallet shielded address.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Pay 140.35 USDC'), findsOneWidget);
-    expect(find.text('Receive ZEC to shielded wallet address'), findsOneWidget);
-    expect(find.text('Refund 0xrequest-usdc-refund'), findsOneWidget);
-    expect(find.text('Stage receive'), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('swap_request_primary_button')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('USDC -> ZEC'), findsNothing);
-    expect(_fieldText(tester, 'swap_amount_field'), '140.35');
-    expect(
-      _fieldText(tester, 'swap_destination_field'),
-      '0xrequest-usdc-refund',
-    );
-    expect(find.text('USDC refund'), findsWidgets);
-  });
-
-  testWidgets('request inbox imports ZIP-321 payment URIs', (tester) async {
-    await _setDesktopViewport(tester);
-
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await _openRequestsSurface(tester);
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_request_import_field')),
-      'zcash:u1zip321destination?amount=1.25&message=Invoice%2042',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_request_import_button')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Zcash payment request'), findsWidgets);
-    expect(find.text('Review payment of 1.25 ZEC'), findsWidgets);
-    expect(find.text('u1zip321destination'), findsOneWidget);
-    expect(find.text('Invoice 42'), findsOneWidget);
-    expect(find.text('Approval required'), findsOneWidget);
-    expect(_fieldText(tester, 'swap_request_import_field'), isEmpty);
-  });
-
-  testWidgets('request inbox pastes ZIP-321 payment URIs from clipboard', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.getData') {
-          return {
-            'text': 'zcash:u1clipboarddestination?amount=0.75&message=Desk',
-          };
-        }
-        return null;
-      },
-    );
-    addTearDown(() {
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        null,
-      );
-    });
-
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await _openRequestsSurface(tester);
-    await tester.tap(find.byKey(const ValueKey('swap_request_paste_button')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Zcash payment request'), findsWidgets);
-    expect(find.text('Review payment of 0.75 ZEC'), findsWidgets);
-    expect(find.text('Desk'), findsOneWidget);
-    expect(_fieldText(tester, 'swap_request_import_field'), isEmpty);
-  });
-
-  testWidgets('request inbox opens parsed ZIP-321 payments in send handoff', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-            GoRoute(
-              path: '/send',
-              builder: (_, state) {
-                final extra = state.extra;
-                if (extra is! SendPrefillArgs) {
-                  return const Text('send route');
-                }
-                return Text(
-                  'send prefill ${extra.address} ${extra.amountText} ${extra.message}',
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await _openRequestsSurface(tester);
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_request_import_field')),
-      'zcash:u1zip321destination?amount=1.25&message=Invoice%2042',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_request_import_button')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_request_primary_button')));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text('send prefill u1zip321destination 1.25 Invoice 42'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('request inbox rejects invalid ZIP-321 payment URIs', (
-    tester,
-  ) async {
-    await _setDesktopViewport(tester);
-
-    await tester.pumpWidget(
-      _routerHarness(
-        GoRouter(
-          initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await _openRequestsSurface(tester);
-    await tester.enterText(
-      find.byKey(const ValueKey('swap_request_import_field')),
-      'zcash:u1zip321destination?amount=0.123456789',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('swap_request_import_button')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Invalid ZIP-321 ZEC amount.'), findsOneWidget);
-    expect(find.text('0.123456789 ZEC'), findsNothing);
-  });
-
   testWidgets('activity queue groups swaps and selection updates detail', (
     tester,
   ) async {
@@ -1968,20 +1508,17 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
 
-    expect(find.text('Open'), findsOneWidget);
-    expect(find.text('Closed'), findsOneWidget);
-    expect(find.text('Swapping through provider'), findsOneWidget);
+    expect(find.text('In progress'), findsWidgets);
+    expect(find.text('Completed'), findsWidgets);
+    expect(find.text('Swap ZEC to USDC'), findsWidgets);
 
     await _openActivityDetail(tester, 'swap-2a11');
 
@@ -2252,30 +1789,17 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
 
-    expect(find.text('Check deposit amount'), findsWidgets);
-    expect(
-      find.byKey(const ValueKey('swap_queue_group_failed')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('swap_queue_row_swap-refund')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('swap_queue_row_swap-failed')),
-      findsOneWidget,
-    );
+    expect(find.text('Action needed'), findsWidgets);
+    expect(find.text('Refunded'), findsWidgets);
+    expect(find.text('Failed'), findsWidgets);
 
     await _openActivityDetail(tester, 'swap-underpaid');
 
@@ -2424,7 +1948,7 @@ void main() {
   testWidgets('activity restores persisted swap sessions', (tester) async {
     await _setDesktopViewport(tester);
     final swapProvider = _FakeSwapProvider();
-    final sessionStore = _FakeSwapSessionStore(
+    final sessionStore = _FakeSwapPersistenceStore(
       initialIntents: [
         _persistedIntent(
           id: 'persisted-deposit',
@@ -2439,9 +1963,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         sessionStore: sessionStore,
@@ -2450,10 +1972,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
 
-    expect(sessionStore.loadCount, 1);
+    expect(sessionStore.loadCount, 2);
     expect(swapProvider.statusRequests, hasLength(1));
     expect(
       swapProvider.statusRequests.single.depositAddress,
@@ -2477,7 +1998,7 @@ void main() {
     (tester) async {
       await _setDesktopViewport(tester);
       final swapProvider = _LongExternalStatusSwapProvider();
-      final sessionStore = _FakeSwapSessionStore(
+      final sessionStore = _FakeSwapPersistenceStore(
         initialIntents: [
           _persistedExternalToZecIntent(
             id: '0xpersisted-usdc-deposit',
@@ -2490,9 +2011,7 @@ void main() {
         _routerHarness(
           GoRouter(
             initialLocation: '/swap',
-            routes: [
-              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-            ],
+            routes: [_swapRoute(), _swapActivityRoute()],
           ),
           swapProvider: swapProvider,
           sessionStore: sessionStore,
@@ -2500,10 +2019,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-      await tester.pumpAndSettle();
+      await _openActivitySurface(tester);
 
-      expect(sessionStore.loadCount, 1);
+      expect(sessionStore.loadCount, 2);
       expect(swapProvider.statusRequests, hasLength(1));
       expect(
         swapProvider.statusRequests.single.depositAddress,
@@ -2534,7 +2052,7 @@ void main() {
     (tester) async {
       await _setDesktopViewport(tester);
       final swapProvider = _CompletingExternalStatusSwapProvider();
-      final sessionStore = _FakeSwapSessionStore(
+      final sessionStore = _FakeSwapPersistenceStore(
         initialIntents: [
           _persistedExternalToZecIntent(
             id: '0xcomplete',
@@ -2547,9 +2065,7 @@ void main() {
         _routerHarness(
           GoRouter(
             initialLocation: '/swap',
-            routes: [
-              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-            ],
+            routes: [_swapRoute(), _swapActivityRoute()],
           ),
           swapProvider: swapProvider,
           sessionStore: sessionStore,
@@ -2557,8 +2073,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-      await tester.pumpAndSettle();
+      await _openActivitySurface(tester);
 
       expect(swapProvider.statusRequests, hasLength(1));
       expect(
@@ -2569,7 +2084,7 @@ void main() {
         sessionStore.savedIntents.single.nextAction,
         'Provider reports destination settlement complete',
       );
-      expect(find.text('Swap delivered'), findsOneWidget);
+      expect(find.text('Completed'), findsOneWidget);
       await _openActivityDetail(tester, '0xcomplete');
 
       expect(find.text('ZEC ready'), findsOneWidget);
@@ -2584,7 +2099,7 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     final swapProvider = _FakeSwapProvider();
-    final sessionStore = _FakeSwapSessionStore(
+    final sessionStore = _FakeSwapPersistenceStore(
       initialIntents: [
         _persistedIntent(
           id: 'polling-deposit',
@@ -2599,9 +2114,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         sessionStore: sessionStore,
@@ -2630,7 +2143,7 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     final swapProvider = _FakeSwapProvider();
-    final sessionStore = _FakeSwapSessionStore(
+    final sessionStore = _FakeSwapPersistenceStore(
       initialIntents: [
         _persistedIntent(
           id: 'swap-session-1',
@@ -2646,9 +2159,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         sessionStore: sessionStore,
@@ -2674,7 +2185,7 @@ void main() {
   ) async {
     await _setDesktopViewport(tester);
     final swapProvider = _FakeSwapProvider();
-    final sessionStore = _FakeSwapSessionStore(
+    final sessionStore = _FakeSwapPersistenceStore(
       initialIntents: [
         _persistedIntent(
           id: 'swap-session-2',
@@ -2690,9 +2201,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         sessionStore: sessionStore,
@@ -2701,8 +2210,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
     await _openActivityDetail(tester, 'swap-session-2');
 
     expect(
@@ -2743,9 +2251,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
@@ -2784,8 +2290,7 @@ void main() {
       0,
     );
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
 
     expect(tester.takeException(), isNull);
     expect(find.text('Technical details'), findsNothing);
@@ -2852,18 +2357,15 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: _LongExternalStatusSwapProvider(),
-        sessionStore: _FakeSwapSessionStore(initialIntents: [longIntent]),
+        sessionStore: _FakeSwapPersistenceStore(initialIntents: [longIntent]),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_activity')));
-    await tester.pumpAndSettle();
+    await _openActivitySurface(tester);
     await _openActivityDetail(tester, 'swap-long-provider-data');
 
     expect(tester.takeException(), isNull);
@@ -2889,9 +2391,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: _LongQuoteSwapProvider(),
       ),
@@ -2936,9 +2436,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
@@ -3046,19 +2544,13 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_start_button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Swap created in Activity'), findsOneWidget);
     expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('swap_toast_overlay_host')),
-        matching: find.text('Swap created in Activity'),
-      ),
+      find.byKey(const ValueKey('swap_activity_detail_page')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
     expect(find.text('Technical details'), findsNothing);
     await _closeActivityDetail(tester);
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_swap')));
-    await tester.pumpAndSettle();
+    await _openSwapSurface(tester);
     expect(_fieldText(tester, 'swap_amount_field'), isEmpty);
     expect(_fieldText(tester, 'swap_destination_field'), isEmpty);
   });
@@ -3073,9 +2565,7 @@ void main() {
         _routerHarness(
           GoRouter(
             initialLocation: '/swap',
-            routes: [
-              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-            ],
+            routes: [_swapRoute(), _swapActivityRoute()],
           ),
           swapProvider: swapProvider,
           seedPrototypeFixtures: false,
@@ -3132,9 +2622,7 @@ void main() {
         _routerHarness(
           GoRouter(
             initialLocation: '/swap',
-            routes: [
-              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-            ],
+            routes: [_swapRoute(), _swapActivityRoute()],
           ),
           swapProvider: swapProvider,
           seedPrototypeFixtures: false,
@@ -3194,9 +2682,7 @@ void main() {
         _routerHarness(
           GoRouter(
             initialLocation: '/swap',
-            routes: [
-              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-            ],
+            routes: [_swapRoute(), _swapActivityRoute()],
           ),
           swapProvider: swapProvider,
           spendableBalance: BigInt.from(100000000),
@@ -3238,9 +2724,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
@@ -3283,9 +2767,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         liveFundsEnabled: true,
@@ -3337,9 +2819,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         liveFundsEnabled: true,
@@ -3407,9 +2887,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: _FailingQuoteSwapProvider(),
       ),
@@ -3453,9 +2931,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         liveFundsEnabled: true,
@@ -3508,9 +2984,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
       ),
     );
@@ -3585,8 +3059,7 @@ void main() {
       findsOneWidget,
     );
     await _closeActivityDetail(tester);
-    await tester.tap(find.byKey(const ValueKey('swap_page_tab_swap')));
-    await tester.pumpAndSettle();
+    await _openSwapSurface(tester);
     expect(_fieldText(tester, 'swap_amount_field'), isEmpty);
     expect(_fieldText(tester, 'swap_destination_field'), isEmpty);
   });
@@ -3601,9 +3074,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         loadShieldedAddress: ({required accountUuid}) async {
@@ -3645,9 +3116,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
       ),
@@ -3696,9 +3165,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         bootstrap: _hardwareBootstrap,
         swapProvider: swapProvider,
@@ -3743,9 +3210,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
       ),
@@ -3823,9 +3288,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         liveFundsEnabled: true,
@@ -3879,7 +3342,7 @@ void main() {
     'activity shows direction-specific external deposit instructions',
     (tester) async {
       await _setDesktopViewport(tester);
-      final sessionStore = _FakeSwapSessionStore();
+      final sessionStore = _FakeSwapPersistenceStore();
       final clipboardWrites = <String>[];
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
@@ -3902,9 +3365,7 @@ void main() {
         _routerHarness(
           GoRouter(
             initialLocation: '/swap',
-            routes: [
-              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-            ],
+            routes: [_swapRoute(), _swapActivityRoute()],
           ),
           sessionStore: sessionStore,
         ),
@@ -4021,15 +3482,13 @@ void main() {
     await _setDesktopViewport(tester);
     final swapProvider = _FakeSwapProvider();
     final depositSender = _FakeSwapDepositSender();
-    final sessionStore = _FakeSwapSessionStore();
+    final sessionStore = _FakeSwapPersistenceStore();
 
     await tester.pumpWidget(
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         depositSender: depositSender,
@@ -4059,10 +3518,7 @@ void main() {
     expect(depositSender.requests, isEmpty);
     expect(swapProvider.submittedDeposits, isEmpty);
     expect(sessionStore.savedIntents, hasLength(1));
-    expect(
-      find.textContaining('Live ZEC deposit is disabled in this build'),
-      findsOneWidget,
-    );
+    expect(sessionStore.savedIntents.single.depositTxHash, isNull);
     expect(find.text('Live submit disabled'), findsOneWidget);
   });
 
@@ -4072,7 +3528,7 @@ void main() {
     await _setDesktopViewport(tester);
     final swapProvider = _FakeSwapProvider();
     final depositSender = _FakeSwapDepositSender();
-    final sessionStore = _FakeSwapSessionStore();
+    final sessionStore = _FakeSwapPersistenceStore();
     final clipboardWrites = <String>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
@@ -4095,9 +3551,7 @@ void main() {
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         depositSender: depositSender,
@@ -4191,15 +3645,13 @@ void main() {
     await _setDesktopViewport(tester);
     final swapProvider = _AwaitingSubmitSwapProvider();
     final depositSender = _DelayedSwapDepositSender();
-    final sessionStore = _FakeSwapSessionStore();
+    final sessionStore = _FakeSwapPersistenceStore();
 
     await tester.pumpWidget(
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         depositSender: depositSender,
@@ -4228,12 +3680,10 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('swap_review_panel')), findsNothing);
-    expect(find.byKey(const ValueKey('swap_queue_title')), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('swap_activity_detail_modal')),
+      find.byKey(const ValueKey('swap_activity_detail_page')),
       findsOneWidget,
     );
-    expect(find.text('Swap created in Activity'), findsOneWidget);
     expect(depositSender.requests, hasLength(1));
     expect(swapProvider.submittedDeposits, isEmpty);
     expect(sessionStore.savedIntents, hasLength(1));
@@ -4244,7 +3694,7 @@ void main() {
 
     expect(swapProvider.submittedDeposits, hasLength(1));
     expect(sessionStore.savedIntents.last.depositTxHash, 'zec-auto-txid');
-    expect(find.text('Confirming deposit'), findsOneWidget);
+    expect(find.text('zec-auto-txid'), findsWidgets);
   });
 
   testWidgets('ZEC deposit tx hash is checkpointed when submit fails', (
@@ -4255,15 +3705,13 @@ void main() {
       submitDepositError: Exception('submit temporarily unavailable'),
     );
     final depositSender = _FakeSwapDepositSender();
-    final sessionStore = _FakeSwapSessionStore();
+    final sessionStore = _FakeSwapPersistenceStore();
 
     await tester.pumpWidget(
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         depositSender: depositSender,
@@ -4303,7 +3751,6 @@ void main() {
       'zec-auto-txid',
     );
     expect(find.text('zec-auto-txid'), findsWidgets);
-    expect(find.textContaining('Could not submit deposit tx'), findsOneWidget);
     expect(find.textContaining('Could not send ZEC deposit'), findsNothing);
   });
 
@@ -4317,15 +3764,13 @@ void main() {
         'Propose failed: Insufficient balance (have 0, need 210000 including fee)',
       ),
     );
-    final sessionStore = _FakeSwapSessionStore();
+    final sessionStore = _FakeSwapPersistenceStore();
 
     await tester.pumpWidget(
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         depositSender: depositSender,
@@ -4372,15 +3817,13 @@ void main() {
       final swapProvider = _FakeSwapProvider();
       final depositSender = _FakeSwapDepositSender();
       final hardwareSigningService = _FakeSwapHardwareSigningService();
-      final sessionStore = _FakeSwapSessionStore();
+      final sessionStore = _FakeSwapPersistenceStore();
 
       await tester.pumpWidget(
         _routerHarness(
           GoRouter(
             initialLocation: '/swap',
-            routes: [
-              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-            ],
+            routes: [_swapRoute(), _swapActivityRoute()],
           ),
           bootstrap: _hardwareBootstrap,
           swapProvider: swapProvider,
@@ -4443,15 +3886,13 @@ void main() {
       final hardwareSigningService = _FakeSwapHardwareSigningService(
         proofCompleter: proofCompleter,
       );
-      final sessionStore = _FakeSwapSessionStore();
+      final sessionStore = _FakeSwapPersistenceStore();
 
       await tester.pumpWidget(
         _routerHarness(
           GoRouter(
             initialLocation: '/swap',
-            routes: [
-              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-            ],
+            routes: [_swapRoute(), _swapActivityRoute()],
           ),
           bootstrap: _hardwareBootstrap,
           swapProvider: swapProvider,
@@ -4513,15 +3954,13 @@ void main() {
       final swapProvider = _FakeSwapProvider();
       final depositSender = _FakeSwapDepositSender();
       final hardwareSigningService = _FakeSwapHardwareSigningService();
-      final sessionStore = _FakeSwapSessionStore();
+      final sessionStore = _FakeSwapPersistenceStore();
 
       await tester.pumpWidget(
         _routerHarness(
           GoRouter(
             initialLocation: '/swap',
-            routes: [
-              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-            ],
+            routes: [_swapRoute(), _swapActivityRoute()],
           ),
           bootstrap: _hardwareBootstrap,
           swapProvider: swapProvider,
@@ -4577,14 +4016,15 @@ void main() {
         broadcastStatus: 'broadcasted_storage_failed',
         broadcastMessage: 'local storage failed after broadcast',
       );
-      final sessionStore = _FakeSwapSessionStore();
+      final sessionStore = _FakeSwapPersistenceStore();
 
       await tester.pumpWidget(
         _routerHarness(
           GoRouter(
             initialLocation: '/swap',
             routes: [
-              GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
+              _swapRoute(),
+              _swapActivityRoute(),
               GoRoute(
                 path: '/send/keystone/scan',
                 builder: (_, _) => const _FakeKeystoneScanScreen(),
@@ -4662,7 +4102,7 @@ void main() {
         sessionStore.savedIntents.single.depositTxHash,
         'hardware-broadcast-txid',
       );
-      expect(find.text('ZEC Deposit Checking'), findsOneWidget);
+      expect(find.text('hardware-broadcast-txid'), findsWidgets);
       expect(
         sessionStore.savedIntents.single.statusError,
         'local storage failed after broadcast',
@@ -4686,15 +4126,13 @@ void main() {
     final swapProvider = _FakeSwapProvider();
     final depositSender = _FakeSwapDepositSender();
     final hardwareSigningService = _FakeSwapHardwareSigningService();
-    final sessionStore = _FakeSwapSessionStore();
+    final sessionStore = _FakeSwapPersistenceStore();
 
     await tester.pumpWidget(
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         bootstrap: _hardwareBootstrap,
         swapProvider: swapProvider,
@@ -4758,15 +4196,13 @@ void main() {
     await _setDesktopViewport(tester);
     final swapProvider = _DelayedStartSwapProvider();
     final depositSender = _FakeSwapDepositSender();
-    final sessionStore = _FakeSwapSessionStore();
+    final sessionStore = _FakeSwapPersistenceStore();
 
     await tester.pumpWidget(
       _routerHarness(
         GoRouter(
           initialLocation: '/swap',
-          routes: [
-            GoRoute(path: '/swap', builder: (_, _) => const SwapScreen()),
-          ],
+          routes: [_swapRoute(), _swapActivityRoute()],
         ),
         swapProvider: swapProvider,
         depositSender: depositSender,
@@ -4816,7 +4252,7 @@ Widget _routerHarness(
   SwapDepositSender? depositSender,
   SwapMaxAmountEstimator? maxAmountEstimator,
   SwapHardwareSigningService? hardwareSigningService,
-  SwapSessionStore? sessionStore,
+  _FakeSwapPersistenceStore? sessionStore,
   BigInt? spendableBalance,
   Duration? statusPollInterval,
   Duration? priceRefreshInterval,
@@ -4827,6 +4263,7 @@ Widget _routerHarness(
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
 }) {
+  final effectiveSessionStore = sessionStore ?? _FakeSwapPersistenceStore();
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
@@ -4870,11 +4307,12 @@ Widget _routerHarness(
       swapHardwareSigningServiceProvider.overrideWithValue(
         hardwareSigningService ?? _FakeSwapHardwareSigningService(),
       ),
-      swapSessionStoreProvider.overrideWithValue(
-        sessionStore ?? _FakeSwapSessionStore(),
-      ),
+      swapActivityStoreProvider.overrideWithValue(effectiveSessionStore),
+      swapDraftStoreProvider.overrideWithValue(effectiveSessionStore),
       if (seedPrototypeFixtures) ...[
-        swapInitialIntentsProvider.overrideWithValue(previewSwapIntents),
+        swapInitialIntentsProvider.overrideWithValue(
+          _accountScopedPreviewSwapIntents(),
+        ),
         swapInitialExternalRequestsProvider.overrideWithValue(
           previewExternalRequests,
         ),
@@ -4896,6 +4334,33 @@ Widget _routerHarness(
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
+}
+
+GoRoute _swapRoute() {
+  return GoRoute(path: '/swap', builder: (_, _) => const SwapScreen());
+}
+
+GoRoute _swapActivityRoute() {
+  return GoRoute(
+    path: '/activity',
+    builder: (_, _) => const ActivityScreen(),
+    routes: [
+      GoRoute(
+        path: 'swap/:swapId',
+        builder: (_, state) => SwapActivityDetailScreen(
+          swapIntentId: state.pathParameters['swapId'] ?? '',
+          autoSignZecDeposit: state.uri.queryParameters['sign'] == 'zecDeposit',
+        ),
+      ),
+    ],
+  );
+}
+
+List<SwapPrototypeIntent> _accountScopedPreviewSwapIntents() {
+  return [
+    for (final intent in previewSwapIntents)
+      intent.copyWith(accountUuid: 'account-1'),
+  ];
 }
 
 Widget _themeHarness(Widget child) {
@@ -5559,8 +5024,8 @@ class _FakeSwapAccountNotifier extends AccountNotifier {
   }
 }
 
-class _FakeSwapSessionStore implements SwapSessionStore {
-  _FakeSwapSessionStore({
+class _FakeSwapPersistenceStore implements SwapActivityStore, SwapDraftStore {
+  _FakeSwapPersistenceStore({
     List<SwapPrototypeIntent> initialIntents = const [],
     SwapDraftSnapshot? initialDraft,
   }) : savedIntents = [...initialIntents],
@@ -5588,7 +5053,7 @@ class _FakeSwapSessionStore implements SwapSessionStore {
   final _intentsByAccount = <String, List<SwapPrototypeIntent>>{};
 
   @override
-  Future<List<SwapPrototypeIntent>> loadIntents({
+  Future<List<SwapIntentRecord>> loadRecords({
     required String accountUuid,
   }) async {
     loadCount++;
@@ -5596,18 +5061,21 @@ class _FakeSwapSessionStore implements SwapSessionStore {
     final accountIntents = _intentsByAccount[accountUuid] ?? const [];
     return [
       for (final intent in [..._legacyIntents, ...accountIntents])
-        intent.copyWith(accountUuid: accountUuid),
+        SwapIntentRecord.fromIntent(intent.copyWith(accountUuid: accountUuid)),
     ];
   }
 
   @override
-  Future<void> saveIntents({
+  Future<void> saveRecords({
     required String accountUuid,
-    required List<SwapPrototypeIntent> intents,
+    required List<SwapIntentRecord> records,
   }) async {
     savedAccounts.add(accountUuid);
     savedIntents = [
-      for (final intent in intents) intent.copyWith(accountUuid: accountUuid),
+      for (final record in records)
+        swapPrototypeIntentFromRecord(
+          record.copyWith(accountUuid: accountUuid),
+        ),
     ];
     _intentsByAccount[accountUuid] = [...savedIntents];
     saveSnapshots.add(savedIntents);
@@ -5732,34 +5200,63 @@ Future<void> _sendShortcut(
   await tester.sendKeyDownEvent(modifier);
   await tester.sendKeyEvent(key);
   await tester.sendKeyUpEvent(modifier);
-  await tester.pumpAndSettle();
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 250));
 }
 
-Future<void> _openRequestsSurface(WidgetTester tester) async {
-  await _sendShortcut(
+Future<void> _openActivitySurface(WidgetTester tester) async {
+  final context = tester.element(find.byType(AppDesktopShell).first);
+  GoRouter.of(context).go('/activity');
+  await _pumpUntilAbsent(
     tester,
-    LogicalKeyboardKey.controlLeft,
-    LogicalKeyboardKey.digit3,
+    find.byKey(const ValueKey('swap_compact_ticket')),
+  );
+}
+
+Future<void> _openSwapSurface(WidgetTester tester) async {
+  final context = tester.element(find.byType(AppDesktopShell).first);
+  GoRouter.of(context).go('/swap');
+  await _pumpUntilPresent(
+    tester,
+    find.byKey(const ValueKey('swap_compact_ticket')),
   );
 }
 
 Future<void> _openActivityDetail(WidgetTester tester, String intentId) async {
   await _closeActivityDetail(tester);
-  final row = find.byKey(ValueKey('swap_queue_row_$intentId'));
-  await tester.ensureVisible(row);
-  await tester.pumpAndSettle();
-  await tester.tap(row, warnIfMissed: false);
-  await tester.pumpAndSettle();
+  final context = tester.element(find.byType(AppDesktopShell).first);
+  GoRouter.of(
+    context,
+  ).go(Uri(path: '/activity/swap/${Uri.encodeComponent(intentId)}').toString());
+  await _pumpUntilPresent(
+    tester,
+    find.byKey(const ValueKey('swap_activity_detail_page')),
+  );
 }
 
 Future<void> _closeActivityDetail(WidgetTester tester) async {
-  final modal = find.byKey(const ValueKey('swap_activity_detail_modal'));
-  if (modal.evaluate().isEmpty) return;
-  await tester.tap(
-    find.byKey(const ValueKey('swap_activity_detail_close_button')),
-    warnIfMissed: false,
+  final page = find.byKey(const ValueKey('swap_activity_detail_page'));
+  if (page.evaluate().isEmpty) return;
+  final context = tester.element(find.byType(AppDesktopShell).first);
+  GoRouter.of(context).go('/activity');
+  await _pumpUntilAbsent(
+    tester,
+    find.byKey(const ValueKey('swap_activity_detail_page')),
   );
-  await tester.pumpAndSettle();
+}
+
+Future<void> _pumpUntilPresent(WidgetTester tester, Finder finder) async {
+  for (var i = 0; i < 20; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (finder.evaluate().isNotEmpty) return;
+  }
+}
+
+Future<void> _pumpUntilAbsent(WidgetTester tester, Finder finder) async {
+  for (var i = 0; i < 20; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (finder.evaluate().isEmpty) return;
+  }
 }
 
 Future<void> _expandDepositTxHash(WidgetTester tester) async {
@@ -5797,15 +5294,6 @@ Future<void> _revealSupportBundle(WidgetTester tester) async {
 Future<void> _tapDepositSubmit(WidgetTester tester) async {
   final button = find.byKey(const ValueKey('swap_deposit_submit_button'));
   await tester.ensureVisible(button);
-  await tester.pumpAndSettle();
-  final modalScroll = find.descendant(
-    of: find.byKey(const ValueKey('swap_activity_detail_modal')),
-    matching: find.byType(SingleChildScrollView),
-  );
-  final scroll = modalScroll.evaluate().isNotEmpty
-      ? modalScroll.first
-      : find.byType(SingleChildScrollView).first;
-  await tester.drag(scroll, const Offset(0, -180));
   await tester.pumpAndSettle();
   await tester.tap(button);
   await tester.pumpAndSettle();
