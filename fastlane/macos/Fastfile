@@ -257,16 +257,35 @@ def github_api_json(url)
   VizorRelease.github_api_json(url)
 end
 
-def sparkle_appcast_xml_enclosure_urls(appcast_xml)
+def sparkle_appcast_xml_enclosures(appcast_xml)
   document = REXML::Document.new(appcast_xml)
-  urls = []
-  document.elements.each("//*") do |element|
-    next unless element.name.to_s.split(":").last == "enclosure"
+  enclosures = []
+  document.elements.each("//item") do |item|
+    sparkle_version = nil
+    item.elements.each("*") do |element|
+      next unless element.name.to_s.split(":").last == "version"
 
-    url = element.attributes["url"].to_s.strip
-    urls << url unless url.empty?
+      sparkle_version = element.text.to_s.strip
+      break
+    end
+
+    item.elements.each(".//*") do |element|
+      next unless element.name.to_s.split(":").last == "enclosure"
+
+      url = element.attributes["url"].to_s.strip
+      next if url.empty?
+
+      enclosures << {
+        url: url,
+        sparkle_version: sparkle_version
+      }
+    end
   end
-  urls
+  enclosures
+end
+
+def sparkle_appcast_xml_enclosure_urls(appcast_xml)
+  sparkle_appcast_xml_enclosures(appcast_xml).map { |enclosure| enclosure.fetch(:url) }
 end
 
 def sparkle_appcast_xml_release_notes_urls(appcast_xml)
@@ -357,7 +376,7 @@ def normalize_sparkle_delta_asset_names!(archives_dir, appcast_path)
   write_sparkle_appcast_document!(appcast_path, document)
 end
 
-def remote_sparkle_appcast_has_enclosure_url?(appcast_asset, expected_url)
+def remote_sparkle_appcast_enclosure(appcast_asset, expected_url)
   appcast_url = appcast_asset.fetch("browser_download_url")
   appcast_xml = http_get(
     URI(appcast_url),
@@ -365,10 +384,10 @@ def remote_sparkle_appcast_has_enclosure_url?(appcast_asset, expected_url)
       "User-Agent" => "vizor-fastlane"
     }
   )
-  sparkle_appcast_xml_enclosure_urls(appcast_xml).include?(expected_url)
+  sparkle_appcast_xml_enclosures(appcast_xml).find { |enclosure| enclosure.fetch(:url) == expected_url }
 rescue StandardError => e
   UI.important("Could not validate prior Sparkle appcast #{appcast_url}: #{e.message}")
-  false
+  nil
 end
 
 def previous_sparkle_release_archive_assets(metadata, limit: 5)
@@ -376,11 +395,10 @@ def previous_sparkle_release_archive_assets(metadata, limit: 5)
   archive_asset_name = sparkle_update_archive_asset_name(metadata)
   appcast_asset_name = sparkle_appcast_asset_name(metadata)
   current_version = Gem::Version.new(metadata.fetch(:version))
+  current_build_number = Integer(metadata.fetch(:build_number), 10)
   previous_assets = []
 
   releases.each do |release|
-    break if previous_assets.size >= limit
-
     tag_name = release["tag_name"].to_s
     next if release["draft"] || release["prerelease"] || tag_name == metadata[:tag]
     next unless tag_name.match?(/\Arelease\/v\d+\.\d+\.\d+\z/)
@@ -401,19 +419,35 @@ def previous_sparkle_release_archive_assets(metadata, limit: 5)
     end
 
     expected_archive_url = github_release_download_url(metadata, tag_name, archive_asset_name)
-    unless remote_sparkle_appcast_has_enclosure_url?(appcast_asset, expected_archive_url)
+    appcast_enclosure = remote_sparkle_appcast_enclosure(appcast_asset, expected_archive_url)
+    unless appcast_enclosure
       UI.important("Skipping prior Sparkle delta source #{tag_name}: #{appcast_asset_name} does not advertise #{expected_archive_url}")
       next
+    end
+    sparkle_version = appcast_enclosure.fetch(:sparkle_version).to_s
+    unless sparkle_version.match?(/\A[1-9]\d*\z/)
+      UI.important("Skipping prior Sparkle delta source #{tag_name}: #{appcast_asset_name} has invalid sparkle:version #{sparkle_version.inspect}")
+      next
+    end
+
+    sparkle_build_number = Integer(sparkle_version, 10)
+    if sparkle_build_number >= current_build_number
+      UI.user_error!(
+        "Prior Sparkle release #{tag_name} has build #{sparkle_build_number}, " \
+        "which is not lower than current build #{current_build_number}. " \
+        "Increase RELEASE_BUILD_NUMBER before releasing #{metadata[:tag]}."
+      )
     end
 
     previous_assets << {
       tag: tag_name,
       name: archive_asset.fetch("name"),
-      download_url: archive_asset.fetch("browser_download_url")
+      download_url: archive_asset.fetch("browser_download_url"),
+      sparkle_version: sparkle_build_number
     }
   end
 
-  previous_assets
+  previous_assets.sort_by { |asset| -asset.fetch(:sparkle_version) }.first(limit)
 end
 
 def previous_release_archive_filename(metadata, tag_name)
@@ -426,7 +460,7 @@ def download_previous_release_archives!(archives_dir, metadata)
     destination_path = File.join(archives_dir, previous_release_archive_filename(metadata, asset.fetch(:tag)))
     next if File.exist?(destination_path)
 
-    UI.message("Downloading prior Sparkle archive #{asset.fetch(:name)} from #{asset.fetch(:tag)}")
+    UI.message("Downloading prior Sparkle archive #{asset.fetch(:name)} from #{asset.fetch(:tag)} build #{asset.fetch(:sparkle_version)}")
     archive_data = begin
       http_get(
         URI(asset.fetch(:download_url)),

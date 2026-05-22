@@ -89,7 +89,7 @@ stable release 태그(`release/v1.2.3`)에서는 아래도 필요합니다. prer
 - `SPARKLE_PRIVATE_ED_KEY_MAINNET` / `SPARKLE_PRIVATE_ED_KEY_TESTNET`은 stable release에서 flavor별 appcast/delta, signed feed, release notes 서명에 쓰는 비밀 Ed25519 키입니다.
 - mainnet Sparkle feed asset은 `appcast.xml`, testnet Sparkle feed asset은 `appcast-testnet.xml`입니다.
 - `release_notes/v1.2.3.md`가 있으면 stable `release/v1.2.3`의 Sparkle release notes로 사용합니다. 없으면 GitHub Release 링크만 포함한 기본 notes를 생성합니다.
-- Sparkle delta 입력으로 쓰는 이전 release는 같은 flavor의 고정 DMG(`Vizor-macos.dmg` 또는 `Vizor-Testnet-macos.dmg`)와 같은 flavor의 appcast asset을 둘 다 가진 stable release여야 합니다. fastlane은 이전 appcast XML이 그 release의 고정 DMG enclosure를 가리키는지도 확인하며, 조건을 만족하지 않으면 delta만 생략하고 현재 full DMG update는 계속 생성합니다.
+- Sparkle delta 입력으로 쓰는 이전 release는 같은 flavor의 고정 DMG(`Vizor-macos.dmg` 또는 `Vizor-Testnet-macos.dmg`)와 같은 flavor의 appcast asset을 둘 다 가진 stable release여야 합니다. fastlane은 이전 appcast XML이 그 release의 고정 DMG enclosure를 가리키는지도 확인하고, 유효한 후보를 `sparkle:version` 내림차순으로 선택합니다. 이전 stable appcast의 `sparkle:version`이 현재 build number보다 크거나 같으면 release를 중단합니다.
 - 현재 stable release의 appcast는 업로드 전에 현재 태그의 고정 DMG URL과 같은 basename의 release notes markdown(`Vizor-macos.md` 또는 `Vizor-Testnet-macos.md`) URL을 가리키고, appcast와 release notes가 Sparkle EdDSA로 검증되는지 확인합니다.
 - Sparkle이 앱 이름에서 생성하는 delta 파일명은 GitHub Release asset 규칙에 맞게 정규화합니다. 예를 들어 testnet 앱 이름 `Vizor Testnet`에서 나온 `Vizor Testnet46-45.delta`는 업로드 전에 `Vizor.Testnet46-45.delta`로 바꾸고 appcast URL도 같이 갱신합니다. 이 후 appcast XML을 다시 서명하므로 서명 이후에는 appcast나 release notes를 수정하지 않아야 합니다.
 - 산출물은 repo root의 `dist/macos` 아래에 생성됩니다.
