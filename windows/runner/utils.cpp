@@ -5,7 +5,31 @@
 #include <stdio.h>
 #include <windows.h>
 
+#include <cctype>
 #include <iostream>
+
+namespace {
+
+bool IsZcashUri(const std::string& value) {
+  constexpr char prefix[] = "zcash:";
+  constexpr size_t prefix_length = sizeof(prefix) - 1;
+  if (value.size() < prefix_length) {
+    return false;
+  }
+
+  for (size_t i = 0; i < prefix_length; ++i) {
+    const auto actual =
+        static_cast<unsigned char>(value[i]);
+    const auto expected =
+        static_cast<unsigned char>(prefix[i]);
+    if (std::tolower(actual) != std::tolower(expected)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
 
 void CreateAndAttachConsole() {
   if (::AllocConsole()) {
@@ -39,6 +63,17 @@ std::vector<std::string> GetCommandLineArguments() {
   ::LocalFree(argv);
 
   return command_line_arguments;
+}
+
+std::vector<std::string> GetZcashUriArguments(
+    const std::vector<std::string>& arguments) {
+  std::vector<std::string> uris;
+  for (const auto& argument : arguments) {
+    if (IsZcashUri(argument)) {
+      uris.push_back(argument);
+    }
+  }
+  return uris;
 }
 
 std::string Utf8FromUtf16(const wchar_t* utf16_string) {
