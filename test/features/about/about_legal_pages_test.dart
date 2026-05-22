@@ -248,7 +248,6 @@ void main() {
     expect(find.text('Privacy Policy'), findsOneWidget);
     expect(find.text('Private money. By default.'), findsNothing);
   });
-
 }
 
 Future<void> _loadAppFonts() async {
