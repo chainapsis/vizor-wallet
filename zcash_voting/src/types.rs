@@ -187,8 +187,9 @@ pub struct GovernancePczt {
 /// Only `c1`, `c2`, and `share_index` may be sent to the helper server.
 /// Leaking `randomness` lets the helper recover plaintext shares via
 /// `v*G = C2 - r*pk`, breaking voter privacy. Do NOT derive `Serialize`
-/// on this struct without skipping these fields.
-#[derive(Clone, Debug)]
+/// on this struct without skipping these fields. `Debug` is hand-written
+/// below to redact the secret fields — do not replace it with a derive.
+#[derive(Clone)]
 pub struct EncryptedShare {
     pub c1: Vec<u8>,
     pub c2: Vec<u8>,
@@ -199,6 +200,22 @@ pub struct EncryptedShare {
     /// Deterministically derived from (sk, round_id, proposal_id, van_commitment, share_index)
     /// so the client can re-derive it after a crash. SECRET — must not be sent over the network.
     pub randomness: Vec<u8>,
+}
+
+/// Hand-written so `{:?}` (and `Debug` on any enclosing struct, e.g.
+/// `VoteCommitmentBundle`) never prints `randomness` or `plaintext_value`.
+/// With `randomness` and the public `c2`/`ea_pk`, the share plaintext is
+/// recoverable via `v*G = C2 - r*pk`; `plaintext_value` is the plaintext itself.
+impl std::fmt::Debug for EncryptedShare {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EncryptedShare")
+            .field("c1", &hex::encode(&self.c1))
+            .field("c2", &hex::encode(&self.c2))
+            .field("share_index", &self.share_index)
+            .field("plaintext_value", &"<redacted>")
+            .field("randomness", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Complete vote commitment bundle for submission to vote chain.
