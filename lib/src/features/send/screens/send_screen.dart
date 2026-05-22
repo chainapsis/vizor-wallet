@@ -54,9 +54,12 @@ class SendScreen extends ConsumerStatefulWidget {
 }
 
 class _SendScreenState extends ConsumerState<SendScreen> {
+  SendPrefillArgs? _retainedPrefill;
+
   @override
   void initState() {
     super.initState();
+    _retainedPrefill = widget.prefill;
     try {
       ref.read(sendProvingKeyWarmupProvider).call();
     } catch (error) {
@@ -65,7 +68,17 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant SendScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final prefill = widget.prefill;
+    if (prefill != null) {
+      _retainedPrefill = prefill;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final prefill = widget.prefill ?? _retainedPrefill;
     final walletAsync = ref.watch(walletProvider);
     final accountState = ref.watch(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
@@ -90,14 +103,14 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         sync.isUsingCompletedSpendableSnapshot;
 
     return _SendComposeBody(
-      key: ValueKey('$activeAccountUuid:${widget.prefill?.fingerprint ?? ''}'),
+      key: ValueKey('$activeAccountUuid:${prefill?.fingerprint ?? ''}'),
       walletAsync: walletAsync,
       activeAccountUuid: activeAccountUuid,
       activeAccountIsHardware: activeAccountIsHardware,
       spendableBalance: spendableBalance,
       displaySpendableBalance: displaySpendableBalance,
       isUsingCompletedSpendableSnapshot: isUsingCompletedSpendableSnapshot,
-      prefill: widget.prefill,
+      prefill: prefill,
     );
   }
 }
