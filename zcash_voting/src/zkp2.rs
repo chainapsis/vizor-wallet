@@ -1,5 +1,5 @@
 use ff::{Field, PrimeField};
-use group::{Curve, GroupEncoding};
+use group::{Curve, Group, GroupEncoding};
 use pasta_curves::pallas;
 
 use orchard::keys::SpendingKey;
@@ -122,6 +122,14 @@ pub fn build_vote_commitment(
         .ok_or_else(|| VotingError::InvalidInput {
             message: "ea_pk is not a valid compressed Pallas point".to_string(),
         })?;
+    // Reject the identity point: with ea_pk = O the El Gamal ciphertexts become
+    // C2 = v*G, exposing every share's plaintext. Pallas has cofactor 1, so the
+    // identity is the only degenerate public key.
+    if bool::from(ea_pk_point.is_identity()) {
+        return Err(VotingError::InvalidInput {
+            message: "ea_pk must not be the identity point".to_string(),
+        });
+    }
     let ea_pk_affine = ea_pk_point.to_affine();
 
     // Convert auth path from byte slices to pallas::Base field elements

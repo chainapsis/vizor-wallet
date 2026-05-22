@@ -1,5 +1,5 @@
 use ff::{Field, PrimeField};
-use group::GroupEncoding;
+use group::{Group, GroupEncoding};
 use pasta_curves::pallas;
 use rand::rngs::OsRng;
 
@@ -35,6 +35,15 @@ pub fn encrypt_shares(shares: &[u64], ea_pk: &[u8]) -> Result<Vec<EncryptedShare
 
     // Decode ea_pk from compressed Pallas point bytes.
     let pk_point = decode_pallas_point(ea_pk, "ea_pk")?;
+
+    // Reject the identity point: with ea_pk = O, C2 = v*G + r*O = v*G, so every
+    // share's plaintext is recoverable by anyone (no secret key needed). Pallas
+    // has cofactor 1, so the identity is the only degenerate public key.
+    if bool::from(pk_point.is_identity()) {
+        return Err(VotingError::InvalidInput {
+            message: "ea_pk must not be the identity point".to_string(),
+        });
+    }
 
     // SpendAuthG — the generator hardcoded in the ZKP #2 circuit.
     let g = pallas::Point::from(voting_circuits::vote_proof::spend_auth_g_affine());
@@ -254,5 +263,13 @@ mod tests {
     fn test_encrypt_shares_invalid_point_ea_pk() {
         // 32 bytes of 0xFF is extremely unlikely to be a valid Pallas point.
         assert!(encrypt_shares(&[1], &[0xFF; 32]).is_err());
+    }
+
+    #[test]
+    fn test_encrypt_shares_rejects_identity_ea_pk() {
+        // The identity point is a valid encoding but a degenerate public key:
+        // C2 = v*G + r*O = v*G would expose every share's plaintext.
+        let identity_bytes = pallas::Point::identity().to_bytes().to_vec();
+        assert!(encrypt_shares(&[1], &identity_bytes).is_err());
     }
 }
