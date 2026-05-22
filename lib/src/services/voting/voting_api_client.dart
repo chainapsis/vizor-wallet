@@ -33,6 +33,14 @@ class VotingApiClient {
         : decoded is Map
         ? decoded['rounds']
         : null;
+    if (values == null) {
+      // vote-sdk proto3 JSON omits empty repeated fields, so a chain with no
+      // stored rounds returns `{}` rather than `{"rounds":[]}`.
+      if (decoded is Map) return const [];
+      throw const FormatException(
+        'listRounds expected a JSON list or rounds field',
+      );
+    }
     if (values is! List) {
       throw const FormatException(
         'listRounds expected a JSON list or rounds field',

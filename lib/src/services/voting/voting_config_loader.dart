@@ -9,8 +9,8 @@ import 'voting_models.dart';
 /// points at the current dynamic service configuration. The checksum query
 /// parameter is stripped before fetching and verified against the raw body.
 const kDefaultStaticVotingConfigSource =
-    'https://raw.githubusercontent.com/valargroup/token-holder-voting-config/d19edb058081d72aba8a955a57607eabf815e5df/static-voting-config.json'
-    '?checksum=sha256:f56224c6552178e64f9cc75e8ee2a663130c46172b2470fc02efdf94c522f2ac';
+    'https://voting.valargroup.org/stage/static-voting-config.json'
+    '?checksum=sha256:80890a6de9acc7293c3e2fabf870bb3e5755dbe0e69de4a59feb8f696134d4dc';
 
 class VotingConfigChecksumMismatch implements Exception {
   final Uri uri;

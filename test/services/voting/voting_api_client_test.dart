@@ -175,6 +175,20 @@ void main() {
     ]);
   });
 
+  test('list rounds treats proto3 empty object as no rounds', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        '/shielded-vote/v1/rounds': <String, dynamic>{},
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: http,
+    );
+
+    await expectLater(client.listRounds(), completion(isEmpty));
+  });
+
   test('list rounds rejects summaries without a routeable round id', () async {
     final http = FakeVotingHttpClient(
       responses: {
