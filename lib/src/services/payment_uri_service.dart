@@ -32,13 +32,18 @@ class PaymentUriService {
       _addUris(pending);
       await _channel.invokeMethod<void>('ready');
     } on MissingPluginException {
-      // Non-macOS builds do not install this channel yet.
+      // Unsupported desktop builds do not install this channel.
     }
   }
 
   static bool get _isSupportedPlatform {
     if (kIsWeb) return false;
-    return defaultTargetPlatform == TargetPlatform.macOS;
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.linux ||
+      TargetPlatform.macOS ||
+      TargetPlatform.windows => true,
+      _ => false,
+    };
   }
 
   static void _addUris(Object? arguments) {

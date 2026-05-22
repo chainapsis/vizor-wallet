@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
@@ -378,8 +379,11 @@ void VerifyDeviceOwner(
 
 }  // namespace
 
-FlutterWindow::FlutterWindow(const flutter::DartProject& project)
-    : project_(project) {}
+FlutterWindow::FlutterWindow(
+    const flutter::DartProject& project,
+    std::vector<std::string> initial_payment_uris)
+    : project_(project),
+      pending_payment_uris_(std::move(initial_payment_uris)) {}
 
 FlutterWindow::~FlutterWindow() {}
 
@@ -432,6 +436,25 @@ bool FlutterWindow::OnCreate() {
       });
   velopack_update_channel_ =
       CreateVelopackUpdateChannel(flutter_controller_->engine()->messenger());
+  payment_uri_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "com.zcash.wallet/payment_uri",
+          &flutter::StandardMethodCodec::GetInstance());
+  payment_uri_channel_->SetMethodCallHandler(
+      [this](const auto& call, auto result) {
+        if (call.method_name() == "takePendingUris") {
+          result->Success(TakePendingPaymentUris());
+          return;
+        }
+        if (call.method_name() == "ready") {
+          payment_uri_dart_ready_ = true;
+          FlushPendingPaymentUris();
+          result->Success();
+          return;
+        }
+        result->NotImplemented();
+      });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
@@ -452,6 +475,7 @@ void FlutterWindow::OnDestroy() {
     camera_permission_channel_.reset();
     device_owner_auth_channel_.reset();
     velopack_update_channel_.reset();
+    payment_uri_channel_.reset();
     flutter_controller_ = nullptr;
   }
 
@@ -479,4 +503,25 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+}
+
+flutter::EncodableValue FlutterWindow::TakePendingPaymentUris() {
+  flutter::EncodableList uris;
+  uris.reserve(pending_payment_uris_.size());
+  for (const auto& uri : pending_payment_uris_) {
+    uris.emplace_back(uri);
+  }
+  pending_payment_uris_.clear();
+  return flutter::EncodableValue(uris);
+}
+
+void FlutterWindow::FlushPendingPaymentUris() {
+  if (!payment_uri_dart_ready_ || !payment_uri_channel_ ||
+      pending_payment_uris_.empty()) {
+    return;
+  }
+
+  payment_uri_channel_->InvokeMethod(
+      "onUris", std::make_unique<flutter::EncodableValue>(
+                    TakePendingPaymentUris()));
 }

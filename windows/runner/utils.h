@@ -20,4 +20,8 @@ std::wstring Utf16FromUtf8(const std::string& utf8_string);
 // encoded in UTF-8. Returns an empty std::vector<std::string> on failure.
 std::vector<std::string> GetCommandLineArguments();
 
+// Extracts zcash: payment URIs from command-line arguments.
+std::vector<std::string> GetZcashUriArguments(
+    const std::vector<std::string>& arguments);
+
 #endif  // RUNNER_UTILS_H_
