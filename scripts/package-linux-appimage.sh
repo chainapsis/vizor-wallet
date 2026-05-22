@@ -123,6 +123,10 @@ require_file() {
   fi
 }
 
+log_step() {
+  printf '\n-- %s --\n' "$1"
+}
+
 require_value "--bundle-dir" "$BUNDLE_DIR"
 require_value "--output" "$OUTPUT"
 require_value "--app-id" "$APP_ID"
@@ -310,16 +314,19 @@ install_appimage_root_icon() {
 
 export APPIMAGE_EXTRACT_AND_RUN=1
 
+log_step "Running linuxdeploy"
 "$LINUXDEPLOY_BIN" \
   --appdir "$APPDIR" \
   --executable "$PAYLOAD_DIR/$BINARY_NAME" \
   --desktop-file "$DESKTOP_FILE" \
   --icon-file "$APPDIR/$APP_ID.png"
 
+log_step "Writing custom AppRun"
 write_app_run
 set_desktop_exec "AppRun"
 install_appimage_root_icon
 
+log_step "Copying GStreamer runtime"
 copy_gstreamer_runtime
 
 rm -f "$OUTPUT" "$OUTPUT.zsync" "$OUTPUT.sha256" "$OUTPUT.asc"
@@ -338,6 +345,7 @@ OUTPUT_BASENAME="$(basename "$OUTPUT")"
     "$APPDIR"
     "$OUTPUT_BASENAME"
   )
+  log_step "Running appimagetool"
   ARCH="$ARCH" "$APPIMAGETOOL_BIN" "${appimagetool_args[@]}"
 )
 
@@ -350,6 +358,7 @@ fi
 
 PASSPHRASE="${LINUX_APPIMAGE_GPG_PASSPHRASE:-${APPIMAGETOOL_SIGN_PASSPHRASE:-}}"
 GPG_ARGS=(--batch --yes --armor --local-user "$SIGN_KEY")
+log_step "Signing detached AppImage signature"
 if [[ -n "$PASSPHRASE" ]]; then
   GPG_ARGS+=(--pinentry-mode loopback --passphrase-fd 0)
   printf '%s\n' "$PASSPHRASE" | gpg "${GPG_ARGS[@]}" --detach-sign --output "$OUTPUT.asc" "$OUTPUT"
@@ -363,6 +372,7 @@ fi
   sha256sum -c "$(basename "$OUTPUT").sha256"
 )
 
+log_step "Verifying AppImage signatures"
 env -u APPIMAGE_EXTRACT_AND_RUN "$OUTPUT" --appimage-signature >/dev/null
 gpg --batch --verify "$OUTPUT.asc" "$OUTPUT"
 
