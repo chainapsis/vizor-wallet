@@ -6,4 +6,18 @@ uri+='?amount=0.12345678'
 uri+='&memo=Q1AtQzZDREI3NzU'
 uri+='&message=Thank%20you%20for%20your%20purchase'
 
-open "$uri"
+case "$(uname -s)" in
+  Darwin)
+    open "$uri"
+    ;;
+  Linux)
+    xdg-open "$uri"
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    cmd.exe /c start "" "$uri"
+    ;;
+  *)
+    printf 'Unsupported platform for opening payment URI\n' >&2
+    exit 1
+    ;;
+esac

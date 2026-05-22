@@ -6,6 +6,8 @@
 #include <flutter/method_channel.h>
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "win32_window.h"
 
@@ -13,7 +15,8 @@
 class FlutterWindow : public Win32Window {
  public:
   // Creates a new FlutterWindow hosting a Flutter view running |project|.
-  explicit FlutterWindow(const flutter::DartProject& project);
+  explicit FlutterWindow(const flutter::DartProject& project,
+                         std::vector<std::string> initial_payment_uris);
   virtual ~FlutterWindow();
 
  protected:
@@ -34,6 +37,13 @@ class FlutterWindow : public Win32Window {
       camera_permission_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       velopack_update_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      payment_uri_channel_;
+  std::vector<std::string> pending_payment_uris_;
+  bool payment_uri_dart_ready_ = false;
+
+  flutter::EncodableValue TakePendingPaymentUris();
+  void FlushPendingPaymentUris();
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_
