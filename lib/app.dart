@@ -48,8 +48,9 @@ import 'src/features/onboarding/storage_unavailable_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/receive/screens/receive_screen.dart';
-import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
+import 'src/features/send/domain/zip321_payment_request.dart';
+import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
@@ -68,6 +69,7 @@ import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
 import 'src/rust/frb_generated.dart';
+import 'src/services/payment_uri_service.dart';
 
 void log(String message) => debugPrint('[zcash] $message');
 
@@ -725,23 +727,26 @@ class ZcashWalletApp extends ConsumerWidget {
             child: _WindowsUpdateStartupCheck(
               child: _WindowsUpdatePromptHost(
                 router: router,
-                child: _RpcEndpointFailoverToastListener(
-                  child: _LinuxOpaqueWindowBackground(
-                    child: DesktopWindowTitlebarSafeArea(
-                      child: GestureDetector(
-                        onTap: () {
-                          // Leaf-only: skip when the primary focus is a
-                          // `FocusScopeNode` rather than a concrete `FocusNode`.
-                          // Unfocusing the scope itself strips the scope's
-                          // "most-recently-focused child" memory, which leaves the
-                          // next Tab with no deterministic starting point.
-                          final primary = FocusManager.instance.primaryFocus;
-                          if (primary != null && primary is! FocusScopeNode) {
-                            primary.unfocus();
-                          }
-                        },
-                        behavior: HitTestBehavior.translucent,
-                        child: child!,
+                child: _PaymentUriLinkListener(
+                  router: router,
+                  child: _RpcEndpointFailoverToastListener(
+                    child: _LinuxOpaqueWindowBackground(
+                      child: DesktopWindowTitlebarSafeArea(
+                        child: GestureDetector(
+                          onTap: () {
+                            // Leaf-only: skip when the primary focus is a
+                            // `FocusScopeNode` rather than a concrete `FocusNode`.
+                            // Unfocusing the scope itself strips the scope's
+                            // "most-recently-focused child" memory, which leaves the
+                            // next Tab with no deterministic starting point.
+                            final primary = FocusManager.instance.primaryFocus;
+                            if (primary != null && primary is! FocusScopeNode) {
+                              primary.unfocus();
+                            }
+                          },
+                          behavior: HitTestBehavior.translucent,
+                          child: child!,
+                        ),
                       ),
                     ),
                   ),
@@ -752,6 +757,130 @@ class ZcashWalletApp extends ConsumerWidget {
         );
       },
     );
+  }
+}
+
+class _PaymentUriLinkListener extends ConsumerStatefulWidget {
+  const _PaymentUriLinkListener({required this.router, required this.child});
+
+  final GoRouter router;
+  final Widget child;
+
+  @override
+  ConsumerState<_PaymentUriLinkListener> createState() =>
+      _PaymentUriLinkListenerState();
+}
+
+class _PaymentUriLinkListenerState
+    extends ConsumerState<_PaymentUriLinkListener> {
+  StreamSubscription<String>? _subscription;
+  SendPrefillArgs? _pendingPrefill;
+  var _paymentSequence = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(PaymentUriService.initialize());
+    _subscription = PaymentUriService.uriStream.listen(_handlePaymentUri);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_subscription?.cancel());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<AsyncValue<WalletState>>(walletProvider, (_, _) {
+      _schedulePendingDrain();
+    });
+    ref.listen<AppSecurityState>(appSecurityProvider, (_, _) {
+      _schedulePendingDrain();
+    });
+    return widget.child;
+  }
+
+  void _handlePaymentUri(String rawUri) {
+    try {
+      _pendingPrefill = _prefillFromUri(rawUri);
+      _schedulePendingDrain();
+    } on Zip321ParseException catch (e) {
+      _pendingPrefill = null;
+      _showPaymentUriMessage(e.message);
+    } catch (e) {
+      _pendingPrefill = null;
+      log('Payment URI: failed to parse: $e');
+      _showPaymentUriMessage('Payment link could not be opened.');
+    }
+  }
+
+  SendPrefillArgs _prefillFromUri(String rawUri) {
+    final request = Zip321PaymentRequest.parse(rawUri);
+    if (!request.isSupported) {
+      throw Zip321ParseException(request.unsupportedReason!);
+    }
+    final payment = request.primaryPayment;
+    return SendPrefillArgs(
+      id: 'payment-uri-${++_paymentSequence}',
+      source: 'zcash-uri',
+      address: payment.address,
+      amountText: payment.amount,
+      memoText: payment.memoText,
+      label: payment.label,
+      message: payment.message,
+    );
+  }
+
+  void _schedulePendingDrain() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _drainPendingPrefill();
+    });
+  }
+
+  void _drainPendingPrefill() {
+    final prefill = _pendingPrefill;
+    if (prefill == null) return;
+
+    final bootstrap = ref.read(appBootstrapProvider);
+    if (bootstrap.hasBlockingFailure) return;
+
+    final walletAsync = ref.read(walletProvider);
+    if (walletAsync.isLoading && walletAsync.value == null) return;
+    if (walletAsync.hasError) return;
+
+    final wallet = walletAsync.value;
+    final hasWallet = wallet?.hasWallet ?? bootstrap.hasWallet;
+    if (!hasWallet) {
+      _pendingPrefill = null;
+      widget.router.go('/welcome');
+      _showPaymentUriMessage(
+        'Set up or import a wallet before opening payment links.',
+      );
+      return;
+    }
+
+    final security = ref.read(appSecurityProvider);
+    if (!security.isUnlocked) {
+      widget.router.go('/unlock');
+      return;
+    }
+
+    _pendingPrefill = null;
+    widget.router.go('/send', extra: prefill);
+  }
+
+  void _showPaymentUriMessage(String message) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
+      );
+    });
   }
 }
 
