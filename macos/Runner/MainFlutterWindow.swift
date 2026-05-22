@@ -599,6 +599,58 @@ final class DeviceOwnerAuthChannel {
   }
 }
 
+final class PaymentUriChannel {
+  private static var channel: FlutterMethodChannel?
+  private static var pendingURLs: [String] = []
+  private static var dartReady = false
+
+  static func register(messenger: FlutterBinaryMessenger) {
+    let methodChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/payment_uri",
+      binaryMessenger: messenger
+    )
+    channel = methodChannel
+    methodChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "takePendingUris":
+        let urls = pendingURLs
+        pendingURLs.removeAll()
+        result(urls)
+      case "ready":
+        dartReady = true
+        flushPendingURLs()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  static func handle(urls: [URL]) {
+    let urlStrings = urls.compactMap { url -> String? in
+      guard url.scheme?.lowercased() == "zcash" else {
+        return nil
+      }
+      return url.absoluteString
+    }
+    guard !urlStrings.isEmpty else {
+      return
+    }
+    pendingURLs.append(contentsOf: urlStrings)
+    flushPendingURLs()
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  private static func flushPendingURLs() {
+    guard dartReady, let channel, !pendingURLs.isEmpty else {
+      return
+    }
+    let urls = pendingURLs
+    pendingURLs.removeAll()
+    channel.invokeMethod("onUris", arguments: urls)
+  }
+}
+
 class MainFlutterWindow: NSWindow {
   private let vizorWindowToolbarDelegate = VizorWindowToolbarDelegate()
   private var vizorWindowToolbar: NSToolbar?
@@ -633,6 +685,9 @@ class MainFlutterWindow: NSWindow {
       messenger: flutterViewController.engine.binaryMessenger
     )
     DeviceOwnerAuthChannel.register(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
+    PaymentUriChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
     RegisterGeneratedPlugins(registry: flutterViewController)

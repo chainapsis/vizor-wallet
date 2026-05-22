@@ -181,6 +181,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   int _addressSeq = 0;
   int _maxSeq = 0;
   int _validateSeq = 0;
+  String? _appliedPrefillFingerprint;
 
   @override
   void initState() {
@@ -193,23 +194,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
-    });
-  }
-
-  void _applyPrefill(SendPrefillArgs? prefill) {
-    if (prefill == null) return;
-    _addressController.text = prefill.address;
-    if (prefill.amountText != null) {
-      _amountController.text = prefill.amountText!;
-      _amountError = null;
-    }
-    if (prefill.memoText != null && prefill.memoText!.isNotEmpty) {
-      _memoController.text = prefill.memoText!;
-      _messageExpanded = true;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(_validateAddress());
     });
   }
 
@@ -264,9 +248,35 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     _handleAddressChanged();
   }
 
+  void _applyPrefill(SendPrefillArgs? prefill) {
+    if (prefill == null || _appliedPrefillFingerprint == prefill.fingerprint) {
+      return;
+    }
+    _appliedPrefillFingerprint = prefill.fingerprint;
+    _maxDebounceTimer?.cancel();
+    _addressController.text = prefill.address;
+    if (prefill.amountText != null) {
+      _amountController.text = prefill.amountText!;
+      _amountError = null;
+    }
+    if (prefill.memoText != null && prefill.memoText!.isNotEmpty) {
+      _memoController.text = prefill.memoText!;
+      _messageExpanded = true;
+    }
+    _isMaxMode = false;
+    _isResolvingMax = false;
+    _maxQuote = null;
+    _error = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_validateAddress());
+    });
+  }
+
   @override
   void didUpdateWidget(covariant _SendComposeBody oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _applyPrefill(widget.prefill);
     if (oldWidget.spendableBalance != widget.spendableBalance) {
       if (_isMaxMode) {
         _scheduleMaxEstimate(immediate: true);
