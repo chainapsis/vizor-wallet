@@ -1012,6 +1012,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                                   ),
                                 ] else ...[
                                   AppTextField(
+                                    key: const ValueKey('send_memo_field'),
                                     label: 'Message',
                                     tone: _memoError != null
                                         ? AppTextFieldTone.destructive
