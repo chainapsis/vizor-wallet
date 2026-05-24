@@ -196,7 +196,7 @@ void main() {
     // Tap the hide button for memo1.
     await _tapInList(
       tester,
-      find.byKey(const ValueKey('hide_memo_$_txid1')),
+      find.byKey(const ValueKey('hide_memo_$_txid1:3:0')),
     );
 
     // memo1 is gone from inbox.
@@ -214,11 +214,11 @@ void main() {
 
       await _tapInList(
         tester,
-        find.byKey(const ValueKey('hide_memo_$_txid1')),
+        find.byKey(const ValueKey('hide_memo_$_txid1:3:0')),
       );
       await _tapInList(
         tester,
-        find.byKey(const ValueKey('hide_memo_$_txid2')),
+        find.byKey(const ValueKey('hide_memo_$_txid2:3:0')),
       );
 
       expect(find.textContaining('All memos hidden'), findsOneWidget);
@@ -236,7 +236,7 @@ void main() {
     // Hide memo1.
     await _tapInList(
       tester,
-      find.byKey(const ValueKey('hide_memo_$_txid1')),
+      find.byKey(const ValueKey('hide_memo_$_txid1:3:0')),
     );
 
     // Switch to hidden view.
@@ -249,7 +249,7 @@ void main() {
 
     // Restore action is visible.
     expect(
-      find.byKey(const ValueKey('restore_memo_$_txid1')),
+      find.byKey(const ValueKey('restore_memo_$_txid1:3:0')),
       findsOneWidget,
     );
   });
@@ -262,7 +262,7 @@ void main() {
     // Hide memo1.
     await _tapInList(
       tester,
-      find.byKey(const ValueKey('hide_memo_$_txid1')),
+      find.byKey(const ValueKey('hide_memo_$_txid1:3:0')),
     );
 
     // Switch to hidden view.
@@ -271,7 +271,7 @@ void main() {
     // Restore memo1.
     await _tapInList(
       tester,
-      find.byKey(const ValueKey('restore_memo_$_txid1')),
+      find.byKey(const ValueKey('restore_memo_$_txid1:3:0')),
     );
 
     // Switch back to inbox.

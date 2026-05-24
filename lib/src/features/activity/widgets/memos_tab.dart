@@ -342,7 +342,9 @@ class _HideButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     return IconButton(
-      key: ValueKey('hide_memo_${memo.txidHex}'),
+      key: ValueKey(
+        'hide_memo_${memoHideKey(txidHex: memo.txidHex, outputPool: memo.outputPool, outputIndex: memo.outputIndex)}',
+      ),
       icon: Icon(
         Icons.visibility_off_outlined,
         size: 18,
@@ -376,7 +378,9 @@ class _RestoreButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     return IconButton(
-      key: ValueKey('restore_memo_${memo.txidHex}'),
+      key: ValueKey(
+        'restore_memo_${memoHideKey(txidHex: memo.txidHex, outputPool: memo.outputPool, outputIndex: memo.outputIndex)}',
+      ),
       icon: Icon(
         Icons.visibility_outlined,
         size: 18,
@@ -431,6 +435,15 @@ class MemoRow extends StatelessWidget {
   /// Optional trailing action widget (hide button, restore button, etc.).
   final Widget? trailing;
 
+  /// Stable per-output identifier used for widget keys. Includes pool/index so
+  /// keys stay unique when a single transaction carries multiple received
+  /// memo outputs (one row per output).
+  String get _rowKey => memoHideKey(
+        txidHex: memo.txidHex,
+        outputPool: memo.outputPool,
+        outputIndex: memo.outputIndex,
+      );
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -458,7 +471,7 @@ class MemoRow extends StatelessWidget {
                 children: [
                   Text(
                     memoText,
-                    key: ValueKey('memo_text_${memo.txidHex}'),
+                    key: ValueKey('memo_text_$_rowKey'),
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.primary,
                     ),
@@ -485,7 +498,7 @@ class MemoRow extends StatelessWidget {
                 onTap != null ? SystemMouseCursors.click : MouseCursor.defer,
             child: Text(
               amountText,
-              key: ValueKey('memo_amount_${memo.txidHex}'),
+              key: ValueKey('memo_amount_$_rowKey'),
               style: AppTypography.bodyMedium.copyWith(
                 color: colors.text.brandCrimson,
               ),
