@@ -44,7 +44,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-In the `keys.rs` test module (mirror the existing account tests that build a wallet with `tempdir`), create a wallet/account, generate one extra external address via the same path the app uses (`db.get_next_available_address(account_id, UnifiedAddressRequest...)` — match how `transactions::get_next_available_address` calls it), then assert:
+In the `keys.rs` test module (mirror the existing account tests that build a wallet with `tempdir`), create a wallet/account, then generate one extra external address. **Prerequisite:** `get_next_available_address` errors if the wallet has no chain tip, so copy the preamble from the existing `test_get_address_returns_last_generated_receive_address` test (around `keys.rs` line 668-686) — it calls `crate::wallet::sync::update_chain_tip(...)` before generating. Generate the extra address via the same path the app uses (match how `transactions::get_next_available_address` calls `db.get_next_available_address(...)`). Then assert:
 - `list_account_addresses(db_path, network, account_uuid)` returns >= 2 addresses (default + generated), all with `key_scope = 0` semantics (i.e. they are external receiving UAs).
 - Exactly one has `is_default == true`.
 - Newest-generated address sorts first (its `address` string differs from the default).
@@ -109,7 +109,7 @@ pub fn list_account_addresses(
 }
 ```
 
-`accounts.uuid` is stored as bytes — the delete path in `keys.rs` already binds `account_uuid.as_bytes().as_slice()` against `accounts`/`ta.uuid`; do the same here (`uuid.as_bytes().as_slice()`).
+`accounts.uuid` is a 16-byte BLOB. Bind the **parsed** UUID's binary form, NOT the UTF-8 bytes of the string: `uuid` here is the `uuid::Uuid` from `parse_str`, and `uuid.as_bytes().as_slice()` is its 16-byte RFC-4122 form (this matches the existing `keys.rs` delete path and `account_row_id` test helper). Binding the raw `account_uuid: &str` bytes would match zero rows.
 
 - [ ] **Step 4: Run test to verify it passes**
 
