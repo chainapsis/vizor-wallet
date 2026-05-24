@@ -31,15 +31,32 @@ These were settled during brainstorming and are fixed for v1:
    "from" is shown. Reply-to detection is explicitly out of scope for v1.
 5. **Codegen:** adding a Rust API function/struct requires
    `flutter_rust_bridge_codegen generate`; this is an accepted build step.
+6. **Hide / restore (spam & abuse):** each memo can be hidden from the inbox.
+   Because v1 has no authenticated sender, hiding is **per-memo** (there is no
+   block-by-sender). Settled sub-decisions:
+   - **Scope:** hiding affects display only. It removes the memo from the Memos
+     inbox and redacts the memo text in the transaction detail. The transaction
+     itself still appears in Activity → All (it affected the balance). Hiding is
+     never a ledger edit.
+   - **Storage:** the hidden set is **local to the device**, stored via
+     `AppSecureStore.writePlain` (unencrypted KV; not secret). It is wiped on
+     wallet reset / `deleteAll`, which is acceptable for spam management. It is
+     NOT written into the librustzcash wallet DB, so it carries no migration
+     risk.
+   - **Reversible:** a dedicated **Hidden** view lists hidden memos with a
+     Restore action. Hiding is never permanent.
 
 ## Non-Goals (v1)
 
 - No compose / reply / send-from-inbox.
 - No sender identity, no reply-to-UA parsing or display.
+- No block-by-sender (impossible without authenticated senders) — hiding is
+  per-memo only.
 - No threading or conversation grouping.
 - No date/amount/range filters.
 - No new transaction-detail screen (reuse the existing one on row tap).
 - No change to the at-rest storage of memo plaintext or to the lock model.
+- Hidden state is not synced across devices or recoverable from seed.
 
 ## Architecture
 
@@ -78,11 +95,18 @@ pub struct ReceivedMemo {
     pub block_time: u64,       // 0 if not yet mined
     pub mined_height: u64,     // 0 if unmined
     pub tx_kind: String,       // carried so row tap opens the correct detail view
+    pub output_pool: i64,      // part of the stable hide key
+    pub output_index: i64,     // part of the stable hide key
 }
 // One item == one received output, NOT one transaction. A single tx may carry
 // multiple received outputs with distinct memos; each becomes its own row so
 // `memo` and `amount_zatoshi` stay aligned. Row tap navigates by `txid_hex` +
 // `tx_kind`, so multiple rows can point at the same detail screen.
+//
+// Stable hide key (Dart-side): `"{txid_hex}:{output_pool}:{output_index}"`.
+// This uniquely identifies one received output across queries and is what the
+// local hidden set stores. txid alone is insufficient (a tx can carry multiple
+// received memo outputs).
 
 pub fn get_received_memos(
     db_path: String,
@@ -113,9 +137,16 @@ pub fn get_received_memos(
   one definition and cannot drift.
 - Reuse `open_readonly_conn` and the read-transaction pattern already in the
   file.
-- `network` is included to match the existing function signatures in the file.
-  If the read-only `v_tx_outputs` path does not actually require it, drop the
-  parameter rather than carry an unused one.
+- `network` is included to match the existing sibling functions
+  (`get_transaction_history`, `get_transaction_detail` both carry `_network`).
+  Keep it as `_network` for consistency; the read-only `v_tx_outputs` path does
+  not use it.
+- **Detail redaction support:** `get_transaction_detail` /
+  `TransactionDetail` gains an optional `memo_output_key: Option<String>` set to
+  `"{output_pool}:{output_index}"` of the output the displayed `memo` came from
+  (None when there is no memo). This lets the Dart detail screen test the memo's
+  output against the local hidden set and redact it. This is the only change to
+  the existing detail path; the selection logic for `memo` is unchanged.
 
 ## Dart Layer
 
@@ -131,6 +162,25 @@ pub fn get_received_memos(
   `activity_transaction_status_screen`, passing `txid_hex` and `tx_kind` from
   the memo item.
 
+### Hide / Restore
+
+- **`hiddenMemosProvider`** (Riverpod) backed by `AppSecureStore.writePlain`
+  under key `zcash_hidden_memos` holding a JSON object: `{ "<accountUuid>":
+  ["<txid>:<pool>:<index>", ...] }`. Per-account scoped. Loaded once, mutated
+  in place, persisted on change. Survives lock (not sensitive); wiped by
+  `deleteAll` on wallet reset.
+- **Memos tab** partitions the Rust result locally: a memo is shown in the
+  inbox iff its hide key is NOT in the account's hidden set. The partition is a
+  cheap set-membership filter applied after the Rust query (and after Rust
+  text-search), so search + hide compose correctly. Each inbox row has a Hide
+  action (icon/menu/swipe per existing Activity affordances).
+- **Hidden view**: a third state of the Memos tab (e.g. a "Hidden" toggle/link),
+  listing only memos whose hide key IS in the hidden set, each with a Restore
+  action. Reuses the same row widget.
+- **Detail redaction**: when the detail screen renders a memo, it builds
+  `"{txidHex}:{memo_output_key}"` and, if present in the hidden set, renders a
+  "Memo hidden" placeholder with a Restore affordance instead of the text.
+
 ## States & Error Handling
 
 - **Locked:** provider yields empty and the list clears, consistent with the
@@ -140,6 +190,9 @@ pub fn get_received_memos(
   state" convention).
 - **Empty (no memos):** "No memos yet" empty state.
 - **Empty (search miss):** "No memos match" state, distinct from no-memos.
+- **All memos hidden:** inbox shows an empty state that points to the Hidden
+  view rather than "No memos yet".
+- **Hidden view empty:** "No hidden memos" state.
 
 ## Security Notes
 
@@ -165,9 +218,16 @@ pub fn get_received_memos(
 ### Dart
 
 - `receivedMemosProvider` returns items and clears on lock.
+- `hiddenMemosProvider`: hide adds a key and persists; restore removes it;
+  state is per-account; round-trips through `AppSecureStore` (use the existing
+  `AppSecureStore.testing` constructor with an in-memory storage).
 - Widget test: tab switch shows the Memos list; typing in search filters;
   empty-search-result vs no-memos states render distinctly; row tap routes to
   the transaction detail screen.
+- Widget test (hide/restore): hiding a memo removes it from the inbox and moves
+  it to the Hidden view; restoring returns it; an all-hidden inbox shows the
+  "points to Hidden" empty state; a hidden memo's text is redacted in the
+  detail screen.
 
 ## Build Step
 
@@ -183,3 +243,5 @@ flutter_rust_bridge_codegen generate
 - Unread/seen tracking and a badge.
 - Cross-account unified inbox.
 - Date/amount filters.
+- Syncing the hidden set across devices / deriving it from seed.
+- Auto-hide heuristics (e.g. dust-amount spam filtering).
