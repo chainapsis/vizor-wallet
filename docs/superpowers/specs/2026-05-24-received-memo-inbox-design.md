@@ -79,6 +79,10 @@ pub struct ReceivedMemo {
     pub mined_height: u64,     // 0 if unmined
     pub tx_kind: String,       // carried so row tap opens the correct detail view
 }
+// One item == one received output, NOT one transaction. A single tx may carry
+// multiple received outputs with distinct memos; each becomes its own row so
+// `memo` and `amount_zatoshi` stay aligned. Row tap navigates by `txid_hex` +
+// `tx_kind`, so multiple rows can point at the same detail screen.
 
 pub fn get_received_memos(
     db_path: String,
@@ -98,8 +102,9 @@ pub fn get_received_memos(
      `Memo::Text`, dropping `Empty`/`Future`/`Arbitrary`).
   3. If `query` is `Some`, keep items whose decoded text contains the query as
      a case-insensitive substring.
-  4. Sort newest-first (by block time / mined height; unmined first or last —
-     follow the ordering Activity already uses for consistency).
+  4. Sort newest-first. Match the exact ordering `get_transaction_history`
+     already produces (look it up during planning and mirror it, including how
+     it places unmined entries) so the Memos tab and the All tab agree.
 - **"Received" classification** must reuse the existing logic that
   `get_transaction_detail` relies on (`to_account_uuid == account`, not change,
   external sender) rather than re-deriving it. The current code path uses
@@ -108,6 +113,9 @@ pub fn get_received_memos(
   one definition and cannot drift.
 - Reuse `open_readonly_conn` and the read-transaction pattern already in the
   file.
+- `network` is included to match the existing function signatures in the file.
+  If the read-only `v_tx_outputs` path does not actually require it, drop the
+  parameter rather than carry an unused one.
 
 ## Dart Layer
 
