@@ -264,6 +264,7 @@ struct TxBase {
     created_time: u64,
 }
 
+#[derive(Clone)]
 struct TxOutput {
     txid: Vec<u8>,
     output_pool: i64,
@@ -779,6 +780,14 @@ fn summarize_activity_outputs(
     summary
 }
 
+/// One definition of "received, user-visible output for this account",
+/// shared by the inbox query and the transaction-detail path.
+fn is_received_output(output: &TxOutput, account_uuid: &[u8]) -> bool {
+    let from_own = output.from_account_uuid.as_deref() == Some(account_uuid);
+    let to_own = output.to_account_uuid.as_deref() == Some(account_uuid);
+    to_own && (!from_own || is_user_visible_self_output(output))
+}
+
 fn detail_includes_output(
     base: &TxBase,
     output: &TxOutput,
@@ -793,9 +802,7 @@ fn detail_includes_output(
         "sent" => {
             !base.is_shielding && from_own && (!to_own || is_user_visible_self_output(output))
         }
-        "received" | "receiving" => {
-            !base.is_shielding && to_own && (!from_own || is_user_visible_self_output(output))
-        }
+        "received" | "receiving" => !base.is_shielding && is_received_output(output, account_uuid),
         _ => false,
     }
 }
@@ -2727,5 +2734,39 @@ mod tests {
         let db = fresh_db();
         let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
         assert!(got.is_empty());
+    }
+
+    #[test]
+    fn is_received_output_matches_external_inbound_only() {
+        let me = uuid::Uuid::new_v4();
+        let me_bytes = me.as_bytes().to_vec();
+        let other = uuid::Uuid::new_v4().as_bytes().to_vec();
+
+        // External sender -> us, shielded: received.
+        let inbound = TxOutput {
+            txid: vec![1; 32], output_pool: 2, output_index: 0,
+            from_account_uuid: Some(other.clone()),
+            to_account_uuid: Some(me_bytes.clone()),
+            to_address: Some("u1addr".into()), to_key_scope: None,
+            value: 100, memo: None,
+        };
+        assert!(is_received_output(&inbound, &me_bytes));
+
+        // We sent it (from us, to other): not received.
+        let outbound = TxOutput {
+            from_account_uuid: Some(me_bytes.clone()),
+            to_account_uuid: Some(other.clone()),
+            ..inbound.clone()
+        };
+        assert!(!is_received_output(&outbound, &me_bytes));
+
+        // Internal change (from us, to us, no address, internal scope): not received.
+        let change = TxOutput {
+            from_account_uuid: Some(me_bytes.clone()),
+            to_account_uuid: Some(me_bytes.clone()),
+            to_address: None, to_key_scope: Some(1),
+            ..inbound.clone()
+        };
+        assert!(!is_received_output(&change, &me_bytes));
     }
 }
