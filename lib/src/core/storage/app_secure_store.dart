@@ -14,6 +14,7 @@ const kThemeModeKey = 'zcash_theme_mode';
 const kPrivacyModeEnabledKey = 'zcash_privacy_mode_enabled';
 const kRpcEndpointUrlKey = 'zcash_rpc_endpoint_url';
 const kRpcEndpointPresetKey = 'zcash_rpc_endpoint_preset';
+const kHiddenMemosKey = 'zcash_hidden_memos';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';
 const _passwordVerifierKey = 'zcash_password_verifier';
 const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
