@@ -45,7 +45,7 @@
 - [ ] **Step 1: Write the failing test**
 
 In the `keys.rs` test module (mirror the existing account tests that build a wallet with `tempdir`), create a wallet/account, then generate one extra external address. **Prerequisite:** `get_next_available_address` errors if the wallet has no chain tip, so copy the preamble from the existing `test_get_address_returns_last_generated_receive_address` test (around `keys.rs` line 668-686) — it calls `crate::wallet::sync::update_chain_tip(...)` before generating. Generate the extra address via the same path the app uses (match how `transactions::get_next_available_address` calls `db.get_next_available_address(...)`). Then assert:
-- `list_account_addresses(db_path, network, account_uuid)` returns >= 2 addresses (default + generated), all with `key_scope = 0` semantics (i.e. they are external receiving UAs).
+- `list_account_addresses(db_path, network, account_uuid)` returns ONLY the EXPOSED addresses — the default + the one you generated. **Assert the count is exact/small (e.g. == 2), NOT the full table.** This proves the gap-limit lookahead pool (`exposed_at_height IS NULL`) is excluded — a `key_scope = 0`-only query would return many extra unused rows, and this assertion must catch that.
 - Exactly one has `is_default == true`.
 - Newest-generated address sorts first (its `address` string differs from the default).
 - An address from a *different* account is not present.
@@ -68,7 +68,9 @@ pub(crate) struct AccountAddress {
 }
 ```
 
-Add the function. Get a read-only `rusqlite::Connection` via **`crate::wallet::sync::open_readonly_conn(db_path)`** (it is `pub(crate)`, defined in `rust/src/wallet/sync/mod.rs`, and returns a `rusqlite::Connection` — exactly what `transactions.rs` uses). Query the `addresses` table joined to `accounts` by uuid, **`WHERE key_scope = 0`**, ordered by `diversifier_index_be DESC` (big-endian BLOB byte order == numeric order; do NOT decode to an integer). Mark `is_default` for the row with the smallest `diversifier_index_be`.
+Add the function. Get a read-only `rusqlite::Connection` via **`crate::wallet::sync::open_readonly_conn(db_path)`** (it is `pub(crate)`, defined in `rust/src/wallet/sync/mod.rs`, and returns a `rusqlite::Connection` — exactly what `transactions.rs` uses). Query the `addresses` table joined to `accounts` by uuid, **`WHERE key_scope = 0 AND exposed_at_height IS NOT NULL`**, ordered by `diversifier_index_be DESC` (big-endian BLOB byte order == numeric order; do NOT decode to an integer). Mark `is_default` for the row with the smallest `diversifier_index_be`.
+
+**Why `exposed_at_height IS NOT NULL` is required:** `create_account` pre-populates a gap-limit *lookahead pool* of `key_scope = 0` addresses with `exposed_at_height = NULL` that the user has never been shown. Filtering only by `key_scope = 0` returns those ~gap-limit unused addresses. librustzcash itself uses `exposed_at_height IS NOT NULL` to list known addresses. The default address is inserted exposed, and `get_next_available_address` exposes each new one, so this filter returns exactly the handed-out addresses.
 
 ```rust
 pub fn list_account_addresses(

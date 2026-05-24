@@ -52,6 +52,8 @@ sub-project 2 and is out of scope here.
 - Labeling the transparent-only receiver.
 - Syncing labels across devices or deriving them from seed.
 - Editing/labeling internal (change) addresses.
+- Listing the gap-limit lookahead pool (unexposed addresses the user has never
+  been shown).
 - Any change to address derivation or the Receive renewal behavior itself.
 
 ## Architecture
@@ -100,12 +102,26 @@ identity (and the label key).
 ### Implementation notes
 
 - Query the `addresses` table joined to `accounts` by `account_uuid`, filtering
-  to **external** receiving addresses with **`WHERE key_scope = 0`** explicitly.
-  `key_scope` values: `0` = External (the user-visible receiving UAs we want),
-  `1` = Internal/change, `2` = Ephemeral (ZIP 320 interstitial), `-1` = Foreign
-  (imported standalone transparent pubkeys). Only `0` is in scope. Do NOT use a
-  negative filter like `key_scope != -1` — it would wrongly include internal
-  (`1`) and ephemeral (`2`) rows.
+  to **external, exposed** receiving addresses:
+  **`WHERE key_scope = 0 AND exposed_at_height IS NOT NULL`**.
+  - `key_scope` values: `0` = External (the user-visible receiving UAs we want),
+    `1` = Internal/change, `2` = Ephemeral (ZIP 320 interstitial), `-1` = Foreign
+    (imported standalone transparent pubkeys). Only `0` is in scope. Do NOT use a
+    negative filter like `key_scope != -1` — it would wrongly include internal
+    (`1`) and ephemeral (`2`) rows.
+  - **`exposed_at_height IS NOT NULL` is required.** `create_account`
+    pre-populates a gap-limit *lookahead pool* of `key_scope = 0` addresses that
+    the user has never been shown (`exposed_at_height = NULL`). Without this
+    clause the list would be polluted with ~gap-limit unused addresses.
+    librustzcash itself uses `exposed_at_height IS NOT NULL` to enumerate
+    known/exposed addresses (`zcash_client_sqlite` `wallet.rs:978`, `1055`).
+    The account's default address is inserted *exposed* (`exposed_at_height =
+    birthday`), and `get_next_available_address` exposes each newly generated
+    address, so this filter yields exactly the addresses the user has actually
+    been handed — the correct set for both My Addresses and the future memo
+    filter.
+  - `is_default` = the exposed address with the smallest `diversifier_index_be`
+    (the account default).
 - **Ordering: `ORDER BY diversifier_index_be DESC` directly in SQL.**
   `diversifier_index_be` is an 11-byte big-endian BLOB, so SQLite's byte-wise
   BLOB comparison preserves numeric order — no decode to an integer is needed
