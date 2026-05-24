@@ -16,6 +16,7 @@
 
 **Rust (create/modify):**
 - Modify `rust/src/wallet/sync/transactions.rs` — add `ReceivedMemo` struct, `get_received_memos()`, a shared `is_received_output()` predicate factored out of `detail_includes_output`, and a `memo_output_key` on the detail path. Add unit tests in the existing `#[cfg(test)] mod tests`.
+- Modify `rust/src/wallet/sync/mod.rs` — re-export the new items. `transactions` is a private submodule; callers reach its items only through the explicit `use transactions::{...}` blocks (lines ~61-71). Add `get_received_memos` to the `pub use transactions::{...}` block and `ReceivedMemo` to the `pub(crate) use transactions::{...}` block. **Without this, Task 5 fails to compile** (`no function get_received_memos in module wallet::sync`).
 - Modify `rust/src/api/sync.rs` — add FRB `ReceivedMemo` struct + `get_received_memos()` wrapper; add `memo_output_key` to the FRB `TransactionDetail` struct and its mapping.
 
 **Dart (create/modify):**
@@ -217,15 +218,19 @@ pub fn get_received_memos(
 
 Note: confirm `read_history_bases` exists and returns `TxBase` with `block_time`, `created_time`, `mined_height`, `tx_index`, `is_shielding`. If its name differs, use the actual loader used by `get_transaction_history`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Re-export from `sync/mod.rs`**
+
+In `rust/src/wallet/sync/mod.rs`, add `get_received_memos` to the `pub use transactions::{...}` block and `ReceivedMemo` to the `pub(crate) use transactions::{...}` block (alongside `TransactionDetail`). The in-module test from Step 1 does not need this, but it must be present before Task 5; do it now so the function is reachable.
+
+- [ ] **Step 5: Run test to verify it passes**
 
 Run: `cd rust && cargo test get_received_memos`
-Expected: PASS.
+Expected: PASS. Also `cd rust && cargo check` clean (re-export resolves).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add rust/src/wallet/sync/transactions.rs
+git add rust/src/wallet/sync/transactions.rs rust/src/wallet/sync/mod.rs
 git commit -m "feat(rust): add get_received_memos query"
 ```
 
@@ -470,6 +475,7 @@ Pump `ActivityScreen` with overridden providers so `getReceivedMemos` is faked (
 - An `All · Memos` segmented control is present; switching to Memos shows memo rows (date, amount, truncated text).
 - Typing in the search field re-queries and narrows results.
 - No-memos shows "No memos yet"; search-miss shows "No memos match".
+- **Clears on lock** (spec requirement): when the wallet locks (drive via the same mechanism Activity history uses — `clearSensitiveStateForLock` / the security provider), the Memos list is cleared from memory. Assert the memo rows disappear on lock.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -478,7 +484,24 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement**
 
-Add a `receivedMemosProvider` (family on `(accountUuid, query)`, or a Notifier holding query state) that calls `rust_sync.getReceivedMemos(dbPath: await getWalletDbPath(), network: ref.read(rpcEndpointProvider).networkName, accountUuid: ..., query: ...)`. Add the segmented control + debounced search `TextField` + memo list to `ActivityScreen`, following the existing loading/error/empty patterns (`_isLoading`, `_error`, account-mismatch guards). Memo row tap reuses `_pushTransactionStatus`-style navigation built from the memo's `txidHex`/`txKind` (pass `initialTransaction: null`, `initialDetail: null` — the detail screen loads on its own; verify it tolerates null initials, which it does since both are optional).
+Add a `receivedMemosProvider` (family on `(accountUuid, query)`, or a Notifier holding query state) that calls `rust_sync.getReceivedMemos(dbPath: await getWalletDbPath(), network: ref.read(rpcEndpointProvider).networkName, accountUuid: ..., query: ...)`. Add the segmented control + debounced search `TextField` + memo list to `ActivityScreen`, following the existing loading/error/empty patterns (`_isLoading`, `_error`, account-mismatch guards).
+
+**Memo row navigation (do NOT reuse `_pushTransactionStatus` — it requires a `TransactionInfo`).** Construct the navigation directly from the memo item:
+
+```dart
+context.push(
+  Uri(path: '/activity/tx/${memo.txidHex}',
+      queryParameters: {'kind': memo.txKind}).toString(), // memo.txKind == "received"
+  extra: ActivityTransactionStatusArgs(
+    txidHex: memo.txidHex,
+    txKind: memo.txKind,            // REQUIRED: detail self-loads via getTransactionHistory + _findTransaction, which falls back to args.txKind when initials are null
+    initialTransaction: null,
+    initialDetail: null,
+  ),
+);
+```
+
+The detail screen tolerates null `initialTransaction`/`initialDetail` (both optional) and self-loads via `_loadTransaction`; passing `txKind: "received"` is what makes its `_findTransaction` lookup match.
 
 - [ ] **Step 4: Run test to verify it passes**
 
