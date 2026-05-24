@@ -388,6 +388,94 @@ pub fn get_transaction_history(
     Ok(visible.into_iter().map(|tx| tx.info).collect())
 }
 
+// ======================== Received Memos Inbox ========================
+
+pub(crate) struct ReceivedMemo {
+    pub txid_hex: String,
+    pub memo: String,
+    pub amount_zatoshi: u64,
+    pub block_time: u64,
+    pub mined_height: u64,
+    pub tx_kind: String,
+    pub output_pool: i64,
+    pub output_index: i64,
+}
+
+pub fn get_received_memos(
+    db_path: &str,
+    _network: WalletNetwork,
+    account_uuid: &str,
+    query: Option<&str>,
+) -> Result<Vec<ReceivedMemo>, String> {
+    let uuid = uuid::Uuid::parse_str(account_uuid).map_err(|e| format!("Invalid UUID: {e}"))?;
+    let uuid_bytes = uuid.as_bytes().to_vec();
+    let conn = open_readonly_conn(db_path)?;
+    let read_tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("SQL error: {e}"))?;
+    let bases = read_history_bases(&read_tx, &uuid_bytes)?;
+    if bases.is_empty() {
+        return Ok(Vec::new());
+    }
+    let outputs_by_txid = read_history_outputs(&read_tx, &uuid_bytes)?;
+
+    let needle = query.map(|q| q.to_lowercase());
+    // (memo, block_time, created_time, mined_height, tx_index, txid_hex)
+    let mut items: Vec<(ReceivedMemo, u64, u64, u64, i64)> = Vec::new();
+    for base in &bases {
+        if base.is_shielding {
+            continue;
+        }
+        let Some(outputs) = outputs_by_txid.get(&base.txid) else {
+            continue;
+        };
+        for output in outputs {
+            if !is_received_output(output, &uuid_bytes) {
+                continue;
+            }
+            let Some(text) = decode_text_memo(output.memo.as_deref()) else {
+                continue;
+            };
+            if let Some(n) = &needle {
+                if !text.to_lowercase().contains(n.as_str()) {
+                    continue;
+                }
+            }
+            let mined_height = base.mined_height.map(u64::from).unwrap_or(0);
+            items.push((
+                ReceivedMemo {
+                    txid_hex: hex::encode(&base.txid),
+                    memo: text,
+                    amount_zatoshi: output.value,
+                    block_time: base.block_time,
+                    mined_height,
+                    tx_kind: "received".to_string(),
+                    output_pool: output.output_pool,
+                    output_index: output.output_index,
+                },
+                base.block_time,
+                base.created_time,
+                mined_height,
+                base.tx_index,
+            ));
+        }
+    }
+    // Sort newest-first: pending first, then block_time desc, created_time desc,
+    // mined_height desc, tx_index desc, txid_hex desc.
+    items.sort_by(|a, b| {
+        let a_pending = (a.0.mined_height == 0) as u8;
+        let b_pending = (b.0.mined_height == 0) as u8;
+        b_pending
+            .cmp(&a_pending)
+            .then_with(|| b.1.cmp(&a.1))
+            .then_with(|| b.2.cmp(&a.2))
+            .then_with(|| b.3.cmp(&a.3))
+            .then_with(|| b.4.cmp(&a.4))
+            .then_with(|| b.0.txid_hex.cmp(&a.0.txid_hex))
+    });
+    Ok(items.into_iter().map(|(m, ..)| m).collect())
+}
+
 pub(crate) fn get_oldest_mined_transaction_anchor(
     db_path: &str,
     account_uuid: &str,
@@ -2734,6 +2822,161 @@ mod tests {
         let db = fresh_db();
         let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
         assert!(got.is_empty());
+    }
+
+    fn set_block_time(db: &NamedTempFile, txid: &[u8], block_time: i64) {
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute(
+            "UPDATE v_transactions SET block_time = ?2 WHERE txid = ?1",
+            rusqlite::params![txid, block_time],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn get_received_memos_returns_only_inbound_text_memos() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let other_account = second_test_account_uuid();
+
+        // TX 1: external inbound with text memo — should appear.
+        let inbound_txid = fake_txid(0xF1);
+        insert_history_tx(
+            &db,
+            account,
+            &inbound_txid,
+            Some(1_000_100),
+            1,
+            None,
+            2_000_000,
+            0,
+            2_000_000,
+            false,
+            None,
+        );
+        set_block_time(&db, &inbound_txid, 1_700_000_100);
+        insert_output_with_address_and_memo(
+            &db,
+            &inbound_txid,
+            3,
+            Some(other_account),
+            Some(account),
+            2_000_000,
+            false,
+            Some("u-my-receiver"),
+            Some(0),
+            Some(b"incoming memo"),
+        );
+
+        // TX 2: change output with text memo — must NOT appear (from us → to us,
+        // internal scope = 1).
+        let change_txid = fake_txid(0xF2);
+        insert_history_tx(
+            &db,
+            account,
+            &change_txid,
+            Some(1_000_100),
+            2,
+            None,
+            -10_000,
+            1_010_000,
+            1_000_000,
+            false,
+            None,
+        );
+        set_block_time(&db, &change_txid, 1_700_000_200);
+        insert_output_with_address_and_memo(
+            &db,
+            &change_txid,
+            3,
+            Some(account),
+            Some(account),
+            1_000_000,
+            true,
+            None,
+            Some(1),
+            Some(b"change memo"),
+        );
+
+        // TX 3: sent output (from us, to other) with text memo — must NOT appear.
+        let sent_txid = fake_txid(0xF3);
+        insert_history_tx(
+            &db,
+            account,
+            &sent_txid,
+            Some(1_000_100),
+            3,
+            None,
+            -1_010_000,
+            1_010_000,
+            0,
+            false,
+            None,
+        );
+        set_block_time(&db, &sent_txid, 1_700_000_300);
+        insert_output_with_address_and_memo(
+            &db,
+            &sent_txid,
+            3,
+            Some(account),
+            None,
+            1_000_000,
+            false,
+            Some("u-recipient"),
+            None,
+            Some(b"sent memo"),
+        );
+
+        // TX 4: external inbound with empty memo (Memo::Empty = 0xF6) — must NOT appear.
+        let empty_memo_txid = fake_txid(0xF4);
+        insert_history_tx(
+            &db,
+            account,
+            &empty_memo_txid,
+            Some(1_000_100),
+            4,
+            None,
+            500_000,
+            0,
+            500_000,
+            false,
+            None,
+        );
+        set_block_time(&db, &empty_memo_txid, 1_700_000_400);
+        insert_output_with_address_and_memo(
+            &db,
+            &empty_memo_txid,
+            3,
+            Some(other_account),
+            Some(account),
+            500_000,
+            false,
+            Some("u-empty-memo-receiver"),
+            Some(0),
+            Some(&[0xF6]),
+        );
+
+        let got = get_received_memos(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            got.len(),
+            1,
+            "expected exactly 1 received memo, got {}: {:?}",
+            got.len(),
+            got.iter().map(|m| &m.memo).collect::<Vec<_>>()
+        );
+        assert_eq!(got[0].memo, "incoming memo");
+        assert_eq!(got[0].txid_hex, hex::encode(inbound_txid));
+        assert_eq!(got[0].tx_kind, "received");
+        assert_eq!(got[0].amount_zatoshi, 2_000_000);
+        assert!(got[0].output_pool >= 0, "output_pool must be populated");
+        assert!(got[0].output_index >= 0, "output_index must be populated");
     }
 
     #[test]
