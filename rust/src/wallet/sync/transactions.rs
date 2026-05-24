@@ -2980,6 +2980,137 @@ mod tests {
     }
 
     #[test]
+    fn get_received_memos_search() {
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let other_account = second_test_account_uuid();
+
+        // TX A: external inbound with memo "Invoice 1042 paid"
+        let txid_a = fake_txid(0xA8);
+        insert_history_tx(
+            &db,
+            account,
+            &txid_a,
+            Some(1_000_100),
+            1,
+            None,
+            1_000_000,
+            0,
+            1_000_000,
+            false,
+            None,
+        );
+        set_block_time(&db, &txid_a, 1_700_001_000);
+        insert_output_with_address_and_memo(
+            &db,
+            &txid_a,
+            3,
+            Some(other_account),
+            Some(account),
+            1_000_000,
+            false,
+            Some("u-receiver-a"),
+            Some(0),
+            Some(b"Invoice 1042 paid"),
+        );
+
+        // TX B: external inbound with memo "thanks for lunch"
+        let txid_b = fake_txid(0xA9);
+        insert_history_tx(
+            &db,
+            account,
+            &txid_b,
+            Some(1_000_100),
+            2,
+            None,
+            500_000,
+            0,
+            500_000,
+            false,
+            None,
+        );
+        set_block_time(&db, &txid_b, 1_700_001_001);
+        insert_output_with_address_and_memo(
+            &db,
+            &txid_b,
+            3,
+            Some(other_account),
+            Some(account),
+            500_000,
+            false,
+            Some("u-receiver-b"),
+            Some(0),
+            Some(b"thanks for lunch"),
+        );
+
+        // Case 1: query=None — both memos returned.
+        let all = get_received_memos(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            all.len(),
+            2,
+            "query=None must return all 2 memos, got {}: {:?}",
+            all.len(),
+            all.iter().map(|m| &m.memo).collect::<Vec<_>>()
+        );
+
+        // Case 2: case-insensitive match for "invoice" (lowercase) — hits TX A only.
+        let invoice = get_received_memos(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            Some("invoice"),
+        )
+        .unwrap();
+        assert_eq!(
+            invoice.len(),
+            1,
+            "query=\"invoice\" must match 1 memo, got {}: {:?}",
+            invoice.len(),
+            invoice.iter().map(|m| &m.memo).collect::<Vec<_>>()
+        );
+        assert_eq!(invoice[0].memo, "Invoice 1042 paid");
+
+        // Case 3: case-insensitive match for "LUNCH" (uppercase) — hits TX B only.
+        let lunch = get_received_memos(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            Some("LUNCH"),
+        )
+        .unwrap();
+        assert_eq!(
+            lunch.len(),
+            1,
+            "query=\"LUNCH\" must match 1 memo, got {}: {:?}",
+            lunch.len(),
+            lunch.iter().map(|m| &m.memo).collect::<Vec<_>>()
+        );
+        assert_eq!(lunch[0].memo, "thanks for lunch");
+
+        // Case 4: no match — returns empty.
+        let none = get_received_memos(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            Some("zzz"),
+        )
+        .unwrap();
+        assert_eq!(
+            none.len(),
+            0,
+            "query=\"zzz\" must return 0 memos, got {}: {:?}",
+            none.len(),
+            none.iter().map(|m| &m.memo).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn is_received_output_matches_external_inbound_only() {
         let me = uuid::Uuid::new_v4();
         let me_bytes = me.as_bytes().to_vec();
