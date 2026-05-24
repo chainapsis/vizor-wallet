@@ -16,11 +16,13 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/hidden_memos_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../send/widgets/transaction_receipt_view.dart';
+import '../models/memo_hide_key.dart';
 
 class ActivityTransactionStatusArgs {
   const ActivityTransactionStatusArgs({
@@ -408,19 +410,50 @@ class _ActivityTransactionStatusScreenState
     return _transactionHashBlock(context);
   }
 
-  List<TransactionReceiptBlockData> _extraBlocksFor(
+  /// Computes whether the detail's memo is currently hidden for the active
+  /// account. Returns false when there is no memo, no `memoOutputKey`, or no
+  /// active account. [hiddenKeys] is the reactive hidden-set for the active
+  /// account (read via `ref.watch` in [build]).
+  bool _isMemoHidden(
     rust_sync.TransactionDetail? detail,
+    Set<String> hiddenKeys,
   ) {
+    final memoOutputKey = detail?.memoOutputKey;
+    final accountUuid = _activeAccountUuid;
+    if (memoOutputKey == null ||
+        accountUuid == null ||
+        accountUuid.isEmpty) {
+      return false;
+    }
+    final hideKey = memoHideKeyFromDetail(
+      txidHex: widget.args.txidHex,
+      memoOutputKey: memoOutputKey,
+    );
+    return hiddenKeys.contains(hideKey);
+  }
+
+  List<TransactionReceiptBlockData> _extraBlocksFor(
+    rust_sync.TransactionDetail? detail, {
+    required bool isMemoHidden,
+  }) {
     final memo = detail?.memo?.trim();
     if (memo == null || memo.isEmpty) return const [];
     return [
       TransactionReceiptBlockData(
         title: 'Message',
-        titleTrailing: TransactionReceiptMessageToggle(
-          expanded: _messageExpanded,
-          onTap: _toggleMessageExpanded,
-        ),
-        child: TransactionReceiptMessageText(
+        // Restore the pre-extraction layout: the expand/collapse toggle sits
+        // beside the "Message" title. When the memo is hidden, no toggle —
+        // the placeholder + Restore live in the child instead.
+        titleTrailing: isMemoHidden
+            ? null
+            : TransactionReceiptMessageToggle(
+                expanded: _messageExpanded,
+                onTap: _toggleMessageExpanded,
+              ),
+        child: MemoDetailSection(
+          txidHex: widget.args.txidHex,
+          detail: detail!,
+          accountUuid: _activeAccountUuid ?? '',
           memo: memo,
           expanded: _messageExpanded,
         ),
@@ -447,6 +480,10 @@ class _ActivityTransactionStatusScreenState
     final tx = _transaction;
     final detail = _matchingDetailFor(tx);
     final privacyModeEnabled = ref.watch(privacyModeProvider);
+    final hiddenKeys = _activeAccountUuid == null
+        ? const <String>{}
+        : ref.watch(hiddenMemosProvider).keysFor(_activeAccountUuid!);
+    final isMemoHidden = _isMemoHidden(detail, hiddenKeys);
     final useFailedReceiptLayout = tx?.expiredUnmined == true;
     final error = useFailedReceiptLayout
         ? 'Transaction expired before it was mined.'
@@ -492,7 +529,10 @@ class _ActivityTransactionStatusScreenState
                               privacyModeEnabled: privacyModeEnabled,
                             ),
                             primaryBlock: _primaryBlockFor(context, tx, detail),
-                            extraBlocks: _extraBlocksFor(detail),
+                            extraBlocks: _extraBlocksFor(
+                              detail,
+                              isMemoHidden: isMemoHidden,
+                            ),
                             dateText: _dateText(tx),
                             feeText: _feeText(
                               tx,
@@ -514,6 +554,91 @@ class _ActivityTransactionStatusScreenState
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Renders the memo text inside a transaction detail receipt, or — when the
+/// memo has been hidden by the user — shows a "Memo hidden" placeholder with a
+/// Restore affordance.
+///
+/// Extracted as a standalone [ConsumerWidget] so it can be unit-tested without
+/// bringing up the full [ActivityTransactionStatusScreen] (which hits FFI on
+/// build).
+class MemoDetailSection extends ConsumerWidget {
+  const MemoDetailSection({
+    required this.txidHex,
+    required this.detail,
+    required this.accountUuid,
+    required this.memo,
+    required this.expanded,
+    super.key,
+  });
+
+  final String txidHex;
+  final rust_sync.TransactionDetail detail;
+  final String accountUuid;
+
+  /// Pre-trimmed memo text. Caller guarantees non-empty.
+  final String memo;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final memoOutputKey = detail.memoOutputKey;
+
+    if (memoOutputKey != null && accountUuid.isNotEmpty) {
+      final hideKey = memoHideKeyFromDetail(
+        txidHex: txidHex,
+        memoOutputKey: memoOutputKey,
+      );
+      final hiddenKeys =
+          ref.watch(hiddenMemosProvider).keysFor(accountUuid);
+      if (hiddenKeys.contains(hideKey)) {
+        return _MemoHiddenPlaceholder(
+          key: const ValueKey('memo_hidden_placeholder'),
+          onRestore: () => ref
+              .read(hiddenMemosProvider.notifier)
+              .restore(accountUuid: accountUuid, key: hideKey),
+        );
+      }
+    }
+
+    // Default: render the memo text. The expand/collapse toggle lives in the
+    // surrounding block's titleTrailing (beside the "Message" heading), so it
+    // is intentionally not owned here.
+    return TransactionReceiptMessageText(memo: memo, expanded: expanded);
+  }
+}
+
+class _MemoHiddenPlaceholder extends StatelessWidget {
+  const _MemoHiddenPlaceholder({required this.onRestore, super.key});
+
+  final VoidCallback onRestore;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          'Memo hidden',
+          style: AppTypography.bodyMedium.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+        GestureDetector(
+          key: const ValueKey('memo_restore_button'),
+          onTap: onRestore,
+          child: Text(
+            'Restore',
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
