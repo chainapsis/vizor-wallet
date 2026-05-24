@@ -605,6 +605,59 @@ pub fn wallet_exists(db_path: &str) -> bool {
     Path::new(db_path).exists()
 }
 
+/// A single external receiving address for an account.
+pub(crate) struct AccountAddress {
+    pub address: String,
+    pub is_default: bool,
+}
+
+/// List the external (key_scope = 0) receiving addresses for the given account
+/// that have actually been handed out to the user, newest diversifier first.
+///
+/// `create_account` pre-populates a gap-limit lookahead pool of external
+/// addresses with `exposed_at_height = NULL` (addresses the user has never been
+/// shown). Those are excluded by the `exposed_at_height IS NOT NULL` filter so
+/// the result only contains the account default (inserted exposed at birthday)
+/// plus any addresses generated via `get_next_available_address`. This mirrors
+/// how zcash_client_sqlite itself enumerates known addresses.
+///
+/// The address with the smallest diversifier_index_be is marked `is_default`.
+pub fn list_account_addresses(
+    db_path: &str,
+    _network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<Vec<AccountAddress>, String> {
+    let uuid =
+        uuid::Uuid::parse_str(account_uuid).map_err(|e| format!("Invalid UUID: {e}"))?;
+    let conn = crate::wallet::sync::open_readonly_conn(db_path)?;
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT a.address, a.diversifier_index_be
+            FROM addresses a
+            JOIN accounts acc ON acc.id = a.account_id
+            WHERE acc.uuid = ?1 AND a.key_scope = 0 AND a.exposed_at_height IS NOT NULL
+            ORDER BY a.diversifier_index_be DESC
+            "#,
+        )
+        .map_err(|e| format!("SQL error: {e}"))?;
+    let rows = stmt
+        .query_map(rusqlite::params![uuid.as_bytes().as_slice()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })
+        .map_err(|e| format!("Query error: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Row error: {e}"))?;
+    let min_div = rows.iter().map(|(_, d)| d).min().cloned();
+    Ok(rows
+        .into_iter()
+        .map(|(address, div)| AccountAddress {
+            address,
+            is_default: Some(&div) == min_div.as_ref(),
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1057,5 +1110,105 @@ mod tests {
             !debug.contains("P2pkh"),
             "UA should NOT contain transparent receiver"
         );
+    }
+
+    #[test]
+    fn test_list_account_addresses_returns_default_and_generated() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let phrase = generate_mnemonic();
+        let seed = mnemonic_to_seed(&phrase).unwrap();
+
+        let (uuid, default_address) =
+            init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "test")
+                .unwrap();
+
+        // A chain tip is required before get_next_available_address can generate
+        // a new diversified address (mirrors test_get_address_returns_last_generated_receive_address).
+        crate::wallet::sync::update_chain_tip(db_path_str, WalletNetwork::Main, 2_500_000)
+            .unwrap();
+        let generated_address = crate::wallet::sync::get_next_available_address(
+            db_path_str,
+            WalletNetwork::Main,
+            &uuid,
+        )
+        .unwrap();
+
+        // The generated address must differ from the default.
+        assert_ne!(default_address, generated_address);
+
+        let addrs = list_account_addresses(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+
+        // EXACT count: only the exposed addresses (account default + the one
+        // generated address) must be returned. The gap-limit lookahead pool
+        // (key_scope = 0, exposed_at_height = NULL) must be excluded. A `>= 2`
+        // assertion would also pass against the buggy unfiltered query that
+        // leaks the lookahead pool, so this exact count is what guards the
+        // regression.
+        assert_eq!(
+            addrs.len(),
+            2,
+            "Expected exactly 2 exposed addresses (default + generated), got {}; \
+             the gap-limit lookahead pool must be excluded",
+            addrs.len()
+        );
+
+        // All must be valid mainnet UAs.
+        for a in &addrs {
+            assert!(
+                a.address.starts_with("u1"),
+                "Expected u1 prefix, got: {}",
+                a.address
+            );
+        }
+
+        // Exactly one is_default.
+        let default_count = addrs.iter().filter(|a| a.is_default).count();
+        assert_eq!(default_count, 1, "Expected exactly one default address");
+
+        // The generated address must appear somewhere in the list and must not be default.
+        let generated_entry = addrs
+            .iter()
+            .find(|a| a.address == generated_address)
+            .expect("generated address must appear in list_account_addresses");
+        assert!(
+            !generated_entry.is_default,
+            "generated (non-default) address must not be marked as default"
+        );
+
+        // The newest-generated address sorts first (highest diversifier_index_be = DESC order).
+        assert_eq!(
+            addrs[0].address, generated_address,
+            "generated address must sort first (highest diversifier)"
+        );
+
+        // The default (oldest / lowest diversifier) differs from the generated address.
+        let default_addr = addrs.iter().find(|a| a.is_default).unwrap();
+        assert_ne!(
+            default_addr.address, generated_address,
+            "default address must differ from generated address"
+        );
+
+        // Create a second account and verify its addresses are not included.
+        let phrase2 = generate_mnemonic();
+        let seed2 = mnemonic_to_seed(&phrase2).unwrap();
+        let (uuid2, _) =
+            add_account(db_path_str, WalletNetwork::Main, "second", &seed2, None).unwrap();
+
+        let addrs2 =
+            list_account_addresses(db_path_str, WalletNetwork::Main, &uuid2).unwrap();
+        let addrs1_again =
+            list_account_addresses(db_path_str, WalletNetwork::Main, &uuid).unwrap();
+
+        // Second account should have its own (independent) address set.
+        for a2 in &addrs2 {
+            assert!(
+                !addrs1_again.iter().any(|a1| a1.address == a2.address),
+                "Address from second account leaked into first account's list: {}",
+                a2.address
+            );
+        }
     }
 }
