@@ -234,6 +234,10 @@ pub(crate) struct TransactionDetail {
     pub tx_kind: String,
     pub primary_address: Option<String>,
     pub memo: Option<String>,
+    /// Identifies the output that carried the text memo, formatted as
+    /// `"<pool>:<index>"` (e.g. `"3:0"` for Orchard output 0).  `None`
+    /// when no text memo was found.
+    pub memo_output_key: Option<String>,
     pub outputs: Vec<TransactionDetailOutput>,
 }
 
@@ -572,9 +576,16 @@ pub fn get_transaction_detail(
         .iter()
         .filter(|output| detail_includes_output(&base, output, uuid_bytes.as_slice(), tx_kind))
         .collect::<Vec<_>>();
-    let memo = visible_outputs
-        .iter()
-        .find_map(|output| decode_text_memo(output.memo.as_deref()));
+    let memo_with_key = visible_outputs.iter().find_map(|output| {
+        decode_text_memo(output.memo.as_deref()).map(|text| {
+            let key = format!("{}:{}", output.output_pool, output.output_index);
+            (text, key)
+        })
+    });
+    let (memo, memo_output_key) = match memo_with_key {
+        Some((text, key)) => (Some(text), Some(key)),
+        None => (None, None),
+    };
     let primary_address = if tx_kind == "sent" {
         visible_outputs
             .iter()
@@ -596,6 +607,7 @@ pub fn get_transaction_detail(
         tx_kind: tx_kind.to_string(),
         primary_address,
         memo,
+        memo_output_key,
         outputs,
     })
 }
@@ -2408,6 +2420,102 @@ mod tests {
         assert_eq!(got.primary_address, None);
         assert_eq!(got.outputs.len(), 1);
         assert_eq!(got.outputs[0].amount_zatoshi, 1_000_000);
+    }
+
+    #[test]
+    fn detail_memo_output_key_set_when_memo_present() {
+        // A received transaction with a text memo: memo_output_key must identify
+        // the pool and index of the output that carried the memo.
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD8);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(1_000_000),
+            1,
+            Some(1_000_100),
+            2_000_000,
+            0,
+            2_000_000,
+            false,
+            Some("2026-04-28T17:10:00Z"),
+        );
+        // output_pool=3 (Orchard), will get output_index=0 (first in that pool)
+        insert_output_with_address_and_memo(
+            &db,
+            &txid,
+            3,
+            None,
+            Some(account),
+            2_000_000,
+            false,
+            Some("u-my-receiver"),
+            Some(0),
+            Some(b"key test memo"),
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "received",
+        )
+        .unwrap();
+
+        assert_eq!(got.memo.as_deref(), Some("key test memo"));
+        // The memo came from pool=3, index=0.
+        assert_eq!(got.memo_output_key.as_deref(), Some("3:0"));
+    }
+
+    #[test]
+    fn detail_memo_output_key_none_when_no_text_memo() {
+        // A received transaction with no text memo: memo_output_key must be None.
+        let db = fresh_history_db();
+        let account = test_account_uuid();
+        let txid = fake_txid(0xD9);
+
+        insert_history_tx(
+            &db,
+            account,
+            &txid,
+            Some(500_000),
+            1,
+            Some(1_000_100),
+            500_000,
+            0,
+            500_000,
+            false,
+            Some("2026-04-28T17:11:00Z"),
+        );
+        // No memo bytes at all.
+        insert_output_with_address_and_memo(
+            &db,
+            &txid,
+            3,
+            None,
+            Some(account),
+            500_000,
+            false,
+            Some("u-no-memo-receiver"),
+            Some(0),
+            None,
+        );
+
+        let got = get_transaction_detail(
+            db.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            &account.to_string(),
+            &hex::encode(txid),
+            "received",
+        )
+        .unwrap();
+
+        assert_eq!(got.memo, None);
+        assert_eq!(got.memo_output_key, None);
     }
 
     #[test]
