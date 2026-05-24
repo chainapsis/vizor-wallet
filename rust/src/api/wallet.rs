@@ -263,6 +263,31 @@ pub fn derive_seed(mnemonic: String) -> Result<Vec<u8>, String> {
     })
 }
 
+/// An address belonging to an account, with a flag indicating whether it is the default address.
+pub struct AccountAddress {
+    pub address: String,
+    pub is_default: bool,
+}
+
+/// List all addresses for a specific account.
+pub fn list_account_addresses(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+) -> Result<Vec<AccountAddress>, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let addrs = keys::list_account_addresses(&db_path, network, &account_uuid)?;
+        Ok(addrs
+            .into_iter()
+            .map(|a| AccountAddress {
+                address: a.address,
+                is_default: a.is_default,
+            })
+            .collect())
+    })
+}
+
 /// Get the transparent address for a specific account (or first account if uuid is None).
 pub fn get_transparent_address(
     db_path: String,

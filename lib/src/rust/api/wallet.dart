@@ -135,6 +135,17 @@ bool validateMnemonic({required String mnemonic}) =>
 Future<Uint8List> deriveSeed({required String mnemonic}) =>
     RustLib.instance.api.crateApiWalletDeriveSeed(mnemonic: mnemonic);
 
+/// List all addresses for a specific account.
+Future<List<AccountAddress>> listAccountAddresses({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiWalletListAccountAddresses(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
 /// Get the transparent address for a specific account (or first account if uuid is None).
 Future<String> getTransparentAddress({
   required String dbPath,
@@ -145,6 +156,25 @@ Future<String> getTransparentAddress({
   network: network,
   accountUuid: accountUuid,
 );
+
+/// An address belonging to an account, with a flag indicating whether it is the default address.
+class AccountAddress {
+  final String address;
+  final bool isDefault;
+
+  const AccountAddress({required this.address, required this.isDefault});
+
+  @override
+  int get hashCode => address.hashCode ^ isDefault.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AccountAddress &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          isDefault == other.isDefault;
+}
 
 /// Result of adding an account to an existing wallet.
 class AccountCreationResult {
