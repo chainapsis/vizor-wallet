@@ -5,11 +5,18 @@ use rust_lib_zcash_wallet::api::{sync as sync_api, wallet as wallet_api};
 
 const NETWORK: &str = "test";
 const DEFAULT_LIGHTWALLETD_URL: &str = "https://testnet.zec.rocks:443";
-const TESTNET_QR_SEED: &str = "powder bronze skirt because truly bonus link gloom cluster quantum birth mutual limit veteran garden almost trophy potato twelve win crush surface decline uphold";
-const TESTNET_QR_BIRTHDAY: u64 = 4_000_000;
+const ACCOUNT_A_SEED: &str = "powder bronze skirt because truly bonus link gloom cluster quantum birth mutual limit veteran garden almost trophy potato twelve win crush surface decline uphold";
+const ACCOUNT_A_ADDRESS: &str = "utest1zvyhrax68yzq3wz62ftap46y7xhak206pp7kl4uu3un8ywk042d2j8mynhj49j2j2hlqlufu3z43tru3kkkmhd0s9dyug0vef6v7hz8fr9gasw0lw09lw23fq56egk26lp542wq6h5d72ylllentu443vdxzpm0ldh2r8ncj3qh4f5xx";
+const ACCOUNT_A_BIRTHDAY: u64 = 4_000_000;
+const ACCOUNT_B_SEED: &str = "monkey develop pass obey like melt furnace announce cradle spin sign school grit gloom enact wall neither intact squeeze soon scatter obvious gauge record";
+const ACCOUNT_B_ADDRESS: &str = "utest1vgmc0w4avv06k9cfzv0x0td9zautetx88tl0qtacvmcxm4e80x2udxz05ar0mds2cfrluhyremqzze62myuqcedl8pc8wd02ayyuh0sftsjpnn034jxq25dcaj3ynsnpurz8t23fe5jr86xelxgjr95kpvz23c20w8eyt4zpq5ja7agr";
+const ACCOUNT_B_BIRTHDAY: u64 = 4_000_000;
 const FIRST_SEND_ZATOSHI: u64 = 50_000;
 const SECOND_SEND_ZATOSHI: u64 = 20_000;
 const MIN_POST_FIRST_CHANGE_ZATOSHI: u64 = 30_000;
+const A_TO_B_SEND_ZATOSHI: u64 = 5_000_000;
+const B_TO_A_SEND_ZATOSHI: u64 = 2_500_000;
+const MIN_POST_A_TO_B_CHANGE_ZATOSHI: u64 = 2_600_000;
 
 fn path_str(path: &Path) -> String {
     path.to_str().expect("utf-8 path").to_string()
@@ -110,6 +117,7 @@ fn execute_send(
     db_path: &Path,
     lightwalletd_url: &str,
     account_uuid: &str,
+    seed_phrase: &str,
     to_address: &str,
     amount_zatoshi: u64,
     flow_id: &str,
@@ -134,7 +142,7 @@ fn execute_send(
         lightwalletd_url.to_string(),
         proposal.proposal_id,
         flow_id.to_string(),
-        TESTNET_QR_SEED.as_bytes().to_vec(),
+        seed_phrase.as_bytes().to_vec(),
         None,
         None,
     )
@@ -245,6 +253,25 @@ fn create_receiver(lightwalletd_url: &str) -> (tempfile::TempDir, PathBuf, Strin
     (receiver_dir, receiver_db, receiver_orchard_address)
 }
 
+fn import_test_account(
+    seed_phrase: &str,
+    birthday: u64,
+    label: &str,
+) -> (tempfile::TempDir, PathBuf, wallet_api::WalletImportResult) {
+    let dir = tempfile::tempdir().expect("account tempdir");
+    let db = dir.path().join("zcash_wallet.db");
+    let account = wallet_api::import_wallet(
+        seed_phrase.to_string(),
+        Some(birthday),
+        NETWORK.to_string(),
+        path_str(&db),
+        Some(label.to_string()),
+    )
+    .expect("import test account");
+
+    (dir, db, account)
+}
+
 #[test]
 #[ignore = "requires the funded testnet QR seed and waits for public testnet confirmations"]
 fn funded_testnet_seed_can_create_reopen_and_spend_qr_change() {
@@ -265,8 +292,8 @@ fn funded_testnet_seed_can_create_reopen_and_spend_qr_change() {
     let sender_dir = tempfile::tempdir().expect("sender tempdir");
     let sender_db = sender_dir.path().join("zcash_wallet.db");
     let sender = wallet_api::import_wallet(
-        TESTNET_QR_SEED.to_string(),
-        Some(TESTNET_QR_BIRTHDAY),
+        ACCOUNT_A_SEED.to_string(),
+        Some(ACCOUNT_A_BIRTHDAY),
         NETWORK.to_string(),
         path_str(&sender_db),
         Some("QR funded testnet seed".to_string()),
@@ -307,6 +334,7 @@ fn funded_testnet_seed_can_create_reopen_and_spend_qr_change() {
         &sender_db,
         &lightwalletd_url,
         &sender.account_uuid,
+        ACCOUNT_A_SEED,
         &receiver_orchard_address,
         FIRST_SEND_ZATOSHI,
         "testnet-qr-first-send",
@@ -348,6 +376,7 @@ fn funded_testnet_seed_can_create_reopen_and_spend_qr_change() {
         &sender_db,
         &lightwalletd_url,
         &sender.account_uuid,
+        ACCOUNT_A_SEED,
         &receiver_orchard_address,
         SECOND_SEND_ZATOSHI,
         "testnet-qr-second-send",
@@ -403,6 +432,7 @@ fn existing_testnet_db_can_spend_qr_change() {
         &sender_db,
         &lightwalletd_url,
         &sender_account.uuid,
+        ACCOUNT_A_SEED,
         &receiver_orchard_address,
         SECOND_SEND_ZATOSHI,
         "testnet-qr-existing-db-send",
@@ -422,4 +452,126 @@ fn existing_testnet_db_can_spend_qr_change() {
     );
     sync_wallet(&receiver_db, &lightwalletd_url);
     assert_receiver_outputs_are_v2(&receiver_db);
+}
+
+#[test]
+#[ignore = "requires funded Account A and waits for public testnet confirmations"]
+fn known_test_accounts_create_qr_change_on_both_sides() {
+    if std::env::var("VIZOR_QR_TESTNET_LIVE").as_deref() != Ok("1") {
+        eprintln!("set VIZOR_QR_TESTNET_LIVE=1 to run the live QR Phase 1 test");
+        return;
+    }
+
+    let lightwalletd_url = lightwalletd_url();
+    let timeout = Duration::from_secs(env_u64("VIZOR_QR_TESTNET_CONFIRM_TIMEOUT_SECS", 3600));
+    let poll = Duration::from_secs(env_u64("VIZOR_QR_TESTNET_CONFIRM_POLL_SECS", 75));
+    eprintln!("using testnet lightwalletd endpoint {lightwalletd_url}");
+    assert_eq!(
+        wallet_api::get_lightwalletd_chain_name(lightwalletd_url.clone()).expect("chain name"),
+        "test"
+    );
+
+    let (_account_a_dir, account_a_db, account_a) =
+        import_test_account(ACCOUNT_A_SEED, ACCOUNT_A_BIRTHDAY, "QR Account A");
+    let (_account_b_dir, account_b_db, account_b) =
+        import_test_account(ACCOUNT_B_SEED, ACCOUNT_B_BIRTHDAY, "QR Account B");
+
+    sync_wallet(&account_a_db, &lightwalletd_url);
+    let account_a_starting_balance = balance(&account_a_db, &account_a.account_uuid);
+    eprintln!(
+        "Account A starting spendable balance: {} zatoshi",
+        account_a_starting_balance.spendable
+    );
+    assert!(
+        account_a_starting_balance.spendable
+            > A_TO_B_SEND_ZATOSHI + B_TO_A_SEND_ZATOSHI + MIN_POST_A_TO_B_CHANGE_ZATOSHI,
+        "Account A needs more spendable balance, got {} zatoshi",
+        account_a_starting_balance.spendable
+    );
+
+    let account_a_qr_change_before = qr_change_count(&account_a_db);
+    let a_to_b_txid = execute_send(
+        &account_a_db,
+        &lightwalletd_url,
+        &account_a.account_uuid,
+        ACCOUNT_A_SEED,
+        ACCOUNT_B_ADDRESS,
+        A_TO_B_SEND_ZATOSHI,
+        "testnet-qr-a-to-b",
+    );
+    eprintln!("Account A -> Account B broadcast: {a_to_b_txid}");
+    assert!(
+        qr_change_count(&account_a_db) > account_a_qr_change_before,
+        "A -> B did not persist Account A QR Orchard change"
+    );
+    assert!(
+        unspent_qr_change_count(&account_a_db) > 0,
+        "A -> B did not leave Account A unspent QR Orchard change"
+    );
+    wait_for_mined_tx(
+        &account_a_db,
+        &lightwalletd_url,
+        &account_a.account_uuid,
+        &a_to_b_txid,
+        timeout,
+        poll,
+    );
+
+    sync_wallet(&account_b_db, &lightwalletd_url);
+    let account_b_external_versions = orchard_note_versions(&account_b_db, false);
+    assert!(
+        account_b_external_versions.iter().all(|v| *v == 2),
+        "A -> B external Orchard output should remain ordinary V2, got {:?}",
+        account_b_external_versions
+    );
+    let account_b_balance = balance(&account_b_db, &account_b.account_uuid);
+    eprintln!(
+        "Account B spendable balance after A -> B: {} zatoshi",
+        account_b_balance.spendable
+    );
+    assert!(
+        account_b_balance.spendable > B_TO_A_SEND_ZATOSHI,
+        "Account B needs spendable balance for B -> A, got {} zatoshi",
+        account_b_balance.spendable
+    );
+
+    let account_b_qr_change_before = qr_change_count(&account_b_db);
+    let b_to_a_txid = execute_send(
+        &account_b_db,
+        &lightwalletd_url,
+        &account_b.account_uuid,
+        ACCOUNT_B_SEED,
+        ACCOUNT_A_ADDRESS,
+        B_TO_A_SEND_ZATOSHI,
+        "testnet-qr-b-to-a",
+    );
+    eprintln!("Account B -> Account A broadcast: {b_to_a_txid}");
+    assert!(
+        qr_change_count(&account_b_db) > account_b_qr_change_before,
+        "B -> A did not persist Account B QR Orchard change"
+    );
+    assert!(
+        unspent_qr_change_count(&account_b_db) > 0,
+        "B -> A did not leave Account B unspent QR Orchard change"
+    );
+    wait_for_mined_tx(
+        &account_b_db,
+        &lightwalletd_url,
+        &account_b.account_uuid,
+        &b_to_a_txid,
+        timeout,
+        poll,
+    );
+
+    sync_wallet(&account_a_db, &lightwalletd_url);
+    let account_a_external_versions = orchard_note_versions(&account_a_db, false);
+    assert!(
+        account_a_external_versions.iter().all(|v| *v == 2),
+        "B -> A external Orchard output should remain ordinary V2, got {:?}",
+        account_a_external_versions
+    );
+
+    eprintln!("QR Phase 1 known-account txids:");
+    eprintln!("A -> B QR change creation: {a_to_b_txid}");
+    eprintln!("B -> A QR change creation: {b_to_a_txid}");
 }
