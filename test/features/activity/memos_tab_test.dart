@@ -6,12 +6,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/formatting/zec_amount.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/activity/widgets/memos_tab.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/hidden_memos_provider.dart';
 import 'package:zcash_wallet/src/providers/memo_repository.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
+
+import '../../helpers/in_memory_secure_storage.dart';
 
 // ---------------------------------------------------------------------------
 // Fake repository
@@ -113,6 +118,10 @@ Widget _harness({
   required MemoRepository memoRepo,
   AppSecurityNotifier Function()? securityNotifier,
 }) {
+  // Each test gets a fresh in-memory store so hiddenMemosProvider works without
+  // calling the real FlutterSecureStorage.
+  final store = AppSecureStore.testing(storage: InMemorySecureStorage());
+
   final router = GoRouter(
     initialLocation: '/memos-test',
     routes: [
@@ -132,6 +141,7 @@ Widget _harness({
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap),
       memoRepositoryProvider.overrideWithValue(memoRepo),
+      appSecureStoreProvider.overrideWithValue(store),
       if (securityNotifier != null)
         appSecurityProvider.overrideWith(securityNotifier),
     ],
@@ -167,8 +177,11 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    // 1 ZEC displayed somewhere in the row
-    expect(find.textContaining('1'), findsWidgets);
+    // Verify the exact formatted amount strings rendered by MemoRow.
+    final memo1Amount = ZecAmount.fromZatoshi(_memo1.amountZatoshi).activity.toString();
+    final memo2Amount = ZecAmount.fromZatoshi(_memo2.amountZatoshi).activity.toString();
+    expect(find.text(memo1Amount), findsOneWidget); // e.g. "1.00 ZEC"
+    expect(find.text(memo2Amount), findsOneWidget); // e.g. "0.50 ZEC"
   });
 
   testWidgets('no-memos empty state shows "No memos yet"', (tester) async {
