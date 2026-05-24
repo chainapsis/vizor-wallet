@@ -7,6 +7,7 @@
 ///   Rust) is already the "pool:index" substring — use [memoHideKeyFromDetail].
 ///
 /// Both helpers produce the identical canonical form `"txid:pool:index"`.
+library;
 
 /// Builds a memo hide-key from the three discrete fields exposed by
 /// `ReceivedMemo`. Produces the canonical form `"txidHex:outputPool:outputIndex"`.
