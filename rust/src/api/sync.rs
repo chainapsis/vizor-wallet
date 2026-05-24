@@ -880,6 +880,7 @@ pub struct TransactionDetail {
     pub tx_kind: String,
     pub primary_address: Option<String>,
     pub memo: Option<String>,
+    pub memo_output_key: Option<String>,
     pub outputs: Vec<TransactionDetailOutput>,
 }
 
@@ -979,6 +980,7 @@ pub fn get_transaction_detail(
             tx_kind: detail.tx_kind,
             primary_address: detail.primary_address,
             memo: detail.memo,
+            memo_output_key: detail.memo_output_key,
             outputs: detail
                 .outputs
                 .into_iter()
@@ -989,6 +991,43 @@ pub fn get_transaction_detail(
                 })
                 .collect(),
         })
+    })
+}
+
+// ======================== Received Memos Inbox ========================
+
+pub struct ReceivedMemo {
+    pub txid_hex: String,
+    pub memo: String,
+    pub amount_zatoshi: u64,
+    pub block_time: u64,
+    pub mined_height: u64,
+    pub tx_kind: String,
+    pub output_pool: i64,
+    pub output_index: i64,
+}
+
+pub fn get_received_memos(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    query: Option<String>,
+) -> Result<Vec<ReceivedMemo>, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let memos = wallet_sync::get_received_memos(
+            &db_path, network, &account_uuid, query.as_deref(),
+        )?;
+        Ok(memos.into_iter().map(|m| ReceivedMemo {
+            txid_hex: m.txid_hex,
+            memo: m.memo,
+            amount_zatoshi: m.amount_zatoshi,
+            block_time: m.block_time,
+            mined_height: m.mined_height,
+            tx_kind: m.tx_kind,
+            output_pool: m.output_pool,
+            output_index: m.output_index,
+        }).collect())
     })
 }
 

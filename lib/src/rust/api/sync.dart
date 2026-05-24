@@ -396,6 +396,18 @@ TransactionDetail getTransactionDetail({
   txKind: txKind,
 );
 
+Future<List<ReceivedMemo>> getReceivedMemos({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  String? query,
+}) => RustLib.instance.api.crateApiSyncGetReceivedMemos(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  query: query,
+);
+
 String getBlocksDir({required String cachePath}) =>
     RustLib.instance.api.crateApiSyncGetBlocksDir(cachePath: cachePath);
 
@@ -717,6 +729,53 @@ class ProposalResult {
           feeZatoshi == other.feeZatoshi;
 }
 
+class ReceivedMemo {
+  final String txidHex;
+  final String memo;
+  final BigInt amountZatoshi;
+  final BigInt blockTime;
+  final BigInt minedHeight;
+  final String txKind;
+  final PlatformInt64 outputPool;
+  final PlatformInt64 outputIndex;
+
+  const ReceivedMemo({
+    required this.txidHex,
+    required this.memo,
+    required this.amountZatoshi,
+    required this.blockTime,
+    required this.minedHeight,
+    required this.txKind,
+    required this.outputPool,
+    required this.outputIndex,
+  });
+
+  @override
+  int get hashCode =>
+      txidHex.hashCode ^
+      memo.hashCode ^
+      amountZatoshi.hashCode ^
+      blockTime.hashCode ^
+      minedHeight.hashCode ^
+      txKind.hashCode ^
+      outputPool.hashCode ^
+      outputIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReceivedMemo &&
+          runtimeType == other.runtimeType &&
+          txidHex == other.txidHex &&
+          memo == other.memo &&
+          amountZatoshi == other.amountZatoshi &&
+          blockTime == other.blockTime &&
+          minedHeight == other.minedHeight &&
+          txKind == other.txKind &&
+          outputPool == other.outputPool &&
+          outputIndex == other.outputIndex;
+}
+
 class ScanRangeInfo {
   final BigInt start;
   final BigInt end;
@@ -940,6 +999,7 @@ class TransactionDetail {
   final String txKind;
   final String? primaryAddress;
   final String? memo;
+  final String? memoOutputKey;
   final List<TransactionDetailOutput> outputs;
 
   const TransactionDetail({
@@ -947,6 +1007,7 @@ class TransactionDetail {
     required this.txKind,
     this.primaryAddress,
     this.memo,
+    this.memoOutputKey,
     required this.outputs,
   });
 
@@ -956,6 +1017,7 @@ class TransactionDetail {
       txKind.hashCode ^
       primaryAddress.hashCode ^
       memo.hashCode ^
+      memoOutputKey.hashCode ^
       outputs.hashCode;
 
   @override
@@ -967,6 +1029,7 @@ class TransactionDetail {
           txKind == other.txKind &&
           primaryAddress == other.primaryAddress &&
           memo == other.memo &&
+          memoOutputKey == other.memoOutputKey &&
           outputs == other.outputs;
 }
 

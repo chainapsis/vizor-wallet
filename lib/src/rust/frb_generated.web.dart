@@ -101,6 +101,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<ReceivedMemo> dco_decode_list_received_memo(dynamic raw);
+
+  @protected
   List<ScanRangeInfo> dco_decode_list_scan_range_info(dynamic raw);
 
   @protected
@@ -131,6 +134,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ProposalResult dco_decode_proposal_result(dynamic raw);
+
+  @protected
+  ReceivedMemo dco_decode_received_memo(dynamic raw);
 
   @protected
   ScanRangeInfo dco_decode_scan_range_info(dynamic raw);
@@ -295,6 +301,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<ReceivedMemo> sse_decode_list_received_memo(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<ScanRangeInfo> sse_decode_list_scan_range_info(
     SseDeserializer deserializer,
   );
@@ -331,6 +342,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
+
+  @protected
+  ReceivedMemo sse_decode_received_memo(SseDeserializer deserializer);
 
   @protected
   ScanRangeInfo sse_decode_scan_range_info(SseDeserializer deserializer);
@@ -530,6 +544,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_received_memo(
+    List<ReceivedMemo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_scan_range_info(
     List<ScanRangeInfo> self,
     SseSerializer serializer,
@@ -579,6 +599,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ProposalResult self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_received_memo(ReceivedMemo self, SseSerializer serializer);
 
   @protected
   void sse_encode_scan_range_info(ScanRangeInfo self, SseSerializer serializer);
