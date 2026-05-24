@@ -82,9 +82,8 @@ logic), exposed via a thin FRB wrapper in `rust/src/api/wallet.rs`.
 ```rust
 // FRB-facing (rust/src/api/wallet.rs) — flat struct + primitives
 pub struct AccountAddress {
-    pub address: String,          // the unified address string (matches v_tx_outputs.to_address)
-    pub diversifier_index: u64,   // ordering / identity within the account
-    pub is_default: bool,         // the account's default/first address
+    pub address: String,   // the unified address string (matches v_tx_outputs.to_address)
+    pub is_default: bool,  // the account's default/first (lowest-diversifier) address
 }
 
 pub fn list_account_addresses(
@@ -94,21 +93,32 @@ pub fn list_account_addresses(
 ) -> Result<Vec<AccountAddress>, String>;
 ```
 
+The returned `Vec` is already sorted newest-first, so Dart relies on list order
+and does not need the diversifier index. The address string is the stable
+identity (and the label key).
+
 ### Implementation notes
 
 - Query the `addresses` table joined to `accounts` by `account_uuid`, filtering
-  to **external** receiving addresses (exclude internal/change `key_scope`).
-  Reuse the existing `key_scope` conventions already used in
-  `transactions.rs` (external scope is the user-visible receiving scope).
-- `diversifier_index` comes from `addresses.diversifier_index_be` (big-endian
-  blob in the schema — decode consistently; expose as a `u64` ordering key).
-  If the full 11-byte diversifier index does not fit a `u64`, expose a
-  monotonic ordering surrogate instead and document it; ordering is the only
-  requirement, exact numeric value is not.
-- `is_default`: the lowest diversifier index / the account's first address.
-- Sort newest-first (highest diversifier index first) to match the "addresses
-  I most recently generated" mental model.
-- Reuse `open_readonly_conn` and the read patterns already in `keys.rs`.
+  to **external** receiving addresses with **`WHERE key_scope = 0`** explicitly.
+  `key_scope` values: `0` = External (the user-visible receiving UAs we want),
+  `1` = Internal/change, `2` = Ephemeral (ZIP 320 interstitial), `-1` = Foreign
+  (imported standalone transparent pubkeys). Only `0` is in scope. Do NOT use a
+  negative filter like `key_scope != -1` — it would wrongly include internal
+  (`1`) and ephemeral (`2`) rows.
+- **Ordering: `ORDER BY diversifier_index_be DESC` directly in SQL.**
+  `diversifier_index_be` is an 11-byte big-endian BLOB, so SQLite's byte-wise
+  BLOB comparison preserves numeric order — no decode to an integer is needed
+  (and an 11-byte index cannot reliably fit a `u64`, so don't try). This gives
+  newest-generated-first.
+- `is_default`: the row with the lowest `diversifier_index_be` (the account's
+  first/default address). Compute via a `MIN(diversifier_index_be)` comparison
+  or by marking the last row after the DESC sort.
+- The CHECK constraint `(diversifier_index_be IS NULL) == (key_scope = -1)`
+  guarantees `diversifier_index_be` is non-NULL for `key_scope = 0`, so the
+  ORDER BY is well-defined.
+- Reuse `open_wallet_db_for_read` (the read helper in `keys.rs`) and the read
+  patterns already there.
 - `network` is parsed for consistency with sibling wrappers; the read-only
   query does not otherwise need it (carry as `_network` like the others).
 
