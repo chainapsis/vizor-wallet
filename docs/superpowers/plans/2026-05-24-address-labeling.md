@@ -68,7 +68,7 @@ pub(crate) struct AccountAddress {
 }
 ```
 
-Add the function. Open a read-only `rusqlite` connection (reuse `transactions::open_readonly_conn` if visible from this module; otherwise open one the same way `open_readonly_conn` does — a read-only `rusqlite::Connection` to `db_path`). Query the `addresses` table joined to `accounts` by uuid, **`WHERE key_scope = 0`**, ordered by `diversifier_index_be DESC` (big-endian BLOB byte order == numeric order; do NOT decode to an integer). Mark `is_default` for the row with the smallest `diversifier_index_be`.
+Add the function. Get a read-only `rusqlite::Connection` via **`crate::wallet::sync::open_readonly_conn(db_path)`** (it is `pub(crate)`, defined in `rust/src/wallet/sync/mod.rs`, and returns a `rusqlite::Connection` — exactly what `transactions.rs` uses). Query the `addresses` table joined to `accounts` by uuid, **`WHERE key_scope = 0`**, ordered by `diversifier_index_be DESC` (big-endian BLOB byte order == numeric order; do NOT decode to an integer). Mark `is_default` for the row with the smallest `diversifier_index_be`.
 
 ```rust
 pub fn list_account_addresses(
@@ -77,7 +77,7 @@ pub fn list_account_addresses(
     account_uuid: &str,
 ) -> Result<Vec<AccountAddress>, String> {
     let uuid = uuid::Uuid::parse_str(account_uuid).map_err(|e| format!("Invalid UUID: {e}"))?;
-    let conn = /* read-only rusqlite::Connection to db_path */;
+    let conn = crate::wallet::sync::open_readonly_conn(db_path)?;
     let mut stmt = conn
         .prepare(
             r#"
@@ -109,7 +109,7 @@ pub fn list_account_addresses(
 }
 ```
 
-Verify the actual read-connection mechanism against `transactions.rs::open_readonly_conn`; if it is `pub(crate)`, call it directly. Confirm `accounts.uuid` is stored as bytes (the delete path in `keys.rs` uses `account_uuid.as_bytes().as_slice()` against `accounts`/`ta.uuid`).
+`accounts.uuid` is stored as bytes — the delete path in `keys.rs` already binds `account_uuid.as_bytes().as_slice()` against `accounts`/`ta.uuid`; do the same here (`uuid.as_bytes().as_slice()`).
 
 - [ ] **Step 4: Run test to verify it passes**
 
