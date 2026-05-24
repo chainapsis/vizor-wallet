@@ -22,7 +22,10 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../activity_row_mapper.dart';
 import '../models/activity_row_data.dart';
 import '../widgets/activity_table.dart';
+import '../widgets/memos_tab.dart';
 import 'activity_transaction_status_screen.dart';
+
+enum _ActivityTab { all, memos }
 
 class ActivityScreen extends ConsumerStatefulWidget {
   const ActivityScreen({super.key});
@@ -46,6 +49,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
   String? _activeAccountUuid;
   bool _isHovered = false;
   bool _canScroll = false;
+  _ActivityTab _selectedTab = _ActivityTab.all;
 
   @override
   void initState() {
@@ -349,6 +353,9 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                         currentPage: currentPage,
                         totalPages: totalPages,
                         onPageChanged: _setPage,
+                        selectedTab: _selectedTab,
+                        onTabChanged: (tab) =>
+                            setState(() => _selectedTab = tab),
                       ),
                     ),
                   ),
@@ -370,6 +377,8 @@ class _ActivityPane extends StatelessWidget {
     required this.currentPage,
     required this.totalPages,
     required this.onPageChanged,
+    required this.selectedTab,
+    required this.onTabChanged,
   });
 
   final List<ActivityRowData> rows;
@@ -378,6 +387,8 @@ class _ActivityPane extends StatelessWidget {
   final int currentPage;
   final int totalPages;
   final ValueChanged<int> onPageChanged;
+  final _ActivityTab selectedTab;
+  final ValueChanged<_ActivityTab> onTabChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -409,22 +420,31 @@ class _ActivityPane extends StatelessWidget {
                 const SizedBox(height: AppSpacing.sm),
                 const Center(child: AppDecorativeDivider(width: 256)),
                 const SizedBox(height: AppSpacing.sm),
+                Center(
+                  child: _ActivitySegmentedControl(
+                    selected: selectedTab,
+                    onChanged: onTabChanged,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.xs,
                     ),
-                    child: ActivityTable(
-                      rows: rows,
-                      rowKeyPrefix: 'activity_screen',
-                      isLoading: isLoading,
-                      errorText: errorText,
-                      showPagination: true,
-                      pinPaginationToBottom: true,
-                      currentPage: currentPage,
-                      totalPages: totalPages,
-                      onPageChanged: onPageChanged,
-                    ),
+                    child: selectedTab == _ActivityTab.all
+                        ? ActivityTable(
+                            rows: rows,
+                            rowKeyPrefix: 'activity_screen',
+                            isLoading: isLoading,
+                            errorText: errorText,
+                            showPagination: true,
+                            pinPaginationToBottom: true,
+                            currentPage: currentPage,
+                            totalPages: totalPages,
+                            onPageChanged: onPageChanged,
+                          )
+                        : const MemosTab(),
                   ),
                 ),
               ],
@@ -432,6 +452,94 @@ class _ActivityPane extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ActivitySegmentedControl extends StatelessWidget {
+  const _ActivitySegmentedControl({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final _ActivityTab selected;
+  final ValueChanged<_ActivityTab> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _SegmentButton(
+          key: const ValueKey('activity_tab_all'),
+          label: 'All',
+          isSelected: selected == _ActivityTab.all,
+          onTap: () => onChanged(_ActivityTab.all),
+          colors: colors,
+          isFirst: true,
+        ),
+        _SegmentButton(
+          key: const ValueKey('activity_tab_memos'),
+          label: 'Memos',
+          isSelected: selected == _ActivityTab.memos,
+          onTap: () => onChanged(_ActivityTab.memos),
+          colors: colors,
+          isLast: true,
+        ),
+      ],
+    );
+  }
+}
+
+class _SegmentButton extends StatelessWidget {
+  const _SegmentButton({
+    super.key,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+    required this.colors,
+    this.isFirst = false,
+    this.isLast = false,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final AppColors colors;
+  final bool isFirst;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.horizontal(
+      left: isFirst ? const Radius.circular(AppRadii.small) : Radius.zero,
+      right: isLast ? const Radius.circular(AppRadii.small) : Radius.zero,
+    );
+    return GestureDetector(
+      onTap: onTap,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? colors.background.neutralSubtleOpacity
+                : colors.background.neutralSubtleOpacity.withValues(alpha: 0.4),
+            borderRadius: radius,
+            border: Border.all(color: colors.border.subtle),
+          ),
+          child: Text(
+            label,
+            style: AppTypography.labelMedium.copyWith(
+              color: isSelected ? colors.text.accent : colors.text.secondary,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
