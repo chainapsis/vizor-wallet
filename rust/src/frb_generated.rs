@@ -3017,6 +3017,7 @@ impl SseDecode for crate::api::sync::ReceivedMemo {
         let mut var_txKind = <String>::sse_decode(deserializer);
         let mut var_outputPool = <i64>::sse_decode(deserializer);
         let mut var_outputIndex = <i64>::sse_decode(deserializer);
+        let mut var_toAddress = <Option<String>>::sse_decode(deserializer);
         return crate::api::sync::ReceivedMemo {
             txid_hex: var_txidHex,
             memo: var_memo,
@@ -3026,6 +3027,7 @@ impl SseDecode for crate::api::sync::ReceivedMemo {
             tx_kind: var_txKind,
             output_pool: var_outputPool,
             output_index: var_outputIndex,
+            to_address: var_toAddress,
         };
     }
 }
@@ -3790,6 +3792,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::ReceivedMemo {
             self.tx_kind.into_into_dart().into_dart(),
             self.output_pool.into_into_dart().into_dart(),
             self.output_index.into_into_dart().into_dart(),
+            self.to_address.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -4525,6 +4528,7 @@ impl SseEncode for crate::api::sync::ReceivedMemo {
         <String>::sse_encode(self.tx_kind, serializer);
         <i64>::sse_encode(self.output_pool, serializer);
         <i64>::sse_encode(self.output_index, serializer);
+        <Option<String>>::sse_encode(self.to_address, serializer);
     }
 }
 

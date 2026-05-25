@@ -738,6 +738,7 @@ class ReceivedMemo {
   final String txKind;
   final PlatformInt64 outputPool;
   final PlatformInt64 outputIndex;
+  final String? toAddress;
 
   const ReceivedMemo({
     required this.txidHex,
@@ -748,6 +749,7 @@ class ReceivedMemo {
     required this.txKind,
     required this.outputPool,
     required this.outputIndex,
+    this.toAddress,
   });
 
   @override
@@ -759,7 +761,8 @@ class ReceivedMemo {
       minedHeight.hashCode ^
       txKind.hashCode ^
       outputPool.hashCode ^
-      outputIndex.hashCode;
+      outputIndex.hashCode ^
+      toAddress.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -773,7 +776,8 @@ class ReceivedMemo {
           minedHeight == other.minedHeight &&
           txKind == other.txKind &&
           outputPool == other.outputPool &&
-          outputIndex == other.outputIndex;
+          outputIndex == other.outputIndex &&
+          toAddress == other.toAddress;
 }
 
 class ScanRangeInfo {

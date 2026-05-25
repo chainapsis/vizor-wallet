@@ -1005,6 +1005,7 @@ pub struct ReceivedMemo {
     pub tx_kind: String,
     pub output_pool: i64,
     pub output_index: i64,
+    pub to_address: Option<String>,
 }
 
 pub fn get_received_memos(
@@ -1027,6 +1028,7 @@ pub fn get_received_memos(
             tx_kind: m.tx_kind,
             output_pool: m.output_pool,
             output_index: m.output_index,
+            to_address: m.to_address,
         }).collect())
     })
 }

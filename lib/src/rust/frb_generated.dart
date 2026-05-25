@@ -3225,8 +3225,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReceivedMemo dco_decode_received_memo(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return ReceivedMemo(
       txidHex: dco_decode_String(arr[0]),
       memo: dco_decode_String(arr[1]),
@@ -3236,6 +3236,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       txKind: dco_decode_String(arr[5]),
       outputPool: dco_decode_i_64(arr[6]),
       outputIndex: dco_decode_i_64(arr[7]),
+      toAddress: dco_decode_opt_String(arr[8]),
     );
   }
 
@@ -3955,6 +3956,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_txKind = sse_decode_String(deserializer);
     var var_outputPool = sse_decode_i_64(deserializer);
     var var_outputIndex = sse_decode_i_64(deserializer);
+    var var_toAddress = sse_decode_opt_String(deserializer);
     return ReceivedMemo(
       txidHex: var_txidHex,
       memo: var_memo,
@@ -3964,6 +3966,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       txKind: var_txKind,
       outputPool: var_outputPool,
       outputIndex: var_outputIndex,
+      toAddress: var_toAddress,
     );
   }
 
@@ -4680,6 +4683,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.txKind, serializer);
     sse_encode_i_64(self.outputPool, serializer);
     sse_encode_i_64(self.outputIndex, serializer);
+    sse_encode_opt_String(self.toAddress, serializer);
   }
 
   @protected
