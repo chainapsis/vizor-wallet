@@ -76,7 +76,9 @@ use zcash_proofs::prover::LocalTxProver;
 use crate::wallet::db::with_wallet_db_write_lock;
 use crate::wallet::network::WalletNetwork;
 
-use super::{consume_stored_proposal, discard_stored_proposal, open_wallet_db};
+use super::{
+    consume_stored_proposal, discard_stored_proposal, open_wallet_db, qr_change_proposed_tx_version,
+};
 
 pub struct ExtractAndBroadcastPcztResult {
     pub txid: String,
@@ -149,6 +151,7 @@ pub fn create_pczt_from_proposal(
             stored.account_id,
             OvkPolicy::Sender,
             &stored.proposal,
+            qr_change_proposed_tx_version(network),
         )
         .map_err(|e| format!("Create PCZT failed: {e}"))
     })?;

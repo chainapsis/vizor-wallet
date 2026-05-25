@@ -10,13 +10,13 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 flutter_rust_bridge = "=2.11.1"
 
 # Zcash core
-zcash_primitives = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
-zcash_address = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
-zcash_keys = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f", features = ["orchard"] }
-zcash_protocol = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
-transparent = { package = "zcash_transparent", git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
+zcash_primitives = { git = "https://github.com/valargroup/librustzcash", rev = "56a6b33642c362892cff440c61451da3e15da640" }
+zcash_address = { git = "https://github.com/valargroup/librustzcash", rev = "56a6b33642c362892cff440c61451da3e15da640" }
+zcash_keys = { git = "https://github.com/valargroup/librustzcash", rev = "56a6b33642c362892cff440c61451da3e15da640", features = ["orchard"] }
+zcash_protocol = { git = "https://github.com/valargroup/librustzcash", rev = "56a6b33642c362892cff440c61451da3e15da640" }
+transparent = { package = "zcash_transparent", git = "https://github.com/valargroup/librustzcash", rev = "56a6b33642c362892cff440c61451da3e15da640" }
 zcash_script = "0.4.3"
-zcash_client_backend = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f", features = [
+zcash_client_backend = { git = "https://github.com/valargroup/librustzcash", rev = "56a6b33642c362892cff440c61451da3e15da640", features = [
     "orchard",
     "transparent-inputs",
     "lightwalletd-tonic",
@@ -25,7 +25,7 @@ zcash_client_backend = { git = "https://github.com/valargroup/librustzcash", rev
     "pczt",
     "unstable",
 ] }
-zcash_client_sqlite = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
+zcash_client_sqlite = { git = "https://github.com/valargroup/librustzcash", rev = "56a6b33642c362892cff440c61451da3e15da640", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
 orchard = { git = "https://github.com/valargroup/qr_orchard", rev = "9f046f22a46dd644aeed070968e51add57478973" }
 sapling-crypto = { version = "0.7", default-features = false }
@@ -37,7 +37,7 @@ bls12_381 = "0.8"
 rand_core = "0.6"
 
 # Proofs
-zcash_proofs = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
+zcash_proofs = { git = "https://github.com/valargroup/librustzcash", rev = "56a6b33642c362892cff440c61451da3e15da640" }
 
 # Key generation
 bip0039 = "0.12"
@@ -78,7 +78,7 @@ hex = "0.4"
 
 # Keystone hardware wallet
 ur = { git = "https://github.com/KeystoneHQ/ur-rs", tag = "0.3.3" }
-pczt = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
+pczt = { git = "https://github.com/valargroup/librustzcash", rev = "56a6b33642c362892cff440c61451da3e15da640" }
 ur-registry = { git = "https://github.com/KeystoneHQ/keystone-sdk-rust", package = "ur-registry", default-features = false, features = ["std"] }
 serde_json = "1"
 

@@ -64,7 +64,7 @@ use zcash_primitives::transaction::{
     fees::{
         transparent::InputSize as TransparentInputSize, zip317::P2PKH_STANDARD_INPUT_SIZE, FeeRule,
     },
-    TxId, TxVersion,
+    TxId,
 };
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
@@ -142,13 +142,6 @@ const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
 pub(in crate::wallet) struct ConservativeZip317FeeRule;
 
 pub(in crate::wallet) type WalletFeeRule = ConservativeZip317FeeRule;
-
-fn software_proposed_tx_version(network: WalletNetwork) -> Option<TxVersion> {
-    match network {
-        WalletNetwork::Main => Some(TxVersion::V5),
-        WalletNetwork::Test | WalletNetwork::Regtest => Some(TxVersion::V5_Qr),
-    }
-}
 
 impl FeeRule for ConservativeZip317FeeRule {
     type Error = <StandardFeeRule as FeeRule>::Error;
@@ -238,7 +231,7 @@ pub fn propose_send(
         &change_strategy,
         request,
         ConfirmationsPolicy::default(),
-        software_proposed_tx_version(network),
+        super::qr_change_proposed_tx_version(network),
     )
     .map_err(|e| format!("Propose failed: {e}"))?;
 
@@ -317,7 +310,7 @@ pub fn estimate_fee(
         &change_strategy,
         request,
         ConfirmationsPolicy::default(),
-        software_proposed_tx_version(network),
+        super::qr_change_proposed_tx_version(network),
     )
     .map_err(|e| format!("Propose failed: {e}"))?;
 
@@ -406,6 +399,7 @@ pub(crate) fn create_shield_transparent_pczt(
             account_id,
             OvkPolicy::Sender,
             &proposal,
+            super::qr_change_proposed_tx_version(network),
         )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
 
@@ -465,7 +459,7 @@ pub(crate) async fn shield_transparent_balance(
                 &wallet::SpendingKeys::from_unified_spending_key(usk),
                 OvkPolicy::Sender,
                 &proposal,
-                software_proposed_tx_version(network),
+                super::qr_change_proposed_tx_version(network),
             )
             .map_err(|e| format!("Create shielding TX failed: {e}"))?;
 
@@ -582,7 +576,7 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &stored.proposal,
-                        software_proposed_tx_version(network),
+                        super::qr_change_proposed_tx_version(network),
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -597,7 +591,7 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &stored.proposal,
-                        software_proposed_tx_version(network),
+                        super::qr_change_proposed_tx_version(network),
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -1241,9 +1235,11 @@ impl OutputProver for NoOpOutputProver {
 mod tests {
     use super::*;
 
+    use pczt::orchard::NotePlaintextVersion;
     use transparent::bundle::{OutPoint, TxOut};
     use zcash_client_backend::{data_api::WalletWrite, wallet::WalletTransparentOutput};
     use zcash_keys::keys::{ReceiverRequirement, UnifiedSpendingKey};
+    use zcash_primitives::transaction::TxVersion;
     use zcash_protocol::consensus::BlockHeight;
 
     fn taddr(seed: u8) -> TransparentAddress {
@@ -1263,17 +1259,17 @@ mod tests {
     }
 
     #[test]
-    fn software_qr_policy_uses_qr_only_on_test_networks() {
+    fn qr_change_policy_uses_qr_only_on_test_networks() {
         assert_eq!(
-            software_proposed_tx_version(WalletNetwork::Main),
+            super::super::qr_change_proposed_tx_version(WalletNetwork::Main),
             Some(TxVersion::V5)
         );
         assert_eq!(
-            software_proposed_tx_version(WalletNetwork::Test),
+            super::super::qr_change_proposed_tx_version(WalletNetwork::Test),
             Some(TxVersion::V5_Qr)
         );
         assert_eq!(
-            software_proposed_tx_version(WalletNetwork::Regtest),
+            super::super::qr_change_proposed_tx_version(WalletNetwork::Regtest),
             Some(TxVersion::V5_Qr)
         );
     }
@@ -1369,14 +1365,11 @@ mod tests {
         let tip = BlockHeight::from_u32(1_000);
         db.update_chain_tip(tip).unwrap();
 
-        let ua_request = zcash_keys::keys::UnifiedAddressRequest::custom(
-            ReceiverRequirement::Require,
-            ReceiverRequirement::Require,
-            ReceiverRequirement::Require,
-        )
-        .unwrap();
-        let (ua, _) = db
-            .get_next_available_address(account_id, ua_request)
+        let ua = db
+            .get_last_generated_address_matching(
+                account_id,
+                zcash_keys::keys::UnifiedAddressRequest::AllAvailableKeys,
+            )
             .unwrap()
             .unwrap();
         let taddr = *ua.transparent().unwrap();
@@ -1407,7 +1400,7 @@ mod tests {
             &wallet::SpendingKeys::from_unified_spending_key(usk),
             OvkPolicy::Sender,
             &proposal,
-            software_proposed_tx_version(network),
+            super::super::qr_change_proposed_tx_version(network),
         )
         .expect("shielding transaction should build");
         drop(db);
@@ -1421,6 +1414,66 @@ mod tests {
             )
             .unwrap();
         assert_eq!(note_version, 3);
+    }
+
+    #[test]
+    fn hardware_shielding_pczt_internal_output_is_qr_on_regtest() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let network = WalletNetwork::Regtest;
+        let mnemonic = crate::wallet::keys::generate_mnemonic();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
+        let (account_uuid, _) = crate::wallet::keys::init_db_and_create_account(
+            db_path,
+            network,
+            &seed,
+            Some(1),
+            "qr-hardware",
+        )
+        .unwrap();
+        let account_id = parse_account_uuid(&account_uuid).unwrap();
+
+        let mut db = open_wallet_db(db_path, network).unwrap();
+        let tip = BlockHeight::from_u32(1_000);
+        db.update_chain_tip(tip).unwrap();
+
+        let ua = db
+            .get_last_generated_address_matching(
+                account_id,
+                zcash_keys::keys::UnifiedAddressRequest::AllAvailableKeys,
+            )
+            .unwrap()
+            .unwrap();
+        let taddr = *ua.transparent().unwrap();
+        let value = Zatoshis::const_from_u64(1_000_000);
+
+        let mut txid = [0u8; 32];
+        txid[..4].copy_from_slice(&0xface_feed_u32.to_le_bytes());
+        let outpoint = OutPoint::new(txid, 0);
+        let txout = TxOut::new(value, taddr.script().into());
+        let utxo = WalletTransparentOutput::from_parts(outpoint, txout, Some(tip)).unwrap();
+        db.put_received_transparent_utxo(&utxo).unwrap();
+        drop(db);
+
+        let result = create_shield_transparent_pczt(db_path, network, &account_uuid)
+            .expect("hardware shielding PCZT should build");
+        let pczt = pczt::Pczt::parse(&result.pczt_bytes).expect("PCZT should parse");
+        let output_versions = pczt
+            .orchard()
+            .actions()
+            .iter()
+            .filter(|action| action.output().value().is_some())
+            .map(|action| *action.output().note_version())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            output_versions
+                .iter()
+                .filter(|version| **version == NotePlaintextVersion::V3)
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -1488,7 +1541,7 @@ mod tests {
             &wallet::SpendingKeys::from_unified_spending_key(usk),
             OvkPolicy::Sender,
             &proposal,
-            software_proposed_tx_version(network),
+            super::super::qr_change_proposed_tx_version(network),
         )
         .expect("many-UTXO shielding should build without a fee/change mismatch");
         let change_values = proposal
