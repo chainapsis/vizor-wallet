@@ -39,6 +39,7 @@ import 'src/features/send/screens/keystone_send_scan_screen.dart';
 import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
+import 'src/features/settings/screens/my_addresses_screen.dart';
 import 'src/features/settings/screens/settings_screen.dart';
 import 'src/features/settings/screens/settings_change_password_screen.dart';
 import 'src/features/settings/screens/settings_endpoint_screen.dart';
@@ -526,6 +527,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings/endpoint',
         builder: (_, _) => const SettingsEndpointScreen(),
+      ),
+      GoRoute(
+        path: '/settings/my-addresses',
+        builder: (_, _) => const MyAddressesScreen(),
       ),
     ],
   );

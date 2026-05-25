@@ -105,6 +105,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onChangePassword:
                     () => context.push('/settings/change-password'),
                 onEndpoint: () => context.push('/settings/endpoint'),
+                onMyAddresses:
+                    () => context.push('/settings/my-addresses'),
                 onAccountName:
                     hasActiveAccount
                         ? () => _showModal(_SettingsModalType.accountName)
@@ -171,6 +173,7 @@ class _SettingsPane extends StatelessWidget {
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onTheme,
+    required this.onMyAddresses,
   });
 
   final String accountName;
@@ -184,6 +187,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
+  final VoidCallback onMyAddresses;
 
   @override
   Widget build(BuildContext context) {
@@ -226,6 +230,7 @@ class _SettingsPane extends StatelessWidget {
                         onAccountName: onAccountName,
                         onProfilePicture: onProfilePicture,
                         onTheme: onTheme,
+                        onMyAddresses: onMyAddresses,
                       ),
                     ],
                   ),
@@ -252,6 +257,7 @@ class _SettingsList extends StatelessWidget {
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onTheme,
+    required this.onMyAddresses,
   });
 
   final String accountName;
@@ -265,6 +271,7 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
+  final VoidCallback onMyAddresses;
 
   @override
   Widget build(BuildContext context) {
@@ -300,6 +307,13 @@ class _SettingsList extends StatelessWidget {
               label: 'Account Name',
               value: accountName,
               onTap: onAccountName,
+            ),
+            const _SettingsRowDivider(),
+            _SettingsRow(
+              iconName: AppIcons.link,
+              label: 'My Addresses',
+              value: 'View',
+              onTap: onMyAddresses,
             ),
           ],
         ),
