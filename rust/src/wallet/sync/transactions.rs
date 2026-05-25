@@ -403,6 +403,7 @@ pub(crate) struct ReceivedMemo {
     pub tx_kind: String,
     pub output_pool: i64,
     pub output_index: i64,
+    pub to_address: Option<String>,
 }
 
 pub fn get_received_memos(
@@ -456,6 +457,7 @@ pub fn get_received_memos(
                     tx_kind: "received".to_string(),
                     output_pool: output.output_pool,
                     output_index: output.output_index,
+                    to_address: output.to_address.clone(),
                 },
                 base.block_time,
                 base.created_time,
@@ -3064,6 +3066,37 @@ mod tests {
             Some(&[0xF6]),
         );
 
+        // TX 5: inbound from other_account to our account, with a text memo, but
+        // to_address = None. is_received_output: to_own=true, from_own=false → included.
+        // Exercises the None path for ReceivedMemo.to_address.
+        let no_addr_txid = fake_txid(0xF5);
+        insert_history_tx(
+            &db,
+            account,
+            &no_addr_txid,
+            Some(1_000_100),
+            5,
+            None,
+            300_000,
+            0,
+            300_000,
+            false,
+            None,
+        );
+        set_block_time(&db, &no_addr_txid, 1_700_000_050);
+        insert_output_with_address_and_memo(
+            &db,
+            &no_addr_txid,
+            3,
+            Some(other_account),
+            Some(account),
+            300_000,
+            false,
+            None,  // to_address: None
+            None,  // to_key_scope: None (no addresses row inserted)
+            Some(b"no-address memo"),
+        );
+
         let got = get_received_memos(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
@@ -3074,17 +3107,29 @@ mod tests {
 
         assert_eq!(
             got.len(),
-            1,
-            "expected exactly 1 received memo, got {}: {:?}",
+            2,
+            "expected exactly 2 received memos, got {}: {:?}",
             got.len(),
             got.iter().map(|m| &m.memo).collect::<Vec<_>>()
         );
+        // Sorted newest-first by block_time: inbound_txid (1_700_000_100) > no_addr_txid (1_700_000_050).
         assert_eq!(got[0].memo, "incoming memo");
         assert_eq!(got[0].txid_hex, hex::encode(inbound_txid));
         assert_eq!(got[0].tx_kind, "received");
         assert_eq!(got[0].amount_zatoshi, 2_000_000);
         assert!(got[0].output_pool >= 0, "output_pool must be populated");
         assert!(got[0].output_index >= 0, "output_index must be populated");
+        assert_eq!(
+            got[0].to_address.as_deref(),
+            Some("u-my-receiver"),
+            "first memo must carry the receiver address"
+        );
+        assert_eq!(got[1].memo, "no-address memo");
+        assert_eq!(got[1].txid_hex, hex::encode(no_addr_txid));
+        assert_eq!(
+            got[1].to_address, None,
+            "second memo must have to_address == None"
+        );
     }
 
     #[test]
