@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart'
     show
+        DropdownButton,
+        DropdownMenuItem,
         Icons,
         IconButton,
         InputDecoration,
@@ -14,10 +16,12 @@ import 'package:go_router/go_router.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/address_labels_provider.dart';
 import '../../../providers/hidden_memos_provider.dart';
 import '../../../providers/memo_repository.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../activity_row_mapper.dart';
+import '../address_display.dart';
 import '../models/memo_hide_key.dart';
 import '../screens/activity_transaction_status_screen.dart';
 
@@ -46,6 +50,7 @@ class _MemosTabState extends ConsumerState<MemosTab> {
   String _committedQuery = '';
   Timer? _debounce;
   _MemosView _view = _MemosView.inbox;
+  String? _selectedAddress;
 
   @override
   void dispose() {
@@ -117,65 +122,127 @@ class _MemosTabState extends ConsumerState<MemosTab> {
               isError: true,
             ),
             data: (memos) {
-              if (_view == _MemosView.hidden) {
-                final hiddenMemos = memos
-                    .where(
-                      (m) => hiddenKeys.contains(
-                        memoHideKey(
-                          txidHex: m.txidHex,
-                          outputPool: m.outputPool,
-                          outputIndex: m.outputIndex,
-                        ),
-                      ),
-                    )
+              // Build distinct address list (preserves first-seen order).
+              final addresses = <String>[
+                ...{
+                  for (final m in memos)
+                    if (m.toAddress != null) m.toAddress!,
+                },
+              ];
+
+              // Reset guard: if the selected address is no longer in the set,
+              // schedule a post-frame reset so we never call setState during
+              // build.
+              if (_selectedAddress != null &&
+                  !addresses.contains(_selectedAddress)) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _selectedAddress = null);
+                });
+              }
+              final effectiveAddress =
+                  addresses.contains(_selectedAddress) ? _selectedAddress : null;
+
+              // Address-narrowing closure applied to both inbox and hidden.
+              List<rust_sync.ReceivedMemo> applyAddress(
+                List<rust_sync.ReceivedMemo> list,
+              ) {
+                if (effectiveAddress == null) return list;
+                return list
+                    .where((m) => m.toAddress == effectiveAddress)
                     .toList();
-                if (hiddenMemos.isEmpty) {
-                  return const _MemosMessage(text: 'No hidden memos');
-                }
-                return _MemosList(
-                  memos: hiddenMemos,
-                  onTap: (memo) => _navigateToMemo(context, memo),
-                  trailing: (memo) => _RestoreButton(
-                    memo: memo,
-                    accountUuid: accountUuid,
-                  ),
-                );
               }
 
-              // Inbox view: exclude hidden memos.
-              final inboxMemos = memos
-                  .where(
-                    (m) => !hiddenKeys.contains(
-                      memoHideKey(
-                        txidHex: m.txidHex,
-                        outputPool: m.outputPool,
-                        outputIndex: m.outputIndex,
-                      ),
-                    ),
-                  )
-                  .toList();
+              Widget listWidget;
 
-              if (inboxMemos.isEmpty) {
-                // If there are memos but all are hidden (inbox is empty because
-                // every returned memo has been hidden), show a distinct message
-                // pointing the user to the Hidden view.
-                if (memos.isNotEmpty) {
-                  return const _MemosMessage(
-                    text: 'All memos hidden — see Hidden',
+              if (_view == _MemosView.hidden) {
+                final hiddenMemos = applyAddress(
+                  memos
+                      .where(
+                        (m) => hiddenKeys.contains(
+                          memoHideKey(
+                            txidHex: m.txidHex,
+                            outputPool: m.outputPool,
+                            outputIndex: m.outputIndex,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                );
+                if (hiddenMemos.isEmpty) {
+                  if (effectiveAddress != null) {
+                    listWidget = const _MemosMessage(
+                      text: 'No memos for this address',
+                    );
+                  } else {
+                    listWidget = const _MemosMessage(text: 'No hidden memos');
+                  }
+                } else {
+                  listWidget = _MemosList(
+                    memos: hiddenMemos,
+                    onTap: (memo) => _navigateToMemo(context, memo),
+                    trailing: (memo) => _RestoreButton(
+                      memo: memo,
+                      accountUuid: accountUuid,
+                    ),
                   );
                 }
-                final hasQuery = _committedQuery.isNotEmpty;
-                return _MemosMessage(
-                  text: hasQuery ? 'No memos match' : 'No memos yet',
+              } else {
+                // Inbox view: exclude hidden memos, then apply address filter.
+                final inboxMemos = applyAddress(
+                  memos
+                      .where(
+                        (m) => !hiddenKeys.contains(
+                          memoHideKey(
+                            txidHex: m.txidHex,
+                            outputPool: m.outputPool,
+                            outputIndex: m.outputIndex,
+                          ),
+                        ),
+                      )
+                      .toList(),
                 );
+
+                if (inboxMemos.isEmpty) {
+                  if (effectiveAddress != null) {
+                    listWidget = const _MemosMessage(
+                      text: 'No memos for this address',
+                    );
+                  } else if (memos.isNotEmpty) {
+                    // All memos are hidden.
+                    listWidget = const _MemosMessage(
+                      text: 'All memos hidden — see Hidden',
+                    );
+                  } else {
+                    final hasQuery = _committedQuery.isNotEmpty;
+                    listWidget = _MemosMessage(
+                      text: hasQuery ? 'No memos match' : 'No memos yet',
+                    );
+                  }
+                } else {
+                  listWidget = _MemosList(
+                    memos: inboxMemos,
+                    onTap: (memo) => _navigateToMemo(context, memo),
+                    trailing: (memo) => _HideButton(
+                      memo: memo,
+                      accountUuid: accountUuid,
+                    ),
+                  );
+                }
               }
-              return _MemosList(
-                memos: inboxMemos,
-                onTap: (memo) => _navigateToMemo(context, memo),
-                trailing: (memo) => _HideButton(
-                  memo: memo,
-                  accountUuid: accountUuid,
-                ),
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (addresses.length >= 2)
+                    _AddressFilter(
+                      addresses: addresses,
+                      selectedAddress: effectiveAddress,
+                      accountUuid: accountUuid,
+                      onChanged: (addr) =>
+                          setState(() => _selectedAddress = addr),
+                    ),
+                  Expanded(child: listWidget),
+                ],
               );
             },
           ),
@@ -400,6 +467,64 @@ class _RestoreButton extends ConsumerWidget {
       tooltip: 'Restore memo',
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(),
+    );
+  }
+}
+
+class _AddressFilter extends ConsumerWidget {
+  const _AddressFilter({
+    required this.addresses,
+    required this.selectedAddress,
+    required this.accountUuid,
+    required this.onChanged,
+  });
+
+  final List<String> addresses;
+  final String? selectedAddress;
+  final String accountUuid;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final labels = ref.watch(addressLabelsProvider);
+    final colors = context.colors;
+
+    String labelFor(String addr) {
+      return labels.labelFor(accountUuid, addr) ?? truncateAddress(addr);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: DropdownButton<String?>(
+        value: selectedAddress,
+        isExpanded: true,
+        style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
+        dropdownColor: colors.background.base,
+        underline: const SizedBox.shrink(),
+        items: [
+          DropdownMenuItem<String?>(
+            value: null,
+            child: Text(
+              'All addresses',
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+          for (final addr in addresses)
+            DropdownMenuItem<String?>(
+              value: addr,
+              child: Text(
+                labelFor(addr),
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.primary,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: onChanged,
+      ),
     );
   }
 }
