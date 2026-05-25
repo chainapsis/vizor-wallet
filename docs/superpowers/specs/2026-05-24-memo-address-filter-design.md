@@ -44,6 +44,13 @@ addresses got paid."
    the active Inbox/Hidden view. All three narrow together.
 6. **Dropdown shown only when ≥2 distinct addresses** are present in the loaded
    set; with one (or zero) it is pointless and hidden.
+   - **Intentional:** options are derived from the current (search-filtered)
+     `receivedMemosProvider` result, so the option set reflects what the search
+     returns. If a search narrows results down to a single address, the dropdown
+     disappears (<2 options) — that is correct, not a bug. Do NOT add a separate
+     unfiltered provider just to keep the option set stable across searches.
+     "All addresses" always sits at the top and shows the full current result,
+     so the user is never stranded.
 7. **Reset to "All addresses"** if the selected address leaves the option set
    (account switch, or it no longer has memos after a refresh).
 
