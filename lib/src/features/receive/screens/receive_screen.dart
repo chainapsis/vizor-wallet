@@ -24,6 +24,7 @@ import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/wallet_provider.dart';
+import '../widgets/address_name_field.dart';
 
 enum _ReceiveAddressType { shielded, transparent }
 
@@ -285,6 +286,8 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
             _ReceivePane(
               selectedType: _selectedType,
               address: address,
+              activeAccountUuid: _activeAccountUuid,
+              shieldedAddress: _shieldedAddress,
               errorText: selectedErrorText,
               isLoading: isLoadingSelectedAddress,
               isRenewingShielded: _isRenewingShielded,
@@ -312,6 +315,8 @@ class _ReceivePane extends StatelessWidget {
   const _ReceivePane({
     required this.selectedType,
     required this.address,
+    required this.activeAccountUuid,
+    required this.shieldedAddress,
     required this.errorText,
     required this.isLoading,
     required this.isRenewingShielded,
@@ -323,6 +328,8 @@ class _ReceivePane extends StatelessWidget {
 
   final _ReceiveAddressType selectedType;
   final String address;
+  final String? activeAccountUuid;
+  final String? shieldedAddress;
   final String? errorText;
   final bool isLoading;
   final bool isRenewingShielded;
@@ -362,6 +369,19 @@ class _ReceivePane extends StatelessWidget {
                           onShowHelp: onShowHelp,
                         ),
                       ),
+                      if (_isShielded &&
+                          activeAccountUuid != null &&
+                          shieldedAddress != null &&
+                          shieldedAddress!.isNotEmpty) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        AddressNameField(
+                          key: ValueKey(
+                            'address_name_${activeAccountUuid}_$shieldedAddress',
+                          ),
+                          accountUuid: activeAccountUuid!,
+                          address: shieldedAddress!,
+                        ),
+                      ],
                       const SizedBox(height: AppSpacing.sm),
                       _CopyAddressButton(
                         key: ValueKey(
