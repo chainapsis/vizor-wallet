@@ -11,6 +11,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/address_labels_provider.dart';
 import '../../../providers/address_list_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../../activity/address_display.dart';
 
 class MyAddressesScreen extends ConsumerWidget {
   const MyAddressesScreen({super.key});
@@ -204,7 +205,7 @@ class _AddressRowState extends ConsumerState<_AddressRow> {
         .watch(addressLabelsProvider)
         .labelFor(widget.accountUuid, widget.address.address);
 
-    final truncatedAddress = _truncateAddress(widget.address.address);
+    final truncatedAddress = truncateAddress(widget.address.address);
 
     if (_editing) {
       return Padding(
@@ -340,7 +341,3 @@ class _RenameField extends StatelessWidget {
   }
 }
 
-String _truncateAddress(String address) {
-  if (address.length <= 20) return address;
-  return '${address.substring(0, 10)}...${address.substring(address.length - 10)}';
-}
