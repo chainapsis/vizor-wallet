@@ -12,6 +12,7 @@ use zcash_client_sqlite::{
     AccountUuid, FsBlockDb,
 };
 use zcash_primitives::block::BlockHash;
+use zcash_primitives::transaction::TxVersion;
 use zcash_protocol::consensus::BlockHeight;
 
 use crate::wallet::{
@@ -73,6 +74,13 @@ pub(crate) use transactions::{
     PendingTxInfo, TransactionDetail, TransactionDetailOutput, TransactionInfo, TxDataRequest,
     WalletBalance,
 };
+
+pub(super) fn qr_change_proposed_tx_version(network: WalletNetwork) -> Option<TxVersion> {
+    match network {
+        WalletNetwork::Main => Some(TxVersion::V5),
+        WalletNetwork::Test | WalletNetwork::Regtest => Some(TxVersion::V5_Qr),
+    }
+}
 
 pub(super) fn open_wallet_db(
     db_path: &str,
