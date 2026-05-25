@@ -35,7 +35,9 @@
 
 - [ ] **Step 1: Extend the failing test**
 
-In the existing `get_received_memos_returns_only_inbound_text_memos` test (the one that inserts an external inbound output with a known `to_address`), add an assertion that the returned `ReceivedMemo.to_address == Some(<the inbound output's address string>)`. Use the address the fixture inserted for the inbound output (the test already calls `insert_output_with_address_and_memo` with a `to_address` — assert the memo carries that same string). Also assert a memo whose output had no address (if such a fixture case exists, or add one) yields `to_address == None`.
+In the existing `get_received_memos_returns_only_inbound_text_memos` test (the one that inserts an external inbound output with a known `to_address`, e.g. `Some("u-my-receiver")`), add an assertion that the returned `ReceivedMemo.to_address == Some("u-my-receiver".into())` (use whatever address the fixture actually inserts for that inbound output).
+
+For the `None` path, add ONE more inbound output to the fixture: from the OTHER account, to OUR account, with a text memo, but `to_address: None` (the existing change/sent rows won't reach `ReceivedMemo` construction — change is filtered by `is_received_output`, sent is `from_own`). Such an inbound row (`to_own = true`, `from_own = false`) passes `is_received_output`, so it becomes a `ReceivedMemo` with `to_address == None`. Assert one returned memo has `to_address == None`. (Adjust the existing exact-count assertions in the test for the added inbound row.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -127,10 +129,11 @@ void main() {
 /// Shortens a (long) address for display: first 10 + '...' + last 10 chars.
 /// Returns the address unchanged when it is already short.
 String truncateAddress(String address) {
-  if (address.length <= 22) return address;
+  if (address.length <= 20) return address;
   return '${address.substring(0, 10)}...${address.substring(address.length - 10)}';
 }
 ```
+(Use `<= 20` — the EXACT threshold of the existing `_truncateAddress` in `my_addresses_screen.dart` — so the My Addresses display is byte-identical after the extraction.)
 Then change `my_addresses_screen.dart` to import and use `truncateAddress`, deleting its private `_truncateAddress`.
 
 - [ ] **Step 4: Run** the new test + `fvm flutter test test/features/settings/my_addresses_screen_test.dart` → both PASS (My Addresses still renders truncated addresses).
