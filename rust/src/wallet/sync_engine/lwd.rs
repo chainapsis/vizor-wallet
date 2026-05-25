@@ -236,6 +236,7 @@ pub(super) async fn get_taddress_txids(
                     height: end_height,
                     hash: vec![],
                 }),
+                pool_types: vec![],
             }),
         })),
     )
@@ -434,6 +435,7 @@ pub(super) async fn download_blocks(
                 height: u32::from(end) as u64,
                 hash: vec![],
             }),
+            pool_types: vec![],
         })),
     )
     .await

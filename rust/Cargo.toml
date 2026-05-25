@@ -10,24 +10,25 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 flutter_rust_bridge = "=2.11.1"
 
 # Zcash core
-zcash_primitives = "0.26.4"
-zcash_address = "0.10.1"
-zcash_keys = { version = "0.12.0", features = ["orchard"] }
-zcash_protocol = "0.7.2"
-transparent = { package = "zcash_transparent", version = "0.6.3" }
+zcash_primitives = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
+zcash_address = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
+zcash_keys = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f", features = ["orchard"] }
+zcash_protocol = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
+transparent = { package = "zcash_transparent", git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
 zcash_script = "0.4.3"
-zcash_client_backend = { version = "0.21.2", features = [
+zcash_client_backend = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f", features = [
     "orchard",
     "transparent-inputs",
     "lightwalletd-tonic",
     "lightwalletd-tonic-tls-webpki-roots",
     "sync",
     "pczt",
+    "unstable",
 ] }
-zcash_client_sqlite = { version = "0.19.5", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
+zcash_client_sqlite = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
-orchard = "0.11"
-sapling-crypto = { version = "0.5", default-features = false }
+orchard = { git = "https://github.com/valargroup/qr_orchard", rev = "9f046f22a46dd644aeed070968e51add57478973" }
+sapling-crypto = { version = "0.7", default-features = false }
 uuid = "1.1"
 zip32 = "0.2"
 # Required by no-op Sapling prover trait impls
@@ -36,7 +37,7 @@ bls12_381 = "0.8"
 rand_core = "0.6"
 
 # Proofs
-zcash_proofs = "0.26.1"
+zcash_proofs = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
 
 # Key generation
 bip0039 = "0.12"
@@ -77,7 +78,7 @@ hex = "0.4"
 
 # Keystone hardware wallet
 ur = { git = "https://github.com/KeystoneHQ/ur-rs", tag = "0.3.3" }
-pczt = "0.5"
+pczt = { git = "https://github.com/valargroup/librustzcash", rev = "d39cbbea0323bbba6ad477e36b604025c4dbbf6f" }
 ur-registry = { git = "https://github.com/KeystoneHQ/keystone-sdk-rust", package = "ur-registry", default-features = false, features = ["std"] }
 serde_json = "1"
 

@@ -47,7 +47,8 @@ use zcash_client_backend::{
             self, create_proposed_transactions, propose_send_max_transfer, propose_shielding,
             propose_transfer, ConfirmationsPolicy,
         },
-        Account as _, Balance, InputSource, MaxSpendMode, WalletRead,
+        Account as _, Balance, InputSource, MaxSpendMode, TransparentKeyOrigin,
+        TransparentOutputFilter, WalletRead,
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
@@ -63,7 +64,7 @@ use zcash_primitives::transaction::{
     fees::{
         transparent::InputSize as TransparentInputSize, zip317::P2PKH_STANDARD_INPUT_SIZE, FeeRule,
     },
-    TxId,
+    TxId, TxVersion,
 };
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
@@ -142,6 +143,13 @@ pub(in crate::wallet) struct ConservativeZip317FeeRule;
 
 pub(in crate::wallet) type WalletFeeRule = ConservativeZip317FeeRule;
 
+fn software_proposed_tx_version(network: WalletNetwork) -> Option<TxVersion> {
+    match network {
+        WalletNetwork::Main => Some(TxVersion::V5),
+        WalletNetwork::Test | WalletNetwork::Regtest => Some(TxVersion::V5_Qr),
+    }
+}
+
 impl FeeRule for ConservativeZip317FeeRule {
     type Error = <StandardFeeRule as FeeRule>::Error;
 
@@ -218,8 +226,8 @@ pub fn propose_send(
     };
 
     let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
-    let payment = Payment::new(to, value, memo_bytes, None, None, vec![])
-        .ok_or("Cannot send memo to this address type")?;
+    let payment = Payment::new(to, Some(value), memo_bytes, None, None, vec![])
+        .map_err(|e| format!("Payment failed: {e:?}"))?;
     let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
 
     let proposal = propose_transfer::<_, _, _, _, Infallible>(
@@ -230,6 +238,7 @@ pub fn propose_send(
         &change_strategy,
         request,
         ConfirmationsPolicy::default(),
+        software_proposed_tx_version(network),
     )
     .map_err(|e| format!("Propose failed: {e}"))?;
 
@@ -296,8 +305,8 @@ pub fn estimate_fee(
     };
 
     let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
-    let payment = Payment::new(to, value, memo_bytes, None, None, vec![])
-        .ok_or("Cannot send memo to this address type")?;
+    let payment = Payment::new(to, Some(value), memo_bytes, None, None, vec![])
+        .map_err(|e| format!("Payment failed: {e:?}"))?;
     let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
 
     let proposal = propose_transfer::<_, _, _, _, Infallible>(
@@ -308,6 +317,7 @@ pub fn estimate_fee(
         &change_strategy,
         request,
         ConfirmationsPolicy::default(),
+        software_proposed_tx_version(network),
     )
     .map_err(|e| format!("Propose failed: {e}"))?;
 
@@ -455,6 +465,7 @@ pub(crate) async fn shield_transparent_balance(
                 &wallet::SpendingKeys::from_unified_spending_key(usk),
                 OvkPolicy::Sender,
                 &proposal,
+                software_proposed_tx_version(network),
             )
             .map_err(|e| format!("Create shielding TX failed: {e}"))?;
 
@@ -571,6 +582,7 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &stored.proposal,
+                        software_proposed_tx_version(network),
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -585,6 +597,7 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &stored.proposal,
+                        software_proposed_tx_version(network),
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -635,6 +648,7 @@ fn build_shielding_proposal(
         &from_addrs,
         account_id,
         ConfirmationsPolicy::MIN,
+        TransparentOutputFilter::All,
     )
     .map_err(|e| format!("Shield proposal failed: {e}"))?;
 
@@ -683,6 +697,8 @@ fn summarize_send_max_proposal<NoteRef>(
             .transaction_request()
             .total()
             .map_err(|e| format!("Max amount calculation failed: {e}"))?;
+        let step_total =
+            step_total.ok_or_else(|| "Max amount calculation missing amount".to_string())?;
         acc.checked_add(u64::from(step_total))
             .ok_or_else(|| "Max amount overflow".to_string())
     })?;
@@ -699,16 +715,21 @@ fn summarize_send_max_proposal<NoteRef>(
 }
 
 fn select_shielding_sources(
-    account_receivers: HashMap<TransparentAddress, (TransparentKeyScope, Balance)>,
+    account_receivers: HashMap<TransparentAddress, (TransparentKeyOrigin, Balance)>,
     shielding_threshold: Zatoshis,
 ) -> Result<(Vec<TransparentAddress>, Zatoshis), String> {
     let mut ephemeral = Vec::new();
     let mut non_ephemeral = Vec::new();
 
-    for (address, (scope, balance)) in account_receivers {
+    for (address, (origin, balance)) in account_receivers {
         let spendable = balance.spendable_value();
         if spendable > Zatoshis::ZERO {
-            if scope == TransparentKeyScope::EPHEMERAL {
+            if matches!(
+                origin,
+                TransparentKeyOrigin::Derived {
+                    scope: TransparentKeyScope::EPHEMERAL
+                }
+            ) {
                 ephemeral.push((address, spendable));
             } else {
                 non_ephemeral.push((address, spendable));
@@ -1220,9 +1241,9 @@ impl OutputProver for NoOpOutputProver {
 mod tests {
     use super::*;
 
+    use transparent::bundle::{OutPoint, TxOut};
     use zcash_client_backend::{data_api::WalletWrite, wallet::WalletTransparentOutput};
     use zcash_keys::keys::{ReceiverRequirement, UnifiedSpendingKey};
-    use zcash_primitives::transaction::components::transparent::{OutPoint, TxOut};
     use zcash_protocol::consensus::BlockHeight;
 
     fn taddr(seed: u8) -> TransparentAddress {
@@ -1237,8 +1258,24 @@ mod tests {
         balance
     }
 
-    fn receiver(value: u64, scope: TransparentKeyScope) -> (TransparentKeyScope, Balance) {
-        (scope, balance(value))
+    fn receiver(value: u64, scope: TransparentKeyScope) -> (TransparentKeyOrigin, Balance) {
+        (TransparentKeyOrigin::Derived { scope }, balance(value))
+    }
+
+    #[test]
+    fn software_qr_policy_uses_qr_only_on_test_networks() {
+        assert_eq!(
+            software_proposed_tx_version(WalletNetwork::Main),
+            Some(TxVersion::V5)
+        );
+        assert_eq!(
+            software_proposed_tx_version(WalletNetwork::Test),
+            Some(TxVersion::V5_Qr)
+        );
+        assert_eq!(
+            software_proposed_tx_version(WalletNetwork::Regtest),
+            Some(TxVersion::V5_Qr)
+        );
     }
 
     #[test]
@@ -1316,6 +1353,77 @@ mod tests {
     }
 
     #[test]
+    fn software_shielding_internal_output_is_qr_on_regtest() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let network = WalletNetwork::Regtest;
+        let mnemonic = crate::wallet::keys::generate_mnemonic();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
+        let (account_uuid, _) =
+            crate::wallet::keys::init_db_and_create_account(db_path, network, &seed, Some(1), "qr")
+                .unwrap();
+        let account_id = parse_account_uuid(&account_uuid).unwrap();
+
+        let mut db = open_wallet_db(db_path, network).unwrap();
+        let tip = BlockHeight::from_u32(1_000);
+        db.update_chain_tip(tip).unwrap();
+
+        let ua_request = zcash_keys::keys::UnifiedAddressRequest::custom(
+            ReceiverRequirement::Require,
+            ReceiverRequirement::Require,
+            ReceiverRequirement::Require,
+        )
+        .unwrap();
+        let (ua, _) = db
+            .get_next_available_address(account_id, ua_request)
+            .unwrap()
+            .unwrap();
+        let taddr = *ua.transparent().unwrap();
+        let value = Zatoshis::const_from_u64(1_000_000);
+
+        let mut txid = [0u8; 32];
+        txid[..4].copy_from_slice(&0xfeed_beefu32.to_le_bytes());
+        let outpoint = OutPoint::new(txid, 0);
+        let txout = TxOut::new(value, taddr.script().into());
+        let utxo = WalletTransparentOutput::from_parts(outpoint, txout, Some(tip)).unwrap();
+        db.put_received_transparent_utxo(&utxo).unwrap();
+
+        let shielding_threshold = Zatoshis::const_from_u64(SHIELDING_THRESHOLD_ZATOSHI);
+        let (proposal, _) =
+            build_shielding_proposal(&mut db, network, account_id, shielding_threshold).unwrap();
+
+        let seed = SecretVec::new(seed.expose_secret().to_vec());
+        let usk =
+            UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32::AccountId::ZERO)
+                .unwrap();
+        let spend_prover = NoOpSpendProver;
+        let output_prover = NoOpOutputProver;
+        create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
+            &mut db,
+            &network,
+            &spend_prover,
+            &output_prover,
+            &wallet::SpendingKeys::from_unified_spending_key(usk),
+            OvkPolicy::Sender,
+            &proposal,
+            software_proposed_tx_version(network),
+        )
+        .expect("shielding transaction should build");
+        drop(db);
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        let note_version = conn
+            .query_row(
+                "SELECT note_version FROM orchard_received_notes LIMIT 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
+        assert_eq!(note_version, 3);
+    }
+
+    #[test]
     #[ignore = "slow librustzcash transaction-construction regression (~100s); run explicitly when touching shielding transaction construction"]
     fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -1380,6 +1488,7 @@ mod tests {
             &wallet::SpendingKeys::from_unified_spending_key(usk),
             OvkPolicy::Sender,
             &proposal,
+            software_proposed_tx_version(network),
         )
         .expect("many-UTXO shielding should build without a fee/change mismatch");
         let change_values = proposal

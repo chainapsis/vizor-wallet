@@ -767,7 +767,10 @@ class _WindowsUpdatePromptHostState
 
   void _handleRouteChanged() {
     if (!mounted) return;
-    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {});
+    });
   }
 
   String get _currentPath {

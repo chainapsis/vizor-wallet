@@ -12,7 +12,6 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
 import 'package:zcash_wallet/src/core/widgets/app_decorative_divider.dart';
 import 'package:zcash_wallet/src/features/about/screens/about_screen.dart';
-import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
