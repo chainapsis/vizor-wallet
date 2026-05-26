@@ -10,6 +10,10 @@ const swapQuoteDifferenceWarningThreshold = 0.05;
 
 enum SwapPrototypeStepState { done, active, pending, warning }
 
+enum SwapAmountInputMode { token, fiat }
+
+enum SwapAmountInputSide { pay, receive }
+
 class SwapPrototypeStep {
   const SwapPrototypeStep({
     required this.label,
@@ -293,8 +297,9 @@ class SwapIntentRecord {
       providerRefundInfo: providerRefundInfo ?? this.providerRefundInfo,
       lastStatusCheckedAt: lastStatusCheckedAt ?? this.lastStatusCheckedAt,
       statusError: clearStatusError ? null : statusError ?? this.statusError,
-      broadcastNotice:
-          clearBroadcastNotice ? null : broadcastNotice ?? this.broadcastNotice,
+      broadcastNotice: clearBroadcastNotice
+          ? null
+          : broadcastNotice ?? this.broadcastNotice,
       oneClickRecipient: oneClickRecipient ?? this.oneClickRecipient,
       oneClickRefundTo: oneClickRefundTo ?? this.oneClickRefundTo,
       depositDeadline: depositDeadline ?? this.depositDeadline,
@@ -454,8 +459,9 @@ class SwapPrototypeIntent {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       completedAt: completedAt ?? this.completedAt,
-      broadcastNotice:
-          clearBroadcastNotice ? null : broadcastNotice ?? this.broadcastNotice,
+      broadcastNotice: clearBroadcastNotice
+          ? null
+          : broadcastNotice ?? this.broadcastNotice,
     );
   }
 }
@@ -472,6 +478,10 @@ class SwapPrototypeState {
     required this.externalRequests,
     required this.requestImportText,
     this.quoteMode = SwapQuoteMode.exactInput,
+    this.amountInputMode = SwapAmountInputMode.token,
+    this.receiveAmountInputMode = SwapAmountInputMode.token,
+    this.amountFiatText = '',
+    this.receiveFiatText = '',
     this.slippageBps = defaultSwapSlippageBps,
     this.supportedExternalAssets = swapExternalAssets,
     this.indicativeExternalPerZec = const {},
@@ -506,6 +516,10 @@ class SwapPrototypeState {
   final List<SwapExternalRequest> externalRequests;
   final String requestImportText;
   final SwapQuoteMode quoteMode;
+  final SwapAmountInputMode amountInputMode;
+  final SwapAmountInputMode receiveAmountInputMode;
+  final String amountFiatText;
+  final String receiveFiatText;
   final int slippageBps;
   final List<SwapAsset> supportedExternalAssets;
   final Map<SwapAsset, double> indicativeExternalPerZec;
@@ -573,10 +587,9 @@ class SwapPrototypeState {
     return externalRequests.where((request) => request.isOpen).length;
   }
 
-  String get walletZecPreviewAddress =>
-      direction.sendsZec
-          ? 'u1wallet-refund-preview'
-          : 'u1wallet-shielded-preview';
+  String get walletZecPreviewAddress => direction.sendsZec
+      ? 'u1wallet-refund-preview'
+      : 'u1wallet-shielded-preview';
 
   double? get sellAmount {
     final amount = double.tryParse(amountText);
@@ -593,10 +606,9 @@ class SwapPrototypeState {
   double? get quoteAmount =>
       quoteMode == SwapQuoteMode.exactInput ? sellAmount : receiveAmount;
 
-  String get quoteAmountText =>
-      quoteMode == SwapQuoteMode.exactInput
-          ? amountText.trim()
-          : receiveAmountText.trim();
+  String get quoteAmountText => quoteMode == SwapQuoteMode.exactInput
+      ? amountText.trim()
+      : receiveAmountText.trim();
 
   SwapAddressPlan? get addressPlan => reviewAddressPlan ?? draftAddressPlan;
 
@@ -610,15 +622,13 @@ class SwapPrototypeState {
     );
   }
 
-  String get destinationFieldLabel =>
-      direction.sendsZec
-          ? 'Destination'
-          : '${externalAsset.symbol} refund address';
+  String get destinationFieldLabel => direction.sendsZec
+      ? 'Destination'
+      : '${externalAsset.symbol} refund address';
 
-  String get destinationFieldHint =>
-      direction.sendsZec
-          ? 'External ${externalAsset.symbol} address or account'
-          : 'Refund address on the ${externalAsset.symbol} source chain';
+  String get destinationFieldHint => direction.sendsZec
+      ? 'External ${externalAsset.symbol} address or account'
+      : 'Refund address on the ${externalAsset.symbol} source chain';
 
   bool get canReviewQuote =>
       quoteAmount != null && draftAddressPlan != null && !quoteLoading;
@@ -670,10 +680,9 @@ class SwapPrototypeState {
       return [
         SwapPrototypeField(
           label: 'Deposit address',
-          value:
-              hasQuote
-                  ? 'one-time ${externalAsset.symbol} address prepared at review'
-                  : 'prepared after quote review',
+          value: hasQuote
+              ? 'one-time ${externalAsset.symbol} address prepared at review'
+              : 'prepared after quote review',
         ),
         const SwapPrototypeField(
           label: 'ZEC destination',
@@ -681,17 +690,15 @@ class SwapPrototypeState {
         ),
         SwapPrototypeField(
           label: 'Refund path',
-          value:
-              addressPlan == null
-                  ? '${externalAsset.symbol} refund address required'
-                  : '${externalAsset.symbol} refunds return to entered address',
+          value: addressPlan == null
+              ? '${externalAsset.symbol} refund address required'
+              : '${externalAsset.symbol} refunds return to entered address',
         ),
         SwapPrototypeField(
           label: 'Source-chain visibility',
-          value:
-              hasQuote
-                  ? 'external deposit is public on source chain'
-                  : 'not open yet',
+          value: hasQuote
+              ? 'external deposit is public on source chain'
+              : 'not open yet',
         ),
         SwapPrototypeField(
           label: 'Third-party data',
@@ -706,10 +713,9 @@ class SwapPrototypeState {
     return [
       SwapPrototypeField(
         label: 'Deposit address',
-        value:
-            hasQuote
-                ? 'one-time transparent address prepared at review'
-                : 'prepared after quote review',
+        value: hasQuote
+            ? 'one-time transparent address prepared at review'
+            : 'prepared after quote review',
       ),
       const SwapPrototypeField(
         label: 'Address reuse',
@@ -717,8 +723,9 @@ class SwapPrototypeState {
       ),
       SwapPrototypeField(
         label: 'Transparent window',
-        value:
-            hasQuote ? 'opens only after ZEC deposit is sent' : 'not open yet',
+        value: hasQuote
+            ? 'opens only after ZEC deposit is sent'
+            : 'not open yet',
       ),
       const SwapPrototypeField(
         label: 'Third-party data',
@@ -742,6 +749,10 @@ class SwapPrototypeState {
     List<SwapExternalRequest>? externalRequests,
     String? requestImportText,
     SwapQuoteMode? quoteMode,
+    SwapAmountInputMode? amountInputMode,
+    SwapAmountInputMode? receiveAmountInputMode,
+    String? amountFiatText,
+    String? receiveFiatText,
     int? slippageBps,
     List<SwapAsset>? supportedExternalAssets,
     Map<SwapAsset, double>? indicativeExternalPerZec,
@@ -785,23 +796,30 @@ class SwapPrototypeState {
       externalRequests: externalRequests ?? this.externalRequests,
       requestImportText: requestImportText ?? this.requestImportText,
       quoteMode: quoteMode ?? this.quoteMode,
+      amountInputMode: amountInputMode ?? this.amountInputMode,
+      receiveAmountInputMode:
+          receiveAmountInputMode ?? this.receiveAmountInputMode,
+      amountFiatText: amountFiatText ?? this.amountFiatText,
+      receiveFiatText: receiveFiatText ?? this.receiveFiatText,
       slippageBps: slippageBps ?? this.slippageBps,
       supportedExternalAssets:
           supportedExternalAssets ?? this.supportedExternalAssets,
       indicativeExternalPerZec:
           indicativeExternalPerZec ?? this.indicativeExternalPerZec,
-      previewQuote:
-          clearPreviewQuote ? null : previewQuote ?? this.previewQuote,
+      previewQuote: clearPreviewQuote
+          ? null
+          : previewQuote ?? this.previewQuote,
       previewQuoteLoading: previewQuoteLoading ?? this.previewQuoteLoading,
-      previewQuoteError:
-          clearPreviewQuote || clearPreviewQuoteError
-              ? null
-              : previewQuoteError ?? this.previewQuoteError,
+      previewQuoteError: clearPreviewQuote || clearPreviewQuoteError
+          ? null
+          : previewQuoteError ?? this.previewQuoteError,
       reviewQuote: clearReview ? null : reviewQuote ?? this.reviewQuote,
-      reviewAddressPlan:
-          clearReview ? null : reviewAddressPlan ?? this.reviewAddressPlan,
-      reviewAccountUuid:
-          clearReview ? null : reviewAccountUuid ?? this.reviewAccountUuid,
+      reviewAddressPlan: clearReview
+          ? null
+          : reviewAddressPlan ?? this.reviewAddressPlan,
+      reviewAccountUuid: clearReview
+          ? null
+          : reviewAccountUuid ?? this.reviewAccountUuid,
       quoteLoading: quoteLoading ?? this.quoteLoading,
       quoteExpired: clearReview ? false : quoteExpired ?? this.quoteExpired,
       quoteError: clearQuoteError ? null : quoteError ?? this.quoteError,
@@ -809,22 +827,20 @@ class SwapPrototypeState {
       statusError: clearStatusError ? null : statusError ?? this.statusError,
       startSubmitting: startSubmitting ?? this.startSubmitting,
       maxAmountLoading: maxAmountLoading ?? this.maxAmountLoading,
-      maxAmountError:
-          clearMaxAmountError ? null : maxAmountError ?? this.maxAmountError,
+      maxAmountError: clearMaxAmountError
+          ? null
+          : maxAmountError ?? this.maxAmountError,
       depositTxHashText: depositTxHashText ?? this.depositTxHashText,
       depositSubmitting: depositSubmitting ?? this.depositSubmitting,
-      selectedIntentId:
-          clearSelectedIntent
-              ? null
-              : selectedIntentId ?? this.selectedIntentId,
-      selectedRequestId:
-          clearSelectedRequest
-              ? null
-              : selectedRequestId ?? this.selectedRequestId,
-      requestImportError:
-          clearRequestImportError
-              ? null
-              : requestImportError ?? this.requestImportError,
+      selectedIntentId: clearSelectedIntent
+          ? null
+          : selectedIntentId ?? this.selectedIntentId,
+      selectedRequestId: clearSelectedRequest
+          ? null
+          : selectedRequestId ?? this.selectedRequestId,
+      requestImportError: clearRequestImportError
+          ? null
+          : requestImportError ?? this.requestImportError,
     );
   }
 }

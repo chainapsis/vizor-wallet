@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
 import '../domain/zip321_payment_request.dart';
+import '../models/swap_fiat_amount.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_prototype_models.dart';
 import '../../../providers/account_provider.dart';
@@ -92,20 +93,27 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       intents: initialIntents,
       externalRequests: initialRequests,
       selectedIntentId: initialIntents.isEmpty ? null : initialIntents.first.id,
-      selectedRequestId:
-          initialRequests.isEmpty ? null : initialRequests.first.id,
+      selectedRequestId: initialRequests.isEmpty
+          ? null
+          : initialRequests.first.id,
     );
   }
 
   void selectDirection(SwapDirection direction) {
     _clearReviewState();
-    state = _withIndicativeCounterpart(
-      state.copyWith(
-        direction: direction,
-        quoteMode: SwapQuoteMode.exactInput,
-        reviewVisible: false,
-        clearPreviewQuote: true,
-        clearPreviewQuoteError: true,
+    state = _withDerivedFiatTexts(
+      _withIndicativeCounterpart(
+        state.copyWith(
+          direction: direction,
+          quoteMode: SwapQuoteMode.exactInput,
+          amountInputMode: SwapAmountInputMode.token,
+          receiveAmountInputMode: SwapAmountInputMode.token,
+          amountFiatText: '',
+          receiveFiatText: '',
+          reviewVisible: false,
+          clearPreviewQuote: true,
+          clearPreviewQuoteError: true,
+        ),
       ),
     );
     unawaited(_persistDraft(_currentDraftSnapshot));
@@ -115,23 +123,26 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
   void toggleDirection() {
     final currentQuote = state.quote;
     final nextDirection = state.direction.toggled;
-    final nextAmountText =
-        currentQuote == null
-            ? state.quoteAmountText
-            : currentQuote.receiveAsset.formatAmount(
-              currentQuote.receiveAmount,
-            );
+    final nextAmountText = currentQuote == null
+        ? state.quoteAmountText
+        : currentQuote.receiveAsset.formatAmount(currentQuote.receiveAmount);
 
     _clearReviewState();
-    state = _withIndicativeCounterpart(
-      state.copyWith(
-        direction: nextDirection,
-        quoteMode: SwapQuoteMode.exactInput,
-        amountText: nextAmountText,
-        receiveAmountText: '',
-        reviewVisible: false,
-        clearPreviewQuote: true,
-        clearPreviewQuoteError: true,
+    state = _withDerivedFiatTexts(
+      _withIndicativeCounterpart(
+        state.copyWith(
+          direction: nextDirection,
+          quoteMode: SwapQuoteMode.exactInput,
+          amountText: nextAmountText,
+          receiveAmountText: '',
+          amountInputMode: SwapAmountInputMode.token,
+          receiveAmountInputMode: SwapAmountInputMode.token,
+          amountFiatText: '',
+          receiveFiatText: '',
+          reviewVisible: false,
+          clearPreviewQuote: true,
+          clearPreviewQuoteError: true,
+        ),
       ),
     );
     unawaited(_persistDraft(_currentDraftSnapshot));
@@ -140,30 +151,99 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
 
   void updateAmount(String value) {
     _clearReviewState();
-    state = _withIndicativeCounterpart(
-      state.copyWith(
-        quoteMode: SwapQuoteMode.exactInput,
-        amountText: value,
-        reviewVisible: false,
-        clearPreviewQuote: true,
-        clearPreviewQuoteError: true,
-        clearMaxAmountError: true,
+    state = _withDerivedFiatTexts(
+      _withIndicativeCounterpart(
+        state.copyWith(
+          quoteMode: SwapQuoteMode.exactInput,
+          amountText: value,
+          reviewVisible: false,
+          clearPreviewQuote: true,
+          clearPreviewQuoteError: true,
+          clearMaxAmountError: true,
+        ),
       ),
+    );
+    _schedulePreviewQuote();
+  }
+
+  void updateAmountFiat(String value) {
+    _clearReviewState();
+    final tokenText = swapTokenAmountTextFromFiatText(
+      state,
+      asset: state.direction.fromAsset(state.externalAsset),
+      fiatAmountText: value,
+    );
+    state = _withDerivedFiatTexts(
+      _withIndicativeCounterpart(
+        state.copyWith(
+          quoteMode: SwapQuoteMode.exactInput,
+          amountInputMode: SwapAmountInputMode.fiat,
+          amountFiatText: value,
+          amountText: tokenText ?? '',
+          reviewVisible: false,
+          clearPreviewQuote: true,
+          clearPreviewQuoteError: true,
+          clearMaxAmountError: true,
+        ),
+      ),
+      preserveAmountFiatInput: true,
     );
     _schedulePreviewQuote();
   }
 
   void updateReceiveAmount(String value) {
     _clearReviewState();
-    state = _withIndicativeCounterpart(
-      state.copyWith(
-        quoteMode: SwapQuoteMode.exactOutput,
-        receiveAmountText: value,
-        reviewVisible: false,
-        clearPreviewQuote: true,
-        clearPreviewQuoteError: true,
-        clearMaxAmountError: true,
+    state = _withDerivedFiatTexts(
+      _withIndicativeCounterpart(
+        state.copyWith(
+          quoteMode: SwapQuoteMode.exactOutput,
+          receiveAmountText: value,
+          reviewVisible: false,
+          clearPreviewQuote: true,
+          clearPreviewQuoteError: true,
+          clearMaxAmountError: true,
+        ),
       ),
+    );
+    _schedulePreviewQuote();
+  }
+
+  void updateReceiveAmountFiat(String value) {
+    _clearReviewState();
+    final tokenText = swapTokenAmountTextFromFiatText(
+      state,
+      asset: state.direction.toAsset(state.externalAsset),
+      fiatAmountText: value,
+    );
+    state = _withDerivedFiatTexts(
+      _withIndicativeCounterpart(
+        state.copyWith(
+          quoteMode: SwapQuoteMode.exactOutput,
+          receiveAmountInputMode: SwapAmountInputMode.fiat,
+          receiveFiatText: value,
+          receiveAmountText: tokenText ?? '',
+          reviewVisible: false,
+          clearPreviewQuote: true,
+          clearPreviewQuoteError: true,
+          clearMaxAmountError: true,
+        ),
+      ),
+      preserveReceiveFiatInput: true,
+    );
+    _schedulePreviewQuote();
+  }
+
+  void toggleFiatInputMode(SwapAmountInputSide side) {
+    _clearReviewState();
+    final next = switch (side) {
+      SwapAmountInputSide.pay => _togglePayInputMode(state),
+      SwapAmountInputSide.receive => _toggleReceiveInputMode(state),
+    };
+    state = next.copyWith(
+      reviewVisible: false,
+      clearPreviewQuote: true,
+      clearPreviewQuoteError: true,
+      clearMaxAmountError: true,
     );
     _schedulePreviewQuote();
   }
@@ -187,13 +267,21 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     );
     if (supportedAsset == null) return;
     _clearReviewState();
-    state = _withIndicativeCounterpart(
-      state.copyWith(
-        externalAsset: supportedAsset,
-        reviewVisible: false,
-        clearPreviewQuote: true,
-        clearPreviewQuoteError: true,
+    state = _withDerivedFiatTexts(
+      _withIndicativeCounterpart(
+        _withTokenAmountsForFiatModes(
+          state.copyWith(
+            externalAsset: supportedAsset,
+            reviewVisible: false,
+            clearPreviewQuote: true,
+            clearPreviewQuoteError: true,
+          ),
+        ),
       ),
+      preserveAmountFiatInput:
+          state.amountInputMode == SwapAmountInputMode.fiat,
+      preserveReceiveFiatInput:
+          state.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
     unawaited(_persistDraft(_currentDraftSnapshot));
     _schedulePreviewQuote();
@@ -210,7 +298,13 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       clearQuoteError: true,
       clearStatusError: true,
     );
-    state = _withIndicativeCounterpart(state);
+    state = _withDerivedFiatTexts(
+      _withIndicativeCounterpart(state),
+      preserveAmountFiatInput:
+          state.amountInputMode == SwapAmountInputMode.fiat,
+      preserveReceiveFiatInput:
+          state.receiveAmountInputMode == SwapAmountInputMode.fiat,
+    );
     unawaited(_persistDraft(_currentDraftSnapshot));
     _schedulePreviewQuote();
   }
@@ -250,18 +344,21 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       }
       final amountText = ZecAmount.fromZatoshi(maxZatoshi).pretty().amountText;
       log('SwapMaxAmount: applied amount=$amountText');
-      state = _withIndicativeCounterpart(
-        state.copyWith(
-          quoteMode: SwapQuoteMode.exactInput,
-          amountText: amountText,
-          maxAmountLoading: false,
-          reviewVisible: false,
-          clearReview: true,
-          clearPreviewQuote: true,
-          clearPreviewQuoteError: true,
-          clearMaxAmountError: true,
-          clearQuoteError: true,
-          clearStatusError: true,
+      state = _withDerivedFiatTexts(
+        _withIndicativeCounterpart(
+          state.copyWith(
+            quoteMode: SwapQuoteMode.exactInput,
+            amountText: amountText,
+            amountInputMode: SwapAmountInputMode.token,
+            maxAmountLoading: false,
+            reviewVisible: false,
+            clearReview: true,
+            clearPreviewQuote: true,
+            clearPreviewQuoteError: true,
+            clearMaxAmountError: true,
+            clearQuoteError: true,
+            clearStatusError: true,
+          ),
         ),
       );
       _schedulePreviewQuote();
@@ -269,10 +366,9 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       final msg = e.toString().toLowerCase();
       state = state.copyWith(
         maxAmountLoading: false,
-        maxAmountError:
-            msg.contains('insufficient')
-                ? 'Insufficient shielded balance to cover fee'
-                : 'Max amount unavailable',
+        maxAmountError: msg.contains('insufficient')
+            ? 'Insufficient shielded balance to cover fee'
+            : 'Max amount unavailable',
       );
       log('SwapMaxAmount: estimate failed error=$e');
     }
@@ -283,20 +379,17 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
   }) async {
     try {
       final provider = ref.read(swapIntentProvider);
-      final pricingProvider =
-          provider is SwapPricingProvider
-              ? provider as SwapPricingProvider
-              : null;
-      final pricing =
-          pricingProvider == null
-              ? null
-              : await pricingProvider.loadPricingSnapshot(
-                forceRefresh: forceRefreshPrices,
-              );
-      final liveAssets =
-          pricing?.supportedExternalAssets.isNotEmpty == true
-              ? pricing!.supportedExternalAssets
-              : await provider.listSupportedExternalAssets();
+      final pricingProvider = provider is SwapPricingProvider
+          ? provider as SwapPricingProvider
+          : null;
+      final pricing = pricingProvider == null
+          ? null
+          : await pricingProvider.loadPricingSnapshot(
+              forceRefresh: forceRefreshPrices,
+            );
+      final liveAssets = pricing?.supportedExternalAssets.isNotEmpty == true
+          ? pricing!.supportedExternalAssets
+          : await provider.listSupportedExternalAssets();
       final supported = [
         for (final asset in liveAssets)
           if (asset != SwapAsset.zec) asset,
@@ -314,10 +407,17 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         clearReview: selectedChanged,
         clearQuoteError: true,
       );
+      nextState = _withTokenAmountsForFiatModes(nextState);
       if (nextState.reviewQuote == null && nextState.previewQuote == null) {
         nextState = _withIndicativeCounterpart(nextState);
       }
-      state = nextState;
+      state = _withDerivedFiatTexts(
+        nextState,
+        preserveAmountFiatInput:
+            nextState.amountInputMode == SwapAmountInputMode.fiat,
+        preserveReceiveFiatInput:
+            nextState.receiveAmountInputMode == SwapAmountInputMode.fiat,
+      );
     } catch (_) {
       // Keep the static fallback so the prototype remains usable offline.
     }
@@ -443,8 +543,9 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       );
       return false;
     }
-    final activeAccountIsHardware =
-        ref.read(accountProvider.notifier).isActiveAccountHardware;
+    final activeAccountIsHardware = ref
+        .read(accountProvider.notifier)
+        .isActiveAccountHardware;
     final liveFundsEnabled = ref.read(swapLiveFundsEnabledProvider);
     if (quote.direction.sendsZec && liveFundsEnabled) {
       try {
@@ -506,6 +607,10 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       amountText: '',
       receiveAmountText: '',
       quoteMode: SwapQuoteMode.exactInput,
+      amountInputMode: SwapAmountInputMode.token,
+      receiveAmountInputMode: SwapAmountInputMode.token,
+      amountFiatText: '',
+      receiveFiatText: '',
       destinationText: '',
       intents: [intent, ...state.intents],
       startSubmitting: false,
@@ -592,14 +697,12 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     final removedSelected =
         state.selectedIntentId == intentId ||
         state.selectedIntentOrNull?.id == intentId;
-    final nextSelectedId =
-        removedSelected
-            ? (remaining.isEmpty ? null : remaining.first.id)
-            : state.selectedIntentId;
-    final nextSelectedIntent =
-        nextSelectedId == null
-            ? null
-            : _intentByIdFrom(remaining, nextSelectedId);
+    final nextSelectedId = removedSelected
+        ? (remaining.isEmpty ? null : remaining.first.id)
+        : state.selectedIntentId;
+    final nextSelectedIntent = nextSelectedId == null
+        ? null
+        : _intentByIdFrom(remaining, nextSelectedId);
 
     state = state.copyWith(
       intents: remaining,
@@ -673,6 +776,10 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       quoteMode: SwapQuoteMode.exactInput,
       amountText: amountText,
       receiveAmountText: '',
+      amountInputMode: SwapAmountInputMode.token,
+      receiveAmountInputMode: SwapAmountInputMode.token,
+      amountFiatText: '',
+      receiveFiatText: '',
       destinationText: destinationText,
       reviewVisible: false,
       quoteLoading: false,
@@ -688,7 +795,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       clearQuoteError: true,
       clearStatusError: true,
     );
-    state = _withIndicativeCounterpart(state);
+    state = _withDerivedFiatTexts(_withIndicativeCounterpart(state));
     _schedulePreviewQuote();
     return true;
   }
@@ -720,10 +827,9 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     if (direction == null || externalAsset == null) return;
 
     final amountText = intent.sellAmount.split(' ').first.trim();
-    final destinationText =
-        direction.sendsZec
-            ? intent.oneClickRecipient ?? ''
-            : intent.oneClickRefundTo ?? '';
+    final destinationText = direction.sendsZec
+        ? intent.oneClickRecipient ?? ''
+        : intent.oneClickRefundTo ?? '';
     if (amountText.isEmpty || destinationText.isEmpty) return;
 
     _quoteGeneration++;
@@ -733,6 +839,10 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       quoteMode: SwapQuoteMode.exactInput,
       amountText: amountText,
       receiveAmountText: '',
+      amountInputMode: SwapAmountInputMode.token,
+      receiveAmountInputMode: SwapAmountInputMode.token,
+      amountFiatText: '',
+      receiveFiatText: '',
       destinationText: destinationText,
       reviewVisible: false,
       quoteLoading: false,
@@ -743,7 +853,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       clearQuoteError: true,
       clearStatusError: true,
     );
-    state = _withIndicativeCounterpart(state);
+    state = _withDerivedFiatTexts(_withIndicativeCounterpart(state));
     _schedulePreviewQuote();
   }
 
@@ -838,10 +948,9 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       ),
     );
     state = state.copyWith(
-      depositTxHashText:
-          state.selectedIntentId == selected.id
-              ? txHash
-              : state.depositTxHashText,
+      depositTxHashText: state.selectedIntentId == selected.id
+          ? txHash
+          : state.depositTxHashText,
       intents: _replaceIntent(state.intents, selected.id, checkpointed),
       clearStatusError: true,
     );
@@ -873,10 +982,9 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       }
       state = state.copyWith(
         depositSubmitting: false,
-        depositTxHashText:
-            state.selectedIntentId == selected.id
-                ? txHash
-                : state.depositTxHashText,
+        depositTxHashText: state.selectedIntentId == selected.id
+            ? txHash
+            : state.depositTxHashText,
         intents: _replaceIntent(state.intents, checkpointed.id, updated),
         clearStatusError: true,
       );
@@ -1155,6 +1263,82 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     );
   }
 
+  SwapPrototypeState _withDerivedFiatTexts(
+    SwapPrototypeState next, {
+    bool preserveAmountFiatInput = false,
+    bool preserveReceiveFiatInput = false,
+  }) {
+    return next.copyWith(
+      amountFiatText: preserveAmountFiatInput
+          ? next.amountFiatText
+          : swapFiatInputTextFromTokenText(
+              next,
+              asset: next.direction.fromAsset(next.externalAsset),
+              tokenAmountText: next.amountText,
+            ),
+      receiveFiatText: preserveReceiveFiatInput
+          ? next.receiveFiatText
+          : swapFiatInputTextFromTokenText(
+              next,
+              asset: next.direction.toAsset(next.externalAsset),
+              tokenAmountText: next.receiveAmountText,
+            ),
+    );
+  }
+
+  SwapPrototypeState _withTokenAmountsForFiatModes(SwapPrototypeState current) {
+    var next = current;
+    if (next.amountInputMode == SwapAmountInputMode.fiat) {
+      final tokenText = swapTokenAmountTextFromFiatText(
+        next,
+        asset: next.direction.fromAsset(next.externalAsset),
+        fiatAmountText: next.amountFiatText,
+      );
+      next = next.copyWith(amountText: tokenText ?? '');
+    }
+    if (next.receiveAmountInputMode == SwapAmountInputMode.fiat) {
+      final tokenText = swapTokenAmountTextFromFiatText(
+        next,
+        asset: next.direction.toAsset(next.externalAsset),
+        fiatAmountText: next.receiveFiatText,
+      );
+      next = next.copyWith(receiveAmountText: tokenText ?? '');
+    }
+    return next;
+  }
+
+  SwapPrototypeState _togglePayInputMode(SwapPrototypeState current) {
+    final nextMode = current.amountInputMode == SwapAmountInputMode.token
+        ? SwapAmountInputMode.fiat
+        : SwapAmountInputMode.token;
+    return current.copyWith(
+      amountInputMode: nextMode,
+      amountFiatText: nextMode == SwapAmountInputMode.fiat
+          ? swapFiatInputTextFromTokenText(
+              current,
+              asset: current.direction.fromAsset(current.externalAsset),
+              tokenAmountText: current.amountText,
+            )
+          : current.amountFiatText,
+    );
+  }
+
+  SwapPrototypeState _toggleReceiveInputMode(SwapPrototypeState current) {
+    final nextMode = current.receiveAmountInputMode == SwapAmountInputMode.token
+        ? SwapAmountInputMode.fiat
+        : SwapAmountInputMode.token;
+    return current.copyWith(
+      receiveAmountInputMode: nextMode,
+      receiveFiatText: nextMode == SwapAmountInputMode.fiat
+          ? swapFiatInputTextFromTokenText(
+              current,
+              asset: current.direction.toAsset(current.externalAsset),
+              tokenAmountText: current.receiveAmountText,
+            )
+          : current.receiveFiatText,
+    );
+  }
+
   void _schedulePreviewQuote() {
     _previewQuoteDebounce?.cancel();
     final generation = ++_previewQuoteGeneration;
@@ -1256,8 +1440,11 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     SwapPrototypeState next,
     SwapQuote quote,
   ) {
-    return next.copyWith(
-      amountText: quote.sellAsset.formatAmount(quote.sellAmount),
+    return _withDerivedFiatTexts(
+      next.copyWith(amountText: quote.sellAsset.formatAmount(quote.sellAmount)),
+      preserveAmountFiatInput: next.amountInputMode == SwapAmountInputMode.fiat,
+      preserveReceiveFiatInput:
+          next.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
   }
 
@@ -1310,8 +1497,9 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         intents: persisted,
         selectedIntentId: persisted.isEmpty ? null : persisted.first.id,
         statusRefreshing: replaceExisting ? false : null,
-        depositTxHashText:
-            persisted.isEmpty ? '' : persisted.first.depositTxHash ?? '',
+        depositTxHashText: persisted.isEmpty
+            ? ''
+            : persisted.first.depositTxHash ?? '',
         depositSubmitting: replaceExisting ? false : null,
         clearSelectedIntent: persisted.isEmpty,
         clearStatusError: true,
@@ -1543,15 +1731,13 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       source: 'ZIP-321 URI',
       title: 'Zcash payment request',
       requestedAction: requestedAction,
-      route:
-          parsed.payments.length == 1
-              ? 'ZEC payment'
-              : '${parsed.payments.length} ZEC payments',
+      route: parsed.payments.length == 1
+          ? 'ZEC payment'
+          : '${parsed.payments.length} ZEC payments',
       receivedAt: 'just now',
-      status:
-          unsupportedReason == null
-              ? SwapExternalRequestStatus.needsReview
-              : SwapExternalRequestStatus.unsupported,
+      status: unsupportedReason == null
+          ? SwapExternalRequestStatus.needsReview
+          : SwapExternalRequestStatus.unsupported,
       riskLabel: unsupportedReason ?? 'Approval required',
       riskDetail:
           unsupportedReason ??
