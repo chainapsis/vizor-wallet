@@ -18,13 +18,14 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
-import '../domain/swap_address_scan_payload.dart';
 import '../models/swap_prototype_models.dart';
 import '../providers/swap_prototype_provider.dart';
 import '../widgets/redacted_receipt_drawer.dart';
 import '../widgets/swap_activity_panel.dart';
+import '../widgets/swap_address_qr_scan_modal.dart';
 import '../widgets/swap_composer_panel.dart';
 import '../widgets/swap_copy_feedback.dart';
+import '../widgets/swap_near_intents_attribution.dart';
 
 class SwapScreen extends ConsumerStatefulWidget {
   const SwapScreen({super.key});
@@ -33,6 +34,15 @@ class SwapScreen extends ConsumerStatefulWidget {
   ConsumerState<SwapScreen> createState() => _SwapScreenState();
 }
 
+enum _SwapModalSurface {
+  assetSelector,
+  addressEditor,
+  addressScanner,
+  slippageSettings,
+}
+
+const double _swapBodyDesignHeight = 580;
+
 class _SwapScreenState extends ConsumerState<SwapScreen> {
   late final ScrollController _scrollController;
   late final FocusNode _shortcutFocusNode;
@@ -40,6 +50,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
     debugLabel: 'swap_toast_overlay_context',
   );
   bool _commandPaletteOpen = false;
+  _SwapModalSurface? _swapModal;
 
   @override
   void initState() {
@@ -60,11 +71,51 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
   }
 
   void _openCommandPalette() {
-    setState(() => _commandPaletteOpen = true);
+    setState(() {
+      _commandPaletteOpen = true;
+      _swapModal = null;
+    });
   }
 
   void _closeCommandPalette() {
     setState(() => _commandPaletteOpen = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _shortcutFocusNode.requestFocus();
+    });
+  }
+
+  void _openAssetSelector() {
+    setState(() {
+      _commandPaletteOpen = false;
+      _swapModal = _SwapModalSurface.assetSelector;
+    });
+  }
+
+  void _openAddressEditor() {
+    setState(() {
+      _commandPaletteOpen = false;
+      _swapModal = _SwapModalSurface.addressEditor;
+    });
+  }
+
+  void _openAddressScanner() {
+    setState(() {
+      _commandPaletteOpen = false;
+      _swapModal = _SwapModalSurface.addressScanner;
+    });
+  }
+
+  void _openSlippageSettings() {
+    setState(() {
+      _commandPaletteOpen = false;
+      _swapModal = _SwapModalSurface.slippageSettings;
+    });
+  }
+
+  void _closeSwapModal() {
+    if (_swapModal == null) return;
+    setState(() => _swapModal = null);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _shortcutFocusNode.requestFocus();
@@ -79,6 +130,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         if (previous == next || !mounted) return;
         setState(() {
           _commandPaletteOpen = false;
+          _swapModal = null;
         });
       },
     );
@@ -110,18 +162,6 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
       }());
     }
 
-    void scanDestinationAddress() {
-      unawaited(() async {
-        final scanned = await context.push<String>('/swap/address-scan');
-        if (!context.mounted || scanned == null || scanned.trim().isEmpty) {
-          return;
-        }
-        final normalized = normalizeSwapAddressScanPayload(scanned);
-        if (normalized == null || normalized.isEmpty) return;
-        swapNotifier.updateDestination(normalized);
-      }());
-    }
-
     void refreshStatus() {
       final selected = ref.read(swapPrototypeProvider).selectedIntentOrNull;
       if (selected == null || !canRefreshSwapIntentStatus(selected.status)) {
@@ -137,6 +177,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
 
     void runPaletteAction(VoidCallback action) {
       _closeCommandPalette();
+      _closeSwapModal();
       action();
     }
 
@@ -248,97 +289,143 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
       focusNode: _shortcutFocusNode,
       autofocus: true,
       onKeyEvent: handleShortcut,
-      child: Stack(
-        children: [
-          AppDesktopShell(
-            sidebar: const AppMainSidebar(),
-            pane: AppDesktopPane(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: AppRouteBackLink(minWidth: 60),
-                  ),
-                  const SizedBox(height: AppSpacing.s),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.s,
-                      ),
-                      child: Column(
-                        children: [
-                          const _SwapPageTitle(),
-                          const SizedBox(height: AppSpacing.md),
-                          Expanded(
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final viewportHeight =
-                                    constraints.maxHeight.isFinite
-                                    ? constraints.maxHeight
-                                    : null;
-                                final primary = _SwapComposerStack(
-                                  viewportHeight: viewportHeight,
-                                  state: swapState,
-                                  onAmountChanged: swapNotifier.updateAmount,
-                                  onReceiveAmountChanged:
-                                      swapNotifier.updateReceiveAmount,
-                                  onDestinationChanged:
-                                      swapNotifier.updateDestination,
-                                  onDirectionChanged:
-                                      swapNotifier.selectDirection,
-                                  onToggleDirection:
-                                      swapNotifier.toggleDirection,
-                                  onExternalAssetChanged:
-                                      swapNotifier.selectExternalAsset,
-                                  onSlippageChanged:
-                                      swapNotifier.updateSlippageBps,
-                                  onUseMaxZecAmount:
-                                      swapNotifier.useMaxZecAmount,
-                                  onReviewQuote: openReview,
-                                  onScanDestinationAddress:
-                                      scanDestinationAddress,
-                                  zecAvailableText: zecAvailableText,
-                                  zecAvailableZatoshi: sync.spendableBalance,
-                                );
+      child: AppDesktopShell(
+        sidebar: const AppMainSidebar(),
+        pane: AppDesktopPane(
+          padding: EdgeInsets.zero,
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: AppRouteBackLink(minWidth: 60),
+                    ),
+                    const SizedBox(height: AppSpacing.s),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final viewportHeight = constraints.maxHeight.isFinite
+                              ? constraints.maxHeight
+                              : null;
+                          final primary = _SwapComposerStack(
+                            viewportHeight: viewportHeight,
+                            state: swapState,
+                            onAmountChanged: swapNotifier.updateAmount,
+                            onAmountFiatChanged: swapNotifier.updateAmountFiat,
+                            onReceiveAmountChanged:
+                                swapNotifier.updateReceiveAmount,
+                            onReceiveAmountFiatChanged:
+                                swapNotifier.updateReceiveAmountFiat,
+                            onToggleFiatInputMode:
+                                swapNotifier.toggleFiatInputMode,
+                            onDirectionChanged: swapNotifier.selectDirection,
+                            onToggleDirection: swapNotifier.toggleDirection,
+                            onOpenExternalAssetPicker: _openAssetSelector,
+                            onOpenDestinationAddress: _openAddressEditor,
+                            assetSelectorOpen:
+                                _swapModal == _SwapModalSurface.assetSelector,
+                            onOpenSlippageSettings: _openSlippageSettings,
+                            slippageSettingsOpen:
+                                _swapModal ==
+                                _SwapModalSurface.slippageSettings,
+                            onUseMaxZecAmount: swapNotifier.useMaxZecAmount,
+                            onReviewQuote: openReview,
+                            zecAvailableText: zecAvailableText,
+                            zecAvailableZatoshi: sync.spendableBalance,
+                          );
 
-                                return SingleChildScrollView(
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned.fill(
+                                child: SingleChildScrollView(
                                   controller: _scrollController,
                                   child: _SwapViewportFrame(
                                     minHeight: viewportHeight,
                                     alignment: Alignment.center,
                                     child: primary,
                                   ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
+                                ),
+                              ),
+                              if ((viewportHeight ?? 0) >= 520)
+                                const Positioned(
+                                  left: 0,
+                                  bottom: 0.48,
+                                  child: SwapNearIntentsAttribution(),
+                                ),
+                            ],
+                          );
+                        },
                       ),
                     ),
+                  ],
+                ),
+              ),
+              if (_commandPaletteOpen)
+                AppPaneModalOverlay(
+                  onDismiss: _closeCommandPalette,
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: _SwapCommandPalette(commands: commandItems),
                   ),
-                ],
+                ),
+              if (_swapModal != null)
+                AppPaneModalOverlay(
+                  onDismiss: _closeSwapModal,
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: switch (_swapModal!) {
+                      _SwapModalSurface.assetSelector => SwapAssetSelectorModal(
+                        assets: swapState.supportedExternalAssets,
+                        selected: swapState.externalAsset,
+                        onSelected: (asset) {
+                          swapNotifier.selectExternalAsset(asset);
+                          _closeSwapModal();
+                        },
+                      ),
+                      _SwapModalSurface.addressEditor => SwapAddressEditModal(
+                        state: swapState,
+                        onSubmitted: (value) {
+                          swapNotifier.updateDestination(value);
+                          _closeSwapModal();
+                        },
+                        onScan: _openAddressScanner,
+                        onCancel: _closeSwapModal,
+                      ),
+                      _SwapModalSurface.addressScanner =>
+                        SwapAddressQrScanModal(
+                          onAddressScanned: (value) {
+                            swapNotifier.updateDestination(value);
+                            _closeSwapModal();
+                          },
+                          onCancel: _closeSwapModal,
+                        ),
+                      _SwapModalSurface.slippageSettings => SwapSlippageModal(
+                        slippageBps: swapState.slippageBps,
+                        onSubmitted: (value) {
+                          swapNotifier.updateSlippageBps(value);
+                          _closeSwapModal();
+                        },
+                        onCancel: _closeSwapModal,
+                      ),
+                    },
+                  ),
+                ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AppToastHost(
+                    key: const ValueKey('swap_toast_overlay_host'),
+                    child: SizedBox.expand(key: _toastOverlayContextKey),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-          if (_commandPaletteOpen)
-            AppPaneModalOverlay(
-              onDismiss: _closeCommandPalette,
-              child: Material(
-                type: MaterialType.transparency,
-                child: _SwapCommandPalette(commands: commandItems),
-              ),
-            ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: AppToastHost(
-                key: const ValueKey('swap_toast_overlay_host'),
-                child: SizedBox.expand(key: _toastOverlayContextKey),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -648,15 +735,19 @@ class _SwapComposerStack extends StatelessWidget {
     required this.viewportHeight,
     required this.state,
     required this.onAmountChanged,
+    required this.onAmountFiatChanged,
     required this.onReceiveAmountChanged,
-    required this.onDestinationChanged,
+    required this.onReceiveAmountFiatChanged,
+    required this.onToggleFiatInputMode,
     required this.onDirectionChanged,
     required this.onToggleDirection,
-    required this.onExternalAssetChanged,
-    required this.onSlippageChanged,
+    required this.onOpenExternalAssetPicker,
+    required this.onOpenDestinationAddress,
+    required this.assetSelectorOpen,
+    required this.onOpenSlippageSettings,
+    required this.slippageSettingsOpen,
     required this.onUseMaxZecAmount,
     required this.onReviewQuote,
-    required this.onScanDestinationAddress,
     required this.zecAvailableText,
     required this.zecAvailableZatoshi,
   });
@@ -664,15 +755,19 @@ class _SwapComposerStack extends StatelessWidget {
   final double? viewportHeight;
   final SwapPrototypeState state;
   final ValueChanged<String> onAmountChanged;
+  final ValueChanged<String> onAmountFiatChanged;
   final ValueChanged<String> onReceiveAmountChanged;
-  final ValueChanged<String> onDestinationChanged;
+  final ValueChanged<String> onReceiveAmountFiatChanged;
+  final ValueChanged<SwapAmountInputSide> onToggleFiatInputMode;
   final ValueChanged<SwapDirection> onDirectionChanged;
   final VoidCallback onToggleDirection;
-  final ValueChanged<SwapAsset> onExternalAssetChanged;
-  final ValueChanged<int> onSlippageChanged;
+  final VoidCallback onOpenExternalAssetPicker;
+  final VoidCallback onOpenDestinationAddress;
+  final bool assetSelectorOpen;
+  final VoidCallback onOpenSlippageSettings;
+  final bool slippageSettingsOpen;
   final VoidCallback onUseMaxZecAmount;
   final VoidCallback onReviewQuote;
-  final VoidCallback onScanDestinationAddress;
   final String zecAvailableText;
   final BigInt zecAvailableZatoshi;
 
@@ -684,18 +779,23 @@ class _SwapComposerStack extends StatelessWidget {
         bodyHeight: _swapBodyHeight,
         state: state,
         zecAvailableZatoshi: zecAvailableZatoshi,
+        onOpenDestinationAddress: onOpenDestinationAddress,
         onReviewQuote: onReviewQuote,
         child: SwapComposerPanel(
           state: state,
           onAmountChanged: onAmountChanged,
+          onAmountFiatChanged: onAmountFiatChanged,
           onReceiveAmountChanged: onReceiveAmountChanged,
-          onDestinationChanged: onDestinationChanged,
+          onReceiveAmountFiatChanged: onReceiveAmountFiatChanged,
+          onToggleFiatInputMode: onToggleFiatInputMode,
           onDirectionChanged: onDirectionChanged,
           onToggleDirection: onToggleDirection,
-          onExternalAssetChanged: onExternalAssetChanged,
-          onSlippageChanged: onSlippageChanged,
+          onOpenExternalAssetPicker: onOpenExternalAssetPicker,
+          onOpenDestinationAddress: onOpenDestinationAddress,
+          assetSelectorOpen: assetSelectorOpen,
+          onOpenSlippageSettings: onOpenSlippageSettings,
+          slippageSettingsOpen: slippageSettingsOpen,
           onUseMaxZecAmount: onUseMaxZecAmount,
-          onScanDestinationAddress: onScanDestinationAddress,
           zecAvailableText: zecAvailableText,
           zecAvailableZatoshi: zecAvailableZatoshi,
         ),
@@ -731,6 +831,7 @@ class _SwapComposerBody extends StatelessWidget {
     required this.bodyHeight,
     required this.state,
     required this.zecAvailableZatoshi,
+    required this.onOpenDestinationAddress,
     required this.onReviewQuote,
     required this.child,
   });
@@ -738,6 +839,7 @@ class _SwapComposerBody extends StatelessWidget {
   final double? bodyHeight;
   final SwapPrototypeState state;
   final BigInt zecAvailableZatoshi;
+  final VoidCallback onOpenDestinationAddress;
   final VoidCallback onReviewQuote;
   final Widget child;
 
@@ -746,36 +848,42 @@ class _SwapComposerBody extends StatelessWidget {
     final footer = _SwapReviewFooter(
       state: state,
       zecAvailableZatoshi: zecAvailableZatoshi,
+      onOpenDestinationAddress: onOpenDestinationAddress,
       onReviewQuote: onReviewQuote,
     );
     final height = bodyHeight;
-    if (height == null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    final content = Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          child,
-          const SizedBox(height: AppSpacing.xs),
-          footer,
+          const _SwapPageTitle(),
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(width: double.infinity, child: child),
         ],
+      ),
+    );
+    if (height == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [content, const SizedBox(height: 38), footer],
+        ),
       );
     }
 
+    final effectiveHeight = _effectiveSwapBodyHeight(height, state);
     return SizedBox(
-      height: _effectiveSwapBodyHeight(height, state),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 60),
-              child: Align(
-                alignment: Alignment.center,
-                child: SizedBox(width: double.infinity, child: child),
-              ),
-            ),
-          ),
-          Align(alignment: Alignment.bottomCenter, child: footer),
-        ],
+      height: effectiveHeight,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
+        child: Column(
+          children: [
+            Expanded(child: content),
+            const SizedBox(height: AppSpacing.sm),
+            footer,
+          ],
+        ),
       ),
     );
   }
@@ -784,50 +892,77 @@ class _SwapComposerBody extends StatelessWidget {
 double _effectiveSwapBodyHeight(double height, SwapPrototypeState state) {
   final hasQuoteError =
       state.quoteError != null || state.previewQuoteError != null;
-  return hasQuoteError ? height + 72 : height;
+  final clampedHeight = height < _swapBodyDesignHeight
+      ? height
+      : _swapBodyDesignHeight;
+  return hasQuoteError ? clampedHeight + 72 : clampedHeight;
 }
 
 class _SwapReviewFooter extends StatelessWidget {
   const _SwapReviewFooter({
     required this.state,
     required this.zecAvailableZatoshi,
+    required this.onOpenDestinationAddress,
     required this.onReviewQuote,
   });
 
   final SwapPrototypeState state;
   final BigInt zecAvailableZatoshi;
+  final VoidCallback onOpenDestinationAddress;
   final VoidCallback onReviewQuote;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final balanceExceeded = _reviewAmountExceedsAvailableZec(
-          state,
-          zecAvailableZatoshi,
-        );
-        final canReview = state.canReviewQuote && !balanceExceeded;
-        return AppButton(
+    final balanceExceeded = _reviewAmountExceedsAvailableZec(
+      state,
+      zecAvailableZatoshi,
+    );
+    final needsDestinationAddress = state.destinationText.trim().isEmpty;
+    final canReview = state.canReviewQuote && !balanceExceeded;
+    final onPressed = needsDestinationAddress
+        ? onOpenDestinationAddress
+        : canReview
+        ? onReviewQuote
+        : null;
+    final label = needsDestinationAddress
+        ? _destinationAddressActionLabel(state)
+        : balanceExceeded
+        ? 'Insufficient ZEC'
+        : state.quoteLoading
+        ? 'Getting quote'
+        : 'Review swap';
+
+    return Center(
+      child: SizedBox(
+        width: 256,
+        child: AppButton(
           key: const ValueKey('swap_review_button'),
-          onPressed: canReview ? onReviewQuote : null,
-          variant: AppButtonVariant.primary,
+          onPressed: onPressed,
+          variant: needsDestinationAddress
+              ? AppButtonVariant.secondary
+              : AppButtonVariant.primary,
           size: AppButtonSize.large,
-          minWidth: constraints.maxWidth,
-          leading: state.quoteLoading ? const AppIcon(AppIcons.loader) : null,
-          trailing: state.quoteLoading
-              ? null
-              : const AppIcon(AppIcons.arrowForwardIos),
-          child: Text(
-            balanceExceeded
-                ? 'Insufficient ZEC'
-                : state.quoteLoading
-                ? 'Getting quote'
-                : 'Review swap',
+          minWidth: 256,
+          leading: state.quoteLoading && !needsDestinationAddress
+              ? const AppIcon(AppIcons.loader)
+              : null,
+          child: SizedBox(
+            width: 184,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(label, maxLines: 1),
+            ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
+}
+
+String _destinationAddressActionLabel(SwapPrototypeState state) {
+  return state.direction.sendsZec
+      ? 'Add Recipient Address'
+      : 'Add Refund Address';
 }
 
 bool _reviewAmountExceedsAvailableZec(

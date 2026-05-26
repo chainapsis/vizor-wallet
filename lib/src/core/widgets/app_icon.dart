@@ -36,10 +36,12 @@ abstract final class AppIcons {
   static const chevronForward = 'chevron_forward';
   static const collapsed = 'collapsed';
   static const cog = 'cog';
+  static const coins = 'coins';
   static const copy = 'copy';
   static const cross = 'cross';
   static const crystalBall = 'crystal_ball';
   static const day = 'day';
+  static const doubleArrowVertical = 'double_arrow_vertical';
   static const dragon = 'dragon';
   static const endpoint = 'endpoint';
   static const eye = 'eye';
@@ -62,11 +64,13 @@ abstract final class AppIcons {
   static const qrCodeFill = 'qr_code_fill';
   static const renew = 'renew';
   static const scroll = 'scroll';
+  static const search = 'search';
   static const shieldAsset = 'shield_asset';
   static const shieldKeyhole = 'shield_keyhole';
   static const shieldKeyholeOutline = 'shield_keyhole_outline';
   static const skip = 'skip';
   static const skull = 'skull';
+  static const swapArrows = 'swap_arrows';
   static const sync = 'sync';
   static const theme = 'theme';
   static const time = 'time';

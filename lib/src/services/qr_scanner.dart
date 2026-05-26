@@ -65,12 +65,14 @@ class PlainQrScannerView extends StatefulWidget {
     required this.onComplete,
     this.controller,
     this.facing,
+    this.scanSessionResetToken,
     super.key,
   });
 
   final ValueChanged<String> onComplete;
   final MobileScannerController? controller;
   final CameraFacing? facing;
+  final Object? scanSessionResetToken;
 
   @override
   State<PlainQrScannerView> createState() => _PlainQrScannerViewState();
@@ -105,7 +107,12 @@ class _PlainQrScannerViewState extends State<PlainQrScannerView> {
     final controllerChanged = oldWidget.controller != widget.controller;
     final ownedFacingChanged =
         widget.controller == null && oldWidget.facing != widget.facing;
-    if (!controllerChanged && !ownedFacingChanged) return;
+    if (!controllerChanged && !ownedFacingChanged) {
+      if (oldWidget.scanSessionResetToken != widget.scanSessionResetToken) {
+        _complete = false;
+      }
+      return;
+    }
     if (_ownsController) {
       _controller.dispose();
     }

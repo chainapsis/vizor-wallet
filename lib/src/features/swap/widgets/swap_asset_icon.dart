@@ -19,7 +19,7 @@ class SwapAssetIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final badgeSize = (size * 0.62).clamp(17.0, 24.0);
+    final badgeSize = (size * 0.5).clamp(16.0, 24.0);
     return SizedBox(
       width: size,
       height: size,
@@ -35,9 +35,10 @@ class SwapAssetIcon extends StatelessWidget {
           ),
           if (showChainBadge)
             Positioned(
-              right: -4,
+              right: -2,
               bottom: -2,
               child: Container(
+                key: ValueKey('swap_asset_chain_badge_${asset.identityKey}'),
                 width: badgeSize,
                 height: badgeSize,
                 padding: const EdgeInsets.all(1),
@@ -79,11 +80,12 @@ class _RoundAssetImage extends StatelessWidget {
       child: Image.asset(
         assetPath,
         fit: BoxFit.cover,
-        errorBuilder: (context, _, _) => _AssetImageFallback(
-          label: fallbackText,
-          selected: selected,
-          small: small,
-        ),
+        errorBuilder:
+            (context, _, _) => _AssetImageFallback(
+              label: fallbackText,
+              selected: selected,
+              small: small,
+            ),
       ),
     );
   }
@@ -107,9 +109,10 @@ class _AssetImageFallback extends StatelessWidget {
     return Container(
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: selected
-            ? colors.background.brandCrimsonAlpha
-            : colors.background.raised,
+        color:
+            selected
+                ? colors.background.brandCrimsonAlpha
+                : colors.background.raised,
         border: Border.all(color: colors.border.subtle),
         borderRadius: BorderRadius.circular(AppRadii.full),
       ),

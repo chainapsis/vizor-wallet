@@ -50,6 +50,29 @@ void main() {
     );
   });
 
+  testWidgets('sidebar keeps primary navigation item spacing consistent', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sidebarHarness(SyncState()));
+    await tester.pump();
+
+    final positions = [
+      tester.getTopLeft(find.text('Wallet')).dy,
+      tester.getTopLeft(find.text('Send')).dy,
+      tester.getTopLeft(find.text('Receive')).dy,
+      tester.getTopLeft(find.text('Swap')).dy,
+      tester.getTopLeft(find.text('Activity')).dy,
+    ];
+    final gaps = [
+      for (var i = 1; i < positions.length; i++)
+        positions[i] - positions[i - 1],
+    ];
+
+    for (final gap in gaps.skip(1)) {
+      expect(gap, moreOrLessEquals(gaps.first, epsilon: 0.1));
+    }
+  });
+
   testWidgets('sidebar sync indicator is pinned to the sidebar edge', (
     tester,
   ) async {

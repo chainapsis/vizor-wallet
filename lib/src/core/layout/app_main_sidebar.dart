@@ -125,18 +125,6 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     active: _matches('/send'),
                     onTap: _matches('/send') ? null : () => context.go('/send'),
                   ),
-                  if (swapFeatureEnabled) ...[
-                    const SizedBox(height: AppSpacing.xs),
-                    AppSidebarItem(
-                      key: const ValueKey('sidebar_swap_button'),
-                      label: 'Swap',
-                      iconName: AppIcons.renew,
-                      active: _matches('/swap'),
-                      onTap: _matches('/swap')
-                          ? null
-                          : () => context.go('/swap'),
-                    ),
-                  ],
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
                     key: const ValueKey('sidebar_receive_button'),
@@ -147,6 +135,18 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         ? null
                         : () => context.go('/receive'),
                   ),
+                  if (swapFeatureEnabled) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    AppSidebarItem(
+                      key: const ValueKey('sidebar_swap_button'),
+                      label: 'Swap',
+                      iconName: AppIcons.swapArrows,
+                      active: _matches('/swap'),
+                      onTap: _matches('/swap')
+                          ? null
+                          : () => context.go('/swap'),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
                     key: const ValueKey('sidebar_activity_button'),
