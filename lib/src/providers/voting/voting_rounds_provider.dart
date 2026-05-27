@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'voting_config_provider.dart';
@@ -35,9 +36,21 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
   Future<void> refresh() async {
     if (_refreshInFlight) return;
     _refreshInFlight = true;
-    state = const AsyncLoading<List<VotingRoundView>>();
+    final previous = state.value;
+    if (previous == null) {
+      state = const AsyncLoading<List<VotingRoundView>>();
+    }
     try {
-      state = await AsyncValue.guard(_load);
+      state = AsyncData(await _load());
+    } catch (error, stackTrace) {
+      if (previous == null) {
+        state = AsyncError(error, stackTrace);
+      } else {
+        debugPrint(
+          '[zcash] Voting: keeping previous poll list after refresh failed: '
+          '$error',
+        );
+      }
     } finally {
       _refreshInFlight = false;
     }
@@ -50,13 +63,53 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
 
     final rounds = await api.listRounds();
     final endorsedIds = await endorser.getEndorsedSet();
+    final votedIds = await _completedVoteRoundIds(
+      rounds.map((round) => round.roundId),
+    );
     return [
       for (final round in rounds)
         VotingRoundView.fromSummary(
           round,
           endorsed: endorsedIds.contains(round.roundId),
+          voted: votedIds.contains(round.roundId),
         ),
     ];
+  }
+
+  Future<Set<String>> _completedVoteRoundIds(Iterable<String> roundIds) async {
+    final String accountUuid;
+    final String dbPath;
+    try {
+      final activeAccountUuid = await ref
+          .read(votingActiveAccountUuidProvider)
+          .call();
+      if (activeAccountUuid == null) return const {};
+      accountUuid = activeAccountUuid;
+      dbPath = await ref.read(votingWalletDbPathProvider).call();
+    } catch (error) {
+      debugPrint('[zcash] Voting: skipped voted-state lookup: $error');
+      return const {};
+    }
+    final recovery = ref.read(votingRecoveryServiceProvider);
+    final votedIds = <String>{};
+    for (final roundId in roundIds) {
+      try {
+        final plan = await recovery.loadResumePlan(
+          dbPath: dbPath,
+          walletId: accountUuid,
+          roundId: roundId,
+        );
+        if (plan.hasCompletedVoteForDisplay) {
+          votedIds.add(roundId);
+        }
+      } catch (error) {
+        debugPrint(
+          '[zcash] Voting: skipped voted-state lookup for round $roundId: '
+          '$error',
+        );
+      }
+    }
+    return votedIds;
   }
 }
 

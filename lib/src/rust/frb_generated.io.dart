@@ -98,6 +98,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiShareDelegationRecord dco_decode_api_share_delegation_record(dynamic raw);
 
   @protected
+  ApiShareSubmissionPlan dco_decode_api_share_submission_plan(dynamic raw);
+
+  @protected
   ApiShareWorkflowRecovery dco_decode_api_share_workflow_recovery(dynamic raw);
 
   @protected
@@ -242,6 +245,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ApiShareDelegationRecord> dco_decode_list_api_share_delegation_record(
+    dynamic raw,
+  );
+
+  @protected
+  List<ApiShareSubmissionPlan> dco_decode_list_api_share_submission_plan(
     dynamic raw,
   );
 
@@ -499,6 +507,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiShareSubmissionPlan sse_decode_api_share_submission_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiShareWorkflowRecovery sse_decode_api_share_workflow_recovery(
     SseDeserializer deserializer,
   );
@@ -677,6 +690,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ApiShareDelegationRecord> sse_decode_list_api_share_delegation_record(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ApiShareSubmissionPlan> sse_decode_list_api_share_submission_plan(
     SseDeserializer deserializer,
   );
 
@@ -995,6 +1013,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_share_submission_plan(
+    ApiShareSubmissionPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_share_workflow_recovery(
     ApiShareWorkflowRecovery self,
     SseSerializer serializer,
@@ -1207,6 +1231,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_api_share_delegation_record(
     List<ApiShareDelegationRecord> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_share_submission_plan(
+    List<ApiShareSubmissionPlan> self,
     SseSerializer serializer,
   );
 

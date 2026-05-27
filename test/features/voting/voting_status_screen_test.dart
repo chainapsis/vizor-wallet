@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
@@ -140,6 +141,71 @@ void main() {
     expect(find.text('active account lookup failed'), findsOne);
     expect(find.text('Voting session action failed.'), findsNothing);
     expect(find.text('Retry'), findsOne);
+  });
+
+  testWidgets('proposal detail hides View more when description fits', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final round = _roundStatusJson()..['summary'] = '[TEST] Max Proposals';
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('[TEST] Max Proposals'), findsOneWidget);
+    expect(find.text('View more'), findsNothing);
+  });
+
+  testWidgets('proposal detail shows View more when description truncates', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final longDescription = List.filled(
+      8,
+      'This poll description should overflow the collapsed row.',
+    ).join(' ');
+    final round = _roundStatusJson()..['summary'] = longDescription;
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('View more'), findsOneWidget);
   });
 
   testWidgets('status screen navigates after successful submission', (
@@ -317,6 +383,49 @@ void main() {
     expect(find.text('submission confirmed route'), findsOneWidget);
   });
 
+  testWidgets('hardware status screen scrolls in a short window', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final container = _statusContainer(
+      accountOverride: _HardwareAccountNotifier.new,
+      activeAccountUuid: () async => 'hardware-1',
+      accountIsHardware: true,
+      hardwareAccountUuids: const {'hardware-1'},
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+    container
+        .read(
+          votingDraftProvider(
+            const VotingSessionKey(
+              roundId: _roundId,
+              accountUuid: 'hardware-1',
+            ),
+          ).notifier,
+        )
+        .setChoice(1, 0);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _statusHarness()),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text('Sign Bundle 1 of 1').evaluate().isNotEmpty) break;
+    }
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+    expect(find.text('Sign Bundle 1 of 1'), findsOneWidget);
+  });
+
   testWidgets('hardware status screen shows retry when Keystone QR fails', (
     tester,
   ) async {
@@ -455,6 +564,40 @@ Widget _statusHarness({List<int>? keystoneScanResult}) {
         path: '/voting/keystone/scan',
         builder: (_, _) =>
             _ScanReturnScreen(result: keystoneScanResult ?? const [3]),
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+      GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
+      GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
+      GoRoute(
+        path: '/activity',
+        builder: (_, _) => const Text('activity route'),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (_, _) => const Text('settings route'),
+      ),
+    ],
+  );
+
+  return MaterialApp.router(
+    routerConfig: router,
+    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+  );
+}
+
+Widget _proposalHarness() {
+  final router = GoRouter(
+    initialLocation: '/voting/poll/$_roundId',
+    routes: [
+      GoRoute(
+        path: '/voting/poll/:roundId',
+        builder: (_, state) => VotingProposalDetailScreen(
+          roundId: state.pathParameters['roundId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/voting/poll/:roundId/review',
+        builder: (_, _) => const Text('review route'),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
@@ -728,6 +871,7 @@ class _MatchedPirSnapshotResolver implements PirSnapshotResolver {
 
 class _FakeVotingConfigSourceStore implements VotingConfigSourceStore {
   String? sourceUrl;
+  String? savedSourcesJson;
 
   @override
   Future<String?> readSourceUrl() async => sourceUrl;
@@ -740,6 +884,14 @@ class _FakeVotingConfigSourceStore implements VotingConfigSourceStore {
   @override
   Future<void> resetSourceUrl() async {
     sourceUrl = null;
+  }
+
+  @override
+  Future<String?> readSavedSourcesJson() async => savedSourcesJson;
+
+  @override
+  Future<void> writeSavedSourcesJson(String savedSourcesJson) async {
+    this.savedSourcesJson = savedSourcesJson;
   }
 }
 
@@ -1098,6 +1250,26 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       'primary_blind': base64Encode(payload.primaryBlind),
       'submit_at': submitAt.toInt(),
     });
+  }
+
+  @override
+  Future<List<rust_voting.ApiShareSubmissionPlan>> planShareSubmissions({
+    required int shareCount,
+    required List<String> serverUrls,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    BigInt? lastMomentBufferSeconds,
+    required bool singleShare,
+  }) async {
+    final targetCount = serverUrls.isEmpty ? 0 : (serverUrls.length / 2).ceil();
+    return [
+      for (var i = 0; i < shareCount; i++)
+        rust_voting.ApiShareSubmissionPlan(
+          submitAt: BigInt.zero,
+          targetCount: targetCount,
+          targetServers: serverUrls.take(targetCount).toList(growable: false),
+        ),
+    ];
   }
 
   @override

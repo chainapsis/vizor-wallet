@@ -427,6 +427,15 @@ abstract interface class VotingRustApi {
     required BigInt submitAt,
   });
 
+  Future<List<rust_voting.ApiShareSubmissionPlan>> planShareSubmissions({
+    required int shareCount,
+    required List<String> serverUrls,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    BigInt? lastMomentBufferSeconds,
+    required bool singleShare,
+  });
+
   Future<String> recoveredVoteShareWireJson({
     required String commitmentBundleJson,
     required int proposalId,
@@ -865,6 +874,25 @@ class FrbVotingRustApi implements VotingRustApi {
       payload: payload,
       vcTreePosition: vcTreePosition,
       submitAt: submitAt,
+    );
+  }
+
+  @override
+  Future<List<rust_voting.ApiShareSubmissionPlan>> planShareSubmissions({
+    required int shareCount,
+    required List<String> serverUrls,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    BigInt? lastMomentBufferSeconds,
+    required bool singleShare,
+  }) {
+    return rust_voting.planShareSubmissions(
+      shareCount: shareCount,
+      serverUrls: serverUrls,
+      nowSeconds: nowSeconds,
+      voteEndTimeSeconds: voteEndTimeSeconds,
+      lastMomentBufferSeconds: lastMomentBufferSeconds,
+      singleShare: singleShare,
     );
   }
 

@@ -17,6 +17,7 @@ class VotingRoundView {
   final String status;
   final bool endorsed;
   final bool unverified;
+  final bool voted;
   final Map<String, dynamic> rawJson;
 
   const VotingRoundView({
@@ -25,12 +26,14 @@ class VotingRoundView {
     required this.status,
     this.endorsed = false,
     this.unverified = false,
+    this.voted = false,
     this.rawJson = const {},
   });
 
   factory VotingRoundView.fromSummary(
     VotingRoundSummary summary, {
     required bool endorsed,
+    bool voted = false,
   }) {
     return VotingRoundView(
       roundId: summary.roundId,
@@ -38,17 +41,19 @@ class VotingRoundView {
       status: summary.status,
       endorsed: endorsed,
       unverified: !endorsed,
+      voted: voted,
       rawJson: summary.rawJson,
     );
   }
 
-  VotingRoundView copyWith({bool? endorsed, bool? unverified}) {
+  VotingRoundView copyWith({bool? endorsed, bool? unverified, bool? voted}) {
     return VotingRoundView(
       roundId: roundId,
       title: title,
       status: status,
       endorsed: endorsed ?? this.endorsed,
       unverified: unverified ?? this.unverified,
+      voted: voted ?? this.voted,
       rawJson: rawJson,
     );
   }
@@ -242,6 +247,8 @@ class VotingSessionState {
   final String? keystoneScanError;
   final int? currentBundleIndex;
   final VotingVoteKey? currentVoteKey;
+  final int voteSubmissionCompletedCount;
+  final int voteSubmissionTotalCount;
   final VotingSessionError? error;
 
   VotingSessionState({
@@ -266,6 +273,8 @@ class VotingSessionState {
     this.keystoneScanError,
     this.currentBundleIndex,
     this.currentVoteKey,
+    this.voteSubmissionCompletedCount = 0,
+    this.voteSubmissionTotalCount = 0,
     this.error,
   }) : pirDiagnostics = UnmodifiableListView(pirDiagnostics),
        delegationProgress = UnmodifiableMapView(delegationProgress),
@@ -299,6 +308,9 @@ class VotingSessionState {
     bool clearCurrentBundleIndex = false,
     VotingVoteKey? currentVoteKey,
     bool clearCurrentVoteKey = false,
+    int? voteSubmissionCompletedCount,
+    int? voteSubmissionTotalCount,
+    bool clearVoteSubmissionProgress = false,
     VotingSessionError? error,
     bool clearError = false,
   }) {
@@ -338,6 +350,12 @@ class VotingSessionState {
       currentVoteKey: clearCurrentVoteKey
           ? null
           : currentVoteKey ?? this.currentVoteKey,
+      voteSubmissionCompletedCount: clearVoteSubmissionProgress
+          ? 0
+          : voteSubmissionCompletedCount ?? this.voteSubmissionCompletedCount,
+      voteSubmissionTotalCount: clearVoteSubmissionProgress
+          ? 0
+          : voteSubmissionTotalCount ?? this.voteSubmissionTotalCount,
       error: clearError ? null : error ?? this.error,
     );
   }

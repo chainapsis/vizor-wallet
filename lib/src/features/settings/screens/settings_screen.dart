@@ -115,9 +115,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onChangePassword: () =>
                     context.push('/settings/change-password'),
                 onEndpoint: () => context.push('/settings/endpoint'),
-                onVoting: activeAccountIsHardware
-                    ? null
-                    : () => context.push('/voting'),
+                onVoting: () => context.push('/voting'),
                 onAccountName: hasActiveAccount
                     ? () => _showModal(_SettingsModalType.accountName)
                     : null,
@@ -368,9 +366,7 @@ class _SettingsList extends StatelessWidget {
             _SettingsRow(
               iconName: AppIcons.scroll,
               label: 'Coinholder Polling',
-              value: activeAccountIsHardware
-                  ? 'Hardware accounts coming soon'
-                  : 'Open',
+              value: 'Open',
               onTap: onVoting,
             ),
           ],

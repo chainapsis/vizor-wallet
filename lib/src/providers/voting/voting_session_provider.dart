@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,8 +24,6 @@ import 'voting_state.dart';
 /// [_enqueue] so repeated button taps cannot overlap Rust wallet mutations.
 class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   VotingSessionNotifier(this._roundId);
-
-  static final Random _submitAtRandom = Random.secure();
 
   Future<void> _operation = Future.value();
   final String _roundId;
@@ -531,6 +528,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
       final pendingBundles = _pendingVoteBundleIndexes(plan);
+      final totalVoteTasks = pendingBundles.length * effectiveDraftVotes.length;
+      var completedVoteTasks = 0;
       debugPrint(
         '[zcash] Voting: cast votes start '
         'round=${context.round.roundId} bundles=${pendingBundles.length} '
@@ -540,10 +539,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       for (final bundleIndex in pendingBundles) {
         for (final draftVote in effectiveDraftVotes) {
           final voteTimer = Stopwatch()..start();
+          final key = VotingVoteKey(
+            bundleIndex: bundleIndex,
+            proposalId: draftVote.proposalId,
+          );
           state = AsyncData(
             (state.value ?? current).copyWith(
               phase: VotingSessionPhase.syncingVoteTree,
               currentBundleIndex: bundleIndex,
+              currentVoteKey: key,
+              voteSubmissionCompletedCount: completedVoteTasks,
+              voteSubmissionTotalCount: totalVoteTasks,
             ),
           );
           debugPrint(
@@ -592,6 +598,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             (state.value ?? current).copyWith(
               phase: VotingSessionPhase.castingVotes,
               currentBundleIndex: bundleIndex,
+              currentVoteKey: key,
+              voteSubmissionCompletedCount: completedVoteTasks,
+              voteSubmissionTotalCount: totalVoteTasks,
             ),
           );
           debugPrint(
@@ -614,20 +623,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                   )) {
             final proposalId = event.proposalId;
             if (proposalId != null) {
-              final key = VotingVoteKey(
+              final eventKey = VotingVoteKey(
                 bundleIndex: event.bundleIndex ?? bundleIndex,
                 proposalId: proposalId,
               );
-              progress[key] = VotingSessionProgress(
+              progress[eventKey] = VotingSessionProgress(
                 phase: event.phase,
-                bundleIndex: key.bundleIndex,
+                bundleIndex: eventKey.bundleIndex,
                 proposalId: proposalId,
                 proofProgress: event.proofProgress,
               );
               state = AsyncData(
                 (state.value ?? current).copyWith(
+                  phase: VotingSessionPhase.castingVotes,
                   voteProgress: progress,
-                  currentVoteKey: key,
+                  currentVoteKey: eventKey,
+                  voteSubmissionCompletedCount: completedVoteTasks,
+                  voteSubmissionTotalCount: totalVoteTasks,
                 ),
               );
             }
@@ -641,9 +653,27 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 context,
                 commitments,
                 vcTreePositions: vcTreePositions,
+                singleShare: draftVote.singleShare,
+                completedVoteTasks: completedVoteTasks,
+                totalVoteTasks: totalVoteTasks,
               );
             }
           }
+          completedVoteTasks++;
+          progress[key] = VotingSessionProgress(
+            phase: 'completed',
+            bundleIndex: key.bundleIndex,
+            proposalId: key.proposalId,
+          );
+          state = AsyncData(
+            (state.value ?? current).copyWith(
+              phase: VotingSessionPhase.castingVotes,
+              voteProgress: progress,
+              currentVoteKey: key,
+              voteSubmissionCompletedCount: completedVoteTasks,
+              voteSubmissionTotalCount: totalVoteTasks,
+            ),
+          );
           debugPrint(
             '[zcash] Voting: vote flow completed '
             'round=${context.round.roundId} bundle=$bundleIndex '
@@ -671,6 +701,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           phase: VotingSessionPhase.submittingShares,
           resumePlan: refreshedPlan,
           voteProgress: progress,
+          voteSubmissionCompletedCount: completedVoteTasks,
+          voteSubmissionTotalCount: totalVoteTasks,
           clearCurrentBundleIndex: true,
           clearCurrentVoteKey: true,
         ),
@@ -728,6 +760,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context,
     rust_voting.ApiSignedVoteCommitments commitments, {
     Map<int, BigInt> vcTreePositions = const {},
+    required bool singleShare,
+    required int completedVoteTasks,
+    required int totalVoteTasks,
   }) async {
     final api = ref.read(votingApiClientProvider(context.config.apiBaseUrl));
     final rust = ref.read(votingRustApiProvider);
@@ -739,28 +774,73 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       throw StateError('No vote servers configured for share submission.');
     }
 
+    final nowSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
+    final voteEnd = context.round.voteEndTime;
+    final voteEndSeconds = voteEnd == null
+        ? nowSeconds
+        : voteEnd.toUtc().millisecondsSinceEpoch ~/ 1000;
+    final lastMomentBufferSeconds = context.round.lastMomentBuffer == null
+        ? null
+        : BigInt.from(context.round.lastMomentBuffer!.inSeconds);
+    final bundleProgressMessage = _bundleProgressMessage(
+      bundleIndex: commitments.bundleIndex,
+      bundleCount: context.resumePlan.bundleCount,
+    );
+
     for (final commitment in commitments.commitments) {
       final vcTreePosition = vcTreePositions[commitment.proposalId];
-      for (final payload in commitment.sharePayloads) {
+      final plans = await rust.planShareSubmissions(
+        shareCount: commitment.sharePayloads.length,
+        serverUrls: serverUrls,
+        nowSeconds: BigInt.from(nowSeconds),
+        voteEndTimeSeconds: BigInt.from(voteEndSeconds),
+        lastMomentBufferSeconds: lastMomentBufferSeconds,
+        singleShare: singleShare,
+      );
+      if (plans.length != commitment.sharePayloads.length) {
+        throw StateError(
+          'Share submission policy returned ${plans.length} plan(s) for '
+          '${commitment.sharePayloads.length} payload(s).',
+        );
+      }
+
+      for (
+        var payloadIndex = 0;
+        payloadIndex < commitment.sharePayloads.length;
+        payloadIndex++
+      ) {
+        final payload = commitment.sharePayloads[payloadIndex];
+        final plan = plans[payloadIndex];
         final acceptedServers = <String>[];
-        final submitAt = VotingShareTimingPolicy.scheduledShareSubmitAt(
-          context.round,
-          randomDouble: _submitAtRandom.nextDouble,
+        final targetCount = plan.targetCount
+            .clamp(1, serverUrls.length)
+            .toInt();
+        final candidateServers = _plannedShareServers(
+          plannedServers: plan.targetServers,
+          fallbackServers: helperHealth.candidateServers(serverUrls),
         );
         final body = await _wireJsonMap(
           rust.voteShareWireJson(
             payload: payload,
             vcTreePosition: vcTreePosition,
-            submitAt: BigInt.from(submitAt),
+            submitAt: plan.submitAt,
           ),
         );
-        for (final serverUrl in helperHealth.candidateServers(serverUrls)) {
+        _setShareSubmissionProgress(
+          bundleIndex: commitments.bundleIndex,
+          proposalId: payload.proposalId,
+          message: bundleProgressMessage,
+          completedVoteTasks: completedVoteTasks,
+          totalVoteTasks: totalVoteTasks,
+        );
+        for (final serverUrl in candidateServers) {
+          if (acceptedServers.length >= targetCount) break;
           try {
             debugPrint(
               '[zcash] Voting: submitting share '
               'proposal=${payload.proposalId} share=${payload.encryptedShare.shareIndex} '
               'server=$serverUrl treePosition=${body['tree_position']} '
-              'submitAt=$submitAt',
+              'submitAt=${plan.submitAt} target=$targetCount',
             );
             await api.submitShare(
               roundId: context.round.roundId,
@@ -772,7 +852,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             debugPrint(
               '[zcash] Voting: share accepted '
               'proposal=${payload.proposalId} share=${payload.encryptedShare.shareIndex} '
-              'server=$serverUrl',
+              'server=$serverUrl accepted=${acceptedServers.length}/$targetCount',
             );
           } catch (e) {
             debugPrint(
@@ -790,6 +870,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             'for proposal ${payload.proposalId}.',
           );
         }
+        if (acceptedServers.length < targetCount) {
+          debugPrint(
+            '[zcash] Voting: share accepted by fewer helpers than planned '
+            'proposal=${payload.proposalId} '
+            'share=${payload.encryptedShare.shareIndex} '
+            'accepted=${acceptedServers.length}/$targetCount',
+          );
+        }
 
         final nullifierHex = await rust.computeShareNullifierHex(
           voteCommitment: commitment.voteCommitment,
@@ -805,10 +893,62 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           shareIndex: payload.encryptedShare.shareIndex,
           sentToUrls: acceptedServers,
           nullifier: _bytesFromHex(nullifierHex),
-          submitAt: BigInt.from(submitAt),
+          submitAt: plan.submitAt,
         );
       }
     }
+  }
+
+  String? _bundleProgressMessage({
+    required int bundleIndex,
+    required int bundleCount,
+  }) {
+    if (bundleCount <= 1) return null;
+    return '${bundleIndex + 1}/$bundleCount';
+  }
+
+  List<String> _plannedShareServers({
+    required List<String> plannedServers,
+    required Iterable<String> fallbackServers,
+  }) {
+    final ordered = <String>{};
+    for (final server in plannedServers) {
+      if (server.trim().isNotEmpty) ordered.add(server);
+    }
+    for (final server in fallbackServers) {
+      if (server.trim().isNotEmpty) ordered.add(server);
+    }
+    return ordered.toList(growable: false);
+  }
+
+  void _setShareSubmissionProgress({
+    required int bundleIndex,
+    required int proposalId,
+    required String? message,
+    required int completedVoteTasks,
+    required int totalVoteTasks,
+  }) {
+    final current = state.value;
+    if (current == null) return;
+    final key = VotingVoteKey(bundleIndex: bundleIndex, proposalId: proposalId);
+    final progress = Map<VotingVoteKey, VotingSessionProgress>.from(
+      current.voteProgress,
+    );
+    progress[key] = VotingSessionProgress(
+      phase: 'submitting_shares',
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      message: message,
+    );
+    state = AsyncData(
+      current.copyWith(
+        phase: VotingSessionPhase.castingVotes,
+        voteProgress: progress,
+        currentVoteKey: key,
+        voteSubmissionCompletedCount: completedVoteTasks,
+        voteSubmissionTotalCount: totalVoteTasks,
+      ),
+    );
   }
 
   Future<Map<int, BigInt>> _submitVoteCommitments(

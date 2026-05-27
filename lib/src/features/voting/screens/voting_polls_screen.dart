@@ -92,12 +92,13 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
                             itemCount: sortedItems.length,
                             separatorBuilder: (_, _) =>
                                 const SizedBox(height: AppSpacing.base),
-                            itemBuilder: (context, index) => _PollCard(
-                              round: sortedItems[index],
-                              onTap: () => context.push(
-                                votingPollRoute(sortedItems[index].roundId),
-                              ),
-                            ),
+                            itemBuilder: (context, index) {
+                              final round = sortedItems[index];
+                              return _PollCard(
+                                round: round,
+                                onAction: () => _openRoundAction(round),
+                              );
+                            },
                           ),
                         ),
                       );
@@ -145,6 +146,15 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
             );
           }),
     );
+  }
+
+  void _openRoundAction(VotingRoundView round) {
+    final state = _pollCardState(round);
+    if (state == _PollCardState.tallying || state == _PollCardState.closed) {
+      context.push(votingResultsRoute(round.roundId));
+      return;
+    }
+    context.push(votingPollRoute(round.roundId));
   }
 
   void _openSettings() {
@@ -319,10 +329,10 @@ class _VotingBackButtonState extends State<_VotingBackButton> {
 }
 
 class _PollCard extends StatelessWidget {
-  const _PollCard({required this.round, required this.onTap});
+  const _PollCard({required this.round, required this.onAction});
 
   final VotingRoundView round;
-  final VoidCallback onTap;
+  final VoidCallback onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -330,82 +340,89 @@ class _PollCard extends StatelessWidget {
     final title = round.title.isEmpty ? round.roundId : round.title;
     final description = _roundDescription(round.rawJson);
     final dateRange = _roundDateRange(round.rawJson);
+    final state = _pollCardState(round);
 
     return Material(
       color: const Color(0x00000000),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-        onTap: onTap,
-        child: Ink(
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(color: colors.border.subtle),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0x0A231F20),
-                offset: const Offset(0, 1),
-                blurRadius: 1,
-                spreadRadius: -0.5,
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _StatusBadge(status: round.status),
-                  const Spacer(),
-                  if (dateRange != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        dateRange,
-                        textAlign: TextAlign.right,
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.secondary,
-                          height: 20 / 14,
-                          letterSpacing: -0.22,
-                        ),
+      child: Ink(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: colors.background.ground,
+          borderRadius: BorderRadius.circular(AppRadii.medium),
+          border: Border.all(color: colors.border.subtle),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0x0A231F20),
+              offset: const Offset(0, 1),
+              blurRadius: 1,
+              spreadRadius: -0.5,
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _StatusBadge(state: state),
+                const Spacer(),
+                if (dateRange != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      dateRange,
+                      textAlign: TextAlign.right,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.secondary,
+                        height: 20 / 14,
+                        letterSpacing: -0.22,
                       ),
                     ),
-                ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              title,
+              style: AppTypography.headlineSmall.copyWith(
+                color: colors.text.accent,
+                fontWeight: FontWeight.w600,
+                height: 24 / 16,
+                letterSpacing: -0.26,
               ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                title,
-                style: AppTypography.headlineSmall.copyWith(
-                  color: colors.text.accent,
-                  fontWeight: FontWeight.w600,
-                  height: 24 / 16,
-                  letterSpacing: -0.26,
-                ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Poll Description',
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.secondary,
+                height: 20 / 14,
+                letterSpacing: -0.22,
               ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'Poll Description',
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.secondary,
-                  height: 20 / 14,
-                  letterSpacing: -0.22,
-                ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              description.isEmpty ? round.roundId : description,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.primary,
+                height: 20 / 14,
+                letterSpacing: -0.22,
               ),
-              const SizedBox(height: 2),
-              Text(
-                description.isEmpty ? round.roundId : description,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.primary,
-                  height: 20 / 14,
-                  letterSpacing: -0.22,
-                ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Align(
+              alignment: Alignment.centerRight,
+              child: AppButton(
+                onPressed: onAction,
+                variant: _actionButtonVariant(state),
+                size: AppButtonSize.medium,
+                child: Text(_actionLabel(state)),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -413,29 +430,29 @@ class _PollCard extends StatelessWidget {
 }
 
 class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.status});
+  const _StatusBadge({required this.state});
 
-  final String status;
+  final _PollCardState state;
 
   @override
   Widget build(BuildContext context) {
-    final label = _statusLabel(status);
+    final label = _statusLabel(state);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       decoration: BoxDecoration(
-        color: _statusBackground(status),
-        border: Border.all(color: _statusBorder(status)),
+        color: _statusBackground(state),
+        border: Border.all(color: _statusBorder(state)),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AppIcon(AppIcons.time, size: 14, color: _statusText(status)),
+          AppIcon(_statusIcon(state), size: 14, color: _statusText(state)),
           const SizedBox(width: AppSpacing.xxs),
           Text(
             label,
             style: AppTypography.labelLarge.copyWith(
-              color: _statusText(status),
+              color: _statusText(state),
               height: 20 / 14,
               letterSpacing: -0.08,
             ),
@@ -689,39 +706,75 @@ bool _isSameDay(DateTime a, DateTime b) {
       localA.day == localB.day;
 }
 
-String _statusLabel(String value) {
-  return switch (_pollStatus(value)) {
-    _PollStatus.active => 'Active',
-    _PollStatus.tallying => 'Tallying',
-    _PollStatus.closed => 'Closed',
+String _statusLabel(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active => 'Active',
+    _PollCardState.voted => 'Voted',
+    _PollCardState.tallying => 'Tallying',
+    _PollCardState.closed => 'Closed',
   };
 }
 
-Color _statusBackground(String value) {
-  return switch (_pollStatus(value)) {
-    _PollStatus.active => const Color(0xFFECFDF3),
-    _PollStatus.tallying => const Color(0xFFFFFAEB),
-    _PollStatus.closed => const Color(0xFFF4F4F0),
+String _statusIcon(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.voted => AppIcons.check,
+    _ => AppIcons.time,
   };
 }
 
-Color _statusBorder(String value) {
-  return switch (_pollStatus(value)) {
-    _PollStatus.active => const Color(0xFFABEFC6),
-    _PollStatus.tallying => const Color(0xFFFEDF89),
-    _PollStatus.closed => const Color(0xFFEBEBE6),
+Color _statusBackground(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active || _PollCardState.voted => const Color(0xFFECFDF3),
+    _PollCardState.tallying => const Color(0xFFFFFAEB),
+    _PollCardState.closed => const Color(0xFFF4F4F0),
   };
 }
 
-Color _statusText(String value) {
-  return switch (_pollStatus(value)) {
-    _PollStatus.active => const Color(0xFF067647),
-    _PollStatus.tallying => const Color(0xFFB54708),
-    _PollStatus.closed => const Color(0xFF716C5D),
+Color _statusBorder(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active || _PollCardState.voted => const Color(0xFFABEFC6),
+    _PollCardState.tallying => const Color(0xFFFEDF89),
+    _PollCardState.closed => const Color(0xFFEBEBE6),
   };
 }
+
+Color _statusText(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active || _PollCardState.voted => const Color(0xFF067647),
+    _PollCardState.tallying => const Color(0xFFB54708),
+    _PollCardState.closed => const Color(0xFF716C5D),
+  };
+}
+
+String _actionLabel(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active => 'Enter Poll',
+    _PollCardState.voted => 'Review',
+    _PollCardState.tallying || _PollCardState.closed => 'View Results',
+  };
+}
+
+AppButtonVariant _actionButtonVariant(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active => AppButtonVariant.primary,
+    _PollCardState.voted ||
+    _PollCardState.tallying ||
+    _PollCardState.closed => AppButtonVariant.secondary,
+  };
+}
+
+enum _PollCardState { active, voted, tallying, closed }
 
 enum _PollStatus { active, tallying, closed }
+
+_PollCardState _pollCardState(VotingRoundView round) {
+  return switch (_pollStatus(round.status)) {
+    _PollStatus.active =>
+      round.voted ? _PollCardState.voted : _PollCardState.active,
+    _PollStatus.tallying => _PollCardState.tallying,
+    _PollStatus.closed => _PollCardState.closed,
+  };
+}
 
 _PollStatus _pollStatus(String value) {
   final status = value.trim().toLowerCase();

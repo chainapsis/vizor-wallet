@@ -62,7 +62,7 @@ void main() {
     expect(find.text('voting route'), findsOneWidget);
   });
 
-  testWidgets('settings disables voting for hardware accounts', (tester) async {
+  testWidgets('settings opens voting for hardware accounts', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
@@ -71,10 +71,10 @@ void main() {
     await tester.pumpWidget(_settingsHarness(isHardware: true));
     await tester.pump();
 
-    expect(find.text('Hardware accounts coming soon'), findsOneWidget);
+    expect(find.text('Hardware accounts coming soon'), findsNothing);
     await tester.tap(find.text('Coinholder Polling'));
     await tester.pumpAndSettle();
-    expect(find.text('voting route'), findsNothing);
+    expect(find.text('voting route'), findsOneWidget);
   });
 }
 

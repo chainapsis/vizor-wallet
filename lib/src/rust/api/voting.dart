@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `b64_hex_field`, `b64_hex`, `b64`, `catch`, `delegation_submission_wire_json_inner`, `hex_list_field`, `json_safe_u64`, `recovered_share_payload_json`, `recovered_vote_share_wire_json_inner`, `recovered_wire_share_json`, `recovered_wire_shares_json`, `selection_result`, `u32_field`, `vote_commitment_wire_json_inner`, `vote_share_wire_json_inner`, `wire_share_json`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -38,6 +38,27 @@ Future<String> voteShareWireJson({
   payload: payload,
   vcTreePosition: vcTreePosition,
   submitAt: submitAt,
+);
+
+/// Plan independent helper-share timing and randomized helper targets.
+///
+/// This mirrors the zcash-swift-wallet-sdk wrapper around
+/// `zcash_voting::share_policy::plan_share_submissions`, with Rust drawing the
+/// policy-sized entropy from the OS CSPRNG before returning FRB-safe plans.
+Future<List<ApiShareSubmissionPlan>> planShareSubmissions({
+  required int shareCount,
+  required List<String> serverUrls,
+  required BigInt nowSeconds,
+  required BigInt voteEndTimeSeconds,
+  BigInt? lastMomentBufferSeconds,
+  required bool singleShare,
+}) => RustLib.instance.api.crateApiVotingPlanShareSubmissions(
+  shareCount: shareCount,
+  serverUrls: serverUrls,
+  nowSeconds: nowSeconds,
+  voteEndTimeSeconds: voteEndTimeSeconds,
+  lastMomentBufferSeconds: lastMomentBufferSeconds,
+  singleShare: singleShare,
 );
 
 /// Extract and validate one helper-share payload from stored recovery JSON.
@@ -111,8 +132,9 @@ Future<int> getBundleCount({
 
 /// Select voting-eligible notes at `snapshot_height` using lightwalletd data.
 ///
-/// The returned notes are already quantized to `BALLOT_DIVISOR` voting weight
-/// and include the cached tree anchor used by later delegation setup.
+/// The returned notes are raw snapshot-unspent notes and include the cached
+/// tree anchor used by later delegation setup. `eligible_weight_zatoshi` is
+/// computed from `zcash_voting` smart bundles.
 Future<ApiVotingNoteSelectionResult> selectVotingNotes({
   required String dbPath,
   required String lightwalletdUrl,
@@ -1159,6 +1181,37 @@ class ApiShareDelegationRecord {
           createdAt == other.createdAt;
 }
 
+/// FRB-safe helper-share submission plan from `zcash_voting::share_policy`.
+class ApiShareSubmissionPlan {
+  /// Unix seconds when helpers should submit this share, or 0 for immediate.
+  final BigInt submitAt;
+
+  /// Number of helpers this share should reach before local delivery succeeds.
+  final int targetCount;
+
+  /// Initial helper targets selected by the shared Rust policy.
+  final List<String> targetServers;
+
+  const ApiShareSubmissionPlan({
+    required this.submitAt,
+    required this.targetCount,
+    required this.targetServers,
+  });
+
+  @override
+  int get hashCode =>
+      submitAt.hashCode ^ targetCount.hashCode ^ targetServers.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiShareSubmissionPlan &&
+          runtimeType == other.runtimeType &&
+          submitAt == other.submitAt &&
+          targetCount == other.targetCount &&
+          targetServers == other.targetServers;
+}
+
 class ApiShareWorkflowRecovery {
   final int bundleIndex;
   final int proposalId;
@@ -1607,12 +1660,15 @@ class ApiVotingBundleSetupResult {
           eligibleWeightZatoshi == other.eligibleWeightZatoshi;
 }
 
-/// FRB-safe reference to one note eligible for voting at the snapshot height.
+/// FRB-safe reference to one Orchard note selected at the snapshot height.
 class ApiVotingNoteRef {
   final String pool;
   final String txidHex;
   final int outputIndex;
   final BigInt valueZatoshi;
+
+  /// Legacy per-note display field. Voting weight is computed from smart
+  /// bundles, so this carries the raw note value.
   final BigInt votingWeightZatoshi;
   final BigInt commitmentTreePosition;
   final BigInt minedHeight;

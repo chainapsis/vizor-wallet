@@ -327,6 +327,11 @@ class _PollSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final hasDescription = description.isNotEmpty;
+    final descriptionStyle = AppTypography.bodyMedium.copyWith(
+      color: colors.text.secondary,
+      height: 20 / 14,
+      letterSpacing: -0.22,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -386,27 +391,57 @@ class _PollSummary extends StatelessWidget {
         ),
         if (hasDescription) ...[
           const SizedBox(height: AppSpacing.xs),
-          Text(
-            description,
-            maxLines: expanded ? null : 1,
-            overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.secondary,
-              height: 20 / 14,
-              letterSpacing: -0.22,
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _ViewMoreButton(
-              expanded: expanded,
-              onPressed: onToggleDescription,
-            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final canExpand = _textExceedsSingleLine(
+                context: context,
+                text: description,
+                style: descriptionStyle,
+                maxWidth: constraints.maxWidth,
+              );
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    description,
+                    maxLines: expanded || !canExpand ? null : 1,
+                    overflow: expanded || !canExpand
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
+                    style: descriptionStyle,
+                  ),
+                  if (canExpand)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: _ViewMoreButton(
+                        expanded: expanded,
+                        onPressed: onToggleDescription,
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ],
       ],
     );
   }
+}
+
+bool _textExceedsSingleLine({
+  required BuildContext context,
+  required String text,
+  required TextStyle style,
+  required double maxWidth,
+}) {
+  if (!maxWidth.isFinite || maxWidth <= 0) return false;
+  final textPainter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout(maxWidth: maxWidth);
+  return textPainter.didExceedMaxLines;
 }
 
 class _ViewMoreButton extends StatelessWidget {
@@ -1026,19 +1061,11 @@ class _PendingVoteRecovery {
 }
 
 bool _hasCompletedVoteArtifact(VotingResumePlan plan) {
-  return plan.votesByKey.isNotEmpty ||
-      plan.voteTxHashesByKey.isNotEmpty ||
-      plan.commitmentBundlesByKey.isNotEmpty ||
-      plan.shareDelegations.isNotEmpty;
+  return plan.hasCompletedVoteArtifact;
 }
 
 bool _hasBlockingRecoveryWork(VotingResumePlan plan) {
-  return plan.pendingDelegationBundleIndexes.isNotEmpty ||
-      plan.pendingVoteSubmissionKeys.isNotEmpty ||
-      plan.incompleteVoteRecoveryKeys.isNotEmpty ||
-      plan.unconfirmedShareDelegations.any(
-        (record) => record.sentToUrls.isEmpty,
-      );
+  return plan.hasBlockingCompletedVoteDisplay;
 }
 
 class _ChoicePalette {

@@ -18,6 +18,7 @@ use crate::wallet::{
     },
 };
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use rand::{rngs::OsRng, RngCore};
 use secrecy::ExposeSecret;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,12 +32,14 @@ pub struct ApiVotingRoundParams {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-/// FRB-safe reference to one note eligible for voting at the snapshot height.
+/// FRB-safe reference to one Orchard note selected at the snapshot height.
 pub struct ApiVotingNoteRef {
     pub pool: String,
     pub txid_hex: String,
     pub output_index: u32,
     pub value_zatoshi: u64,
+    /// Legacy per-note display field. Voting weight is computed from smart
+    /// bundles, so this carries the raw note value.
     pub voting_weight_zatoshi: u64,
     pub commitment_tree_position: u64,
     pub mined_height: u64,
@@ -214,6 +217,17 @@ pub struct ApiSignedVoteCommitments {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// FRB-safe helper-share submission plan from `zcash_voting::share_policy`.
+pub struct ApiShareSubmissionPlan {
+    /// Unix seconds when helpers should submit this share, or 0 for immediate.
+    pub submit_at: u64,
+    /// Number of helpers this share should reach before local delivery succeeds.
+    pub target_count: u32,
+    /// Initial helper targets selected by the shared Rust policy.
+    pub target_servers: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// Stored vote row keyed by `(round_id, wallet_id, bundle_index, proposal_id)`.
 pub struct ApiVoteRecord {
     pub proposal_id: u32,
@@ -328,6 +342,65 @@ pub fn vote_share_wire_json(
     submit_at: u64,
 ) -> Result<String, String> {
     catch(|| vote_share_wire_json_inner(&payload, vc_tree_position, submit_at))
+}
+
+/// Plan independent helper-share timing and randomized helper targets.
+///
+/// This mirrors the zcash-swift-wallet-sdk wrapper around
+/// `zcash_voting::share_policy::plan_share_submissions`, with Rust drawing the
+/// policy-sized entropy from the OS CSPRNG before returning FRB-safe plans.
+pub fn plan_share_submissions(
+    share_count: u32,
+    server_urls: Vec<String>,
+    now_seconds: u64,
+    vote_end_time_seconds: u64,
+    last_moment_buffer_seconds: Option<u64>,
+    single_share: bool,
+) -> Result<Vec<ApiShareSubmissionPlan>, String> {
+    catch(|| {
+        let share_count = usize::try_from(share_count)
+            .map_err(|_| "share_count does not fit in usize".to_string())?;
+        let required = zcash_voting::share_policy::share_submission_random_bytes_required(
+            share_count,
+            server_urls.len(),
+            now_seconds,
+            vote_end_time_seconds,
+            last_moment_buffer_seconds,
+            single_share,
+        );
+        let mut submit_at_random_bytes = vec![0u8; required.submit_at_random_bytes];
+        let mut server_random_bytes = vec![0u8; required.server_random_bytes];
+        OsRng
+            .try_fill_bytes(&mut submit_at_random_bytes)
+            .map_err(|e| format!("failed to draw submit_at entropy: {e}"))?;
+        OsRng
+            .try_fill_bytes(&mut server_random_bytes)
+            .map_err(|e| format!("failed to draw share-server entropy: {e}"))?;
+
+        let plans = zcash_voting::share_policy::plan_share_submissions(
+            share_count,
+            &server_urls,
+            now_seconds,
+            vote_end_time_seconds,
+            last_moment_buffer_seconds,
+            single_share,
+            &submit_at_random_bytes,
+            &server_random_bytes,
+        )
+        .map_err(|e| e.to_string())?;
+
+        plans
+            .into_iter()
+            .map(|plan| {
+                Ok(ApiShareSubmissionPlan {
+                    submit_at: plan.submit_at,
+                    target_count: u32::try_from(plan.target_count)
+                        .map_err(|_| "share target_count does not fit in u32".to_string())?,
+                    target_servers: plan.target_servers,
+                })
+            })
+            .collect()
+    })
 }
 
 /// Extract and validate one helper-share payload from stored recovery JSON.
@@ -1078,8 +1151,9 @@ pub fn get_bundle_count(
 
 /// Select voting-eligible notes at `snapshot_height` using lightwalletd data.
 ///
-/// The returned notes are already quantized to `BALLOT_DIVISOR` voting weight
-/// and include the cached tree anchor used by later delegation setup.
+/// The returned notes are raw snapshot-unspent notes and include the cached
+/// tree anchor used by later delegation setup. `eligible_weight_zatoshi` is
+/// computed from `zcash_voting` smart bundles.
 pub async fn select_voting_notes(
     db_path: String,
     lightwalletd_url: String,
@@ -2318,8 +2392,8 @@ mod tests {
         let divisor = zcash_voting::governance::BALLOT_DIVISOR;
         let selected = SelectedNotes {
             notes: vec![
-                test_note_ref(divisor, divisor, 3),
-                test_note_ref(divisor * 2 + 1, divisor * 2, 7),
+                test_note_ref(divisor / 2, divisor / 2, 3),
+                test_note_ref(divisor / 2, divisor / 2, 7),
             ],
             snapshot_height: 100,
             anchor_tree_state: test_tree_state(100),
@@ -2328,12 +2402,12 @@ mod tests {
         let api = selection_result(selected).unwrap();
 
         assert_eq!(api.note_count, 2);
-        assert_eq!(api.eligible_weight_zatoshi, divisor * 3);
+        assert_eq!(api.eligible_weight_zatoshi, divisor);
         assert_eq!(api.snapshot_height, 100);
         assert_eq!(api.anchor_height, 100);
         assert_eq!(api.notes[0].commitment_tree_position, 3);
-        assert_eq!(api.notes[1].value_zatoshi, divisor * 2 + 1);
-        assert_eq!(api.notes[1].voting_weight_zatoshi, divisor * 2);
+        assert_eq!(api.notes[1].value_zatoshi, divisor / 2);
+        assert_eq!(api.notes[1].voting_weight_zatoshi, divisor / 2);
     }
 
     #[test]

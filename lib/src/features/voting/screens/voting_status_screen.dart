@@ -280,6 +280,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
                 return _StatusContent(
                   phase: phase,
                   shareSummary: _shareSummary(state),
+                  voteSubmissionDetail: _voteSubmissionDetail(state),
                   softwareAccountRequired: _softwareAccountRequired,
                   isHardwareAccount: state.isHardwareAccount,
                   keystoneSigningRequest: state.keystoneSigningRequest,
@@ -317,6 +318,34 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     return VotingShareTrackingSummary.fromShares(plan.shareDelegations, round);
   }
 
+  String? _shareSubmissionDetail(VotingSessionState state) {
+    final key = state.currentVoteKey;
+    if (key != null) {
+      final message = state.voteProgress[key]?.message;
+      if (message != null && message.isNotEmpty) return message;
+    }
+    final messages = state.voteProgress.values
+        .where(
+          (progress) =>
+              progress.phase == 'submitting_shares' &&
+              progress.message != null &&
+              progress.message!.isNotEmpty,
+        )
+        .map((progress) => progress.message!)
+        .toList(growable: false);
+    return messages.isEmpty ? null : messages.last;
+  }
+
+  String? _voteSubmissionDetail(VotingSessionState state) {
+    final total = state.voteSubmissionTotalCount;
+    if (total > 0) {
+      final completed = state.voteSubmissionCompletedCount.clamp(0, total);
+      final current = completed >= total ? total : completed + 1;
+      return '$current/$total';
+    }
+    return _shareSubmissionDetail(state);
+  }
+
   void _retry() {
     _started = false;
     _completedInThisRun = false;
@@ -333,6 +362,7 @@ class _StatusContent extends StatelessWidget {
   const _StatusContent({
     required this.phase,
     this.shareSummary,
+    this.voteSubmissionDetail,
     this.softwareAccountRequired = false,
     this.isHardwareAccount = false,
     this.keystoneSigningRequest,
@@ -349,6 +379,7 @@ class _StatusContent extends StatelessWidget {
 
   final VotingSessionPhase phase;
   final VotingShareTrackingSummary? shareSummary;
+  final String? voteSubmissionDetail;
   final bool softwareAccountRequired;
   final bool isHardwareAccount;
   final rust_voting.ApiKeystoneDelegationRequest? keystoneSigningRequest;
@@ -368,108 +399,131 @@ class _StatusContent extends StatelessWidget {
       return const _SoftwareAccountRequiredContent();
     }
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              phase == VotingSessionPhase.done
-                  ? 'Votes Submitted'
-                  : 'Submitting Votes',
-              textAlign: TextAlign.center,
-              style: AppTypography.displaySmall.copyWith(
-                color: context.colors.text.accent,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              "Don't close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.",
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: context.colors.text.secondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            if (phase == VotingSessionPhase.waitingForWalletSync) ...[
-              _WalletSyncProgressText(
-                scannedHeight: walletScannedHeight,
-                snapshotHeight: walletSnapshotHeight,
-                chainTipHeight: walletChainTipHeight,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-            ],
-            _StepRow(
-              label: 'Syncing wallet to snapshot',
-              active: phase == VotingSessionPhase.waitingForWalletSync,
-              complete: _after(VotingSessionPhase.waitingForWalletSync),
-            ),
-            if (phase == VotingSessionPhase.keystoneSigning &&
-                keystoneSigningRequest != null) ...[
-              _KeystoneSigningPanel(
-                request: keystoneSigningRequest!,
-                urParts: keystoneUrParts,
-                qrError: keystoneQrError,
-                scanError: keystoneScanError,
-                onScan: onScanKeystone,
-              ),
-              const SizedBox(height: AppSpacing.md),
-            ],
-            _StepRow(
-              label: 'Selecting notes',
-              complete: _after(VotingSessionPhase.loadingWitnesses),
-            ),
-            if (isHardwareAccount)
-              _StepRow(
-                label: 'Signing with Keystone',
-                active: phase == VotingSessionPhase.keystoneSigning,
-                complete: _after(VotingSessionPhase.keystoneSigning),
-              ),
-            _StepRow(
-              label: 'Delegating voting authority',
-              active: phase == VotingSessionPhase.delegating,
-              complete: _after(VotingSessionPhase.delegating),
-            ),
-            _StepRow(
-              label: 'Submitting delegation',
-              complete: _after(VotingSessionPhase.delegated),
-            ),
-            _StepRow(
-              label: 'Casting votes',
-              active:
-                  phase == VotingSessionPhase.castingVotes ||
-                  phase == VotingSessionPhase.syncingVoteTree,
-              complete: _after(VotingSessionPhase.castingVotes),
-            ),
-            _StepRow(
-              label: 'Submitting shares',
-              active: phase == VotingSessionPhase.submittingShares,
-              complete: phase == VotingSessionPhase.done,
-            ),
-            if (shareSummary case final summary? when summary.hasShares) ...[
-              const SizedBox(height: AppSpacing.xs),
-              _ShareTrackingRows(summary: summary),
-            ],
-            if (phase == VotingSessionPhase.error) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                errorMessage ?? 'Voting failed.',
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: context.colors.text.destructive,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final minHeight = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : 0.0;
+        return Scrollbar(
+          child: SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: minHeight),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.md,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          phase == VotingSessionPhase.done
+                              ? 'Votes Submitted'
+                              : 'Submitting Votes',
+                          textAlign: TextAlign.center,
+                          style: AppTypography.displaySmall.copyWith(
+                            color: context.colors.text.accent,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          "Don't close the window. Generating zero-knowledge proofs can take a while; closing now may lose in-flight proof work.",
+                          textAlign: TextAlign.center,
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: context.colors.text.secondary,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        if (phase ==
+                            VotingSessionPhase.waitingForWalletSync) ...[
+                          _WalletSyncProgressText(
+                            scannedHeight: walletScannedHeight,
+                            snapshotHeight: walletSnapshotHeight,
+                            chainTipHeight: walletChainTipHeight,
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                        ],
+                        _StepRow(
+                          label: 'Syncing wallet to snapshot',
+                          active:
+                              phase == VotingSessionPhase.waitingForWalletSync,
+                          complete: _after(
+                            VotingSessionPhase.waitingForWalletSync,
+                          ),
+                        ),
+                        if (phase == VotingSessionPhase.keystoneSigning &&
+                            keystoneSigningRequest != null) ...[
+                          _KeystoneSigningPanel(
+                            request: keystoneSigningRequest!,
+                            urParts: keystoneUrParts,
+                            qrError: keystoneQrError,
+                            scanError: keystoneScanError,
+                            onScan: onScanKeystone,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                        ],
+                        _StepRow(
+                          label: 'Selecting notes',
+                          complete: _after(VotingSessionPhase.loadingWitnesses),
+                        ),
+                        if (isHardwareAccount)
+                          _StepRow(
+                            label: 'Signing with Keystone',
+                            active: phase == VotingSessionPhase.keystoneSigning,
+                            complete: _after(
+                              VotingSessionPhase.keystoneSigning,
+                            ),
+                          ),
+                        _StepRow(
+                          label: 'Delegating voting authority',
+                          active: phase == VotingSessionPhase.delegating,
+                          complete: _after(VotingSessionPhase.delegating),
+                        ),
+                        _StepRow(
+                          label: 'Submitting delegation',
+                          complete: _after(VotingSessionPhase.delegated),
+                        ),
+                        _StepRow(
+                          label: 'Casting votes and submitting shares',
+                          active:
+                              phase == VotingSessionPhase.syncingVoteTree ||
+                              phase == VotingSessionPhase.castingVotes ||
+                              phase == VotingSessionPhase.submittingShares,
+                          complete: phase == VotingSessionPhase.done,
+                          detail: voteSubmissionDetail,
+                        ),
+                        if (shareSummary case final summary?
+                            when summary.hasShares) ...[
+                          const SizedBox(height: AppSpacing.xs),
+                          _ShareTrackingRows(summary: summary),
+                        ],
+                        if (phase == VotingSessionPhase.error) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            errorMessage ?? 'Voting failed.',
+                            textAlign: TextAlign.center,
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: context.colors.text.destructive,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          AppButton(
+                            onPressed: onRetry,
+                            variant: AppButtonVariant.primary,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.sm),
-              AppButton(
-                onPressed: onRetry,
-                variant: AppButtonVariant.primary,
-                child: const Text('Retry'),
-              ),
-            ],
-          ],
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -726,11 +780,13 @@ class _StepRow extends StatelessWidget {
     required this.label,
     this.active = false,
     this.complete = false,
+    this.detail,
   });
 
   final String label;
   final bool active;
   final bool complete;
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
@@ -756,13 +812,27 @@ class _StepRow extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.xs),
           Expanded(
-            child: Text(
-              label,
-              style: AppTypography.bodyMedium.copyWith(
-                color: active || complete
-                    ? colors.text.accent
-                    : colors.text.secondary,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: active || complete
+                        ? colors.text.accent
+                        : colors.text.secondary,
+                  ),
+                ),
+                if (detail != null && detail!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    detail!,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
