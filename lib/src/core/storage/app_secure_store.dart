@@ -23,6 +23,7 @@ const kPrivacyModeEnabledKey = 'zcash_privacy_mode_enabled';
 const kRpcEndpointUrlKey = 'zcash_rpc_endpoint_url';
 const kRpcEndpointPresetKey = 'zcash_rpc_endpoint_preset';
 const kVotingConfigSourceKey = 'zcash_voting_config_source_url';
+const _accountsKey = 'zcash_accounts';
 const _secureStoreSaltKey = 'zcash_secure_store_salt';
 const _passwordVerifierKey = 'zcash_password_verifier';
 const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
@@ -54,6 +55,19 @@ class SecureStorageUnavailableException implements Exception {
   String toString() => 'Secure storage unavailable during $operation: $cause';
 }
 
+class SecretStorageUnlockFailedException implements Exception {
+  const SecretStorageUnlockFailedException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+void _tracePasswordUnlock(String message) {
+  debugPrint('AppSecureStore: $message');
+}
+
 class AppSecureStore {
   AppSecureStore._({
     FlutterSecureStorage? storage,
@@ -83,7 +97,7 @@ class AppSecureStore {
       mOptions: MacOsOptions(
         accountName: service,
         accessibility: KeychainAccessibility.first_unlock,
-        usesDataProtectionKeychain: true,
+        usesDataProtectionKeychain: false,
       ),
     );
   }
@@ -104,7 +118,7 @@ class AppSecureStore {
       mOptions: MacOsOptions(
         accountName: macOsService,
         accessibility: KeychainAccessibility.unlocked,
-        usesDataProtectionKeychain: true,
+        usesDataProtectionKeychain: false,
       ),
     );
   }
@@ -554,6 +568,7 @@ class AppSecureStore {
   /// wallet is already unlocked and callers only need a fresh password check.
   Future<bool> verifyPasswordOnly(String password) async {
     if (!isWalletPasswordValid(password)) {
+      _tracePasswordUnlock('password rejected by local policy');
       return false;
     }
     final encodedSalt = await readPlain(_passwordVerifierSaltKey);
@@ -562,33 +577,52 @@ class AppSecureStore {
         encodedSalt.isEmpty ||
         storedVerifier == null ||
         storedVerifier.isEmpty) {
+      _tracePasswordUnlock('password verifier is missing');
       return false;
     }
 
     final derived = await _derivePasswordVerifier(password, encodedSalt);
-    return derived == storedVerifier;
+    final matches = derived == storedVerifier;
+    _tracePasswordUnlock(
+      'password verifier ${matches ? 'matched' : 'mismatched'}',
+    );
+    return matches;
   }
 
   Future<bool> verifyPassword(String password) async {
     final isMatch = await verifyPasswordOnly(password);
-    if (isMatch) {
-      setSessionPassword(password);
-      try {
-        final migratedForRead = await migrateAccountMnemonicsAfterUnlock();
-        if (!migratedForRead) {
-          clearSessionPassword();
-          return false;
-        }
-      } catch (error, stackTrace) {
+    if (!isMatch) return false;
+
+    setSessionPassword(password);
+    try {
+      final migratedForRead = await migrateAccountMnemonicsAfterUnlock();
+      if (!migratedForRead) {
         clearSessionPassword();
-        debugPrint(
-          'AppSecureStore: failed to migrate account mnemonics after unlock: '
-          '$error\n$stackTrace',
+        _tracePasswordUnlock(
+          'password matched but account mnemonics were not readable',
         );
-        return false;
+        throw const SecretStorageUnlockFailedException(
+          'Password matched, but secure wallet data could not be opened.',
+        );
       }
+      _tracePasswordUnlock('password unlock checks passed');
+    } catch (error, stackTrace) {
+      clearSessionPassword();
+      _tracePasswordUnlock(
+        'password matched but unlock storage checks failed: '
+        '$error\n$stackTrace',
+      );
+      if (error is SecretStorageUnlockFailedException) {
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+      Error.throwWithStackTrace(
+        const SecretStorageUnlockFailedException(
+          'Password matched, but secure wallet data could not be opened.',
+        ),
+        stackTrace,
+      );
     }
-    return isMatch;
+    return true;
   }
 
   Future<bool> migrateAccountMnemonicsAfterUnlock() {
@@ -711,51 +745,85 @@ class AppSecureStore {
       return _AccountMnemonicMigrationResult.complete;
     }
 
-    final legacyValues = await _runStorageOperation(
-      'read legacy secure storage values',
-      _storage.readAll,
-    );
+    final targets = await _accountMnemonicMigrationTargets();
     var mnemonicsAvailable = true;
     var legacyCleanupComplete = true;
-    for (final entry in legacyValues.entries) {
-      if (!_isAccountMnemonicKey(entry.key)) continue;
+    for (final target in targets) {
+      if (target.isHardware) continue;
+      final key = _accountMnemonicKey(target.accountUuid);
 
+      String? existing;
       try {
-        final existing = await _runStorageOperation(
-          'read migrated account mnemonic "${entry.key}"',
-          () => _mnemonicStorage.read(key: entry.key),
+        existing = await _runStorageOperation(
+          'read migrated account mnemonic "$key"',
+          () => _mnemonicStorage.read(key: key),
         );
-        if (existing == null) {
-          await _runStorageOperation(
-            'write migrated account mnemonic "${entry.key}"',
-            () => _mnemonicStorage.write(key: entry.key, value: entry.value),
-          );
-        }
       } catch (error, stackTrace) {
         mnemonicsAvailable = false;
         legacyCleanupComplete = false;
         debugPrint(
-          'AppSecureStore: failed to copy account mnemonic "${entry.key}": '
+          'AppSecureStore: failed to read migrated account mnemonic "$key": '
           '$error\n$stackTrace',
         );
         continue;
       }
 
+      if (existing == null) {
+        String? legacyValue;
+        try {
+          legacyValue = await _runStorageOperation(
+            'read legacy account mnemonic "$key"',
+            () => _storage.read(key: key),
+          );
+        } catch (error, stackTrace) {
+          mnemonicsAvailable = false;
+          legacyCleanupComplete = false;
+          debugPrint(
+            'AppSecureStore: failed to read legacy account mnemonic "$key": '
+            '$error\n$stackTrace',
+          );
+          continue;
+        }
+
+        if (legacyValue == null || legacyValue.isEmpty) {
+          mnemonicsAvailable = false;
+          debugPrint(
+            'AppSecureStore: account mnemonic "$key" was not found in '
+            'migrated or legacy storage',
+          );
+          continue;
+        }
+
+        try {
+          await _runStorageOperation(
+            'write migrated account mnemonic "$key"',
+            () => _mnemonicStorage.write(key: key, value: legacyValue),
+          );
+        } catch (error, stackTrace) {
+          mnemonicsAvailable = false;
+          legacyCleanupComplete = false;
+          debugPrint(
+            'AppSecureStore: failed to copy account mnemonic "$key": '
+            '$error\n$stackTrace',
+          );
+          continue;
+        }
+      }
+
       try {
         await _runStorageOperation(
-          'delete legacy account mnemonic "${entry.key}"',
-          () => _storage.delete(key: entry.key),
+          'delete legacy account mnemonic "$key"',
+          () => _storage.delete(key: key),
         );
       } catch (error, stackTrace) {
         legacyCleanupComplete = false;
         debugPrint(
-          'AppSecureStore: failed to delete legacy account mnemonic '
-          '"${entry.key}": '
+          'AppSecureStore: failed to delete legacy account mnemonic "$key": '
           '$error\n$stackTrace',
         );
       }
     }
-    if (legacyCleanupComplete) {
+    if (mnemonicsAvailable && legacyCleanupComplete) {
       try {
         await writePlain(_accountMnemonicMigrationCompleteKey, 'true');
       } catch (error, stackTrace) {
@@ -769,6 +837,38 @@ class AppSecureStore {
       mnemonicsAvailable: mnemonicsAvailable,
       legacyCleanupComplete: legacyCleanupComplete,
     );
+  }
+
+  Future<List<_AccountMnemonicMigrationTarget>>
+  _accountMnemonicMigrationTargets() async {
+    final rawAccounts = await readPlain(_accountsKey);
+    if (rawAccounts == null || rawAccounts.isEmpty) return const [];
+
+    Object? decoded;
+    try {
+      decoded = jsonDecode(rawAccounts);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'AppSecureStore: failed to parse account list for mnemonic migration: '
+        '$error\n$stackTrace',
+      );
+      return const [];
+    }
+    if (decoded is! List) return const [];
+
+    final targets = <_AccountMnemonicMigrationTarget>[];
+    for (final entry in decoded) {
+      if (entry is! Map) continue;
+      final uuid = entry['uuid'];
+      if (uuid is! String || uuid.isEmpty) continue;
+      targets.add(
+        _AccountMnemonicMigrationTarget(
+          accountUuid: uuid,
+          isHardware: entry['isHardware'] == true,
+        ),
+      );
+    }
+    return targets;
   }
 
   Future<void> _deleteLegacyAccountMnemonicBestEffort(String key) async {
@@ -959,9 +1059,6 @@ class AppSecureStore {
 bool get _usesSeparateMacOsMnemonicStorage =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
 
-bool _isAccountMnemonicKey(String key) =>
-    key.startsWith(_accountMnemonicKeyPrefix);
-
 String _accountMnemonicKey(String accountUuid) =>
     '$_accountMnemonicKeyPrefix$accountUuid';
 
@@ -982,6 +1079,16 @@ class _AccountMnemonicMigrationResult {
 
   final bool mnemonicsAvailable;
   final bool legacyCleanupComplete;
+}
+
+class _AccountMnemonicMigrationTarget {
+  const _AccountMnemonicMigrationTarget({
+    required this.accountUuid,
+    required this.isHardware,
+  });
+
+  final String accountUuid;
+  final bool isHardware;
 }
 
 class _AsyncLock {
