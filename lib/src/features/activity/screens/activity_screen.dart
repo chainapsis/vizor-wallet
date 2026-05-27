@@ -37,9 +37,16 @@ class ActivityScreen extends ConsumerStatefulWidget {
 }
 
 class _ActivityScreenState extends ConsumerState<ActivityScreen> {
-  static const _activityRowsPerPage = 5;
+  static const _activityRowsPerPage = 6;
   // Figma frame keeps a 32px Back row plus a 616px Activity panel.
   static const double _activityPaneMinHeight = 648;
+  static const double _activityTitleBlockHeight =
+      AppBackLink.height +
+      (AppSpacing.s * 2) +
+      44 +
+      AppSpacing.sm +
+      16 +
+      AppSpacing.sm;
 
   final ScrollController _scrollController = ScrollController();
   List<rust_sync.TransactionInfo>? _transactions;
@@ -347,14 +354,14 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md,
-          AppSpacing.md,
-          AppSpacing.md,
-          0,
-        ),
+        padding: EdgeInsets.zero,
         child: LayoutBuilder(
           builder: (context, constraints) {
+            final paneHeight = _activityPaneHeight(
+              viewportHeight: constraints.maxHeight - AppSpacing.md,
+              rows: rows,
+              showPagination: totalPages > 1,
+            );
             return NotificationListener<ScrollMetricsNotification>(
               onNotification: (_) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -379,28 +386,35 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                   }
                 },
                 child: Scrollbar(
+                  key: const ValueKey('activity_screen_scrollbar'),
                   controller: _scrollController,
                   thumbVisibility:
                       isDesktopLayoutPlatform && _isHovered && _canScroll,
                   child: SingleChildScrollView(
+                    key: const ValueKey('activity_screen_scroll_view'),
                     controller: _scrollController,
-                    child: SizedBox(
-                      height: math.max(
-                        constraints.maxHeight,
-                        _activityPaneMinHeight,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.md,
+                        AppSpacing.md,
+                        AppSpacing.md,
+                        0,
                       ),
-                      child: _ActivityPane(
-                        rows: rows,
-                        isLoading:
-                            _isLoading &&
-                            !canRenderTransactions &&
-                            rows.isEmpty,
-                        errorText: rows.isEmpty && loadedTransactions == null
-                            ? _error
-                            : null,
-                        currentPage: currentPage,
-                        totalPages: totalPages,
-                        onPageChanged: _setPage,
+                      child: SizedBox(
+                        height: paneHeight,
+                        child: _ActivityPane(
+                          rows: rows,
+                          isLoading:
+                              _isLoading &&
+                              !canRenderTransactions &&
+                              rows.isEmpty,
+                          errorText: rows.isEmpty && loadedTransactions == null
+                              ? _error
+                              : null,
+                          currentPage: currentPage,
+                          totalPages: totalPages,
+                          onPageChanged: _setPage,
+                        ),
                       ),
                     ),
                   ),
@@ -410,6 +424,21 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
           },
         ),
       ),
+    );
+  }
+
+  double _activityPaneHeight({
+    required double viewportHeight,
+    required List<ActivityRowData> rows,
+    required bool showPagination,
+  }) {
+    return math.max(
+      math.max(viewportHeight, _activityPaneMinHeight),
+      _activityTitleBlockHeight +
+          estimateActivityTableContentHeight(
+            rows: rows,
+            showPagination: showPagination,
+          ),
     );
   }
 }

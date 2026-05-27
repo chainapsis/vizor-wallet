@@ -196,6 +196,30 @@ const double _activityFixedColumnsWidth =
     _activityRightCellWidth;
 const double _activityAvatarSize = 32;
 const double _activityProgressRingSize = 37;
+const double _activityTableHeaderHeight = 32 + AppSpacing.s;
+const double _activityTableMessageHeight = 120;
+const double _activityTableRowHeight = 48;
+const double _activityTableCompactRowHeight = 40;
+const double _activityTableRowDividerHeight = AppSpacing.xs + 1 + AppSpacing.xs;
+const double _activityPaginationHeight = AppSpacing.xs + 40;
+
+double estimateActivityTableContentHeight({
+  required List<ActivityRowData> rows,
+  bool showPagination = false,
+}) {
+  final rowGroupsHeight = rows.isEmpty
+      ? _activityTableMessageHeight
+      : rows.fold<double>(0, (height, row) {
+              return height +
+                  _activityTableRowHeight +
+                  ((AppSpacing.xxs + _activityTableCompactRowHeight) *
+                      row.childRows.length);
+            }) +
+            (_activityTableRowDividerHeight * math.max(0, rows.length - 1));
+  return _activityTableHeaderHeight +
+      rowGroupsHeight +
+      (showPagination ? _activityPaginationHeight : 0);
+}
 
 class _ActivityTableDivider extends StatelessWidget {
   const _ActivityTableDivider();
@@ -560,12 +584,57 @@ class _AmountLabel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         value,
-        Text(
-          subtitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.labelMedium.copyWith(
-            color: colors.text.secondary,
+        _AmountSubtitle(
+          iconName: row.amountSubtitleIconName,
+          iconColor: row.amountSubtitleIconColor,
+          text: subtitle,
+        ),
+      ],
+    );
+  }
+}
+
+class _AmountSubtitle extends StatelessWidget {
+  const _AmountSubtitle({
+    required this.iconName,
+    required this.iconColor,
+    required this.text,
+  });
+
+  final String? iconName;
+  final Color? iconColor;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final style = AppTypography.labelMedium.copyWith(
+      color: colors.text.secondary,
+    );
+    if (iconName == null) {
+      return Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppIcon(
+          iconName!,
+          size: AppIconSize.medium,
+          color: iconColor ?? colors.text.secondary,
+        ),
+        const SizedBox(width: AppSpacing.xxs),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
           ),
         ),
       ],

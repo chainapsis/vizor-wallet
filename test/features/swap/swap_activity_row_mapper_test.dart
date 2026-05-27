@@ -234,4 +234,47 @@ void main() {
     expect(row!.leadingProgressValue, isNull);
     expect(row!.childRows, isEmpty);
   });
+
+  testWidgets('maps expired swaps as failed without refunding the amount', (
+    tester,
+  ) async {
+    ActivityRowData? row;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              row = buildSwapActivityRow(
+                context: context,
+                record: const SwapIntentRecord(
+                  id: 'swap-timeout',
+                  providerLabel: 'NEAR Intents',
+                  pairText: 'USDC -> ZEC',
+                  sellAmountText: '101.23 USDC',
+                  receiveEstimateText: '4.12 ZEC',
+                  status: SwapIntentStatus.expired,
+                  nextAction: 'Start a fresh quote',
+                  direction: SwapDirection.externalToZec,
+                  externalAsset: SwapAsset.usdc,
+                ),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(row!.title, 'Swap failed');
+    expect(row!.amountText, '101.23 USDC');
+    expect(row!.amountIconName, isNull);
+    expect(row!.amountSubtitle, 'Timeout');
+    expect(row!.amountSubtitleIconName, AppIcons.time);
+    expect(row!.statusText, 'Failed');
+    expect(row!.statusIconName, AppIcons.skull);
+    expect(row!.leadingProgressValue, isNull);
+    expect(row!.childRows, isEmpty);
+  });
 }

@@ -177,6 +177,35 @@ void main() {
     expect(find.text('Refunded'), findsOneWidget);
   });
 
+  testWidgets('amount subtitles can render an inline status icon', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: ActivityTable(
+            rows: [
+              _row(
+                title: 'Swap failed',
+                amountSubtitle: 'Timeout',
+                amountSubtitleIconName: AppIcons.time,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Timeout'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.time,
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('activity rows hide asset amounts with a fixed mask', (
     tester,
   ) async {
@@ -366,6 +395,8 @@ ActivityRowData _row({
   required String title,
   String leadingIconName = AppIcons.sync,
   String? subtitle,
+  String? amountSubtitle,
+  String? amountSubtitleIconName,
   double? leadingProgressValue,
   List<ActivityRowData> childRows = const [],
   VoidCallback? onTap,
@@ -378,6 +409,8 @@ ActivityRowData _row({
     leadingProgressValue: leadingProgressValue,
     subtitle: subtitle,
     amountText: '1.00 $kZcashDefaultCurrencyTicker',
+    amountSubtitle: amountSubtitle,
+    amountSubtitleIconName: amountSubtitleIconName,
     statusText: 'Completed',
     timestampText: 'Today, 13:11',
     childRows: childRows,

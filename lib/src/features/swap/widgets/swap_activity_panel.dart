@@ -2657,6 +2657,7 @@ bool _showsDepositPage(
   SwapPrototypeIntent intent, {
   required bool intentIsHardware,
 }) {
+  if (intent.status == SwapIntentStatus.expired) return true;
   return _showsExternalDepositPage(intent) ||
       _showsHardwareZecDepositPage(intent, intentIsHardware: intentIsHardware);
 }

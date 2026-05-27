@@ -34,6 +34,7 @@ ActivityRowData buildSwapActivityRow({
 }) {
   final colors = context.colors;
   final failed = _swapActivityFailed(record.status);
+  final timedOut = record.status == SwapIntentStatus.expired;
   final returnsFunds = _swapActivityReturnsFunds(record.status);
   final incompleteDeposit = record.status == SwapIntentStatus.incompleteDeposit;
   final complete = record.status == SwapIntentStatus.complete;
@@ -50,13 +51,19 @@ ActivityRowData buildSwapActivityRow({
     subtitle: _swapActivityAssetSubtitle(sellAsset) ?? record.providerLabel,
     amountText: _swapActivityAmountText(
       record,
-      includeSign: !returnsFunds,
+      includeSign: !(returnsFunds || timedOut),
       privacyModeEnabled: privacyModeEnabled,
     ),
     amountIconName: returnsFunds ? AppIcons.arrowBack : null,
     amountIconColor: returnsFunds ? colors.icon.regular : null,
     amountColor: colors.text.accent,
-    amountSubtitle: returnsFunds ? 'Refunded' : null,
+    amountSubtitle: timedOut
+        ? 'Timeout'
+        : returnsFunds
+        ? 'Refunded'
+        : null,
+    amountSubtitleIconName: timedOut ? AppIcons.time : null,
+    amountSubtitleIconColor: timedOut ? colors.text.secondary : null,
     statusText: _swapActivityStatusText(record.status, progress),
     statusIconName: failed
         ? AppIcons.skull
@@ -173,7 +180,7 @@ String _swapActivityStatusText(
     SwapIntentStatus.providerStatusUnknown => progress?.label ?? 'In progress',
     SwapIntentStatus.complete => 'Completed',
     SwapIntentStatus.refunded => 'Refunded',
-    SwapIntentStatus.expired => 'Expired',
+    SwapIntentStatus.expired => 'Failed',
     SwapIntentStatus.failed => 'Failed',
   };
 }
@@ -198,7 +205,8 @@ bool _swapActivityFailed(SwapIntentStatus status) {
 }
 
 bool _swapActivityReturnsFunds(SwapIntentStatus status) {
-  return _swapActivityFailed(status) || status == SwapIntentStatus.refunded;
+  return status == SwapIntentStatus.failed ||
+      status == SwapIntentStatus.refunded;
 }
 
 String _swapActivityTitle(SwapIntentStatus status) {

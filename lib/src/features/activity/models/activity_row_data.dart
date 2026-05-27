@@ -14,6 +14,8 @@ class ActivityRowData {
     this.amountIconColor,
     this.amountColor,
     this.amountSubtitle,
+    this.amountSubtitleIconName,
+    this.amountSubtitleIconColor,
     required this.statusText,
     required this.timestampText,
     this.statusIconName,
@@ -36,6 +38,8 @@ class ActivityRowData {
   final Color? amountIconColor;
   final Color? amountColor;
   final String? amountSubtitle;
+  final String? amountSubtitleIconName;
+  final Color? amountSubtitleIconColor;
   final String statusText;
   final String timestampText;
   final String? statusIconName;

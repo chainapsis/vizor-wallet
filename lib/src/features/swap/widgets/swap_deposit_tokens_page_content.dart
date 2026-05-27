@@ -309,55 +309,68 @@ class SwapDepositTimeoutPageContent extends StatelessWidget {
             fit: BoxFit.contain,
           ),
           const SizedBox(height: AppSpacing.base),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppIcon(
-                    AppIcons.time,
-                    size: AppIconSize.medium,
-                    color: colors.text.secondary,
-                  ),
-                  const SizedBox(width: AppSpacing.xxs),
-                  Text(
-                    'Time’s up',
-                    key: const ValueKey('swap_deposit_timeout_label'),
-                    style: AppTypography.labelLarge.copyWith(
+          SizedBox(
+            width: 274,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppIcon(
+                      AppIcons.time,
+                      size: AppIconSize.medium,
                       color: colors.text.secondary,
                     ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    Text(
+                      'Time’s up',
+                      key: const ValueKey('swap_deposit_timeout_label'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Swap failed',
+                  key: const ValueKey('swap_deposit_timeout_title'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.displaySmall.copyWith(
+                    color: colors.text.accent,
                   ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'Swap failed',
-                key: const ValueKey('swap_deposit_timeout_title'),
-                textAlign: TextAlign.center,
-                style: AppTypography.displaySmall.copyWith(
-                  color: colors.text.accent,
                 ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'This deposit address is no longer valid. Please, start another swap transaction.',
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.accent,
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'This deposit address is no longer valid.\nPlease, start another swap transaction.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.accent,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.base),
-          AppButton(
-            key: const ValueKey('swap_deposit_restart_button'),
-            onPressed: onRestart,
-            variant: AppButtonVariant.secondary,
-            size: AppButtonSize.large,
-            minWidth: 256,
-            leading: const AppIcon(AppIcons.renew),
-            child: const Text('Restart Swap'),
+          SizedBox(
+            width: 256,
+            height: 44,
+            child: AppButton(
+              key: const ValueKey('swap_deposit_restart_button'),
+              onPressed: onRestart,
+              variant: AppButtonVariant.secondary,
+              size: AppButtonSize.large,
+              minWidth: 256,
+              leading: const AppIcon(AppIcons.renew),
+              child: const Text('Restart Swap'),
+            ),
           ),
         ],
       ),

@@ -28,6 +28,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferenc
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
+import 'package:zcash_wallet/src/features/activity/widgets/activity_table.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_address_scan_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
@@ -231,6 +232,59 @@ void main() {
       'assets/illustrations/swap_deposit_timeout_illustration_dark.png',
     );
   });
+
+  testWidgets(
+    'expired deposit timeout content stays centered in activity detail',
+    (tester) async {
+      await _setViewport(tester, const Size(1080, 720));
+      final sessionStore = _FakeSwapPersistenceStore(
+        initialIntents: [
+          _persistedIntent(
+            id: 'expired-deposit',
+            txHash: '',
+            status: SwapIntentStatus.expired,
+            nextAction: 'Start a fresh quote',
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/activity/swap/expired-deposit?from=swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          seedPrototypeFixtures: false,
+          sessionStore: sessionStore,
+        ),
+      );
+      await _pumpUntilPresent(
+        tester,
+        find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Time’s up'), findsOneWidget);
+      expect(find.text('Restart Swap'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('swap_near_intents_attribution')),
+        findsOneWidget,
+      );
+      final detailRect = tester.getRect(
+        find.byKey(const ValueKey('swap_activity_detail_page')),
+      );
+      final timeoutRect = tester.getRect(
+        find.byKey(const ValueKey('swap_deposit_timeout_panel')),
+      );
+      final attributionRect = tester.getRect(
+        find.byKey(const ValueKey('swap_near_intents_attribution')),
+      );
+
+      expect(timeoutRect.size, const Size(274, 388));
+      expect(timeoutRect.center.dy, closeTo(detailRect.center.dy, 1));
+      expect(timeoutRect.bottom, lessThan(attributionRect.top));
+    },
+  );
 
   testWidgets(
     'status page blinks live quote signal and cycles loader highlight',
@@ -2900,6 +2954,96 @@ void main() {
       find.byKey(const ValueKey('swap_deposit_submit_button')),
       findsNothing,
     );
+  });
+
+  testWidgets('activity page scrolls when swap rows exceed the viewport', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(940, 560));
+    final baseIntent = previewSwapIntents.firstWhere(
+      (intent) => intent.id == 'swap-2a11',
+    );
+    final now = DateTime.utc(2026, 5, 27, 12);
+    final overflowIntents = [
+      for (var i = 0; i < 5; i++)
+        baseIntent.copyWith(
+          id: 'swap-scroll-$i',
+          accountUuid: 'account-1',
+          updatedAt: now.subtract(Duration(minutes: i)),
+        ),
+    ];
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedPrototypeFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(
+          initialIntents: overflowIntents,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final scrollView = tester.widget<SingleChildScrollView>(
+      find.byKey(const ValueKey('activity_screen_scroll_view')),
+    );
+    final controller = scrollView.controller!;
+    expect(controller.position.maxScrollExtent, greaterThan(0));
+    final paneRect = tester.getRect(find.byType(AppDesktopPane));
+    final scrollbarRect = tester.getRect(
+      find.byKey(const ValueKey('activity_screen_scrollbar')),
+    );
+    expect((scrollbarRect.right - paneRect.right).abs(), lessThan(1));
+
+    await tester.drag(
+      find.byKey(const ValueKey('activity_screen_scroll_view')),
+      const Offset(0, -180),
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.offset, greaterThan(0));
+  });
+
+  testWidgets('activity page shows six rows before paginating', (tester) async {
+    await _setDesktopViewport(tester);
+    final baseIntent = previewSwapIntents.firstWhere(
+      (intent) => intent.id == 'swap-2a11',
+    );
+    final now = DateTime.utc(2026, 5, 27, 12);
+    final intents = [
+      for (var i = 0; i < 7; i++)
+        baseIntent.copyWith(
+          id: 'swap-page-$i',
+          accountUuid: 'account-1',
+          updatedAt: now.subtract(Duration(minutes: i)),
+        ),
+    ];
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/activity',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedPrototypeFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(initialIntents: intents),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('activity_screen_row_5')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('activity_screen_row_6')),
+      findsNothing,
+    );
+    expect(find.byType(ActivityTablePagination), findsOneWidget);
   });
 
   testWidgets('swap queue groups attention terminal swaps', (tester) async {
