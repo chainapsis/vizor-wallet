@@ -19,7 +19,7 @@ import 'src/features/swap/providers/swap_prototype_provider.dart';
 import 'src/features/swap/providers/swap_deposit_sender.dart';
 import 'src/features/swap/providers/swap_max_amount_estimator.dart';
 import 'src/features/swap/providers/swap_activity_store.dart';
-import 'src/features/swap/providers/swap_draft_store.dart';
+import 'src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'src/features/swap/screens/swap_address_scan_screen.dart';
 import 'src/features/swap/screens/swap_review_screen.dart';
@@ -112,7 +112,9 @@ Future<void> main() async {
           _PreviewMaxAmountEstimator(),
         ),
         swapActivityStoreProvider.overrideWithValue(previewSwapStore),
-        swapDraftStoreProvider.overrideWithValue(previewSwapStore),
+        swapComposerPreferencesStoreProvider.overrideWithValue(
+          previewSwapStore,
+        ),
         swapStatusPollIntervalProvider.overrideWithValue(
           const Duration(minutes: 10),
         ),
@@ -351,7 +353,8 @@ class _PreviewMaxAmountEstimator implements SwapMaxAmountEstimator {
   }
 }
 
-class _PreviewSwapStore implements SwapActivityStore, SwapDraftStore {
+class _PreviewSwapStore
+    implements SwapActivityStore, SwapComposerPreferencesStore {
   _PreviewSwapStore({List<SwapPrototypeIntent> initialIntents = const []})
     : _records = [
         for (final intent in initialIntents)
@@ -359,7 +362,7 @@ class _PreviewSwapStore implements SwapActivityStore, SwapDraftStore {
       ];
 
   List<SwapIntentRecord> _records;
-  SwapDraftSnapshot? _draft;
+  final _preferencesByAccount = <String, SwapComposerPreferences>{};
 
   @override
   Future<List<SwapIntentRecord>> loadRecords({
@@ -377,12 +380,17 @@ class _PreviewSwapStore implements SwapActivityStore, SwapDraftStore {
   }
 
   @override
-  Future<SwapDraftSnapshot?> loadDraft() async {
-    return _draft;
+  Future<SwapComposerPreferences?> loadPreferences({
+    required String accountUuid,
+  }) async {
+    return _preferencesByAccount[accountUuid];
   }
 
   @override
-  Future<void> saveDraft(SwapDraftSnapshot draft) async {
-    _draft = draft;
+  Future<void> savePreferences({
+    required String accountUuid,
+    required SwapComposerPreferences preferences,
+  }) async {
+    _preferencesByAccount[accountUuid] = preferences;
   }
 }

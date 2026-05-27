@@ -5,21 +5,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_prototype_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
-import 'package:zcash_wallet/src/features/swap/providers/swap_draft_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late AppSecureStore secureStore;
   late SwapActivityStore activityStore;
-  late SwapDraftStore draftStore;
+  late SwapComposerPreferencesStore preferencesStore;
 
   setUp(() async {
     FlutterSecureStorage.setMockInitialValues({});
     secureStore = AppSecureStore.instance;
     await secureStore.deleteAll();
     activityStore = AppSecureStoreSwapActivityStore(secureStore);
-    draftStore = AppSecureStoreSwapDraftStore(secureStore);
+    preferencesStore = AppSecureStoreSwapComposerPreferencesStore(secureStore);
   });
 
   tearDown(() async {
@@ -225,15 +225,20 @@ void main() {
   });
 
   test('round-trips only the last attempted swap pair', () async {
-    const draft = SwapDraftSnapshot(
+    const preferences = SwapComposerPreferences(
       direction: SwapDirection.externalToZec,
       externalAsset: SwapAsset.near,
       slippageBps: 125,
     );
 
-    await draftStore.saveDraft(draft);
+    await preferencesStore.savePreferences(
+      accountUuid: 'account-1',
+      preferences: preferences,
+    );
 
-    final restored = await draftStore.loadDraft();
+    final restored = await preferencesStore.loadPreferences(
+      accountUuid: 'account-1',
+    );
 
     expect(restored, isNotNull);
     expect(restored!.direction, SwapDirection.externalToZec);
@@ -250,15 +255,20 @@ void main() {
         blockchain: 'base',
         decimals: 6,
       );
-      final draft = SwapDraftSnapshot(
+      final preferences = SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: asset,
         slippageBps: 150,
       );
 
-      await draftStore.saveDraft(draft);
+      await preferencesStore.savePreferences(
+        accountUuid: 'account-1',
+        preferences: preferences,
+      );
 
-      final restored = await draftStore.loadDraft();
+      final restored = await preferencesStore.loadPreferences(
+        accountUuid: 'account-1',
+      );
 
       expect(restored, isNotNull);
       expect(restored!.direction, SwapDirection.zecToExternal);
@@ -266,6 +276,45 @@ void main() {
       expect(restored.externalAsset.assetId, 'nep141:base-usdc.example');
       expect(restored.externalAsset.chainTicker, 'base');
       expect(restored.slippageBps, 150);
+    },
+  );
+
+  test(
+    'keeps persisted swap composer preferences scoped to their account',
+    () async {
+      const accountOnePreferences = SwapComposerPreferences(
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.near,
+        slippageBps: 125,
+      );
+      const accountTwoPreferences = SwapComposerPreferences(
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        slippageBps: 200,
+      );
+
+      await preferencesStore.savePreferences(
+        accountUuid: 'account-1',
+        preferences: accountOnePreferences,
+      );
+      await preferencesStore.savePreferences(
+        accountUuid: 'account-2',
+        preferences: accountTwoPreferences,
+      );
+
+      final accountOne = await preferencesStore.loadPreferences(
+        accountUuid: 'account-1',
+      );
+      final accountTwo = await preferencesStore.loadPreferences(
+        accountUuid: 'account-2',
+      );
+
+      expect(accountOne!.direction, SwapDirection.externalToZec);
+      expect(accountOne.externalAsset, SwapAsset.near);
+      expect(accountOne.slippageBps, 125);
+      expect(accountTwo!.direction, SwapDirection.zecToExternal);
+      expect(accountTwo.externalAsset, SwapAsset.usdc);
+      expect(accountTwo.slippageBps, 200);
     },
   );
 }

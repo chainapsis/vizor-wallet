@@ -24,7 +24,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_prototype_provider
 import 'package:zcash_wallet/src/features/swap/providers/swap_deposit_sender.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_max_amount_estimator.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
-import 'package:zcash_wallet/src/features/swap/providers/swap_draft_store.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_composer_preferences_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_zec_staging_address_service.dart';
 import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart';
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
@@ -1381,6 +1381,68 @@ void main() {
     expect(swapProvider.startedQuotes, isEmpty);
   });
 
+  testWidgets('account switch restores composer preferences for the account', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final sessionStore = _FakeSwapPersistenceStore(
+      initialPreferencesByAccount: const {
+        'account-1': SwapComposerPreferences(
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          slippageBps: 50,
+        ),
+        'account-2': SwapComposerPreferences(
+          direction: SwapDirection.externalToZec,
+          externalAsset: SwapAsset.near,
+          slippageBps: 200,
+        ),
+      },
+    );
+    final accountNotifier = _FakeSwapAccountNotifier(
+      _twoAccountBootstrap.initialAccountState,
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        bootstrap: _twoAccountBootstrap,
+        accountNotifier: () => accountNotifier,
+        sessionStore: sessionStore,
+        seedPrototypeFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    expect(container.read(swapPrototypeProvider).slippageBps, 50);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(tester, '0xrecipient');
+    await tester.pumpAndSettle();
+
+    await container.read(accountProvider.notifier).switchAccount('account-2');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    final accountTwoState = container.read(swapPrototypeProvider);
+    expect(accountTwoState.direction, SwapDirection.externalToZec);
+    expect(accountTwoState.externalAsset, SwapAsset.near);
+    expect(accountTwoState.slippageBps, 200);
+    expect(accountTwoState.amountText, isEmpty);
+    expect(accountTwoState.destinationText, isEmpty);
+    expect(sessionStore.loadPreferencesCount, 2);
+  });
+
   testWidgets('account switch closes open swap activity detail', (
     tester,
   ) async {
@@ -1562,7 +1624,7 @@ void main() {
     await _setDesktopViewport(tester);
 
     final sessionStore = _FakeSwapPersistenceStore(
-      initialDraft: const SwapDraftSnapshot(
+      initialPreferences: const SwapComposerPreferences(
         direction: SwapDirection.externalToZec,
         externalAsset: SwapAsset.near,
         slippageBps: 125,
@@ -1581,7 +1643,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(sessionStore.loadDraftCount, 1);
+    expect(sessionStore.loadPreferencesCount, 1);
     expect(_fieldText(tester, 'swap_amount_field'), isEmpty);
     expect(_destinationSummaryText(tester), isEmpty);
     expect(find.text('Add Refund address...'), findsOneWidget);
@@ -1602,7 +1664,7 @@ void main() {
       decimals: 6,
     );
     final sessionStore = _FakeSwapPersistenceStore(
-      initialDraft: SwapDraftSnapshot(
+      initialPreferences: SwapComposerPreferences(
         direction: SwapDirection.zecToExternal,
         externalAsset: baseUsdc,
         slippageBps: 50,
@@ -1625,7 +1687,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(sessionStore.loadDraftCount, 1);
+    expect(sessionStore.loadPreferencesCount, 1);
     expect(find.text('Base'), findsWidgets);
     expect(find.text('Ethereum recipient'), findsNothing);
 
@@ -1862,7 +1924,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
     expect(find.text('2%'), findsWidgets);
-    expect(sessionStore.savedDraft?.slippageBps, 200);
+    expect(sessionStore.savedPreferences?.slippageBps, 200);
 
     await tester.enterText(
       find.byKey(const ValueKey('swap_amount_field')),
@@ -1947,7 +2009,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
     expect(find.text('1.25%'), findsWidgets);
-    expect(sessionStore.savedDraft?.slippageBps, 125);
+    expect(sessionStore.savedPreferences?.slippageBps, 125);
 
     await tester.enterText(
       find.byKey(const ValueKey('swap_amount_field')),
@@ -1993,7 +2055,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsOneWidget);
-    expect(sessionStore.savedDraft?.slippageBps, isNull);
+    expect(sessionStore.savedPreferences?.slippageBps, isNull);
   });
 
   testWidgets('slippage modal cancel keeps the existing setting', (
@@ -2024,7 +2086,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_slippage_modal')), findsNothing);
-    expect(sessionStore.savedDraft?.slippageBps, isNull);
+    expect(sessionStore.savedPreferences?.slippageBps, isNull);
     expect(find.text('2%'), findsNothing);
   });
 
@@ -5622,7 +5684,7 @@ Widget _routerHarness(
         hardwareSigningService ?? _FakeSwapHardwareSigningService(),
       ),
       swapActivityStoreProvider.overrideWithValue(effectiveSessionStore),
-      swapDraftStoreProvider.overrideWithValue(effectiveSessionStore),
+      swapComposerPreferencesStoreProvider.overrideWithValue(effectiveSessionStore),
       if (seedPrototypeFixtures) ...[
         swapInitialIntentsProvider.overrideWithValue(previewIntents),
         swapInitialExternalRequestsProvider.overrideWithValue(
@@ -6590,12 +6652,18 @@ class _FakeSwapAccountNotifier extends AccountNotifier {
   }
 }
 
-class _FakeSwapPersistenceStore implements SwapActivityStore, SwapDraftStore {
+class _FakeSwapPersistenceStore
+    implements SwapActivityStore, SwapComposerPreferencesStore {
   _FakeSwapPersistenceStore({
     List<SwapPrototypeIntent> initialIntents = const [],
-    SwapDraftSnapshot? initialDraft,
+    SwapComposerPreferences? initialPreferences,
+    Map<String, SwapComposerPreferences> initialPreferencesByAccount = const {},
   }) : savedIntents = [...initialIntents],
-       savedDraft = initialDraft {
+       savedPreferences = initialPreferences {
+    if (initialPreferences != null) {
+      _preferencesByAccount['account-1'] = initialPreferences;
+    }
+    _preferencesByAccount.addAll(initialPreferencesByAccount);
     for (final intent in initialIntents) {
       final accountUuid = intent.accountUuid;
       if (accountUuid == null || accountUuid.trim().isEmpty) {
@@ -6609,14 +6677,15 @@ class _FakeSwapPersistenceStore implements SwapActivityStore, SwapDraftStore {
   }
 
   var loadCount = 0;
-  var loadDraftCount = 0;
+  var loadPreferencesCount = 0;
   final saveSnapshots = <List<SwapPrototypeIntent>>[];
   final loadedAccounts = <String>[];
   final savedAccounts = <String>[];
   List<SwapPrototypeIntent> savedIntents;
-  SwapDraftSnapshot? savedDraft;
+  SwapComposerPreferences? savedPreferences;
   final _legacyIntents = <SwapPrototypeIntent>[];
   final _intentsByAccount = <String, List<SwapPrototypeIntent>>{};
+  final _preferencesByAccount = <String, SwapComposerPreferences>{};
 
   @override
   Future<List<SwapIntentRecord>> loadRecords({
@@ -6650,14 +6719,20 @@ class _FakeSwapPersistenceStore implements SwapActivityStore, SwapDraftStore {
   }
 
   @override
-  Future<SwapDraftSnapshot?> loadDraft() async {
-    loadDraftCount++;
-    return savedDraft;
+  Future<SwapComposerPreferences?> loadPreferences({
+    required String accountUuid,
+  }) async {
+    loadPreferencesCount++;
+    return _preferencesByAccount[accountUuid];
   }
 
   @override
-  Future<void> saveDraft(SwapDraftSnapshot draft) async {
-    savedDraft = draft;
+  Future<void> savePreferences({
+    required String accountUuid,
+    required SwapComposerPreferences preferences,
+  }) async {
+    savedPreferences = preferences;
+    _preferencesByAccount[accountUuid] = preferences;
   }
 }
 

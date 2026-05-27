@@ -124,8 +124,8 @@ class SwapExternalRequest {
   }
 }
 
-class SwapDraftSnapshot {
-  const SwapDraftSnapshot({
+class SwapComposerPreferences {
+  const SwapComposerPreferences({
     required this.direction,
     required this.externalAsset,
     this.slippageBps = defaultSwapSlippageBps,

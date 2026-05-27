@@ -1,11 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('loads contacts sorted by network and creation time', () async {
     final repo = _FakeAddressBookRepository([
       _contact(
@@ -103,6 +108,35 @@ void main() {
       isEmpty,
     );
   });
+
+  test(
+    'stores contacts as secure-store JSON without an unlock session',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final store = AppSecureStore.instance;
+      await store.deleteAll();
+      store.clearSessionPassword();
+      addTearDown(() async {
+        await store.deleteAll();
+        store.clearSessionPassword();
+      });
+
+      final repo = SecureStorageAddressBookRepository(store: store);
+      final contact = _contact(id: 'alice', label: 'Alice');
+
+      await repo.saveContacts([contact]);
+
+      final raw = await store.readString(kAddressBookContactsKey);
+      final decoded = jsonDecode(raw!) as List<dynamic>;
+      expect(decoded.single, containsPair('id', 'alice'));
+
+      store.clearSessionPassword();
+      final restored = await repo.loadContacts();
+
+      expect(restored, hasLength(1));
+      expect(restored.single.id, 'alice');
+    },
+  );
 
   test('filters by label address and network', () async {
     final repo = _FakeAddressBookRepository([

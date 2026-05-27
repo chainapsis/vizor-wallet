@@ -13,7 +13,7 @@ import 'swap_activity_tracker.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
 import 'swap_max_amount_estimator.dart';
-import 'swap_draft_store.dart';
+import 'swap_composer_preferences_store.dart';
 import 'swap_provider_config.dart';
 import 'swap_zec_staging_address_service.dart';
 
@@ -52,8 +52,15 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         if (previous == next) return;
         if (previous != null) {
           unawaited(_persistCurrentIntents(accountUuid: previous));
+          unawaited(
+            _persistComposerPreferences(
+              _currentComposerPreferences,
+              accountUuid: previous,
+            ),
+          );
         }
         _clearAccountScopedTransientState();
+        unawaited(_restoreComposerPreferences(accountUuid: next));
         unawaited(
           _restorePersistedIntents(accountUuid: next, replaceExisting: true),
         );
@@ -69,9 +76,10 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       unawaited(_loadSupportedExternalAssets(forceRefreshPrices: true));
     });
     ref.onDispose(priceRefreshTimer.cancel);
-    unawaited(_restorePersistedDraft());
+    final activeAccountUuid = _activeAccountUuidOrNull;
+    unawaited(_restoreComposerPreferences(accountUuid: activeAccountUuid));
     unawaited(_loadSupportedExternalAssets());
-    unawaited(_restorePersistedIntents(accountUuid: _activeAccountUuidOrNull));
+    unawaited(_restorePersistedIntents(accountUuid: activeAccountUuid));
     final initialIntents = ref.watch(swapInitialIntentsProvider);
     final initialRequests = ref.watch(swapInitialExternalRequestsProvider);
     return const SwapPrototypeState(
@@ -111,7 +119,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         ),
       ),
     );
-    unawaited(_persistDraft(_currentDraftSnapshot));
+    unawaited(_persistComposerPreferences(_currentComposerPreferences));
     _clearPreviewQuoteState();
   }
 
@@ -140,7 +148,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         ),
       ),
     );
-    unawaited(_persistDraft(_currentDraftSnapshot));
+    unawaited(_persistComposerPreferences(_currentComposerPreferences));
     _clearPreviewQuoteState();
   }
 
@@ -280,7 +288,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       preserveReceiveFiatInput:
           state.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
-    unawaited(_persistDraft(_currentDraftSnapshot));
+    unawaited(_persistComposerPreferences(_currentComposerPreferences));
     _clearPreviewQuoteState();
   }
 
@@ -302,7 +310,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       preserveReceiveFiatInput:
           state.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
-    unawaited(_persistDraft(_currentDraftSnapshot));
+    unawaited(_persistComposerPreferences(_currentComposerPreferences));
     _clearPreviewQuoteState();
   }
 
@@ -435,7 +443,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     final quoteMode = state.quoteMode;
     final amountText = state.quoteAmountText;
     final generation = ++_quoteGeneration;
-    final draft = _currentDraftSnapshot;
+    final preferences = _currentComposerPreferences;
 
     state = state.copyWith(
       reviewVisible: false,
@@ -448,7 +456,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     );
 
     try {
-      await _persistDraft(draft);
+      await _persistComposerPreferences(preferences);
       final stagingAddress = await ref
           .read(swapZecStagingAddressServiceProvider)
           .prepareForQuote(accountUuid: accountUuid);
@@ -1385,6 +1393,14 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
   void _clearAccountScopedTransientState() {
     _quoteGeneration++;
     state = state.copyWith(
+      amountText: '',
+      receiveAmountText: '',
+      quoteMode: SwapQuoteMode.exactInput,
+      amountInputMode: SwapAmountInputMode.token,
+      receiveAmountInputMode: SwapAmountInputMode.token,
+      amountFiatText: '',
+      receiveFiatText: '',
+      destinationText: '',
       reviewVisible: false,
       quoteLoading: false,
       previewQuoteLoading: false,
@@ -1442,10 +1458,19 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     } catch (_) {}
   }
 
-  Future<void> _restorePersistedDraft() async {
+  Future<void> _restoreComposerPreferences({
+    required String? accountUuid,
+  }) async {
+    final scopedAccountUuid = accountUuid?.trim();
+    if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) {
+      return;
+    }
     try {
-      final draft = await ref.read(swapDraftStoreProvider).loadDraft();
-      if (draft == null) return;
+      final preferences = await ref
+          .read(swapComposerPreferencesStoreProvider)
+          .loadPreferences(accountUuid: scopedAccountUuid);
+      if (preferences == null) return;
+      if (!_isAccountActive(scopedAccountUuid)) return;
       if (state.amountText.isNotEmpty ||
           state.receiveAmountText.isNotEmpty ||
           state.destinationText.isNotEmpty ||
@@ -1455,15 +1480,15 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       }
       final externalAsset =
           _supportedAssetFor(
-            draft.externalAsset,
+            preferences.externalAsset,
             state.supportedExternalAssets,
           ) ??
-          draft.externalAsset;
+          preferences.externalAsset;
       _quoteGeneration++;
       state = state.copyWith(
-        direction: draft.direction,
+        direction: preferences.direction,
         externalAsset: externalAsset,
-        slippageBps: draft.slippageBps,
+        slippageBps: preferences.slippageBps,
         reviewVisible: false,
         quoteLoading: false,
         clearReview: true,
@@ -1567,14 +1592,26 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
         scopedAccountUuid == _activeAccountUuidOrNull;
   }
 
-  Future<void> _persistDraft(SwapDraftSnapshot draft) async {
+  Future<void> _persistComposerPreferences(
+    SwapComposerPreferences preferences, {
+    String? accountUuid,
+  }) async {
+    final scopedAccountUuid = (accountUuid ?? _activeAccountUuidOrNull)?.trim();
+    if (scopedAccountUuid == null || scopedAccountUuid.isEmpty) {
+      return;
+    }
     try {
-      await ref.read(swapDraftStoreProvider).saveDraft(draft);
+      await ref
+          .read(swapComposerPreferencesStoreProvider)
+          .savePreferences(
+            accountUuid: scopedAccountUuid,
+            preferences: preferences,
+          );
     } catch (_) {}
   }
 
-  SwapDraftSnapshot get _currentDraftSnapshot {
-    return SwapDraftSnapshot(
+  SwapComposerPreferences get _currentComposerPreferences {
+    return SwapComposerPreferences(
       direction: state.direction,
       externalAsset: state.externalAsset,
       slippageBps: state.slippageBps,

@@ -23,10 +23,7 @@ class SecureStorageAddressBookRepository implements AddressBookRepository {
 
   @override
   Future<List<AddressBookContact>> loadContacts() async {
-    final raw = await _store.readSecretStringWithOptions(
-      kAddressBookContactsKey,
-      requireUnlockedSession: true,
-    );
+    final raw = await _store.readString(kAddressBookContactsKey);
     if (raw == null || raw.trim().isEmpty) return const [];
 
     return decodeContactsJson(raw);
@@ -54,7 +51,7 @@ class SecureStorageAddressBookRepository implements AddressBookRepository {
 
   @override
   Future<void> saveContacts(List<AddressBookContact> contacts) async {
-    await _store.writeSecretString(
+    await _store.writeString(
       kAddressBookContactsKey,
       jsonEncode([for (final contact in contacts) contact.toJson()]),
     );
