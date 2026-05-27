@@ -50,6 +50,7 @@ abstract final class AppIcons {
   static const expand = 'expand';
   static const help = 'help';
   static const history = 'history';
+  static const home = 'home';
   static const importWallet = 'import_wallet';
   static const key = 'key';
   static const keystone = 'keystone';

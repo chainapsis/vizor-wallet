@@ -1485,7 +1485,7 @@ class _AddressBookSidebar extends StatelessWidget {
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
                     label: 'Home',
-                    iconName: AppIcons.wallet,
+                    iconName: AppIcons.home,
                     onTap: () {},
                   ),
                   const SizedBox(height: AppSpacing.xs),
@@ -1522,13 +1522,7 @@ class _AddressBookSidebar extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
-                    label: 'About Vizor',
-                    iconName: AppIcons.vizor,
-                    onTap: () {},
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    label: 'Sign Out',
+                    label: 'Sign out',
                     iconName: AppIcons.logOut,
                     onTap: () {},
                   ),

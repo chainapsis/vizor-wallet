@@ -40,6 +40,7 @@ const _iconNames = <String>[
   AppIcons.expand,
   AppIcons.help,
   AppIcons.history,
+  AppIcons.home,
   AppIcons.importWallet,
   AppIcons.key,
   AppIcons.link,

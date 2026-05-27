@@ -111,29 +111,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
-                    key: const ValueKey('sidebar_wallet_button'),
-                    label: 'Wallet',
-                    iconName: AppIcons.wallet,
+                    key: const ValueKey('sidebar_home_button'),
+                    label: 'Home',
+                    iconName: AppIcons.home,
                     active: _matches('/home'),
                     onTap: _matches('/home') ? null : () => context.go('/home'),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    key: const ValueKey('sidebar_send_button'),
-                    label: 'Send',
-                    iconName: AppIcons.plane,
-                    active: _matches('/send'),
-                    onTap: _matches('/send') ? null : () => context.go('/send'),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    key: const ValueKey('sidebar_receive_button'),
-                    label: 'Receive',
-                    iconName: AppIcons.arrowDownCircle,
-                    active: _matches('/receive'),
-                    onTap: _matches('/receive')
-                        ? null
-                        : () => context.go('/receive'),
                   ),
                   if (swapFeatureEnabled) ...[
                     const SizedBox(height: AppSpacing.xs),
@@ -186,16 +168,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
-                    label: 'About Vizor',
-                    iconName: AppIcons.vizor,
-                    active: _matches('/about'),
-                    onTap: _matches('/about')
-                        ? null
-                        : () => context.go('/about'),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
-                    label: 'Sign Out',
+                    label: 'Sign out',
                     iconName: AppIcons.logOut,
                     onTap: _isSigningOut ? null : _handleSignOut,
                   ),

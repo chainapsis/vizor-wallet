@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -43,11 +44,17 @@ void main() {
 
     expect(find.byKey(const ValueKey('sidebar_swap_button')), findsNothing);
     expect(find.text('Swap'), findsNothing);
-    expect(find.byKey(const ValueKey('sidebar_send_button')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('sidebar_receive_button')),
-      findsOneWidget,
+    expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+    final homeIcon = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('sidebar_home_button')),
+        matching: find.byType(AppIcon),
+      ),
     );
+    expect(homeIcon.name, AppIcons.home);
+    expect(find.text('Send'), findsNothing);
+    expect(find.text('Receive'), findsNothing);
     expect(
       find.byKey(const ValueKey('sidebar_address_book_button')),
       findsOneWidget,
@@ -73,9 +80,7 @@ void main() {
     await tester.pump();
 
     final positions = [
-      tester.getTopLeft(find.text('Wallet')).dy,
-      tester.getTopLeft(find.text('Send')).dy,
-      tester.getTopLeft(find.text('Receive')).dy,
+      tester.getTopLeft(find.text('Home')).dy,
       tester.getTopLeft(find.text('Swap')).dy,
       tester.getTopLeft(find.text('Address Book')).dy,
       tester.getTopLeft(find.text('Activity')).dy,

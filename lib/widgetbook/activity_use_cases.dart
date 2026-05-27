@@ -359,8 +359,8 @@ class _PreviewActivitySidebar extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
-                    label: 'Wallet',
-                    iconName: AppIcons.wallet,
+                    label: 'Home',
+                    iconName: AppIcons.home,
                     onTap: () {},
                   ),
                   const SizedBox(height: AppSpacing.xs),
