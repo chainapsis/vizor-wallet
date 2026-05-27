@@ -647,6 +647,8 @@ final _figmaNode6State = SwapPrototypeState(
   amountFiatText: '100',
   amountInputMode: SwapAmountInputMode.fiat,
   receiveAmountText: '0.25',
+  receiveFiatText: '100',
+  receiveAmountInputMode: SwapAmountInputMode.fiat,
   destinationText: '',
   externalAsset: _figmaUsdc,
   reviewVisible: false,
@@ -1294,6 +1296,7 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
         amountText: amountText ?? '',
         amountFiatText: value,
         amountInputMode: SwapAmountInputMode.fiat,
+        receiveAmountInputMode: SwapAmountInputMode.fiat,
         quoteMode: SwapQuoteMode.exactInput,
       );
       _state = _withDerivedFiatTexts(
@@ -1331,6 +1334,7 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
       );
       final next = _state.copyWith(
         receiveAmountText: receiveAmountText ?? '',
+        amountInputMode: SwapAmountInputMode.fiat,
         receiveFiatText: value,
         receiveAmountInputMode: SwapAmountInputMode.fiat,
         quoteMode: SwapQuoteMode.exactOutput,
@@ -1352,17 +1356,35 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
           amountInputMode: _state.amountInputMode == SwapAmountInputMode.token
               ? SwapAmountInputMode.fiat
               : SwapAmountInputMode.token,
+          receiveAmountInputMode:
+              _state.amountInputMode == SwapAmountInputMode.token
+              ? SwapAmountInputMode.fiat
+              : SwapAmountInputMode.token,
           amountFiatText: swapFiatInputTextFromTokenText(
             _state,
             asset: _state.direction.fromAsset(_state.externalAsset),
             tokenAmountText: _state.amountText,
           ),
+          receiveFiatText: swapFiatInputTextFromTokenText(
+            _state,
+            asset: _state.direction.toAsset(_state.externalAsset),
+            tokenAmountText: _state.receiveAmountText,
+          ),
         ),
         SwapAmountInputSide.receive => _state.copyWith(
+          amountInputMode:
+              _state.receiveAmountInputMode == SwapAmountInputMode.token
+              ? SwapAmountInputMode.fiat
+              : SwapAmountInputMode.token,
           receiveAmountInputMode:
               _state.receiveAmountInputMode == SwapAmountInputMode.token
               ? SwapAmountInputMode.fiat
               : SwapAmountInputMode.token,
+          amountFiatText: swapFiatInputTextFromTokenText(
+            _state,
+            asset: _state.direction.fromAsset(_state.externalAsset),
+            tokenAmountText: _state.amountText,
+          ),
           receiveFiatText: swapFiatInputTextFromTokenText(
             _state,
             asset: _state.direction.toAsset(_state.externalAsset),
@@ -1538,8 +1560,8 @@ String _estimateCounterpart(SwapPrototypeState state) {
   final quote = state.draftQuote;
   if (quote == null) return '';
   return state.quoteMode == SwapQuoteMode.exactInput
-      ? quote.receiveAsset.formatAmount(quote.receiveAmount)
-      : quote.sellAsset.formatAmount(quote.sellAmount);
+      ? quote.receiveAsset.formatAmountDown(quote.receiveAmount)
+      : quote.sellAsset.formatAmountUp(quote.sellAmount);
 }
 
 SwapPrototypeState _withDerivedFiatTexts(

@@ -1021,7 +1021,7 @@ class _SwapReviewFooter extends StatelessWidget {
         ? 'Insufficient ZEC'
         : state.quoteLoading
         ? 'Getting quote'
-        : 'Review swap';
+        : 'Get a quote';
 
     return Center(
       child: SizedBox(
@@ -1034,18 +1034,39 @@ class _SwapReviewFooter extends StatelessWidget {
               : AppButtonVariant.primary,
           size: AppButtonSize.large,
           minWidth: 256,
-          leading: state.quoteLoading && !needsDestinationAddress
-              ? const AppIcon(AppIcons.loader)
-              : null,
           child: SizedBox(
             width: 184,
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(label, maxLines: 1),
+              child: _SwapReviewButtonLabel(
+                label: label,
+                loading: state.quoteLoading && !needsDestinationAddress,
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SwapReviewButtonLabel extends StatelessWidget {
+  const _SwapReviewButtonLabel({required this.label, required this.loading});
+
+  final String label;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, maxLines: 1),
+        if (loading) ...[
+          const SizedBox(width: 4),
+          const AppIcon(AppIcons.loader),
+        ],
+      ],
     );
   }
 }

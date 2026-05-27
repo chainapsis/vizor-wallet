@@ -122,7 +122,6 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
         state.receiveAmountInputMode == SwapAmountInputMode.fiat;
     final targetDirection = state.direction.toggled;
     final rateText = _rateTextForState(state);
-    final quoteBusy = state.quoteLoading || state.previewQuoteLoading;
     final quoteError = state.quoteError ?? state.previewQuoteError;
     final zecAmountOverAvailable = _zecAmountOverAvailable(
       state,
@@ -277,7 +276,6 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
             const SizedBox(height: AppSpacing.sm),
             _SwapTicketFooter(
               rateText: rateText,
-              quoteLoading: quoteBusy,
               slippageBps: state.slippageBps,
               settingsOpen: widget.slippageSettingsOpen,
               onSettingsTap: widget.onOpenSlippageSettings,
@@ -296,14 +294,12 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
 class _SwapTicketFooter extends StatelessWidget {
   const _SwapTicketFooter({
     required this.rateText,
-    required this.quoteLoading,
     required this.slippageBps,
     required this.settingsOpen,
     required this.onSettingsTap,
   });
 
   final String rateText;
-  final bool quoteLoading;
   final int slippageBps;
   final bool settingsOpen;
   final VoidCallback onSettingsTap;
@@ -316,12 +312,7 @@ class _SwapTicketFooter extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Expanded(
-            child: _SwapRateInline(
-              rateText: rateText,
-              quoteLoading: quoteLoading,
-            ),
-          ),
+          Expanded(child: _SwapRateInline(rateText: rateText)),
           const SizedBox(width: 8),
           _SlippageControl(
             label: _formatSlippage(slippageBps),
@@ -335,10 +326,9 @@ class _SwapTicketFooter extends StatelessWidget {
 }
 
 class _SwapRateInline extends StatelessWidget {
-  const _SwapRateInline({required this.rateText, required this.quoteLoading});
+  const _SwapRateInline({required this.rateText});
 
   final String rateText;
-  final bool quoteLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -362,10 +352,6 @@ class _SwapRateInline extends StatelessWidget {
             ),
           ),
         ),
-        if (quoteLoading) ...[
-          const SizedBox(width: AppSpacing.xxs),
-          AppIcon(AppIcons.loader, size: 12, color: colors.icon.muted),
-        ],
       ],
     );
   }
@@ -695,10 +681,6 @@ class _MaxAmountTrigger extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (loading) ...[
-                AppIcon(AppIcons.loader, size: 13, color: colors.icon.muted),
-                const SizedBox(width: 4),
-              ],
               Flexible(
                 child: Text(
                   label,

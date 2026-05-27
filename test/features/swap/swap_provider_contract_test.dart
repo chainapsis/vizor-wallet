@@ -56,13 +56,13 @@ void main() {
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.usdc,
         mode: SwapQuoteMode.exactOutput,
-        amount: 105.26,
+        amount: 105.27,
         destination: '0xabc123',
       ),
     );
 
-    expect(quote.sellAmountText, '1.5000 ZEC');
-    expect(quote.receiveEstimateText, '105.26 USDC');
+    expect(quote.sellAmountText, '1.5002 ZEC');
+    expect(quote.receiveEstimateText, '105.27 USDC');
     expect(quote.mode, SwapQuoteMode.exactOutput);
     expect(quote.pairText, 'ZEC -> USDC');
   });

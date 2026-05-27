@@ -235,17 +235,45 @@ class SwapAsset {
   }
 
   String formatAmount(double amount) {
+    return _formatAmountForDisplay(
+      amount,
+      rounding: _SwapAmountRounding.nearest,
+    );
+  }
+
+  String formatAmountDown(double amount) {
+    return _formatAmountForDisplay(amount, rounding: _SwapAmountRounding.down);
+  }
+
+  String formatAmountUp(double amount) {
+    return _formatAmountForDisplay(amount, rounding: _SwapAmountRounding.up);
+  }
+
+  String _formatAmountForDisplay(
+    double amount, {
+    required _SwapAmountRounding rounding,
+  }) {
+    final digits = _displayFractionDigits;
+    final displayAmount = switch (rounding) {
+      _SwapAmountRounding.nearest => amount,
+      _SwapAmountRounding.down => _roundDisplayAmountDown(amount, digits),
+      _SwapAmountRounding.up => _roundDisplayAmountUp(amount, digits),
+    };
+    return displayAmount.toStringAsFixed(digits);
+  }
+
+  int get _displayFractionDigits {
     final normalized = symbol.toUpperCase();
     if (normalized == 'ZEC') {
-      return amount.toStringAsFixed(4);
+      return 4;
     }
     if (normalized == 'BTC' || normalized == 'WBTC' || decimals == 8) {
-      return amount.toStringAsFixed(8);
+      return 8;
     }
     if (normalized == 'ETH' || normalized == 'SOL' || normalized == 'NEAR') {
-      return amount.toStringAsFixed(4);
+      return 4;
     }
-    return amount.toStringAsFixed(2);
+    return 2;
   }
 
   Map<String, Object?> toPersistedJson() {
@@ -324,6 +352,34 @@ class SwapAsset {
 
   String get _marketKey =>
       '${symbol.toLowerCase()}:${chainTicker.toLowerCase()}:$decimals';
+}
+
+enum _SwapAmountRounding { nearest, down, up }
+
+double _roundDisplayAmountDown(double amount, int fractionDigits) {
+  return _roundDisplayAmount(amount, fractionDigits, roundUp: false);
+}
+
+double _roundDisplayAmountUp(double amount, int fractionDigits) {
+  return _roundDisplayAmount(amount, fractionDigits, roundUp: true);
+}
+
+double _roundDisplayAmount(
+  double amount,
+  int fractionDigits, {
+  required bool roundUp,
+}) {
+  if (!amount.isFinite || amount <= 0) return 0;
+  var factor = 1.0;
+  for (var i = 0; i < fractionDigits; i++) {
+    factor *= 10;
+  }
+  final scaled = amount * factor;
+  final epsilon = scaled.abs() * 1e-12 + 1e-9;
+  final rounded = roundUp
+      ? (scaled - epsilon).ceilToDouble()
+      : (scaled + epsilon).floorToDouble();
+  return rounded / factor;
 }
 
 const swapExternalAssets = <SwapAsset>[
@@ -846,13 +902,13 @@ class SwapQuote {
   String get pairText => '${sellAsset.symbol} -> ${receiveAsset.symbol}';
   String get sellAmountText =>
       sellAmountTextOverride ??
-      '${sellAsset.formatAmount(sellAmount)} ${sellAsset.symbol}';
+      '${mode == SwapQuoteMode.exactOutput ? sellAsset.formatAmountUp(sellAmount) : sellAsset.formatAmount(sellAmount)} ${sellAsset.symbol}';
   String get receiveEstimateText =>
       receiveEstimateTextOverride ??
-      '${receiveAsset.formatAmount(receiveAmount)} ${receiveAsset.symbol}';
+      '${mode == SwapQuoteMode.exactInput ? receiveAsset.formatAmountDown(receiveAmount) : receiveAsset.formatAmount(receiveAmount)} ${receiveAsset.symbol}';
   String get minimumReceiveText =>
       minimumReceiveTextOverride ??
-      '${receiveAsset.formatAmount(minimumReceiveAmount)} ${receiveAsset.symbol}';
+      '${receiveAsset.formatAmountDown(minimumReceiveAmount)} ${receiveAsset.symbol}';
 
   String get rateText {
     final override = rateTextOverride;

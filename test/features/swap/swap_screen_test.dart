@@ -1337,6 +1337,46 @@ void main() {
     expect(_fieldText(tester, 'swap_amount_field'), '1.2339');
   });
 
+  testWidgets('ZEC max amount request keeps the max label spinner-free', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final maxEstimator = _CompletingSwapMaxAmountEstimator();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedPrototypeFixtures: false,
+        sessionStore: _FakeSwapPersistenceStore(),
+        spendableBalance: BigInt.from(123450000),
+        maxAmountEstimator: maxEstimator,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_max_amount_button')));
+    await tester.pump();
+
+    expect(maxEstimator.requests, ['account-1']);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_max_amount_button')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+        ),
+      ),
+      findsNothing,
+    );
+
+    maxEstimator.complete(BigInt.from(123390000));
+    await tester.pumpAndSettle();
+
+    expect(_fieldText(tester, 'swap_amount_field'), '1.2339');
+  });
+
   testWidgets(
     'ZEC review is disabled when the amount reaches available balance',
     (tester) async {
@@ -1872,7 +1912,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(swapProvider.pricingRequests, 1);
-    expect(_fieldText(tester, 'swap_receive_amount_field'), '5.41');
+    expect(_fieldText(tester, 'swap_receive_amount_field'), '5.40');
     expect(find.text('1 ZEC = 540.62 USDC'), findsOneWidget);
     expect(find.byKey(const ValueKey('swap_rate_line')), findsOneWidget);
     expect(
@@ -3559,7 +3599,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_fieldText(tester, 'swap_amount_field'), '105');
-    expect(_fieldText(tester, 'swap_receive_amount_field'), '105.00');
+    expect(_fieldText(tester, 'swap_receive_amount_field'), '105');
     expect(find.text('1.5000 ZEC'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -3608,7 +3648,7 @@ void main() {
     expect(_fieldText(tester, 'swap_receive_amount_field'), '105.26');
     expect(swapProvider.requests, hasLength(1));
     final previewRequest = swapProvider.requests.single;
-    expect(previewRequest.dryRun, isTrue);
+    expect(previewRequest.dryRun, isFalse);
     expect(previewRequest.mode, SwapQuoteMode.exactOutput);
     expect(previewRequest.amount, 105.26);
     expect(previewRequest.amountText, '105.26');
@@ -3636,19 +3676,19 @@ void main() {
 
       await tester.enterText(
         find.byKey(const ValueKey('swap_receive_amount_field')),
-        '105.26',
+        '105.27',
       );
       await _enterDestinationText(tester, '0xrecipient');
       await tester.pumpAndSettle();
 
-      expect(_fieldText(tester, 'swap_receive_amount_field'), '105.26');
-      expect(_fieldText(tester, 'swap_amount_field'), '1.5000');
+      expect(_fieldText(tester, 'swap_receive_amount_field'), '105.27');
+      expect(_fieldText(tester, 'swap_amount_field'), '1.5002');
       expect(swapProvider.requests, hasLength(1));
       final previewRequest = swapProvider.requests.single;
-      expect(previewRequest.dryRun, isTrue);
+      expect(previewRequest.dryRun, isFalse);
       expect(previewRequest.mode, SwapQuoteMode.exactOutput);
-      expect(previewRequest.amount, 105.26);
-      expect(previewRequest.amountText, '105.26');
+      expect(previewRequest.amount, 105.27);
+      expect(previewRequest.amountText, '105.27');
       expect(previewRequest.amountAsset, SwapAsset.usdc);
 
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -3658,8 +3698,8 @@ void main() {
       final liveRequest = swapProvider.requests.last;
       expect(liveRequest.dryRun, isFalse);
       expect(liveRequest.mode, SwapQuoteMode.exactOutput);
-      expect(liveRequest.amount, 105.26);
-      expect(liveRequest.amountText, '105.26');
+      expect(liveRequest.amount, 105.27);
+      expect(liveRequest.amountText, '105.27');
       expect(liveRequest.destination, '0xrecipient');
       expect(liveRequest.refundAddress, 'u1actualshieldedrecipient');
       expect(find.text('Review Swap'), findsOneWidget);
@@ -3782,6 +3822,15 @@ void main() {
     expect(find.text('Getting quote'), findsOneWidget);
     expect(
       find.descendant(
+        of: find.byKey(const ValueKey('swap_rate_line')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+        ),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
         of: find.byKey(const ValueKey('swap_review_button')),
         matching: find.byWidgetPredicate(
           (widget) => widget is AppIcon && widget.name == AppIcons.loader,
@@ -3789,6 +3838,21 @@ void main() {
       ),
       findsOneWidget,
     );
+    final gettingQuoteRect = tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_review_button')),
+        matching: find.text('Getting quote'),
+      ),
+    );
+    final buttonLoaderRect = tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_review_button')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+        ),
+      ),
+    );
+    expect(buttonLoaderRect.left - gettingQuoteRect.right, closeTo(4, 1));
 
     swapProvider.completeQuote();
     await tester.pumpAndSettle();
@@ -5384,6 +5448,21 @@ class _FakeSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
   }
 }
 
+class _CompletingSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
+  final requests = <String>[];
+  final _completer = Completer<BigInt>();
+
+  void complete(BigInt value) {
+    _completer.complete(value);
+  }
+
+  @override
+  Future<BigInt> estimateMaxZecSellAmount({required String accountUuid}) async {
+    requests.add(accountUuid);
+    return _completer.future;
+  }
+}
+
 class _FakeSwapProvider implements SwapProvider {
   _FakeSwapProvider({List<SwapAsset>? supportedAssets, this.submitDepositError})
     : supportedAssets = supportedAssets ?? swapExternalAssets;
@@ -5536,11 +5615,14 @@ class _FakeSwapProvider implements SwapProvider {
 }
 
 class _DriftingExactOutputSwapProvider extends _FakeSwapProvider {
+  var _exactOutputQuotes = 0;
+
   @override
   Future<SwapQuote> quote(SwapQuoteRequest request) async {
     final quote = await super.quote(request);
     if (request.mode != SwapQuoteMode.exactOutput) return quote;
-    final sellAmount = request.dryRun ? 0.5 : 1.5;
+    _exactOutputQuotes += 1;
+    final sellAmount = _exactOutputQuotes == 1 ? 0.5 : 1.5;
     return SwapQuote(
       direction: quote.direction,
       sellAsset: quote.sellAsset,

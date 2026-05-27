@@ -179,6 +179,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       _withIndicativeCounterpart(
         state.copyWith(
           quoteMode: SwapQuoteMode.exactInput,
+          receiveAmountInputMode: SwapAmountInputMode.fiat,
           amountInputMode: SwapAmountInputMode.fiat,
           amountFiatText: value,
           amountText: tokenText ?? '',
@@ -221,6 +222,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
       _withIndicativeCounterpart(
         state.copyWith(
           quoteMode: SwapQuoteMode.exactOutput,
+          amountInputMode: SwapAmountInputMode.fiat,
           receiveAmountInputMode: SwapAmountInputMode.fiat,
           receiveFiatText: value,
           receiveAmountText: tokenText ?? '',
@@ -1285,13 +1287,13 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     }
     if (next.quoteMode == SwapQuoteMode.exactInput) {
       return next.copyWith(
-        receiveAmountText: estimate.receiveAsset.formatAmount(
+        receiveAmountText: estimate.receiveAsset.formatAmountDown(
           estimate.receiveAmount,
         ),
       );
     }
     return next.copyWith(
-      amountText: estimate.sellAsset.formatAmount(estimate.sellAmount),
+      amountText: estimate.sellAsset.formatAmountUp(estimate.sellAmount),
     );
   }
 
@@ -1348,6 +1350,7 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
             : SwapAmountInputMode.token;
     return current.copyWith(
       amountInputMode: nextMode,
+      receiveAmountInputMode: nextMode,
       amountFiatText:
           nextMode == SwapAmountInputMode.fiat
               ? swapFiatInputTextFromTokenText(
@@ -1356,6 +1359,14 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
                 tokenAmountText: current.amountText,
               )
               : current.amountFiatText,
+      receiveFiatText:
+          nextMode == SwapAmountInputMode.fiat
+              ? swapFiatInputTextFromTokenText(
+                current,
+                asset: current.direction.toAsset(current.externalAsset),
+                tokenAmountText: current.receiveAmountText,
+              )
+              : current.receiveFiatText,
     );
   }
 
@@ -1365,7 +1376,16 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
             ? SwapAmountInputMode.fiat
             : SwapAmountInputMode.token;
     return current.copyWith(
+      amountInputMode: nextMode,
       receiveAmountInputMode: nextMode,
+      amountFiatText:
+          nextMode == SwapAmountInputMode.fiat
+              ? swapFiatInputTextFromTokenText(
+                current,
+                asset: current.direction.fromAsset(current.externalAsset),
+                tokenAmountText: current.amountText,
+              )
+              : current.amountFiatText,
       receiveFiatText:
           nextMode == SwapAmountInputMode.fiat
               ? swapFiatInputTextFromTokenText(
@@ -1444,7 +1464,6 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
               mode: quoteMode,
               amount: amount,
               amountText: amountText,
-              dryRun: true,
               slippageBps: slippageBps,
             ),
           );
@@ -1479,7 +1498,9 @@ class SwapPrototypeNotifier extends Notifier<SwapPrototypeState> {
     SwapQuote quote,
   ) {
     return _withDerivedFiatTexts(
-      next.copyWith(amountText: quote.sellAsset.formatAmount(quote.sellAmount)),
+      next.copyWith(
+        amountText: quote.sellAsset.formatAmountUp(quote.sellAmount),
+      ),
       preserveAmountFiatInput: next.amountInputMode == SwapAmountInputMode.fiat,
       preserveReceiveFiatInput:
           next.receiveAmountInputMode == SwapAmountInputMode.fiat,
