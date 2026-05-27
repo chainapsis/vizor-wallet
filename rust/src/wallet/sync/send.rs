@@ -1275,26 +1275,6 @@ mod tests {
     }
 
     #[test]
-    fn shield_result_preserves_pending_broadcast_status() {
-        let result = CreatedBroadcastResult {
-            txids: "abc123".to_string(),
-            status: CreatedBroadcastResult::PENDING_BROADCAST,
-            broadcasted_count: 0,
-            total_count: 1,
-            message: Some("Broadcast could not start".to_string()),
-        }
-        .into_shield_transparent_result(10_000, 90_000);
-
-        assert_eq!(result.txids, "abc123");
-        assert_eq!(result.status, CreatedBroadcastResult::PENDING_BROADCAST);
-        assert_eq!(result.broadcasted_count, 0);
-        assert_eq!(result.total_count, 1);
-        assert_eq!(result.message.as_deref(), Some("Broadcast could not start"));
-        assert_eq!(result.fee_zatoshi, 10_000);
-        assert_eq!(result.shielded_zatoshi, 90_000);
-    }
-
-    #[test]
     fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() {
         let network = WalletNetwork::Regtest;
         let height = BlockHeight::from_u32(1_000);

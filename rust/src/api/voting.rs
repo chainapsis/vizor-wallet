@@ -7,7 +7,8 @@ use crate::wallet::{
         bundle::{self, SelectedNotes},
         delegation,
         delegation::{
-            BundleSetupResult, DelegationPirPrecomputeResult, ProofEvent, SignedDelegationPayload,
+            BundleSetupResult, DelegationPirPrecomputeResult, KeystoneDelegationRequest,
+            KeystoneSignatureRecord, ProofEvent, SignedDelegationPayload,
         },
         hotkey,
         progress::{cancel_voting_work, VotingWorkCancellation},
@@ -87,6 +88,29 @@ pub struct ApiSignedDelegationPayload {
     pub delegated_weight_zatoshi: u64,
     pub bundle_count: u32,
     pub bundle_index: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Voting PCZT request that should be signed by Keystone.
+pub struct ApiKeystoneDelegationRequest {
+    pub pczt_bytes: Vec<u8>,
+    pub redacted_pczt_bytes: Vec<u8>,
+    pub pczt_sighash: Vec<u8>,
+    pub rk: Vec<u8>,
+    pub action_index: u32,
+    pub eligible_weight_zatoshi: u64,
+    pub delegated_weight_zatoshi: u64,
+    pub bundle_count: u32,
+    pub bundle_index: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Persisted Keystone signature for one delegation bundle.
+pub struct ApiKeystoneSignatureRecord {
+    pub bundle_index: u32,
+    pub sig: Vec<u8>,
+    pub sighash: Vec<u8>,
+    pub rk: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -349,6 +373,21 @@ pub fn derive_voting_hotkey(
     })
 }
 
+/// Generate opaque voting hotkey bytes for a hardware account.
+///
+/// Hardware accounts cannot expose their wallet seed to derive the deterministic
+/// software hotkey, so the app persists this random per-round hotkey in secure
+/// storage and reuses it for vote commitment signing.
+pub fn generate_voting_hotkey() -> Result<Vec<u8>, String> {
+    catch(|| {
+        hotkey::generate_random_hotkey().map(|hotkey| {
+            // FRB returns owned bytes, so this copy cannot be zeroized by Rust
+            // after Dart receives it.
+            hotkey.expose_secret().to_vec()
+        })
+    })
+}
+
 impl From<ApiVotingRoundParams> for zcash_voting::VotingRoundParams {
     fn from(params: ApiVotingRoundParams) -> Self {
         Self {
@@ -415,6 +454,33 @@ impl From<SignedDelegationPayload> for ApiSignedDelegationPayload {
             delegated_weight_zatoshi: result.delegated_weight_zatoshi,
             bundle_count: result.bundle_count,
             bundle_index: result.bundle_index,
+        }
+    }
+}
+
+impl From<KeystoneDelegationRequest> for ApiKeystoneDelegationRequest {
+    fn from(result: KeystoneDelegationRequest) -> Self {
+        Self {
+            pczt_bytes: result.pczt_bytes,
+            redacted_pczt_bytes: result.redacted_pczt_bytes,
+            pczt_sighash: result.pczt_sighash,
+            rk: result.rk,
+            action_index: result.action_index,
+            eligible_weight_zatoshi: result.eligible_weight_zatoshi,
+            delegated_weight_zatoshi: result.delegated_weight_zatoshi,
+            bundle_count: result.bundle_count,
+            bundle_index: result.bundle_index,
+        }
+    }
+}
+
+impl From<KeystoneSignatureRecord> for ApiKeystoneSignatureRecord {
+    fn from(record: KeystoneSignatureRecord) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            sig: record.sig,
+            sighash: record.sighash,
+            rk: record.rk,
         }
     }
 }
@@ -1195,6 +1261,150 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         &account_uuid,
         &seed,
         bundle_index,
+        move |event| {
+            if progress_sink.add(event.into()).is_err() {
+                progress_cancellation.cancel_local();
+                log::warn!("voting delegation: StreamSink closed, progress not delivered");
+            }
+        },
+        cancellation,
+    )
+    .await
+    .map(ApiSignedDelegationPayload::from)?;
+
+    if sink
+        .add(ApiDelegationProofEvent {
+            phase: "result".to_string(),
+            proof_progress: None,
+            signed_delegation_payload: Some(signed),
+        })
+        .is_err()
+    {
+        log::warn!("voting delegation: StreamSink closed before final result");
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Build and redact a voting PCZT that Keystone must sign for one bundle.
+pub async fn build_keystone_delegation_request(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    round_params: ApiVotingRoundParams,
+    round_name: String,
+    session_json: Option<String>,
+    account_uuid: String,
+    hotkey_seed: Vec<u8>,
+    bundle_index: u32,
+) -> Result<ApiKeystoneDelegationRequest, String> {
+    let network = keys::parse_network(&network)?;
+    let round_id = round_params.vote_round_id.clone();
+    let hotkey_secret = secrecy::SecretVec::new(hotkey_seed);
+    let cancellation = VotingWorkCancellation::start(&db_path, &account_uuid, Some(&round_id))?;
+    delegation::build_keystone_delegation_request(
+        &db_path,
+        &lightwalletd_url,
+        network,
+        round_params.into(),
+        &round_name,
+        session_json.as_deref(),
+        &account_uuid,
+        &hotkey_secret,
+        bundle_index,
+        cancellation,
+    )
+    .await
+    .map(Into::into)
+}
+
+/// Extract the ZIP-244 sighash from PCZT bytes.
+pub fn extract_pczt_sighash(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    catch(|| delegation::extract_pczt_sighash(&pczt_bytes))
+}
+
+/// Extract a Keystone SpendAuth signature from signed PCZT bytes.
+pub fn extract_spend_auth_signature_from_signed_pczt(
+    signed_pczt_bytes: Vec<u8>,
+    action_index: u32,
+) -> Result<Vec<u8>, String> {
+    catch(|| {
+        delegation::extract_spend_auth_signature_from_signed_pczt(&signed_pczt_bytes, action_index)
+    })
+}
+
+/// Persist a Keystone signature for one delegation bundle.
+pub fn store_keystone_signature(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    bundle_index: u32,
+    sig: Vec<u8>,
+    sighash: Vec<u8>,
+    rk: Vec<u8>,
+) -> Result<(), String> {
+    catch(|| {
+        delegation::store_keystone_signature(
+            &db_path,
+            &wallet_id,
+            &round_id,
+            bundle_index,
+            &sig,
+            &sighash,
+            &rk,
+        )
+    })
+}
+
+/// Load persisted Keystone signatures for one voting round.
+pub fn get_keystone_signatures(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+) -> Result<Vec<ApiKeystoneSignatureRecord>, String> {
+    catch(|| {
+        delegation::get_keystone_signatures(&db_path, &wallet_id, &round_id)
+            .map(|records| records.into_iter().map(Into::into).collect())
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Streaming Keystone variant of `build_prove_and_sign_delegation_payload`.
+pub async fn build_prove_delegation_payload_with_keystone_signature_with_progress(
+    db_path: String,
+    lightwalletd_url: String,
+    pir_server_url: String,
+    network: String,
+    round_params: ApiVotingRoundParams,
+    round_name: String,
+    session_json: Option<String>,
+    account_uuid: String,
+    hotkey_seed: Vec<u8>,
+    bundle_index: u32,
+    keystone_sig: Vec<u8>,
+    keystone_sighash: Vec<u8>,
+    sink: StreamSink<ApiDelegationProofEvent>,
+) -> Result<(), String> {
+    let network = keys::parse_network(&network)?;
+    let round_id = round_params.vote_round_id.clone();
+    let hotkey_secret = secrecy::SecretVec::new(hotkey_seed);
+    let cancellation = VotingWorkCancellation::start(&db_path, &account_uuid, Some(&round_id))?;
+    let sink = Arc::new(sink);
+    let progress_sink = sink.clone();
+    let progress_cancellation = cancellation.clone();
+    let signed = delegation::build_prove_delegation_payload_with_keystone_signature(
+        &db_path,
+        &lightwalletd_url,
+        &pir_server_url,
+        network,
+        round_params.into(),
+        &round_name,
+        session_json.as_deref(),
+        &account_uuid,
+        &hotkey_secret,
+        bundle_index,
+        &keystone_sig,
+        &keystone_sighash,
         move |event| {
             if progress_sink.add(event.into()).is_err() {
                 progress_cancellation.cancel_local();

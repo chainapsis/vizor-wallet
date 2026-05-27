@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `b64_hex_field`, `b64_hex`, `b64`, `catch`, `delegation_submission_wire_json_inner`, `hex_list_field`, `json_safe_u64`, `recovered_share_payload_json`, `recovered_vote_share_wire_json_inner`, `recovered_wire_share_json`, `recovered_wire_shares_json`, `selection_result`, `u32_field`, `vote_commitment_wire_json_inner`, `vote_share_wire_json_inner`, `wire_share_json`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -73,6 +73,14 @@ Future<Uint8List> deriveVotingHotkey({
   roundId: roundId,
   accountUuid: accountUuid,
 );
+
+/// Generate opaque voting hotkey bytes for a hardware account.
+///
+/// Hardware accounts cannot expose their wallet seed to derive the deterministic
+/// software hotkey, so the app persists this random per-round hotkey in secure
+/// storage and reuses it for vote commitment signing.
+Future<Uint8List> generateVotingHotkey() =>
+    RustLib.instance.api.crateApiVotingGenerateVotingHotkey();
 
 /// Initialize or load a voting round in the local voting database.
 ///
@@ -225,6 +233,104 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
       accountUuid: accountUuid,
       seedBytes: seedBytes,
       bundleIndex: bundleIndex,
+    );
+
+/// Build and redact a voting PCZT that Keystone must sign for one bundle.
+Future<ApiKeystoneDelegationRequest> buildKeystoneDelegationRequest({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required ApiVotingRoundParams roundParams,
+  required String roundName,
+  String? sessionJson,
+  required String accountUuid,
+  required List<int> hotkeySeed,
+  required int bundleIndex,
+}) => RustLib.instance.api.crateApiVotingBuildKeystoneDelegationRequest(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  roundParams: roundParams,
+  roundName: roundName,
+  sessionJson: sessionJson,
+  accountUuid: accountUuid,
+  hotkeySeed: hotkeySeed,
+  bundleIndex: bundleIndex,
+);
+
+/// Extract the ZIP-244 sighash from PCZT bytes.
+Future<Uint8List> extractPcztSighash({required List<int> pcztBytes}) =>
+    RustLib.instance.api.crateApiVotingExtractPcztSighash(pcztBytes: pcztBytes);
+
+/// Extract a Keystone SpendAuth signature from signed PCZT bytes.
+Future<Uint8List> extractSpendAuthSignatureFromSignedPczt({
+  required List<int> signedPcztBytes,
+  required int actionIndex,
+}) =>
+    RustLib.instance.api.crateApiVotingExtractSpendAuthSignatureFromSignedPczt(
+      signedPcztBytes: signedPcztBytes,
+      actionIndex: actionIndex,
+    );
+
+/// Persist a Keystone signature for one delegation bundle.
+Future<void> storeKeystoneSignature({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required List<int> sig,
+  required List<int> sighash,
+  required List<int> rk,
+}) => RustLib.instance.api.crateApiVotingStoreKeystoneSignature(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  sig: sig,
+  sighash: sighash,
+  rk: rk,
+);
+
+/// Load persisted Keystone signatures for one voting round.
+Future<List<ApiKeystoneSignatureRecord>> getKeystoneSignatures({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+}) => RustLib.instance.api.crateApiVotingGetKeystoneSignatures(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+);
+
+/// Streaming Keystone variant of `build_prove_and_sign_delegation_payload`.
+Stream<ApiDelegationProofEvent>
+buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String pirServerUrl,
+  required String network,
+  required ApiVotingRoundParams roundParams,
+  required String roundName,
+  String? sessionJson,
+  required String accountUuid,
+  required List<int> hotkeySeed,
+  required int bundleIndex,
+  required List<int> keystoneSig,
+  required List<int> keystoneSighash,
+}) => RustLib.instance.api
+    .crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      pirServerUrl: pirServerUrl,
+      network: network,
+      roundParams: roundParams,
+      roundName: roundName,
+      sessionJson: sessionJson,
+      accountUuid: accountUuid,
+      hotkeySeed: hotkeySeed,
+      bundleIndex: bundleIndex,
+      keystoneSig: keystoneSig,
+      keystoneSighash: keystoneSighash,
     );
 
 /// Store the broadcast transaction hash for one delegation bundle.
@@ -854,6 +960,87 @@ class ApiDraftVote {
           numOptions == other.numOptions &&
           vcTreePosition == other.vcTreePosition &&
           singleShare == other.singleShare;
+}
+
+/// Voting PCZT request that should be signed by Keystone.
+class ApiKeystoneDelegationRequest {
+  final Uint8List pcztBytes;
+  final Uint8List redactedPcztBytes;
+  final Uint8List pcztSighash;
+  final Uint8List rk;
+  final int actionIndex;
+  final BigInt eligibleWeightZatoshi;
+  final BigInt delegatedWeightZatoshi;
+  final int bundleCount;
+  final int bundleIndex;
+
+  const ApiKeystoneDelegationRequest({
+    required this.pcztBytes,
+    required this.redactedPcztBytes,
+    required this.pcztSighash,
+    required this.rk,
+    required this.actionIndex,
+    required this.eligibleWeightZatoshi,
+    required this.delegatedWeightZatoshi,
+    required this.bundleCount,
+    required this.bundleIndex,
+  });
+
+  @override
+  int get hashCode =>
+      pcztBytes.hashCode ^
+      redactedPcztBytes.hashCode ^
+      pcztSighash.hashCode ^
+      rk.hashCode ^
+      actionIndex.hashCode ^
+      eligibleWeightZatoshi.hashCode ^
+      delegatedWeightZatoshi.hashCode ^
+      bundleCount.hashCode ^
+      bundleIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiKeystoneDelegationRequest &&
+          runtimeType == other.runtimeType &&
+          pcztBytes == other.pcztBytes &&
+          redactedPcztBytes == other.redactedPcztBytes &&
+          pcztSighash == other.pcztSighash &&
+          rk == other.rk &&
+          actionIndex == other.actionIndex &&
+          eligibleWeightZatoshi == other.eligibleWeightZatoshi &&
+          delegatedWeightZatoshi == other.delegatedWeightZatoshi &&
+          bundleCount == other.bundleCount &&
+          bundleIndex == other.bundleIndex;
+}
+
+/// Persisted Keystone signature for one delegation bundle.
+class ApiKeystoneSignatureRecord {
+  final int bundleIndex;
+  final Uint8List sig;
+  final Uint8List sighash;
+  final Uint8List rk;
+
+  const ApiKeystoneSignatureRecord({
+    required this.bundleIndex,
+    required this.sig,
+    required this.sighash,
+    required this.rk,
+  });
+
+  @override
+  int get hashCode =>
+      bundleIndex.hashCode ^ sig.hashCode ^ sighash.hashCode ^ rk.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiKeystoneSignatureRecord &&
+          runtimeType == other.runtimeType &&
+          bundleIndex == other.bundleIndex &&
+          sig == other.sig &&
+          sighash == other.sighash &&
+          rk == other.rk;
 }
 
 /// Recovery summary for resuming one voting round after app restart.
