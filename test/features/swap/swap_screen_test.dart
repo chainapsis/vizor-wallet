@@ -32,6 +32,7 @@ import 'package:zcash_wallet/src/features/swap/screens/swap_address_scan_screen.
 import 'package:zcash_wallet/src/features/swap/screens/swap_review_screen.dart';
 import 'package:zcash_wallet/src/features/swap/screens/swap_screen.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/swap_asset_icon.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_queue_panel.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.dart';
@@ -4359,6 +4360,10 @@ void main() {
 
     expect(find.text('Deposit tokens'), findsOneWidget);
     expect(find.text('0xlive-deposit'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('swap_deposit_check_warning')),
+      findsNothing,
+    );
 
     await tester.tap(find.byKey(const ValueKey('swap_deposit_confirm_button')));
     await tester.pumpAndSettle();
@@ -4368,6 +4373,109 @@ void main() {
     expect(swapProvider.statusRequests.last.depositAddress, '0xlive-deposit');
     expect(swapProvider.statusRequests.last.depositMemo, 'memo-live');
   });
+
+  testWidgets(
+    'external deposit confirmation warns when provider has not confirmed yet',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final statusGate = Completer<void>();
+      final swapProvider = _PendingExternalDepositSwapProvider(
+        statusGate: statusGate,
+      );
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: swapProvider,
+          liveFundsEnabled: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('swap_direction_externalToZec')),
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '140.35',
+      );
+      await _enterDestinationText(tester, '0xexternal-refund');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('swap_deposit_check_warning')),
+        findsNothing,
+      );
+      final buttonFinder = find.byKey(
+        const ValueKey('swap_deposit_confirm_button'),
+      );
+      final initialButtonRect = tester.getRect(buttonFinder);
+
+      await tester.tap(buttonFinder);
+      await tester.pump();
+
+      expect(swapProvider.statusRequests, isNotEmpty);
+      expect(tester.widget<AppButton>(buttonFinder).onPressed, isNull);
+      expect(
+        find.byKey(const ValueKey('swap_deposit_confirm_loader')),
+        findsOneWidget,
+      );
+      expect(find.text('Checking'), findsOneWidget);
+
+      statusGate.complete();
+      await tester.pumpAndSettle();
+
+      final warningFinder = find.byKey(
+        const ValueKey('swap_deposit_check_warning'),
+      );
+      expect(warningFinder, findsOneWidget);
+      expect(
+        find.text(
+          'Deposit confirmation not found yet.\nCheck again in a few minutes.',
+        ),
+        findsOneWidget,
+      );
+      expect(tester.getRect(buttonFinder), initialButtonRect);
+      expect(tester.widget<AppButton>(buttonFinder).onPressed, isNotNull);
+      expect(
+        find.byKey(const ValueKey('swap_deposit_confirm_loader')),
+        findsNothing,
+      );
+      final warningIcon = tester.widget<AppIcon>(
+        find.descendant(
+          of: warningFinder,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is AppIcon && widget.name == AppIcons.warning,
+          ),
+        ),
+      );
+      expect(warningIcon.size, AppIconSize.medium);
+      final warningText = tester.widget<Text>(
+        find.descendant(
+          of: warningFinder,
+          matching: find.text(
+            'Deposit confirmation not found yet.\nCheck again in a few minutes.',
+          ),
+        ),
+      );
+      expect(
+        warningText.style?.color,
+        tester.element(warningFinder).colors.text.destructive,
+      );
+    },
+  );
 
   testWidgets(
     'activity shows direction-specific external deposit instructions',
@@ -4428,14 +4536,48 @@ void main() {
         findsOneWidget,
       );
       expect(
+        find.byKey(const ValueKey('swap_near_intents_attribution')),
+        findsOneWidget,
+      );
+      expect(
         find.byKey(const ValueKey('swap_copy_deposit_address')),
         findsOneWidget,
       );
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('swap_copy_deposit_address')),
+      final copyDepositAddress = find.byKey(
+        const ValueKey('swap_copy_deposit_address'),
       );
+      final copyCursor = tester.widget<MouseRegion>(
+        find
+            .ancestor(
+              of: copyDepositAddress,
+              matching: find.byType(MouseRegion),
+            )
+            .first,
+      );
+      expect(copyCursor.cursor, SystemMouseCursors.click);
+      final copyIcon = tester.widget<AppIcon>(
+        find.descendant(
+          of: copyDepositAddress,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is AppIcon && widget.name == AppIcons.copy,
+          ),
+        ),
+      );
+      expect(copyIcon.size, AppIconSize.medium);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('swap_deposit_qr_logo'))),
+        const Size(34, 34),
+      );
+      final qrAssetIcon = tester.widget<SwapAssetIcon>(
+        find.descendant(
+          of: find.byKey(const ValueKey('swap_deposit_tokens_qr_code')),
+          matching: find.byType(SwapAssetIcon),
+        ),
+      );
+      expect(qrAssetIcon.size, 30);
+      await tester.ensureVisible(copyDepositAddress);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('swap_copy_deposit_address')));
+      await tester.tap(copyDepositAddress);
       await tester.pumpAndSettle();
       expect(clipboardWrites.last, '0xlive-deposit');
       expect(find.text('Address Copied'), findsOneWidget);
@@ -5671,6 +5813,47 @@ class _FakeSwapProvider implements SwapProvider {
       receiveEstimateText: base.receiveEstimateText,
       status: SwapIntentStatus.depositObserved,
       nextAction: 'Deposit detected',
+      depositInstruction: base.depositInstruction,
+    );
+  }
+}
+
+class _PendingExternalDepositSwapProvider extends _FakeSwapProvider {
+  _PendingExternalDepositSwapProvider({Completer<void>? statusGate})
+    : _statusGate = statusGate;
+
+  final Completer<void>? _statusGate;
+
+  @override
+  Future<SwapIntentSnapshot> getStatus(
+    String intentId, {
+    String? depositMemo,
+  }) async {
+    statusRequests.add(
+      _StatusRequest(depositAddress: intentId, depositMemo: depositMemo),
+    );
+    final statusGate = _statusGate;
+    if (statusGate != null) {
+      await statusGate.future;
+    }
+    final statusQuote = await quote(
+      const SwapQuoteRequest(
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        sellAmount: 140.35,
+        destination: '0xexternal-refund',
+        refundAddress: '0xexternal-refund',
+      ),
+    );
+    final base = SwapIntentSnapshot.fromQuote(statusQuote, id: intentId);
+    return SwapIntentSnapshot(
+      id: base.id,
+      providerLabel: base.providerLabel,
+      pairText: base.pairText,
+      sellAmountText: base.sellAmountText,
+      receiveEstimateText: base.receiveEstimateText,
+      status: SwapIntentStatus.awaitingExternalDeposit,
+      nextAction: 'Waiting for deposit confirmation',
       depositInstruction: base.depositInstruction,
     );
   }

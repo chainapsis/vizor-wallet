@@ -57,6 +57,8 @@ class _SwapActivityDetailSurfaceState
     debugLabel: 'swap_activity_toast_overlay_context',
   );
   _SwapKeystoneSigningRequest? _keystoneSigningRequest;
+  String? _depositCheckWarningIntentId;
+  String? _depositCheckingIntentId;
   var _initialIntentApplied = false;
 
   @override
@@ -129,13 +131,40 @@ class _SwapActivityDetailSurfaceState
   }
 
   void _refreshStatus() {
+    unawaited(_refreshStatusForSelectedIntent());
+  }
+
+  Future<void> _refreshStatusForSelectedIntent() async {
     final selected = ref.read(swapPrototypeProvider).selectedIntentOrNull;
     if (selected == null || !canRefreshSwapIntentStatus(selected.status)) {
       return;
     }
-    unawaited(
-      ref.read(swapPrototypeProvider.notifier).refreshSelectedIntentStatus(),
-    );
+    if (mounted) {
+      setState(() {
+        _depositCheckingIntentId = selected.id;
+        if (_depositCheckWarningIntentId == selected.id) {
+          _depositCheckWarningIntentId = null;
+        }
+      });
+    }
+    await ref
+        .read(swapPrototypeProvider.notifier)
+        .refreshSelectedIntentStatus();
+    if (!mounted) return;
+
+    final state = ref.read(swapPrototypeProvider);
+    final refreshed = state.selectedIntentOrNull;
+    final shouldWarn =
+        _showsExternalDepositPage(selected) &&
+        refreshed != null &&
+        refreshed.id == selected.id &&
+        refreshed.status == SwapIntentStatus.awaitingExternalDeposit &&
+        refreshed.statusError == null &&
+        state.statusError == null;
+    setState(() {
+      _depositCheckingIntentId = null;
+      _depositCheckWarningIntentId = shouldWarn ? selected.id : null;
+    });
   }
 
   void _submitDepositTransaction() {
@@ -247,6 +276,12 @@ class _SwapActivityDetailSurfaceState
             state: state,
             intent: activityDetailIntent,
             liveFundsEnabled: liveFundsEnabled,
+            depositChecking:
+                _depositCheckingIntentId == activityDetailIntent.id,
+            depositCheckWarning:
+                _depositCheckWarningIntentId == activityDetailIntent.id
+                ? _depositConfirmationPendingMessage
+                : null,
             onRefreshStatus: _refreshStatus,
             onDepositTxHashChanged: ref
                 .read(swapPrototypeProvider.notifier)
@@ -490,6 +525,8 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
     required this.state,
     required this.intent,
     required this.liveFundsEnabled,
+    required this.depositChecking,
+    required this.depositCheckWarning,
     required this.onRefreshStatus,
     required this.onDepositTxHashChanged,
     required this.onSubmitDepositTransaction,
@@ -503,6 +540,8 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
   final SwapPrototypeState state;
   final SwapPrototypeIntent intent;
   final bool liveFundsEnabled;
+  final bool depositChecking;
+  final String? depositCheckWarning;
   final VoidCallback onRefreshStatus;
   final ValueChanged<String> onDepositTxHashChanged;
   final VoidCallback onSubmitDepositTransaction;
@@ -517,6 +556,8 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       state: state,
       intent: intent,
       liveFundsEnabled: liveFundsEnabled,
+      depositChecking: depositChecking,
+      depositCheckWarning: depositCheckWarning,
       onRefreshStatus: onRefreshStatus,
       onDepositTxHashChanged: onDepositTxHashChanged,
       onSubmitDepositTransaction: onSubmitDepositTransaction,
@@ -525,6 +566,7 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
       onCopyExplorerLink: onCopyExplorerLink,
       intentIsHardware: intentIsHardware,
     );
+    final flowOffsetY = _showsExternalDepositPage(intent) ? AppSpacing.sm : 0.0;
 
     return Container(
       key: const ValueKey('swap_activity_detail_page'),
@@ -535,8 +577,8 @@ class SwapActivityDetailPagePanel extends StatelessWidget {
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: constraints.maxHeight),
               child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                child: Transform.translate(
+                  offset: Offset(0, flowOffsetY),
                   child: flowContent,
                 ),
               ),
@@ -553,6 +595,8 @@ class _SwapActivityFlowContent extends StatelessWidget {
     required this.state,
     required this.intent,
     required this.liveFundsEnabled,
+    required this.depositChecking,
+    required this.depositCheckWarning,
     required this.onRefreshStatus,
     required this.onDepositTxHashChanged,
     required this.onSubmitDepositTransaction,
@@ -565,6 +609,8 @@ class _SwapActivityFlowContent extends StatelessWidget {
   final SwapPrototypeState state;
   final SwapPrototypeIntent intent;
   final bool liveFundsEnabled;
+  final bool depositChecking;
+  final String? depositCheckWarning;
   final VoidCallback onRefreshStatus;
   final ValueChanged<String> onDepositTxHashChanged;
   final VoidCallback onSubmitDepositTransaction;
@@ -599,6 +645,8 @@ class _SwapActivityFlowContent extends StatelessWidget {
         expiresInLabel: _depositDeadlineLabel(intent) ?? '2hrs',
         expiresAt: intent.depositDeadline,
         memo: depositInstruction.memo,
+        checking: depositChecking || state.statusRefreshing,
+        checkWarning: depositCheckWarning,
         onDeposited: onRefreshStatus,
       ),
       _ => _SwapStatusForIntent(
@@ -2446,6 +2494,15 @@ bool _showDepositControls(SwapIntentStatus status) {
 bool canRefreshSwapIntentStatus(SwapIntentStatus status) {
   return status != SwapIntentStatus.complete;
 }
+
+bool _showsExternalDepositPage(SwapPrototypeIntent intent) {
+  return intent.direction == SwapDirection.externalToZec &&
+      intent.status == SwapIntentStatus.awaitingExternalDeposit &&
+      _ActivityDepositInstruction.fromIntent(intent) != null;
+}
+
+const _depositConfirmationPendingMessage =
+    'Deposit confirmation not found yet.\nCheck again in a few minutes.';
 
 class _ActiveSwapSummaryPanel extends StatelessWidget {
   const _ActiveSwapSummaryPanel({

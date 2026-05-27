@@ -17,6 +17,8 @@ class SwapDepositTokensPageContent extends StatelessWidget {
     required this.depositAddress,
     required this.expiresInLabel,
     required this.onDeposited,
+    this.checking = false,
+    this.checkWarning,
     this.expiresAt,
     this.now,
     this.memo,
@@ -31,6 +33,8 @@ class SwapDepositTokensPageContent extends StatelessWidget {
   final DateTime Function()? now;
   final String? memo;
   final VoidCallback onDeposited;
+  final bool checking;
+  final String? checkWarning;
 
   @override
   Widget build(BuildContext context) {
@@ -66,21 +70,123 @@ class SwapDepositTokensPageContent extends StatelessWidget {
             amountText: amountText,
             depositAddress: depositAddress,
           ),
-          const SizedBox(height: AppSpacing.xl + AppSpacing.sm),
-          Align(
-            alignment: Alignment.center,
-            child: AppButton(
-              key: const ValueKey('swap_deposit_confirm_button'),
-              onPressed: onDeposited,
-              variant: AppButtonVariant.primary,
-              size: AppButtonSize.large,
-              minWidth: 256,
-              trailing: const AppIcon(AppIcons.arrowForwardIos),
-              child: const Text("I've deposited"),
-            ),
+          _DepositConfirmActionArea(
+            checking: checking,
+            warning: checkWarning,
+            onDeposited: onDeposited,
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DepositConfirmActionArea extends StatelessWidget {
+  const _DepositConfirmActionArea({
+    required this.checking,
+    required this.warning,
+    required this.onDeposited,
+  });
+
+  static const _buttonHeight = 44.0;
+  static const _buttonWidth = 256.0;
+  static const _buttonTopGap = AppSpacing.xl + AppSpacing.sm;
+  static const _height = _buttonTopGap + _buttonHeight;
+
+  final bool checking;
+  final String? warning;
+  final VoidCallback onDeposited;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: const ValueKey('swap_deposit_confirm_action_area'),
+      height: _height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.bottomCenter,
+        children: [
+          if (warning != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: _buttonHeight + AppSpacing.sm,
+              child: Align(
+                alignment: Alignment.center,
+                child: SizedBox(
+                  width: _buttonWidth,
+                  child: _DepositCheckWarning(message: warning!),
+                ),
+              ),
+            ),
+          AppButton(
+            key: const ValueKey('swap_deposit_confirm_button'),
+            onPressed: checking ? null : onDeposited,
+            variant: AppButtonVariant.primary,
+            size: AppButtonSize.large,
+            minWidth: _buttonWidth,
+            trailing: checking ? null : const AppIcon(AppIcons.arrowForwardIos),
+            child: _DepositConfirmButtonLabel(checking: checking),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DepositConfirmButtonLabel extends StatelessWidget {
+  const _DepositConfirmButtonLabel({required this.checking});
+
+  final bool checking;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(checking ? 'Checking' : "I've deposited", maxLines: 1),
+        if (checking) ...[
+          const SizedBox(width: AppSpacing.xxs),
+          const AppIcon(
+            AppIcons.loader,
+            key: ValueKey('swap_deposit_confirm_loader'),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _DepositCheckWarning extends StatelessWidget {
+  const _DepositCheckWarning({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      key: const ValueKey('swap_deposit_check_warning'),
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppIcon(
+          AppIcons.warning,
+          size: AppIconSize.medium,
+          color: colors.icon.destructive,
+        ),
+        const SizedBox(width: AppSpacing.xxs),
+        Flexible(
+          child: Text(
+            message,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.destructive,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -390,14 +496,15 @@ class _DepositQrCode extends StatelessWidget {
             ),
           ),
           Container(
-            width: 42,
-            height: 42,
+            key: const ValueKey('swap_deposit_qr_logo'),
+            width: 34,
+            height: 34,
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
               color: const Color(0xFFFFFFFF),
               borderRadius: BorderRadius.circular(AppRadii.full),
             ),
-            child: SwapAssetIcon(asset: asset, size: 38, showChainBadge: false),
+            child: SwapAssetIcon(asset: asset, size: 30, showChainBadge: false),
           ),
         ],
       ),
@@ -493,21 +600,21 @@ class _DepositDetailRow extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xxs),
-                  GestureDetector(
-                    key: copyKey,
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      copySwapText(
-                        context,
-                        text: copyText,
-                        toastMessage: toastMessage,
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(2),
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      key: copyKey,
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        copySwapText(
+                          context,
+                          text: copyText,
+                          toastMessage: toastMessage,
+                        );
+                      },
                       child: AppIcon(
                         AppIcons.copy,
-                        size: 14,
+                        size: AppIconSize.medium,
                         color: colors.icon.regular.withValues(alpha: 0.72),
                       ),
                     ),
