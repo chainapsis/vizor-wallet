@@ -121,6 +121,35 @@ def windows_validate_update_feed_environment!(metadata_items)
   UI.user_error!("VIZOR_UPDATE_FEED_SIGNING_KEY_B64 is required for stable Windows release builds") if signing_key.empty?
 end
 
+def windows_code_signing_params_for(metadata)
+  return "" unless metadata.fetch(:flavor) == "mainnet"
+
+  ENV["VIZOR_WINDOWS_CODE_SIGN_PARAMS"].to_s.strip
+end
+
+def windows_code_signing_parallel_for(metadata)
+  return "" if windows_code_signing_params_for(metadata).empty?
+
+  ENV["VIZOR_WINDOWS_CODE_SIGN_PARALLEL"].to_s.strip
+end
+
+def windows_code_signing_exclude_for(metadata)
+  return "" if windows_code_signing_params_for(metadata).empty?
+
+  ENV["VIZOR_WINDOWS_CODE_SIGN_EXCLUDE"].to_s.strip
+end
+
+def windows_validate_code_signing_environment!(metadata_items)
+  requires_mainnet_signature = metadata_items.any? do |metadata|
+    metadata.fetch(:flavor) == "mainnet" && !metadata.fetch(:is_prerelease)
+  end
+  return unless requires_mainnet_signature
+
+  if ENV["VIZOR_WINDOWS_CODE_SIGN_PARAMS"].to_s.strip.empty?
+    UI.user_error!("VIZOR_WINDOWS_CODE_SIGN_PARAMS is required for stable Windows mainnet release builds")
+  end
+end
+
 def with_windows_update_environment(update_enabled:)
   previous_signing_key = ENV["VIZOR_UPDATE_FEED_SIGNING_KEY_B64"]
   previous_public_key = ENV["VIZOR_UPDATE_FEED_PUBLIC_KEY_B64"]
@@ -171,6 +200,27 @@ platform :windows do
       "-UpdateRepositoryUrl", windows_cmd_quote(metadata.fetch(:update_repository_url))
     ]
 
+    code_signing_params = windows_code_signing_params_for(metadata)
+    unless code_signing_params.empty?
+      command += [
+        "-CodeSignParams", windows_cmd_quote(code_signing_params)
+      ]
+
+      code_signing_parallel = windows_code_signing_parallel_for(metadata)
+      unless code_signing_parallel.empty?
+        command += [
+          "-CodeSignParallel", windows_cmd_quote(code_signing_parallel)
+        ]
+      end
+
+      code_signing_exclude = windows_code_signing_exclude_for(metadata)
+      unless code_signing_exclude.empty?
+        command += [
+          "-CodeSignExclude", windows_cmd_quote(code_signing_exclude)
+        ]
+      end
+    end
+
     unless metadata.fetch(:update_enabled)
       command += [
         "-UpdateFeedSigningKey", windows_cmd_quote(""),
@@ -190,6 +240,7 @@ platform :windows do
     metadata_items = flavors.map { |flavor| windows_release_metadata(flavor: flavor) }
 
     windows_validate_update_feed_environment!(metadata_items)
+    windows_validate_code_signing_environment!(metadata_items)
     metadata_items.each { |metadata| package(flavor: metadata[:flavor]) }
 
     UI.message("Windows Velopack release assets are ready under #{metadata_items.first[:velopack_dir]}")
