@@ -66,6 +66,7 @@ import 'src/features/voting/screens/voting_results_screen.dart';
 import 'src/features/voting/screens/voting_review_screen.dart';
 import 'src/features/voting/screens/voting_status_screen.dart';
 import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
+import 'src/features/voting/screens/keystone_voting_scan_screen.dart';
 import 'src/features/voting/screens/voting_software_account_guard.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
@@ -688,6 +689,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => _guardVotingScreen(
           VotingStatusScreen(roundId: state.pathParameters['roundId'] ?? ''),
         ),
+      ),
+      GoRoute(
+        path: '/voting/keystone/scan',
+        builder: (_, _) => _guardVotingScreen(const KeystoneVotingScanScreen()),
       ),
       GoRoute(
         path: '/voting/poll/:roundId/submitted',

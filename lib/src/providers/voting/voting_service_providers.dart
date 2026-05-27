@@ -92,6 +92,19 @@ final votingActiveAccountUuidProvider = Provider<Future<String?> Function()>((
   return () async => (await ref.read(accountProvider.future)).activeAccountUuid;
 });
 
+/// Test seam for account hardware classification.
+final votingAccountIsHardwareProvider = Provider<Future<bool> Function(String)>(
+  (ref) {
+    return (accountUuid) async {
+      final accountState = await ref.read(accountProvider.future);
+      for (final account in accountState.accounts) {
+        if (account.uuid == accountUuid) return account.isHardware;
+      }
+      return false;
+    };
+  },
+);
+
 /// Current lightwalletd/network configuration for Rust voting calls.
 final votingRpcEndpointConfigProvider = Provider<RpcEndpointConfig>((ref) {
   return ref.watch(rpcEndpointProvider);
@@ -202,6 +215,60 @@ abstract interface class VotingRustApi {
     required String accountUuid,
     required List<int> seedBytes,
     required int bundleIndex,
+  });
+
+  Future<List<int>> generateVotingHotkey();
+
+  Future<rust_voting.ApiKeystoneDelegationRequest>
+  buildKeystoneDelegationRequest({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required rust_voting.ApiVotingRoundParams roundParams,
+    required String roundName,
+    String? sessionJson,
+    required String accountUuid,
+    required List<int> hotkeySeed,
+    required int bundleIndex,
+  });
+
+  Future<List<int>> extractPcztSighash({required List<int> pcztBytes});
+
+  Future<List<int>> extractSpendAuthSignatureFromSignedPczt({
+    required List<int> signedPcztBytes,
+    required int actionIndex,
+  });
+
+  Future<void> storeKeystoneSignature({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> sig,
+    required List<int> sighash,
+    required List<int> rk,
+  });
+
+  Future<List<rust_voting.ApiKeystoneSignatureRecord>> getKeystoneSignatures({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+  });
+
+  Stream<rust_voting.ApiDelegationProofEvent>
+  buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String pirServerUrl,
+    required String network,
+    required rust_voting.ApiVotingRoundParams roundParams,
+    required String roundName,
+    String? sessionJson,
+    required String accountUuid,
+    required List<int> hotkeySeed,
+    required int bundleIndex,
+    required List<int> keystoneSig,
+    required List<int> keystoneSighash,
   });
 
   Future<String> delegationSubmissionWireJson({
@@ -448,6 +515,120 @@ class FrbVotingRustApi implements VotingRustApi {
       seedBytes: seedBytes,
       bundleIndex: bundleIndex,
     );
+  }
+
+  @override
+  Future<List<int>> generateVotingHotkey() {
+    return rust_voting.generateVotingHotkey();
+  }
+
+  @override
+  Future<rust_voting.ApiKeystoneDelegationRequest>
+  buildKeystoneDelegationRequest({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required rust_voting.ApiVotingRoundParams roundParams,
+    required String roundName,
+    String? sessionJson,
+    required String accountUuid,
+    required List<int> hotkeySeed,
+    required int bundleIndex,
+  }) {
+    return rust_voting.buildKeystoneDelegationRequest(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      roundParams: roundParams,
+      roundName: roundName,
+      sessionJson: sessionJson,
+      accountUuid: accountUuid,
+      hotkeySeed: hotkeySeed,
+      bundleIndex: bundleIndex,
+    );
+  }
+
+  @override
+  Future<List<int>> extractPcztSighash({required List<int> pcztBytes}) {
+    return rust_voting.extractPcztSighash(pcztBytes: pcztBytes);
+  }
+
+  @override
+  Future<List<int>> extractSpendAuthSignatureFromSignedPczt({
+    required List<int> signedPcztBytes,
+    required int actionIndex,
+  }) {
+    return rust_voting.extractSpendAuthSignatureFromSignedPczt(
+      signedPcztBytes: signedPcztBytes,
+      actionIndex: actionIndex,
+    );
+  }
+
+  @override
+  Future<void> storeKeystoneSignature({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> sig,
+    required List<int> sighash,
+    required List<int> rk,
+  }) {
+    return rust_voting.storeKeystoneSignature(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      sig: sig,
+      sighash: sighash,
+      rk: rk,
+    );
+  }
+
+  @override
+  Future<List<rust_voting.ApiKeystoneSignatureRecord>> getKeystoneSignatures({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+  }) {
+    return rust_voting.getKeystoneSignatures(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+    );
+  }
+
+  @override
+  Stream<rust_voting.ApiDelegationProofEvent>
+  buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String pirServerUrl,
+    required String network,
+    required rust_voting.ApiVotingRoundParams roundParams,
+    required String roundName,
+    String? sessionJson,
+    required String accountUuid,
+    required List<int> hotkeySeed,
+    required int bundleIndex,
+    required List<int> keystoneSig,
+    required List<int> keystoneSighash,
+  }) {
+    return rust_voting
+        .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
+          dbPath: dbPath,
+          lightwalletdUrl: lightwalletdUrl,
+          pirServerUrl: pirServerUrl,
+          network: network,
+          roundParams: roundParams,
+          roundName: roundName,
+          sessionJson: sessionJson,
+          accountUuid: accountUuid,
+          hotkeySeed: hotkeySeed,
+          bundleIndex: bundleIndex,
+          keystoneSig: keystoneSig,
+          keystoneSighash: keystoneSighash,
+        );
   }
 
   @override
