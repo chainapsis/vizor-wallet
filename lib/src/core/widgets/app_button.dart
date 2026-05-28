@@ -72,6 +72,8 @@ class _VariantPalette {
     required this.bgHover,
     required this.bgPressed,
     required this.border,
+    required this.borderHover,
+    required this.borderPressed,
     required this.borderWidth,
     required this.label,
     required this.labelHover,
@@ -82,6 +84,8 @@ class _VariantPalette {
   final Color bgHover;
   final Color bgPressed;
   final Color border;
+  final Color borderHover;
+  final Color borderPressed;
   final double borderWidth;
   final Color label;
   final Color labelHover;
@@ -96,10 +100,12 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         bgHover: c.button.primary.bgHover,
         bgPressed: c.button.primary.bgPressed,
         border: c.button.primary.border,
+        borderHover: c.button.primary.borderHover,
+        borderPressed: c.button.primary.borderPressed,
         borderWidth: 1.5,
         label: c.button.primary.label,
         labelHover: c.button.primary.labelHover,
-        focusRing: c.state.focusRingBrand,
+        focusRing: c.state.focusRing,
       );
     case AppButtonVariant.secondary:
       return _VariantPalette(
@@ -107,6 +113,8 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         bgHover: c.button.secondary.bgHover,
         bgPressed: c.button.secondary.bgPressed,
         border: c.background.ground.withValues(alpha: 0),
+        borderHover: c.background.ground.withValues(alpha: 0),
+        borderPressed: c.background.ground.withValues(alpha: 0),
         borderWidth: 0,
         label: c.button.secondary.label,
         labelHover: c.button.secondary.label,
@@ -120,6 +128,8 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         bgHover: c.button.ghost.bgHover,
         bgPressed: c.button.ghost.bgHover,
         border: c.background.ground.withValues(alpha: 0),
+        borderHover: c.background.ground.withValues(alpha: 0),
+        borderPressed: c.background.ground.withValues(alpha: 0),
         borderWidth: 0,
         label: c.button.ghost.label,
         labelHover: c.button.ghost.label,
@@ -131,6 +141,8 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         bgHover: c.button.destructive.bgHover,
         bgPressed: c.button.destructive.bgPressed,
         border: c.button.destructive.border,
+        borderHover: c.button.destructive.borderHover,
+        borderPressed: c.button.destructive.borderPressed,
         borderWidth: 1.5,
         label: c.button.destructive.label,
         labelHover: c.button.destructive.label,
@@ -250,6 +262,13 @@ class _AppButtonState extends State<AppButton> {
         : _pressed || _hovered
         ? palette.labelHover
         : palette.label;
+    final Color borderColor = !_enabled
+        ? palette.border
+        : _pressed
+        ? palette.borderPressed
+        : _hovered
+        ? palette.borderHover
+        : palette.border;
     final borderWidth = _enabled ? palette.borderWidth : 0.0;
     final iconGap = widget.iconGap ?? sizing.gap;
 
@@ -311,7 +330,7 @@ class _AppButtonState extends State<AppButton> {
           shape: StadiumBorder(
             side: borderWidth == 0
                 ? BorderSide.none
-                : BorderSide(color: palette.border, width: borderWidth),
+                : BorderSide(color: borderColor, width: borderWidth),
           ),
         ),
         padding: sizing.padding,

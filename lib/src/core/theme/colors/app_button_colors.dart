@@ -44,6 +44,8 @@ class AppPrimaryButtonColors {
     required this.bgHover,
     required this.bgPressed,
     required this.border,
+    required this.borderHover,
+    required this.borderPressed,
     required this.label,
     required this.labelHover,
   });
@@ -52,6 +54,8 @@ class AppPrimaryButtonColors {
   final Color bgHover;
   final Color bgPressed;
   final Color border;
+  final Color borderHover;
+  final Color borderPressed;
   final Color label;
   final Color labelHover;
 
@@ -59,7 +63,9 @@ class AppPrimaryButtonColors {
     bg: Primitives.p800Dark,
     bgHover: CrimsonPrimitives.p300Dark,
     bgPressed: CrimsonPrimitives.p300Dark,
-    border: Primitives.p900Alpha10Dark,
+    border: Primitives.p150Alpha15Dark,
+    borderHover: Primitives.p900Alpha10Dark,
+    borderPressed: Primitives.p900Alpha10Dark,
     label: Primitives.p50Dark,
     labelHover: Primitives.p800Dark,
   );
@@ -68,7 +74,9 @@ class AppPrimaryButtonColors {
     bg: Primitives.p800Light,
     bgHover: CrimsonPrimitives.p400Light,
     bgPressed: CrimsonPrimitives.p400Light,
-    border: Primitives.p900Alpha5Light,
+    border: Primitives.p0Alpha10Light,
+    borderHover: Primitives.p900Alpha5Light,
+    borderPressed: Primitives.p900Alpha5Light,
     label: Primitives.p100Light,
     labelHover: Primitives.p100Light,
   );
@@ -155,6 +163,8 @@ class AppDestructiveButtonColors {
     required this.bgHover,
     required this.bgPressed,
     required this.border,
+    required this.borderHover,
+    required this.borderPressed,
     required this.label,
   });
 
@@ -162,13 +172,17 @@ class AppDestructiveButtonColors {
   final Color bgHover;
   final Color bgPressed;
   final Color border;
+  final Color borderHover;
+  final Color borderPressed;
   final Color label;
 
   static const dark = AppDestructiveButtonColors(
     bg: PlumPrimitives.p400Dark,
     bgHover: PlumPrimitives.p300Dark,
     bgPressed: PlumPrimitives.p300Dark,
-    border: Primitives.p900Alpha20Dark,
+    border: Primitives.p900Alpha10Dark,
+    borderHover: Primitives.p900Alpha10Dark,
+    borderPressed: Primitives.p900Alpha10Dark,
     label: PlumPrimitives.p50Dark,
   );
 
@@ -176,7 +190,9 @@ class AppDestructiveButtonColors {
     bg: PlumPrimitives.p300Light,
     bgHover: PlumPrimitives.p400Light,
     bgPressed: PlumPrimitives.p400Light,
-    border: Primitives.p0Alpha15Light,
+    border: Primitives.p900Alpha5Light,
+    borderHover: Primitives.p900Alpha5Light,
+    borderPressed: Primitives.p900Alpha5Light,
     label: PlumPrimitives.p50Light,
   );
 }

@@ -691,9 +691,21 @@ Widget buildButtonPrimaryUseCase(BuildContext context) {
       ),
       TokenSwatch(
         name: 'button/primary/border',
-        description: 'Subtle alpha border',
+        description: 'Border at rest',
         dark: d.button.primary.border,
         light: l.button.primary.border,
+      ),
+      TokenSwatch(
+        name: 'button/primary/border-hover',
+        description: 'Border on hover',
+        dark: d.button.primary.borderHover,
+        light: l.button.primary.borderHover,
+      ),
+      TokenSwatch(
+        name: 'button/primary/border-pressed',
+        description: 'Border on press',
+        dark: d.button.primary.borderPressed,
+        light: l.button.primary.borderPressed,
       ),
       TokenSwatch(
         name: 'button/primary/label',
@@ -795,9 +807,21 @@ Widget buildButtonGhostDestructiveUseCase(BuildContext context) {
       ),
       TokenSwatch(
         name: 'button/destructive/border',
-        description: 'Destructive alpha border',
+        description: 'Destructive alpha border at rest',
         dark: d.button.destructive.border,
         light: l.button.destructive.border,
+      ),
+      TokenSwatch(
+        name: 'button/destructive/border-hover',
+        description: 'Destructive alpha border on hover',
+        dark: d.button.destructive.borderHover,
+        light: l.button.destructive.borderHover,
+      ),
+      TokenSwatch(
+        name: 'button/destructive/border-pressed',
+        description: 'Destructive alpha border on press',
+        dark: d.button.destructive.borderPressed,
+        light: l.button.destructive.borderPressed,
       ),
       TokenSwatch(
         name: 'button/destructive/label',

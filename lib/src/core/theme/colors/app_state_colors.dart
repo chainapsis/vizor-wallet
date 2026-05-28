@@ -13,9 +13,9 @@ import '../primitives.dart';
 /// contrast against the page, separated from the element by a 2dp gap so it
 /// reads cleanly on any surface.
 ///
-/// [focusRingBrand] is the brand-crimson variant used when focusing the
-/// primary/accent button so the ring blends with the brand color instead of
-/// contrasting with it.
+/// [focusRingBrand] is the retained brand-crimson focus variant for one-off
+/// accent cases. The current button component uses the neutral ring for its
+/// primary variant.
 class AppStateColors {
   const AppStateColors({
     required this.hover,
