@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 
@@ -43,15 +45,78 @@ class AppDesktopSidebarSurface extends StatelessWidget {
     required this.child,
     this.backgroundColor,
     this.clipBehavior = Clip.antiAlias,
+    this.glass = false,
     super.key,
   });
 
   final Widget child;
   final Color? backgroundColor;
   final Clip clipBehavior;
+  final bool glass;
+
+  static const _glassRadius = 20.0;
+  static const _glassBlur = 17.5;
 
   @override
   Widget build(BuildContext context) {
+    if (glass) {
+      final colors = context.colors;
+      final isDark =
+          colors.background.ground == AppColors.dark.background.ground;
+      final radius = BorderRadius.circular(_glassRadius);
+      final fill =
+          backgroundColor ??
+          (isDark
+              ? const Color(0xFF1A1A1A).withValues(alpha: 0.25)
+              : const Color(0xFFFFFFFF).withValues(alpha: 0.78));
+
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF000000).withValues(alpha: 0.12),
+              blurRadius: 44,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: radius,
+          clipBehavior: clipBehavior,
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: _glassBlur, sigmaY: _glassBlur),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: fill,
+                borderRadius: radius,
+                border: Border.all(
+                  color: const Color(0xFF1A1A1A).withValues(alpha: 0.23),
+                ),
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  child,
+                  IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: radius,
+                        border: Border.all(
+                          color: const Color(
+                            0xFFFFFFFF,
+                          ).withValues(alpha: 0.15),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: backgroundColor ?? Colors.transparent,
@@ -95,7 +160,8 @@ class AppSidebarItem extends StatelessWidget {
     this.leading,
     this.active = false,
     this.onTap,
-    this.leadingGap = AppSpacing.s,
+    this.leadingGap = AppSpacing.md,
+    this.inactiveOpacity = 1,
     super.key,
   }) : assert(iconName != null || leading != null);
 
@@ -105,21 +171,31 @@ class AppSidebarItem extends StatelessWidget {
   final bool active;
   final VoidCallback? onTap;
   final double leadingGap;
+  final double inactiveOpacity;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final disabled = onTap == null && !active;
-    final iconColor = disabled ? colors.icon.disabled : colors.icon.accent;
-    final textColor = disabled ? colors.text.disabled : colors.text.accent;
+    final itemOpacity = active || disabled ? 1.0 : inactiveOpacity;
+    final iconColor = disabled
+        ? colors.icon.disabled
+        : active
+        ? colors.navPanel.activeIcon
+        : colors.icon.accent.withValues(alpha: itemOpacity);
+    final textColor = disabled
+        ? colors.text.disabled
+        : active
+        ? colors.navPanel.activeLabel
+        : colors.text.accent.withValues(alpha: itemOpacity);
     final row = AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
-      height: 36,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+      height: 40,
+      padding: const EdgeInsets.only(left: 14, right: AppSpacing.xs),
       decoration: BoxDecoration(
-        color: active ? colors.state.selectedOpacity : null,
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        color: active ? colors.navPanel.activeBg : null,
+        borderRadius: BorderRadius.circular(AppRadii.small),
       ),
       child: Row(
         children: [

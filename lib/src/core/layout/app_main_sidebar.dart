@@ -79,40 +79,43 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     }
     final accountName = activeAccount?.name ?? 'Username';
     final sync = ref.watch(syncProvider).value ?? SyncState();
+    final accountsActive = _matches('/accounts');
 
     return AppDesktopSidebarSurface(
-      clipBehavior: Clip.none,
+      glass: true,
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xs),
+        padding: const EdgeInsets.only(
+          top: 40,
+          left: AppSpacing.xs,
+          right: AppSpacing.xs,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.only(
-                left: AppSpacing.xs,
-                right: AppSpacing.xs,
-                bottom: AppSpacing.xs,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.xs,
               ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  AppSidebarItem(
+                  _SidebarAccountHeader(
                     key: const ValueKey('sidebar_accounts_button'),
-                    label: accountName,
-                    leading: _SidebarAccountAvatar(
-                      profilePictureId:
-                          activeAccount?.profilePictureId ??
-                          kDefaultProfilePictureId,
-                    ),
-                    leadingGap: AppSpacing.xs,
-                    active: _matches('/accounts'),
-                    onTap: _matches('/accounts') ? null : _openAccounts,
+                    accountName: accountName,
+                    profilePictureId:
+                        activeAccount?.profilePictureId ??
+                        kDefaultProfilePictureId,
+                    balanceLabel: '0.00 ZEC',
+                    onTap: accountsActive ? null : _openAccounts,
                   ),
-                  const SizedBox(height: AppSpacing.xs),
+                  const SizedBox(height: AppSpacing.md),
                   AppSidebarItem(
                     key: const ValueKey('sidebar_wallet_button'),
                     label: 'Wallet',
                     iconName: AppIcons.wallet,
                     active: _matches('/home'),
+                    inactiveOpacity: 0.5,
                     onTap: _matches('/home') ? null : () => context.go('/home'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
@@ -121,6 +124,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     label: 'Send',
                     iconName: AppIcons.plane,
                     active: _matches('/send'),
+                    inactiveOpacity: 0.5,
                     onTap: _matches('/send') ? null : () => context.go('/send'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
@@ -129,6 +133,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     label: 'Receive',
                     iconName: AppIcons.arrowDownCircle,
                     active: _matches('/receive'),
+                    inactiveOpacity: 0.5,
                     onTap: _matches('/receive')
                         ? null
                         : () => context.go('/receive'),
@@ -139,6 +144,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     label: 'Activity',
                     iconName: AppIcons.history,
                     active: _matches('/activity'),
+                    inactiveOpacity: 0.5,
                     onTap: _matches('/activity')
                         ? null
                         : () => context.go('/activity'),
@@ -148,7 +154,12 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
             ),
             const Spacer(),
             Padding(
-              padding: const EdgeInsets.all(AppSpacing.xs),
+              padding: const EdgeInsets.only(
+                left: AppSpacing.xs,
+                right: AppSpacing.xs,
+                top: AppSpacing.xs,
+                bottom: AppSpacing.md,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -162,21 +173,15 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
-                    label: 'About Vizor',
-                    iconName: AppIcons.vizor,
-                    active: _matches('/about'),
-                    onTap: _matches('/about')
-                        ? null
-                        : () => context.go('/about'),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  AppSidebarItem(
                     label: 'Sign Out',
                     iconName: AppIcons.logOut,
                     onTap: _isSigningOut ? null : _handleSignOut,
                   ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _SidebarSyncStatus(sync: sync),
+                  const SizedBox(height: AppSpacing.md),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _SidebarSyncStatus(sync: sync),
+                  ),
                 ],
               ),
             ),
@@ -184,6 +189,84 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         ),
       ),
     );
+  }
+}
+
+class _SidebarAccountHeader extends StatelessWidget {
+  const _SidebarAccountHeader({
+    required this.accountName,
+    required this.profilePictureId,
+    required this.balanceLabel,
+    this.onTap,
+    super.key,
+  });
+
+  final String accountName;
+  final String profilePictureId;
+  final String balanceLabel;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final row = SizedBox(
+      height: 48,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xxs),
+        child: Row(
+          children: [
+            _SidebarAccountAvatar(profilePictureId: profilePictureId),
+            const SizedBox(width: AppSpacing.s),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          accountName,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xxs),
+                      AppIcon(
+                        AppIcons.copy,
+                        size: 16,
+                        color: colors.icon.regular.withValues(alpha: 0.72),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    balanceLabel,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return onTap == null
+        ? row
+        : MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: row,
+            ),
+          );
   }
 }
 
@@ -196,7 +279,7 @@ class _SidebarAccountAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppProfilePicture(
       profilePictureId: profilePictureId,
-      size: AppProfilePictureSize.medium,
+      size: AppProfilePictureSize.navLarge,
     );
   }
 }
@@ -206,10 +289,11 @@ class _SidebarSyncStatus extends StatelessWidget {
 
   final SyncState sync;
 
+  static const _width = 176.0;
   static const _height = 34.0;
   static const _indicatorWidth = 5.0;
   static const _indicatorHeight = 32.0;
-  static const _indicatorLeft = -AppSpacing.md;
+  static const _indicatorLeft = -AppSpacing.sm;
   static const _textLeft = AppSpacing.xs;
 
   @override
@@ -227,6 +311,7 @@ class _SidebarSyncStatus extends StatelessWidget {
     };
 
     return SizedBox(
+      width: _width,
       height: _height,
       child: Semantics(
         label: status.semanticsLabel,
