@@ -24,6 +24,20 @@ private func currentSystemBrightness() -> String {
   return match == .darkAqua ? "dark" : "light"
 }
 
+private final class VizorWindowToolbarDelegate: NSObject, NSToolbarDelegate {
+  func toolbarAllowedItemIdentifiers(
+    _ toolbar: NSToolbar
+  ) -> [NSToolbarItem.Identifier] {
+    [.flexibleSpace]
+  }
+
+  func toolbarDefaultItemIdentifiers(
+    _ toolbar: NSToolbar
+  ) -> [NSToolbarItem.Identifier] {
+    [.flexibleSpace]
+  }
+}
+
 final class WindowAppearanceChannel {
   private static var shared: WindowAppearanceChannel?
 
@@ -464,6 +478,16 @@ final class CameraPermissionSettingsChannel {
 }
 
 class MainFlutterWindow: NSWindow {
+  private let vizorWindowToolbarDelegate = VizorWindowToolbarDelegate()
+  private var vizorWindowToolbar: NSToolbar?
+  private var vizorWindowToolbarObservers: [NSObjectProtocol] = []
+
+  deinit {
+    for observer in vizorWindowToolbarObservers {
+      NotificationCenter.default.removeObserver(observer)
+    }
+  }
+
   override func awakeFromNib() {
     let desktopWindowViewController = DesktopWindowBootstrapMacOS.start(
       mainFlutterWindow: self,
@@ -471,6 +495,8 @@ class MainFlutterWindow: NSWindow {
       backgroundColor: appWindowBackgroundColor(for: currentSystemBrightness())
     )
     title = ""
+    installVizorWindowToolbarObservers()
+    applyAndScheduleVizorWindowToolbarForCurrentState()
     let flutterViewController = desktopWindowViewController.flutterViewController
     WindowAppearanceChannel.register(
       window: self,
@@ -492,5 +518,95 @@ class MainFlutterWindow: NSWindow {
   override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
     super.order(place, relativeTo: otherWin)
     hiddenWindowAtLaunch()
+    applyAndScheduleVizorWindowToolbarForCurrentState()
+  }
+
+  private func installVizorWindowToolbarObservers() {
+    guard vizorWindowToolbarObservers.isEmpty else {
+      return
+    }
+
+    let center = NotificationCenter.default
+    let hideToolbarEvents: [Notification.Name] = [
+      NSWindow.willEnterFullScreenNotification,
+      NSWindow.didEnterFullScreenNotification,
+    ]
+    for name in hideToolbarEvents {
+      vizorWindowToolbarObservers.append(
+        center.addObserver(
+          forName: name,
+          object: self,
+          queue: .main
+        ) { [weak self] _ in
+          self?.hideVizorWindowToolbar()
+        }
+      )
+    }
+
+    vizorWindowToolbarObservers.append(
+      center.addObserver(
+        forName: NSWindow.didExitFullScreenNotification,
+        object: self,
+        queue: .main
+      ) { [weak self] _ in
+        self?.applyAndScheduleVizorWindowToolbarForCurrentState()
+      }
+    )
+
+    let reapplyToolbarEvents: [Notification.Name] = [
+      NSWindow.didBecomeKeyNotification,
+      NSWindow.didEndLiveResizeNotification,
+    ]
+    for name in reapplyToolbarEvents {
+      vizorWindowToolbarObservers.append(
+        center.addObserver(
+          forName: name,
+          object: self,
+          queue: .main
+        ) { [weak self] _ in
+          self?.applyAndScheduleVizorWindowToolbarForCurrentState()
+        }
+      )
+    }
+  }
+
+  private func applyAndScheduleVizorWindowToolbarForCurrentState() {
+    applyVizorWindowToolbarForCurrentState()
+    DispatchQueue.main.async { [weak self] in
+      self?.applyVizorWindowToolbarForCurrentState()
+    }
+  }
+
+  private func applyVizorWindowToolbarForCurrentState() {
+    configureVizorWindowToolbar(
+      isVisible: !styleMask.contains(.fullScreen)
+    )
+  }
+
+  private func hideVizorWindowToolbar() {
+    configureVizorWindowToolbar(isVisible: false)
+  }
+
+  private func configureVizorWindowToolbar(isVisible: Bool) {
+    let vizorToolbar = vizorWindowToolbar ?? makeVizorWindowToolbar()
+    vizorToolbar.allowsUserCustomization = false
+    vizorToolbar.autosavesConfiguration = false
+    vizorToolbar.delegate = vizorWindowToolbarDelegate
+    vizorToolbar.displayMode = .iconOnly
+    vizorToolbar.sizeMode = .regular
+    vizorToolbar.showsBaselineSeparator = false
+    if toolbar !== vizorToolbar {
+      self.toolbar = vizorToolbar
+    }
+    vizorToolbar.isVisible = isVisible
+    toolbarStyle = .unified
+    titleVisibility = .hidden
+    titlebarSeparatorStyle = .none
+  }
+
+  private func makeVizorWindowToolbar() -> NSToolbar {
+    let toolbar = NSToolbar(identifier: "com.zcash.wallet.window-toolbar")
+    vizorWindowToolbar = toolbar
+    return toolbar
   }
 }
