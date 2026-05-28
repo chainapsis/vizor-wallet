@@ -4,13 +4,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use incrementalmerkletree::Position;
 use prost::Message;
 use secrecy::{ExposeSecret, SecretVec};
-use zcash_client_backend::{
-    data_api::{Account, WalletRead},
-    proto::service::TreeState,
-};
+use zcash_client_backend::data_api::{Account, WalletRead};
 use zcash_protocol::consensus::{BlockHeight, BranchId, NetworkConstants, Parameters};
 
 use crate::wallet::{
@@ -82,11 +78,7 @@ pub struct KeystoneSignatureRecord {
 }
 
 /// Result of preparing bundle rows for a voting round.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BundleSetupResult {
-    pub bundle_count: u32,
-    pub eligible_weight_zatoshi: u64,
-}
+pub type BundleSetupResult = zcash_voting::BundleSetupResult;
 
 /// Result of warming delegation PIR proofs and prepared PCZT material.
 ///
@@ -380,6 +372,7 @@ struct DelegationBundleContext {
     bundle_index: u32,
     bundle_setup: BundleSetupResult,
     selected_weight_zatoshi: u64,
+    note_infos: Vec<zcash_voting::NoteInfo>,
     bundle_note_infos: Vec<zcash_voting::NoteInfo>,
     delegated_weight_zatoshi: u64,
     account: DelegationAccount,
@@ -446,7 +439,9 @@ async fn prepare_delegation_bundle_context(
     let note_infos = selected.voting_note_infos();
     let selected_weight_zatoshi = voting_power(&selected);
 
-    let bundle_setup = ensure_bundles(&voting_db, &round_id, &note_infos)?;
+    let bundle_setup = voting_db
+        .ensure_bundles_for_notes(&round_id, &note_infos)
+        .map_err(|e| format!("ensure_bundles_for_notes failed: {e}"))?;
     if bundle_setup.bundle_count == 0 {
         return Err("No eligible voting bundles were created for delegation".to_string());
     }
@@ -454,7 +449,7 @@ async fn prepare_delegation_bundle_context(
     let bundle_note_infos = bundle_notes(&note_infos, bundle_index)?;
     let delegated_weight_zatoshi = bundle_weight_zatoshi(&bundle_note_infos)?;
 
-    store_and_generate_witnesses(
+    generate_and_cache_bundle_witnesses(
         db_path,
         network,
         &voting_db,
@@ -481,6 +476,7 @@ async fn prepare_delegation_bundle_context(
         bundle_index,
         bundle_setup,
         selected_weight_zatoshi,
+        note_infos,
         bundle_note_infos,
         delegated_weight_zatoshi,
         account,
@@ -640,7 +636,9 @@ pub async fn setup_delegation_bundles(
     )
     .await?;
     let note_infos = selected.voting_note_infos();
-    ensure_bundles(&voting_db, round_params.vote_round_id.as_str(), &note_infos)
+    voting_db
+        .ensure_bundles_for_notes(round_params.vote_round_id.as_str(), &note_infos)
+        .map_err(|e| format!("ensure_bundles_for_notes failed: {e}"))
 }
 
 /// Warms PIR and governance-PCZT state for a single delegation bundle.
@@ -684,20 +682,25 @@ pub async fn precompute_delegation_pir(
         bundle_index,
     )
     .await?;
-    let governance_pczt = build_governance_pczt_for_context(&context, network)?;
-
     let prepared_key = context.prepared_key(db_path, account_uuid, network);
     let prepared_epoch = prepared_pczt_epoch(db_path, account_uuid)?;
     cancellation.check()?;
 
     let proof_db_path = db_path.to_string();
     let proof_account_uuid = account_uuid.to_string();
-    let proof_round_id = round_id.clone();
-    let proof_bundle_note_infos = context.bundle_note_infos.clone();
+    let proof_round_id = context.round_id.clone();
+    let proof_note_infos = context.note_infos.clone();
     let proof_pir_server_url = pir_server_url.to_string();
     let proof_network_id = network.voting_id().into();
+    let proof_orchard_fvk_bytes = context.account.orchard_fvk_bytes;
+    let proof_hotkey_raw_address = context.hotkey_raw_address.clone();
+    let proof_seed_fingerprint = context.account.seed_fingerprint;
+    let proof_account_index = context.account.account_index;
+    let proof_round_name = context.round_name.clone();
+    let proof_branch_id = context.branch_id;
+    let proof_coin_type = network.network_type().coin_type();
     let proof_cancellation = cancellation.clone();
-    let precompute = tokio::task::spawn_blocking(move || {
+    let prepared = tokio::task::spawn_blocking(move || {
         proof_cancellation.check()?;
         let proof_voting_db = open_voting_db(&proof_db_path, &proof_account_uuid)?;
         proof_cancellation.check()?;
@@ -708,20 +711,34 @@ pub async fn precompute_delegation_pir(
         .map_err(|e| format!("connect to PIR server failed: {e}"))?;
         proof_cancellation.check()?;
         proof_voting_db
-            .precompute_delegation_pir(
-                &proof_round_id,
-                bundle_index,
-                &proof_bundle_note_infos,
-                &pir_client,
-                proof_network_id,
+            .prepare_delegation_pir(
+                zcash_voting::storage::operations::PrepareDelegationPirParams {
+                    round_id: &proof_round_id,
+                    bundle_index,
+                    notes: &proof_note_infos,
+                    fvk_bytes: &proof_orchard_fvk_bytes,
+                    hotkey_raw_address: &proof_hotkey_raw_address,
+                    consensus_branch_id: proof_branch_id,
+                    coin_type: proof_coin_type,
+                    seed_fingerprint: &proof_seed_fingerprint,
+                    account_index: proof_account_index,
+                    round_name: &proof_round_name,
+                    address_index: 0,
+                    pir_client: &pir_client,
+                    network_id: proof_network_id,
+                },
             )
-            .map_err(|e| format!("precompute_delegation_pir failed: {e}"))
+            .map_err(|e| format!("prepare_delegation_pir failed: {e}"))
     })
     .await
     .map_err(|e| format!("delegation PIR precompute task failed: {e}"))??;
 
     cancellation.check()?;
-    if insert_prepared_pczt_if_current(prepared_key, prepared_epoch, governance_pczt)? {
+    if insert_prepared_pczt_if_current(
+        prepared_key,
+        prepared_epoch,
+        prepared.governance_pczt.clone(),
+    )? {
         log::info!(
             "voting delegation: prepared PCZT cached \
              (round_id={}, account_uuid={}, bundle_index={})",
@@ -743,14 +760,14 @@ pub async fn precompute_delegation_pir(
         "voting delegation: PIR precompute completed \
          (bundle_index={}, cached={}, fetched={}, elapsed={:.2}s)",
         bundle_index,
-        precompute.cached_count,
-        precompute.fetched_count,
+        prepared.precompute.cached_count,
+        prepared.precompute.fetched_count,
         started.elapsed().as_secs_f64()
     );
 
     Ok(DelegationPirPrecomputeResult {
-        cached_count: precompute.cached_count,
-        fetched_count: precompute.fetched_count,
+        cached_count: prepared.precompute.cached_count,
+        fetched_count: prepared.precompute.fetched_count,
         bundle_count: context.bundle_setup.bundle_count,
         bundle_index,
     })
@@ -1109,67 +1126,6 @@ fn ensure_round_initialized(
     })
 }
 
-/// Creates bundle rows for eligible notes or validates existing rows.
-///
-/// Existing rows are accepted only when current chunking and stored note
-/// identities match; this prevents recovery state from drifting from the live
-/// note set.
-fn ensure_bundles(
-    voting_db: &zcash_voting::storage::VotingDb,
-    round_id: &str,
-    notes: &[zcash_voting::NoteInfo],
-) -> Result<BundleSetupResult, String> {
-    let stored_count = voting_db
-        .get_bundle_count(round_id)
-        .map_err(|e| format!("get_bundle_count failed: {e}"))?;
-    if stored_count > 0 {
-        let chunks = zcash_voting::chunk_notes(notes);
-        if chunks.bundles.len() != stored_count as usize {
-            return Err(format!(
-                "current note selection produces {} delegation bundles, but {stored_count} \
-                 bundle rows are already persisted for round {round_id}",
-                chunks.bundles.len()
-            ));
-        }
-        validate_persisted_bundle_notes(voting_db, round_id, &chunks.bundles)?;
-        return Ok(BundleSetupResult {
-            bundle_count: stored_count,
-            eligible_weight_zatoshi: chunks.eligible_weight,
-        });
-    }
-
-    voting_db
-        .setup_bundles(round_id, notes)
-        .map(|(count, weight)| BundleSetupResult {
-            bundle_count: count,
-            eligible_weight_zatoshi: weight,
-        })
-        .map_err(|e| format!("setup_bundles failed: {e}"))
-}
-
-/// Verifies that persisted bundle rows match the current note chunks.
-///
-/// The check includes stored positions and note identity hashes where available.
-fn validate_persisted_bundle_notes(
-    voting_db: &zcash_voting::storage::VotingDb,
-    round_id: &str,
-    bundles: &[Vec<zcash_voting::NoteInfo>],
-) -> Result<(), String> {
-    let wallet_id = voting_db.wallet_id();
-    let conn = voting_db.conn();
-    for (bundle_index, bundle_notes) in bundles.iter().enumerate() {
-        zcash_voting::storage::queries::require_bundle_notes(
-            &conn,
-            round_id,
-            &wallet_id,
-            bundle_index as u32,
-            bundle_notes,
-        )
-        .map_err(|e| format!("persisted bundle notes do not match current selection: {e}"))?;
-    }
-    Ok(())
-}
-
 /// Returns the eligible notes for one chunked delegation bundle.
 fn bundle_notes(
     notes: &[zcash_voting::NoteInfo],
@@ -1281,10 +1237,11 @@ pub fn get_delegation_tx_hash(
         .map_err(|e| format!("get_delegation_tx_hash failed: {e}"))
 }
 
-/// Persists the selected anchor tree state and Merkle witnesses for a bundle.
+/// Open the wallet source and ask `zcash_voting` to cache bundle witnesses.
 ///
-/// The witnesses are generated at the voting round snapshot height.
-fn store_and_generate_witnesses(
+/// Witness generation itself lives in the shared crate so SDKs enforce the same
+/// snapshot-tree-state and bundle-cache invariants.
+fn generate_and_cache_bundle_witnesses(
     db_path: &str,
     network: WalletNetwork,
     voting_db: &zcash_voting::storage::VotingDb,
@@ -1293,109 +1250,17 @@ fn store_and_generate_witnesses(
     selected: &SelectedNotes,
     notes: &[zcash_voting::NoteInfo],
 ) -> Result<(), String> {
-    voting_db
-        .store_tree_state(round_id, &selected.anchor_tree_state.encode_to_vec())
-        .map_err(|e| format!("store_tree_state failed: {e}"))?;
-    let witnesses = generate_note_witnesses(db_path, network, voting_db, round_id, notes)?;
-    voting_db
-        .store_witnesses(round_id, bundle_index, &witnesses)
-        .map_err(|e| format!("store_witnesses failed: {e}"))
-}
-
-/// Generates Orchard Merkle witnesses for the bundle notes at the round snapshot.
-///
-/// Validates the cached tree state against the round roots before querying the
-/// wallet DB for historical witnesses.
-fn generate_note_witnesses(
-    db_path: &str,
-    network: WalletNetwork,
-    voting_db: &zcash_voting::storage::VotingDb,
-    round_id: &str,
-    notes: &[zcash_voting::NoteInfo],
-) -> Result<Vec<zcash_voting::WitnessData>, String> {
-    let (tree_state_bytes, params) = {
-        let wallet_id = voting_db.wallet_id();
-        let conn = voting_db.conn();
-        let tree_state_bytes =
-            zcash_voting::storage::queries::load_tree_state(&conn, round_id, &wallet_id)
-                .map_err(|e| format!("load_tree_state failed: {e}"))?;
-        let params = zcash_voting::storage::queries::load_round_params(&conn, round_id, &wallet_id)
-            .map_err(|e| format!("load_round_params failed: {e}"))?;
-        (tree_state_bytes, params)
-    };
-
-    let tree_state = TreeState::decode(tree_state_bytes.as_slice())
-        .map_err(|e| format!("failed to decode TreeState protobuf: {e}"))?;
-    let orchard_ct = tree_state
-        .orchard_tree()
-        .map_err(|e| format!("failed to parse orchard tree from TreeState: {e}"))?;
-    let frontier_root_bytes = orchard_ct.root().to_bytes();
-    validate_cached_tree_state_for_round(&tree_state, &frontier_root_bytes[..], &params)?;
-    let frontier = orchard_ct.to_frontier();
-    let nonempty_frontier = frontier
-        .take()
-        .ok_or_else(|| "empty orchard frontier at snapshot height".to_string())?;
-
-    let positions: Vec<Position> = notes
-        .iter()
-        .map(|note| Position::from(note.position))
-        .collect();
-    let snapshot_height = u32::try_from(params.snapshot_height).map_err(|_| {
-        format!(
-            "snapshot_height {} does not fit in u32",
-            params.snapshot_height
-        )
-    })?;
     let wallet_db = open_wallet_db_for_read(db_path, network)?;
-    let merkle_paths = wallet_db
-        .generate_orchard_witnesses_at_historical_height(
-            &positions,
-            nonempty_frontier,
-            BlockHeight::from_u32(snapshot_height),
-        )
-        .map_err(|e| format!("generate_orchard_witnesses_at_historical_height failed: {e}"))?;
-
-    if merkle_paths.len() != notes.len() {
-        return Err(format!(
-            "generated {} Merkle paths for {} voting notes",
-            merkle_paths.len(),
-            notes.len()
-        ));
-    }
-
-    let root = frontier_root_bytes.to_vec();
-    Ok(merkle_paths
-        .into_iter()
-        .zip(notes.iter())
-        .map(|(path, note)| zcash_voting::WitnessData {
-            note_commitment: note.commitment.clone(),
-            position: note.position,
-            root: root.clone(),
-            auth_path: path
-                .path_elems()
-                .iter()
-                .map(|hash| hash.to_bytes().to_vec())
-                .collect(),
-        })
-        .collect())
-}
-
-/// Validates that cached lightwalletd tree state belongs to the voting round.
-fn validate_cached_tree_state_for_round(
-    tree_state: &TreeState,
-    orchard_root: &[u8],
-    params: &zcash_voting::VotingRoundParams,
-) -> Result<(), String> {
-    if tree_state.height != params.snapshot_height {
-        return Err(format!(
-            "cached TreeState height {} does not match round snapshot_height {}",
-            tree_state.height, params.snapshot_height
-        ));
-    }
-    if orchard_root != params.nc_root.as_slice() {
-        return Err("cached TreeState orchard root does not match round nc_root".to_string());
-    }
-    Ok(())
+    zcash_voting::witness::store_tree_state_and_generate_note_witnesses(
+        voting_db,
+        round_id,
+        bundle_index,
+        &selected.anchor_tree_state.encode_to_vec(),
+        notes,
+        &wallet_db,
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
 }
 
 #[derive(Clone, Debug)]
@@ -1629,8 +1494,8 @@ mod tests {
         ensure_voting_round(&voting_db, &params, None).unwrap();
         let notes = vec![test_note_info(42)];
 
-        let created = ensure_bundles(&voting_db, ROUND_ID, &notes).unwrap();
-        let reused = ensure_bundles(&voting_db, ROUND_ID, &notes).unwrap();
+        let created = voting_db.ensure_bundles_for_notes(ROUND_ID, &notes).unwrap();
+        let reused = voting_db.ensure_bundles_for_notes(ROUND_ID, &notes).unwrap();
 
         assert_eq!(created.bundle_count, 1);
         assert_eq!(
@@ -1652,14 +1517,22 @@ mod tests {
         let params = test_round_params();
         ensure_voting_round(&voting_db, &params, None).unwrap();
 
-        ensure_bundles(&voting_db, ROUND_ID, &[test_note_info(42)]).unwrap();
+        voting_db
+            .ensure_bundles_for_notes(ROUND_ID, &[test_note_info(42)])
+            .unwrap();
 
-        let shape_err = ensure_bundles(&voting_db, ROUND_ID, &[]).unwrap_err();
+        let shape_err = voting_db
+            .ensure_bundles_for_notes(ROUND_ID, &[])
+            .unwrap_err()
+            .to_string();
         assert!(shape_err.contains("bundle rows are already persisted"));
 
         let mut substituted = test_note_info(42);
         substituted.nullifier[0] ^= 0x01;
-        let identity_err = ensure_bundles(&voting_db, ROUND_ID, &[substituted]).unwrap_err();
+        let identity_err = voting_db
+            .ensure_bundles_for_notes(ROUND_ID, &[substituted])
+            .unwrap_err()
+            .to_string();
         assert!(identity_err.contains("persisted bundle notes do not match current selection"));
     }
 
@@ -1672,7 +1545,7 @@ mod tests {
         ensure_voting_round(&voting_db, &params, None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
 
-        let setup = ensure_bundles(&voting_db, ROUND_ID, &notes).unwrap();
+        let setup = voting_db.ensure_bundles_for_notes(ROUND_ID, &notes).unwrap();
 
         assert_eq!(setup.bundle_count, 2);
         assert_eq!(
@@ -1727,13 +1600,17 @@ mod tests {
     }
 
     #[test]
-    fn store_and_generate_witnesses_rejects_invalid_cached_tree_state() {
+    fn generate_and_cache_bundle_witnesses_rejects_invalid_cached_tree_state() {
+        use zcash_client_backend::proto::service::TreeState;
+
         let temp_dir = tempfile::tempdir().unwrap();
         let wallet_db_path = temp_dir.path().join("wallet.sqlite");
         let voting_db = open_voting_db(wallet_db_path.to_str().unwrap(), ACCOUNT_UUID).unwrap();
         let params = test_round_params();
         ensure_voting_round(&voting_db, &params, None).unwrap();
-        ensure_bundles(&voting_db, ROUND_ID, &[test_note_info(42)]).unwrap();
+        voting_db
+            .ensure_bundles_for_notes(ROUND_ID, &[test_note_info(42)])
+            .unwrap();
         let selected = SelectedNotes {
             notes: Vec::new(),
             snapshot_height: params.snapshot_height,
@@ -1747,7 +1624,7 @@ mod tests {
             },
         };
 
-        let err = store_and_generate_witnesses(
+        let err = generate_and_cache_bundle_witnesses(
             wallet_db_path.to_str().unwrap(),
             WalletNetwork::Regtest,
             &voting_db,
@@ -1796,42 +1673,6 @@ mod tests {
         assert_eq!(
             consensus_branch_id(WalletNetwork::Regtest, 1).unwrap(),
             0x4DEC_4DF0
-        );
-    }
-
-    #[test]
-    fn validate_cached_tree_state_checks_height_and_root() {
-        let params = zcash_voting::VotingRoundParams {
-            vote_round_id: ROUND_ID.to_string(),
-            snapshot_height: 100,
-            ea_pk: vec![0; 32],
-            nc_root: vec![7; 32],
-            nullifier_imt_root: vec![8; 32],
-        };
-        let tree_state = TreeState {
-            network: "test".to_string(),
-            height: 100,
-            hash: String::new(),
-            time: 0,
-            sapling_tree: String::new(),
-            orchard_tree: String::new(),
-        };
-
-        assert!(validate_cached_tree_state_for_round(&tree_state, &[7; 32], &params).is_ok());
-        assert!(
-            validate_cached_tree_state_for_round(&tree_state, &[9; 32], &params)
-                .unwrap_err()
-                .contains("orchard root")
-        );
-
-        let stale = TreeState {
-            height: 99,
-            ..tree_state
-        };
-        assert!(
-            validate_cached_tree_state_for_round(&stale, &[7; 32], &params)
-                .unwrap_err()
-                .contains("snapshot_height")
         );
     }
 
