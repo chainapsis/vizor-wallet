@@ -60,15 +60,17 @@ class AppDesktopSidebarSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (glass) {
-      final colors = context.colors;
-      final isDark =
-          colors.background.ground == AppColors.dark.background.ground;
+      final isDark = context.appTheme == AppThemeData.dark;
       final radius = BorderRadius.circular(_glassRadius);
       final fill =
           backgroundColor ??
-          (isDark
-              ? const Color(0xFF1A1A1A).withValues(alpha: 0.25)
-              : const Color(0xFFFFFFFF).withValues(alpha: 0.78));
+          (isDark ? const Color(0xFF101010) : const Color(0xFFFFFFFF));
+      final thinBorderColor = isDark
+          ? const Color(0xFF1A1A1A).withValues(alpha: 0.23)
+          : const Color(0xFF1A1A1A).withValues(alpha: 0.06);
+      final innerHighlightColor = const Color(
+        0xFFFFFFFF,
+      ).withValues(alpha: isDark ? 0.15 : 0.04);
 
       return DecoratedBox(
         decoration: BoxDecoration(
@@ -78,6 +80,7 @@ class AppDesktopSidebarSurface extends StatelessWidget {
               color: const Color(0xFF000000).withValues(alpha: 0.12),
               blurRadius: 44,
             ),
+            BoxShadow(color: thinBorderColor, blurRadius: 0, spreadRadius: 1),
           ],
         ),
         child: ClipRRect(
@@ -86,13 +89,7 @@ class AppDesktopSidebarSurface extends StatelessWidget {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: _glassBlur, sigmaY: _glassBlur),
             child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: fill,
-                borderRadius: radius,
-                border: Border.all(
-                  color: const Color(0xFF1A1A1A).withValues(alpha: 0.23),
-                ),
-              ),
+              decoration: BoxDecoration(color: fill, borderRadius: radius),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -101,11 +98,7 @@ class AppDesktopSidebarSurface extends StatelessWidget {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         borderRadius: radius,
-                        border: Border.all(
-                          color: const Color(
-                            0xFFFFFFFF,
-                          ).withValues(alpha: 0.15),
-                        ),
+                        border: Border.all(color: innerHighlightColor),
                       ),
                     ),
                   ),
