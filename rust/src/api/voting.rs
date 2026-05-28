@@ -1759,6 +1759,117 @@ pub fn clear_recovery_state(
     catch(|| recovery::clear_recovery_state(&db_path, &wallet_id, &round_id))
 }
 
+/// One unit of remaining work for a round, flattened for the FRB boundary.
+pub struct ApiNextStep {
+    /// "delegate" | "poll_delegation" | "cast_vote" | "poll_vote" | "confirm_share".
+    pub kind: String,
+    pub bundle_index: u32,
+    /// 0 for delegation steps.
+    pub proposal_id: u32,
+    /// 0 unless `confirm_share`.
+    pub share_index: u32,
+}
+
+/// Derived resume state for one round, produced by the crate's `resume_plan`.
+pub struct ApiRoundPlan {
+    pub round_id: String,
+    pub pending_recovery: bool,
+    pub next_steps: Vec<ApiNextStep>,
+    pub open_proposals: Vec<u32>,
+    pub all_decided: bool,
+}
+
+/// Compute the resumable voting-session plan for a round. The plan reports the
+/// ordered remaining work (`next_steps`) and which proposals are still open.
+pub fn get_round_plan(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    proposal_ids: Vec<u32>,
+) -> Result<ApiRoundPlan, String> {
+    catch(|| {
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        let plan = zcash_voting::session::resume_plan(&db, &round_id, &proposal_ids)
+            .map_err(|e| format!("resume_plan failed: {e}"))?;
+        let next_steps = plan
+            .next_steps
+            .into_iter()
+            .map(|step| match step {
+                zcash_voting::session::NextStep::Delegate { bundle_index } => ApiNextStep {
+                    kind: "delegate".to_string(),
+                    bundle_index,
+                    proposal_id: 0,
+                    share_index: 0,
+                },
+                zcash_voting::session::NextStep::PollDelegation { bundle_index } => ApiNextStep {
+                    kind: "poll_delegation".to_string(),
+                    bundle_index,
+                    proposal_id: 0,
+                    share_index: 0,
+                },
+                zcash_voting::session::NextStep::CastVote { bundle_index, proposal_id } => {
+                    ApiNextStep {
+                        kind: "cast_vote".to_string(),
+                        bundle_index,
+                        proposal_id,
+                        share_index: 0,
+                    }
+                }
+                zcash_voting::session::NextStep::PollVote { bundle_index, proposal_id } => {
+                    ApiNextStep {
+                        kind: "poll_vote".to_string(),
+                        bundle_index,
+                        proposal_id,
+                        share_index: 0,
+                    }
+                }
+                zcash_voting::session::NextStep::ConfirmShare {
+                    bundle_index,
+                    proposal_id,
+                    share_index,
+                } => ApiNextStep {
+                    kind: "confirm_share".to_string(),
+                    bundle_index,
+                    proposal_id,
+                    share_index,
+                },
+            })
+            .collect();
+        Ok(ApiRoundPlan {
+            round_id: plan.round_id,
+            pending_recovery: plan.pending_recovery,
+            next_steps,
+            open_proposals: plan.open_proposals,
+            all_decided: plan.all_decided,
+        })
+    })
+}
+
+/// Persist (insert or replace) the voter's ballot intent for one proposal.
+/// Pass `skipped: true` for `Decision::Skipped`; otherwise `choice` must be set.
+pub fn set_ballot_intent(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    proposal_id: u32,
+    skipped: bool,
+    choice: Option<u32>,
+) -> Result<(), String> {
+    catch(|| {
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        let decision = if skipped {
+            zcash_voting::session::Decision::Skipped
+        } else {
+            let c = choice.ok_or_else(|| {
+                "set_ballot_intent: choice must be Some when skipped is false".to_string()
+            })?;
+            zcash_voting::session::Decision::Choice(c)
+        };
+        db.set_ballot_intent(&round_id, proposal_id, decision)
+            .map_err(|e| format!("set_ballot_intent failed: {e}"))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
