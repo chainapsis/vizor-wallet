@@ -88,7 +88,7 @@ serde_json = "1"
 url = "2.5.8"
 
 [patch.crates-io]
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "b98e7fd727e98185971a102d1e629fd0fcc4d3b3" }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "d5fee17e76ab2f174aab8e2e3473466717dce908" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }

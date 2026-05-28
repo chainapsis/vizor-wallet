@@ -97,7 +97,7 @@ Key: `(round_id, bundle_index, proposal_id, share_index)`
 
 ### Bundle Setup And Reuse
 
-`delegation::ensure_bundles` owns initial bundle setup through
+`VotingDb::ensure_bundles_for_notes` owns initial bundle setup through
 `VotingDb::setup_bundles`. If bundle rows already exist, it validates the
 current note selection using `zcash_voting::storage::queries::require_bundle_notes`
 before any PIR or proof work. A reused bundle must have the same note identity
