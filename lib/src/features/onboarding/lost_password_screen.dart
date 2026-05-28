@@ -8,11 +8,17 @@ import 'package:go_router/go_router.dart';
 import '../../../main.dart' show log;
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
-import '../../core/widgets/app_decorative_divider.dart';
 import '../../core/widgets/app_icon.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/sync_provider.dart';
 import 'shared/onboarding_welcome_art.dart';
+
+const double _lostPasswordContentMaxWidth = 420;
+const double _lostPasswordCardHorizontalMargin = AppSpacing.s;
+const double _lostPasswordCardMinHeight = 509;
+const double _lostPasswordActionWidth = 256;
+const double _lostPasswordWordmarkWidth = 93;
+const double _lostPasswordWordmarkHeight = 35.1;
 
 class LostPasswordScreen extends ConsumerStatefulWidget {
   const LostPasswordScreen({
@@ -120,10 +126,10 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xs),
           child: _LostPasswordPane(
-            onBack: _handleBack,
             child: _LostPasswordContent(
               remainingSeconds: _remainingSeconds,
               canReset: _canReset,
+              onCancel: _handleBack,
               onReset: _handleReset,
             ),
           ),
@@ -134,118 +140,44 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
 }
 
 class _LostPasswordPane extends StatelessWidget {
-  const _LostPasswordPane({required this.child, required this.onBack});
+  const _LostPasswordPane({required this.child});
 
   final Widget child;
-  final VoidCallback onBack;
-
-  static const double _canvasWidth = 1064;
-  static const double _canvasHeight = 672;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
     return Container(
       width: double.infinity,
       height: double.infinity,
       decoration: BoxDecoration(
-        color: colors.background.ground,
+        color: isDark ? colors.background.ground : colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: OnboardingWelcomeBackdrop(
-              fit: BoxFit.fitWidth,
-              alignment: Alignment.bottomCenter,
-            ),
-          ),
-          Positioned.fill(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final alignment = constraints.maxHeight < _canvasHeight
-                    ? Alignment.bottomCenter
-                    : Alignment.center;
-                return OverflowBox(
-                  alignment: alignment,
-                  minWidth: _canvasWidth,
-                  maxWidth: _canvasWidth,
-                  minHeight: _canvasHeight,
-                  maxHeight: _canvasHeight,
-                  child: SizedBox(
-                    width: _canvasWidth,
-                    height: _canvasHeight,
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Column(
-                        children: [
-                          Align(
-                            alignment: Alignment.topLeft,
-                            child: _LostPasswordBackButton(onPressed: onBack),
-                          ),
-                          Expanded(
-                            child: Center(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: AppSpacing.base,
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: AppSpacing.md,
-                                  ),
-                                  child: child,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const topInset = AppSpacing.lg;
+          const bottomInset = AppSpacing.md;
+          final minHeight = (constraints.maxHeight - topInset - bottomInset)
+              .clamp(0.0, double.infinity)
+              .toDouble();
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(0, topInset, 0, bottomInset),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: minHeight),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: _lostPasswordContentMaxWidth,
                   ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LostPasswordBackButton extends StatelessWidget {
-  const _LostPasswordBackButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onPressed,
-        child: SizedBox(
-          height: 32,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(
-                AppIcons.chevronBackward,
-                size: AppIconSize.medium,
-                color: colors.text.accent,
-              ),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                'Back',
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
+                  child: child,
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -255,19 +187,19 @@ class _LostPasswordContent extends StatelessWidget {
   const _LostPasswordContent({
     required this.remainingSeconds,
     required this.canReset,
+    required this.onCancel,
     required this.onReset,
   });
 
   final int remainingSeconds;
   final bool canReset;
+  final VoidCallback onCancel;
   final VoidCallback onReset;
-
-  static const double _contentWidth = 349;
-  static const double _buttonWidth = 256;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
     final bodyStyle = AppTypography.bodyMedium.copyWith(
       color: colors.text.secondary,
     );
@@ -278,68 +210,120 @@ class _LostPasswordContent extends StatelessWidget {
         ? 'Reset after ${remainingSeconds}s...'
         : 'Reset Vizor';
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: _contentWidth,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Lost Password?',
-                style: AppTypography.displayLarge.copyWith(
-                  color: colors.text.accent,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text.rich(
-                TextSpan(
-                  style: bodyStyle,
-                  children: [
-                    const TextSpan(
-                      text:
-                          "If you've lost your password, the only way to recover your account is to ",
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: _lostPasswordCardHorizontalMargin,
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isDark ? colors.background.base : colors.background.ground,
+          borderRadius: BorderRadius.circular(AppRadii.large),
+          boxShadow: [
+            BoxShadow(
+              color: colors.shadows.regular,
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            minHeight: _lostPasswordCardMinHeight,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.xl,
+              AppSpacing.md,
+              AppSpacing.lg,
+            ),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Opacity(
+                    opacity: 0.5,
+                    child: VizorWordmark(
+                      width: _lostPasswordWordmarkWidth,
+                      height: _lostPasswordWordmarkHeight,
                     ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    'Lost Password?',
+                    style: AppTypography.displayMedium.copyWith(
+                      color: colors.text.accent,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text.rich(
                     TextSpan(
-                      text: 'completely reset the Vizor app',
-                      style: strongStyle,
+                      style: bodyStyle,
+                      children: [
+                        const TextSpan(
+                          text:
+                              "If you've lost your password, the only way to recover your account is to ",
+                        ),
+                        TextSpan(
+                          text: 'completely reset Vizor app',
+                          style: strongStyle,
+                        ),
+                        const TextSpan(
+                          text:
+                              ', which means deleting all accounts and requiring you to ',
+                        ),
+                        TextSpan(
+                          text: 'import accounts again',
+                          style: strongStyle,
+                        ),
+                        const TextSpan(text: '.'),
+                      ],
                     ),
-                    const TextSpan(
-                      text:
-                          ', which means deleting all accounts and requiring you to ',
-                    ),
-                    TextSpan(text: 'import accounts again', style: strongStyle),
-                    const TextSpan(text: '.'),
-                  ],
-                ),
-                textAlign: TextAlign.center,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _DestructiveNotice(color: colors.text.destructive),
+                  const SizedBox(height: AppSpacing.md),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final actionWidth =
+                          constraints.maxWidth < _lostPasswordActionWidth
+                          ? constraints.maxWidth
+                          : _lostPasswordActionWidth;
+                      return SizedBox(
+                        width: actionWidth,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AppButton(
+                              onPressed: canReset ? onReset : null,
+                              variant: AppButtonVariant.destructive,
+                              minWidth: actionWidth,
+                              trailing: const AppIcon(
+                                AppIcons.chevronForward,
+                                size: 20,
+                              ),
+                              child: Text(buttonLabel),
+                            ),
+                            const SizedBox(height: AppSpacing.s),
+                            AppButton(
+                              onPressed: onCancel,
+                              variant: AppButtonVariant.ghost,
+                              minWidth: actionWidth,
+                              child: const Text('Cancel'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
-        const SizedBox(height: AppSpacing.lg),
-        const AppDecorativeDivider(width: _buttonWidth),
-        const SizedBox(height: AppSpacing.lg),
-        SizedBox(
-          width: _buttonWidth,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppButton(
-                onPressed: canReset ? onReset : null,
-                variant: AppButtonVariant.destructive,
-                minWidth: _buttonWidth,
-                trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-                child: Text(buttonLabel),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              _DestructiveNotice(color: colors.text.destructive),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

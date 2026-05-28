@@ -16,6 +16,13 @@ import '../../providers/router_refresh_provider.dart';
 import '../../providers/sync_provider.dart';
 import 'shared/onboarding_welcome_art.dart';
 
+const double _unlockContentMaxWidth = 420;
+const double _unlockCardHorizontalMargin = AppSpacing.s;
+const double _unlockCardMinHeight = 520;
+const double _unlockActionWidth = 256;
+const double _unlockWordmarkWidth = 93;
+const double _unlockWordmarkHeight = 35.1;
+
 class UnlockScreen extends ConsumerStatefulWidget {
   const UnlockScreen({super.key});
 
@@ -126,56 +133,40 @@ class _UnlockPane extends StatelessWidget {
 
   final Widget child;
 
-  static const double _canvasWidth = 1064;
-  static const double _canvasHeight = 672;
-
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
     return Container(
       width: double.infinity,
       height: double.infinity,
       decoration: BoxDecoration(
-        color: colors.background.ground,
+        color: isDark ? colors.background.ground : colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: OnboardingWelcomeBackdrop(
-              fit: BoxFit.fitWidth,
-              alignment: Alignment.bottomCenter,
-            ),
-          ),
-          Positioned.fill(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final alignment = constraints.maxHeight < _canvasHeight
-                    ? Alignment.bottomCenter
-                    : Alignment.center;
-                return OverflowBox(
-                  alignment: alignment,
-                  minWidth: _canvasWidth,
-                  maxWidth: _canvasWidth,
-                  minHeight: _canvasHeight,
-                  maxHeight: _canvasHeight,
-                  child: SizedBox(
-                    width: _canvasWidth,
-                    height: _canvasHeight,
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [child],
-                      ),
-                    ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const topInset = AppSpacing.lg;
+          const bottomInset = AppSpacing.md;
+          final minHeight = (constraints.maxHeight - topInset - bottomInset)
+              .clamp(0.0, double.infinity)
+              .toDouble();
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(0, topInset, 0, bottomInset),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: minHeight),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: _unlockContentMaxWidth,
                   ),
-                );
-              },
+                  child: child,
+                ),
+              ),
             ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -198,30 +189,52 @@ class _UnlockContent extends StatelessWidget {
   final Future<void> Function() onSubmit;
   final VoidCallback onForgotPassword;
 
-  static const double _contentWidth = 256;
-  static const double _titleWidth = 347;
   static const double _fieldGroupHeight = 66;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.base),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: _titleWidth,
+      padding: const EdgeInsets.symmetric(
+        horizontal: _unlockCardHorizontalMargin,
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isDark ? colors.background.base : colors.background.ground,
+          borderRadius: BorderRadius.circular(AppRadii.large),
+          boxShadow: [
+            BoxShadow(
+              color: colors.shadows.regular,
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: _unlockCardMinHeight),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.xl,
+              AppSpacing.md,
+              AppSpacing.lg,
+            ),
+            child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const VizorWordmark(),
+                  const Opacity(
+                    opacity: 0.5,
+                    child: VizorWordmark(
+                      width: _unlockWordmarkWidth,
+                      height: _unlockWordmarkHeight,
+                    ),
+                  ),
                   const SizedBox(height: AppSpacing.md),
                   Text(
-                    'Welcome Back',
-                    style: AppTypography.displayLarge.copyWith(
+                    'Welcome back',
+                    style: AppTypography.displayMedium.copyWith(
                       color: colors.text.accent,
                     ),
                     textAlign: TextAlign.center,
@@ -234,53 +247,64 @@ class _UnlockContent extends StatelessWidget {
                     ),
                     textAlign: TextAlign.center,
                   ),
+                  const SizedBox(height: AppSpacing.lg),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final actionWidth =
+                          constraints.maxWidth < _unlockActionWidth
+                          ? constraints.maxWidth
+                          : _unlockActionWidth;
+                      return SizedBox(
+                        width: actionWidth,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              height: _fieldGroupHeight,
+                              child: PasswordTextField(
+                                label: 'Password',
+                                hintText: 'Min. 8 characters and symbols',
+                                showLabel: false,
+                                leadingSlotWidth: 32,
+                                trailingSlotWidth: 40,
+                                inputHorizontalPadding: AppSpacing.s,
+                                controller: passwordController,
+                                autofocus: false,
+                                messageText: messageText,
+                                tone: messageText == null
+                                    ? AppTextFieldTone.neutral
+                                    : AppTextFieldTone.destructive,
+                                onChanged: (_) => onChanged(),
+                                onSubmitted: (_) => onSubmit(),
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.xxs),
+                            AppButton(
+                              onPressed: canSubmit ? onSubmit : null,
+                              variant: AppButtonVariant.primary,
+                              minWidth: actionWidth,
+                              trailing: const AppIcon(
+                                AppIcons.chevronForward,
+                                size: 20,
+                              ),
+                              child: const Text('Sign In'),
+                            ),
+                            const SizedBox(height: AppSpacing.base),
+                            AppButton(
+                              onPressed: onForgotPassword,
+                              variant: AppButtonVariant.ghost,
+                              size: AppButtonSize.small,
+                              child: const Text('Forgot Password?'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
-            SizedBox(
-              width: _contentWidth,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    height: _fieldGroupHeight,
-                    child: PasswordTextField(
-                      label: 'Password',
-                      hintText: 'Enter Your Password',
-                      showLabel: false,
-                      leadingSlotWidth: 32,
-                      trailingSlotWidth: 40,
-                      inputHorizontalPadding: AppSpacing.s,
-                      controller: passwordController,
-                      autofocus: false,
-                      messageText: messageText,
-                      tone: messageText == null
-                          ? AppTextFieldTone.neutral
-                          : AppTextFieldTone.destructive,
-                      onChanged: (_) => onChanged(),
-                      onSubmitted: (_) => onSubmit(),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  AppButton(
-                    onPressed: canSubmit ? onSubmit : null,
-                    variant: AppButtonVariant.primary,
-                    minWidth: _contentWidth,
-                    trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-                    child: const Text('Sign In'),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.base),
-            AppButton(
-              onPressed: onForgotPassword,
-              variant: AppButtonVariant.ghost,
-              size: AppButtonSize.small,
-              child: const Text('Forgot Password?'),
-            ),
-          ],
+          ),
         ),
       ),
     );
