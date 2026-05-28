@@ -1,6 +1,6 @@
 use rusqlite::{named_params, OptionalExtension};
 
-use super::{state::open_voting_db, vote::VoteRecord, workflow};
+use super::{state::open_voting_db, vote::VoteRecord};
 
 /// Stored commitment bundle recovery data for one `(bundle_index, proposal_id)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -163,21 +163,63 @@ pub fn get_round_recovery_state(
         }
     }
 
-    let delegation_workflows = workflow::delegation_workflows(&voting_db, round_id)?
+    let delegation_workflows = voting_db
+        .delegation_phases(round_id)
+        .map_err(|e| format!("load delegation phases failed: {e}"))?
         .into_iter()
-        .map(Into::into)
-        .collect();
-    let vote_workflows = workflow::vote_workflows(&voting_db, round_id)?
+        .map(|(bundle_index, phase)| {
+            let tx_hash = voting_db
+                .get_delegation_tx_hash(round_id, bundle_index)
+                .map_err(|e| format!("load delegation tx hash failed: {e}"))?;
+            Ok(DelegationWorkflowRecovery {
+                bundle_index,
+                phase: delegation_workflow_phase(phase).to_string(),
+                tx_hash,
+                van_leaf_position: voting_db.load_van_position(round_id, bundle_index).ok(),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let vote_workflows = voting_db
+        .vote_phases(round_id)
+        .map_err(|e| format!("load vote phases failed: {e}"))?
         .into_iter()
-        .map(Into::into)
-        .collect();
-    let share_workflows = workflow::share_workflows(&voting_db, round_id)?
+        .map(|(bundle_index, proposal_id, phase)| {
+            let tx_hash = voting_db
+                .get_vote_tx_hash(round_id, bundle_index, proposal_id)
+                .map_err(|e| format!("load vote tx hash failed: {e}"))?;
+            let (has_commitment_bundle, vc_tree_position) =
+                load_vote_recovery_presence(&voting_db, round_id, bundle_index, proposal_id)?;
+            Ok(VoteWorkflowRecovery {
+                bundle_index,
+                proposal_id,
+                phase: vote_workflow_phase(phase).to_string(),
+                tx_hash,
+                vc_tree_position,
+                has_commitment_bundle,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let share_workflows = voting_db
+        .share_phases(round_id)
+        .map_err(|e| format!("load share phases failed: {e}"))?
         .into_iter()
-        .map(Into::into)
+        .map(
+            |(bundle_index, proposal_id, share_index, phase)| ShareWorkflowRecovery {
+                bundle_index,
+                proposal_id,
+                share_index,
+                phase: share_workflow_phase(phase).to_string(),
+            },
+        )
         .collect();
-    let share_delegations = get_share_delegations_from_db(&voting_db, round_id)?;
-    let unconfirmed_share_delegations =
-        get_unconfirmed_share_delegations_from_db(&voting_db, round_id)?;
+    let share_delegations = map_share_records(
+        zcash_voting::share::list(&voting_db, round_id),
+        "get_share_delegations",
+    )?;
+    let unconfirmed_share_delegations = map_share_records(
+        zcash_voting::share::unconfirmed(&voting_db, round_id),
+        "get_unconfirmed_delegations",
+    )?;
 
     Ok(RoundRecoveryState {
         round_id: round_id.to_string(),
@@ -192,76 +234,6 @@ pub fn get_round_recovery_state(
         share_delegations,
         unconfirmed_share_delegations,
     })
-}
-
-/// Persists the broadcast transaction hash for a vote and marks that vote submitted.
-///
-/// The `(round_id, bundle_index, proposal_id)` tuple must identify an existing
-/// vote row. After storing, the value is read back and must match `tx_hash`.
-///
-/// # Errors
-///
-/// Returns an error if storage fails, the vote row is missing, or read-after-write
-/// verification observes a different hash.
-pub fn store_vote_tx_hash(
-    db_path: &str,
-    wallet_id: &str,
-    round_id: &str,
-    bundle_index: u32,
-    proposal_id: u32,
-    tx_hash: &str,
-) -> Result<(), String> {
-    workflow::mark_vote_submitted(
-        db_path,
-        wallet_id,
-        round_id,
-        bundle_index,
-        proposal_id,
-        tx_hash,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn mark_vote_confirmed(
-    db_path: &str,
-    wallet_id: &str,
-    round_id: &str,
-    bundle_index: u32,
-    proposal_id: u32,
-    tx_hash: &str,
-    van_position: u32,
-    vc_tree_position: u64,
-    commitment_bundle_json: &str,
-) -> Result<(), String> {
-    workflow::mark_vote_confirmed(
-        db_path,
-        wallet_id,
-        round_id,
-        bundle_index,
-        proposal_id,
-        tx_hash,
-        van_position,
-        vc_tree_position,
-        commitment_bundle_json,
-    )
-}
-
-pub fn mark_delegation_confirmed(
-    db_path: &str,
-    wallet_id: &str,
-    round_id: &str,
-    bundle_index: u32,
-    tx_hash: &str,
-    van_leaf_position: u32,
-) -> Result<(), String> {
-    workflow::mark_delegation_confirmed(
-        db_path,
-        wallet_id,
-        round_id,
-        bundle_index,
-        tx_hash,
-        van_leaf_position,
-    )
 }
 
 /// Returns the stored vote transaction hash for one vote, when present.
@@ -315,40 +287,6 @@ pub fn get_commitment_bundle(
     )
 }
 
-/// Records helper-server share delegation progress for retry/resume.
-///
-/// `sent_to_urls` is the set of helper endpoints already attempted for the share,
-/// `nullifier` is the share nullifier bytes, and `submit_at` is the caller-owned
-/// retry scheduling timestamp.
-///
-/// # Errors
-///
-/// Returns an error if the voting database cannot be opened or the share record
-/// cannot be persisted.
-pub fn record_share_delegation(
-    db_path: &str,
-    wallet_id: &str,
-    round_id: &str,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-    sent_to_urls: &[String],
-    nullifier: &[u8],
-    submit_at: u64,
-) -> Result<(), String> {
-    workflow::record_share_delegation(
-        db_path,
-        wallet_id,
-        round_id,
-        bundle_index,
-        proposal_id,
-        share_index,
-        sent_to_urls,
-        nullifier,
-        submit_at,
-    )
-}
-
 /// Lists all stored share delegation records for a round.
 ///
 /// Returned records include both confirmed and unconfirmed shares.
@@ -362,7 +300,10 @@ pub fn get_share_delegations(
     round_id: &str,
 ) -> Result<Vec<ShareDelegationRecord>, String> {
     let voting_db = open_voting_db(db_path, wallet_id)?;
-    get_share_delegations_from_db(&voting_db, round_id)
+    map_share_records(
+        zcash_voting::share::list(&voting_db, round_id),
+        "get_share_delegations",
+    )
 }
 
 /// Lists share delegation records that still need confirmation.
@@ -379,33 +320,9 @@ pub fn get_unconfirmed_share_delegations(
     round_id: &str,
 ) -> Result<Vec<ShareDelegationRecord>, String> {
     let voting_db = open_voting_db(db_path, wallet_id)?;
-    get_unconfirmed_share_delegations_from_db(&voting_db, round_id)
-}
-
-/// Marks one share delegation as confirmed.
-///
-/// The key is the exact `(round_id, bundle_index, proposal_id, share_index)`
-/// tuple previously passed to `record_share_delegation`.
-///
-/// # Errors
-///
-/// Returns an error if the voting database cannot be opened or no matching share
-/// delegation can be updated.
-pub fn mark_share_confirmed(
-    db_path: &str,
-    wallet_id: &str,
-    round_id: &str,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-) -> Result<(), String> {
-    workflow::mark_share_confirmed(
-        db_path,
-        wallet_id,
-        round_id,
-        bundle_index,
-        proposal_id,
-        share_index,
+    map_share_records(
+        zcash_voting::share::unconfirmed(&voting_db, round_id),
+        "get_unconfirmed_delegations",
     )
 }
 
@@ -428,9 +345,15 @@ pub fn add_sent_servers(
     new_urls: &[String],
 ) -> Result<(), String> {
     let voting_db = open_voting_db(db_path, wallet_id)?;
-    voting_db
-        .add_sent_servers(round_id, bundle_index, proposal_id, share_index, new_urls)
-        .map_err(|e| format!("add_sent_servers failed: {e}"))
+    zcash_voting::share::add_sent_servers(
+        &voting_db,
+        round_id,
+        bundle_index,
+        proposal_id,
+        share_index,
+        new_urls,
+    )
+    .map_err(|e| format!("add_sent_servers failed: {e}"))
 }
 
 /// Clears retry/recovery artifacts for a voting round.
@@ -450,36 +373,15 @@ pub fn clear_recovery_state(db_path: &str, wallet_id: &str, round_id: &str) -> R
         .map_err(|e| format!("clear_recovery_state failed: {e}"))
 }
 
-/// Reads share delegation rows using an already-open voting database.
-fn get_share_delegations_from_db(
-    voting_db: &zcash_voting::storage::VotingDb,
-    round_id: &str,
+fn map_share_records(
+    records: Result<Vec<zcash_voting::ShareDelegationRecord>, zcash_voting::VotingError>,
+    operation: &str,
 ) -> Result<Vec<ShareDelegationRecord>, String> {
-    voting_db
-        .get_share_delegations(round_id)
-        .map(|records| {
-            records
-                .into_iter()
-                .map(share_record_from_upstream)
-                .collect()
-        })
-        .map_err(|e| format!("get_share_delegations failed: {e}"))
-}
-
-/// Reads only unconfirmed share delegation rows using an already-open database.
-fn get_unconfirmed_share_delegations_from_db(
-    voting_db: &zcash_voting::storage::VotingDb,
-    round_id: &str,
-) -> Result<Vec<ShareDelegationRecord>, String> {
-    voting_db
-        .get_unconfirmed_delegations(round_id)
-        .map(|records| {
-            records
-                .into_iter()
-                .map(share_record_from_upstream)
-                .collect()
-        })
-        .map_err(|e| format!("get_unconfirmed_delegations failed: {e}"))
+    Ok(records
+        .map_err(|e| format!("{operation} failed: {e}"))?
+        .into_iter()
+        .map(share_record_from_upstream)
+        .collect())
 }
 
 /// Reads commitment recovery without failing on legacy signed-only rows.
@@ -567,45 +469,79 @@ fn share_record_from_upstream(
     }
 }
 
-impl From<workflow::DelegationWorkflowRecord> for DelegationWorkflowRecovery {
-    fn from(record: workflow::DelegationWorkflowRecord) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            phase: record.phase.as_str().to_string(),
-            tx_hash: record.tx_hash,
-            van_leaf_position: record.van_leaf_position,
-        }
+fn delegation_workflow_phase(phase: zcash_voting::phases::DelegationPhase) -> &'static str {
+    match phase {
+        zcash_voting::phases::DelegationPhase::Prepared => "prepared",
+        zcash_voting::phases::DelegationPhase::PcztBuilt
+        | zcash_voting::phases::DelegationPhase::Proved => "signed",
+        zcash_voting::phases::DelegationPhase::Submitted => "submitted_delegation",
+        zcash_voting::phases::DelegationPhase::Confirmed => "confirmed",
+        _ => "prepared",
     }
 }
 
-impl From<workflow::VoteWorkflowRecord> for VoteWorkflowRecovery {
-    fn from(record: workflow::VoteWorkflowRecord) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            phase: record.phase.as_str().to_string(),
-            tx_hash: record.tx_hash,
-            vc_tree_position: record.vc_tree_position,
-            has_commitment_bundle: record.has_commitment_bundle,
-        }
+fn vote_workflow_phase(phase: zcash_voting::phases::VotePhase) -> &'static str {
+    match phase {
+        zcash_voting::phases::VotePhase::Prepared => "prepared",
+        zcash_voting::phases::VotePhase::Committed => "signed",
+        zcash_voting::phases::VotePhase::Submitted => "submitted_vote",
+        zcash_voting::phases::VotePhase::Confirmed => "confirmed",
+        _ => "prepared",
     }
 }
 
-impl From<workflow::ShareWorkflowRecord> for ShareWorkflowRecovery {
-    fn from(record: workflow::ShareWorkflowRecord) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            share_index: record.share_index,
-            phase: record.phase.as_str().to_string(),
-        }
+fn share_workflow_phase(phase: zcash_voting::phases::SharePhase) -> &'static str {
+    match phase {
+        zcash_voting::phases::SharePhase::Submitted => "submitted_share",
+        zcash_voting::phases::SharePhase::Confirmed => "confirmed",
+        _ => "submitted_share",
     }
+}
+
+fn load_vote_recovery_presence(
+    db: &zcash_voting::storage::VotingDb,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> Result<(bool, Option<u64>), String> {
+    let conn = db.conn();
+    let wallet_id = db.wallet_id();
+    let fields: Option<(Option<String>, Option<i64>)> = conn
+        .query_row(
+            "SELECT commitment_bundle_json, vc_tree_position FROM votes
+             WHERE round_id = :round_id AND wallet_id = :wallet_id
+             AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+            named_params! {
+                ":round_id": round_id,
+                ":wallet_id": wallet_id,
+                ":bundle_index": bundle_index as i64,
+                ":proposal_id": proposal_id as i64,
+            },
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| format!("load vote recovery fields failed: {e}"))?;
+
+    let Some((bundle_json, position)) = fields else {
+        return Ok((false, None));
+    };
+    let position = position
+        .map(|position| {
+            u64::try_from(position)
+                .map_err(|_| format!("vc_tree_position must be non-negative, got {position}"))
+        })
+        .transpose()?;
+    Ok((bundle_json.is_some(), position))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::wallet::voting::{state, workflow};
+    use workflow::{
+        mark_share_confirmed, mark_vote_confirmed, mark_vote_submitted as store_vote_tx_hash,
+        record_share_delegation,
+    };
 
     const WALLET_ID: &str = "wallet-recovery";
     const ROUND_ID: &str = "round-recovery";
@@ -673,11 +609,11 @@ mod tests {
         workflow::store_signed_vote_commitment(&fixture.db, ROUND_ID, 0, 1, r#"{"bundle":"one"}"#)
             .unwrap();
 
-        let workflows = workflow::vote_workflows(&fixture.db, ROUND_ID).unwrap();
-        assert_eq!(workflows.len(), 1);
-        assert_eq!(workflows[0].phase, workflow::WorkflowPhase::Signed);
-        assert!(workflows[0].has_commitment_bundle);
-        assert_eq!(workflows[0].vc_tree_position, Some(0));
+        let state = get_round_recovery_state(fixture.path(), WALLET_ID, ROUND_ID).unwrap();
+        assert_eq!(state.vote_workflows.len(), 1);
+        assert_eq!(state.vote_workflows[0].phase, "signed");
+        assert!(state.vote_workflows[0].has_commitment_bundle);
+        assert_eq!(state.vote_workflows[0].vc_tree_position, Some(0));
 
         let bundle = get_commitment_bundle(fixture.path(), WALLET_ID, ROUND_ID, 0, 1)
             .unwrap()

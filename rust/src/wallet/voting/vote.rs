@@ -7,7 +7,6 @@ use super::{
     progress::{ProofProgressBridge, VotingWorkCancellation},
     state::open_voting_db,
     tree_sync::VanWitness,
-    workflow,
 };
 
 const VAN_AUTH_PATH_LEN: usize = 24;
@@ -155,22 +154,41 @@ where
             "voting vote: starting proof generation (bundle_index={bundle_index}, proposal_id={})",
             draft.proposal_id
         );
-        let bundle = voting_db
-            .build_vote_commitment(
-                round_id,
-                bundle_index,
-                hotkey_seed.expose_secret(),
-                network.voting_id().into(),
-                draft.proposal_id,
-                draft.choice,
-                draft.num_options,
-                &van_auth_path,
-                van_witness.position,
-                van_witness.anchor_height,
-                draft.single_share,
-                &reporter,
-            )
-            .map_err(|e| format!("build_vote_commitment failed: {e}"))?;
+        let commit = zcash_voting::vote::commit(
+            &voting_db,
+            round_id,
+            bundle_index,
+            &zcash_voting::vote::DraftVote {
+                proposal_id: draft.proposal_id,
+                choice: draft.choice,
+                num_options: draft.num_options,
+                vc_tree_position: draft.vc_tree_position,
+                single_share: draft.single_share,
+            },
+            &zcash_voting::vote::VanWitness {
+                auth_path: van_auth_path,
+                position: van_witness.position,
+                anchor_height: van_witness.anchor_height,
+            },
+            zcash_voting::vote::VoteSigner::Seed {
+                seed: hotkey_seed.expose_secret(),
+                network: zcash_voting::Network::from_id(network.voting_id().into())
+                    .map_err(|e| format!("network conversion failed: {e}"))?,
+                account_index: 0,
+            },
+            &reporter,
+        )
+        .map_err(|e| format!("vote commit failed: {e}"))?;
+        let recovery = zcash_voting::vote::recovery_bundle(
+            &voting_db,
+            round_id,
+            bundle_index,
+            draft.proposal_id,
+        )
+        .map_err(|e| format!("load vote recovery bundle failed: {e}"))?
+        .ok_or_else(|| "vote recovery bundle missing after commit".to_string())?;
+        let commitment_json = zcash_voting::vote::serialize_recovery(&recovery)
+            .map_err(|e| format!("serialize vote recovery failed: {e}"))?;
         cancellation.check()?;
         log::info!(
             "voting vote: proof generation completed \
@@ -179,25 +197,12 @@ where
             proof_start.elapsed().as_secs_f64(),
         );
 
-        cancellation.check()?;
-        let wire_shares: Vec<zcash_voting::WireEncryptedShare> =
-            bundle.enc_shares.iter().map(Into::into).collect();
-
         on_progress(VoteCommitEvent::BuildingSharePayloads {
             proposal_id: draft.proposal_id,
             bundle_index,
         });
         let payload_start = std::time::Instant::now();
-        let share_payloads = voting_db
-            .build_share_payloads(
-                &wire_shares,
-                &bundle,
-                draft.choice,
-                draft.num_options,
-                draft.vc_tree_position,
-                draft.single_share,
-            )
-            .map_err(|e| format!("build_share_payloads failed: {e}"))?;
+        let share_payloads = commit.share_payloads;
         log::info!(
             "voting vote: share payloads built \
              (bundle_index={bundle_index}, proposal_id={}, elapsed={:.2}s)",
@@ -205,60 +210,44 @@ where
             payload_start.elapsed().as_secs_f64(),
         );
 
-        cancellation.check()?;
         on_progress(VoteCommitEvent::Signing {
             proposal_id: draft.proposal_id,
             bundle_index,
         });
         let signing_start = std::time::Instant::now();
-        let signature = zcash_voting::vote_commitment::sign_cast_vote(
-            hotkey_seed.expose_secret(),
-            network.voting_id().into(),
-            &bundle.vote_round_id,
-            &bundle.r_vpk_bytes,
-            &bundle.van_nullifier,
-            &bundle.vote_authority_note_new,
-            &bundle.vote_commitment,
-            bundle.proposal_id,
-            bundle.anchor_height,
-            &bundle.alpha_v,
-        )
-        .map_err(|e| format!("sign_cast_vote failed: {e}"))?;
         log::info!(
             "voting vote: commitment signed \
              (bundle_index={bundle_index}, proposal_id={}, elapsed={:.2}s)",
             draft.proposal_id,
             signing_start.elapsed().as_secs_f64(),
         );
-        let commitment_json =
-            commitment_bundle_recovery_json(&bundle, &share_payloads, &signature.vote_auth_sig)?;
-
-        workflow::store_signed_vote_commitment(
-            &voting_db,
-            round_id,
-            bundle_index,
-            draft.proposal_id,
-            &commitment_json,
-        )?;
 
         commitments.push(SignedVoteCommitment {
             proposal_id: draft.proposal_id,
             choice: draft.choice,
-            vote_round_id: bundle.vote_round_id,
-            van_nullifier: bundle.van_nullifier,
-            vote_authority_note_new: bundle.vote_authority_note_new,
-            vote_commitment: bundle.vote_commitment,
-            proof: bundle.proof,
-            encrypted_shares: wire_shares.iter().map(wire_share_from_upstream).collect(),
+            vote_round_id: recovery.vote_round_id,
+            van_nullifier: commit.van_nullifier.to_vec(),
+            vote_authority_note_new: commit.vote_authority_note_new.to_vec(),
+            vote_commitment: commit.vote_commitment.to_vec(),
+            proof: commit.proof,
+            encrypted_shares: commit
+                .encrypted_shares
+                .iter()
+                .map(wire_share_from_upstream)
+                .collect(),
             share_payloads: share_payloads
                 .iter()
                 .map(share_payload_from_upstream)
                 .collect(),
-            anchor_height: bundle.anchor_height,
-            shares_hash: bundle.shares_hash,
-            share_comms: bundle.share_comms,
-            r_vpk_bytes: bundle.r_vpk_bytes,
-            vote_auth_sig: signature.vote_auth_sig,
+            anchor_height: commit.anchor_height,
+            shares_hash: recovery.shares_hash.to_vec(),
+            share_comms: recovery
+                .share_comms
+                .iter()
+                .map(|comm| comm.to_vec())
+                .collect(),
+            r_vpk_bytes: commit.r_vpk.to_vec(),
+            vote_auth_sig: commit.vote_auth_sig.to_vec(),
             commitment_bundle_json: commitment_json,
         });
         log::info!(
@@ -308,13 +297,21 @@ pub fn compute_share_nullifier_hex(
     share_index: u32,
     primary_blind: &[u8],
 ) -> Result<String, String> {
-    zcash_voting::share_tracking::compute_share_nullifier(
-        vote_commitment,
-        share_index,
-        primary_blind,
-    )
-    .map(hex::encode)
-    .map_err(|e| format!("compute_share_nullifier failed: {e}"))
+    let vote_commitment: [u8; 32] = vote_commitment.try_into().map_err(|_| {
+        format!(
+            "vote_commitment must be 32 bytes, got {}",
+            vote_commitment.len()
+        )
+    })?;
+    let primary_blind: [u8; 32] = primary_blind.try_into().map_err(|_| {
+        format!(
+            "primary_blind must be 32 bytes, got {}",
+            primary_blind.len()
+        )
+    })?;
+    zcash_voting::share::compute_nullifier(&vote_commitment, share_index, &primary_blind)
+        .map(hex::encode)
+        .map_err(|e| format!("compute_share_nullifier failed: {e}"))
 }
 
 fn validate_draft_votes(draft_votes: &[DraftVote]) -> Result<(), String> {
@@ -388,82 +385,57 @@ fn share_payload_from_upstream(payload: &zcash_voting::SharePayload) -> VoteShar
     }
 }
 
-/// Serializes the complete local recovery payload for one signed vote.
-///
-/// The JSON is stored in `votes.commitment_bundle_json` and must contain enough
-/// material to resume cast-vote confirmation and helper-share submission after
-/// process death. It intentionally includes local-only encrypted-share recovery
-/// fields; callers must not send this blob to helper servers or vote-chain APIs.
-fn commitment_bundle_recovery_json(
-    bundle: &zcash_voting::VoteCommitmentBundle,
-    payloads: &[zcash_voting::SharePayload],
-    vote_auth_sig: &[u8],
-) -> Result<String, String> {
-    serde_json::to_string(&serde_json::json!({
-        "format": "vizor_vote_commitment_bundle_recovery_v1",
-        "van_nullifier": hex::encode(&bundle.van_nullifier),
-        "vote_authority_note_new": hex::encode(&bundle.vote_authority_note_new),
-        "vote_commitment": hex::encode(&bundle.vote_commitment),
-        "proposal_id": bundle.proposal_id,
-        "proof": hex::encode(&bundle.proof),
-        "enc_shares": bundle.enc_shares.iter().map(encrypted_share_json).collect::<Vec<_>>(),
-        "anchor_height": bundle.anchor_height,
-        "vote_round_id": bundle.vote_round_id,
-        "shares_hash": hex::encode(&bundle.shares_hash),
-        "share_blinds": hex_vecs(&bundle.share_blinds),
-        "share_comms": hex_vecs(&bundle.share_comms),
-        "r_vpk_bytes": hex::encode(&bundle.r_vpk_bytes),
-        "alpha_v": hex::encode(&bundle.alpha_v),
-        "vote_auth_sig": hex::encode(vote_auth_sig),
-        "share_payloads": payloads.iter().map(share_payload_json).collect::<Vec<_>>(),
-    }))
-    .map_err(|e| format!("serialize commitment bundle failed: {e}"))
-}
-
-/// Serializes one encrypted share including secret local recovery fields.
-fn encrypted_share_json(share: &zcash_voting::EncryptedShare) -> serde_json::Value {
-    serde_json::json!({
-        "c1": hex::encode(&share.c1),
-        "c2": hex::encode(&share.c2),
-        "share_index": share.share_index,
-        "plaintext_value": share.plaintext_value,
-        "randomness": hex::encode(&share.randomness),
-    })
-}
-
-fn wire_share_json(share: &zcash_voting::WireEncryptedShare) -> serde_json::Value {
-    serde_json::json!({
-        "c1": hex::encode(&share.c1),
-        "c2": hex::encode(&share.c2),
-        "share_index": share.share_index,
-    })
-}
-
-/// Serializes one helper-share payload exactly as needed for later resubmission.
-fn share_payload_json(payload: &zcash_voting::SharePayload) -> serde_json::Value {
-    serde_json::json!({
-        "shares_hash": hex::encode(&payload.shares_hash),
-        "proposal_id": payload.proposal_id,
-        "vote_decision": payload.vote_decision,
-        "enc_share": wire_share_json(&payload.enc_share),
-        "tree_position": payload.tree_position,
-        "all_enc_shares": payload
-            .all_enc_shares
-            .iter()
-            .map(wire_share_json)
-            .collect::<Vec<_>>(),
-        "share_comms": hex_vecs(&payload.share_comms),
-        "primary_blind": hex::encode(&payload.primary_blind),
-    })
-}
-
-fn hex_vecs(values: &[Vec<u8>]) -> Vec<String> {
-    values.iter().map(hex::encode).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wallet::voting::workflow;
+
+    fn commitment_bundle_recovery_json(
+        bundle: &zcash_voting::VoteCommitmentBundle,
+        payloads: &[zcash_voting::SharePayload],
+        vote_auth_sig: &[u8],
+    ) -> Result<String, String> {
+        let draft = zcash_voting::vote::DraftVote {
+            proposal_id: bundle.proposal_id,
+            choice: payloads.first().map(|p| p.vote_decision).unwrap_or(0),
+            num_options: 2,
+            single_share: payloads.len() == 1,
+            vc_tree_position: payloads.first().map(|p| p.tree_position).unwrap_or(0),
+        };
+        let recovery = zcash_voting::vote::VoteRecoveryBundle {
+            vote_round_id: bundle.vote_round_id.clone(),
+            bundle_index: 0,
+            proposal_id: bundle.proposal_id,
+            vote_decision: draft.choice,
+            anchor_height: bundle.anchor_height,
+            vc_tree_position: draft.vc_tree_position,
+            single_share: draft.single_share,
+            num_options: draft.num_options,
+            van_nullifier: bundle.van_nullifier.clone().try_into().unwrap(),
+            vote_authority_note_new: bundle.vote_authority_note_new.clone().try_into().unwrap(),
+            vote_commitment: bundle.vote_commitment.clone().try_into().unwrap(),
+            proof: bundle.proof.clone(),
+            shares_hash: bundle.shares_hash.clone().try_into().unwrap(),
+            r_vpk: bundle.r_vpk_bytes.clone().try_into().unwrap(),
+            alpha_v: bundle.alpha_v.clone().try_into().unwrap(),
+            vote_auth_sig: vote_auth_sig.try_into().unwrap(),
+            encrypted_shares: bundle.enc_shares.clone(),
+            share_blinds: bundle
+                .share_blinds
+                .iter()
+                .cloned()
+                .map(|blind| blind.try_into().unwrap())
+                .collect(),
+            share_comms: bundle
+                .share_comms
+                .iter()
+                .cloned()
+                .map(|comm| comm.try_into().unwrap())
+                .collect(),
+        };
+        zcash_voting::vote::serialize_recovery(&recovery)
+            .map_err(|e| format!("serialize recovery failed: {e}"))
+    }
 
     #[test]
     fn validate_draft_votes_rejects_invalid_inputs_before_db_work() {
@@ -611,35 +583,20 @@ mod tests {
         .unwrap();
 
         let json = commitment_bundle_recovery_json(&commitment, &payloads, &[0x99; 64]).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let recovered = zcash_voting::vote::parse_recovery(&json).unwrap();
+        let recovered_payloads = zcash_voting::share::recover_payloads(&recovered).unwrap();
 
-        assert_eq!(value["format"], "vizor_vote_commitment_bundle_recovery_v1");
-        assert_eq!(value["enc_shares"].as_array().unwrap().len(), 2);
-        assert_eq!(value["enc_shares"][0]["plaintext_value"], 5);
-        assert_eq!(
-            value["enc_shares"][0]["randomness"],
-            hex::encode([0x33; 32])
-        );
-        assert_eq!(value["share_blinds"].as_array().unwrap().len(), 2);
-        assert_eq!(value["share_blinds"][0], hex::encode([0x11; 32]));
-        assert_eq!(value["share_payloads"].as_array().unwrap().len(), 2);
-        assert_eq!(
-            value["share_payloads"][0]["primary_blind"],
-            hex::encode([0x11; 32])
-        );
-        assert_eq!(
-            value["share_payloads"][0]["share_comms"]
-                .as_array()
-                .unwrap()
-                .len(),
-            2
-        );
-        assert_eq!(
-            value["share_payloads"][0]["enc_share"]["c1"],
-            hex::encode([0xC1; 32])
-        );
-        assert_eq!(value["vote_auth_sig"], hex::encode([0x99; 64]));
-        assert_eq!(value["alpha_v"], hex::encode([0x01; 32]));
+        assert_eq!(recovered.encrypted_shares.len(), 2);
+        assert_eq!(recovered.encrypted_shares[0].plaintext_value, 5);
+        assert_eq!(recovered.encrypted_shares[0].randomness, vec![0x33; 32]);
+        assert_eq!(recovered.share_blinds.len(), 2);
+        assert_eq!(recovered.share_blinds[0], [0x11; 32]);
+        assert_eq!(recovered_payloads.len(), 2);
+        assert_eq!(recovered_payloads[0].primary_blind, vec![0x11; 32]);
+        assert_eq!(recovered_payloads[0].share_comms.len(), 2);
+        assert_eq!(recovered_payloads[0].enc_share.c1, vec![0xC1; 32]);
+        assert_eq!(recovered.vote_auth_sig, [0x99; 64]);
+        assert_eq!(recovered.alpha_v, [0x01; 32]);
     }
 
     #[test]
@@ -675,15 +632,11 @@ mod tests {
             .unwrap();
         let (stored_json, stored_position) =
             db.get_commitment_bundle("round-1", 0, 1).unwrap().unwrap();
-        let stored: serde_json::Value = serde_json::from_str(&stored_json).unwrap();
-
-        let stored_payload = &stored["share_payloads"][0];
-        let stored_vote_commitment =
-            hex::decode(stored["vote_commitment"].as_str().unwrap()).unwrap();
-        let stored_primary_blind =
-            hex::decode(stored_payload["primary_blind"].as_str().unwrap()).unwrap();
-        let stored_share_index =
-            stored_payload["enc_share"]["share_index"].as_u64().unwrap() as u32;
+        let stored = zcash_voting::vote::parse_recovery(&stored_json).unwrap();
+        let stored_payload = zcash_voting::share::recover_payload(&stored, 0).unwrap();
+        let stored_vote_commitment = stored.vote_commitment;
+        let stored_primary_blind = stored_payload.primary_blind.clone();
+        let stored_share_index = stored_payload.enc_share.share_index;
         let expected_nullifier = compute_share_nullifier_hex(
             &commitment.vote_commitment,
             payloads[0].enc_share.share_index,
@@ -692,9 +645,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(stored_position, 42);
-        assert_eq!(stored_payload["tree_position"], 42);
+        assert_eq!(stored_payload.tree_position, 42);
         assert_eq!(
-            stored_payload["all_enc_shares"].as_array().unwrap().len(),
+            stored_payload.all_enc_shares.len(),
             payloads[0].all_enc_shares.len()
         );
         assert_eq!(

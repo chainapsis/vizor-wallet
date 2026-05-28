@@ -18,8 +18,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use rand::{rngs::OsRng, RngCore};
 use secrecy::ExposeSecret;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// FRB-safe voting round parameters loaded from the coordinator/session.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiVotingRoundParams {
     pub vote_round_id: String,
     pub snapshot_height: u64,
@@ -125,15 +125,8 @@ pub struct ApiDelegationProofEvent {
     pub signed_delegation_payload: Option<ApiSignedDelegationPayload>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiVanWitness {
-    /// 24 sibling hashes from the VAN leaf to the vote-tree root.
-    pub auth_path: Vec<Vec<u8>>,
-    /// VAN leaf position in the vote commitment tree.
-    pub position: u32,
-    /// Vote-tree height at which this witness is valid.
-    pub anchor_height: u32,
-}
+/// FRB-friendly Vote Authority Note Merkle witness.
+pub type ApiVanWitness = VanWitness;
 
 #[derive(Clone, Debug, PartialEq)]
 /// Progress event emitted while building ZKP2 vote commitments.
@@ -148,71 +141,28 @@ pub struct ApiVoteCommitEvent {
     pub commitments: Option<ApiSignedVoteCommitments>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// One requested vote for a proposal in a bundle.
 ///
 /// `choice` is zero-indexed and must be less than `num_options`. `single_share`
 /// enables the last-moment vote mode where only share 0 is submitted.
-pub struct ApiDraftVote {
-    pub proposal_id: u32,
-    pub choice: u32,
-    pub num_options: u32,
-    pub vc_tree_position: u64,
-    pub single_share: bool,
-}
+pub type ApiDraftVote = vote::DraftVote;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Public encrypted share fields safe to pass through Dart/REST.
 ///
 /// Plaintext values and encryption randomness intentionally never cross this API.
-pub struct ApiWireEncryptedShare {
-    pub ciphertext1: Vec<u8>,
-    pub ciphertext2: Vec<u8>,
-    pub share_index: u32,
-}
+pub type ApiWireEncryptedShare = vote::WireEncryptedShare;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Helper-server payload for one encrypted vote share.
 ///
 /// Contains only public inputs and the selected public encrypted share. The
 /// `primary_blind` is included for share tracking/nullifier recovery.
-pub struct ApiVoteSharePayload {
-    pub shares_hash: Vec<u8>,
-    pub proposal_id: u32,
-    pub vote_decision: u32,
-    pub encrypted_share: ApiWireEncryptedShare,
-    pub tree_position: u64,
-    pub all_encrypted_shares: Vec<ApiWireEncryptedShare>,
-    pub share_comms: Vec<Vec<u8>>,
-    pub primary_blind: Vec<u8>,
-}
+pub type ApiVoteSharePayload = vote::VoteSharePayload;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Signed ZKP2 vote commitment and wire-safe share data for one proposal.
-pub struct ApiSignedVoteCommitment {
-    pub proposal_id: u32,
-    pub choice: u32,
-    pub vote_round_id: String,
-    pub van_nullifier: Vec<u8>,
-    pub vote_authority_note_new: Vec<u8>,
-    pub vote_commitment: Vec<u8>,
-    pub proof: Vec<u8>,
-    pub encrypted_shares: Vec<ApiWireEncryptedShare>,
-    pub share_payloads: Vec<ApiVoteSharePayload>,
-    pub anchor_height: u32,
-    pub shares_hash: Vec<u8>,
-    pub share_comms: Vec<Vec<u8>>,
-    pub r_vpk_bytes: Vec<u8>,
-    pub vote_auth_sig: Vec<u8>,
-    pub commitment_bundle_json: String,
-}
+pub type ApiSignedVoteCommitment = vote::SignedVoteCommitment;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Set of signed vote commitments produced for one bundle index.
-pub struct ApiSignedVoteCommitments {
-    pub bundle_index: u32,
-    pub commitments: Vec<ApiSignedVoteCommitment>,
-}
+pub type ApiSignedVoteCommitments = vote::SignedVoteCommitments;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// FRB-safe helper-share submission plan from `zcash_voting::share_policy`.
@@ -225,95 +175,29 @@ pub struct ApiShareSubmissionPlan {
     pub target_servers: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Stored vote row keyed by `(round_id, wallet_id, bundle_index, proposal_id)`.
-pub struct ApiVoteRecord {
-    pub proposal_id: u32,
-    pub bundle_index: u32,
-    pub choice: u32,
-    pub submitted: bool,
-}
+pub type ApiVoteRecord = vote::VoteRecord;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Stored commitment bundle recovery data for one `(bundle_index, proposal_id)`.
-pub struct ApiCommitmentBundleRecovery {
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub commitment_bundle_json: String,
-    pub vc_tree_position: u64,
-}
+pub type ApiCommitmentBundleRecovery = recovery::CommitmentBundleRecovery;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Stored delegation transaction hash for one bundle.
-pub struct ApiDelegationTxRecovery {
-    pub bundle_index: u32,
-    pub tx_hash: String,
-}
+pub type ApiDelegationTxRecovery = recovery::DelegationTxRecovery;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Stored vote transaction hash for one `(bundle_index, proposal_id)`.
-pub struct ApiVoteTxRecovery {
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub tx_hash: String,
-}
+pub type ApiVoteTxRecovery = recovery::VoteTxRecovery;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Helper-server share delegation state used for retry/resume.
-pub struct ApiShareDelegationRecord {
-    pub round_id: String,
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub share_index: u32,
-    pub sent_to_urls: Vec<String>,
-    pub nullifier: Vec<u8>,
-    pub phase: String,
-    pub confirmed: bool,
-    pub submit_at: u64,
-    pub created_at: u64,
-}
+pub type ApiShareDelegationRecord = recovery::ShareDelegationRecord;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiDelegationWorkflowRecovery {
-    pub bundle_index: u32,
-    pub phase: String,
-    pub tx_hash: Option<String>,
-    pub van_leaf_position: Option<u32>,
-}
+pub type ApiDelegationWorkflowRecovery = recovery::DelegationWorkflowRecovery;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiVoteWorkflowRecovery {
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub phase: String,
-    pub tx_hash: Option<String>,
-    pub vc_tree_position: Option<u64>,
-    pub has_commitment_bundle: bool,
-}
+pub type ApiVoteWorkflowRecovery = recovery::VoteWorkflowRecovery;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiShareWorkflowRecovery {
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub share_index: u32,
-    pub phase: String,
-}
+pub type ApiShareWorkflowRecovery = recovery::ShareWorkflowRecovery;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Recovery summary for resuming one voting round after app restart.
-pub struct ApiRoundRecoveryState {
-    pub round_id: String,
-    pub bundle_count: u32,
-    pub delegation_workflows: Vec<ApiDelegationWorkflowRecovery>,
-    pub delegation_tx_hashes: Vec<ApiDelegationTxRecovery>,
-    pub votes: Vec<ApiVoteRecord>,
-    pub vote_workflows: Vec<ApiVoteWorkflowRecovery>,
-    pub vote_tx_hashes: Vec<ApiVoteTxRecovery>,
-    pub commitment_bundles: Vec<ApiCommitmentBundleRecovery>,
-    pub share_workflows: Vec<ApiShareWorkflowRecovery>,
-    pub share_delegations: Vec<ApiShareDelegationRecord>,
-    pub unconfirmed_share_delegations: Vec<ApiShareDelegationRecord>,
-}
+pub type ApiRoundRecoveryState = recovery::RoundRecoveryState;
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -600,38 +484,6 @@ impl From<ProofEvent> for ApiDelegationProofEvent {
     }
 }
 
-impl From<VanWitness> for ApiVanWitness {
-    fn from(witness: VanWitness) -> Self {
-        Self {
-            auth_path: witness.auth_path,
-            position: witness.position,
-            anchor_height: witness.anchor_height,
-        }
-    }
-}
-
-impl From<ApiVanWitness> for VanWitness {
-    fn from(witness: ApiVanWitness) -> Self {
-        Self {
-            auth_path: witness.auth_path,
-            position: witness.position,
-            anchor_height: witness.anchor_height,
-        }
-    }
-}
-
-impl From<ApiDraftVote> for vote::DraftVote {
-    fn from(draft: ApiDraftVote) -> Self {
-        Self {
-            proposal_id: draft.proposal_id,
-            choice: draft.choice,
-            num_options: draft.num_options,
-            vc_tree_position: draft.vc_tree_position,
-            single_share: draft.single_share,
-        }
-    }
-}
-
 impl From<vote::VoteCommitEvent> for ApiVoteCommitEvent {
     fn from(event: vote::VoteCommitEvent) -> Self {
         match event {
@@ -683,209 +535,6 @@ impl From<vote::VoteCommitEvent> for ApiVoteCommitEvent {
                 proof_progress: None,
                 commitments: None,
             },
-        }
-    }
-}
-
-impl From<vote::WireEncryptedShare> for ApiWireEncryptedShare {
-    fn from(share: vote::WireEncryptedShare) -> Self {
-        Self {
-            ciphertext1: share.ciphertext1,
-            ciphertext2: share.ciphertext2,
-            share_index: share.share_index,
-        }
-    }
-}
-
-impl From<vote::VoteSharePayload> for ApiVoteSharePayload {
-    fn from(payload: vote::VoteSharePayload) -> Self {
-        Self {
-            shares_hash: payload.shares_hash,
-            proposal_id: payload.proposal_id,
-            vote_decision: payload.vote_decision,
-            encrypted_share: payload.encrypted_share.into(),
-            tree_position: payload.tree_position,
-            all_encrypted_shares: payload
-                .all_encrypted_shares
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            share_comms: payload.share_comms,
-            primary_blind: payload.primary_blind,
-        }
-    }
-}
-
-impl From<vote::SignedVoteCommitment> for ApiSignedVoteCommitment {
-    fn from(commitment: vote::SignedVoteCommitment) -> Self {
-        Self {
-            proposal_id: commitment.proposal_id,
-            choice: commitment.choice,
-            vote_round_id: commitment.vote_round_id,
-            van_nullifier: commitment.van_nullifier,
-            vote_authority_note_new: commitment.vote_authority_note_new,
-            vote_commitment: commitment.vote_commitment,
-            proof: commitment.proof,
-            encrypted_shares: commitment
-                .encrypted_shares
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            share_payloads: commitment
-                .share_payloads
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            anchor_height: commitment.anchor_height,
-            shares_hash: commitment.shares_hash,
-            share_comms: commitment.share_comms,
-            r_vpk_bytes: commitment.r_vpk_bytes,
-            vote_auth_sig: commitment.vote_auth_sig,
-            commitment_bundle_json: commitment.commitment_bundle_json,
-        }
-    }
-}
-
-impl From<vote::SignedVoteCommitments> for ApiSignedVoteCommitments {
-    fn from(commitments: vote::SignedVoteCommitments) -> Self {
-        Self {
-            bundle_index: commitments.bundle_index,
-            commitments: commitments
-                .commitments
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-        }
-    }
-}
-
-impl From<vote::VoteRecord> for ApiVoteRecord {
-    fn from(record: vote::VoteRecord) -> Self {
-        Self {
-            proposal_id: record.proposal_id,
-            bundle_index: record.bundle_index,
-            choice: record.choice,
-            submitted: record.submitted,
-        }
-    }
-}
-
-impl From<recovery::CommitmentBundleRecovery> for ApiCommitmentBundleRecovery {
-    fn from(record: recovery::CommitmentBundleRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            commitment_bundle_json: record.commitment_bundle_json,
-            vc_tree_position: record.vc_tree_position,
-        }
-    }
-}
-
-impl From<recovery::DelegationTxRecovery> for ApiDelegationTxRecovery {
-    fn from(record: recovery::DelegationTxRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            tx_hash: record.tx_hash,
-        }
-    }
-}
-
-impl From<recovery::VoteTxRecovery> for ApiVoteTxRecovery {
-    fn from(record: recovery::VoteTxRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            tx_hash: record.tx_hash,
-        }
-    }
-}
-
-impl From<recovery::DelegationWorkflowRecovery> for ApiDelegationWorkflowRecovery {
-    fn from(record: recovery::DelegationWorkflowRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            phase: record.phase,
-            tx_hash: record.tx_hash,
-            van_leaf_position: record.van_leaf_position,
-        }
-    }
-}
-
-impl From<recovery::VoteWorkflowRecovery> for ApiVoteWorkflowRecovery {
-    fn from(record: recovery::VoteWorkflowRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            phase: record.phase,
-            tx_hash: record.tx_hash,
-            vc_tree_position: record.vc_tree_position,
-            has_commitment_bundle: record.has_commitment_bundle,
-        }
-    }
-}
-
-impl From<recovery::ShareWorkflowRecovery> for ApiShareWorkflowRecovery {
-    fn from(record: recovery::ShareWorkflowRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            share_index: record.share_index,
-            phase: record.phase,
-        }
-    }
-}
-
-impl From<recovery::ShareDelegationRecord> for ApiShareDelegationRecord {
-    fn from(record: recovery::ShareDelegationRecord) -> Self {
-        Self {
-            round_id: record.round_id,
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            share_index: record.share_index,
-            sent_to_urls: record.sent_to_urls,
-            nullifier: record.nullifier,
-            phase: record.phase,
-            confirmed: record.confirmed,
-            submit_at: record.submit_at,
-            created_at: record.created_at,
-        }
-    }
-}
-
-impl From<recovery::RoundRecoveryState> for ApiRoundRecoveryState {
-    fn from(state: recovery::RoundRecoveryState) -> Self {
-        Self {
-            round_id: state.round_id,
-            bundle_count: state.bundle_count,
-            delegation_workflows: state
-                .delegation_workflows
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            delegation_tx_hashes: state
-                .delegation_tx_hashes
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            votes: state.votes.into_iter().map(Into::into).collect(),
-            vote_workflows: state.vote_workflows.into_iter().map(Into::into).collect(),
-            vote_tx_hashes: state.vote_tx_hashes.into_iter().map(Into::into).collect(),
-            commitment_bundles: state
-                .commitment_bundles
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            share_workflows: state.share_workflows.into_iter().map(Into::into).collect(),
-            share_delegations: state
-                .share_delegations
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            unconfirmed_share_delegations: state
-                .unconfirmed_share_delegations
-                .into_iter()
-                .map(Into::into)
-                .collect(),
         }
     }
 }
@@ -986,6 +635,61 @@ fn recovered_vote_share_wire_json_inner(
     vc_tree_position: u64,
     submit_at: u64,
 ) -> Result<String, String> {
+    let recovery = match zcash_voting::vote::parse_recovery(commitment_bundle_json) {
+        Ok(recovery) => recovery,
+        Err(parse_error) => {
+            return recovered_legacy_vote_share_wire_json_inner(
+                commitment_bundle_json,
+                proposal_id,
+                share_index,
+                vc_tree_position,
+                submit_at,
+            )
+            .map_err(|legacy_error| {
+                format!("parse vote recovery failed: {parse_error}; legacy parse failed: {legacy_error}")
+            });
+        }
+    };
+    if recovery.proposal_id != proposal_id {
+        return Err(format!(
+            "recovery proposal_id {} does not match requested {proposal_id}",
+            recovery.proposal_id
+        ));
+    }
+    let payload = zcash_voting::share::recover_payload(&recovery, share_index)
+        .map_err(|e| format!("recover share payload failed: {e}"))?;
+    let api_payload = ApiVoteSharePayload {
+        shares_hash: payload.shares_hash,
+        proposal_id: payload.proposal_id,
+        vote_decision: payload.vote_decision,
+        encrypted_share: ApiWireEncryptedShare {
+            ciphertext1: payload.enc_share.c1,
+            ciphertext2: payload.enc_share.c2,
+            share_index: payload.enc_share.share_index,
+        },
+        tree_position: payload.tree_position,
+        all_encrypted_shares: payload
+            .all_enc_shares
+            .into_iter()
+            .map(|share| ApiWireEncryptedShare {
+                ciphertext1: share.c1,
+                ciphertext2: share.c2,
+                share_index: share.share_index,
+            })
+            .collect(),
+        share_comms: payload.share_comms,
+        primary_blind: payload.primary_blind,
+    };
+    vote_share_wire_json_inner(&api_payload, Some(vc_tree_position), submit_at)
+}
+
+fn recovered_legacy_vote_share_wire_json_inner(
+    commitment_bundle_json: &str,
+    proposal_id: u32,
+    share_index: u32,
+    vc_tree_position: u64,
+    submit_at: u64,
+) -> Result<String, String> {
     let decoded: serde_json::Value = serde_json::from_str(commitment_bundle_json)
         .map_err(|e| format!("commitment bundle recovery JSON is malformed: {e}"))?;
     let object = decoded
@@ -1021,7 +725,7 @@ fn recovered_vote_share_wire_json_inner(
             format!("no stored share payload for proposal {proposal_id} share {share_index}")
         })?;
 
-    recovered_share_payload_json(
+    recovered_legacy_share_payload_json(
         payload,
         proposal_id,
         share_index,
@@ -1030,7 +734,7 @@ fn recovered_vote_share_wire_json_inner(
     )
 }
 
-fn recovered_share_payload_json(
+fn recovered_legacy_share_payload_json(
     payload: &serde_json::Value,
     proposal_id: u32,
     share_index: u32,
@@ -1041,14 +745,14 @@ fn recovered_share_payload_json(
         "shares_hash": b64_hex_field(payload, "shares_hash")?,
         "proposal_id": proposal_id,
         "vote_decision": u32_field(payload, "vote_decision")?,
-        "enc_share": recovered_wire_share_json(
+        "enc_share": recovered_legacy_wire_share_json(
             payload
                 .get("enc_share")
                 .ok_or_else(|| "stored share payload has no enc_share".to_string())?,
         )?,
         "share_index": share_index,
         "tree_position": json_safe_u64(vc_tree_position, "tree_position")?,
-        "all_enc_shares": recovered_wire_shares_json(
+        "all_enc_shares": recovered_legacy_wire_shares_json(
             payload
                 .get("all_enc_shares")
                 .ok_or_else(|| "stored share payload has no all_enc_shares list".to_string())?,
@@ -1063,7 +767,9 @@ fn recovered_share_payload_json(
     .map_err(|e| format!("serialize recovered vote share wire JSON failed: {e}"))
 }
 
-fn recovered_wire_share_json(share: &serde_json::Value) -> Result<serde_json::Value, String> {
+fn recovered_legacy_wire_share_json(
+    share: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
         "c1": b64_hex_field(share, "c1")?,
         "c2": b64_hex_field(share, "c2")?,
@@ -1071,13 +777,16 @@ fn recovered_wire_share_json(share: &serde_json::Value) -> Result<serde_json::Va
     }))
 }
 
-fn recovered_wire_shares_json(
+fn recovered_legacy_wire_shares_json(
     shares: &serde_json::Value,
 ) -> Result<Vec<serde_json::Value>, String> {
     let shares = shares
         .as_array()
         .ok_or_else(|| "stored share payload all_enc_shares is not a list".to_string())?;
-    shares.iter().map(recovered_wire_share_json).collect()
+    shares
+        .iter()
+        .map(recovered_legacy_wire_share_json)
+        .collect()
 }
 
 fn b64_hex_field(object: &serde_json::Value, key: &str) -> Result<String, String> {
@@ -1565,7 +1274,7 @@ pub fn mark_delegation_confirmed(
     van_leaf_position: u32,
 ) -> Result<(), String> {
     catch(|| {
-        recovery::mark_delegation_confirmed(
+        workflow::mark_delegation_confirmed(
             &db_path,
             &wallet_id,
             &round_id,
@@ -1659,7 +1368,6 @@ pub fn generate_van_witness(
             bundle_index,
             anchor_height,
         )
-        .map(Into::into)
     })
 }
 
@@ -1735,12 +1443,11 @@ pub fn build_vote_commitments(
         &round_id,
         bundle_index,
         &hotkey_seed,
-        van_witness.into(),
-        draft_votes.into_iter().map(Into::into).collect(),
+        van_witness,
+        draft_votes,
         |_| {},
         cancellation,
     )
-    .map(Into::into)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1773,8 +1480,8 @@ pub async fn build_vote_commitments_with_progress(
             &round_id,
             bundle_index,
             &hotkey_seed,
-            van_witness.into(),
-            draft_votes.into_iter().map(Into::into).collect(),
+            van_witness,
+            draft_votes,
             move |event| {
                 if progress_sink.add(event.into()).is_err() {
                     progress_cancellation.cancel_local();
@@ -1785,8 +1492,7 @@ pub async fn build_vote_commitments_with_progress(
         )
     })
     .await
-    .map_err(|e| format!("vote commitment task failed: {e}"))?
-    .map(ApiSignedVoteCommitments::from)?;
+    .map_err(|e| format!("vote commitment task failed: {e}"))??;
 
     if sink
         .add(ApiVoteCommitEvent {
@@ -1809,10 +1515,7 @@ pub fn get_votes(
     wallet_id: String,
     round_id: String,
 ) -> Result<Vec<ApiVoteRecord>, String> {
-    catch(|| {
-        vote::get_votes(&db_path, &wallet_id, &round_id)
-            .map(|records| records.into_iter().map(Into::into).collect())
-    })
+    catch(|| vote::get_votes(&db_path, &wallet_id, &round_id))
 }
 
 /// Compute the deterministic share nullifier as lowercase 64-character hex.
@@ -1832,7 +1535,7 @@ pub fn get_round_recovery_state(
     wallet_id: String,
     round_id: String,
 ) -> Result<ApiRoundRecoveryState, String> {
-    catch(|| recovery::get_round_recovery_state(&db_path, &wallet_id, &round_id).map(Into::into))
+    catch(|| recovery::get_round_recovery_state(&db_path, &wallet_id, &round_id))
 }
 
 /// Store the broadcast transaction hash for one vote.
@@ -1848,7 +1551,7 @@ pub fn store_vote_tx_hash(
     tx_hash: String,
 ) -> Result<(), String> {
     catch(|| {
-        recovery::store_vote_tx_hash(
+        workflow::mark_vote_submitted(
             &db_path,
             &wallet_id,
             &round_id,
@@ -1868,7 +1571,7 @@ pub fn mark_vote_submitted(
     tx_hash: String,
 ) -> Result<(), String> {
     catch(|| {
-        recovery::store_vote_tx_hash(
+        workflow::mark_vote_submitted(
             &db_path,
             &wallet_id,
             &round_id,
@@ -1892,7 +1595,7 @@ pub fn mark_vote_confirmed(
     commitment_bundle_json: String,
 ) -> Result<(), String> {
     catch(|| {
-        recovery::mark_vote_confirmed(
+        workflow::mark_vote_confirmed(
             &db_path,
             &wallet_id,
             &round_id,
@@ -1951,7 +1654,6 @@ pub fn get_commitment_bundle(
 ) -> Result<Option<ApiCommitmentBundleRecovery>, String> {
     catch(|| {
         recovery::get_commitment_bundle(&db_path, &wallet_id, &round_id, bundle_index, proposal_id)
-            .map(|bundle| bundle.map(Into::into))
     })
 }
 
@@ -1969,7 +1671,7 @@ pub fn record_share_delegation(
     submit_at: u64,
 ) -> Result<(), String> {
     catch(|| {
-        recovery::record_share_delegation(
+        workflow::record_share_delegation(
             &db_path,
             &wallet_id,
             &round_id,
@@ -1989,10 +1691,7 @@ pub fn get_share_delegations(
     wallet_id: String,
     round_id: String,
 ) -> Result<Vec<ApiShareDelegationRecord>, String> {
-    catch(|| {
-        recovery::get_share_delegations(&db_path, &wallet_id, &round_id)
-            .map(|records| records.into_iter().map(Into::into).collect())
-    })
+    catch(|| recovery::get_share_delegations(&db_path, &wallet_id, &round_id))
 }
 
 /// Load only unconfirmed helper-server share delegation records for retry.
@@ -2001,10 +1700,7 @@ pub fn get_unconfirmed_share_delegations(
     wallet_id: String,
     round_id: String,
 ) -> Result<Vec<ApiShareDelegationRecord>, String> {
-    catch(|| {
-        recovery::get_unconfirmed_share_delegations(&db_path, &wallet_id, &round_id)
-            .map(|records| records.into_iter().map(Into::into).collect())
-    })
+    catch(|| recovery::get_unconfirmed_share_delegations(&db_path, &wallet_id, &round_id))
 }
 
 /// Mark one delegated share as confirmed on-chain.
@@ -2017,7 +1713,7 @@ pub fn mark_share_confirmed(
     share_index: u32,
 ) -> Result<(), String> {
     catch(|| {
-        recovery::mark_share_confirmed(
+        workflow::mark_share_confirmed(
             &db_path,
             &wallet_id,
             &round_id,
@@ -2244,7 +1940,58 @@ mod tests {
         let expected = r#"{"all_enc_shares":[{"c1":"Aw==","c2":"BA==","share_index":1},{"c1":"BQ==","c2":"Bg==","share_index":2}],"enc_share":{"c1":"Aw==","c2":"BA==","share_index":1},"primary_blind":"CQ==","proposal_id":42,"share_comms":["Bw==","CA=="],"share_index":1,"shares_hash":"AQ==","submit_at":123,"tree_position":99,"vote_decision":2}"#;
         assert_eq!(live, expected);
 
-        let recovery_json = serde_json::json!({
+        let recovery_json =
+            zcash_voting::vote::serialize_recovery(&zcash_voting::vote::VoteRecoveryBundle {
+                vote_round_id: "00".repeat(32),
+                bundle_index: 0,
+                proposal_id: 42,
+                vote_decision: 2,
+                anchor_height: 10,
+                vc_tree_position: 55,
+                single_share: false,
+                num_options: 3,
+                van_nullifier: [0; 32],
+                vote_authority_note_new: [0; 32],
+                vote_commitment: [0; 32],
+                proof: vec![0],
+                shares_hash: [1; 32],
+                r_vpk: [0; 32],
+                alpha_v: [0; 32],
+                vote_auth_sig: [0; 64],
+                encrypted_shares: vec![
+                    zcash_voting::EncryptedShare {
+                        c1: vec![3],
+                        c2: vec![4],
+                        share_index: 1,
+                        plaintext_value: 1,
+                        randomness: vec![0],
+                    },
+                    zcash_voting::EncryptedShare {
+                        c1: vec![5],
+                        c2: vec![6],
+                        share_index: 2,
+                        plaintext_value: 2,
+                        randomness: vec![0],
+                    },
+                ],
+                share_blinds: vec![[9; 32], [10; 32]],
+                share_comms: vec![[7; 32], [8; 32]],
+            })
+            .unwrap();
+        let recovered = recovered_vote_share_wire_json(recovery_json, 42, 1, 99, 0).unwrap();
+        let recovered: serde_json::Value = serde_json::from_str(&recovered).unwrap();
+        assert_eq!(recovered["proposal_id"], 42);
+        assert_eq!(recovered["vote_decision"], 2);
+        assert_eq!(recovered["share_index"], 1);
+        assert_eq!(recovered["tree_position"], 99);
+        assert_eq!(recovered["submit_at"], 0);
+        assert_eq!(recovered["enc_share"]["c1"], "Aw==");
+        assert_eq!(recovered["all_enc_shares"].as_array().unwrap().len(), 2);
+        assert_eq!(recovered["shares_hash"], b64(&[1; 32]));
+        assert_eq!(recovered["primary_blind"], b64(&[9; 32]));
+        assert_eq!(recovered["share_comms"][0], b64(&[7; 32]));
+
+        let legacy_recovery_json = serde_json::json!({
             "format": "vizor_vote_commitment_bundle_recovery_v1",
             "share_payloads": [{
                 "shares_hash": "01",
@@ -2261,9 +2008,10 @@ mod tests {
             }]
         })
         .to_string();
-        let recovered = recovered_vote_share_wire_json(recovery_json, 42, 1, 99, 0).unwrap();
-        let expected_recovered = r#"{"all_enc_shares":[{"c1":"Aw==","c2":"BA==","share_index":1},{"c1":"BQ==","c2":"Bg==","share_index":2}],"enc_share":{"c1":"Aw==","c2":"BA==","share_index":1},"primary_blind":"CQ==","proposal_id":42,"share_comms":["Bw==","CA=="],"share_index":1,"shares_hash":"AQ==","submit_at":0,"tree_position":99,"vote_decision":2}"#;
-        assert_eq!(recovered, expected_recovered);
+        let legacy_recovered =
+            recovered_vote_share_wire_json(legacy_recovery_json, 42, 1, 99, 0).unwrap();
+        let expected_legacy = r#"{"all_enc_shares":[{"c1":"Aw==","c2":"BA==","share_index":1},{"c1":"BQ==","c2":"Bg==","share_index":2}],"enc_share":{"c1":"Aw==","c2":"BA==","share_index":1},"primary_blind":"CQ==","proposal_id":42,"share_comms":["Bw==","CA=="],"share_index":1,"shares_hash":"AQ==","submit_at":0,"tree_position":99,"vote_decision":2}"#;
+        assert_eq!(legacy_recovered, expected_legacy);
     }
 
     #[test]

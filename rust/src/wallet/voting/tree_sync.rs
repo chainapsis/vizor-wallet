@@ -1,9 +1,6 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex, OnceLock},
-};
+use std::sync::OnceLock;
 
-use zcash_voting::{storage::VotingDb, tree_sync::VoteTreeSync};
+use zcash_voting::storage::VotingDb;
 
 use super::{bundle::validate_bundle_index, state};
 
@@ -19,14 +16,6 @@ pub struct VanWitness {
     pub anchor_height: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct RegistryKey {
-    db_path: String,
-    wallet_id: String,
-}
-
-static TREE_SYNC_REGISTRY: OnceLock<Mutex<HashMap<RegistryKey, Arc<VoteTreeSync>>>> =
-    OnceLock::new();
 static RUSTLS_PROVIDER: OnceLock<()> = OnceLock::new();
 
 /// Install the Rustls ring provider before constructing the tree HTTP transport.
@@ -38,37 +27,6 @@ fn ensure_rustls_provider() {
     RUSTLS_PROVIDER.get_or_init(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
     });
-}
-
-fn registry() -> &'static Mutex<HashMap<RegistryKey, Arc<VoteTreeSync>>> {
-    TREE_SYNC_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Build the stable identity for a process-local vote-tree sync session.
-fn registry_key(db_path: &str, wallet_id: &str) -> RegistryKey {
-    RegistryKey {
-        db_path: db_path.to_string(),
-        wallet_id: wallet_id.to_string(),
-    }
-}
-
-/// Return the shared `VoteTreeSync` for a voting DB and wallet.
-///
-/// Vizor opens `VotingDb` per operation, but upstream `VoteTreeSync` keeps
-/// in-memory `TreeClient` state that must be shared between sync and witness
-/// generation calls. This registry bridges those two lifetime models and is
-/// cleared only by explicit account-wide lifecycle cleanup.
-fn tree_sync_for(db_path: &str, wallet_id: &str) -> Result<Arc<VoteTreeSync>, String> {
-    ensure_rustls_provider();
-
-    let key = registry_key(db_path, wallet_id);
-    let mut guard = registry()
-        .lock()
-        .map_err(|e| format!("VoteTreeSync registry lock poisoned: {e}"))?;
-    Ok(guard
-        .entry(key)
-        .or_insert_with(|| Arc::new(VoteTreeSync::new()))
-        .clone())
 }
 
 /// Sync the vote commitment tree for `round_id` from a chain node URL.
@@ -102,15 +60,14 @@ pub fn sync_commitment_tree(
 /// that already hold a database handle can avoid reopening it, while still using
 /// the same process-local `VoteTreeSync` registry.
 pub fn sync_commitment_tree_with_db(
-    db_path: &str,
-    wallet_id: &str,
+    _db_path: &str,
+    _wallet_id: &str,
     voting_db: &VotingDb,
     round_id: &str,
     node_url: &str,
 ) -> Result<u32, String> {
-    let tree_sync = tree_sync_for(db_path, wallet_id)?;
-    tree_sync
-        .sync(voting_db, round_id, node_url)
+    ensure_rustls_provider();
+    zcash_voting::precompute::sync_vote_tree(voting_db, round_id, node_url)
         .map_err(|e| format!("sync_vote_tree failed: {e}"))
 }
 
@@ -158,20 +115,19 @@ pub fn generate_van_witness(
 /// underlying `VoteTreeSync` requires its in-memory `TreeClient` to have synced
 /// the round before witnesses can be produced.
 pub fn generate_van_witness_with_db(
-    db_path: &str,
-    wallet_id: &str,
+    _db_path: &str,
+    _wallet_id: &str,
     voting_db: &VotingDb,
     round_id: &str,
     bundle_index: u32,
     anchor_height: u32,
 ) -> Result<VanWitness, String> {
+    ensure_rustls_provider();
     let bundle_count = voting_db
         .get_bundle_count(round_id)
         .map_err(|e| format!("get_bundle_count failed: {e}"))?;
     validate_bundle_index(bundle_count, bundle_index, "voting")?;
-    let tree_sync = tree_sync_for(db_path, wallet_id)?;
-    tree_sync
-        .generate_van_witness(voting_db, round_id, bundle_index, anchor_height)
+    zcash_voting::precompute::van_witness(voting_db, round_id, bundle_index, anchor_height)
         .map(|witness| VanWitness {
             auth_path: witness.auth_path.iter().map(|h| h.to_vec()).collect(),
             position: witness.position,
@@ -189,10 +145,10 @@ pub fn reset_tree_client(
     wallet_id: &str,
     round_id: Option<&str>,
 ) -> Result<(), String> {
+    ensure_rustls_provider();
     let round_id = round_id.unwrap_or("");
-    let tree_sync = tree_sync_for(db_path, wallet_id)?;
-    tree_sync
-        .reset(round_id)
+    let db = state::open_voting_db(db_path, wallet_id)?;
+    zcash_voting::precompute::reset_vote_tree(&db, round_id)
         .map_err(|e| format!("reset_tree_client failed: {e}"))
 }
 
@@ -202,11 +158,11 @@ pub fn reset_tree_client(
 /// account removal, or wallet reset. Round-scoped cleanup should keep this
 /// client because `VoteTreeSync` can serve multiple rounds for the same wallet.
 pub fn clear_tree_sync_session(db_path: &str, wallet_id: &str) -> Result<usize, String> {
-    let key = registry_key(db_path, wallet_id);
-    let mut guard = registry()
-        .lock()
-        .map_err(|e| format!("VoteTreeSync registry lock poisoned: {e}"))?;
-    Ok(usize::from(guard.remove(&key).is_some()))
+    ensure_rustls_provider();
+    let db = state::open_voting_db(db_path, wallet_id)?;
+    zcash_voting::precompute::reset_vote_tree(&db, "")
+        .map_err(|e| format!("clear_tree_sync_session failed: {e}"))?;
+    Ok(1)
 }
 
 #[cfg(test)]
@@ -222,35 +178,6 @@ mod tests {
     use vote_commitment_tree::{MemoryTreeServer, MerkleHashVote};
 
     const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
-
-    #[test]
-    fn tree_sync_registry_reuses_session_clients() {
-        let first = tree_sync_for("/tmp/voting-a.sqlite", "wallet-1").unwrap();
-        let second = tree_sync_for("/tmp/voting-a.sqlite", "wallet-1").unwrap();
-        let other_wallet = tree_sync_for("/tmp/voting-a.sqlite", "wallet-2").unwrap();
-        let other_db = tree_sync_for("/tmp/voting-b.sqlite", "wallet-1").unwrap();
-
-        assert!(Arc::ptr_eq(&first, &second));
-        assert!(!Arc::ptr_eq(&first, &other_wallet));
-        assert!(!Arc::ptr_eq(&first, &other_db));
-    }
-
-    #[test]
-    fn clear_tree_sync_session_drops_registry_entry() {
-        let first = tree_sync_for("/tmp/voting-clear.sqlite", "wallet-1").unwrap();
-
-        assert_eq!(
-            clear_tree_sync_session("/tmp/voting-clear.sqlite", "wallet-1").unwrap(),
-            1
-        );
-        assert_eq!(
-            clear_tree_sync_session("/tmp/voting-clear.sqlite", "wallet-1").unwrap(),
-            0
-        );
-        let second = tree_sync_for("/tmp/voting-clear.sqlite", "wallet-1").unwrap();
-
-        assert!(!Arc::ptr_eq(&first, &second));
-    }
 
     #[test]
     fn reset_tree_client_accepts_round_and_all_rounds() {
