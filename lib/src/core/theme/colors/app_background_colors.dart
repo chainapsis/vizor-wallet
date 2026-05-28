@@ -5,6 +5,7 @@ import '../primitives.dart';
 /// Depth hierarchy for the app shell.
 ///
 /// Layered from deepest to highest:
+/// * [window] — Desktop window backing and matching onboarding pane background.
 /// * [ground] — Scaffold background, deepest layer.
 /// * [base] — Primary content surface, main panels.
 /// * [raised] — Cards, modals, sidebars, drawers.
@@ -20,6 +21,7 @@ import '../primitives.dart';
 /// * [homeCard] — Exception surface for the home balance card. Theme-invariant.
 class AppBackgroundColors {
   const AppBackgroundColors({
+    required this.window,
     required this.ground,
     required this.base,
     required this.raised,
@@ -40,6 +42,7 @@ class AppBackgroundColors {
     required this.homeCard,
   });
 
+  final Color window;
   final Color ground;
   final Color base;
   final Color raised;
@@ -60,6 +63,7 @@ class AppBackgroundColors {
   final Color homeCard;
 
   static const dark = AppBackgroundColors(
+    window: Color(0xFF0F0F0F),
     ground: Primitives.p0Dark,
     base: Primitives.p50Dark,
     raised: Primitives.p100Dark,
@@ -81,6 +85,7 @@ class AppBackgroundColors {
   );
 
   static const light = AppBackgroundColors(
+    window: Color(0xFFF5F5F5),
     ground: Primitives.p0Light,
     base: Primitives.p50Light,
     raised: Primitives.p100Light,

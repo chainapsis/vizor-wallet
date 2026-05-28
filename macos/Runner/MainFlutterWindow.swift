@@ -9,6 +9,23 @@ private func titlebarTitleColor(for brightness: String) -> NSColor {
   return NSColor.black.withAlphaComponent(0.8)
 }
 
+private func appWindowBackgroundColor(for brightness: String) -> NSColor {
+  if brightness == "dark" {
+    return NSColor(
+      srgbRed: 15.0 / 255.0,
+      green: 15.0 / 255.0,
+      blue: 15.0 / 255.0,
+      alpha: 1
+    )
+  }
+  return NSColor(
+    srgbRed: 245.0 / 255.0,
+    green: 245.0 / 255.0,
+    blue: 245.0 / 255.0,
+    alpha: 1
+  )
+}
+
 private func currentSystemBrightness() -> String {
   let match = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
   return match == .darkAqua ? "dark" : "light"
@@ -93,9 +110,9 @@ final class WindowAppearanceChannel {
     visualEffectView?.appearance = appearance
     titleLabel?.appearance = appearance
     titleLabel?.textColor = titlebarTitleColor(for: brightness)
-    visualEffectView?.material = .fullScreenUI
-    visualEffectView?.state = .active
-    window?.backgroundColor = .clear
+    DesktopWindowBootstrapMacOS.setOpaqueBackgroundColor(
+      appWindowBackgroundColor(for: brightness)
+    )
     window?.invalidateShadow()
   }
 }
@@ -484,7 +501,9 @@ class MainFlutterWindow: NSWindow {
 
   override func awakeFromNib() {
     let desktopWindowViewController = DesktopWindowBootstrapMacOS.start(
-      mainFlutterWindow: self
+      mainFlutterWindow: self,
+      visualStyle: .opaque,
+      backgroundColor: appWindowBackgroundColor(for: currentSystemBrightness())
     )
     let flutterViewController = desktopWindowViewController.flutterViewController
     let titleLabel = makeTitleLabel()

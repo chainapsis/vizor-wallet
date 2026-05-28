@@ -49,13 +49,12 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Transparent so the flutter_acrylic window effect on the native
-      // surface shows through the outer gap below.
+      // Transparent so the desktop window background can fill the outer
+      // gap consistently across macOS, Windows, and Linux.
       backgroundColor: Colors.transparent,
       body: SafeArea(
         child: Padding(
-          // Only the 8 dp gap around the pane is transparent — this is
-          // the strip where the native acrylic is visible.
+          // Only the 8 dp gap around the pane is transparent.
           padding: const EdgeInsets.all(AppSpacing.xs),
           child: _Pane(
             showBackButton: widget.showBackButton,
@@ -97,12 +96,11 @@ class _Pane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
     return Container(
       width: double.infinity,
       height: double.infinity,
       decoration: BoxDecoration(
-        color: isDark ? colors.background.ground : colors.background.base,
+        color: colors.background.window,
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       clipBehavior: Clip.antiAlias,

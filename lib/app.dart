@@ -77,7 +77,9 @@ Future<void> initializeZcashWalletRuntime() async {
   await initializeDesktopWindow();
   if (isDesktopLayoutPlatform) {
     log('runtime: initializing desktop window visuals');
-    await DesktopWindowBootstrap.initialize();
+    await DesktopWindowBootstrap.initialize(
+      visualStyle: DesktopWindowVisualStyle.opaque,
+    );
     if (!Platform.isWindows) {
       await showDesktopWindow();
     }
@@ -676,7 +678,7 @@ class ZcashWalletApp extends ConsumerWidget {
               child: _WindowsUpdatePromptHost(
                 router: router,
                 child: _RpcEndpointFailoverToastListener(
-                  child: _LinuxOpaqueWindowBackground(
+                  child: _DesktopOpaqueWindowBackground(
                     child: DesktopWindowTitlebarSafeArea(
                       child: GestureDetector(
                         onTap: () {
@@ -1151,17 +1153,20 @@ Future<void> _openLinuxUpdateRelease(LinuxUpdateInfo update) async {
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-class _LinuxOpaqueWindowBackground extends StatelessWidget {
-  const _LinuxOpaqueWindowBackground({required this.child});
+class _DesktopOpaqueWindowBackground extends StatelessWidget {
+  const _DesktopOpaqueWindowBackground({required this.child});
 
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.linux) {
+    if (kIsWeb ||
+        (defaultTargetPlatform != TargetPlatform.macOS &&
+            defaultTargetPlatform != TargetPlatform.windows &&
+            defaultTargetPlatform != TargetPlatform.linux)) {
       return child;
     }
-    return ColoredBox(color: context.colors.background.ground, child: child);
+    return ColoredBox(color: context.colors.background.window, child: child);
   }
 }
 

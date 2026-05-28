@@ -147,12 +147,11 @@ class _LostPasswordPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isDark = AppTheme.of(context) == AppThemeData.dark;
     return Container(
       width: double.infinity,
       height: double.infinity,
       decoration: BoxDecoration(
-        color: isDark ? colors.background.ground : colors.background.base,
+        color: colors.background.window,
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       clipBehavior: Clip.antiAlias,
