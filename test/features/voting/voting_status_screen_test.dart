@@ -75,6 +75,9 @@ void main() {
         votingRecoveryServiceProvider.overrideWithValue(
           VotingRecoveryService(api: _FakeVotingRecoveryApi()),
         ),
+        votingDraftPersistenceProvider.overrideWithValue(
+          _MemoryVotingDraftPersistence(),
+        ),
         votingRustApiProvider.overrideWithValue(_NoopVotingRustApi()),
         votingWalletSyncReadinessCheckerProvider.overrideWithValue(
           _FakeVotingWalletSyncReadinessChecker(),
@@ -88,6 +91,7 @@ void main() {
       UncontrolledProviderScope(container: container, child: _statusHarness()),
     );
     await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text('Software Account Required'));
 
     expect(find.text('Software Account Required'), findsOneWidget);
     expect(
@@ -116,6 +120,10 @@ void main() {
       UncontrolledProviderScope(container: container, child: _statusHarness()),
     );
     await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.text('Choose at least one vote before submitting.'),
+    );
 
     expect(find.text('Choose at least one vote before submitting.'), findsOne);
     expect(find.text('Retry'), findsOne);
@@ -498,12 +506,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Confirmed by helper'), findsNothing);
-    for (var i = 0; i < 5; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('submission confirmed route').evaluate().isNotEmpty) {
-        break;
-      }
-    }
+    await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
     expect(find.text('submission confirmed route'), findsOne);
     expect(
@@ -591,10 +594,7 @@ void main() {
         child: _statusHarness(keystoneScanResult: const [3]),
       ),
     );
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('Sign Bundle 1 of 1').evaluate().isNotEmpty) break;
-    }
+    await _pumpUntilFound(tester, find.text('Sign Bundle 1 of 1'));
 
     expect(find.text('Sign Bundle 1 of 1'), findsOneWidget);
     expect(find.text('Memo'), findsOneWidget);
@@ -609,12 +609,7 @@ void main() {
 
     expect(find.text('keystone scan route'), findsOneWidget);
     await tester.tap(find.text('Return Signature'));
-    for (var i = 0; i < 20; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('submission confirmed route').evaluate().isNotEmpty) {
-        break;
-      }
-    }
+    await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
     expect(find.text('submission confirmed route'), findsOneWidget);
   });
@@ -699,18 +694,12 @@ void main() {
         child: _statusHarness(keystoneScanResult: const [3]),
       ),
     );
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('Sign Bundle 1 of 2').evaluate().isNotEmpty) break;
-    }
+    await _pumpUntilFound(tester, find.text('Sign Bundle 1 of 2'));
 
     await tester.tap(find.text('Scan Signature'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Return Signature'));
-    for (var i = 0; i < 20; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('Skip').evaluate().isNotEmpty) break;
-    }
+    await _pumpUntilFound(tester, find.text('Skip'));
 
     expect(find.text('Sign Bundle 2 of 2'), findsOneWidget);
     expect(find.text('Skip'), findsOneWidget);
@@ -721,12 +710,7 @@ void main() {
     expect(find.text('Use signed bundles only?'), findsOneWidget);
 
     await tester.tap(find.text('Use Signed Bundles'));
-    for (var i = 0; i < 40; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('submission confirmed route').evaluate().isNotEmpty) {
-        break;
-      }
-    }
+    await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
     expect(find.text('submission confirmed route'), findsOneWidget);
   });
@@ -764,10 +748,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: _statusHarness()),
     );
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('Sign Bundle 1 of 1').evaluate().isNotEmpty) break;
-    }
+    await _pumpUntilFound(tester, find.text('Sign Bundle 1 of 1'));
 
     expect(tester.takeException(), isNull);
     expect(find.byType(SingleChildScrollView), findsOneWidget);
@@ -809,15 +790,10 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: _statusHarness()),
     );
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-      if (find
-          .textContaining('Failed to prepare Keystone voting QR')
-          .evaluate()
-          .isNotEmpty) {
-        break;
-      }
-    }
+    await _pumpUntilFound(
+      tester,
+      find.textContaining('Failed to prepare Keystone voting QR'),
+    );
 
     expect(
       find.textContaining('Failed to prepare Keystone voting QR'),
@@ -826,6 +802,17 @@ void main() {
     expect(find.text('Retry'), findsOneWidget);
     expect(find.text('Scan Signature'), findsNothing);
   });
+}
+
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  int attempts = 50,
+}) async {
+  for (var i = 0; i < attempts; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (finder.evaluate().isNotEmpty) return;
+  }
 }
 
 ProviderContainer _statusContainer({
@@ -876,6 +863,9 @@ ProviderContainer _statusContainer({
       ),
       votingRecoveryServiceProvider.overrideWithValue(
         VotingRecoveryService(api: recoveryApi ?? _FakeVotingRecoveryApi()),
+      ),
+      votingDraftPersistenceProvider.overrideWithValue(
+        _MemoryVotingDraftPersistence(),
       ),
       votingPirResolverProvider.overrideWithValue(
         const _MatchedPirSnapshotResolver(),
@@ -1313,6 +1303,20 @@ class _FakeVotingConfigSourceStore implements VotingConfigSourceStore {
   @override
   Future<void> writeSavedSourcesJson(String savedSourcesJson) async {
     this.savedSourcesJson = savedSourcesJson;
+  }
+}
+
+class _MemoryVotingDraftPersistence implements VotingDraftPersistence {
+  final _drafts = <VotingSessionKey, VotingDraftState>{};
+
+  @override
+  Future<VotingDraftState> load(VotingSessionKey key) async {
+    return _drafts[key] ?? const VotingDraftState();
+  }
+
+  @override
+  Future<void> save(VotingSessionKey key, VotingDraftState draft) async {
+    _drafts[key] = draft;
   }
 }
 

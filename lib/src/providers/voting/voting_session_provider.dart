@@ -546,7 +546,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
-  Future<void> castVotes({required List<rust_voting.ApiDraftVote> draftVotes}) {
+  Future<void> castVotes({
+    required List<rust_voting.ApiDraftVote> draftVotes,
+    List<int>? allProposalIds,
+  }) {
     return _enqueue(() async {
       final current = await future;
       final context = await _loadContext(_roundId);
@@ -578,16 +581,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       // Write durable ballot intent before the cast loop so recovery can
       // resume from the correct choice if the user quits mid-vote.
       try {
-        for (final draftVote in effectiveDraftVotes) {
+        final draftVotesByProposal = {
+          for (final draftVote in effectiveDraftVotes)
+            draftVote.proposalId: draftVote,
+        };
+        final intentProposalIds = {
+          ...?allProposalIds,
+          ...draftVotesByProposal.keys,
+        }.toList()..sort();
+        for (final proposalId in intentProposalIds) {
+          final draftVote = draftVotesByProposal[proposalId];
           await ref
               .read(votingRecoveryServiceProvider)
               .setBallotIntent(
                 dbPath: context.dbPath,
                 walletId: context.accountUuid,
                 roundId: context.round.roundId,
-                proposalId: draftVote.proposalId,
-                skipped: false,
-                choice: draftVote.choice,
+                proposalId: proposalId,
+                skipped: draftVote == null,
+                choice: draftVote?.choice,
               );
         }
       } catch (e) {
@@ -644,15 +656,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             draftVote.proposalId,
           ).toList()..sort(),
       };
-      for (final draftVote in effectiveDraftVotes) {
-        if (bundleIndexesByProposal[draftVote.proposalId]?.isEmpty == true &&
-            _proposalHasVoteArtifact(plan, draftVote.proposalId)) {
-          await _clearPersistedDraftChoice(
-            context,
-            proposalId: draftVote.proposalId,
-          );
-        }
-      }
       final voteWork = [
         for (final draftVote in effectiveDraftVotes)
           _DraftVoteWork(
@@ -849,10 +852,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           );
         }
         completedQuestions++;
-        await _clearPersistedDraftChoice(
-          context,
-          proposalId: draftVote.proposalId,
-        );
         state = AsyncData(
           (state.value ?? current).copyWith(
             phase: VotingSessionPhase.castingVotes,
@@ -1520,6 +1519,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
 
       final refreshedPlan = await _loadResumePlan(context);
+      if (!refreshedPlan.hasPendingWork) {
+        await _clearPersistedDraftChoices(context);
+      }
       state = AsyncData(
         (state.value ?? current).copyWith(
           phase: refreshedPlan.hasPendingWork
@@ -2208,17 +2210,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return VotingSessionPhase.done;
   }
 
-  Future<void> _clearPersistedDraftChoice(
-    _VotingSessionContext context, {
-    required int proposalId,
-  }) async {
+  Future<void> _clearPersistedDraftChoices(
+    _VotingSessionContext context,
+  ) async {
     final draftKey = VotingSessionKey(
       roundId: context.round.roundId,
       accountUuid: context.accountUuid,
     );
     final notifier = ref.read(votingDraftProvider(draftKey).notifier);
-    await notifier.ensureLoaded();
-    notifier.clearChoice(proposalId);
+    final draft = await notifier.ensureLoaded();
+    for (final proposalId in draft.choices.keys.toList(growable: false)) {
+      notifier.clearChoice(proposalId);
+    }
   }
 
   static Set<int> _pendingVoteBundleIndexesForProposal(
@@ -2247,14 +2250,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       return false;
     }
     return !plan.voteTxHashesByKey.containsKey(key);
-  }
-
-  static bool _proposalHasVoteArtifact(VotingResumePlan plan, int proposalId) {
-    bool matches(VotingVoteKey key) => key.proposalId == proposalId;
-    return plan.votesByKey.keys.any(matches) ||
-        plan.votePhasesByKey.keys.any(matches) ||
-        plan.voteTxHashesByKey.keys.any(matches) ||
-        plan.commitmentBundlesByKey.keys.any(matches);
   }
 
   static String _hexFromBytes(List<int> bytes) {
