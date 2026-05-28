@@ -17,7 +17,7 @@ import 'widgetbook/widgetbook_app.dart';
 /// so the Dart side must explicitly `show()` it. The production
 /// `main.dart` does this via `initializeDesktopWindow()`; we reuse the
 /// same helper here so the Widgetbook window lands at the same default
-/// size / aspect ratio as the real app. Skipping the acrylic + transparent
+/// size as the real app. Skipping the acrylic + transparent
 /// setup on purpose — Widgetbook doesn't need window effects, and the
 /// opaque chrome is better for inspecting flat component previews.
 Future<void> main() async {

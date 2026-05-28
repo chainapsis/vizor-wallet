@@ -13,7 +13,8 @@ import 'package:window_manager/window_manager.dart';
 ///
 /// Mobile and web are permanently [small]. On desktop the OS window is
 /// reshaped to the selected ratio and its aspect ratio is enforced for
-/// user drag-resize.
+/// user drag-resize, except in macOS debug builds where constraints are
+/// skipped so development can exercise arbitrary window sizes.
 enum AppLayoutMode {
   large,
   small;
@@ -57,6 +58,11 @@ bool get isDesktopLayoutPlatform {
   return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 }
 
+bool get _skipDesktopWindowConstraints {
+  if (kIsWeb) return false;
+  return kDebugMode && Platform.isMacOS;
+}
+
 /// Decision boundary for inferring the current layout mode from the
 /// window's width/height ratio — the midpoint between the two
 /// configured aspect ratios. Above it the window is "landscape enough"
@@ -76,11 +82,12 @@ Future<void> initializeDesktopWindow({
 
   await windowManager.ensureInitialized();
 
+  final skipConstraints = _skipDesktopWindowConstraints;
   final options = Platform.isWindows
       ? WindowOptions(title: 'Vizor')
       : WindowOptions(
           size: initialMode.defaultSize,
-          minimumSize: initialMode.minimumSize,
+          minimumSize: skipConstraints ? null : initialMode.minimumSize,
           center: true,
           title: 'Vizor',
         );
@@ -89,8 +96,10 @@ Future<void> initializeDesktopWindow({
   if (Platform.isWindows) {
     await _applyWindowsClientAreaLayout(initialMode, center: true);
   } else {
-    await windowManager.setMinimumSize(initialMode.minimumSize);
-    await windowManager.setAspectRatio(initialMode.aspectRatio);
+    if (!skipConstraints) {
+      await windowManager.setMinimumSize(initialMode.minimumSize);
+      await windowManager.setAspectRatio(initialMode.aspectRatio);
+    }
     await windowManager.setSize(initialMode.defaultSize, animate: false);
   }
 }
@@ -122,6 +131,7 @@ Future<void> reapplyDesktopWindowConstraints({
   AppLayoutMode mode = AppLayoutMode.large,
 }) async {
   if (!isDesktopLayoutPlatform) return;
+  if (_skipDesktopWindowConstraints) return;
   if (Platform.isWindows) {
     await _applyWindowsClientAreaLayout(mode, resize: false);
   } else {
@@ -173,8 +183,10 @@ class AppLayoutNotifier extends Notifier<AppLayoutState> with WindowListener {
       if (Platform.isWindows) {
         await _applyWindowsClientAreaLayout(mode);
       } else {
-        await windowManager.setMinimumSize(mode.minimumSize);
-        await windowManager.setAspectRatio(mode.aspectRatio);
+        if (!_skipDesktopWindowConstraints) {
+          await windowManager.setMinimumSize(mode.minimumSize);
+          await windowManager.setAspectRatio(mode.aspectRatio);
+        }
         await windowManager.setSize(mode.defaultSize, animate: false);
       }
     } catch (e, st) {
