@@ -1,6 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use tonic::transport::Channel;
 use zcash_client_backend::{
@@ -30,7 +29,7 @@ use {
     },
     zcash_client_backend::{
         proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
-        wallet::{TransparentAddressMetadata, WalletTransparentOutput},
+        wallet::WalletTransparentOutput,
     },
     zcash_keys::encoding::AddressCodec as _,
     zcash_protocol::value::Zatoshis,
@@ -91,7 +90,6 @@ const SANDBLASTING_END: u32 = 2_050_000;
 const BATCH_SIZE_SANDBLASTING: u32 = 100;
 
 const SAPLING_ACTIVATION_HEIGHT: u32 = 419200;
-const EPHEMERAL_UTXO_EXPOSURE_DEPTH: u32 = 10_000;
 
 /// Sync-scoped elapsed time reference. Set at sync start.
 static SYNC_START: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
@@ -177,38 +175,9 @@ async fn refresh_utxos(
             refresh_transparent_addresses(client, db, addresses, start_height, "transparent UTXOs")
                 .await?;
         }
-
-        let now = SystemTime::now();
-        let ephemeral_addresses: Vec<String> = db
-            .get_ephemeral_transparent_receivers(account_id, EPHEMERAL_UTXO_EXPOSURE_DEPTH, true)
-            .map_err(|e| SyncError::db(format!("get_ephemeral_transparent_receivers: {e}")))?
-            .into_iter()
-            .filter(|(_, metadata)| should_query_transparent_receiver(metadata, now))
-            .map(|(addr, _)| addr.encode(&network))
-            .collect();
-
-        for address in ephemeral_addresses {
-            refresh_transparent_addresses(
-                client,
-                db,
-                vec![address],
-                start_height,
-                "ephemeral transparent UTXO",
-            )
-            .await?;
-        }
     }
 
     Ok(())
-}
-
-fn should_query_transparent_receiver(
-    metadata: &TransparentAddressMetadata,
-    now: SystemTime,
-) -> bool {
-    metadata
-        .next_check_time()
-        .map_or(true, |next_check_time| next_check_time <= now)
 }
 
 async fn refresh_transparent_addresses(
@@ -1188,9 +1157,6 @@ fn is_sqlite_lock_contention(err: &SqliteClientError) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
-    use transparent::keys::{NonHardenedChildIndex, TransparentKeyScope};
-    use zcash_client_backend::wallet::{Exposure, TransparentAddressMetadata};
 
     #[test]
     fn sqlite_lock_contention_is_recognised() {
@@ -1232,32 +1198,5 @@ mod tests {
             zcash_protocol::consensus::BlockHeight::from_u32(2_500_000),
         );
         assert!(!is_sqlite_lock_contention(&block_conflict));
-    }
-
-    #[test]
-    fn transparent_receiver_query_waits_for_next_check_time() {
-        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
-
-        assert!(should_query_transparent_receiver(
-            &transparent_metadata(None),
-            now
-        ));
-        assert!(should_query_transparent_receiver(
-            &transparent_metadata(Some(now - Duration::from_secs(1))),
-            now
-        ));
-        assert!(!should_query_transparent_receiver(
-            &transparent_metadata(Some(now + Duration::from_secs(1))),
-            now
-        ));
-    }
-
-    fn transparent_metadata(next_check_time: Option<SystemTime>) -> TransparentAddressMetadata {
-        TransparentAddressMetadata::derived(
-            TransparentKeyScope::EPHEMERAL,
-            NonHardenedChildIndex::ZERO,
-            Exposure::Unknown,
-            next_check_time,
-        )
     }
 }
