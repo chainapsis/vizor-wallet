@@ -33,12 +33,12 @@ abstract final class AppTypography {
 
   /// Display Large — largest onboarding/welcome headline.
   ///
-  /// Libre Caslon Text Regular, 52 / 62.4 px, letter-spacing −2.
+  /// Libre Caslon Text Regular, 60 / 62.4 px, letter-spacing −2.
   static const displayLarge = TextStyle(
     fontFamily: 'Libre Caslon Text',
     fontWeight: FontWeight.w400,
-    fontSize: 52,
-    height: 62.4 / 52,
+    fontSize: 60,
+    height: 62.4 / 60,
     letterSpacing: -2,
   );
 
@@ -102,10 +102,10 @@ abstract final class AppTypography {
 
   /// Body L — comfortable paragraph copy, intro descriptions.
   ///
-  /// Geist Regular, 16 / 24 px, letter-spacing −0.24.
+  /// Geist Medium, 16 / 24 px, letter-spacing −0.24.
   static const bodyLarge = TextStyle(
     fontFamily: 'Geist',
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500,
     fontSize: 16,
     height: 24 / 16,
     letterSpacing: -0.24,
