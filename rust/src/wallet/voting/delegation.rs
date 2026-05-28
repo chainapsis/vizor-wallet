@@ -4,13 +4,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use incrementalmerkletree::Position;
 use prost::Message;
 use secrecy::{ExposeSecret, SecretVec};
-use zcash_client_backend::{
-    data_api::{Account, WalletRead},
-    proto::service::TreeState,
-};
+use zcash_client_backend::data_api::{Account, WalletRead};
 use zcash_protocol::consensus::{BlockHeight, BranchId, NetworkConstants, Parameters};
 
 use crate::wallet::{
@@ -959,106 +955,13 @@ fn store_and_generate_witnesses(
     voting_db
         .store_tree_state(round_id, &selected.anchor_tree_state.encode_to_vec())
         .map_err(|e| format!("store_tree_state failed: {e}"))?;
-    let witnesses = generate_note_witnesses(db_path, network, voting_db, round_id, notes)?;
+    let wallet_db = open_wallet_db_for_read(db_path, network)?;
+    let witnesses =
+        zcash_voting::witness::generate_note_witnesses(voting_db, round_id, notes, &wallet_db)
+            .map_err(|e| e.to_string())?;
     voting_db
         .store_witnesses(round_id, bundle_index, &witnesses)
         .map_err(|e| format!("store_witnesses failed: {e}"))
-}
-
-/// Generates Orchard Merkle witnesses for the bundle notes at the round snapshot.
-///
-/// Validates the cached tree state against the round roots before querying the
-/// wallet DB for historical witnesses.
-fn generate_note_witnesses(
-    db_path: &str,
-    network: WalletNetwork,
-    voting_db: &zcash_voting::storage::VotingDb,
-    round_id: &str,
-    notes: &[zcash_voting::NoteInfo],
-) -> Result<Vec<zcash_voting::WitnessData>, String> {
-    let (tree_state_bytes, params) = {
-        let wallet_id = voting_db.wallet_id();
-        let conn = voting_db.conn();
-        let tree_state_bytes =
-            zcash_voting::storage::queries::load_tree_state(&conn, round_id, &wallet_id)
-                .map_err(|e| format!("load_tree_state failed: {e}"))?;
-        let params = zcash_voting::storage::queries::load_round_params(&conn, round_id, &wallet_id)
-            .map_err(|e| format!("load_round_params failed: {e}"))?;
-        (tree_state_bytes, params)
-    };
-
-    let tree_state = TreeState::decode(tree_state_bytes.as_slice())
-        .map_err(|e| format!("failed to decode TreeState protobuf: {e}"))?;
-    let orchard_ct = tree_state
-        .orchard_tree()
-        .map_err(|e| format!("failed to parse orchard tree from TreeState: {e}"))?;
-    let frontier_root_bytes = orchard_ct.root().to_bytes();
-    validate_cached_tree_state_for_round(&tree_state, &frontier_root_bytes[..], &params)?;
-    let frontier = orchard_ct.to_frontier();
-    let nonempty_frontier = frontier
-        .take()
-        .ok_or_else(|| "empty orchard frontier at snapshot height".to_string())?;
-
-    let positions: Vec<Position> = notes
-        .iter()
-        .map(|note| Position::from(note.position))
-        .collect();
-    let snapshot_height = u32::try_from(params.snapshot_height).map_err(|_| {
-        format!(
-            "snapshot_height {} does not fit in u32",
-            params.snapshot_height
-        )
-    })?;
-    let wallet_db = open_wallet_db_for_read(db_path, network)?;
-    let merkle_paths = wallet_db
-        .generate_orchard_witnesses_at_historical_height(
-            &positions,
-            nonempty_frontier,
-            BlockHeight::from_u32(snapshot_height),
-        )
-        .map_err(|e| format!("generate_orchard_witnesses_at_historical_height failed: {e}"))?;
-
-    if merkle_paths.len() != notes.len() {
-        return Err(format!(
-            "generated {} Merkle paths for {} voting notes",
-            merkle_paths.len(),
-            notes.len()
-        ));
-    }
-
-    let root = frontier_root_bytes.to_vec();
-    Ok(merkle_paths
-        .into_iter()
-        .zip(notes.iter())
-        .map(|(path, note)| zcash_voting::WitnessData {
-            note_commitment: note.commitment.clone(),
-            position: note.position,
-            root: root.clone(),
-            auth_path: path
-                .path_elems()
-                .iter()
-                .map(|hash| hash.to_bytes().to_vec())
-                .collect(),
-        })
-        .collect())
-}
-
-/// Validates that cached lightwalletd tree state belongs to the voting round.
-fn validate_cached_tree_state_for_round(
-    tree_state: &TreeState,
-    orchard_root: &[u8],
-    params: &zcash_voting::VotingRoundParams,
-) -> Result<(), String> {
-    if tree_state.height != params.snapshot_height {
-        return Err(format!(
-            "cached TreeState height {} does not match round snapshot_height {}",
-            tree_state.height, params.snapshot_height
-        ));
-    }
-    if orchard_root != params.nc_root.as_slice() {
-        return Err("cached TreeState orchard root does not match round nc_root".to_string());
-    }
-    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -1123,6 +1026,7 @@ fn consensus_branch_id(network: WalletNetwork, height: u64) -> Result<u32, Strin
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+    use zcash_client_backend::proto::service::TreeState;
 
     const ACCOUNT_UUID: &str = "550e8400-e29b-41d4-a716-446655440000";
     const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
@@ -1443,42 +1347,6 @@ mod tests {
         assert_eq!(
             consensus_branch_id(WalletNetwork::Regtest, 1).unwrap(),
             0x4DEC_4DF0
-        );
-    }
-
-    #[test]
-    fn validate_cached_tree_state_checks_height_and_root() {
-        let params = zcash_voting::VotingRoundParams {
-            vote_round_id: ROUND_ID.to_string(),
-            snapshot_height: 100,
-            ea_pk: vec![0; 32],
-            nc_root: vec![7; 32],
-            nullifier_imt_root: vec![8; 32],
-        };
-        let tree_state = TreeState {
-            network: "test".to_string(),
-            height: 100,
-            hash: String::new(),
-            time: 0,
-            sapling_tree: String::new(),
-            orchard_tree: String::new(),
-        };
-
-        assert!(validate_cached_tree_state_for_round(&tree_state, &[7; 32], &params).is_ok());
-        assert!(
-            validate_cached_tree_state_for_round(&tree_state, &[9; 32], &params)
-                .unwrap_err()
-                .contains("orchard root")
-        );
-
-        let stale = TreeState {
-            height: 99,
-            ..tree_state
-        };
-        assert!(
-            validate_cached_tree_state_for_round(&stale, &[7; 32], &params)
-                .unwrap_err()
-                .contains("snapshot_height")
         );
     }
 

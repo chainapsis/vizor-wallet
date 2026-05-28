@@ -87,6 +87,9 @@ ur-registry = { git = "https://github.com/KeystoneHQ/keystone-sdk-rust", package
 serde_json = "1"
 url = "2.5.8"
 
+[patch.crates-io]
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "94d402de0911b93f754d060bdce0f78b113f2e80" }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3.7", features = ["OSX_10_15"] }
 
