@@ -435,7 +435,7 @@ pub async fn precompute_delegation_pir(
     validate_bundle_index(bundle_setup.bundle_count, bundle_index, "delegation")?;
     let bundle_note_infos = bundle_notes(&note_infos, bundle_index)?;
 
-    store_and_generate_witnesses(
+    generate_and_cache_bundle_witnesses(
         db_path,
         network,
         &voting_db,
@@ -611,7 +611,7 @@ where
         delegated_weight_zatoshi
     );
 
-    store_and_generate_witnesses(
+    generate_and_cache_bundle_witnesses(
         db_path,
         network,
         &voting_db,
@@ -940,10 +940,11 @@ pub fn get_delegation_tx_hash(
         .map_err(|e| format!("get_delegation_tx_hash failed: {e}"))
 }
 
-/// Persists the selected anchor tree state and Merkle witnesses for a bundle.
+/// Open the wallet source and ask `zcash_voting` to cache bundle witnesses.
 ///
-/// The witnesses are generated at the voting round snapshot height.
-fn store_and_generate_witnesses(
+/// Witness generation itself lives in the shared crate so SDKs enforce the same
+/// snapshot-tree-state and bundle-cache invariants.
+fn generate_and_cache_bundle_witnesses(
     db_path: &str,
     network: WalletNetwork,
     voting_db: &zcash_voting::storage::VotingDb,
@@ -952,16 +953,17 @@ fn store_and_generate_witnesses(
     selected: &SelectedNotes,
     notes: &[zcash_voting::NoteInfo],
 ) -> Result<(), String> {
-    voting_db
-        .store_tree_state(round_id, &selected.anchor_tree_state.encode_to_vec())
-        .map_err(|e| format!("store_tree_state failed: {e}"))?;
     let wallet_db = open_wallet_db_for_read(db_path, network)?;
-    let witnesses =
-        zcash_voting::witness::generate_note_witnesses(voting_db, round_id, notes, &wallet_db)
-            .map_err(|e| e.to_string())?;
-    voting_db
-        .store_witnesses(round_id, bundle_index, &witnesses)
-        .map_err(|e| format!("store_witnesses failed: {e}"))
+    zcash_voting::witness::store_tree_state_and_generate_note_witnesses(
+        voting_db,
+        round_id,
+        bundle_index,
+        &selected.anchor_tree_state.encode_to_vec(),
+        notes,
+        &wallet_db,
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
 }
 
 #[derive(Clone, Debug)]
@@ -1026,7 +1028,6 @@ fn consensus_branch_id(network: WalletNetwork, height: u64) -> Result<u32, Strin
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
-    use zcash_client_backend::proto::service::TreeState;
 
     const ACCOUNT_UUID: &str = "550e8400-e29b-41d4-a716-446655440000";
     const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
@@ -1275,41 +1276,6 @@ mod tests {
             zcash_voting::BALLOT_DIVISOR
         );
         assert!(bundle_notes(&notes, 2).is_err());
-    }
-
-    #[test]
-    fn store_and_generate_witnesses_rejects_invalid_cached_tree_state() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let wallet_db_path = temp_dir.path().join("wallet.sqlite");
-        let voting_db = open_voting_db(wallet_db_path.to_str().unwrap(), ACCOUNT_UUID).unwrap();
-        let params = test_round_params();
-        ensure_voting_round(&voting_db, &params, None).unwrap();
-        ensure_bundles(&voting_db, ROUND_ID, &[test_note_info(42)]).unwrap();
-        let selected = SelectedNotes {
-            notes: Vec::new(),
-            snapshot_height: params.snapshot_height,
-            anchor_tree_state: TreeState {
-                network: "regtest".to_string(),
-                height: params.snapshot_height,
-                hash: String::new(),
-                time: 0,
-                sapling_tree: String::new(),
-                orchard_tree: String::new(),
-            },
-        };
-
-        let err = store_and_generate_witnesses(
-            wallet_db_path.to_str().unwrap(),
-            WalletNetwork::Regtest,
-            &voting_db,
-            ROUND_ID,
-            0,
-            &selected,
-            &[test_note_info(42)],
-        )
-        .unwrap_err();
-
-        assert!(err.contains("orchard") || err.contains("TreeState"));
     }
 
     #[test]
