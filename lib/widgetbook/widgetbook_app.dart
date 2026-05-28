@@ -329,6 +329,24 @@ class WidgetbookApp extends StatelessWidget {
                 WidgetbookUseCase(name: 'All', builder: buildFadeUseCase),
               ],
             ),
+            WidgetbookComponent(
+              name: 'Nav Panel',
+              useCases: [
+                WidgetbookUseCase(name: 'All', builder: buildNavPanelUseCase),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'Shadows',
+              useCases: [
+                WidgetbookUseCase(name: 'All', builder: buildShadowsUseCase),
+              ],
+            ),
+            WidgetbookComponent(
+              name: 'Sync',
+              useCases: [
+                WidgetbookUseCase(name: 'All', builder: buildSyncUseCase),
+              ],
+            ),
           ],
         ),
       ],

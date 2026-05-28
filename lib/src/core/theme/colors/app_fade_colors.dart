@@ -2,7 +2,7 @@ import 'package:flutter/painting.dart';
 
 import '../primitives.dart';
 
-/// Fade / scrim tokens.
+/// Fade / scrim tokens retained from the OLDSemantic fade group.
 ///
 /// * [illustration] — Gentle fade laid over a bottom-anchored
 ///   illustration so the art dissolves into the backdrop instead of

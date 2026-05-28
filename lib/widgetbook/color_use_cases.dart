@@ -346,6 +346,12 @@ Widget buildBackgroundUseCase(BuildContext context) {
         light: l.background.utilityDestructiveSubtle,
       ),
       TokenSwatch(
+        name: 'bg/utility/alpha/destructive-alpha-subtle',
+        description: 'Subtle destructive utility alpha overlay',
+        dark: d.background.utilityDestructiveAlphaSubtle,
+        light: l.background.utilityDestructiveAlphaSubtle,
+      ),
+      TokenSwatch(
         name: 'bg/utility/alpha/destructive-alpha',
         description: 'Destructive utility alpha overlay',
         dark: d.background.utilityDestructiveAlpha,
@@ -368,6 +374,12 @@ Widget buildBackgroundUseCase(BuildContext context) {
         description: 'Success utility alpha overlay',
         dark: d.background.utilitySuccessAlpha,
         light: l.background.utilitySuccessAlpha,
+      ),
+      TokenSwatch(
+        name: 'bg/exceptions/home-card',
+        description: 'Exception surface for the home balance card',
+        dark: d.background.homeCard,
+        light: l.background.homeCard,
       ),
     ],
   );
@@ -438,6 +450,12 @@ Widget buildBorderUseCase(BuildContext context) {
         light: l.border.subtleOpacity,
       ),
       TokenSwatch(
+        name: 'border/neutral/alpha/inverse-opacity',
+        description: 'Alpha border over inverted / strong fills',
+        dark: d.border.inverseOpacity,
+        light: l.border.inverseOpacity,
+      ),
+      TokenSwatch(
         name: 'border/default',
         description: 'Default border for hover / cards / chips',
         dark: d.border.regular,
@@ -460,6 +478,12 @@ Widget buildBorderUseCase(BuildContext context) {
         description: 'Validation and destructive emphasis',
         dark: d.border.utilityDestructive,
         light: l.border.utilityDestructive,
+      ),
+      TokenSwatch(
+        name: 'border/utility/destructive-subtle',
+        description: 'Soft destructive border',
+        dark: d.border.utilityDestructiveSubtle,
+        light: l.border.utilityDestructiveSubtle,
       ),
       TokenSwatch(
         name: 'border/utility/success',
@@ -526,10 +550,22 @@ Widget buildTextUseCase(BuildContext context) {
         light: l.text.warning,
       ),
       TokenSwatch(
+        name: 'text/positive/strong',
+        description: 'Positive-state copy — green utility',
+        dark: d.text.positiveStrong,
+        light: l.text.positiveStrong,
+      ),
+      TokenSwatch(
         name: 'text/utility/destructive',
         description: 'Destructive utility copy',
         dark: d.text.destructive,
         light: l.text.destructive,
+      ),
+      TokenSwatch(
+        name: 'text/utility/destructive-light',
+        description: 'Secondary destructive utility copy',
+        dark: d.text.destructiveLight,
+        light: l.text.destructiveLight,
       ),
       TokenSwatch(
         name: 'text/utility/success',
@@ -542,6 +578,12 @@ Widget buildTextUseCase(BuildContext context) {
         description: 'Brand-crimson inline text accent',
         dark: d.text.brandCrimson,
         light: l.text.brandCrimson,
+      ),
+      TokenSwatch(
+        name: 'text/exception/home-card-text',
+        description: 'Exception text used on the home balance card',
+        dark: d.text.homeCard,
+        light: l.text.homeCard,
       ),
     ],
   );
@@ -602,6 +644,12 @@ Widget buildIconUseCase(BuildContext context) {
         light: l.icon.destructive,
       ),
       TokenSwatch(
+        name: 'icon/utility/destructive-light',
+        description: 'Secondary destructive utility icon',
+        dark: d.icon.destructiveLight,
+        light: l.icon.destructiveLight,
+      ),
+      TokenSwatch(
         name: 'icon/utility/success',
         description: 'Success utility icon',
         dark: d.icon.success,
@@ -652,6 +700,12 @@ Widget buildButtonPrimaryUseCase(BuildContext context) {
         description: 'Label inside primary button',
         dark: d.button.primary.label,
         light: l.button.primary.label,
+      ),
+      TokenSwatch(
+        name: 'button/primary/label-hover',
+        description: 'Label inside primary button on hover',
+        dark: d.button.primary.labelHover,
+        light: l.button.primary.labelHover,
       ),
     ],
   );
@@ -831,6 +885,114 @@ Widget buildFadeUseCase(BuildContext context) {
             'Scrim for bottom-anchored art — dark=50% over p0, light=transparent',
         dark: d.fade.illustration,
         light: l.fade.illustration,
+      ),
+    ],
+  );
+}
+
+Widget buildNavPanelUseCase(BuildContext context) {
+  const d = AppColors.dark;
+  const l = AppColors.light;
+  return ColorCategoryPage(
+    title: 'Nav Panel',
+    swatches: [
+      TokenSwatch(
+        name: 'nav-panel/badge/bg',
+        description: 'Badge fill',
+        dark: d.navPanel.badgeBg,
+        light: l.navPanel.badgeBg,
+      ),
+      TokenSwatch(
+        name: 'nav-panel/badge/label',
+        description: 'Badge label',
+        dark: d.navPanel.badgeLabel,
+        light: l.navPanel.badgeLabel,
+      ),
+      TokenSwatch(
+        name: 'nav-panel/active/bg',
+        description: 'Active navigation item background',
+        dark: d.navPanel.activeBg,
+        light: l.navPanel.activeBg,
+      ),
+      TokenSwatch(
+        name: 'nav-panel/active/icon',
+        description: 'Active navigation item icon',
+        dark: d.navPanel.activeIcon,
+        light: l.navPanel.activeIcon,
+      ),
+      TokenSwatch(
+        name: 'nav-panel/active/label',
+        description: 'Active navigation item label',
+        dark: d.navPanel.activeLabel,
+        light: l.navPanel.activeLabel,
+      ),
+      TokenSwatch(
+        name: 'nav-panel/hover/bg',
+        description: 'Navigation item hover background',
+        dark: d.navPanel.hoverBg,
+        light: l.navPanel.hoverBg,
+      ),
+    ],
+  );
+}
+
+Widget buildShadowsUseCase(BuildContext context) {
+  const d = AppColors.dark;
+  const l = AppColors.light;
+  return ColorCategoryPage(
+    title: 'Shadows',
+    swatches: [
+      TokenSwatch(
+        name: 'shadows/subtle',
+        description: 'Subtle shadow overlay',
+        dark: d.shadows.subtle,
+        light: l.shadows.subtle,
+      ),
+      TokenSwatch(
+        name: 'shadows/default',
+        description: 'Default shadow overlay',
+        dark: d.shadows.regular,
+        light: l.shadows.regular,
+      ),
+    ],
+  );
+}
+
+Widget buildSyncUseCase(BuildContext context) {
+  const d = AppColors.dark;
+  const l = AppColors.light;
+  return ColorCategoryPage(
+    title: 'Sync',
+    swatches: [
+      TokenSwatch(
+        name: 'sync/text',
+        description: 'Synced state text',
+        dark: d.sync.text,
+        light: l.sync.text,
+      ),
+      TokenSwatch(
+        name: 'sync/text-syncing',
+        description: 'Syncing state text',
+        dark: d.sync.textSyncing,
+        light: l.sync.textSyncing,
+      ),
+      TokenSwatch(
+        name: 'sync/text-error',
+        description: 'Error state text',
+        dark: d.sync.textError,
+        light: l.sync.textError,
+      ),
+      TokenSwatch(
+        name: 'sync/light-success',
+        description: 'Success indicator light',
+        dark: d.sync.lightSuccess,
+        light: l.sync.lightSuccess,
+      ),
+      TokenSwatch(
+        name: 'sync/light-error',
+        description: 'Error indicator light',
+        dark: d.sync.lightError,
+        light: l.sync.lightError,
       ),
     ],
   );

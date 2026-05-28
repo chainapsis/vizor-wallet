@@ -74,6 +74,7 @@ class _VariantPalette {
     required this.border,
     required this.borderWidth,
     required this.label,
+    required this.labelHover,
     required this.focusRing,
   });
 
@@ -83,6 +84,7 @@ class _VariantPalette {
   final Color border;
   final double borderWidth;
   final Color label;
+  final Color labelHover;
   final Color focusRing;
 }
 
@@ -96,6 +98,7 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         border: c.button.primary.border,
         borderWidth: 1.5,
         label: c.button.primary.label,
+        labelHover: c.button.primary.labelHover,
         focusRing: c.state.focusRingBrand,
       );
     case AppButtonVariant.secondary:
@@ -106,6 +109,7 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         border: c.background.ground.withValues(alpha: 0),
         borderWidth: 0,
         label: c.button.secondary.label,
+        labelHover: c.button.secondary.label,
         focusRing: c.state.focusRing,
       );
     case AppButtonVariant.ghost:
@@ -118,6 +122,7 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         border: c.background.ground.withValues(alpha: 0),
         borderWidth: 0,
         label: c.button.ghost.label,
+        labelHover: c.button.ghost.label,
         focusRing: c.state.focusRing,
       );
     case AppButtonVariant.destructive:
@@ -128,6 +133,7 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         border: c.button.destructive.border,
         borderWidth: 1.5,
         label: c.button.destructive.label,
+        labelHover: c.button.destructive.label,
         focusRing: c.state.focusRingDestructive,
       );
   }
@@ -239,7 +245,11 @@ class _AppButtonState extends State<AppButton> {
         ? palette.bgHover
         : palette.bg;
 
-    final Color labelColor = _enabled ? palette.label : disabled.label;
+    final Color labelColor = !_enabled
+        ? disabled.label
+        : _pressed || _hovered
+        ? palette.labelHover
+        : palette.label;
     final borderWidth = _enabled ? palette.borderWidth : 0.0;
     final iconGap = widget.iconGap ?? sizing.gap;
 

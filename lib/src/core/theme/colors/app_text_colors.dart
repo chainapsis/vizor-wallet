@@ -13,7 +13,9 @@ import '../primitives.dart';
 ///   chip inside dark mode).
 /// * [warning] — Inline caution copy. Backed by the current gold utility
 ///   token for compatibility with existing warning call sites.
+/// * [positiveStrong] — Positive-state copy backed by the green utility ramp.
 /// * [destructive] — Destructive utility copy.
+/// * [destructiveLight] — Softer destructive copy for secondary error text.
 /// * [success] — Positive / success utility copy.
 /// * [brandCrimson] — Brand-colored inline text accent.
 /// * [homeCard] — Exception text used on the home balance card. Theme-invariant.
@@ -26,7 +28,9 @@ class AppTextColors {
     required this.disabled,
     required this.inverse,
     required this.warning,
+    required this.positiveStrong,
     required this.destructive,
+    required this.destructiveLight,
     required this.success,
     required this.brandCrimson,
     required this.homeCard,
@@ -39,7 +43,9 @@ class AppTextColors {
   final Color disabled;
   final Color inverse;
   final Color warning;
+  final Color positiveStrong;
   final Color destructive;
+  final Color destructiveLight;
   final Color success;
   final Color brandCrimson;
   final Color homeCard;
@@ -52,7 +58,9 @@ class AppTextColors {
     disabled: Primitives.p400Dark,
     inverse: Primitives.p0Dark,
     warning: GoldPrimitives.p500Dark,
+    positiveStrong: GreenPrimitives.p400Dark,
     destructive: PlumPrimitives.p500Dark,
+    destructiveLight: PlumPrimitives.p400Dark,
     success: GoldPrimitives.p500Dark,
     brandCrimson: CrimsonPrimitives.p400Dark,
     homeCard: Primitives.p800Dark,
@@ -68,9 +76,11 @@ class AppTextColors {
     disabled: Primitives.p400Light,
     inverse: Primitives.p0Light,
     warning: GoldPrimitives.p400Light,
+    positiveStrong: GreenPrimitives.p500Light,
     destructive: PlumPrimitives.p300Light,
+    destructiveLight: PlumPrimitives.p150Light,
     success: GoldPrimitives.p400Light,
     brandCrimson: CrimsonPrimitives.p400Light,
-    homeCard: Primitives.p900Dark,
+    homeCard: Primitives.p0Light,
   );
 }

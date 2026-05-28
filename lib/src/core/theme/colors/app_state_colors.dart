@@ -2,7 +2,7 @@ import 'package:flutter/painting.dart';
 
 import '../primitives.dart';
 
-/// Interaction-state colors.
+/// Interaction-state colors from the Figma `OLDSemantic/State` group.
 ///
 /// [hover] is the alpha overlay layered over a base surface. [pressed] and
 /// [selected] are standalone neutral backgrounds.
@@ -52,11 +52,11 @@ class AppStateColors {
   );
 
   static const light = AppStateColors(
-    hover: Primitives.p0Alpha30Light,
+    hover: Primitives.p900Alpha5Light,
     pressed: Primitives.p150Light,
     focus: Primitives.p200Light,
     selected: Primitives.p150Light,
-    selectedOpacity: Primitives.p0Alpha50Light,
+    selectedOpacity: Primitives.p900Alpha5Light,
     focusRing: Primitives.p900Light,
     focusGap: Primitives.p0Light,
     focusRingBrand: CrimsonPrimitives.p300Light,

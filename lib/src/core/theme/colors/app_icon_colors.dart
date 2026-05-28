@@ -2,7 +2,7 @@ import 'package:flutter/painting.dart';
 
 import '../primitives.dart';
 
-/// Icon color hierarchy.
+/// Icon color hierarchy retained from the OLDSemantic icon tokens.
 ///
 /// * [accent] — Active, selected, primary icons.
 /// * [regular] — Standard UI icons. (Named `regular` instead of `default`
@@ -14,6 +14,7 @@ import '../primitives.dart';
 /// * [warning] — Caution icons. Backed by the current gold utility token for
 ///   compatibility with existing warning call sites.
 /// * [destructive] — Destructive-state icons.
+/// * [destructiveLight] — Softer destructive icon for secondary error affordances.
 /// * [success] — Positive / success utility icons.
 /// * [brandCrimson] — Brand-colored icons.
 class AppIconColors {
@@ -26,6 +27,7 @@ class AppIconColors {
     required this.onPrimary,
     required this.warning,
     required this.destructive,
+    required this.destructiveLight,
     required this.success,
     required this.brandCrimson,
   });
@@ -38,6 +40,7 @@ class AppIconColors {
   final Color onPrimary;
   final Color warning;
   final Color destructive;
+  final Color destructiveLight;
   final Color success;
   final Color brandCrimson;
 
@@ -48,9 +51,10 @@ class AppIconColors {
     disabled: Primitives.p300Dark,
     inverse: Primitives.p0Dark,
     onPrimary: Primitives.p0Dark,
-    warning: GoldPrimitives.p600Dark,
+    warning: GoldPrimitives.p500Dark,
     destructive: PlumPrimitives.p400Dark,
-    success: GoldPrimitives.p600Dark,
+    destructiveLight: PlumPrimitives.p300Dark,
+    success: GoldPrimitives.p500Dark,
     brandCrimson: CrimsonPrimitives.p300Dark,
   );
 
@@ -63,7 +67,8 @@ class AppIconColors {
     onPrimary: Primitives.p0Light,
     warning: GoldPrimitives.p300Light,
     destructive: PlumPrimitives.p300Light,
+    destructiveLight: PlumPrimitives.p200Light,
     success: GoldPrimitives.p300Light,
-    brandCrimson: CrimsonPrimitives.p400Light,
+    brandCrimson: CrimsonPrimitives.p300Light,
   );
 }

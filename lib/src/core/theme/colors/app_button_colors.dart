@@ -45,6 +45,7 @@ class AppPrimaryButtonColors {
     required this.bgPressed,
     required this.border,
     required this.label,
+    required this.labelHover,
   });
 
   final Color bg;
@@ -52,21 +53,24 @@ class AppPrimaryButtonColors {
   final Color bgPressed;
   final Color border;
   final Color label;
+  final Color labelHover;
 
   static const dark = AppPrimaryButtonColors(
-    bg: CrimsonPrimitives.p300Dark,
-    bgHover: CrimsonPrimitives.p200Dark,
-    bgPressed: CrimsonPrimitives.p200Dark,
-    border: Primitives.p900Alpha20Dark,
-    label: GoldPrimitives.p800Dark,
+    bg: Primitives.p800Dark,
+    bgHover: CrimsonPrimitives.p300Dark,
+    bgPressed: CrimsonPrimitives.p300Dark,
+    border: Primitives.p900Alpha10Dark,
+    label: Primitives.p50Dark,
+    labelHover: Primitives.p800Dark,
   );
 
   static const light = AppPrimaryButtonColors(
-    bg: CrimsonPrimitives.p400Light,
-    bgHover: CrimsonPrimitives.p500Light,
-    bgPressed: CrimsonPrimitives.p500Light,
-    border: Primitives.p0Alpha15Light,
-    label: GoldPrimitives.p100Light,
+    bg: Primitives.p800Light,
+    bgHover: CrimsonPrimitives.p400Light,
+    bgPressed: CrimsonPrimitives.p400Light,
+    border: Primitives.p900Alpha5Light,
+    label: Primitives.p100Light,
+    labelHover: Primitives.p100Light,
   );
 }
 
