@@ -17,10 +17,8 @@ import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
-import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
@@ -742,7 +740,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: EdgeInsets.zero,
+        backgroundColor: Colors.transparent,
         child: SizedBox.expand(
           child: widget.walletAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -758,8 +757,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
             data: (_) => Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const AppRouteBackLink(),
-                const SizedBox(height: AppSpacing.s),
+                const _SendPageToolbar(),
                 Expanded(
                   child: _SendComposeLayout(
                     messageFieldVisible: messageFieldVisible,
@@ -782,95 +780,108 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        AppTextField(
-                          key: const ValueKey('send_address_field'),
-                          label: 'Send to',
-                          tone: addressTone,
-                          focusNode: _addressFocusNode,
-                          controller: _addressController,
-                          hintText: 'Zcash address',
-                          leading: AppIcon(
-                            AppIcons.users,
-                            size: 20,
-                            color: _addressController.text.trim().isNotEmpty
-                                ? colors.icon.accent
-                                : colors.icon.regular,
-                          ),
-                          messageText: addressMessage,
-                          messageIcon: addressMessageIcon,
-                          messageStyle: addressMessageStyle,
-                          onChanged: (_) => _handleAddressChanged(),
-                          keyboardType: TextInputType.text,
-                          showClearButton: true,
-                          onClear: () {
-                            _addressSeq++;
-                            _maxDebounceTimer?.cancel();
-                            setState(() {
-                              _addressType = '';
-                              _error = null;
-                              if (_isMaxMode) {
-                                _validateSeq++;
-                                _maxSeq++;
-                                _maxQuote = null;
-                                _isResolvingMax = false;
-                                _amountError = '';
+                        _SendFieldSurface(
+                          child: AppTextField(
+                            key: const ValueKey('send_address_field'),
+                            label: 'Send to',
+                            rightSlot: const _SendFieldRightLink(
+                              label: 'Contacts',
+                            ),
+                            tone: addressTone,
+                            focusNode: _addressFocusNode,
+                            controller: _addressController,
+                            hintText: 'Zcash Address',
+                            leading: AppIcon(
+                              AppIcons.plane,
+                              size: 20,
+                              color: _addressController.text.trim().isNotEmpty
+                                  ? colors.icon.accent
+                                  : colors.icon.regular,
+                            ),
+                            leadingSlotWidth: 32,
+                            trailingSlotWidth: 40,
+                            inputHorizontalPadding: AppSpacing.s,
+                            messageText: addressMessage,
+                            messageIcon: addressMessageIcon,
+                            messageStyle: addressMessageStyle,
+                            onChanged: (_) => _handleAddressChanged(),
+                            keyboardType: TextInputType.text,
+                            showClearButton: true,
+                            onClear: () {
+                              _addressSeq++;
+                              _maxDebounceTimer?.cancel();
+                              setState(() {
+                                _addressType = '';
+                                _error = null;
+                                if (_isMaxMode) {
+                                  _validateSeq++;
+                                  _maxSeq++;
+                                  _maxQuote = null;
+                                  _isResolvingMax = false;
+                                  _amountError = '';
+                                }
+                              });
+                              if (!_isMaxMode) {
+                                _validateAmount();
                               }
-                            });
-                            if (!_isMaxMode) {
-                              _validateAmount();
-                            }
-                          },
+                            },
+                          ),
                         ),
                         const SizedBox(height: _singleLineFieldOverlayReserve),
                         const SizedBox(height: _singleLineFieldGap),
-                        AppTextField(
-                          key: const ValueKey('send_amount_field'),
-                          label: 'Amount',
-                          tone: _showAmountError
-                              ? AppTextFieldTone.destructive
-                              : AppTextFieldTone.neutral,
-                          focusNode: _amountFocusNode,
-                          controller: _amountController,
-                          hintText: '0.00',
-                          leading: AppIcon(
-                            AppIcons.zcash,
-                            size: 20,
-                            color: _amountController.text.trim().isNotEmpty
-                                ? colors.icon.accent
-                                : colors.icon.regular,
+                        _SendFieldSurface(
+                          child: AppTextField(
+                            key: const ValueKey('send_amount_field'),
+                            label: 'Amount',
+                            tone: _showAmountError
+                                ? AppTextFieldTone.destructive
+                                : AppTextFieldTone.neutral,
+                            focusNode: _amountFocusNode,
+                            controller: _amountController,
+                            hintText: '0.00',
+                            leading: AppIcon(
+                              AppIcons.zcash,
+                              size: 20,
+                              color: _amountController.text.trim().isNotEmpty
+                                  ? colors.icon.accent
+                                  : colors.icon.regular,
+                            ),
+                            leadingSlotWidth: 32,
+                            trailingSlotWidth: 40,
+                            inputHorizontalPadding: AppSpacing.s,
+                            rightSlot: _SendMaxBalanceControl(
+                              spendableText: spendableText,
+                              onMaxPressed: _isResolvingMax
+                                  ? null
+                                  : _activateMaxMode,
+                            ),
+                            messageText: _showAmountError ? _amountError : null,
+                            messageIcon: _showAmountError
+                                ? AppIcon(
+                                    AppIcons.warning,
+                                    size: 16,
+                                    color: colors.text.destructive,
+                                  )
+                                : null,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            inputFormatters: [const ZecAmountInputFormatter()],
+                            onChanged: (_) => _handleAmountChanged(),
+                            showClearButton: true,
+                            onClear: () {
+                              _maxDebounceTimer?.cancel();
+                              _validateSeq++;
+                              _maxSeq++;
+                              setState(() {
+                                _isMaxMode = false;
+                                _isResolvingMax = false;
+                                _maxQuote = null;
+                                _amountError = '';
+                                _error = null;
+                              });
+                            },
                           ),
-                          rightSlot: _SendMaxBalanceControl(
-                            spendableText: spendableText,
-                            onMaxPressed: _isResolvingMax
-                                ? null
-                                : _activateMaxMode,
-                          ),
-                          messageText: _showAmountError ? _amountError : null,
-                          messageIcon: _showAmountError
-                              ? AppIcon(
-                                  AppIcons.warning,
-                                  size: 16,
-                                  color: colors.text.destructive,
-                                )
-                              : null,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: [const ZecAmountInputFormatter()],
-                          onChanged: (_) => _handleAmountChanged(),
-                          showClearButton: true,
-                          onClear: () {
-                            _maxDebounceTimer?.cancel();
-                            _validateSeq++;
-                            _maxSeq++;
-                            setState(() {
-                              _isMaxMode = false;
-                              _isResolvingMax = false;
-                              _maxQuote = null;
-                              _amountError = '';
-                              _error = null;
-                            });
-                          },
                         ),
                         const SizedBox(height: _singleLineFieldOverlayReserve),
                         const SizedBox(height: _singleLineFieldGap),
@@ -881,77 +892,69 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                               padding: const EdgeInsets.symmetric(
                                 vertical: AppSpacing.xs,
                               ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const AppDecorativeDivider(
-                                    width: 256,
-                                    middleWidth: 53.553,
-                                    middleHeight: 14,
-                                  ),
-                                  const SizedBox(height: AppSpacing.sm),
-                                  _SendAddMessageCard(
-                                    onTap: () {
-                                      setState(() {
-                                        _messageExpanded = true;
-                                      });
-                                      _memoFocusNode.requestFocus();
-                                    },
-                                  ),
-                                ],
+                              child: _SendAddMessageCard(
+                                onTap: () {
+                                  setState(() {
+                                    _messageExpanded = true;
+                                  });
+                                  _memoFocusNode.requestFocus();
+                                },
                               ),
                             ),
                           ] else ...[
-                            AppTextField(
-                              label: 'Message',
-                              tone: _memoError != null
-                                  ? AppTextFieldTone.destructive
-                                  : AppTextFieldTone.neutral,
-                              focusNode: _memoFocusNode,
-                              controller: _memoController,
-                              hintText: 'Add a message',
-                              leading: AppIcon(
-                                AppIcons.scroll,
-                                size: 20,
-                                color: colors.icon.regular,
-                              ),
-                              rightSlot: Text(
-                                '$_memoLength/512',
-                                style: AppTypography.labelMedium.copyWith(
-                                  color: colors.text.secondary,
+                            _SendFieldSurface(
+                              multiline: true,
+                              child: AppTextField(
+                                label: 'Message',
+                                tone: _memoError != null
+                                    ? AppTextFieldTone.destructive
+                                    : AppTextFieldTone.neutral,
+                                focusNode: _memoFocusNode,
+                                controller: _memoController,
+                                hintText: 'Add a message',
+                                leading: AppIcon(
+                                  AppIcons.scroll,
+                                  size: 20,
+                                  color: colors.icon.regular,
                                 ),
-                              ),
-                              messageText: _memoError,
-                              messageIcon: _memoError != null
-                                  ? AppIcon(
-                                      AppIcons.warning,
-                                      size: 16,
-                                      color: colors.text.destructive,
-                                    )
-                                  : null,
-                              minLines: 6,
-                              maxLines: 6,
-                              scrollController: _memoScrollController,
-                              textStyle: AppTypography.bodyMedium.copyWith(
-                                color: colors.text.accent,
-                              ),
-                              onChanged: (_) => setState(() {
-                                _error = null;
-                              }),
-                              showClearButton: true,
-                              clearButtonRequiresText: false,
-                              clearButtonSemanticLabel: 'Close message',
-                              onClear: () {
-                                setState(() {
-                                  _messageExpanded = false;
+                                rightSlot: Text(
+                                  '$_memoLength/512',
+                                  style: AppTypography.labelMedium.copyWith(
+                                    color: colors.text.secondary,
+                                  ),
+                                ),
+                                messageText: _memoError,
+                                messageIcon: _memoError != null
+                                    ? AppIcon(
+                                        AppIcons.warning,
+                                        size: 16,
+                                        color: colors.text.destructive,
+                                      )
+                                    : null,
+                                minLines: 6,
+                                maxLines: 6,
+                                scrollController: _memoScrollController,
+                                textStyle: AppTypography.bodyMedium.copyWith(
+                                  color: colors.text.accent,
+                                ),
+                                onChanged: (_) => setState(() {
                                   _error = null;
-                                });
-                                if (_isMaxMode) {
-                                  _scheduleMaxEstimate();
-                                } else {
-                                  _validateAmount();
-                                }
-                              },
+                                }),
+                                showClearButton: true,
+                                clearButtonRequiresText: false,
+                                clearButtonSemanticLabel: 'Close message',
+                                onClear: () {
+                                  setState(() {
+                                    _messageExpanded = false;
+                                    _error = null;
+                                  });
+                                  if (_isMaxMode) {
+                                    _scheduleMaxEstimate();
+                                  } else {
+                                    _validateAmount();
+                                  }
+                                },
+                              ),
                             ),
                             const SizedBox(
                               height: _multilineFieldOverlayReserve,
@@ -982,51 +985,80 @@ class _SendComposeLayout extends StatelessWidget {
     required this.reviewButton,
   });
 
+  static const _contentMaxWidth = 420.0;
   static const _formWidth = 352.0;
   static const _reviewButtonWidth = 256.0;
-  static const _contentToButtonGap = AppSpacing.sm;
-  // State-specific gaps keep the collapsed and expanded forms balanced.
-  static const _collapsedTitleToFirstFieldGap = 72.0;
-  static const _expandedTitleToFirstFieldGap = 58.0;
-  static const _collapsedBottomGap = 48.0;
-  static const _expandedBottomGap = 10.0;
+  static const _compactBreakpoint = 540.0;
+  static const _compactTitleToFieldsGap = AppSpacing.lg;
+  static const _compactFieldsToButtonGap = AppSpacing.md;
 
   final bool messageFieldVisible;
   final Widget child;
   final Widget reviewButton;
 
-  double get _titleToFirstFieldGap => messageFieldVisible
-      ? _expandedTitleToFirstFieldGap
-      : _collapsedTitleToFirstFieldGap;
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _contentMaxWidth),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s,
+            vertical: AppSpacing.sm,
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxHeight < _compactBreakpoint) {
+                final compactGap = messageFieldVisible
+                    ? AppSpacing.md
+                    : _compactTitleToFieldsGap;
+                return SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const _SendTitle(),
+                      SizedBox(height: compactGap),
+                      SizedBox(width: _formWidth, child: child),
+                      const SizedBox(height: _compactFieldsToButtonGap),
+                      SizedBox(width: _reviewButtonWidth, child: reviewButton),
+                    ],
+                  ),
+                );
+              }
 
-  double get _bottomGap =>
-      messageFieldVisible ? _expandedBottomGap : _collapsedBottomGap;
+              return Column(
+                children: [
+                  const _SendTitle(),
+                  Expanded(
+                    child: Center(
+                      child: SizedBox(width: _formWidth, child: child),
+                    ),
+                  ),
+                  SizedBox(width: _reviewButtonWidth, child: reviewButton),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SendPageToolbar extends StatelessWidget {
+  const _SendPageToolbar();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: Center(
-            child: SingleChildScrollView(
-              child: SizedBox(
-                width: _formWidth,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const _SendTitle(),
-                    SizedBox(height: _titleToFirstFieldGap),
-                    child,
-                    SizedBox(height: _bottomGap),
-                  ],
-                ),
-              ),
-            ),
-          ),
+    return const SizedBox(
+      height: 48,
+      child: Padding(
+        padding: EdgeInsets.all(AppSpacing.xxs),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: AppRouteBackLink(),
         ),
-        const SizedBox(height: _contentToButtonGap),
-        SizedBox(width: _reviewButtonWidth, child: reviewButton),
-      ],
+      ),
     );
   }
 }
@@ -1038,10 +1070,68 @@ class _SendTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       'Send $kZcashDefaultCurrencyTicker',
-      style: AppTypography.displaySmall.copyWith(
+      style: AppTypography.headlineLarge.copyWith(
         color: context.colors.text.accent,
       ),
       textAlign: TextAlign.center,
+    );
+  }
+}
+
+class _SendFieldSurface extends StatelessWidget {
+  const _SendFieldSurface({required this.child, this.multiline = false});
+
+  final Widget child;
+  final bool multiline;
+
+  @override
+  Widget build(BuildContext context) {
+    final shellTop = multiline ? 16.0 + AppSpacing.xs : 16.0 + AppSpacing.xxs;
+    final shellHeight = multiline ? 148.0 : 46.0;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          left: 0,
+          right: 0,
+          top: shellTop,
+          height: shellHeight,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppRadii.small),
+                boxShadow: _sendSurfaceShadow(context.colors),
+              ),
+            ),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+class _SendFieldRightLink extends StatelessWidget {
+  const _SendFieldRightLink({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: AppTypography.labelMedium.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xxs),
+        AppIcon(AppIcons.chevronForward, size: 16, color: colors.icon.muted),
+      ],
     );
   }
 }
@@ -1052,66 +1142,31 @@ class _SendMaxBalanceControl extends StatelessWidget {
     required this.onMaxPressed,
   });
 
-  static const _tooltipTitle =
-      'Your spendable balance may be lower than your total balance.';
-  static const _tooltipBody =
-      'Funds need confirmations before they can be spent: 3 for change from '
-      'your own wallet, 10 for funds received from others. Shielded notes also '
-      "need to be fully scanned. They'll become available shortly.";
-
   final String spendableText;
   final VoidCallback? onMaxPressed;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final maxLabel = Text(
-      'Max: $spendableText',
-      style: AppTypography.labelMedium.copyWith(color: colors.text.secondary),
-    );
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Semantics(
-          button: true,
-          label: 'Use maximum spendable balance',
-          child: MouseRegion(
-            cursor: onMaxPressed == null
-                ? SystemMouseCursors.basic
-                : SystemMouseCursors.click,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onMaxPressed,
-              child: maxLabel,
+    return Semantics(
+      button: true,
+      label: 'Use maximum spendable balance',
+      hint: 'Your spendable balance may be lower than your total balance.',
+      child: MouseRegion(
+        cursor: onMaxPressed == null
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onMaxPressed,
+          child: Text(
+            'Max: $spendableText',
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.secondary,
             ),
           ),
         ),
-        const SizedBox(width: AppSpacing.xxs),
-        AppTooltip(
-          richMessage: TextSpan(
-            children: [
-              TextSpan(
-                text: _tooltipTitle,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const TextSpan(text: '\n\n$_tooltipBody'),
-            ],
-          ),
-          child: SizedBox(
-            width: 18,
-            height: 18,
-            child: Center(
-              child: AppIcon(
-                AppIcons.help,
-                size: 14,
-                color: colors.icon.muted,
-                semanticLabel: 'Spendable balance info',
-              ),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -1130,6 +1185,7 @@ class _SendAddMessageCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.medium),
+        boxShadow: _sendSurfaceShadow(colors),
       ),
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
       child: Column(
@@ -1141,7 +1197,7 @@ class _SendAddMessageCard extends StatelessWidget {
               AppIcon(AppIcons.scroll, size: 16, color: colors.icon.accent),
               const SizedBox(width: AppSpacing.xxs),
               Text(
-                'Add a message',
+                'Add a memo',
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.text.accent,
                 ),
@@ -1168,6 +1224,23 @@ class _SendAddMessageCard extends StatelessWidget {
       ),
     );
   }
+}
+
+List<BoxShadow> _sendSurfaceShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 2),
+      blurRadius: 4,
+    ),
+    BoxShadow(
+      color: colors.shadows.subtle,
+      offset: const Offset(0, 1),
+      blurRadius: 2,
+    ),
+    BoxShadow(color: colors.shadows.subtle, blurRadius: 1),
+  ];
 }
 
 class _SendGlobalError extends StatelessWidget {

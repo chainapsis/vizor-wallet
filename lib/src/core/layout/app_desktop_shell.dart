@@ -125,17 +125,19 @@ class AppDesktopPane extends StatelessWidget {
   const AppDesktopPane({
     required this.child,
     this.padding = const EdgeInsets.all(AppSpacing.md),
+    this.backgroundColor,
     super.key,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
+  final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: context.colors.background.ground,
+        color: backgroundColor ?? context.colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.xSmall),
       ),
       clipBehavior: Clip.antiAlias,
