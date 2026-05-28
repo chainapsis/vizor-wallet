@@ -753,6 +753,99 @@ void main() {
   });
 
   test(
+    'hardware voting can skip unsigned Keystone bundles after prefix signed',
+    () async {
+      late FakeVotingRecoveryApi recoveryApi;
+      final rust = FakeVotingRustApi(
+        bundleCount: 2,
+        onDeleteSkippedBundles: (keepCount) {
+          recoveryApi.state = recoveryState(bundleCount: keepCount);
+        },
+      );
+      recoveryApi = FakeVotingRecoveryApi(state: recoveryState(bundleCount: 2));
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: recoveryApi,
+        accountIsHardware: true,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareKeystoneSigning();
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .handleKeystoneSignedPczt([10, 0]);
+      var state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.keystoneSigning);
+      expect(state.keystoneSigningRequest?.bundleIndex, 1);
+      expect(state.canSkipRemainingKeystoneBundles, isTrue);
+
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .skipRemainingKeystoneBundles();
+      state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.readyToDelegate);
+      expect(state.resumePlan?.bundleCount, 1);
+      expect(state.keystoneSigningRequest, isNull);
+      expect(rust.deleteSkippedBundleKeepCounts, [1]);
+      expect(rust.storedKeystoneSignatures.keys, [0]);
+
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundlesWithKeystoneSignatures();
+      state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.delegated);
+      expect(rust.keystoneProofBundleCalls, [0]);
+      expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
+    },
+  );
+
+  test(
+    'hardware voting cannot skip across missing Keystone bundle prefix',
+    () async {
+      final rust = FakeVotingRustApi(bundleCount: 2);
+      rust.storedKeystoneSignatures[1] = rust_voting.ApiKeystoneSignatureRecord(
+        bundleIndex: 1,
+        sig: Uint8List.fromList(const [3, 1]),
+        sighash: Uint8List.fromList(const [10, 1]),
+        rk: Uint8List.fromList(const [2, 1]),
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(bundleCount: 2),
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: recoveryApi,
+        accountIsHardware: true,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareKeystoneSigning();
+      var state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.keystoneSigningRequest?.bundleIndex, 0);
+      expect(state.canSkipRemainingKeystoneBundles, isFalse);
+
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .skipRemainingKeystoneBundles();
+      state = container.read(votingSessionProvider(kRoundId)).value!;
+
+      expect(state.phase, VotingSessionPhase.error);
+      expect(state.error?.message, contains('Sign at least one'));
+      expect(rust.deleteSkippedBundleKeepCounts, isEmpty);
+    },
+  );
+
+  test(
     'hardware voting does not regenerate hotkey after stored signature',
     () async {
       final rust = FakeVotingRustApi(bundleCount: 2);
@@ -2307,6 +2400,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.failPrecompute = false,
     this.bundleCount = 1,
     this.mismatchKeystoneSubmission = false,
+    this.onDeleteSkippedBundles,
   });
 
   final Duration setupDelay;
@@ -2315,6 +2409,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final bool failPrecompute;
   final int bundleCount;
   final bool mismatchKeystoneSubmission;
+  final void Function(int keepCount)? onDeleteSkippedBundles;
   int setupCalls = 0;
   int _activeSetups = 0;
   int maxConcurrentSetups = 0;
@@ -2336,6 +2431,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final confirmedShares = <String>[];
   final keystoneDelegationRequestCalls = <int>[];
   final keystoneProofBundleCalls = <int>[];
+  final deleteSkippedBundleKeepCounts = <int>[];
   final storedKeystoneSignatures =
       <int, rust_voting.ApiKeystoneSignatureRecord>{};
   int generateVotingHotkeyCalls = 0;
@@ -2487,6 +2583,24 @@ class FakeVotingRustApi implements VotingRustApi {
     final records = storedKeystoneSignatures.values.toList()
       ..sort((a, b) => a.bundleIndex.compareTo(b.bundleIndex));
     return records;
+  }
+
+  @override
+  Future<int> deleteSkippedBundles({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int keepCount,
+  }) async {
+    deleteSkippedBundleKeepCounts.add(keepCount);
+    final removed = storedKeystoneSignatures.keys
+        .where((bundleIndex) => bundleIndex >= keepCount)
+        .toList();
+    for (final bundleIndex in removed) {
+      storedKeystoneSignatures.remove(bundleIndex);
+    }
+    onDeleteSkippedBundles?.call(keepCount);
+    return bundleCount - keepCount;
   }
 
   @override

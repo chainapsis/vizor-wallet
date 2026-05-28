@@ -10,6 +10,7 @@ import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 
 const int _ballotDivisorZatoshi = 12500000;
@@ -280,7 +281,7 @@ class _ResultCard extends StatelessWidget {
               total: total,
               color: _optionColor(
                 context,
-                option.index,
+                option.label,
                 highlighted: option.index == winningOption,
               ),
               highlighted: option.index == winningOption,
@@ -545,7 +546,7 @@ Map<int, num> _proposalTally(Map<String, dynamic> json, int proposalId) {
     final object = _objectFromValue(value);
     final id = _intFromJson(object, const ['proposal_id', 'proposalId', 'id']);
     if (id == proposalId) {
-      final row = _directTallyEntry(object);
+      final row = _directTallyEntry(object, fallbackDecision: 0);
       if (row != null) {
         addEntry(row);
         continue;
@@ -583,8 +584,11 @@ Map<int, num> _entriesToTally(Object? value) {
   }
   if (value is List) {
     final entries = <int, num>{};
-    for (final entry in value) {
-      final direct = _directTallyEntry(_objectFromValue(entry));
+    for (var index = 0; index < value.length; index++) {
+      final direct = _directTallyEntry(
+        _objectFromValue(value[index]),
+        fallbackDecision: index,
+      );
       if (direct == null) continue;
       entries.update(
         direct.decision,
@@ -597,17 +601,22 @@ Map<int, num> _entriesToTally(Object? value) {
   return const {};
 }
 
-_TallyEntry? _directTallyEntry(Map<String, dynamic> json) {
-  final decision = _intFromJson(json, const [
-    'vote_decision',
-    'voteDecision',
-    'decision',
-    'choice',
-    'index',
-    'option',
-    'option_id',
-    'optionId',
-  ]);
+_TallyEntry? _directTallyEntry(
+  Map<String, dynamic> json, {
+  int? fallbackDecision,
+}) {
+  final decision =
+      _intFromJson(json, const [
+        'vote_decision',
+        'voteDecision',
+        'decision',
+        'choice',
+        'index',
+        'option',
+        'option_id',
+        'optionId',
+      ]) ??
+      fallbackDecision;
   final amount = _valueFromJson(json, const [
     'total_value',
     'totalValue',
@@ -654,15 +663,11 @@ String? _optionLabel(List<VotingOptionView> options, int? choice) {
 
 Color _optionColor(
   BuildContext context,
-  int index, {
+  String label, {
   required bool highlighted,
 }) {
   if (!highlighted) return context.colors.text.disabled;
-  return switch (index) {
-    0 => context.colors.text.success,
-    1 => context.colors.text.destructive,
-    _ => context.colors.text.brandCrimson,
-  };
+  return votingChoicePalette(context, label).text;
 }
 
 String _formatTallyZec(num ballotUnits) {

@@ -18,7 +18,6 @@ import '../../../rust/api/voting.dart' as rust_voting;
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../voting_flow_models.dart';
 import '../voting_routes.dart';
-import '../voting_share_timing.dart';
 
 class VotingStatusScreen extends ConsumerStatefulWidget {
   const VotingStatusScreen({super.key, required this.roundId});
@@ -31,7 +30,6 @@ class VotingStatusScreen extends ConsumerStatefulWidget {
 
 class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   bool _started = false;
-  bool _completedInThisRun = false;
   bool _softwareAccountRequired = false;
   String? _runErrorMessage;
   List<String> _keystoneUrParts = const [];
@@ -128,10 +126,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       if (!mounted) return;
       final done = ref.read(votingSessionProvider(roundId)).value;
       if (done?.phase != VotingSessionPhase.done) return;
-      setState(() {
-        _completedInThisRun = true;
-      });
-      context.go(votingSubmissionConfirmedRoute(roundId));
+      _navigateToConfirmation();
     } catch (error) {
       _setRunError(_messageFromError(error));
     }
@@ -201,6 +196,48 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     }
   }
 
+  Future<void> _skipRemainingKeystoneBundles() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Use signed bundles only?'),
+          content: const Text(
+            'Vizor will submit with the Keystone bundle signatures already collected and skip the remaining unsigned bundles. This lowers voting power for this poll.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep Signing'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Use Signed Bundles'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || confirmed != true) return;
+
+    try {
+      setState(() {
+        _keystoneUrParts = const [];
+        _keystoneQrError = null;
+      });
+      final sessionNotifier = ref.read(
+        votingSessionProvider(widget.roundId).notifier,
+      );
+      await sessionNotifier.skipRemainingKeystoneBundles();
+      if (!mounted) return;
+      final afterSkip = ref.read(votingSessionProvider(widget.roundId)).value;
+      if (afterSkip?.phase == VotingSessionPhase.error) return;
+      await _submitAfterKeystoneSignatures(sessionNotifier);
+    } catch (error) {
+      _setRunError(_messageFromError(error));
+    }
+  }
+
   Future<void> _submitAfterKeystoneSignatures(
     VotingSessionNotifier sessionNotifier,
   ) async {
@@ -228,9 +265,11 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     if (!mounted) return;
     final done = ref.read(votingSessionProvider(widget.roundId)).value;
     if (done?.phase != VotingSessionPhase.done) return;
-    setState(() {
-      _completedInThisRun = true;
-    });
+    _navigateToConfirmation();
+  }
+
+  void _navigateToConfirmation() {
+    if (!mounted) return;
     context.go(votingSubmissionConfirmedRoute(widget.roundId));
   }
 
@@ -279,13 +318,14 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
                     : VotingSessionPhase.error;
                 return _StatusContent(
                   phase: phase,
-                  shareSummary: _shareSummary(state),
                   voteSubmissionDetail: _voteSubmissionDetail(state),
                   voteSubmissionProgress: _voteSubmissionProgress(state),
                   delegationProgress: _delegationProgress(state),
                   softwareAccountRequired: _softwareAccountRequired,
                   isHardwareAccount: state.isHardwareAccount,
                   keystoneSigningRequest: state.keystoneSigningRequest,
+                  canSkipRemainingKeystoneBundles:
+                      state.canSkipRemainingKeystoneBundles,
                   keystoneUrParts: _keystoneUrParts,
                   keystoneQrError: _keystoneQrError,
                   keystoneScanError: state.keystoneScanError,
@@ -295,6 +335,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
                   errorMessage: localError ?? state.error?.message,
                   onRetry: _retry,
                   onScanKeystone: _scanKeystoneSignature,
+                  onSkipKeystoneBundles: _skipRemainingKeystoneBundles,
                 );
               },
             ),
@@ -305,19 +346,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   }
 
   VotingSessionPhase _displayPhase(VotingSessionPhase phase) {
-    if (phase == VotingSessionPhase.done && !_completedInThisRun) {
-      return VotingSessionPhase.loadingWitnesses;
-    }
     return phase;
-  }
-
-  VotingShareTrackingSummary? _shareSummary(VotingSessionState state) {
-    final plan = state.resumePlan;
-    final round = state.round;
-    if (plan == null || round == null || plan.shareDelegations.isEmpty) {
-      return null;
-    }
-    return VotingShareTrackingSummary.fromShares(plan.shareDelegations, round);
   }
 
   String? _shareSubmissionDetail(VotingSessionState state) {
@@ -343,20 +372,9 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     if (total > 0) {
       final completed = state.voteSubmissionCompletedCount.clamp(0, total);
       final current = completed >= total ? total : completed + 1;
-      final bundleDetail = _voteSubmissionBundleDetail(state);
-      final questionDetail = 'Question $current/$total';
-      return bundleDetail == null
-          ? questionDetail
-          : '$questionDetail · $bundleDetail';
+      return 'Question $current/$total';
     }
     return _shareSubmissionDetail(state);
-  }
-
-  String? _voteSubmissionBundleDetail(VotingSessionState state) {
-    final bundleIndex = state.currentVoteKey?.bundleIndex;
-    final bundleCount = state.resumePlan?.bundleCount ?? 0;
-    if (bundleIndex == null || bundleCount <= 1) return null;
-    return 'Bundle ${bundleIndex + 1}/$bundleCount';
   }
 
   double? _voteSubmissionProgress(VotingSessionState state) {
@@ -368,16 +386,37 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
 
   double? _delegationProgress(VotingSessionState state) {
     if (state.phase != VotingSessionPhase.delegating) return null;
-    final bundleIndex = state.currentBundleIndex;
-    if (bundleIndex == null) return null;
-    return state.delegationProgress[bundleIndex]?.proofProgress
-        ?.clamp(0.0, 1.0)
-        .toDouble();
+    final bundleIndexes = _delegationProgressBundleIndexes(state);
+    if (bundleIndexes.isEmpty) return null;
+
+    var completedProgress = 0.0;
+    for (final bundleIndex in bundleIndexes) {
+      final progress = state.delegationProgress[bundleIndex];
+      if (_isDelegationBundleComplete(progress)) {
+        completedProgress += 1;
+      } else {
+        completedProgress +=
+            progress?.proofProgress?.clamp(0.0, 1.0).toDouble() ?? 0;
+      }
+    }
+    return (completedProgress / bundleIndexes.length).clamp(0.0, 1.0);
+  }
+
+  List<int> _delegationProgressBundleIndexes(VotingSessionState state) {
+    final indexes = <int>{
+      ...?state.resumePlan?.pendingDelegationBundleIndexes,
+      ...state.delegationProgress.keys,
+      ?state.currentBundleIndex,
+    }.toList()..sort();
+    return indexes;
+  }
+
+  bool _isDelegationBundleComplete(VotingSessionProgress? progress) {
+    return progress?.phase == 'submitted' || progress?.phase == 'confirmed';
   }
 
   void _retry() {
     _started = false;
-    _completedInThisRun = false;
     _softwareAccountRequired = false;
     _runErrorMessage = null;
     _keystoneUrParts = const [];
@@ -390,13 +429,13 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
 class _StatusContent extends StatelessWidget {
   const _StatusContent({
     required this.phase,
-    this.shareSummary,
     this.voteSubmissionDetail,
     this.voteSubmissionProgress,
     this.delegationProgress,
     this.softwareAccountRequired = false,
     this.isHardwareAccount = false,
     this.keystoneSigningRequest,
+    this.canSkipRemainingKeystoneBundles = false,
     this.keystoneUrParts = const [],
     this.keystoneQrError,
     this.keystoneScanError,
@@ -406,16 +445,17 @@ class _StatusContent extends StatelessWidget {
     this.errorMessage,
     this.onRetry,
     this.onScanKeystone,
+    this.onSkipKeystoneBundles,
   });
 
   final VotingSessionPhase phase;
-  final VotingShareTrackingSummary? shareSummary;
   final String? voteSubmissionDetail;
   final double? voteSubmissionProgress;
   final double? delegationProgress;
   final bool softwareAccountRequired;
   final bool isHardwareAccount;
   final rust_voting.ApiKeystoneDelegationRequest? keystoneSigningRequest;
+  final bool canSkipRemainingKeystoneBundles;
   final List<String> keystoneUrParts;
   final String? keystoneQrError;
   final String? keystoneScanError;
@@ -425,12 +465,15 @@ class _StatusContent extends StatelessWidget {
   final String? errorMessage;
   final VoidCallback? onRetry;
   final VoidCallback? onScanKeystone;
+  final VoidCallback? onSkipKeystoneBundles;
 
   @override
   Widget build(BuildContext context) {
     if (softwareAccountRequired) {
       return const _SoftwareAccountRequiredContent();
     }
+    final voteStepComplete =
+        phase == VotingSessionPhase.done || (voteSubmissionProgress ?? 0) >= 1;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -452,9 +495,7 @@ class _StatusContent extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          phase == VotingSessionPhase.done
-                              ? 'Votes Submitted'
-                              : 'Submitting Votes',
+                          'Submitting Votes',
                           textAlign: TextAlign.center,
                           style: AppTypography.displaySmall.copyWith(
                             color: context.colors.text.accent,
@@ -478,18 +519,21 @@ class _StatusContent extends StatelessWidget {
                           ),
                           const SizedBox(height: AppSpacing.sm),
                         ],
-                        _StepRow(
-                          label: 'Syncing wallet to snapshot',
-                          active:
-                              phase == VotingSessionPhase.waitingForWalletSync,
-                          complete: _after(
-                            VotingSessionPhase.waitingForWalletSync,
+                        if (isHardwareAccount &&
+                            phase == VotingSessionPhase.keystoneSigning &&
+                            keystoneSigningRequest != null) ...[
+                          _KeystoneSigningPanel(
+                            request: keystoneSigningRequest!,
+                            urParts: keystoneUrParts,
+                            qrError: keystoneQrError,
+                            scanError: keystoneScanError,
+                            canSkipRemainingBundles:
+                                canSkipRemainingKeystoneBundles,
+                            onScan: onScanKeystone,
+                            onSkipRemainingBundles: onSkipKeystoneBundles,
                           ),
-                        ),
-                        _StepRow(
-                          label: 'Selecting notes',
-                          complete: _after(VotingSessionPhase.loadingWitnesses),
-                        ),
+                          const SizedBox(height: AppSpacing.md),
+                        ],
                         if (isHardwareAccount) ...[
                           _StepRow(
                             label: 'Signing with Keystone',
@@ -498,18 +542,6 @@ class _StatusContent extends StatelessWidget {
                               VotingSessionPhase.keystoneSigning,
                             ),
                           ),
-                          if (phase == VotingSessionPhase.keystoneSigning &&
-                              keystoneSigningRequest != null) ...[
-                            const SizedBox(height: AppSpacing.xs),
-                            _KeystoneSigningPanel(
-                              request: keystoneSigningRequest!,
-                              urParts: keystoneUrParts,
-                              qrError: keystoneQrError,
-                              scanError: keystoneScanError,
-                              onScan: onScanKeystone,
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                          ],
                         ],
                         _StepRow(
                           label: 'Delegating voting authority',
@@ -520,18 +552,18 @@ class _StatusContent extends StatelessWidget {
                         _StepRow(
                           label: 'Casting votes and submitting shares',
                           active:
-                              phase == VotingSessionPhase.syncingVoteTree ||
-                              phase == VotingSessionPhase.castingVotes ||
-                              phase == VotingSessionPhase.submittingShares,
-                          complete: phase == VotingSessionPhase.done,
-                          detail: voteSubmissionDetail,
-                          progressValue: voteSubmissionProgress,
+                              !voteStepComplete &&
+                              (phase == VotingSessionPhase.syncingVoteTree ||
+                                  phase == VotingSessionPhase.castingVotes ||
+                                  phase == VotingSessionPhase.submittingShares),
+                          complete: voteStepComplete,
+                          detail: voteStepComplete
+                              ? null
+                              : voteSubmissionDetail,
+                          progressValue: voteStepComplete
+                              ? null
+                              : voteSubmissionProgress,
                         ),
-                        if (shareSummary case final summary?
-                            when summary.hasShares) ...[
-                          const SizedBox(height: AppSpacing.xs),
-                          _ShareTrackingRows(summary: summary),
-                        ],
                         if (phase == VotingSessionPhase.error) ...[
                           const SizedBox(height: AppSpacing.sm),
                           Text(
@@ -594,36 +626,55 @@ class _WalletSyncProgressText extends StatelessWidget {
       if (snapshot != null) 'snapshot block $snapshot',
       if (chainTip != null) 'chain tip $chainTip',
     ].join(' / ');
-    return Column(
-      children: [
-        Text(
-          'Waiting for wallet sync',
-          textAlign: TextAlign.center,
-          style: AppTypography.bodyMediumStrong.copyWith(
-            color: context.colors.text.accent,
-          ),
+    final colors = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.neutralSubtleOpacity,
+        border: Border.all(color: colors.border.subtle),
+        borderRadius: BorderRadius.circular(AppRadii.medium),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          children: [
+            Text(
+              'Waiting for wallet sync',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              'Your wallet is catching up to this poll snapshot. Voting will continue automatically once the wallet has synced through the snapshot block.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+            if (detail.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                detail,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ],
+            if (remaining != null && remaining > 0) ...[
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                '$remaining blocks remaining',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ],
+          ],
         ),
-        if (detail.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.xxs),
-          Text(
-            detail,
-            textAlign: TextAlign.center,
-            style: AppTypography.bodySmall.copyWith(
-              color: context.colors.text.secondary,
-            ),
-          ),
-        ],
-        if (remaining != null && remaining > 0) ...[
-          const SizedBox(height: AppSpacing.xxs),
-          Text(
-            '$remaining blocks remaining',
-            textAlign: TextAlign.center,
-            style: AppTypography.bodySmall.copyWith(
-              color: context.colors.text.secondary,
-            ),
-          ),
-        ],
-      ],
+      ),
     );
   }
 }
@@ -634,14 +685,18 @@ class _KeystoneSigningPanel extends StatelessWidget {
     required this.urParts,
     this.qrError,
     this.scanError,
+    this.canSkipRemainingBundles = false,
     this.onScan,
+    this.onSkipRemainingBundles,
   });
 
   final rust_voting.ApiKeystoneDelegationRequest request;
   final List<String> urParts;
   final String? qrError;
   final String? scanError;
+  final bool canSkipRemainingBundles;
   final VoidCallback? onScan;
+  final VoidCallback? onSkipRemainingBundles;
 
   @override
   Widget build(BuildContext context) {
@@ -660,12 +715,33 @@ class _KeystoneSigningPanel extends StatelessWidget {
         padding: const EdgeInsets.all(AppSpacing.sm),
         child: Column(
           children: [
-            Text(
-              'Sign Bundle ${request.bundleIndex + 1} of ${request.bundleCount}',
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.accent,
-              ),
+            Row(
+              children: [
+                const SizedBox(width: 64),
+                Expanded(
+                  child: Text(
+                    'Sign Bundle ${request.bundleIndex + 1} of ${request.bundleCount}',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 64,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: canSkipRemainingBundles
+                        ? AppButton(
+                            onPressed: onSkipRemainingBundles,
+                            variant: AppButtonVariant.primary,
+                            size: AppButtonSize.small,
+                            child: const Text('Skip'),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
@@ -751,76 +827,6 @@ class _KeystoneSigningMemo extends StatelessWidget {
   }
 }
 
-class _ShareTrackingRows extends StatelessWidget {
-  const _ShareTrackingRows({required this.summary});
-
-  final VotingShareTrackingSummary summary;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: context.colors.border.subtle),
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        child: Column(
-          children: [
-            _ShareStatusLine(
-              label: 'Accepted, waiting for reveal',
-              count: summary.waiting,
-            ),
-            _ShareStatusLine(
-              label: 'Ready for helper confirmation',
-              count: summary.ready,
-            ),
-            _ShareStatusLine(
-              label: 'Overdue, retrying helpers',
-              count: summary.overdue,
-            ),
-            _ShareStatusLine(
-              label: 'Confirmed by helper',
-              count: summary.confirmed,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ShareStatusLine extends StatelessWidget {
-  const _ShareStatusLine({required this.label, required this.count});
-
-  final String label;
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: AppTypography.bodySmall.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ),
-          Text(
-            count.toString(),
-            style: AppTypography.bodySmall.copyWith(color: colors.text.accent),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _SoftwareAccountRequiredContent extends StatelessWidget {
   const _SoftwareAccountRequiredContent();
 
@@ -881,7 +887,7 @@ class _StepRow extends StatelessWidget {
             width: 24,
             height: 24,
             child: active
-                ? CircularProgressIndicator(strokeWidth: 2, value: progress)
+                ? _ProgressBubble(progress: progress)
                 : Icon(
                     complete
                         ? Icons.check_circle
@@ -919,6 +925,48 @@ class _StepRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ProgressBubble extends StatelessWidget {
+  const _ProgressBubble({required this.progress});
+
+  final double? progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final value = progress;
+    final backgroundColor = colors.text.secondary.withValues(alpha: 0.35);
+    const size = 20.0;
+    if (value == null) {
+      return Center(
+        child: SizedBox.square(
+          dimension: size,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            backgroundColor: backgroundColor,
+          ),
+        ),
+      );
+    }
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: value),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      builder: (context, animatedValue, child) {
+        return Center(
+          child: SizedBox.square(
+            dimension: size,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              value: animatedValue,
+              backgroundColor: backgroundColor,
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -12,6 +12,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
+import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import '../voting_routes.dart';
 
@@ -172,7 +173,7 @@ class _ReviewRow extends StatelessWidget {
         : colors.text.secondary;
     final valueColor = skipped
         ? colors.text.secondary.withValues(alpha: 0.72)
-        : colors.text.accent;
+        : votingChoicePalette(context, value).text;
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.xs),
       padding: const EdgeInsets.all(AppSpacing.sm),

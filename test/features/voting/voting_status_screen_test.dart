@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.dart';
+import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
@@ -257,6 +258,117 @@ void main() {
     expect(find.text('Preparing voting power'), findsNothing);
   });
 
+  testWidgets('results screen renders flat tally rows as ZEC totals', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final round = _roundStatusJson()
+      ..['status'] = 'closed'
+      ..['summary'] = 'Completed poll'
+      ..['proposals'] = [
+        {
+          'proposal_id': 1,
+          'title': 'First proposal',
+          'options': ['Yes', 'No'],
+        },
+        {
+          'proposal_id': 2,
+          'title': 'Second proposal',
+          'options': ['Mint', 'Burn'],
+        },
+      ];
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round}
+        ..['/shielded-vote/v1/tally-results/$_roundId'] = {
+          'vote_round_id': _roundId,
+          'results': [
+            {'proposal_id': 1, 'total_value': 4},
+            {'proposal_id': 1, 'vote_decision': 1, 'total_value': 2},
+            {'proposal_id': 2, 'vote_decision': 0, 'total_value': 1},
+          ],
+        },
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(
+        votes: const [
+          rust_voting.ApiVoteRecord(
+            proposalId: 1,
+            bundleIndex: 0,
+            choice: 0,
+            submitted: true,
+          ),
+        ],
+      );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _resultsHarness()),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Poll'), findsOneWidget);
+    expect(find.text('Completed poll'), findsOneWidget);
+    expect(find.text('Results'), findsOneWidget);
+    expect(find.text('First proposal'), findsOneWidget);
+    expect(find.text('Yes'), findsOneWidget);
+    expect(find.text('0.50 ZEC'), findsOneWidget);
+    expect(find.text('No'), findsOneWidget);
+    expect(find.text('0.25 ZEC'), findsOneWidget);
+    expect(find.text('Total: 0.75 ZEC'), findsOneWidget);
+    expect(find.text('Voted: Yes'), findsOneWidget);
+    expect(find.text('Second proposal'), findsOneWidget);
+    expect(find.text('Mint'), findsOneWidget);
+    expect(find.text('0.13 ZEC'), findsOneWidget);
+    expect(find.text('Burn'), findsOneWidget);
+    expect(find.text('0.00 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('results screen keeps empty tallies visible as zero rows', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final round = _roundStatusJson()..['status'] = 'closed';
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round}
+        ..['/shielded-vote/v1/tally-results/$_roundId'] = {
+          'vote_round_id': _roundId,
+          'results': const [],
+        },
+    );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _resultsHarness()),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('First proposal'), findsOneWidget);
+    expect(find.text('Yes'), findsOneWidget);
+    expect(find.text('No'), findsOneWidget);
+    expect(find.text('0.00 ZEC'), findsNWidgets(2));
+    expect(find.text('Results pending...'), findsNothing);
+    expect(find.textContaining("Couldn't load results"), findsNothing);
+  });
+
   testWidgets('reviewing partial votes warns and marks skipped rows', (
     tester,
   ) async {
@@ -385,6 +497,13 @@ void main() {
       UncontrolledProviderScope(container: container, child: _statusHarness()),
     );
     await tester.pumpAndSettle();
+    expect(find.text('Confirmed by helper'), findsNothing);
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text('submission confirmed route').evaluate().isNotEmpty) {
+        break;
+      }
+    }
 
     expect(find.text('submission confirmed route'), findsOne);
     expect(
@@ -491,6 +610,118 @@ void main() {
     expect(find.text('keystone scan route'), findsOneWidget);
     await tester.tap(find.text('Return Signature'));
     for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text('submission confirmed route').evaluate().isNotEmpty) {
+        break;
+      }
+    }
+
+    expect(find.text('submission confirmed route'), findsOneWidget);
+  });
+
+  testWidgets('hardware status screen can skip unsigned Keystone bundles', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..addAll({
+          '/shielded-vote/v1/delegate-vote': {
+            'tx_hash': 'delegation-tx',
+            'code': 0,
+            'log': '',
+          },
+          '/shielded-vote/v1/tx/delegation-tx': {
+            'height': 10,
+            'code': 0,
+            'log': '',
+            'events': [
+              {
+                'type': 'delegate_vote',
+                'attributes': [
+                  {'key': 'leaf_index', 'value': '0'},
+                ],
+              },
+            ],
+          },
+          '/shielded-vote/v1/cast-vote': {
+            'tx_hash': 'vote-tx',
+            'code': 0,
+            'log': '',
+          },
+          '/shielded-vote/v1/tx/vote-tx': {
+            'height': 11,
+            'code': 0,
+            'log': '',
+            'events': [
+              {
+                'type': 'cast_vote',
+                'attributes': [
+                  {'key': 'leaf_index', 'value': '1,2'},
+                ],
+              },
+            ],
+          },
+          '/shielded-vote/v1/shares': {'share_id': '0102'},
+        }),
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(bundleCount: 2);
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _HardwareAccountNotifier.new,
+      activeAccountUuid: () async => 'hardware-1',
+      accountIsHardware: true,
+      hardwareAccountUuids: const {'hardware-1'},
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi, bundleCount: 2),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+    container
+        .read(
+          votingDraftProvider(
+            const VotingSessionKey(
+              roundId: _roundId,
+              accountUuid: 'hardware-1',
+            ),
+          ).notifier,
+        )
+        .setChoice(1, 0);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _statusHarness(keystoneScanResult: const [3]),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text('Sign Bundle 1 of 2').evaluate().isNotEmpty) break;
+    }
+
+    await tester.tap(find.text('Scan Signature'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Return Signature'));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text('Skip').evaluate().isNotEmpty) break;
+    }
+
+    expect(find.text('Sign Bundle 2 of 2'), findsOneWidget);
+    expect(find.text('Skip'), findsOneWidget);
+
+    await tester.tap(find.text('Skip'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Use signed bundles only?'), findsOneWidget);
+
+    await tester.tap(find.text('Use Signed Bundles'));
+    for (var i = 0; i < 40; i++) {
       await tester.pump(const Duration(milliseconds: 100));
       if (find.text('submission confirmed route').evaluate().isNotEmpty) {
         break;
@@ -737,6 +968,35 @@ Widget _proposalHarness() {
   );
 }
 
+Widget _resultsHarness() {
+  final router = GoRouter(
+    initialLocation: '/voting/poll/$_roundId/results',
+    routes: [
+      GoRoute(
+        path: '/voting/poll/:roundId/results',
+        builder: (_, state) =>
+            VotingResultsScreen(roundId: state.pathParameters['roundId']!),
+      ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+      GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
+      GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
+      GoRoute(
+        path: '/activity',
+        builder: (_, _) => const Text('activity route'),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (_, _) => const Text('settings route'),
+      ),
+    ],
+  );
+
+  return MaterialApp.router(
+    routerConfig: router,
+    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+  );
+}
+
 class _ScanReturnScreen extends StatelessWidget {
   const _ScanReturnScreen({required this.result});
 
@@ -847,13 +1107,14 @@ Map<String, dynamic> _roundStatusJson() => {
 };
 
 rust_voting.ApiRoundRecoveryState _recoveryState({
+  int bundleCount = 1,
   List<rust_voting.ApiDelegationTxRecovery> delegationTxHashes = const [],
   List<rust_voting.ApiVoteRecord> votes = const [],
   List<rust_voting.ApiVoteTxRecovery> voteTxHashes = const [],
 }) {
   return rust_voting.ApiRoundRecoveryState(
     roundId: _roundId,
-    bundleCount: 1,
+    bundleCount: bundleCount,
     delegationWorkflows: const [],
     delegationTxHashes: delegationTxHashes,
     votes: votes,
@@ -1073,9 +1334,10 @@ class _FakeVotingHotkeyStore implements VotingHotkeyStore {
 }
 
 class _VotingStatusRustApi extends _NoopVotingRustApi {
-  _VotingStatusRustApi(this.recoveryApi);
+  _VotingStatusRustApi(this.recoveryApi, {this.bundleCount = 1});
 
   final _MutableVotingRecoveryApi recoveryApi;
+  final int bundleCount;
   final storedKeystoneSignatures =
       <int, rust_voting.ApiKeystoneSignatureRecord>{};
 
@@ -1090,7 +1352,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String accountUuid,
   }) async {
     return rust_voting.ApiVotingBundleSetupResult(
-      bundleCount: 1,
+      bundleCount: bundleCount,
       eligibleWeightZatoshi: BigInt.from(100),
     );
   }
@@ -1152,6 +1414,23 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
+  Future<int> deleteSkippedBundles({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int keepCount,
+  }) async {
+    final removed = storedKeystoneSignatures.keys
+        .where((bundleIndex) => bundleIndex >= keepCount)
+        .toList();
+    for (final bundleIndex in removed) {
+      storedKeystoneSignatures.remove(bundleIndex);
+    }
+    recoveryApi.state = _recoveryState(bundleCount: keepCount);
+    return bundleCount - keepCount;
+  }
+
+  @override
   Future<rust_voting.ApiKeystoneDelegationRequest>
   buildKeystoneDelegationRequest({
     required String dbPath,
@@ -1174,7 +1453,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
           'I am authorizing this hotkey managed by my wallet to vote on $roundName with 0.00000100 ZEC.',
       eligibleWeightZatoshi: BigInt.from(100),
       delegatedWeightZatoshi: BigInt.from(100),
-      bundleCount: 1,
+      bundleCount: bundleCount,
       bundleIndex: bundleIndex,
     );
   }

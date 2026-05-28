@@ -14,6 +14,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
@@ -317,66 +318,63 @@ class _ActivePollContentState extends State<_ActivePollContent> {
       children: [
         const _VotingTopBar(),
         Expanded(
-          child: Stack(
-            children: [
-              Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: widget.proposals.isEmpty
-                      ? const _Message(
-                          title: 'No proposals',
-                          message: 'This poll does not contain any proposals.',
-                        )
-                      : ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppSpacing.md,
-                            AppSpacing.sm,
-                            AppSpacing.md,
-                            120,
-                          ),
-                          itemCount: widget.proposals.length + 1,
-                          separatorBuilder: (_, index) => SizedBox(
-                            height: index == 0 ? AppSpacing.md : AppSpacing.xs,
-                          ),
-                          itemBuilder: (context, index) {
-                            if (index == 0) {
-                              return _PollSummary(
-                                title: widget.title,
-                                snapshotHeight: widget.snapshotHeight,
-                                description: widget.description,
-                                endDate: widget.endDate,
-                                votingPowerZatoshi: widget.votingPowerZatoshi,
-                                votingPowerPreparing:
-                                    widget.votingPowerPreparing,
-                                expanded: _descriptionExpanded,
-                                onToggleDescription: () => setState(() {
-                                  _descriptionExpanded = !_descriptionExpanded;
-                                }),
-                              );
-                            }
-                            final proposal = widget.proposals[index - 1];
-                            return _ProposalCard(
-                              proposal: proposal,
-                              selectedChoice: widget.draft.choices[proposal.id],
-                              onChoice: (choice) =>
-                                  widget.onChoice(proposal.id, choice),
-                            );
-                          },
-                        ),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: _BottomActionBar(
-                  label: 'Review Answers',
-                  enabled: !widget.draft.isEmpty,
-                  onPressed: _handleBottomActionPressed,
-                ),
-              ),
-            ],
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: widget.proposals.isEmpty
+                  ? const _Message(
+                      title: 'No proposals',
+                      message: 'This poll does not contain any proposals.',
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.md,
+                        AppSpacing.sm,
+                        AppSpacing.md,
+                        AppSpacing.md,
+                      ),
+                      itemCount: widget.proposals.length + 2,
+                      separatorBuilder: (_, index) {
+                        final afterSummary = index == 0;
+                        final beforeAction = index == widget.proposals.length;
+                        return SizedBox(
+                          height: afterSummary || beforeAction
+                              ? AppSpacing.md
+                              : AppSpacing.xs,
+                        );
+                      },
+                      itemBuilder: (context, index) {
+                        if (index == 0) {
+                          return _PollSummary(
+                            title: widget.title,
+                            snapshotHeight: widget.snapshotHeight,
+                            description: widget.description,
+                            endDate: widget.endDate,
+                            votingPowerZatoshi: widget.votingPowerZatoshi,
+                            votingPowerPreparing: widget.votingPowerPreparing,
+                            expanded: _descriptionExpanded,
+                            onToggleDescription: () => setState(() {
+                              _descriptionExpanded = !_descriptionExpanded;
+                            }),
+                          );
+                        }
+                        if (index == widget.proposals.length + 1) {
+                          return _ReviewAnswersButton(
+                            enabled: !widget.draft.isEmpty,
+                            onPressed: _handleBottomActionPressed,
+                          );
+                        }
+                        final proposal = widget.proposals[index - 1];
+                        return _ProposalCard(
+                          proposal: proposal,
+                          selectedChoice: widget.draft.choices[proposal.id],
+                          onChoice: (choice) =>
+                              widget.onChoice(proposal.id, choice),
+                        );
+                      },
+                    ),
+            ),
           ),
         ),
       ],
@@ -654,61 +652,24 @@ class _ViewMoreButton extends StatelessWidget {
   }
 }
 
-class _BottomActionBar extends StatelessWidget {
-  const _BottomActionBar({
-    required this.label,
-    required this.enabled,
-    required this.onPressed,
-  });
+class _ReviewAnswersButton extends StatelessWidget {
+  const _ReviewAnswersButton({required this.enabled, required this.onPressed});
 
-  final String label;
   final bool enabled;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            colors.background.ground.withValues(alpha: 0),
-            colors.background.ground,
-            colors.background.ground,
-          ],
-          stops: const [0, 0.45, 1],
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Align(
-          alignment: Alignment.center,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.md,
-                AppSpacing.md,
-                AppSpacing.md,
-                AppSpacing.md,
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return AppButton(
-                    onPressed: enabled ? onPressed : null,
-                    variant: AppButtonVariant.primary,
-                    size: AppButtonSize.large,
-                    minWidth: constraints.maxWidth,
-                    child: Text(label),
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return AppButton(
+          onPressed: enabled ? onPressed : null,
+          variant: AppButtonVariant.primary,
+          size: AppButtonSize.large,
+          minWidth: constraints.maxWidth,
+          child: const Text('Review Answers'),
+        );
+      },
     );
   }
 }
@@ -1094,8 +1055,7 @@ class _ChoiceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final palette = _choicePalette(colors, label);
+    final palette = votingChoicePalette(context, label);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.xs,
@@ -1277,43 +1237,8 @@ bool _hasBlockingRecoveryWork(VotingResumePlan plan) {
   return plan.hasBlockingCompletedVoteDisplay;
 }
 
-class _ChoicePalette {
-  const _ChoicePalette({
-    required this.background,
-    required this.border,
-    required this.text,
-  });
-
-  final Color background;
-  final Color border;
-  final Color text;
-}
-
-_ChoicePalette _choicePalette(AppColors colors, String label) {
-  final lower = label.toLowerCase();
-  if (lower.contains('support') || lower.contains('yes')) {
-    return _ChoicePalette(
-      background: colors.background.utilitySuccessSubtle,
-      border: colors.background.utilitySuccessAlpha,
-      text: colors.text.success,
-    );
-  }
-  if (lower.contains('oppose') || lower.contains('no')) {
-    return _ChoicePalette(
-      background: colors.background.utilityDestructiveSubtle,
-      border: colors.background.utilityDestructiveAlpha,
-      text: colors.text.destructive,
-    );
-  }
-  return _ChoicePalette(
-    background: colors.background.neutralSubtleOpacity,
-    border: colors.border.subtle,
-    text: colors.text.secondary,
-  );
-}
-
 String _choiceLabel(VotingProposalView proposal, int? choice) {
-  if (choice == null) return 'Vote recorded';
+  if (choice == null) return 'Skipped';
   return proposal.options
       .firstWhere(
         (option) => option.index == choice,
@@ -1453,6 +1378,7 @@ class _OptionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final palette = votingChoicePalette(context, option.label);
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadii.small),
       onTap: onTap,
@@ -1463,13 +1389,11 @@ class _OptionRow extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           color: selected
-              ? colors.background.brandCrimsonAlpha
+              ? palette.background
               : colors.background.neutralSubtleOpacity,
           borderRadius: BorderRadius.circular(AppRadii.small),
           border: Border.all(
-            color: selected
-                ? colors.border.brandCrimsonStrong
-                : colors.border.subtle,
+            color: selected ? palette.border : colors.border.subtle,
           ),
         ),
         child: Row(
@@ -1478,16 +1402,14 @@ class _OptionRow extends StatelessWidget {
               child: Text(
                 option.label,
                 style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
+                  color: selected ? palette.text : colors.text.accent,
                 ),
               ),
             ),
             Text(
               selected ? 'Selected' : 'Choose',
               style: AppTypography.bodySmall.copyWith(
-                color: selected
-                    ? colors.text.brandCrimson
-                    : colors.text.secondary,
+                color: selected ? palette.text : colors.text.secondary,
               ),
             ),
           ],

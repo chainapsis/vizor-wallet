@@ -285,6 +285,24 @@ class VotingSessionState {
 
   bool get hasError => phase == VotingSessionPhase.error;
 
+  int get keystoneResolvedBundlePrefixCount =>
+      resolvedKeystoneBundlePrefixCount(
+        plan: resumePlan,
+        signatures: keystoneSignatures,
+      );
+
+  bool get canSkipRemainingKeystoneBundles {
+    final request = keystoneSigningRequest;
+    if (!isHardwareAccount ||
+        phase != VotingSessionPhase.keystoneSigning ||
+        request == null ||
+        request.bundleCount <= 1) {
+      return false;
+    }
+    final prefix = keystoneResolvedBundlePrefixCount;
+    return prefix > 0 && prefix < request.bundleCount;
+  }
+
   VotingSessionState copyWith({
     String? accountUuid,
     VotingSessionPhase? phase,
@@ -365,6 +383,40 @@ class VotingSessionState {
       error: clearError ? null : error ?? this.error,
     );
   }
+}
+
+int resolvedKeystoneBundlePrefixCount({
+  required VotingResumePlan? plan,
+  required Map<int, rust_voting.ApiKeystoneSignatureRecord> signatures,
+}) {
+  final bundleCount = plan?.bundleCount ?? 0;
+  if (bundleCount <= 0) return 0;
+
+  final resolved = <int>{};
+  for (final bundleIndex in signatures.keys) {
+    if (bundleIndex >= 0 && bundleIndex < bundleCount) {
+      resolved.add(bundleIndex);
+    }
+  }
+  final phases = plan?.delegationPhasesByIndex ?? const <int, String>{};
+  for (final entry in phases.entries) {
+    if (entry.key >= 0 &&
+        entry.key < bundleCount &&
+        _isResolvedKeystoneDelegationPhase(entry.value)) {
+      resolved.add(entry.key);
+    }
+  }
+
+  var count = 0;
+  while (count < bundleCount && resolved.contains(count)) {
+    count += 1;
+  }
+  return count;
+}
+
+bool _isResolvedKeystoneDelegationPhase(String phase) {
+  return phase == VotingWorkflowPhase.submittedDelegation ||
+      phase == VotingWorkflowPhase.confirmed;
 }
 
 String _stringFromJson(Map<String, dynamic> json, List<String> keys) {

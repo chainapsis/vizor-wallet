@@ -327,6 +327,13 @@ abstract interface class VotingRustApi {
     required String roundId,
   });
 
+  Future<int> deleteSkippedBundles({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int keepCount,
+  });
+
   Stream<rust_voting.ApiDelegationProofEvent>
   buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required String dbPath,
@@ -676,6 +683,21 @@ class FrbVotingRustApi implements VotingRustApi {
       dbPath: dbPath,
       walletId: walletId,
       roundId: roundId,
+    );
+  }
+
+  @override
+  Future<int> deleteSkippedBundles({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int keepCount,
+  }) {
+    return rust_voting.deleteSkippedBundles(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      keepCount: keepCount,
     );
   }
 

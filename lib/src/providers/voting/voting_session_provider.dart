@@ -170,10 +170,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             )) {
           signedDelegationPayload =
               event.signedDelegationPayload ?? signedDelegationPayload;
+          final proofProgress = _monotonicProofProgress(
+            progress[bundleIndex]?.proofProgress,
+            event.proofProgress,
+          );
           progress[bundleIndex] = VotingSessionProgress(
             phase: event.phase,
             bundleIndex: bundleIndex,
-            proofProgress: event.proofProgress,
+            proofProgress: proofProgress,
             message: null,
           );
           state = AsyncData(
@@ -310,6 +314,74 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
+  Future<void> skipRemainingKeystoneBundles() {
+    return _enqueue(() async {
+      final current = await future;
+      final context = await _loadContext(_roundId);
+      if (!context.isHardwareAccount) {
+        _setError('Keystone voting is only available for hardware accounts.');
+        return;
+      }
+
+      final plan = current.resumePlan ?? context.resumePlan;
+      final signatures = await _loadKeystoneSignatures(context);
+      final signedPrefixCount = resolvedKeystoneBundlePrefixCount(
+        plan: plan,
+        signatures: signatures,
+      );
+      if (signedPrefixCount <= 0) {
+        _setError(
+          'Sign at least one Keystone bundle before skipping the rest.',
+        );
+        return;
+      }
+      if (signedPrefixCount >= plan.bundleCount) {
+        state = AsyncData(
+          (state.value ?? current).copyWith(
+            phase: VotingSessionPhase.readyToDelegate,
+            resumePlan: plan,
+            keystoneSignatures: signatures,
+            clearKeystoneSigningRequest: true,
+            clearKeystoneScanError: true,
+            clearCurrentBundleIndex: true,
+            clearError: true,
+          ),
+        );
+        return;
+      }
+
+      debugPrint(
+        '[zcash] Voting: Keystone skipping remaining bundles '
+        'round=${context.round.roundId} keepCount=$signedPrefixCount '
+        'bundleCount=${plan.bundleCount}',
+      );
+      await ref
+          .read(votingRustApiProvider)
+          .deleteSkippedBundles(
+            dbPath: context.dbPath,
+            walletId: context.accountUuid,
+            roundId: context.round.roundId,
+            keepCount: signedPrefixCount,
+          );
+      final refreshedPlan = await _loadResumePlan(context);
+      final retainedSignatures = {
+        for (final entry in signatures.entries)
+          if (entry.key < signedPrefixCount) entry.key: entry.value,
+      };
+      state = AsyncData(
+        (state.value ?? current).copyWith(
+          phase: VotingSessionPhase.readyToDelegate,
+          resumePlan: refreshedPlan,
+          keystoneSignatures: retainedSignatures,
+          clearKeystoneSigningRequest: true,
+          clearKeystoneScanError: true,
+          clearCurrentBundleIndex: true,
+          clearError: true,
+        ),
+      );
+    });
+  }
+
   Future<void> delegatePendingBundlesWithKeystoneSignatures() {
     return _enqueue(() async {
       var current = await future;
@@ -390,10 +462,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 )) {
           signedDelegationPayload =
               event.signedDelegationPayload ?? signedDelegationPayload;
+          final proofProgress = _monotonicProofProgress(
+            progress[bundleIndex]?.proofProgress,
+            event.proofProgress,
+          );
           progress[bundleIndex] = VotingSessionProgress(
             phase: event.phase,
             bundleIndex: bundleIndex,
-            proofProgress: event.proofProgress,
+            proofProgress: proofProgress,
             message: null,
           );
           state = AsyncData(
@@ -637,11 +713,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 bundleIndex: event.bundleIndex ?? bundleIndex,
                 proposalId: proposalId,
               );
+              final proofProgress = _monotonicProofProgress(
+                progress[eventKey]?.proofProgress,
+                event.proofProgress,
+              );
               progress[eventKey] = VotingSessionProgress(
                 phase: event.phase,
                 bundleIndex: eventKey.bundleIndex,
                 proposalId: proposalId,
-                proofProgress: event.proofProgress,
+                proofProgress: proofProgress,
               );
               state = AsyncData(
                 (state.value ?? current).copyWith(
@@ -653,7 +733,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                   voteSubmissionProgress: _voteSubmissionProgress(
                     completedBundleTasks: completedBundleTasks,
                     totalBundleTasks: totalBundleTasks,
-                    currentBundleProgress: event.proofProgress,
+                    currentBundleProgress: proofProgress,
                   ),
                 ),
               );
@@ -674,7 +754,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 voteSubmissionProgress: _voteSubmissionProgress(
                   completedBundleTasks: completedBundleTasks,
                   totalBundleTasks: totalBundleTasks,
-                  currentBundleProgress: 0.95,
+                  currentBundleProgress: _monotonicProofProgress(
+                    progress[key]?.proofProgress,
+                    0.95,
+                  ),
                 ),
               );
             }
@@ -965,6 +1048,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return ((completedBundleTasks + currentProgress) / totalBundleTasks)
         .clamp(0.0, 1.0)
         .toDouble();
+  }
+
+  double? _monotonicProofProgress(double? previous, double? next) {
+    final previousValue = previous?.clamp(0.0, 1.0).toDouble();
+    final nextValue = next?.clamp(0.0, 1.0).toDouble();
+    if (nextValue == null) return previousValue;
+    if (previousValue == null) return nextValue;
+    return nextValue < previousValue ? previousValue : nextValue;
   }
 
   List<String> _plannedShareServers({
