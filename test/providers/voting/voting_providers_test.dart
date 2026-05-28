@@ -1288,6 +1288,10 @@ void main() {
           );
 
       expect(rust.voteCommitmentKeys, ['0:8', '1:8', '0:9', '1:9']);
+      expect((await persistence.load(draftKey)).choices, {7: 1, 8: 0, 9: 1});
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .submitPendingShares();
       expect((await persistence.load(draftKey)).choices, isEmpty);
     },
   );
@@ -1426,8 +1430,10 @@ void main() {
               singleShare: false,
             ),
           ],
+          allProposalIds: const [7, 8],
         );
 
+    expect(recoveryApi.ballotIntents, ['7:false:1', '8:true:null']);
     expect(rust.recordedShares, hasLength(1));
     expect(rust.recordedShares.single.bundleIndex, 0);
     expect(rust.recordedShares.single.proposalId, 7);
@@ -2358,6 +2364,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   rust_voting.ApiRoundRecoveryState state;
   final walletIds = <String>[];
   final addedSentServers = <_AddedSentServers>[];
+  final ballotIntents = <String>[];
 
   FakeVotingRecoveryApi({required this.state});
 
@@ -2417,7 +2424,9 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required int proposalId,
     required bool skipped,
     int? choice,
-  }) async {}
+  }) async {
+    ballotIntents.add('$proposalId:$skipped:${choice ?? 'null'}');
+  }
 }
 
 class FakeVotingDraftPersistence implements VotingDraftPersistence {

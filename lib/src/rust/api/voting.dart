@@ -797,6 +797,38 @@ Future<void> clearRecoveryState({
   roundId: roundId,
 );
 
+/// Compute the resumable voting-session plan for a round. The plan reports the
+/// ordered remaining work (`next_steps`) and which proposals are still open.
+Future<ApiRoundPlan> getRoundPlan({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required List<int> proposalIds,
+}) => RustLib.instance.api.crateApiVotingGetRoundPlan(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  proposalIds: proposalIds,
+);
+
+/// Persist (insert or replace) the voter's ballot intent for one proposal.
+/// Pass `skipped: true` for `Decision::Skipped`; otherwise `choice` must be set.
+Future<void> setBallotIntent({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int proposalId,
+  required bool skipped,
+  int? choice,
+}) => RustLib.instance.api.crateApiVotingSetBallotIntent(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  proposalId: proposalId,
+  skipped: skipped,
+  choice: choice,
+);
+
 /// Stored commitment bundle recovery data for one `(bundle_index, proposal_id)`.
 class ApiCommitmentBundleRecovery {
   final int bundleIndex;
@@ -1067,6 +1099,79 @@ class ApiKeystoneSignatureRecord {
           sig == other.sig &&
           sighash == other.sighash &&
           rk == other.rk;
+}
+
+/// One unit of remaining work for a round, flattened for the FRB boundary.
+class ApiNextStep {
+  /// "delegate" | "poll_delegation" | "cast_vote" | "poll_vote" | "confirm_share".
+  final String kind;
+  final int bundleIndex;
+
+  /// 0 for delegation steps.
+  final int proposalId;
+
+  /// 0 unless `confirm_share`.
+  final int shareIndex;
+
+  const ApiNextStep({
+    required this.kind,
+    required this.bundleIndex,
+    required this.proposalId,
+    required this.shareIndex,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      bundleIndex.hashCode ^
+      proposalId.hashCode ^
+      shareIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiNextStep &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId &&
+          shareIndex == other.shareIndex;
+}
+
+/// Derived resume state for one round, produced by the crate's `resume_plan`.
+class ApiRoundPlan {
+  final String roundId;
+  final bool pendingRecovery;
+  final List<ApiNextStep> nextSteps;
+  final Uint32List openProposals;
+  final bool allDecided;
+
+  const ApiRoundPlan({
+    required this.roundId,
+    required this.pendingRecovery,
+    required this.nextSteps,
+    required this.openProposals,
+    required this.allDecided,
+  });
+
+  @override
+  int get hashCode =>
+      roundId.hashCode ^
+      pendingRecovery.hashCode ^
+      nextSteps.hashCode ^
+      openProposals.hashCode ^
+      allDecided.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiRoundPlan &&
+          runtimeType == other.runtimeType &&
+          roundId == other.roundId &&
+          pendingRecovery == other.pendingRecovery &&
+          nextSteps == other.nextSteps &&
+          openProposals == other.openProposals &&
+          allDecided == other.allDecided;
 }
 
 /// Recovery summary for resuming one voting round after app restart.

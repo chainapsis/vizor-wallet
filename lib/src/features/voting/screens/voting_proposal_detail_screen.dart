@@ -81,6 +81,22 @@ class _VotingProposalDetailScreenState
                 ? _CompletedVote.fromPlan(state.resumePlan, proposals)
                 : null;
             _maybePrepareVotingPower(state);
+            // Crate planner gate: takes precedence over the old voted view.
+            // When the planner reports pending recovery work the vote can be
+            // resumed, so show a "Continue voting" button instead.
+            if (state.roundPlan?.pendingRecovery == true) {
+              return Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: _PendingVoteContent(
+                  roundTitle: round.title.isEmpty
+                      ? 'Coinholder Poll'
+                      : round.title,
+                  snapshotHeight: round.snapshotHeight,
+                  description: _roundDescription(round.rawJson),
+                  roundId: roundId,
+                ),
+              );
+            }
             if (completedVote != null) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
@@ -95,22 +111,6 @@ class _VotingProposalDetailScreenState
                   votedAt: completedVote.votedAt,
                   proposals: proposals,
                   choicesByProposalId: completedVote.choicesByProposalId,
-                ),
-              );
-            }
-            // Crate planner gate: takes precedence over the old dead-end.
-            // When the planner reports pending recovery work the vote can be
-            // resumed, so show a "Continue voting" button instead.
-            if (state.roundPlan?.pendingRecovery == true) {
-              return Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: _PendingVoteContent(
-                  roundTitle: round.title.isEmpty
-                      ? 'Coinholder Poll'
-                      : round.title,
-                  snapshotHeight: round.snapshotHeight,
-                  description: _roundDescription(round.rawJson),
-                  roundId: roundId,
                 ),
               );
             }
@@ -832,8 +832,7 @@ class _PendingVoteContent extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.md),
                   AppButton(
-                    onPressed: () =>
-                        context.go(votingStatusRoute(roundId)),
+                    onPressed: () => context.go(votingStatusRoute(roundId)),
                     variant: AppButtonVariant.primary,
                     child: const Text('Continue voting'),
                   ),

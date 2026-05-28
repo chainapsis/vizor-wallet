@@ -3,10 +3,16 @@ import 'package:zcash_wallet/src/features/voting/voting_poll_ordering.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 
 void main() {
-  test('matches zodl-ios poll list ordering', () {
+  test('prioritizes in-progress polls before normal active polls', () {
     final rounds = [
       _round('closed-old', status: 'finalized', end: '2026-01-01T00:00:00Z'),
       _round('active-later', status: 'active', end: '2026-03-01T00:00:00Z'),
+      _round(
+        'in-progress',
+        status: 'active',
+        end: '2026-05-01T00:00:00Z',
+        inProgress: true,
+      ),
       _round(
         'voted',
         status: 'active',
@@ -21,6 +27,7 @@ void main() {
     final sorted = sortVotingRoundsForPollList(rounds);
 
     expect(sorted.map((round) => round.roundId), [
+      'in-progress',
       'active-sooner',
       'active-later',
       'voted',
@@ -47,12 +54,14 @@ VotingRoundView _round(
   required String status,
   required String end,
   bool voted = false,
+  bool inProgress = false,
 }) {
   return VotingRoundView(
     roundId: id,
     title: id,
     status: status,
     voted: voted,
+    inProgress: inProgress,
     rawJson: {'vote_end_time': end},
   );
 }

@@ -18,6 +18,7 @@ class VotingRoundView {
   final bool endorsed;
   final bool unverified;
   final bool voted;
+  final bool inProgress;
   final Map<String, dynamic> rawJson;
 
   const VotingRoundView({
@@ -27,6 +28,7 @@ class VotingRoundView {
     this.endorsed = false,
     this.unverified = false,
     this.voted = false,
+    this.inProgress = false,
     this.rawJson = const {},
   });
 
@@ -34,6 +36,7 @@ class VotingRoundView {
     VotingRoundSummary summary, {
     required bool endorsed,
     bool voted = false,
+    bool inProgress = false,
   }) {
     return VotingRoundView(
       roundId: summary.roundId,
@@ -42,11 +45,17 @@ class VotingRoundView {
       endorsed: endorsed,
       unverified: !endorsed,
       voted: voted,
+      inProgress: inProgress,
       rawJson: summary.rawJson,
     );
   }
 
-  VotingRoundView copyWith({bool? endorsed, bool? unverified, bool? voted}) {
+  VotingRoundView copyWith({
+    bool? endorsed,
+    bool? unverified,
+    bool? voted,
+    bool? inProgress,
+  }) {
     return VotingRoundView(
       roundId: roundId,
       title: title,
@@ -54,6 +63,7 @@ class VotingRoundView {
       endorsed: endorsed ?? this.endorsed,
       unverified: unverified ?? this.unverified,
       voted: voted ?? this.voted,
+      inProgress: inProgress ?? this.inProgress,
       rawJson: rawJson,
     );
   }

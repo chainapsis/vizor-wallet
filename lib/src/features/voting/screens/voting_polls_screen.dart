@@ -530,7 +530,9 @@ String? _roundDateLabel(Map<String, dynamic> json, _PollCardState state) {
   final end = votingRoundEndDate(json);
   if (end != null) {
     final label = switch (state) {
-      _PollCardState.active || _PollCardState.voted => 'Closes',
+      _PollCardState.inProgress ||
+      _PollCardState.active ||
+      _PollCardState.voted => 'Closes',
       _PollCardState.tallying || _PollCardState.closed => 'Closed',
     };
     return '$label ${_formatPollDate(end)}';
@@ -560,6 +562,7 @@ String _formatPollDate(DateTime date) {
 
 String _statusLabel(_PollCardState state) {
   return switch (state) {
+    _PollCardState.inProgress => 'In Progress',
     _PollCardState.active => 'Active',
     _PollCardState.voted => 'Voted',
     _PollCardState.tallying => 'Tallying',
@@ -576,7 +579,9 @@ String _statusIcon(_PollCardState state) {
 
 Color _statusBackground(_PollCardState state) {
   return switch (state) {
-    _PollCardState.active || _PollCardState.voted => const Color(0xFFECFDF3),
+    _PollCardState.inProgress ||
+    _PollCardState.active ||
+    _PollCardState.voted => const Color(0xFFECFDF3),
     _PollCardState.tallying => const Color(0xFFFFFAEB),
     _PollCardState.closed => const Color(0xFFF4F4F0),
   };
@@ -584,7 +589,9 @@ Color _statusBackground(_PollCardState state) {
 
 Color _statusBorder(_PollCardState state) {
   return switch (state) {
-    _PollCardState.active || _PollCardState.voted => const Color(0xFFABEFC6),
+    _PollCardState.inProgress ||
+    _PollCardState.active ||
+    _PollCardState.voted => const Color(0xFFABEFC6),
     _PollCardState.tallying => const Color(0xFFFEDF89),
     _PollCardState.closed => const Color(0xFFEBEBE6),
   };
@@ -592,7 +599,9 @@ Color _statusBorder(_PollCardState state) {
 
 Color _statusText(_PollCardState state) {
   return switch (state) {
-    _PollCardState.active || _PollCardState.voted => const Color(0xFF067647),
+    _PollCardState.inProgress ||
+    _PollCardState.active ||
+    _PollCardState.voted => const Color(0xFF067647),
     _PollCardState.tallying => const Color(0xFFB54708),
     _PollCardState.closed => const Color(0xFF716C5D),
   };
@@ -600,6 +609,7 @@ Color _statusText(_PollCardState state) {
 
 String _actionLabel(_PollCardState state) {
   return switch (state) {
+    _PollCardState.inProgress => 'Resume',
     _PollCardState.active => 'Enter Poll',
     _PollCardState.voted => 'Review',
     _PollCardState.tallying || _PollCardState.closed => 'View Results',
@@ -608,6 +618,7 @@ String _actionLabel(_PollCardState state) {
 
 AppButtonVariant _actionButtonVariant(_PollCardState state) {
   return switch (state) {
+    _PollCardState.inProgress ||
     _PollCardState.active => AppButtonVariant.primary,
     _PollCardState.voted ||
     _PollCardState.tallying ||
@@ -615,12 +626,16 @@ AppButtonVariant _actionButtonVariant(_PollCardState state) {
   };
 }
 
-enum _PollCardState { active, voted, tallying, closed }
+enum _PollCardState { inProgress, active, voted, tallying, closed }
 
 _PollCardState _pollCardState(VotingRoundView round) {
   return switch (votingPollListStatus(round.status)) {
     VotingPollListStatus.active =>
-      round.voted ? _PollCardState.voted : _PollCardState.active,
+      round.inProgress
+          ? _PollCardState.inProgress
+          : round.voted
+          ? _PollCardState.voted
+          : _PollCardState.active,
     VotingPollListStatus.tallying => _PollCardState.tallying,
     VotingPollListStatus.closed => _PollCardState.closed,
   };
