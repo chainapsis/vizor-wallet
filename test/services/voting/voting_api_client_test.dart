@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/services/voting/voting_api_client.dart';
 
@@ -77,6 +79,65 @@ void main() {
     expect(tally.roundId, 'round-1');
     expect(delegation.txHash, 'delegation-tx');
     expect(delegation.code, 0);
+  });
+
+  test(
+    'fetches active round and treats missing active round as null',
+    () async {
+      final http = FakeVotingHttpClient(
+        responses: {
+          '/shielded-vote/v1/rounds/active': {
+            'round': {'vote_round_id': encodedRoundId, 'status': 'active'},
+          },
+        },
+      );
+      final client = VotingApiClient(
+        baseUrl: Uri.parse('https://voting.valargroup.org'),
+        httpClient: http,
+      );
+
+      final active = await client.getActiveRoundStatus();
+
+      expect(active?.roundId, hexRoundId);
+      expect(active?.status, 'active');
+
+      final missing = VotingApiClient(
+        baseUrl: Uri.parse('https://voting.valargroup.org'),
+        httpClient: FakeVotingHttpClient(
+          responses: {
+            '/shielded-vote/v1/rounds/active': jsonResponse(
+              {},
+              statusCode: 404,
+            ),
+          },
+        ),
+      );
+      await expectLater(missing.getActiveRoundStatus(), completion(isNull));
+    },
+  );
+
+  test('filters proposal tally entries by proposal id', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        '/shielded-vote/v1/tally-results/$hexRoundId': {
+          'vote_round_id': hexRoundId,
+          'results': [
+            {'proposal_id': 1, 'vote_decision': 0, 'total_value': 4},
+            {'proposal_id': 2, 'vote_decision': 1, 'total_value': 9},
+          ],
+        },
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: http,
+    );
+
+    final tally = await client.getProposalTally(hexRoundId, 2);
+
+    expect(tally.rawJson['results'], [
+      {'proposal_id': 2, 'vote_decision': 1, 'total_value': 9},
+    ]);
   });
 
   test(
@@ -177,9 +238,7 @@ void main() {
 
   test('list rounds treats proto3 empty object as no rounds', () async {
     final http = FakeVotingHttpClient(
-      responses: {
-        '/shielded-vote/v1/rounds': <String, dynamic>{},
-      },
+      responses: {'/shielded-vote/v1/rounds': <String, dynamic>{}},
     );
     final client = VotingApiClient(
       baseUrl: Uri.parse('https://voting.valargroup.org'),
@@ -243,6 +302,71 @@ void main() {
     expect(confirmation?.event('delegate_vote')?.attribute('leaf_index'), '3');
   });
 
+  test('retries transient broadcast errors', () async {
+    final delays = <Duration>[];
+    final http = FakeVotingHttpClient(
+      responses: {
+        '/shielded-vote/v1/cast-vote': SequentialVotingHttpResponses([
+          jsonResponse({'error': 'gateway'}, statusCode: 503),
+          {'tx_hash': 'vote-tx', 'code': 0, 'log': ''},
+        ]),
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: http,
+      broadcastRetryDelays: const [Duration(milliseconds: 1)],
+      delay: (delay) async => delays.add(delay),
+    );
+
+    final result = await client.submitVoteCommitment(
+      commitment: {'vote_round_id': 'round-1'},
+    );
+
+    expect(result.txHash, 'vote-tx');
+    expect(http.requests.map((request) => request.uri.path), [
+      '/shielded-vote/v1/cast-vote',
+      '/shielded-vote/v1/cast-vote',
+    ]);
+    expect(delays, const [Duration(milliseconds: 1)]);
+  });
+
+  test(
+    'retries transient delegate timeout but not deterministic rejection',
+    () async {
+      final http = FakeVotingHttpClient(
+        responses: {
+          '/shielded-vote/v1/delegate-vote': SequentialVotingHttpResponses([
+            TimeoutException('timed out'),
+            {'tx_hash': 'delegation-tx', 'code': 0, 'log': ''},
+            jsonResponse({
+              'tx_hash': '',
+              'code': 7,
+              'log': 'rejected',
+            }, statusCode: 422),
+          ]),
+        },
+      );
+      final client = VotingApiClient(
+        baseUrl: Uri.parse('https://voting.valargroup.org'),
+        httpClient: http,
+        broadcastRetryDelays: const [Duration.zero],
+        delay: (_) async {},
+      );
+
+      final retried = await client.submitDelegation(
+        submission: {'vote_round_id': 'round-1'},
+      );
+      final rejected = await client.submitDelegation(
+        submission: {'vote_round_id': 'round-1'},
+      );
+
+      expect(retried.txHash, 'delegation-tx');
+      expect(rejected.code, 7);
+      expect(http.requests.length, 3);
+    },
+  );
+
   test('share request payloads preserve service JSON field names', () async {
     final http = FakeVotingHttpClient(
       responses: {
@@ -266,5 +390,6 @@ void main() {
       'vote_round_id': 'round-1',
       'share_index': 7,
     });
+    expect(http.requests.single.timeout, const Duration(seconds: 5));
   });
 }

@@ -9,7 +9,7 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_software_account
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
-  testWidgets('hardware accounts see voting coming soon state', (tester) async {
+  testWidgets('hardware accounts can load voting child routes', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
     addTearDown(() async {
       await tester.binding.setSurfaceSize(null);
@@ -23,19 +23,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Hardware Accounts Coming Soon'), findsOneWidget);
-    expect(
-      find.text(
-        'Coinholder polling for Keystone and other hardware accounts is coming soon. Switch to a software account to view and submit polls.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('polls child'), findsNothing);
-
-    await tester.tap(find.text('Switch Account'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('accounts route'), findsOneWidget);
+    expect(find.text('polls child'), findsOneWidget);
+    expect(find.text('Hardware Accounts Coming Soon'), findsNothing);
   });
 
   testWidgets('software accounts can load voting child routes', (tester) async {

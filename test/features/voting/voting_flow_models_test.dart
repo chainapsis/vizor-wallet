@@ -62,4 +62,15 @@ void main() {
       ),
     );
   });
+
+  test('draft choices can be cleared by proposal id', () {
+    final draft = const VotingDraftState()
+        .setChoice(1, 0)
+        .setChoice(2, 1)
+        .clearChoice(1);
+
+    expect(draft.choices, {2: 1});
+    expect(draft.isEmpty, false);
+    expect(draft.clearChoice(2).isEmpty, true);
+  });
 }

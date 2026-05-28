@@ -1,6 +1,7 @@
 fastlane_version "2.220.0"
 
 require "fileutils"
+require "open3"
 require "tempfile"
 require "tmpdir"
 require_relative "../common/release"
@@ -137,20 +138,61 @@ end
 def linux_validate_signing_environment!
   ENV.fetch("LINUX_APPIMAGE_GPG_PRIVATE_KEY")
   ENV.fetch("LINUX_APPIMAGE_GPG_KEY_ID")
+  UI.user_error!("LINUX_APPIMAGE_GPG_PASSPHRASE is required for non-interactive AppImage signing") if ENV["LINUX_APPIMAGE_GPG_PASSPHRASE"].to_s.empty?
 end
 
 def linux_with_gnupg_home
   Dir.mktmpdir("vizor-linux-gnupg") do |gnupg_home|
     FileUtils.chmod(0o700, gnupg_home)
+    File.write(File.join(gnupg_home, "gpg-agent.conf"), "allow-preset-passphrase\n")
     previous_gnupg_home = ENV["GNUPGHOME"]
     previous_passphrase = ENV["APPIMAGETOOL_SIGN_PASSPHRASE"]
     ENV["GNUPGHOME"] = gnupg_home
     ENV["APPIMAGETOOL_SIGN_PASSPHRASE"] = ENV["LINUX_APPIMAGE_GPG_PASSPHRASE"].to_s
+    sh("gpgconf --kill gpg-agent || true")
     yield
   ensure
+    sh("gpgconf --kill gpg-agent || true")
     previous_gnupg_home.nil? ? ENV.delete("GNUPGHOME") : ENV["GNUPGHOME"] = previous_gnupg_home
     previous_passphrase.nil? ? ENV.delete("APPIMAGETOOL_SIGN_PASSPHRASE") : ENV["APPIMAGETOOL_SIGN_PASSPHRASE"] = previous_passphrase
   end
+end
+
+def linux_run_command!(argv, stdin_data: nil, error_context:)
+  stdout, stderr, status = if stdin_data.nil?
+    Open3.capture3(*argv)
+  else
+    Open3.capture3(*argv, stdin_data: stdin_data)
+  end
+  return stdout if status.success?
+
+  UI.user_error!("#{error_context} failed with status #{status.exitstatus}\n#{stderr}")
+end
+
+def linux_appimage_gpg_keygrip
+  key_id = ENV.fetch("LINUX_APPIMAGE_GPG_KEY_ID")
+  output = linux_run_command!(
+    ["gpg", "--batch", "--with-colons", "--with-keygrip", "--list-secret-keys", key_id],
+    error_context: "Resolving Linux AppImage GPG keygrip"
+  )
+  keygrip = output.each_line
+    .find { |line| line.start_with?("grp:") }
+    &.split(":")
+    &.[](9)
+    &.strip
+  UI.user_error!("Could not resolve GPG keygrip for #{key_id}") if keygrip.to_s.empty?
+  keygrip
+end
+
+def linux_preset_appimage_gpg_passphrase!
+  passphrase = ENV.fetch("LINUX_APPIMAGE_GPG_PASSPHRASE")
+  preset_command = "PRESET_PASSPHRASE #{linux_appimage_gpg_keygrip} -1 #{passphrase.unpack1("H*")}\n/bye\n"
+  linux_run_command!(
+    ["gpg-connect-agent"],
+    stdin_data: preset_command,
+    error_context: "Presetting Linux AppImage GPG passphrase"
+  )
+  UI.message("Preset Linux AppImage GPG passphrase for appimagetool")
 end
 
 def linux_import_appimage_gpg_key!
@@ -163,6 +205,7 @@ def linux_import_appimage_gpg_key!
 
   key_id = ENV.fetch("LINUX_APPIMAGE_GPG_KEY_ID")
   sh("gpg --batch --list-secret-keys #{VizorRelease.shell_escape(key_id)}")
+  linux_preset_appimage_gpg_passphrase!
 end
 
 def linux_update_enabled_for_release?(metadata)

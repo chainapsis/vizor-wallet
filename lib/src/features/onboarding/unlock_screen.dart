@@ -201,6 +201,7 @@ class _UnlockContent extends StatelessWidget {
   static const double _contentWidth = 256;
   static const double _titleWidth = 347;
   static const double _fieldGroupHeight = 66;
+  static const double _fieldGroupErrorHeight = 82;
 
   @override
   Widget build(BuildContext context) {
@@ -244,7 +245,9 @@ class _UnlockContent extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   SizedBox(
-                    height: _fieldGroupHeight,
+                    height: messageText == null
+                        ? _fieldGroupHeight
+                        : _fieldGroupErrorHeight,
                     child: PasswordTextField(
                       label: 'Password',
                       hintText: 'Enter Your Password',

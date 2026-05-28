@@ -97,7 +97,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  'Review Your Votes',
+                  'Review Your Answers',
                   textAlign: TextAlign.center,
                   style: AppTypography.displaySmall.copyWith(
                     color: context.colors.text.accent,
@@ -109,22 +109,11 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                   child: Column(
                     children: [
                       for (final proposal in proposals)
-                        if (draft.choices[proposal.id] != null)
-                          _ReviewRow(
-                            title: proposal.title,
-                            value: proposal.options
-                                .firstWhere(
-                                  (option) =>
-                                      option.index ==
-                                      draft.choices[proposal.id],
-                                  orElse: () => VotingOptionView(
-                                    index: draft.choices[proposal.id]!,
-                                    label:
-                                        'Choice ${draft.choices[proposal.id]}',
-                                  ),
-                                )
-                                .label,
-                          ),
+                        _ReviewRow(
+                          title: proposal.title,
+                          value: _reviewValue(proposal, draft),
+                          skipped: draft.choices[proposal.id] == null,
+                        ),
                     ],
                   ),
                 ),
@@ -140,7 +129,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                         : () => context.go(votingStatusRoute(widget.roundId)),
                     variant: AppButtonVariant.primary,
                     minWidth: 240,
-                    child: const Text('Submit Votes'),
+                    child: const Text('Confirm & Submit'),
                   ),
                 ),
                 const Spacer(),
@@ -153,37 +142,58 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
   }
 }
 
+String _reviewValue(VotingProposalView proposal, VotingDraftState draft) {
+  final choice = draft.choices[proposal.id];
+  if (choice == null) return 'Skipped';
+  return proposal.options
+      .firstWhere(
+        (option) => option.index == choice,
+        orElse: () => VotingOptionView(index: choice, label: 'Choice $choice'),
+      )
+      .label;
+}
+
 class _ReviewRow extends StatelessWidget {
-  const _ReviewRow({required this.title, required this.value});
+  const _ReviewRow({
+    required this.title,
+    required this.value,
+    this.skipped = false,
+  });
 
   final String title;
   final String value;
+  final bool skipped;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
+    final titleColor = skipped
+        ? colors.text.secondary.withValues(alpha: 0.64)
+        : colors.text.secondary;
+    final valueColor = skipped
+        ? colors.text.secondary.withValues(alpha: 0.72)
+        : colors.text.accent;
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.xs),
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: context.colors.background.ground.withValues(alpha: 0.78),
+        color: skipped
+            ? colors.background.neutralSubtleOpacity
+            : colors.background.ground.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(AppRadii.medium),
-        border: Border.all(color: context.colors.border.subtle),
+        border: Border.all(color: colors.border.subtle),
       ),
       child: Row(
         children: [
           Expanded(
             child: Text(
               title,
-              style: AppTypography.bodyMedium.copyWith(
-                color: context.colors.text.secondary,
-              ),
+              style: AppTypography.bodyMedium.copyWith(color: titleColor),
             ),
           ),
           Text(
             value,
-            style: AppTypography.bodyMediumStrong.copyWith(
-              color: context.colors.text.accent,
-            ),
+            style: AppTypography.bodyMediumStrong.copyWith(color: valueColor),
           ),
         ],
       ),

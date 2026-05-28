@@ -79,6 +79,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiDraftVote dco_decode_api_draft_vote(dynamic raw);
 
   @protected
+  ApiKeystoneDelegationRequest dco_decode_api_keystone_delegation_request(
+    dynamic raw,
+  );
+
+  @protected
+  ApiKeystoneSignatureRecord dco_decode_api_keystone_signature_record(
+    dynamic raw,
+  );
+
+  @protected
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
 
   @protected
@@ -86,6 +96,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiShareDelegationRecord dco_decode_api_share_delegation_record(dynamic raw);
+
+  @protected
+  ApiShareSubmissionPlan dco_decode_api_share_submission_plan(dynamic raw);
 
   @protected
   ApiShareWorkflowRecovery dco_decode_api_share_workflow_recovery(dynamic raw);
@@ -227,7 +240,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ApiDraftVote> dco_decode_list_api_draft_vote(dynamic raw);
 
   @protected
+  List<ApiKeystoneSignatureRecord>
+  dco_decode_list_api_keystone_signature_record(dynamic raw);
+
+  @protected
   List<ApiShareDelegationRecord> dco_decode_list_api_share_delegation_record(
+    dynamic raw,
+  );
+
+  @protected
+  List<ApiShareSubmissionPlan> dco_decode_list_api_share_submission_plan(
     dynamic raw,
   );
 
@@ -460,6 +482,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiDraftVote sse_decode_api_draft_vote(SseDeserializer deserializer);
 
   @protected
+  ApiKeystoneDelegationRequest sse_decode_api_keystone_delegation_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiKeystoneSignatureRecord sse_decode_api_keystone_signature_record(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiMempoolTxEvent sse_decode_api_mempool_tx_event(
     SseDeserializer deserializer,
   );
@@ -471,6 +503,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiShareDelegationRecord sse_decode_api_share_delegation_record(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiShareSubmissionPlan sse_decode_api_share_submission_plan(
     SseDeserializer deserializer,
   );
 
@@ -648,7 +685,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<ApiKeystoneSignatureRecord>
+  sse_decode_list_api_keystone_signature_record(SseDeserializer deserializer);
+
+  @protected
   List<ApiShareDelegationRecord> sse_decode_list_api_share_delegation_record(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ApiShareSubmissionPlan> sse_decode_list_api_share_submission_plan(
     SseDeserializer deserializer,
   );
 
@@ -937,6 +983,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_api_draft_vote(ApiDraftVote self, SseSerializer serializer);
 
   @protected
+  void sse_encode_api_keystone_delegation_request(
+    ApiKeystoneDelegationRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_keystone_signature_record(
+    ApiKeystoneSignatureRecord self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_mempool_tx_event(
     ApiMempoolTxEvent self,
     SseSerializer serializer,
@@ -951,6 +1009,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_share_delegation_record(
     ApiShareDelegationRecord self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_share_submission_plan(
+    ApiShareSubmissionPlan self,
     SseSerializer serializer,
   );
 
@@ -1159,8 +1223,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_api_keystone_signature_record(
+    List<ApiKeystoneSignatureRecord> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_api_share_delegation_record(
     List<ApiShareDelegationRecord> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_share_submission_plan(
+    List<ApiShareSubmissionPlan> self,
     SseSerializer serializer,
   );
 

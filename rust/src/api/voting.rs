@@ -7,7 +7,8 @@ use crate::wallet::{
         bundle::{self, SelectedNotes},
         delegation,
         delegation::{
-            BundleSetupResult, DelegationPirPrecomputeResult, ProofEvent, SignedDelegationPayload,
+            BundleSetupResult, DelegationPirPrecomputeResult, KeystoneDelegationRequest,
+            KeystoneSignatureRecord, ProofEvent, SignedDelegationPayload,
         },
         hotkey,
         progress::{cancel_voting_work, VotingWorkCancellation},
@@ -17,6 +18,7 @@ use crate::wallet::{
     },
 };
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use rand::{rngs::OsRng, RngCore};
 use secrecy::ExposeSecret;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,12 +32,14 @@ pub struct ApiVotingRoundParams {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-/// FRB-safe reference to one note eligible for voting at the snapshot height.
+/// FRB-safe reference to one Orchard note selected at the snapshot height.
 pub struct ApiVotingNoteRef {
     pub pool: String,
     pub txid_hex: String,
     pub output_index: u32,
     pub value_zatoshi: u64,
+    /// Legacy per-note display field. Voting weight is computed from smart
+    /// bundles, so this carries the raw note value.
     pub voting_weight_zatoshi: u64,
     pub commitment_tree_position: u64,
     pub mined_height: u64,
@@ -87,6 +91,30 @@ pub struct ApiSignedDelegationPayload {
     pub delegated_weight_zatoshi: u64,
     pub bundle_count: u32,
     pub bundle_index: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Voting PCZT request that should be signed by Keystone.
+pub struct ApiKeystoneDelegationRequest {
+    pub pczt_bytes: Vec<u8>,
+    pub redacted_pczt_bytes: Vec<u8>,
+    pub pczt_sighash: Vec<u8>,
+    pub rk: Vec<u8>,
+    pub action_index: u32,
+    pub display_memo: String,
+    pub eligible_weight_zatoshi: u64,
+    pub delegated_weight_zatoshi: u64,
+    pub bundle_count: u32,
+    pub bundle_index: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Persisted Keystone signature for one delegation bundle.
+pub struct ApiKeystoneSignatureRecord {
+    pub bundle_index: u32,
+    pub sig: Vec<u8>,
+    pub sighash: Vec<u8>,
+    pub rk: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -187,6 +215,17 @@ pub struct ApiSignedVoteCommitment {
 pub struct ApiSignedVoteCommitments {
     pub bundle_index: u32,
     pub commitments: Vec<ApiSignedVoteCommitment>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// FRB-safe helper-share submission plan from `zcash_voting::share_policy`.
+pub struct ApiShareSubmissionPlan {
+    /// Unix seconds when helpers should submit this share, or 0 for immediate.
+    pub submit_at: u64,
+    /// Number of helpers this share should reach before local delivery succeeds.
+    pub target_count: u32,
+    /// Initial helper targets selected by the shared Rust policy.
+    pub target_servers: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -306,6 +345,65 @@ pub fn vote_share_wire_json(
     catch(|| vote_share_wire_json_inner(&payload, vc_tree_position, submit_at))
 }
 
+/// Plan independent helper-share timing and randomized helper targets.
+///
+/// This mirrors the zcash-swift-wallet-sdk wrapper around
+/// `zcash_voting::share_policy::plan_share_submissions`, with Rust drawing the
+/// policy-sized entropy from the OS CSPRNG before returning FRB-safe plans.
+pub fn plan_share_submissions(
+    share_count: u32,
+    server_urls: Vec<String>,
+    now_seconds: u64,
+    vote_end_time_seconds: u64,
+    last_moment_buffer_seconds: Option<u64>,
+    single_share: bool,
+) -> Result<Vec<ApiShareSubmissionPlan>, String> {
+    catch(|| {
+        let share_count = usize::try_from(share_count)
+            .map_err(|_| "share_count does not fit in usize".to_string())?;
+        let required = zcash_voting::share_policy::share_submission_random_bytes_required(
+            share_count,
+            server_urls.len(),
+            now_seconds,
+            vote_end_time_seconds,
+            last_moment_buffer_seconds,
+            single_share,
+        );
+        let mut submit_at_random_bytes = vec![0u8; required.submit_at_random_bytes];
+        let mut server_random_bytes = vec![0u8; required.server_random_bytes];
+        OsRng
+            .try_fill_bytes(&mut submit_at_random_bytes)
+            .map_err(|e| format!("failed to draw submit_at entropy: {e}"))?;
+        OsRng
+            .try_fill_bytes(&mut server_random_bytes)
+            .map_err(|e| format!("failed to draw share-server entropy: {e}"))?;
+
+        let plans = zcash_voting::share_policy::plan_share_submissions(
+            share_count,
+            &server_urls,
+            now_seconds,
+            vote_end_time_seconds,
+            last_moment_buffer_seconds,
+            single_share,
+            &submit_at_random_bytes,
+            &server_random_bytes,
+        )
+        .map_err(|e| e.to_string())?;
+
+        plans
+            .into_iter()
+            .map(|plan| {
+                Ok(ApiShareSubmissionPlan {
+                    submit_at: plan.submit_at,
+                    target_count: u32::try_from(plan.target_count)
+                        .map_err(|_| "share target_count does not fit in u32".to_string())?,
+                    target_servers: plan.target_servers,
+                })
+            })
+            .collect()
+    })
+}
+
 /// Extract and validate one helper-share payload from stored recovery JSON.
 ///
 /// The stored recovery blob is hex-encoded and also contains local-only
@@ -342,6 +440,21 @@ pub fn derive_voting_hotkey(
     catch(|| {
         let seed = secrecy::SecretVec::new(seed_bytes);
         hotkey::derive_hotkey(&seed, &round_id, &account_uuid).map(|hotkey| {
+            // FRB returns owned bytes, so this copy cannot be zeroized by Rust
+            // after Dart receives it.
+            hotkey.expose_secret().to_vec()
+        })
+    })
+}
+
+/// Generate opaque voting hotkey bytes for a hardware account.
+///
+/// Hardware accounts cannot expose their wallet seed to derive the deterministic
+/// software hotkey, so the app persists this random per-round hotkey in secure
+/// storage and reuses it for vote commitment signing.
+pub fn generate_voting_hotkey() -> Result<Vec<u8>, String> {
+    catch(|| {
+        hotkey::generate_random_hotkey().map(|hotkey| {
             // FRB returns owned bytes, so this copy cannot be zeroized by Rust
             // after Dart receives it.
             hotkey.expose_secret().to_vec()
@@ -415,6 +528,34 @@ impl From<SignedDelegationPayload> for ApiSignedDelegationPayload {
             delegated_weight_zatoshi: result.delegated_weight_zatoshi,
             bundle_count: result.bundle_count,
             bundle_index: result.bundle_index,
+        }
+    }
+}
+
+impl From<KeystoneDelegationRequest> for ApiKeystoneDelegationRequest {
+    fn from(result: KeystoneDelegationRequest) -> Self {
+        Self {
+            pczt_bytes: result.pczt_bytes,
+            redacted_pczt_bytes: result.redacted_pczt_bytes,
+            pczt_sighash: result.pczt_sighash,
+            rk: result.rk,
+            action_index: result.action_index,
+            display_memo: result.display_memo,
+            eligible_weight_zatoshi: result.eligible_weight_zatoshi,
+            delegated_weight_zatoshi: result.delegated_weight_zatoshi,
+            bundle_count: result.bundle_count,
+            bundle_index: result.bundle_index,
+        }
+    }
+}
+
+impl From<KeystoneSignatureRecord> for ApiKeystoneSignatureRecord {
+    fn from(record: KeystoneSignatureRecord) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            sig: record.sig,
+            sighash: record.sighash,
+            rk: record.rk,
         }
     }
 }
@@ -1012,8 +1153,9 @@ pub fn get_bundle_count(
 
 /// Select voting-eligible notes at `snapshot_height` using lightwalletd data.
 ///
-/// The returned notes are already quantized to `BALLOT_DIVISOR` voting weight
-/// and include the cached tree anchor used by later delegation setup.
+/// The returned notes are raw snapshot-unspent notes and include the cached
+/// tree anchor used by later delegation setup. `eligible_weight_zatoshi` is
+/// computed from `zcash_voting` smart bundles.
 pub async fn select_voting_notes(
     db_path: String,
     lightwalletd_url: String,
@@ -1195,6 +1337,150 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         &account_uuid,
         &seed,
         bundle_index,
+        move |event| {
+            if progress_sink.add(event.into()).is_err() {
+                progress_cancellation.cancel_local();
+                log::warn!("voting delegation: StreamSink closed, progress not delivered");
+            }
+        },
+        cancellation,
+    )
+    .await
+    .map(ApiSignedDelegationPayload::from)?;
+
+    if sink
+        .add(ApiDelegationProofEvent {
+            phase: "result".to_string(),
+            proof_progress: None,
+            signed_delegation_payload: Some(signed),
+        })
+        .is_err()
+    {
+        log::warn!("voting delegation: StreamSink closed before final result");
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Build and redact a voting PCZT that Keystone must sign for one bundle.
+pub async fn build_keystone_delegation_request(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    round_params: ApiVotingRoundParams,
+    round_name: String,
+    session_json: Option<String>,
+    account_uuid: String,
+    hotkey_seed: Vec<u8>,
+    bundle_index: u32,
+) -> Result<ApiKeystoneDelegationRequest, String> {
+    let network = keys::parse_network(&network)?;
+    let round_id = round_params.vote_round_id.clone();
+    let hotkey_secret = secrecy::SecretVec::new(hotkey_seed);
+    let cancellation = VotingWorkCancellation::start(&db_path, &account_uuid, Some(&round_id))?;
+    delegation::build_keystone_delegation_request(
+        &db_path,
+        &lightwalletd_url,
+        network,
+        round_params.into(),
+        &round_name,
+        session_json.as_deref(),
+        &account_uuid,
+        &hotkey_secret,
+        bundle_index,
+        cancellation,
+    )
+    .await
+    .map(Into::into)
+}
+
+/// Extract the ZIP-244 sighash from PCZT bytes.
+pub fn extract_pczt_sighash(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    catch(|| delegation::extract_pczt_sighash(&pczt_bytes))
+}
+
+/// Extract a Keystone SpendAuth signature from signed PCZT bytes.
+pub fn extract_spend_auth_signature_from_signed_pczt(
+    signed_pczt_bytes: Vec<u8>,
+    action_index: u32,
+) -> Result<Vec<u8>, String> {
+    catch(|| {
+        delegation::extract_spend_auth_signature_from_signed_pczt(&signed_pczt_bytes, action_index)
+    })
+}
+
+/// Persist a Keystone signature for one delegation bundle.
+pub fn store_keystone_signature(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    bundle_index: u32,
+    sig: Vec<u8>,
+    sighash: Vec<u8>,
+    rk: Vec<u8>,
+) -> Result<(), String> {
+    catch(|| {
+        delegation::store_keystone_signature(
+            &db_path,
+            &wallet_id,
+            &round_id,
+            bundle_index,
+            &sig,
+            &sighash,
+            &rk,
+        )
+    })
+}
+
+/// Load persisted Keystone signatures for one voting round.
+pub fn get_keystone_signatures(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+) -> Result<Vec<ApiKeystoneSignatureRecord>, String> {
+    catch(|| {
+        delegation::get_keystone_signatures(&db_path, &wallet_id, &round_id)
+            .map(|records| records.into_iter().map(Into::into).collect())
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Streaming Keystone variant of `build_prove_and_sign_delegation_payload`.
+pub async fn build_prove_delegation_payload_with_keystone_signature_with_progress(
+    db_path: String,
+    lightwalletd_url: String,
+    pir_server_url: String,
+    network: String,
+    round_params: ApiVotingRoundParams,
+    round_name: String,
+    session_json: Option<String>,
+    account_uuid: String,
+    hotkey_seed: Vec<u8>,
+    bundle_index: u32,
+    keystone_sig: Vec<u8>,
+    keystone_sighash: Vec<u8>,
+    sink: StreamSink<ApiDelegationProofEvent>,
+) -> Result<(), String> {
+    let network = keys::parse_network(&network)?;
+    let round_id = round_params.vote_round_id.clone();
+    let hotkey_secret = secrecy::SecretVec::new(hotkey_seed);
+    let cancellation = VotingWorkCancellation::start(&db_path, &account_uuid, Some(&round_id))?;
+    let sink = Arc::new(sink);
+    let progress_sink = sink.clone();
+    let progress_cancellation = cancellation.clone();
+    let signed = delegation::build_prove_delegation_payload_with_keystone_signature(
+        &db_path,
+        &lightwalletd_url,
+        &pir_server_url,
+        network,
+        round_params.into(),
+        &round_name,
+        session_json.as_deref(),
+        &account_uuid,
+        &hotkey_secret,
+        bundle_index,
+        &keystone_sig,
+        &keystone_sighash,
         move |event| {
             if progress_sink.add(event.into()).is_err() {
                 progress_cancellation.cancel_local();
@@ -1826,6 +2112,26 @@ mod tests {
     }
 
     #[test]
+    fn api_keystone_delegation_request_preserves_display_memo() {
+        let api = ApiKeystoneDelegationRequest::from(KeystoneDelegationRequest {
+            pczt_bytes: vec![1],
+            redacted_pczt_bytes: vec![2],
+            pczt_sighash: vec![3],
+            rk: vec![4],
+            action_index: 5,
+            display_memo: "I am authorizing this hotkey.".to_string(),
+            eligible_weight_zatoshi: 20,
+            delegated_weight_zatoshi: 10,
+            bundle_count: 2,
+            bundle_index: 1,
+        });
+
+        assert_eq!(api.display_memo, "I am authorizing this hotkey.");
+        assert_eq!(api.bundle_count, 2);
+        assert_eq!(api.bundle_index, 1);
+    }
+
+    #[test]
     fn delegation_wire_json_matches_vote_chain_shape() {
         let wire = delegation_submission_wire_json(ApiSignedDelegationPayload {
             pczt_bytes: vec![],
@@ -2110,8 +2416,8 @@ mod tests {
         let divisor = zcash_voting::governance::BALLOT_DIVISOR;
         let selected = SelectedNotes {
             notes: vec![
-                test_note_ref(divisor, divisor, 3),
-                test_note_ref(divisor * 2 + 1, divisor * 2, 7),
+                test_note_ref(divisor / 2, divisor / 2, 3),
+                test_note_ref(divisor / 2, divisor / 2, 7),
             ],
             snapshot_height: 100,
             anchor_tree_state: test_tree_state(100),
@@ -2120,12 +2426,12 @@ mod tests {
         let api = selection_result(selected).unwrap();
 
         assert_eq!(api.note_count, 2);
-        assert_eq!(api.eligible_weight_zatoshi, divisor * 3);
+        assert_eq!(api.eligible_weight_zatoshi, divisor);
         assert_eq!(api.snapshot_height, 100);
         assert_eq!(api.anchor_height, 100);
         assert_eq!(api.notes[0].commitment_tree_position, 3);
-        assert_eq!(api.notes[1].value_zatoshi, divisor * 2 + 1);
-        assert_eq!(api.notes[1].voting_weight_zatoshi, divisor * 2);
+        assert_eq!(api.notes[1].value_zatoshi, divisor / 2);
+        assert_eq!(api.notes[1].voting_weight_zatoshi, divisor / 2);
     }
 
     #[test]

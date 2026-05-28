@@ -1,5 +1,4 @@
-String formatVotingPower(BigInt? zatoshi) {
-  if (zatoshi == null) return 'Recorded';
+String formatVotingPower(BigInt zatoshi) {
   const zatoshiPerZec = 100000000;
   final whole = zatoshi ~/ BigInt.from(zatoshiPerZec);
   final fraction = (zatoshi % BigInt.from(zatoshiPerZec))

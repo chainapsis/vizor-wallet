@@ -17,10 +17,20 @@ const _mnemonicKey = 'zcash_account_mnemonic_test-account';
 const _externalEncryptedKey = 'external_encrypted_key';
 const _mnemonic = 'abandon abandon abandon abandon abandon abandon';
 
+const _accountsKey = 'zcash_accounts';
 const _passwordVerifierKey = 'zcash_password_verifier';
 const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
 const _rotationInProgressKey = 'zcash_rotation_in_progress';
 const _migrationCompleteKey = 'zcash_mnemonic_storage_migrated_v1';
+
+String _accountListJson({bool isHardware = false}) => jsonEncode([
+  {
+    'uuid': _accountUuid,
+    'name': 'Account 1',
+    'order': 0,
+    'isHardware': isHardware,
+  },
+]);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -596,6 +606,7 @@ void main() {
 
       await store.configurePassword(_oldPassword);
       await store.writeAccountMnemonic(_accountUuid, _mnemonic);
+      await store.writeString(_accountsKey, _accountListJson());
       expect(regularStorage.valueFor(_mnemonicKey), isNull);
       expect(mnemonicStorage.valueFor(_mnemonicKey), isNotNull);
 
@@ -607,11 +618,29 @@ void main() {
       expect(regularStorage.valueFor(_mnemonicKey), isNull);
       expect(mnemonicStorage.valueFor(_mnemonicKey), isNotNull);
       expect(regularStorage.valueFor(_migrationCompleteKey), 'true');
-      expect(operations, contains('regular.readAll'));
+      expect(operations, isNot(contains('regular.readAll')));
       expect(operations, isNot(contains('mnemonic.write $_mnemonicKey')));
-      expect(operations, isNot(contains('regular.delete $_mnemonicKey')));
+      expect(operations, contains('regular.delete $_mnemonicKey'));
     },
   );
+
+  test('macOS unlock does not require regular storage readAll', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    final regularStorage = _ReadAllFailingMapStorage('regular');
+    final mnemonicStorage = _MapStorage('mnemonic');
+    store = AppSecureStore.testing(
+      storage: regularStorage,
+      mnemonicStorage: mnemonicStorage,
+    );
+
+    await store.configurePassword(_oldPassword);
+    await store.writeAccountMnemonic(_accountUuid, _mnemonic);
+    await store.writeString(_accountsKey, _accountListJson());
+    store.clearSessionPassword();
+
+    expect(await store.verifyPassword(_oldPassword), isTrue);
+    expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
+  });
 
   test(
     'macOS unlock migrates legacy mnemonic payloads write then delete',
@@ -626,6 +655,7 @@ void main() {
       );
 
       await store.configurePassword(_oldPassword);
+      await store.writeString(_accountsKey, _accountListJson());
       await store.writeSecretString(_mnemonicKey, _mnemonic);
       store.clearSessionPassword();
       operations.clear();
@@ -638,6 +668,8 @@ void main() {
       expect(
         operations,
         containsAllInOrder([
+          'regular.read $_accountsKey',
+          'regular.read $_mnemonicKey',
           'mnemonic.write $_mnemonicKey',
           'regular.delete $_mnemonicKey',
         ]),
@@ -656,12 +688,14 @@ void main() {
     );
 
     await store.configurePassword(_oldPassword);
+    await store.writeString(_accountsKey, _accountListJson());
     await store.writeSecretString(_mnemonicKey, _mnemonic);
     store.clearSessionPassword();
 
     expect(await store.verifyPassword(_oldPassword), isTrue);
     expect(regularStorage.valueFor(_migrationCompleteKey), 'true');
-    expect(operations, contains('regular.readAll'));
+    expect(operations, contains('regular.read $_accountsKey'));
+    expect(operations, isNot(contains('regular.readAll')));
 
     operations.clear();
     store.clearSessionPassword();
@@ -680,11 +714,15 @@ void main() {
     );
 
     await store.configurePassword(_oldPassword);
+    await store.writeString(_accountsKey, _accountListJson());
     await store.writeSecretString(_mnemonicKey, _mnemonic);
     store.clearSessionPassword();
     mnemonicStorage.failNextWriteFor(_mnemonicKey);
 
-    expect(await store.verifyPassword(_oldPassword), isFalse);
+    await expectLater(
+      () => store.verifyPassword(_oldPassword),
+      throwsA(isA<SecretStorageUnlockFailedException>()),
+    );
     expect(store.hasSessionPassword, isFalse);
     expect(regularStorage.valueFor(_mnemonicKey), isNotNull);
     expect(mnemonicStorage.valueFor(_mnemonicKey), isNull);
@@ -703,6 +741,7 @@ void main() {
       );
 
       await store.configurePassword(_oldPassword);
+      await store.writeString(_accountsKey, _accountListJson());
       await store.writeSecretString(_mnemonicKey, _mnemonic);
       store.clearSessionPassword();
       regularStorage.failNextDeleteFor(_mnemonicKey);
@@ -985,6 +1024,25 @@ class _FailingMapStorage extends _MapStorage {
       webOptions: webOptions,
       mOptions: mOptions,
       wOptions: wOptions,
+    );
+  }
+}
+
+class _ReadAllFailingMapStorage extends _MapStorage {
+  _ReadAllFailingMapStorage(super.name);
+
+  @override
+  Future<Map<String, String>> readAll({
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    throw PlatformException(
+      code: 'Unexpected security result code',
+      message: 'One or more parameters passed to a function were not valid.',
     );
   }
 }

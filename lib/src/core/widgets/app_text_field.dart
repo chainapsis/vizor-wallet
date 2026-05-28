@@ -690,11 +690,17 @@ class _AppTextFieldState extends State<AppTextField> {
                   widget.messageIcon ?? defaultMessageIcon ?? const SizedBox(),
                   if (widget.messageIcon != null || defaultMessageIcon != null)
                     const SizedBox(width: AppSpacing.xxs),
-                  Text(
-                    widget.messageText!,
-                    style:
-                        widget.messageStyle ??
-                        AppTypography.labelMedium.copyWith(color: messageColor),
+                  Expanded(
+                    child: Text(
+                      widget.messageText!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          widget.messageStyle ??
+                          AppTypography.labelMedium.copyWith(
+                            color: messageColor,
+                          ),
+                    ),
                   ),
                 ],
               ),

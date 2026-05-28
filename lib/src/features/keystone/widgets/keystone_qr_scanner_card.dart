@@ -10,6 +10,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../services/camera_preference_store.dart';
 import '../../../services/camera_permission_settings.dart';
 import '../../../services/qr_scanner.dart';
 import 'keystone_transaction_progress_panel.dart';
@@ -51,9 +52,12 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   static const _cameraRadius = 24.0;
 
   late MobileScannerController _controller;
+  final _cameraPreferences = CameraPreferenceStore();
   StreamSubscription<List<MobileScannerCameraInfo>>? _camerasSubscription;
   List<MobileScannerCameraInfo> _cameras = const [];
   String? _selectedCameraId;
+  String? _rememberedCameraId;
+  String? _restoreAttemptedCameraId;
   bool _loadingCameras = false;
   bool _cameraPickerOpen = false;
   bool _troubleScanningPopoverOpen = false;
@@ -65,7 +69,9 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _controller = _createController();
+    _controller.addListener(_maybeRestoreRememberedCamera);
     _camerasSubscription = _controller.camerasStream.listen(_applyCameras);
+    unawaited(_loadRememberedCamera());
     _loadCameras();
   }
 
@@ -76,6 +82,30 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
       formats: QrScanner.formats,
       detectionSpeed: QrScanner.detectionSpeed,
     );
+  }
+
+  Future<void> _loadRememberedCamera() async {
+    if (!QrScanner.isAvailable) return;
+
+    try {
+      final cameraId = await _cameraPreferences.readLastQrCameraId();
+      if (!mounted) return;
+      _rememberedCameraId = cameraId;
+      _maybeRestoreRememberedCamera();
+    } catch (e, st) {
+      log('KeystoneQrScannerCard: camera preference read error: $e\n$st');
+    }
+  }
+
+  Future<void> _rememberCamera(String cameraId) async {
+    _rememberedCameraId = cameraId;
+    _restoreAttemptedCameraId = cameraId;
+
+    try {
+      await _cameraPreferences.writeLastQrCameraId(cameraId);
+    } catch (e, st) {
+      log('KeystoneQrScannerCard: camera preference write error: $e\n$st');
+    }
   }
 
   Future<void> _loadCameras() async {
@@ -115,6 +145,8 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
         _cameraPickerOpen = false;
       }
     });
+
+    _maybeRestoreRememberedCamera();
   }
 
   MobileScannerCameraInfo? _cameraById(String? id) {
@@ -126,10 +158,36 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   }
 
   MobileScannerCameraInfo? get _defaultCamera {
-    for (final camera in _cameras) {
-      if (camera.isDefault) return camera;
+    return preferredQrScannerCamera(_cameras);
+  }
+
+  void _maybeRestoreRememberedCamera() {
+    if (!mounted ||
+        _cameras.isEmpty ||
+        _selectedCameraId != null ||
+        !_controller.value.isInitialized) {
+      return;
     }
-    return _cameras.isEmpty ? null : _cameras.first;
+
+    final rememberedCameraId = _rememberedCameraId?.trim();
+    if (rememberedCameraId == null || rememberedCameraId.isEmpty) return;
+    if (_restoreAttemptedCameraId == rememberedCameraId) return;
+
+    final camera = preferredQrScannerCamera(
+      _cameras,
+      preferredCameraId: rememberedCameraId,
+    );
+    if (camera == null || camera.id != rememberedCameraId) return;
+
+    _restoreAttemptedCameraId = rememberedCameraId;
+    if (_controller.value.camera?.id == camera.id) {
+      setState(() {
+        _selectedCameraId = camera.id;
+      });
+      return;
+    }
+
+    unawaited(_switchToCamera(camera, remember: false));
   }
 
   void _toggleCameraPicker() {
@@ -161,6 +219,13 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
       return;
     }
 
+    await _switchToCamera(camera, remember: true);
+  }
+
+  Future<void> _switchToCamera(
+    MobileScannerCameraInfo camera, {
+    required bool remember,
+  }) async {
     setState(() {
       _selectedCameraId = camera.id;
       _cameraPickerOpen = false;
@@ -177,6 +242,11 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
         _selectedCameraId = _controller.value.camera?.id;
         _scanProgress = 0;
       });
+      return;
+    }
+
+    if (remember) {
+      unawaited(_rememberCamera(camera.id));
     }
   }
 
@@ -243,7 +313,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     if (!QrScanner.isAvailable || _controller.value.isStarting) return;
 
     try {
-      await _controller.start();
+      await _controller.start(cameraId: _availableRememberedCameraId());
     } catch (e, st) {
       log('KeystoneQrScannerCard: camera start retry error: $e\n$st');
     }
@@ -259,6 +329,16 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
     }
   }
 
+  String? _availableRememberedCameraId() {
+    final rememberedCameraId = _rememberedCameraId?.trim();
+    if (rememberedCameraId == null || rememberedCameraId.isEmpty) return null;
+    final camera = preferredQrScannerCamera(
+      _cameras,
+      preferredCameraId: rememberedCameraId,
+    );
+    return camera?.id == rememberedCameraId ? rememberedCameraId : null;
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
@@ -268,6 +348,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _controller.removeListener(_maybeRestoreRememberedCamera);
     _camerasSubscription?.cancel();
     _controller.dispose();
     super.dispose();

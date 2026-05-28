@@ -10,10 +10,14 @@ import '../../../core/navigation/app_back_resolver.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
+import '../voting_poll_ordering.dart';
 import '../voting_routes.dart';
+import '../widgets/voting_config_settings_panel.dart';
 
 class VotingPollsScreen extends ConsumerStatefulWidget {
   const VotingPollsScreen({super.key});
@@ -23,6 +27,8 @@ class VotingPollsScreen extends ConsumerStatefulWidget {
 }
 
 class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
+  bool _showSettings = false;
+
   @override
   void initState() {
     super.initState();
@@ -46,55 +52,70 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Stack(
           children: [
-            const _VotingTopBar(),
-            Expanded(
-              child: rounds.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) => _VotingMessage(
-                  title: "Couldn't load polls",
-                  message: error.toString(),
-                  actionLabel: 'Try Again',
-                  onAction: () =>
-                      ref.read(votingRoundsProvider.notifier).refresh(),
-                ),
-                data: (items) {
-                  if (items.isEmpty) {
-                    return const _VotingMessage(
-                      title: 'No polls available',
-                      message: 'There are no coinholder polls to display yet.',
-                    );
-                  }
-                  final sortedItems = _sortRoundsByDate(items);
-                  _preSyncVisibleRoundTrees(sortedItems);
-                  return Align(
-                    alignment: Alignment.topCenter,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 560),
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.md,
-                          AppSpacing.sm,
-                          AppSpacing.md,
-                          40,
-                        ),
-                        itemCount: sortedItems.length,
-                        separatorBuilder: (_, _) =>
-                            const SizedBox(height: AppSpacing.base),
-                        itemBuilder: (context, index) => _PollCard(
-                          round: sortedItems[index],
-                          onTap: () => context.push(
-                            votingPollRoute(sortedItems[index].roundId),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _VotingTopBar(onSettings: _openSettings),
+                Expanded(
+                  child: rounds.when(
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (error, _) => _VotingMessage(
+                      title: "Couldn't load polls",
+                      message: error.toString(),
+                      actionLabel: 'Try Again',
+                      onAction: () =>
+                          ref.read(votingRoundsProvider.notifier).refresh(),
+                    ),
+                    data: (items) {
+                      if (items.isEmpty) {
+                        return const _VotingMessage(
+                          title: 'No polls available',
+                          message:
+                              'There are no coinholder polls to display yet.',
+                        );
+                      }
+                      final sortedItems = sortVotingRoundsForPollList(items);
+                      _preSyncVisibleRoundTrees(sortedItems);
+                      return Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 560),
+                          child: ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(
+                              AppSpacing.md,
+                              AppSpacing.sm,
+                              AppSpacing.md,
+                              40,
+                            ),
+                            itemCount: sortedItems.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: AppSpacing.base),
+                            itemBuilder: (context, index) {
+                              final round = sortedItems[index];
+                              return _PollCard(
+                                round: round,
+                                onAction: () => _openRoundAction(round),
+                              );
+                            },
                           ),
                         ),
-                      ),
-                    ),
-                  );
-                },
-              ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
+            if (_showSettings)
+              AppPaneModalOverlay(
+                onDismiss: _closeSettings,
+                child: VotingConfigSettingsPanel(
+                  onClose: _closeSettings,
+                  onUpdated: _closeSettings,
+                ),
+              ),
           ],
         ),
       ),
@@ -127,10 +148,33 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
           }),
     );
   }
+
+  void _openRoundAction(VotingRoundView round) {
+    final state = _pollCardState(round);
+    if (state == _PollCardState.tallying || state == _PollCardState.closed) {
+      context.push(votingResultsRoute(round.roundId));
+      return;
+    }
+    context.push(votingPollRoute(round.roundId));
+  }
+
+  void _openSettings() {
+    setState(() {
+      _showSettings = true;
+    });
+  }
+
+  void _closeSettings() {
+    setState(() {
+      _showSettings = false;
+    });
+  }
 }
 
 class _VotingTopBar extends StatelessWidget {
-  const _VotingTopBar();
+  const _VotingTopBar({required this.onSettings});
+
+  final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -140,6 +184,15 @@ class _VotingTopBar extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           const Positioned(left: AppSpacing.md, child: _VotingBackButton()),
+          Positioned(
+            right: AppSpacing.md,
+            child: _VotingTopBarIconButton(
+              icon: AppIcons.cog,
+              tooltip: 'Voting config',
+              semanticLabel: 'Voting config settings',
+              onTap: onSettings,
+            ),
+          ),
           Text(
             'COINHOLDER POLLING',
             textAlign: TextAlign.center,
@@ -152,6 +205,74 @@ class _VotingTopBar extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _VotingTopBarIconButton extends StatefulWidget {
+  const _VotingTopBarIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.semanticLabel,
+    required this.onTap,
+  });
+
+  final String icon;
+  final String tooltip;
+  final String semanticLabel;
+  final VoidCallback onTap;
+
+  @override
+  State<_VotingTopBarIconButton> createState() =>
+      _VotingTopBarIconButtonState();
+}
+
+class _VotingTopBarIconButtonState extends State<_VotingTopBarIconButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return AppTooltip(
+      message: widget.tooltip,
+      child: Semantics(
+        button: true,
+        label: widget.semanticLabel,
+        child: ExcludeSemantics(
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => _setHovered(true),
+            onExit: (_) => _setHovered(false),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onTap,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: _hovered ? colors.state.hover : null,
+                  borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                ),
+                child: Center(
+                  child: AppIcon(
+                    widget.icon,
+                    size: 20,
+                    color: colors.icon.accent,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _setHovered(bool hovered) {
+    if (_hovered == hovered) return;
+    setState(() {
+      _hovered = hovered;
+    });
   }
 }
 
@@ -209,93 +330,100 @@ class _VotingBackButtonState extends State<_VotingBackButton> {
 }
 
 class _PollCard extends StatelessWidget {
-  const _PollCard({required this.round, required this.onTap});
+  const _PollCard({required this.round, required this.onAction});
 
   final VotingRoundView round;
-  final VoidCallback onTap;
+  final VoidCallback onAction;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final title = round.title.isEmpty ? round.roundId : round.title;
     final description = _roundDescription(round.rawJson);
-    final dateRange = _roundDateRange(round.rawJson);
+    final state = _pollCardState(round);
+    final dateLabel = _roundDateLabel(round.rawJson, state);
 
     return Material(
       color: const Color(0x00000000),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-        onTap: onTap,
-        child: Ink(
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.medium),
-            border: Border.all(color: colors.border.subtle),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0x0A231F20),
-                offset: const Offset(0, 1),
-                blurRadius: 1,
-                spreadRadius: -0.5,
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _StatusBadge(status: round.status),
-                  const Spacer(),
-                  if (dateRange != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        dateRange,
-                        textAlign: TextAlign.right,
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.secondary,
-                          height: 20 / 14,
-                          letterSpacing: -0.22,
-                        ),
+      child: Ink(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: colors.background.ground,
+          borderRadius: BorderRadius.circular(AppRadii.medium),
+          border: Border.all(color: colors.border.subtle),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0x0A231F20),
+              offset: const Offset(0, 1),
+              blurRadius: 1,
+              spreadRadius: -0.5,
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _StatusBadge(state: state),
+                const Spacer(),
+                if (dateLabel != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      dateLabel,
+                      textAlign: TextAlign.right,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: colors.text.secondary,
+                        height: 20 / 14,
+                        letterSpacing: -0.22,
                       ),
                     ),
-                ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              title,
+              style: AppTypography.headlineSmall.copyWith(
+                color: colors.text.accent,
+                fontWeight: FontWeight.w600,
+                height: 24 / 16,
+                letterSpacing: -0.26,
               ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                title,
-                style: AppTypography.headlineSmall.copyWith(
-                  color: colors.text.accent,
-                  fontWeight: FontWeight.w600,
-                  height: 24 / 16,
-                  letterSpacing: -0.26,
-                ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Poll Description',
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.secondary,
+                height: 20 / 14,
+                letterSpacing: -0.22,
               ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'Poll Description',
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.secondary,
-                  height: 20 / 14,
-                  letterSpacing: -0.22,
-                ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              description.isEmpty ? round.roundId : description,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.bodyMediumStrong.copyWith(
+                color: colors.text.primary,
+                height: 20 / 14,
+                letterSpacing: -0.22,
               ),
-              const SizedBox(height: 2),
-              Text(
-                description.isEmpty ? round.roundId : description,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.bodyMediumStrong.copyWith(
-                  color: colors.text.primary,
-                  height: 20 / 14,
-                  letterSpacing: -0.22,
-                ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Align(
+              alignment: Alignment.centerRight,
+              child: AppButton(
+                onPressed: onAction,
+                variant: _actionButtonVariant(state),
+                size: AppButtonSize.medium,
+                child: Text(_actionLabel(state)),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -303,29 +431,29 @@ class _PollCard extends StatelessWidget {
 }
 
 class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.status});
+  const _StatusBadge({required this.state});
 
-  final String status;
+  final _PollCardState state;
 
   @override
   Widget build(BuildContext context) {
-    final label = _statusLabel(status);
+    final label = _statusLabel(state);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       decoration: BoxDecoration(
-        color: _statusBackground(status),
-        border: Border.all(color: _statusBorder(status)),
+        color: _statusBackground(state),
+        border: Border.all(color: _statusBorder(state)),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AppIcon(AppIcons.time, size: 14, color: _statusText(status)),
+          AppIcon(_statusIcon(state), size: 14, color: _statusText(state)),
           const SizedBox(width: AppSpacing.xxs),
           Text(
             label,
             style: AppTypography.labelLarge.copyWith(
-              color: _statusText(status),
+              color: _statusText(state),
               height: 20 / 14,
               letterSpacing: -0.08,
             ),
@@ -397,159 +525,18 @@ String _roundDescription(Map<String, dynamic> json) {
   return '';
 }
 
-List<VotingRoundView> _sortRoundsByDate(List<VotingRoundView> rounds) {
-  return [...rounds]..sort((a, b) {
-    final aDate = _roundSortDate(a.rawJson);
-    final bDate = _roundSortDate(b.rawJson);
-    if (aDate == null && bDate == null) {
-      return a.title.compareTo(b.title);
-    }
-    if (aDate == null) return 1;
-    if (bDate == null) return -1;
-    return bDate.compareTo(aDate);
-  });
-}
-
-String? _roundDateRange(Map<String, dynamic> json) {
-  final start = _dateFromJson(json, const [
-    'start_date',
-    'startDate',
-    'starts_at',
-    'startsAt',
-    'open_date',
-    'openDate',
-    'opens_at',
-    'opensAt',
-    'start_time',
-    'startTime',
-    'starts',
-    'start',
-    'voting_start',
-    'votingStart',
-    'poll_start',
-    'pollStart',
-    'vote_start_time',
-    'voteStartTime',
-    'ceremony_phase_start',
-    'ceremonyPhaseStart',
-  ]);
-  final end = _dateFromJson(json, const [
-    'end_date',
-    'endDate',
-    'ends_at',
-    'endsAt',
-    'close_date',
-    'closeDate',
-    'closes_at',
-    'closesAt',
-    'end_time',
-    'endTime',
-    'ends',
-    'end',
-    'deadline',
-    'voting_end',
-    'votingEnd',
-    'poll_end',
-    'pollEnd',
-    'vote_end_time',
-    'voteEndTime',
-  ]);
-  if (start == null && end == null) return null;
-  if (start == null) return 'Ends ${_formatPollDate(end!)}';
-  if (end == null) return 'Starts ${_formatPollDate(start)}';
-  if (_isSameDay(start, end)) return _formatPollDate(end);
-  return '${_formatPollDate(start)} - ${_formatPollDate(end)}';
-}
-
-DateTime? _roundSortDate(Map<String, dynamic> json) {
-  final start = _dateFromJson(json, const [
-    'start_date',
-    'startDate',
-    'starts_at',
-    'startsAt',
-    'open_date',
-    'openDate',
-    'opens_at',
-    'opensAt',
-    'start_time',
-    'startTime',
-    'starts',
-    'start',
-    'voting_start',
-    'votingStart',
-    'poll_start',
-    'pollStart',
-    'vote_start_time',
-    'voteStartTime',
-    'ceremony_phase_start',
-    'ceremonyPhaseStart',
-    'created_at',
-    'createdAt',
-    'published_at',
-    'publishedAt',
-  ]);
-  final end = _dateFromJson(json, const [
-    'end_date',
-    'endDate',
-    'ends_at',
-    'endsAt',
-    'close_date',
-    'closeDate',
-    'closes_at',
-    'closesAt',
-    'end_time',
-    'endTime',
-    'ends',
-    'end',
-    'deadline',
-    'voting_end',
-    'votingEnd',
-    'poll_end',
-    'pollEnd',
-    'vote_end_time',
-    'voteEndTime',
-  ]);
-  return start ?? end;
-}
-
-DateTime? _dateFromJson(Map<String, dynamic> json, List<String> keys) {
-  for (final key in keys) {
-    final value = _valueFromJson(json, key);
-    final date = _parseDate(value);
-    if (date != null) return date;
+String? _roundDateLabel(Map<String, dynamic> json, _PollCardState state) {
+  final start = votingRoundStartDate(json);
+  final end = votingRoundEndDate(json);
+  if (end != null) {
+    final label = switch (state) {
+      _PollCardState.active || _PollCardState.voted => 'Closes',
+      _PollCardState.tallying || _PollCardState.closed => 'Closed',
+    };
+    return '$label ${_formatPollDate(end)}';
   }
+  if (start != null) return 'Starts ${_formatPollDate(start)}';
   return null;
-}
-
-Object? _valueFromJson(Object? value, String key) {
-  if (value is! Map) return null;
-  if (value.containsKey(key)) return value[key];
-  for (final entry in value.entries) {
-    if (entry.key.toString() == key) return entry.value;
-  }
-  for (final entry in value.entries) {
-    final nested = entry.value;
-    if (nested is Map) {
-      final match = _valueFromJson(nested, key);
-      if (match != null) return match;
-    }
-  }
-  return null;
-}
-
-DateTime? _parseDate(Object? value) {
-  if (value == null) return null;
-  if (value is DateTime) return value;
-  if (value is num) {
-    final milliseconds = value > 100000000000
-        ? value.toInt()
-        : (value * 1000).toInt();
-    return DateTime.fromMillisecondsSinceEpoch(milliseconds);
-  }
-  final text = value.toString().trim();
-  final numeric = num.tryParse(text);
-  if (numeric != null) return _parseDate(numeric);
-  return DateTime.tryParse(text);
 }
 
 String _formatPollDate(DateTime date) {
@@ -571,61 +558,70 @@ String _formatPollDate(DateTime date) {
   return '${months[local.month - 1]} ${local.day}';
 }
 
-bool _isSameDay(DateTime a, DateTime b) {
-  final localA = a.toLocal();
-  final localB = b.toLocal();
-  return localA.year == localB.year &&
-      localA.month == localB.month &&
-      localA.day == localB.day;
-}
-
-String _statusLabel(String value) {
-  return switch (_pollStatus(value)) {
-    _PollStatus.active => 'Active',
-    _PollStatus.tallying => 'Tallying',
-    _PollStatus.closed => 'Closed',
+String _statusLabel(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active => 'Active',
+    _PollCardState.voted => 'Voted',
+    _PollCardState.tallying => 'Tallying',
+    _PollCardState.closed => 'Closed',
   };
 }
 
-Color _statusBackground(String value) {
-  return switch (_pollStatus(value)) {
-    _PollStatus.active => const Color(0xFFECFDF3),
-    _PollStatus.tallying => const Color(0xFFFFFAEB),
-    _PollStatus.closed => const Color(0xFFF4F4F0),
+String _statusIcon(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.voted => AppIcons.check,
+    _ => AppIcons.time,
   };
 }
 
-Color _statusBorder(String value) {
-  return switch (_pollStatus(value)) {
-    _PollStatus.active => const Color(0xFFABEFC6),
-    _PollStatus.tallying => const Color(0xFFFEDF89),
-    _PollStatus.closed => const Color(0xFFEBEBE6),
+Color _statusBackground(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active || _PollCardState.voted => const Color(0xFFECFDF3),
+    _PollCardState.tallying => const Color(0xFFFFFAEB),
+    _PollCardState.closed => const Color(0xFFF4F4F0),
   };
 }
 
-Color _statusText(String value) {
-  return switch (_pollStatus(value)) {
-    _PollStatus.active => const Color(0xFF067647),
-    _PollStatus.tallying => const Color(0xFFB54708),
-    _PollStatus.closed => const Color(0xFF716C5D),
+Color _statusBorder(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active || _PollCardState.voted => const Color(0xFFABEFC6),
+    _PollCardState.tallying => const Color(0xFFFEDF89),
+    _PollCardState.closed => const Color(0xFFEBEBE6),
   };
 }
 
-enum _PollStatus { active, tallying, closed }
+Color _statusText(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active || _PollCardState.voted => const Color(0xFF067647),
+    _PollCardState.tallying => const Color(0xFFB54708),
+    _PollCardState.closed => const Color(0xFF716C5D),
+  };
+}
 
-_PollStatus _pollStatus(String value) {
-  final status = value.trim().toLowerCase();
-  if (status == '1') return _PollStatus.active;
-  if (status == '2') return _PollStatus.tallying;
-  if (status == '3') return _PollStatus.closed;
-  if (status.contains('tally')) return _PollStatus.tallying;
-  if (status.contains('closed') ||
-      status.contains('complete') ||
-      status.contains('done') ||
-      status.contains('ended') ||
-      status.contains('final') ||
-      status.contains('result')) {
-    return _PollStatus.closed;
-  }
-  return _PollStatus.active;
+String _actionLabel(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active => 'Enter Poll',
+    _PollCardState.voted => 'Review',
+    _PollCardState.tallying || _PollCardState.closed => 'View Results',
+  };
+}
+
+AppButtonVariant _actionButtonVariant(_PollCardState state) {
+  return switch (state) {
+    _PollCardState.active => AppButtonVariant.primary,
+    _PollCardState.voted ||
+    _PollCardState.tallying ||
+    _PollCardState.closed => AppButtonVariant.secondary,
+  };
+}
+
+enum _PollCardState { active, voted, tallying, closed }
+
+_PollCardState _pollCardState(VotingRoundView round) {
+  return switch (votingPollListStatus(round.status)) {
+    VotingPollListStatus.active =>
+      round.voted ? _PollCardState.voted : _PollCardState.active,
+    VotingPollListStatus.tallying => _PollCardState.tallying,
+    VotingPollListStatus.closed => _PollCardState.closed,
+  };
 }

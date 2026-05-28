@@ -8,6 +8,22 @@ import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 import 'fake_voting_http.dart';
 
 void main() {
+  test('default static config source points at the prod pinned config', () {
+    final source = StaticVotingConfigSource.parse(
+      kDefaultStaticVotingConfigSource,
+    );
+
+    expect(
+      source.uri.toString(),
+      'https://raw.githubusercontent.com/valargroup/token-holder-voting-config/'
+      '2785311d45758e85567d70a1f13709fa01b62c6b/prod/static-voting-config.json',
+    );
+    expect(
+      source.sha256Hex,
+      'bed0116f961226b256a574b52461ce81d9f5294a57e190987dc155f07eb1e431',
+    );
+  });
+
   test('parses static config source and strips sha256 checksum', () {
     const hex =
         '0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a';

@@ -32,7 +32,7 @@ class VotingSubmissionConfirmationScreen extends ConsumerWidget {
               error: (error, _) => _ConfirmationScaffold(
                 pollTitle: 'Coinholder Poll',
                 message: "Couldn't load submission details: $error",
-                votingPower: 'Recorded',
+                votingPower: 'Not available',
               ),
               data: (state) => _ConfirmationScaffold(
                 pollTitle: state.round?.title.isNotEmpty == true
@@ -40,7 +40,9 @@ class VotingSubmissionConfirmationScreen extends ConsumerWidget {
                     : 'Coinholder Poll',
                 message:
                     'Your vote was successfully published and cannot be changed.',
-                votingPower: formatVotingPower(state.eligibleWeightZatoshi),
+                votingPower: state.eligibleWeightZatoshi == null
+                    ? 'Not available'
+                    : formatVotingPower(state.eligibleWeightZatoshi!),
               ),
             ),
           ),

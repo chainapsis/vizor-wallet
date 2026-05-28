@@ -10,7 +10,10 @@ use zcash_protocol::consensus::BlockHeight;
 use zip32::Scope;
 
 use crate::wallet::{
-    keys::parse_account_uuid, network::WalletNetwork, sync::open_wallet_db_for_read, sync_engine,
+    keys::parse_account_uuid,
+    network::WalletNetwork,
+    sync::{get_sync_progress, open_wallet_db_for_read},
+    sync_engine,
 };
 
 const POOL_ORCHARD: &str = "orchard";
@@ -26,6 +29,11 @@ pub struct NoteRef {
     pub txid_hex: String,
     pub output_index: u32,
     pub value_zatoshi: u64,
+    /// Compatibility field for callers that display individual note rows.
+    ///
+    /// Voting power is quantized per smart bundle, not per note. This mirrors
+    /// `value_zatoshi` so sub-divisor notes remain visible to callers while
+    /// [`voting_power`] reports the real bundle-quantized total.
     pub voting_weight_zatoshi: u64,
     pub commitment: Vec<u8>,
     pub nullifier: Vec<u8>,
@@ -102,6 +110,7 @@ pub async fn select_notes_with_lwd(
     account_uuid: &str,
     snapshot_height: u64,
 ) -> Result<SelectedNotes, String> {
+    ensure_wallet_scanned_to_snapshot(db_path, network, snapshot_height)?;
     let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
@@ -115,6 +124,21 @@ pub async fn select_notes_with_lwd(
         snapshot_height,
         anchor_tree_state,
     )
+}
+
+fn ensure_wallet_scanned_to_snapshot(
+    db_path: &str,
+    network: WalletNetwork,
+    snapshot_height: u64,
+) -> Result<(), String> {
+    let progress = get_sync_progress(db_path, network)?;
+    if progress.scanned_height >= snapshot_height {
+        return Ok(());
+    }
+    Err(format!(
+        "Wallet is not synced to voting snapshot height {snapshot_height}. Fully scanned height is {}.",
+        progress.scanned_height
+    ))
 }
 
 /// Selects voting-eligible Orchard notes with a caller-supplied anchor state.
@@ -171,35 +195,33 @@ where
 
     for note in selected {
         let value = note.note().value().inner();
-        if let Some(weight) = note_voting_weight(value) {
-            let commitment: OrchardExtractedNoteCommitment = note.note().commitment().into();
-            let nullifier = note.note().nullifier(orchard_fvk);
-            let scope = match note.spending_key_scope() {
-                Scope::External => 0,
-                Scope::Internal => 1,
-            };
-            notes.push(NoteRef {
-                pool: POOL_ORCHARD.to_string(),
-                txid_hex: note.txid().to_string(),
-                output_index: note.output_index().into(),
-                value_zatoshi: value,
-                voting_weight_zatoshi: weight,
-                commitment: commitment.to_bytes().to_vec(),
-                nullifier: nullifier.to_bytes().to_vec(),
-                diversifier: note.note().recipient().diversifier().as_array().to_vec(),
-                rho: note.note().rho().to_bytes().to_vec(),
-                rseed: note.note().rseed().as_bytes().to_vec(),
-                scope,
-                ufvk_str: ufvk_str.clone(),
-                commitment_tree_position: u64::from(note.note_commitment_tree_position()),
-                mined_height: note
-                    .mined_height()
-                    .map(u32::from)
-                    .ok_or_else(|| format!("Selected voting note is unmined: {}", note.txid()))?
-                    .into(),
-                anchor_height: snapshot_height,
-            });
-        }
+        let commitment: OrchardExtractedNoteCommitment = note.note().commitment().into();
+        let nullifier = note.note().nullifier(orchard_fvk);
+        let scope = match note.spending_key_scope() {
+            Scope::External => 0,
+            Scope::Internal => 1,
+        };
+        notes.push(NoteRef {
+            pool: POOL_ORCHARD.to_string(),
+            txid_hex: note.txid().to_string(),
+            output_index: note.output_index().into(),
+            value_zatoshi: value,
+            voting_weight_zatoshi: value,
+            commitment: commitment.to_bytes().to_vec(),
+            nullifier: nullifier.to_bytes().to_vec(),
+            diversifier: note.note().recipient().diversifier().as_array().to_vec(),
+            rho: note.note().rho().to_bytes().to_vec(),
+            rseed: note.note().rseed().as_bytes().to_vec(),
+            scope,
+            ufvk_str: ufvk_str.clone(),
+            commitment_tree_position: u64::from(note.note_commitment_tree_position()),
+            mined_height: note
+                .mined_height()
+                .map(u32::from)
+                .ok_or_else(|| format!("Selected voting note is unmined: {}", note.txid()))?
+                .into(),
+            anchor_height: snapshot_height,
+        });
     }
 
     notes.sort_by(|a, b| {
@@ -224,11 +246,7 @@ where
 
 /// Returns quantized zatoshi voting power for the selected note set.
 pub fn voting_power(notes: &SelectedNotes) -> u64 {
-    notes
-        .notes
-        .iter()
-        .map(|note| note.voting_weight_zatoshi)
-        .sum()
+    zcash_voting::chunk_notes(&notes.voting_note_infos()).eligible_weight
 }
 
 /// Validates that `bundle_index` is in `[0, bundle_count)`.
@@ -244,11 +262,6 @@ pub(super) fn validate_bundle_index(
             "bundle_index {bundle_index} is out of range for {bundle_count} {bundle_kind} bundles"
         ))
     }
-}
-
-fn note_voting_weight(value_zatoshi: u64) -> Option<u64> {
-    let ballots = value_zatoshi / zcash_voting::governance::BALLOT_DIVISOR;
-    (ballots > 0).then_some(ballots * zcash_voting::governance::BALLOT_DIVISOR)
 }
 
 fn placeholder_tree_state(network: WalletNetwork, snapshot_height: u64) -> TreeState {
@@ -280,30 +293,22 @@ mod tests {
     use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
 
     #[test]
-    fn note_voting_weight_filters_and_quantizes_by_ballot_divisor() {
+    fn voting_power_uses_smart_bundle_quantization() {
         let divisor = zcash_voting::governance::BALLOT_DIVISOR;
-
-        assert_eq!(note_voting_weight(divisor - 1), None);
-        assert_eq!(note_voting_weight(divisor), Some(divisor));
-        assert_eq!(
-            note_voting_weight(divisor * 2 + divisor - 1),
-            Some(divisor * 2)
-        );
-    }
-
-    #[test]
-    fn voting_power_sums_post_divisor_values() {
-        let divisor = zcash_voting::governance::BALLOT_DIVISOR;
+        let small_note_value = divisor / 5;
         let selected = SelectedNotes {
             notes: vec![
-                test_note_ref(POOL_ORCHARD, divisor, divisor),
-                test_note_ref(POOL_ORCHARD, divisor * 2 + 1, divisor * 2),
+                test_note_ref(POOL_ORCHARD, small_note_value, small_note_value).with_position(1),
+                test_note_ref(POOL_ORCHARD, small_note_value, small_note_value).with_position(2),
+                test_note_ref(POOL_ORCHARD, small_note_value, small_note_value).with_position(3),
+                test_note_ref(POOL_ORCHARD, small_note_value, small_note_value).with_position(4),
+                test_note_ref(POOL_ORCHARD, small_note_value, small_note_value).with_position(5),
             ],
             snapshot_height: 100,
             anchor_tree_state: placeholder_tree_state(WalletNetwork::Regtest, 100),
         };
 
-        assert_eq!(voting_power(&selected), divisor * 3);
+        assert_eq!(voting_power(&selected), divisor);
     }
 
     #[test]
@@ -384,18 +389,60 @@ mod tests {
 
         assert_eq!(selected.snapshot_height, snapshot_height);
         assert_eq!(selected.anchor_tree_state.height, snapshot_height);
-        assert_eq!(selected.notes.len(), 2);
+        assert_eq!(selected.notes.len(), 3);
         assert_eq!(selected.notes[0].commitment_tree_position, 3);
         assert_eq!(selected.notes[0].mined_height, 8);
         assert_eq!(selected.notes[0].voting_weight_zatoshi, divisor);
         assert_eq!(selected.notes[1].commitment_tree_position, 7);
         assert_eq!(selected.notes[1].mined_height, 10);
         assert_eq!(selected.notes[1].value_zatoshi, divisor * 2 + 1);
-        assert_eq!(selected.notes[1].voting_weight_zatoshi, divisor * 2);
-        assert_eq!(voting_power(&selected), divisor * 3);
+        assert_eq!(selected.notes[1].voting_weight_zatoshi, divisor * 2 + 1);
+        assert_eq!(selected.notes[2].commitment_tree_position, 8);
+        assert_eq!(selected.notes[2].value_zatoshi, divisor - 1);
+        assert_eq!(selected.notes[2].voting_weight_zatoshi, divisor - 1);
+        assert_eq!(voting_power(&selected), divisor * 4);
         assert!(selected.notes.iter().all(|note| note.pool == POOL_ORCHARD));
         assert!(selected.notes.iter().all(|note| note.scope == 0));
         assert!(selected.notes.iter().all(|note| !note.ufvk_str.is_empty()));
+    }
+
+    #[test]
+    fn select_notes_keeps_sub_divisor_notes_for_smart_bundles() {
+        let network = WalletNetwork::Regtest;
+        let snapshot_height = 12;
+        let divisor = zcash_voting::governance::BALLOT_DIVISOR;
+        let mut conn = Connection::open_in_memory().unwrap();
+        let (account_uuid, orchard_fvk) = setup_test_account(&mut conn, network);
+        let account_ref = account_internal_id(&conn, &account_uuid);
+
+        for note_tag in 1..=5 {
+            insert_orchard_note(
+                &conn,
+                account_ref,
+                &orchard_fvk,
+                note_tag,
+                10,
+                divisor / 5,
+                u64::from(note_tag),
+            );
+        }
+
+        let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
+        let selected = select_notes_from_db(
+            &db,
+            network,
+            &account_uuid.expose_uuid().to_string(),
+            snapshot_height,
+            placeholder_tree_state(network, snapshot_height),
+        )
+        .unwrap();
+
+        assert_eq!(selected.notes.len(), 5);
+        assert!(selected
+            .notes
+            .iter()
+            .all(|note| note.value_zatoshi < divisor));
+        assert_eq!(voting_power(&selected), divisor);
     }
 
     #[test]

@@ -13,18 +13,39 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
+import '../../../providers/voting/voting_state.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 
-class VotingProposalDetailScreen extends ConsumerWidget {
+class VotingProposalDetailScreen extends ConsumerStatefulWidget {
   const VotingProposalDetailScreen({super.key, required this.roundId});
 
   final String roundId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<VotingProposalDetailScreen> createState() =>
+      _VotingProposalDetailScreenState();
+}
+
+class _VotingProposalDetailScreenState
+    extends ConsumerState<VotingProposalDetailScreen> {
+  bool _votingPowerPreparationStarted = false;
+  bool _votingPowerPreparationInFlight = false;
+
+  @override
+  void didUpdateWidget(covariant VotingProposalDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.roundId != widget.roundId) {
+      _votingPowerPreparationStarted = false;
+      _votingPowerPreparationInFlight = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final roundId = widget.roundId;
     final session = ref.watch(votingSessionProvider(roundId));
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -59,6 +80,7 @@ class VotingProposalDetailScreen extends ConsumerWidget {
               state.resumePlan,
               proposals,
             );
+            _maybePrepareVotingPower(state);
             if (completedVote != null) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
@@ -68,7 +90,8 @@ class VotingProposalDetailScreen extends ConsumerWidget {
                       : round.title,
                   snapshotHeight: round.snapshotHeight,
                   description: _roundDescription(round.rawJson),
-                  votingPower: formatVotingPower(state.eligibleWeightZatoshi),
+                  votingPowerZatoshi: state.eligibleWeightZatoshi,
+                  votingPowerPreparing: _votingPowerPreparationInFlight,
                   votedAt: completedVote.votedAt,
                   proposals: proposals,
                   choicesByProposalId: completedVote.choicesByProposalId,
@@ -95,20 +118,65 @@ class VotingProposalDetailScreen extends ConsumerWidget {
               snapshotHeight: round.snapshotHeight,
               description: _roundDescription(round.rawJson),
               endDate: _roundEndDate(round.rawJson),
-              votingPower: formatVotingPower(state.eligibleWeightZatoshi),
+              votingPowerZatoshi: state.eligibleWeightZatoshi,
+              votingPowerPreparing: _votingPowerPreparationInFlight,
               proposals: proposals,
               draft: draft,
               onChoice: draftKey == null
                   ? (_, _) {}
-                  : (proposalId, choice) => ref
-                        .read(votingDraftProvider(draftKey).notifier)
-                        .setChoice(proposalId, choice),
+                  : (proposalId, choice) {
+                      final notifier = ref.read(
+                        votingDraftProvider(draftKey).notifier,
+                      );
+                      if (choice == null) {
+                        notifier.clearChoice(proposalId);
+                      } else {
+                        notifier.setChoice(proposalId, choice);
+                      }
+                    },
             );
           },
         ),
       ),
     );
   }
+
+  void _maybePrepareVotingPower(VotingSessionState state) {
+    if (_votingPowerPreparationStarted ||
+        state.eligibleWeightZatoshi != null ||
+        !_shouldPrepareVotingPower(state)) {
+      return;
+    }
+
+    _votingPowerPreparationStarted = true;
+    _votingPowerPreparationInFlight = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        ref
+            .read(votingSessionProvider(widget.roundId).notifier)
+            .prepareDelegation()
+            .whenComplete(() {
+              if (!mounted) return;
+              setState(() {
+                _votingPowerPreparationInFlight = false;
+              });
+            }),
+      );
+    });
+  }
+}
+
+bool _shouldPrepareVotingPower(VotingSessionState state) {
+  return switch (state.phase) {
+    VotingSessionPhase.idle ||
+    VotingSessionPhase.delegated ||
+    VotingSessionPhase.readyToDelegate ||
+    VotingSessionPhase.readyToVote ||
+    VotingSessionPhase.submittingShares ||
+    VotingSessionPhase.done => true,
+    _ => false,
+  };
 }
 
 class _VotingTopBar extends StatelessWidget {
@@ -197,7 +265,8 @@ class _ActivePollContent extends StatefulWidget {
     required this.snapshotHeight,
     required this.description,
     required this.endDate,
-    required this.votingPower,
+    required this.votingPowerZatoshi,
+    required this.votingPowerPreparing,
     required this.proposals,
     required this.draft,
     required this.onChoice,
@@ -208,10 +277,11 @@ class _ActivePollContent extends StatefulWidget {
   final int snapshotHeight;
   final String description;
   final DateTime? endDate;
-  final String votingPower;
+  final BigInt? votingPowerZatoshi;
+  final bool votingPowerPreparing;
   final List<VotingProposalView> proposals;
   final VotingDraftState draft;
-  final void Function(int proposalId, int choice) onChoice;
+  final void Function(int proposalId, int? choice) onChoice;
 
   @override
   State<_ActivePollContent> createState() => _ActivePollContentState();
@@ -219,7 +289,26 @@ class _ActivePollContent extends StatefulWidget {
 
 class _ActivePollContentState extends State<_ActivePollContent> {
   bool _descriptionExpanded = false;
-  bool _choosing = false;
+
+  Future<void> _handleBottomActionPressed() async {
+    final skippedCount = widget.proposals
+        .where((proposal) => widget.draft.choices[proposal.id] == null)
+        .length;
+    if (skippedCount > 0) {
+      final continueToReview = await showDialog<bool>(
+        context: context,
+        builder: (_) => _SkippedQuestionsDialog(
+          skippedCount: skippedCount,
+          totalCount: widget.proposals.length,
+        ),
+      );
+      if (!mounted || continueToReview != true) return;
+    }
+
+    if (mounted) {
+      context.push(votingReviewRoute(widget.roundId));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -257,7 +346,9 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                                 snapshotHeight: widget.snapshotHeight,
                                 description: widget.description,
                                 endDate: widget.endDate,
-                                votingPower: widget.votingPower,
+                                votingPowerZatoshi: widget.votingPowerZatoshi,
+                                votingPowerPreparing:
+                                    widget.votingPowerPreparing,
                                 expanded: _descriptionExpanded,
                                 onToggleDescription: () => setState(() {
                                   _descriptionExpanded = !_descriptionExpanded;
@@ -268,7 +359,6 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                             return _ProposalCard(
                               proposal: proposal,
                               selectedChoice: widget.draft.choices[proposal.id],
-                              showChoices: _choosing,
                               onChoice: (choice) =>
                                   widget.onChoice(proposal.id, choice),
                             );
@@ -281,19 +371,9 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                 right: 0,
                 bottom: 0,
                 child: _BottomActionBar(
-                  label: _choosing ? 'Review Votes' : 'Start Voting',
-                  enabled: _choosing
-                      ? !widget.draft.isEmpty
-                      : widget.proposals.isNotEmpty,
-                  onPressed: () {
-                    if (!_choosing) {
-                      setState(() {
-                        _choosing = true;
-                      });
-                      return;
-                    }
-                    context.push(votingReviewRoute(widget.roundId));
-                  },
+                  label: 'Review Answers',
+                  enabled: !widget.draft.isEmpty,
+                  onPressed: _handleBottomActionPressed,
                 ),
               ),
             ],
@@ -304,13 +384,98 @@ class _ActivePollContentState extends State<_ActivePollContent> {
   }
 }
 
+class _SkippedQuestionsDialog extends StatelessWidget {
+  const _SkippedQuestionsDialog({
+    required this.skippedCount,
+    required this.totalCount,
+  });
+
+  final int skippedCount;
+  final int totalCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Dialog(
+      backgroundColor: colors.background.ground,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: colors.background.neutralSubtleOpacity,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: AppIcon(
+                        AppIcons.warning,
+                        size: AppIconSize.medium,
+                        color: colors.icon.regular,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      'Skip unanswered questions?',
+                      style: AppTypography.bodyLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'You have not answered $skippedCount of $totalCount '
+                'questions. The review screen will mark them as skipped, '
+                'and skipped questions will not be submitted.',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                minWidth: 312,
+                child: const Text('Continue to Review'),
+              ),
+              const SizedBox(height: AppSpacing.s),
+              AppButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                variant: AppButtonVariant.ghost,
+                minWidth: 312,
+                child: const Text('Keep Voting'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PollSummary extends StatelessWidget {
   const _PollSummary({
     required this.title,
     required this.snapshotHeight,
     required this.description,
     required this.endDate,
-    required this.votingPower,
+    required this.votingPowerZatoshi,
+    required this.votingPowerPreparing,
     required this.expanded,
     required this.onToggleDescription,
   });
@@ -319,7 +484,8 @@ class _PollSummary extends StatelessWidget {
   final int snapshotHeight;
   final String description;
   final DateTime? endDate;
-  final String votingPower;
+  final BigInt? votingPowerZatoshi;
+  final bool votingPowerPreparing;
   final bool expanded;
   final VoidCallback onToggleDescription;
 
@@ -327,6 +493,11 @@ class _PollSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final hasDescription = description.isNotEmpty;
+    final descriptionStyle = AppTypography.bodyMedium.copyWith(
+      color: colors.text.secondary,
+      height: 20 / 14,
+      letterSpacing: -0.22,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -377,7 +548,10 @@ class _PollSummary extends StatelessWidget {
                   : 'Ends ${_formatDate(endDate!)}',
             ),
             const _MetaText('·'),
-            _MetaText('Voting Power $votingPower'),
+            _VotingPowerMeta(
+              zatoshi: votingPowerZatoshi,
+              preparing: votingPowerPreparing,
+            ),
             if (endDate != null) ...[
               const _MetaText('·'),
               _MetaText(_daysLeftLabel(endDate!)),
@@ -386,27 +560,57 @@ class _PollSummary extends StatelessWidget {
         ),
         if (hasDescription) ...[
           const SizedBox(height: AppSpacing.xs),
-          Text(
-            description,
-            maxLines: expanded ? null : 1,
-            overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-            style: AppTypography.bodyMedium.copyWith(
-              color: colors.text.secondary,
-              height: 20 / 14,
-              letterSpacing: -0.22,
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _ViewMoreButton(
-              expanded: expanded,
-              onPressed: onToggleDescription,
-            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final canExpand = _textExceedsSingleLine(
+                context: context,
+                text: description,
+                style: descriptionStyle,
+                maxWidth: constraints.maxWidth,
+              );
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    description,
+                    maxLines: expanded || !canExpand ? null : 1,
+                    overflow: expanded || !canExpand
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
+                    style: descriptionStyle,
+                  ),
+                  if (canExpand)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: _ViewMoreButton(
+                        expanded: expanded,
+                        onPressed: onToggleDescription,
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ],
       ],
     );
   }
+}
+
+bool _textExceedsSingleLine({
+  required BuildContext context,
+  required String text,
+  required TextStyle style,
+  required double maxWidth,
+}) {
+  if (!maxWidth.isFinite || maxWidth <= 0) return false;
+  final textPainter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout(maxWidth: maxWidth);
+  return textPainter.didExceedMaxLines;
 }
 
 class _ViewMoreButton extends StatelessWidget {
@@ -514,7 +718,8 @@ class _VotedPollContent extends StatelessWidget {
     required this.roundTitle,
     required this.snapshotHeight,
     required this.description,
-    required this.votingPower,
+    required this.votingPowerZatoshi,
+    required this.votingPowerPreparing,
     required this.votedAt,
     required this.proposals,
     required this.choicesByProposalId,
@@ -523,7 +728,8 @@ class _VotedPollContent extends StatelessWidget {
   final String roundTitle;
   final int snapshotHeight;
   final String description;
-  final String votingPower;
+  final BigInt? votingPowerZatoshi;
+  final bool votingPowerPreparing;
   final DateTime? votedAt;
   final List<VotingProposalView> proposals;
   final Map<int, int?> choicesByProposalId;
@@ -539,7 +745,8 @@ class _VotedPollContent extends StatelessWidget {
           title: roundTitle,
           snapshotHeight: snapshotHeight,
           description: description,
-          votingPower: votingPower,
+          votingPowerZatoshi: votingPowerZatoshi,
+          votingPowerPreparing: votingPowerPreparing,
           votedAt: votedAt,
         ),
         const SizedBox(height: AppSpacing.md),
@@ -668,14 +875,16 @@ class _VotedPollHeader extends StatelessWidget {
     required this.title,
     required this.snapshotHeight,
     required this.description,
-    required this.votingPower,
+    required this.votingPowerZatoshi,
+    required this.votingPowerPreparing,
     required this.votedAt,
   });
 
   final String title;
   final int snapshotHeight;
   final String description;
-  final String votingPower;
+  final BigInt? votingPowerZatoshi;
+  final bool votingPowerPreparing;
   final DateTime? votedAt;
 
   @override
@@ -713,7 +922,10 @@ class _VotedPollHeader extends StatelessWidget {
               votedAt == null ? 'Voted' : 'Voted ${_formatDate(votedAt!)}',
             ),
             const _MetaText('·'),
-            _MetaText('Voting Power $votingPower'),
+            _VotingPowerMeta(
+              zatoshi: votingPowerZatoshi,
+              preparing: votingPowerPreparing,
+            ),
             const _MetaText('·'),
             const _MetaText('Vote locked'),
           ],
@@ -749,6 +961,40 @@ class _MetaText extends StatelessWidget {
         letterSpacing: -0.07,
       ),
     );
+  }
+}
+
+class _VotingPowerMeta extends StatelessWidget {
+  const _VotingPowerMeta({required this.zatoshi, required this.preparing});
+
+  final BigInt? zatoshi;
+  final bool preparing;
+
+  @override
+  Widget build(BuildContext context) {
+    final votingPower = zatoshi;
+    if (votingPower == null) {
+      if (!preparing) {
+        return const _MetaText('Voting Power unavailable');
+      }
+      final colors = context.colors;
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: colors.icon.regular,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+          const _MetaText('Preparing voting power'),
+        ],
+      );
+    }
+    return _MetaText('Voting Power ${formatVotingPower(votingPower)}');
   }
 }
 
@@ -872,14 +1118,12 @@ class _ProposalCard extends StatelessWidget {
   const _ProposalCard({
     required this.proposal,
     required this.selectedChoice,
-    required this.showChoices,
     required this.onChoice,
   });
 
   final VotingProposalView proposal;
   final int? selectedChoice;
-  final bool showChoices;
-  final ValueChanged<int> onChoice;
+  final ValueChanged<int?> onChoice;
 
   @override
   Widget build(BuildContext context) {
@@ -941,17 +1185,17 @@ class _ProposalCard extends StatelessWidget {
               ),
             ),
           ],
-          if (showChoices) ...[
-            const SizedBox(height: AppSpacing.s),
-            for (final option in proposal.options) ...[
-              _OptionRow(
-                option: option,
-                selected: selectedChoice == option.index,
-                onTap: () => onChoice(option.index),
+          const SizedBox(height: AppSpacing.s),
+          for (final option in proposal.options) ...[
+            _OptionRow(
+              option: option,
+              selected: selectedChoice == option.index,
+              onTap: () => onChoice(
+                selectedChoice == option.index ? null : option.index,
               ),
-              if (option != proposal.options.last)
-                const SizedBox(height: AppSpacing.xs),
-            ],
+            ),
+            if (option != proposal.options.last)
+              const SizedBox(height: AppSpacing.xs),
           ],
         ],
       ),
@@ -1026,19 +1270,11 @@ class _PendingVoteRecovery {
 }
 
 bool _hasCompletedVoteArtifact(VotingResumePlan plan) {
-  return plan.votesByKey.isNotEmpty ||
-      plan.voteTxHashesByKey.isNotEmpty ||
-      plan.commitmentBundlesByKey.isNotEmpty ||
-      plan.shareDelegations.isNotEmpty;
+  return plan.hasCompletedVoteArtifact;
 }
 
 bool _hasBlockingRecoveryWork(VotingResumePlan plan) {
-  return plan.pendingDelegationBundleIndexes.isNotEmpty ||
-      plan.pendingVoteSubmissionKeys.isNotEmpty ||
-      plan.incompleteVoteRecoveryKeys.isNotEmpty ||
-      plan.unconfirmedShareDelegations.any(
-        (record) => record.sentToUrls.isEmpty,
-      );
+  return plan.hasBlockingCompletedVoteDisplay;
 }
 
 class _ChoicePalette {

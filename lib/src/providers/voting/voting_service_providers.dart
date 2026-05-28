@@ -8,12 +8,16 @@ import '../../core/storage/app_secure_store.dart';
 import '../../core/storage/wallet_paths.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/rpc_endpoint_provider.dart';
+import '../../providers/sync_provider.dart';
+import '../../rust/api/sync.dart' as rust_sync;
 import '../../rust/api/voting.dart' as rust_voting;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_config_loader.dart';
 import '../../services/voting/voting_endorser_client.dart';
+import '../../services/voting/voting_helper_health_tracker.dart';
 import '../../services/voting/voting_http.dart';
+import 'voting_config_source_provider.dart';
 
 /// Transport shared by the voting service clients.
 final votingHttpClientProvider = Provider<VotingHttpClient>((ref) {
@@ -24,7 +28,11 @@ final votingHttpClientProvider = Provider<VotingHttpClient>((ref) {
 
 /// Loads the hash-pinned static config and dynamic voting config.
 final votingConfigLoaderProvider = Provider<VotingConfigLoader>((ref) {
-  return VotingConfigLoader(httpClient: ref.watch(votingHttpClientProvider));
+  final source = ref.watch(votingConfigSourceProvider).value;
+  return VotingConfigLoader(
+    httpClient: ref.watch(votingHttpClientProvider),
+    staticConfigSource: source?.staticConfigSource,
+  );
 });
 
 /// REST client for chain-facing vote server endpoints.
@@ -36,6 +44,14 @@ final votingApiClientProvider = Provider.family<VotingApiClient, Uri>((
     baseUrl: baseUrl,
     httpClient: ref.watch(votingHttpClientProvider),
   );
+});
+
+/// Tracks helper servers that repeatedly fail so recovery can prefer healthier
+/// endpoints without blocking voting when every helper is degraded.
+final votingHelperHealthTrackerProvider = Provider<VotingHelperHealthTracker>((
+  ref,
+) {
+  return VotingHelperHealthTracker();
 });
 
 /// Optional off-chain endorser source for poll-list badges.
@@ -83,10 +99,88 @@ final votingActiveAccountUuidProvider = Provider<Future<String?> Function()>((
   return () async => (await ref.read(accountProvider.future)).activeAccountUuid;
 });
 
+/// Test seam for account hardware classification.
+final votingAccountIsHardwareProvider = Provider<Future<bool> Function(String)>(
+  (ref) {
+    return (accountUuid) async {
+      final accountState = await ref.read(accountProvider.future);
+      for (final account in accountState.accounts) {
+        if (account.uuid == accountUuid) return account.isHardware;
+      }
+      return false;
+    };
+  },
+);
+
 /// Current lightwalletd/network configuration for Rust voting calls.
 final votingRpcEndpointConfigProvider = Provider<RpcEndpointConfig>((ref) {
   return ref.watch(rpcEndpointProvider);
 });
+
+/// Starts foreground wallet sync when voting needs the wallet to catch up.
+final votingWalletSyncStarterProvider = Provider<void Function()>((ref) {
+  return () => ref.read(syncProvider.notifier).startSync();
+});
+
+/// Delay between contiguous scan readiness checks while waiting to vote.
+final votingWalletSyncPollIntervalProvider = Provider<Duration>((ref) {
+  return const Duration(seconds: 2);
+});
+
+/// Checks whether wallet scan progress has reached a voting snapshot height.
+final votingWalletSyncReadinessCheckerProvider =
+    Provider<VotingWalletSyncReadinessChecker>((ref) {
+      return const FrbVotingWalletSyncReadinessChecker();
+    });
+
+class VotingWalletSyncReadiness {
+  const VotingWalletSyncReadiness({
+    required this.scannedHeight,
+    required this.snapshotHeight,
+    required this.chainTipHeight,
+  });
+
+  final int scannedHeight;
+  final int snapshotHeight;
+  final int chainTipHeight;
+
+  bool get isReady => scannedHeight >= snapshotHeight;
+
+  int get blocksRemaining {
+    final remaining = snapshotHeight - scannedHeight;
+    return remaining > 0 ? remaining : 0;
+  }
+}
+
+abstract interface class VotingWalletSyncReadinessChecker {
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required int snapshotHeight,
+  });
+}
+
+class FrbVotingWalletSyncReadinessChecker
+    implements VotingWalletSyncReadinessChecker {
+  const FrbVotingWalletSyncReadinessChecker();
+
+  @override
+  Future<VotingWalletSyncReadiness> check({
+    required String dbPath,
+    required String network,
+    required int snapshotHeight,
+  }) async {
+    final status = await rust_sync.getSyncStatus(
+      dbPath: dbPath,
+      network: network,
+    );
+    return VotingWalletSyncReadiness(
+      scannedHeight: status.scannedHeight.toInt(),
+      snapshotHeight: snapshotHeight,
+      chainTipHeight: status.chainTipHeight.toInt(),
+    );
+  }
+}
 
 abstract interface class VotingHotkeyStore {
   Future<List<int>?> readHotkey({
@@ -195,6 +289,60 @@ abstract interface class VotingRustApi {
     required int bundleIndex,
   });
 
+  Future<List<int>> generateVotingHotkey();
+
+  Future<rust_voting.ApiKeystoneDelegationRequest>
+  buildKeystoneDelegationRequest({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required rust_voting.ApiVotingRoundParams roundParams,
+    required String roundName,
+    String? sessionJson,
+    required String accountUuid,
+    required List<int> hotkeySeed,
+    required int bundleIndex,
+  });
+
+  Future<List<int>> extractPcztSighash({required List<int> pcztBytes});
+
+  Future<List<int>> extractSpendAuthSignatureFromSignedPczt({
+    required List<int> signedPcztBytes,
+    required int actionIndex,
+  });
+
+  Future<void> storeKeystoneSignature({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> sig,
+    required List<int> sighash,
+    required List<int> rk,
+  });
+
+  Future<List<rust_voting.ApiKeystoneSignatureRecord>> getKeystoneSignatures({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+  });
+
+  Stream<rust_voting.ApiDelegationProofEvent>
+  buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String pirServerUrl,
+    required String network,
+    required rust_voting.ApiVotingRoundParams roundParams,
+    required String roundName,
+    String? sessionJson,
+    required String accountUuid,
+    required List<int> hotkeySeed,
+    required int bundleIndex,
+    required List<int> keystoneSig,
+    required List<int> keystoneSighash,
+  });
+
   Future<String> delegationSubmissionWireJson({
     required rust_voting.ApiSignedDelegationPayload submission,
   });
@@ -277,6 +425,15 @@ abstract interface class VotingRustApi {
     required rust_voting.ApiVoteSharePayload payload,
     BigInt? vcTreePosition,
     required BigInt submitAt,
+  });
+
+  Future<List<rust_voting.ApiShareSubmissionPlan>> planShareSubmissions({
+    required int shareCount,
+    required List<String> serverUrls,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    BigInt? lastMomentBufferSeconds,
+    required bool singleShare,
   });
 
   Future<String> recoveredVoteShareWireJson({
@@ -442,6 +599,120 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
+  Future<List<int>> generateVotingHotkey() {
+    return rust_voting.generateVotingHotkey();
+  }
+
+  @override
+  Future<rust_voting.ApiKeystoneDelegationRequest>
+  buildKeystoneDelegationRequest({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required rust_voting.ApiVotingRoundParams roundParams,
+    required String roundName,
+    String? sessionJson,
+    required String accountUuid,
+    required List<int> hotkeySeed,
+    required int bundleIndex,
+  }) {
+    return rust_voting.buildKeystoneDelegationRequest(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      roundParams: roundParams,
+      roundName: roundName,
+      sessionJson: sessionJson,
+      accountUuid: accountUuid,
+      hotkeySeed: hotkeySeed,
+      bundleIndex: bundleIndex,
+    );
+  }
+
+  @override
+  Future<List<int>> extractPcztSighash({required List<int> pcztBytes}) {
+    return rust_voting.extractPcztSighash(pcztBytes: pcztBytes);
+  }
+
+  @override
+  Future<List<int>> extractSpendAuthSignatureFromSignedPczt({
+    required List<int> signedPcztBytes,
+    required int actionIndex,
+  }) {
+    return rust_voting.extractSpendAuthSignatureFromSignedPczt(
+      signedPcztBytes: signedPcztBytes,
+      actionIndex: actionIndex,
+    );
+  }
+
+  @override
+  Future<void> storeKeystoneSignature({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> sig,
+    required List<int> sighash,
+    required List<int> rk,
+  }) {
+    return rust_voting.storeKeystoneSignature(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      sig: sig,
+      sighash: sighash,
+      rk: rk,
+    );
+  }
+
+  @override
+  Future<List<rust_voting.ApiKeystoneSignatureRecord>> getKeystoneSignatures({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+  }) {
+    return rust_voting.getKeystoneSignatures(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+    );
+  }
+
+  @override
+  Stream<rust_voting.ApiDelegationProofEvent>
+  buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String pirServerUrl,
+    required String network,
+    required rust_voting.ApiVotingRoundParams roundParams,
+    required String roundName,
+    String? sessionJson,
+    required String accountUuid,
+    required List<int> hotkeySeed,
+    required int bundleIndex,
+    required List<int> keystoneSig,
+    required List<int> keystoneSighash,
+  }) {
+    return rust_voting
+        .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
+          dbPath: dbPath,
+          lightwalletdUrl: lightwalletdUrl,
+          pirServerUrl: pirServerUrl,
+          network: network,
+          roundParams: roundParams,
+          roundName: roundName,
+          sessionJson: sessionJson,
+          accountUuid: accountUuid,
+          hotkeySeed: hotkeySeed,
+          bundleIndex: bundleIndex,
+          keystoneSig: keystoneSig,
+          keystoneSighash: keystoneSighash,
+        );
+  }
+
+  @override
   Future<String> delegationSubmissionWireJson({
     required rust_voting.ApiSignedDelegationPayload submission,
   }) {
@@ -603,6 +874,25 @@ class FrbVotingRustApi implements VotingRustApi {
       payload: payload,
       vcTreePosition: vcTreePosition,
       submitAt: submitAt,
+    );
+  }
+
+  @override
+  Future<List<rust_voting.ApiShareSubmissionPlan>> planShareSubmissions({
+    required int shareCount,
+    required List<String> serverUrls,
+    required BigInt nowSeconds,
+    required BigInt voteEndTimeSeconds,
+    BigInt? lastMomentBufferSeconds,
+    required bool singleShare,
+  }) {
+    return rust_voting.planShareSubmissions(
+      shareCount: shareCount,
+      serverUrls: serverUrls,
+      nowSeconds: nowSeconds,
+      voteEndTimeSeconds: voteEndTimeSeconds,
+      lastMomentBufferSeconds: lastMomentBufferSeconds,
+      singleShare: singleShare,
     );
   }
 

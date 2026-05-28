@@ -59,6 +59,7 @@ import 'src/features/voting/screens/voting_results_screen.dart';
 import 'src/features/voting/screens/voting_review_screen.dart';
 import 'src/features/voting/screens/voting_status_screen.dart';
 import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
+import 'src/features/voting/screens/keystone_voting_scan_screen.dart';
 import 'src/features/voting/screens/voting_software_account_guard.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
@@ -640,6 +641,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '/voting/keystone/scan',
+        builder: (_, _) => _guardVotingScreen(const KeystoneVotingScanScreen()),
+      ),
+      GoRoute(
         path: '/voting/poll/:roundId/submitted',
         builder: (_, state) => _guardVotingScreen(
           VotingSubmissionConfirmationScreen(
@@ -793,6 +798,7 @@ class _WindowsUpdatePromptHost extends ConsumerStatefulWidget {
 class _WindowsUpdatePromptHostState
     extends ConsumerState<_WindowsUpdatePromptHost> {
   final Set<String> _dismissedPromptKeys = {};
+  var _routeRebuildScheduled = false;
 
   @override
   void initState() {
@@ -815,8 +821,13 @@ class _WindowsUpdatePromptHostState
   }
 
   void _handleRouteChanged() {
-    if (!mounted) return;
-    setState(() {});
+    if (!mounted || _routeRebuildScheduled) return;
+    _routeRebuildScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _routeRebuildScheduled = false;
+      setState(() {});
+    });
   }
 
   String get _currentPath {

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/voting/voting_models.dart';
+import 'voting_config_source_provider.dart';
 import 'voting_service_providers.dart';
 
 /// Loads and caches the active dynamic voting configuration.
@@ -28,7 +29,8 @@ class VotingConfigNotifier extends AsyncNotifier<VotingConfig> {
     state = await AsyncValue.guard(_load);
   }
 
-  Future<VotingConfig> _load() {
+  Future<VotingConfig> _load() async {
+    await ref.read(votingConfigSourceProvider.future);
     return ref.read(votingConfigLoaderProvider).load();
   }
 }

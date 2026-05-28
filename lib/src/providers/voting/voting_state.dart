@@ -17,6 +17,7 @@ class VotingRoundView {
   final String status;
   final bool endorsed;
   final bool unverified;
+  final bool voted;
   final Map<String, dynamic> rawJson;
 
   const VotingRoundView({
@@ -25,12 +26,14 @@ class VotingRoundView {
     required this.status,
     this.endorsed = false,
     this.unverified = false,
+    this.voted = false,
     this.rawJson = const {},
   });
 
   factory VotingRoundView.fromSummary(
     VotingRoundSummary summary, {
     required bool endorsed,
+    bool voted = false,
   }) {
     return VotingRoundView(
       roundId: summary.roundId,
@@ -38,17 +41,19 @@ class VotingRoundView {
       status: summary.status,
       endorsed: endorsed,
       unverified: !endorsed,
+      voted: voted,
       rawJson: summary.rawJson,
     );
   }
 
-  VotingRoundView copyWith({bool? endorsed, bool? unverified}) {
+  VotingRoundView copyWith({bool? endorsed, bool? unverified, bool? voted}) {
     return VotingRoundView(
       roundId: roundId,
       title: title,
       status: status,
       endorsed: endorsed ?? this.endorsed,
       unverified: unverified ?? this.unverified,
+      voted: voted ?? this.voted,
       rawJson: rawJson,
     );
   }
@@ -61,9 +66,11 @@ class VotingRoundView {
 /// lower-level proof progress changes.
 enum VotingSessionPhase {
   idle,
+  waitingForWalletSync,
   resolvingPir,
   loadingWitnesses,
   readyToDelegate,
+  keystoneSigning,
   delegating,
   delegated,
   readyToVote,
@@ -227,11 +234,22 @@ class VotingSessionState {
   final VotingResumePlan? resumePlan;
   final Uri? pirEndpoint;
   final BigInt? eligibleWeightZatoshi;
+  final int? walletScannedHeight;
+  final int? walletSnapshotHeight;
+  final int? walletChainTipHeight;
+  final bool isHardwareAccount;
   final UnmodifiableListView<PirSnapshotEndpointDiagnostic> pirDiagnostics;
   final UnmodifiableMapView<int, VotingSessionProgress> delegationProgress;
   final UnmodifiableMapView<VotingVoteKey, VotingSessionProgress> voteProgress;
+  final UnmodifiableMapView<int, rust_voting.ApiKeystoneSignatureRecord>
+  keystoneSignatures;
+  final rust_voting.ApiKeystoneDelegationRequest? keystoneSigningRequest;
+  final String? keystoneScanError;
   final int? currentBundleIndex;
   final VotingVoteKey? currentVoteKey;
+  final int voteSubmissionCompletedCount;
+  final int voteSubmissionTotalCount;
+  final double? voteSubmissionProgress;
   final VotingSessionError? error;
 
   VotingSessionState({
@@ -243,15 +261,27 @@ class VotingSessionState {
     this.resumePlan,
     this.pirEndpoint,
     this.eligibleWeightZatoshi,
+    this.walletScannedHeight,
+    this.walletSnapshotHeight,
+    this.walletChainTipHeight,
+    this.isHardwareAccount = false,
     List<PirSnapshotEndpointDiagnostic> pirDiagnostics = const [],
     Map<int, VotingSessionProgress> delegationProgress = const {},
     Map<VotingVoteKey, VotingSessionProgress> voteProgress = const {},
+    Map<int, rust_voting.ApiKeystoneSignatureRecord> keystoneSignatures =
+        const {},
+    this.keystoneSigningRequest,
+    this.keystoneScanError,
     this.currentBundleIndex,
     this.currentVoteKey,
+    this.voteSubmissionCompletedCount = 0,
+    this.voteSubmissionTotalCount = 0,
+    this.voteSubmissionProgress,
     this.error,
   }) : pirDiagnostics = UnmodifiableListView(pirDiagnostics),
        delegationProgress = UnmodifiableMapView(delegationProgress),
-       voteProgress = UnmodifiableMapView(voteProgress);
+       voteProgress = UnmodifiableMapView(voteProgress),
+       keystoneSignatures = UnmodifiableMapView(keystoneSignatures);
 
   bool get hasError => phase == VotingSessionPhase.error;
 
@@ -263,13 +293,27 @@ class VotingSessionState {
     VotingResumePlan? resumePlan,
     Uri? pirEndpoint,
     BigInt? eligibleWeightZatoshi,
+    int? walletScannedHeight,
+    int? walletSnapshotHeight,
+    int? walletChainTipHeight,
+    bool clearWalletSyncReadiness = false,
+    bool? isHardwareAccount,
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
     Map<int, VotingSessionProgress>? delegationProgress,
     Map<VotingVoteKey, VotingSessionProgress>? voteProgress,
+    Map<int, rust_voting.ApiKeystoneSignatureRecord>? keystoneSignatures,
+    rust_voting.ApiKeystoneDelegationRequest? keystoneSigningRequest,
+    bool clearKeystoneSigningRequest = false,
+    String? keystoneScanError,
+    bool clearKeystoneScanError = false,
     int? currentBundleIndex,
     bool clearCurrentBundleIndex = false,
     VotingVoteKey? currentVoteKey,
     bool clearCurrentVoteKey = false,
+    int? voteSubmissionCompletedCount,
+    int? voteSubmissionTotalCount,
+    double? voteSubmissionProgress,
+    bool clearVoteSubmissionProgress = false,
     VotingSessionError? error,
     bool clearError = false,
   }) {
@@ -283,15 +327,41 @@ class VotingSessionState {
       pirEndpoint: pirEndpoint ?? this.pirEndpoint,
       eligibleWeightZatoshi:
           eligibleWeightZatoshi ?? this.eligibleWeightZatoshi,
+      walletScannedHeight: clearWalletSyncReadiness
+          ? null
+          : walletScannedHeight ?? this.walletScannedHeight,
+      walletSnapshotHeight: clearWalletSyncReadiness
+          ? null
+          : walletSnapshotHeight ?? this.walletSnapshotHeight,
+      walletChainTipHeight: clearWalletSyncReadiness
+          ? null
+          : walletChainTipHeight ?? this.walletChainTipHeight,
+      isHardwareAccount: isHardwareAccount ?? this.isHardwareAccount,
       pirDiagnostics: pirDiagnostics ?? this.pirDiagnostics,
       delegationProgress: delegationProgress ?? this.delegationProgress,
       voteProgress: voteProgress ?? this.voteProgress,
+      keystoneSignatures: keystoneSignatures ?? this.keystoneSignatures,
+      keystoneSigningRequest: clearKeystoneSigningRequest
+          ? null
+          : keystoneSigningRequest ?? this.keystoneSigningRequest,
+      keystoneScanError: clearKeystoneScanError
+          ? null
+          : keystoneScanError ?? this.keystoneScanError,
       currentBundleIndex: clearCurrentBundleIndex
           ? null
           : currentBundleIndex ?? this.currentBundleIndex,
       currentVoteKey: clearCurrentVoteKey
           ? null
           : currentVoteKey ?? this.currentVoteKey,
+      voteSubmissionCompletedCount: clearVoteSubmissionProgress
+          ? 0
+          : voteSubmissionCompletedCount ?? this.voteSubmissionCompletedCount,
+      voteSubmissionTotalCount: clearVoteSubmissionProgress
+          ? 0
+          : voteSubmissionTotalCount ?? this.voteSubmissionTotalCount,
+      voteSubmissionProgress: clearVoteSubmissionProgress
+          ? null
+          : voteSubmissionProgress ?? this.voteSubmissionProgress,
       error: clearError ? null : error ?? this.error,
     );
   }

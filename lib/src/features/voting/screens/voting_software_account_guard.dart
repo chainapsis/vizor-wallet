@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../providers/account_provider.dart';
 
 class VotingSoftwareAccountGuard extends ConsumerWidget {
@@ -27,12 +25,7 @@ class VotingSoftwareAccountGuard extends ConsumerWidget {
           message: error.toString(),
         ),
       ),
-      data: (state) {
-        if (state.activeAccount?.isHardware == true) {
-          return const _VotingGuardScaffold(child: _HardwareVotingComingSoon());
-        }
-        return child;
-      },
+      data: (_) => child,
     );
   }
 }
@@ -63,37 +56,11 @@ class _VotingGuardScaffold extends StatelessWidget {
   }
 }
 
-class _HardwareVotingComingSoon extends StatelessWidget {
-  const _HardwareVotingComingSoon();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: _VotingGuardMessage(
-        title: 'Hardware Accounts Coming Soon',
-        message:
-            'Coinholder polling for Keystone and other hardware accounts is coming soon. Switch to a software account to view and submit polls.',
-        action: AppButton(
-          onPressed: () => context.go('/accounts'),
-          variant: AppButtonVariant.primary,
-          minWidth: 220,
-          child: const Text('Switch Account'),
-        ),
-      ),
-    );
-  }
-}
-
 class _VotingGuardMessage extends StatelessWidget {
-  const _VotingGuardMessage({
-    required this.title,
-    required this.message,
-    this.action,
-  });
+  const _VotingGuardMessage({required this.title, required this.message});
 
   final String title;
   final String message;
-  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -119,10 +86,6 @@ class _VotingGuardMessage extends StatelessWidget {
                 color: colors.text.secondary,
               ),
             ),
-            if (action != null) ...[
-              const SizedBox(height: AppSpacing.md),
-              action!,
-            ],
           ],
         ),
       ),

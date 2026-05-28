@@ -11,6 +11,9 @@ param(
   [string]$UpdateFeedPublicKey = $env:VIZOR_UPDATE_FEED_PUBLIC_KEY_B64,
   [string]$UpdateRepositoryUrl = $env:VIZOR_UPDATE_GITHUB_REPO_URL,
   [string]$UpdateReleaseBaseUrl = $env:VIZOR_UPDATE_RELEASE_BASE_URL,
+  [string]$CodeSignParams = $env:VIZOR_WINDOWS_CODE_SIGN_PARAMS,
+  [string]$CodeSignParallel = $env:VIZOR_WINDOWS_CODE_SIGN_PARALLEL,
+  [string]$CodeSignExclude = $env:VIZOR_WINDOWS_CODE_SIGN_EXCLUDE,
   [switch]$Msi,
   [switch]$Clean
 )
@@ -40,6 +43,22 @@ function Resolve-Command($name, $fallbacks, $installHint) {
   }
 
   throw "$name was not found on PATH. $installHint"
+}
+
+function Remove-BuildSubdirectory($path) {
+  $buildRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "build"))
+  if (-not $buildRoot.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+    $buildRoot = "$buildRoot$([System.IO.Path]::DirectorySeparatorChar)"
+  }
+
+  $targetFullPath = [System.IO.Path]::GetFullPath($path)
+  if (-not $targetFullPath.StartsWith($buildRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to remove build output outside build directory: $targetFullPath"
+  }
+
+  if (Test-Path $targetFullPath) {
+    Remove-Item -LiteralPath $targetFullPath -Recurse -Force
+  }
 }
 
 function Get-FvmVersion {
@@ -214,12 +233,21 @@ if ($fvmVersion) {
   Add-PathIfExists (Join-Path $fvmSdk "bin")
 }
 Add-PathIfExists "C:\Program Files\Git\cmd"
-$dotnetRoot = Join-Path $env:USERPROFILE ".dotnet"
-if (Test-Path $dotnetRoot) {
+$userDotnetRoot = Join-Path $env:USERPROFILE ".dotnet"
+$dotnetRoot = $env:DOTNET_ROOT
+if ([string]::IsNullOrWhiteSpace($dotnetRoot) -or -not (Test-Path (Join-Path $dotnetRoot "dotnet.exe"))) {
+  $programFilesDotnetRoot = "C:\Program Files\dotnet"
+  if (Test-Path (Join-Path $programFilesDotnetRoot "dotnet.exe")) {
+    $dotnetRoot = $programFilesDotnetRoot
+  } elseif (Test-Path (Join-Path $userDotnetRoot "dotnet.exe")) {
+    $dotnetRoot = $userDotnetRoot
+  }
+}
+if (-not [string]::IsNullOrWhiteSpace($dotnetRoot) -and (Test-Path (Join-Path $dotnetRoot "dotnet.exe"))) {
   $env:DOTNET_ROOT = $dotnetRoot
   Add-PathIfExists $dotnetRoot
-  Add-PathIfExists (Join-Path $dotnetRoot "tools")
 }
+Add-PathIfExists (Join-Path $userDotnetRoot "tools")
 
 $fvmExe = Resolve-Command `
   "fvm" `
@@ -302,18 +330,15 @@ $packDir = Join-Path $repoRoot "build\windows\x64\runner\Release"
 $mainExe = Join-Path $packDir "Vizor.exe"
 $resolvedOutputDir = Join-Path $repoRoot $OutputDir
 
+$effectiveCodeSignParams = ""
+if ($Network -eq "mainnet" -and -not [string]::IsNullOrWhiteSpace($CodeSignParams)) {
+  $effectiveCodeSignParams = $CodeSignParams.Trim()
+} elseif ($Network -ne "mainnet" -and -not [string]::IsNullOrWhiteSpace($CodeSignParams)) {
+  Write-Host "Ignoring Windows code signing parameters for $Network package."
+}
+
 if ($Clean) {
-  $buildRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "build"))
-  if (-not $buildRoot.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
-    $buildRoot = "$buildRoot$([System.IO.Path]::DirectorySeparatorChar)"
-  }
-  $outputFullPath = [System.IO.Path]::GetFullPath($resolvedOutputDir)
-  if (-not $outputFullPath.StartsWith($buildRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Refusing to clean output directory outside build directory: $outputFullPath"
-  }
-  if (Test-Path $outputFullPath) {
-    Remove-Item -LiteralPath $outputFullPath -Recurse -Force
-  }
+  Remove-BuildSubdirectory $resolvedOutputDir
 }
 
 $flutterBuildArgs = @(
@@ -329,6 +354,7 @@ $cmakeCache = Join-Path $repoRoot "build\windows\x64\CMakeCache.txt"
 if (Test-Path $cmakeCache) {
   Remove-Item -LiteralPath $cmakeCache -Force
 }
+Remove-BuildSubdirectory $packDir
 
 & $fvmExe @flutterBuildArgs
 if ($LASTEXITCODE -ne 0) {
@@ -356,6 +382,22 @@ $packArgs = @(
 
 if ($Msi) {
   $packArgs += "--msi"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($effectiveCodeSignParams)) {
+  $packArgs += @("--signParams", $effectiveCodeSignParams)
+
+  if (-not [string]::IsNullOrWhiteSpace($CodeSignParallel)) {
+    $parsedParallel = 0
+    if (-not [int]::TryParse($CodeSignParallel.Trim(), [ref]$parsedParallel) -or $parsedParallel -lt 1) {
+      throw "VIZOR_WINDOWS_CODE_SIGN_PARALLEL must be a positive integer."
+    }
+    $packArgs += @("--signParallel", $parsedParallel.ToString())
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($CodeSignExclude)) {
+    $packArgs += @("--signExclude", $CodeSignExclude.Trim())
+  }
 }
 
 & $vpkExe @packArgs

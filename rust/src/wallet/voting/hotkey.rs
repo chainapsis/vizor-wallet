@@ -47,6 +47,42 @@ pub fn derive_hotkey_raw_orchard_address(
 ) -> Result<Vec<u8>, String> {
     let hotkey = generate_contextual_hotkey(seed, round_id, account_uuid)?;
     let hotkey_secret = SecretVec::new(hotkey.secret_key);
+    hotkey_raw_orchard_address_from_secret(&hotkey_secret, network)
+}
+
+/// Generates opaque voting hotkey bytes for hardware-account voting.
+///
+/// Hardware accounts do not expose wallet seed material to the app, so the
+/// voting hotkey is random app-owned material that gets persisted in secure
+/// storage and reused for the round.
+///
+/// # Errors
+///
+/// Returns an error if random hotkey material cannot be converted into the
+/// voting hotkey format.
+pub fn generate_random_hotkey() -> Result<SecretVec<u8>, String> {
+    use rand::RngCore;
+
+    let mut seed = Zeroizing::new(vec![0u8; 64]);
+    rand::rngs::OsRng.fill_bytes(&mut seed);
+    zcash_voting::hotkey::generate_hotkey(&seed)
+        .map(|hotkey| SecretVec::new(hotkey.secret_key))
+        .map_err(|e| format!("Voting hotkey generation failed: {e}"))
+}
+
+/// Derives the Orchard raw address for an already-generated voting hotkey.
+///
+/// This supports hardware voting, where the app stores only the per-round
+/// voting hotkey bytes and never has access to the Keystone account seed.
+///
+/// # Errors
+///
+/// Returns an error if the hotkey cannot be converted into a Zcash spending key
+/// for `network`, or if the resulting UFVK has no Orchard receiver.
+pub fn hotkey_raw_orchard_address_from_secret(
+    hotkey_secret: &SecretVec<u8>,
+    network: WalletNetwork,
+) -> Result<Vec<u8>, String> {
     let address = {
         // `UnifiedSpendingKey` does not expose a zeroizing wrapper here, so keep
         // its lifetime limited to the address derivation scope.
@@ -176,6 +212,26 @@ mod tests {
                 .unwrap()
                 .expose_secret()
         );
+    }
+
+    #[test]
+    fn random_hotkey_returns_storable_secret_bytes() {
+        let first = generate_random_hotkey().unwrap();
+        let second = generate_random_hotkey().unwrap();
+
+        assert_eq!(first.expose_secret().len(), 32);
+        assert_eq!(second.expose_secret().len(), 32);
+        assert_ne!(first.expose_secret(), second.expose_secret());
+    }
+
+    #[test]
+    fn raw_orchard_address_can_be_derived_from_stored_hotkey_secret() {
+        let hotkey = derive_hotkey(&test_seed(), ROUND_ID, ACCOUNT_UUID).unwrap();
+
+        let address =
+            hotkey_raw_orchard_address_from_secret(&hotkey, WalletNetwork::Regtest).unwrap();
+
+        assert!(!address.is_empty());
     }
 
     #[test]

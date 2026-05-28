@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'voting_http.dart';
 import 'voting_models.dart';
@@ -13,13 +15,25 @@ class VotingApiClient {
     required Uri baseUrl,
     required VotingHttpClient httpClient,
     Duration timeout = const Duration(seconds: 10),
+    Duration helperTimeout = const Duration(seconds: 5),
+    List<Duration> broadcastRetryDelays = const [
+      Duration(seconds: 2),
+      Duration(seconds: 4),
+    ],
+    Future<void> Function(Duration delay)? delay,
   }) : _baseUrl = baseUrl,
        _httpClient = httpClient,
-       _timeout = timeout;
+       _timeout = timeout,
+       _helperTimeout = helperTimeout,
+       _broadcastRetryDelays = List.unmodifiable(broadcastRetryDelays),
+       _delay = delay ?? Future<void>.delayed;
 
   final Uri _baseUrl;
   final VotingHttpClient _httpClient;
   final Duration _timeout;
+  final Duration _helperTimeout;
+  final List<Duration> _broadcastRetryDelays;
+  final Future<void> Function(Duration delay) _delay;
 
   /// Lists rounds from the vote server.
   ///
@@ -52,6 +66,18 @@ class VotingApiClient {
         .toList(growable: false);
   }
 
+  /// Fetches the currently active round, returning null when the chain has none.
+  Future<VotingRoundStatus?> getActiveRoundStatus() async {
+    final uri = _endpoint(['rounds', 'active']);
+    final response = await _httpClient.get(uri, timeout: _timeout);
+    if (response.statusCode == 404) return null;
+    _throwIfNotSuccess(uri, response);
+    final decoded = jsonDecode(response.bodyText);
+    final object = _objectFromValue(decoded);
+    if (object['round'] == null) return null;
+    return VotingRoundStatus.fromJson(_unwrapNestedObject(object, 'round'));
+  }
+
   /// Fetches one round and unwraps the ZODL-style `{ "round": ... }` envelope.
   Future<VotingRoundStatus> getRoundStatus(String roundId) async {
     final decoded = await _getJson(
@@ -67,13 +93,25 @@ class VotingApiClient {
     return VotingRoundTally.fromJson(_objectFromValue(decoded));
   }
 
+  Future<VotingRoundTally> getProposalTally(
+    String roundId,
+    int proposalId,
+  ) async {
+    final tally = await getRoundTally(roundId);
+    return VotingRoundTally.fromJson(
+      _filterProposalTally(tally.rawJson, proposalId),
+    );
+  }
+
   Future<VotingTxResult> submitDelegation({
     required Map<String, dynamic> submission,
   }) async {
-    final decoded = await _postJson(
-      _endpoint(['delegate-vote']),
-      submission,
-      allowStatusCodes: const {422},
+    final decoded = await _withBroadcastRetry(
+      () => _postJson(
+        _endpoint(['delegate-vote']),
+        submission,
+        allowStatusCodes: const {422},
+      ),
     );
     return VotingTxResult.fromJson(_objectFromValue(decoded));
   }
@@ -81,10 +119,12 @@ class VotingApiClient {
   Future<VotingTxResult> submitVoteCommitment({
     required Map<String, dynamic> commitment,
   }) async {
-    final decoded = await _postJson(
-      _endpoint(['cast-vote']),
-      commitment,
-      allowStatusCodes: const {422},
+    final decoded = await _withBroadcastRetry(
+      () => _postJson(
+        _endpoint(['cast-vote']),
+        commitment,
+        allowStatusCodes: const {422},
+      ),
     );
     return VotingTxResult.fromJson(_objectFromValue(decoded));
   }
@@ -94,7 +134,9 @@ class VotingApiClient {
     final response = await _httpClient.get(uri, timeout: _timeout);
     if (response.statusCode == 404) return null;
     _throwIfNotSuccess(uri, response, allowStatusCodes: const {422});
-    return VotingTxConfirmation.fromJson(_objectFromValue(jsonDecode(response.bodyText)));
+    return VotingTxConfirmation.fromJson(
+      _objectFromValue(jsonDecode(response.bodyText)),
+    );
   }
 
   /// Posts one encrypted share directly to a helper server.
@@ -111,6 +153,7 @@ class VotingApiClient {
     final decoded = await _postJson(
       _endpoint(['shares'], baseUrl: serverUrl),
       body,
+      timeout: _helperTimeout,
     );
     return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
   }
@@ -127,6 +170,7 @@ class VotingApiClient {
         normalizeVotingRoundId(roundId),
         shareId,
       ], baseUrl: serverUrl),
+      timeout: _helperTimeout,
     );
     return VotingShareStatus.fromJson(_objectFromValue(decoded));
   }
@@ -146,6 +190,7 @@ class VotingApiClient {
     final decoded = await _postJson(
       _endpoint(['shares'], baseUrl: serverUrl),
       body,
+      timeout: _helperTimeout,
     );
     return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
   }
@@ -165,8 +210,8 @@ class VotingApiClient {
     );
   }
 
-  Future<Object?> _getJson(Uri uri) async {
-    final response = await _httpClient.get(uri, timeout: _timeout);
+  Future<Object?> _getJson(Uri uri, {Duration? timeout}) async {
+    final response = await _httpClient.get(uri, timeout: timeout ?? _timeout);
     _throwIfNotSuccess(uri, response);
     return jsonDecode(response.bodyText);
   }
@@ -175,10 +220,44 @@ class VotingApiClient {
     Uri uri,
     Map<String, dynamic> body, {
     Set<int> allowStatusCodes = const {},
+    Duration? timeout,
   }) async {
-    final response = await _httpClient.postJson(uri, body, timeout: _timeout);
+    final response = await _httpClient.postJson(
+      uri,
+      body,
+      timeout: timeout ?? _timeout,
+    );
     _throwIfNotSuccess(uri, response, allowStatusCodes: allowStatusCodes);
     return jsonDecode(response.bodyText);
+  }
+
+  Future<T> _withBroadcastRetry<T>(Future<T> Function() operation) async {
+    Object? lastError;
+    for (var attempt = 0; attempt <= _broadcastRetryDelays.length; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (attempt == _broadcastRetryDelays.length ||
+            !_isBroadcastRetryable(error)) {
+          rethrow;
+        }
+        await _delay(_broadcastRetryDelays[attempt]);
+      }
+    }
+    throw StateError('broadcast retry exited unexpectedly: $lastError');
+  }
+
+  static bool _isBroadcastRetryable(Object error) {
+    if (error is TimeoutException ||
+        error is SocketException ||
+        error is HttpException) {
+      return true;
+    }
+    if (error is VotingHttpException) {
+      return error.statusCode == 502 || error.statusCode == 503;
+    }
+    return false;
   }
 
   static void _throwIfNotSuccess(
@@ -209,4 +288,31 @@ Map<String, dynamic> _unwrapNestedObject(Object? value, String key) {
   final object = _objectFromValue(value);
   final nested = object[key];
   return nested == null ? object : _objectFromValue(nested);
+}
+
+Map<String, dynamic> _filterProposalTally(
+  Map<String, dynamic> json,
+  int proposalId,
+) {
+  for (final key in const ['results', 'tallies', 'proposals']) {
+    final value = json[key];
+    if (value is! List) continue;
+    return {
+      ...json,
+      key: [
+        for (final entry in value)
+          if (_proposalIdFromTallyEntry(entry) == proposalId) entry,
+      ],
+    };
+  }
+  return json;
+}
+
+int? _proposalIdFromTallyEntry(Object? value) {
+  if (value is! Map) return null;
+  final raw = value['proposal_id'] ?? value['proposalId'] ?? value['id'];
+  if (raw is int) return raw;
+  if (raw is num) return raw.toInt();
+  if (raw is String) return int.tryParse(raw);
+  return null;
 }

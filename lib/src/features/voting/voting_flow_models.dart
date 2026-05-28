@@ -60,6 +60,11 @@ class VotingDraftState {
     return VotingDraftState(choices: {...choices, proposalId: choice});
   }
 
+  VotingDraftState clearChoice(int proposalId) {
+    final nextChoices = Map<int, int>.from(choices)..remove(proposalId);
+    return VotingDraftState(choices: nextChoices);
+  }
+
   List<rust_voting.ApiDraftVote> toDraftVotes(
     List<VotingProposalView> proposals, {
     bool singleShare = false,
@@ -89,6 +94,10 @@ class VotingDraftNotifier extends Notifier<VotingDraftState> {
 
   void setChoice(int proposalId, int choice) {
     state = state.setChoice(proposalId, choice);
+  }
+
+  void clearChoice(int proposalId) {
+    state = state.clearChoice(proposalId);
   }
 }
 

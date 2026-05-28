@@ -12,7 +12,7 @@ class FakeVotingHttpClient implements VotingHttpClient {
 
   @override
   Future<VotingHttpResponse> get(Uri uri, {Duration? timeout}) async {
-    requests.add(FakeVotingHttpRequest('GET', uri));
+    requests.add(FakeVotingHttpRequest('GET', uri, timeout: timeout));
     return _responseFor(uri);
   }
 
@@ -22,12 +22,17 @@ class FakeVotingHttpClient implements VotingHttpClient {
     Map<String, dynamic> body, {
     Duration? timeout,
   }) async {
-    requests.add(FakeVotingHttpRequest('POST', uri, body: body));
+    requests.add(
+      FakeVotingHttpRequest('POST', uri, body: body, timeout: timeout),
+    );
     return _responseFor(uri);
   }
 
   VotingHttpResponse _responseFor(Uri uri) {
-    final response = responses[uri.toString()] ?? responses[uri.path];
+    final configured = responses[uri.toString()] ?? responses[uri.path];
+    final response = configured is SequentialVotingHttpResponses
+        ? configured.next()
+        : configured;
     if (response == null) {
       return jsonResponse({'ok': true});
     }
@@ -57,8 +62,25 @@ class FakeVotingHttpRequest {
   final String method;
   final Uri uri;
   final Map<String, dynamic>? body;
+  final Duration? timeout;
 
-  const FakeVotingHttpRequest(this.method, this.uri, {this.body});
+  const FakeVotingHttpRequest(this.method, this.uri, {this.body, this.timeout});
+}
+
+class SequentialVotingHttpResponses {
+  SequentialVotingHttpResponses(this._responses);
+
+  final List<Object> _responses;
+  int _index = 0;
+
+  Object next() {
+    if (_responses.isEmpty) {
+      throw StateError('SequentialVotingHttpResponses cannot be empty');
+    }
+    final index = _index < _responses.length ? _index : _responses.length - 1;
+    _index += 1;
+    return _responses[index];
+  }
 }
 
 VotingHttpResponse jsonResponse(Object body, {int statusCode = 200}) {
