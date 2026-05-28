@@ -60,11 +60,19 @@ const kProfilePictureOptions = <ProfilePictureOption>[
   ),
 ];
 
+const _kZnsPrefix = 'zns-';
+
+bool isZnsProfilePictureId(String id) => id.startsWith(_kZnsPrefix);
+
+String _stripZnsPrefix(String id) =>
+    id.startsWith(_kZnsPrefix) ? id.substring(_kZnsPrefix.length) : id;
+
 ProfilePictureOption? findProfilePictureOption(String id) {
+  final baseId = _stripZnsPrefix(id);
   for (final option in kProfilePictureOptions) {
-    if (option.id == id) return option;
+    if (option.id == baseId) return option;
   }
-  if (_legacyKnightIdPattern.hasMatch(id)) {
+  if (_legacyKnightIdPattern.hasMatch(baseId)) {
     return kProfilePictureOptions.first;
   }
   return null;

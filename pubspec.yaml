@@ -64,6 +64,7 @@ dependencies:
   # without re-exporting.
   flutter_svg: ^2.0.10+1
   pretty_qr_code: ^3.6.0
+  zcashname_sdk: ^0.5.1
 
 dev_dependencies:
   flutter_test:

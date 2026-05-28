@@ -5,6 +5,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:zcashname_sdk/zcashname_sdk.dart' show isValidName;
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
@@ -26,6 +28,7 @@ import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_provider.dart';
+import '../../../providers/zns_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import 'send_review_screen.dart';
 
@@ -144,11 +147,14 @@ String _newSendFlowId() {
   ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 }
 
+enum _ZnsStatus { resolving, notFound, networkError }
+
 class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldOverlayReserve = 20.0;
   static const _singleLineFieldGap = AppSpacing.xs;
   static const _multilineFieldOverlayReserve = 24.0;
   static const _maxDebounceDuration = Duration(milliseconds: 300);
+  static const _znsDebounceDuration = Duration(milliseconds: 300);
   final _addressController = _AddressTextEditingController();
   final _amountController = TextEditingController();
   final _memoController = TextEditingController();
@@ -168,6 +174,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   bool _programmaticAmountEdit = false;
   _MaxQuote? _maxQuote;
   Timer? _maxDebounceTimer;
+  Timer? _znsDebounceTimer;
+  _ZnsStatus? _znsStatus;
+  String? _resolvedName;
   int _addressSeq = 0;
   int _maxSeq = 0;
   int _validateSeq = 0;
@@ -188,6 +197,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   @override
   void dispose() {
     _maxDebounceTimer?.cancel();
+    _znsDebounceTimer?.cancel();
     _memoController.removeListener(_handleMemoChanged);
     _addressFocusNode.removeListener(_handleFieldVisualStateChanged);
     _amountFocusNode.removeListener(_handleFieldVisualStateChanged);
@@ -230,6 +240,18 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     }
   }
 
+  static String? _extractZnsName(String input) {
+    const znsProtocols = ['.zcash', '.zec'];
+    final normalized = input.toLowerCase();
+    for (final protocol in znsProtocols) {
+      if (normalized.endsWith(protocol)) {
+        final normalizedName = normalized.substring(0, normalized.length - protocol.length);
+        return isValidName(normalizedName) ? normalizedName : null;
+      }
+    }
+    return null;
+  }
+
   Future<void> _validateAddress() async {
     final seq = ++_addressSeq;
     final addr = _addressController.text.trim();
@@ -242,14 +264,53 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     try {
       final result = await rust_sync.validateAddress(address: addr);
       if (!mounted || seq != _addressSeq) return;
-      setState(
-        () => _addressType = result.isValid ? result.addressType : 'invalid',
-      );
-      _handleAddressValidationSettled();
+      if (result.isValid) {
+        setState(() => _addressType = result.addressType);
+        _handleAddressValidationSettled();
+      } else if (_extractZnsName(addr) case final name?) {
+        _scheduleZnsResolution(name, seq);
+      } else {
+        setState(() => _addressType = 'invalid');
+        _handleAddressValidationSettled();
+      }
     } catch (e) {
       log('Send: address validation error: $e');
       if (!mounted || seq != _addressSeq) return;
       setState(() => _addressType = 'error');
+      _handleAddressValidationSettled();
+    }
+  }
+
+  void _scheduleZnsResolution(String name, int seq) {
+    _znsDebounceTimer?.cancel();
+    setState(() => _znsStatus = _ZnsStatus.resolving);
+    _znsDebounceTimer = Timer(
+      _znsDebounceDuration,
+      () => unawaited(_resolveZnsName(name, seq)),
+    );
+  }
+
+  Future<void> _resolveZnsName(String name, int seq) async {
+    if (!mounted || seq != _addressSeq) return;
+    try {
+      final resolvedUa = await ref.read(znsResolverProvider).resolveName(name);
+      if (!mounted || seq != _addressSeq) return;
+      if (resolvedUa == null) {
+        setState(() => _znsStatus = _ZnsStatus.notFound);
+        _handleAddressValidationSettled();
+        return;
+      }
+      final resolvedName = _addressController.text.trim();
+      _addressController.text = resolvedUa;
+      _handleAddressChanged();
+      setState(() => _resolvedName = resolvedName);
+    } catch (e) {
+      log('Send: ZNS resolution error: $e');
+      if (!mounted || seq != _addressSeq) return;
+      setState(() {
+        _znsStatus = _ZnsStatus.networkError;
+        _error = 'Could not reach ZNS. Check your connection.';
+      });
       _handleAddressValidationSettled();
     }
   }
@@ -265,8 +326,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   void _handleAddressChanged() {
     _addressSeq++;
     _maxDebounceTimer?.cancel();
+    _znsDebounceTimer?.cancel();
     setState(() {
       _addressType = '';
+      _znsStatus = null;
+      _resolvedName = null;
       _error = null;
       if (_isMaxMode) {
         _validateSeq++;
@@ -301,7 +365,8 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
       _addressController.text.trim().isNotEmpty &&
       _addressType.isNotEmpty &&
       _addressType != 'invalid' &&
-      _addressType != 'error';
+      _addressType != 'error' &&
+      _znsStatus == null;
 
   bool get _isShieldedAddress =>
       _addressType == 'unified' || _addressType == 'sapling';
@@ -657,6 +722,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
           addressType: _addressType,
           amountZatoshi: amountZatoshi,
           feeZatoshi: proposal.feeZatoshi,
+          resolvedName: _resolvedName,
           memo: memo.isNotEmpty ? memo : null,
           needsSaplingParams: proposal.needsSaplingParams,
         ),
@@ -699,35 +765,53 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         ? colors.icon.success
         : null;
 
-    final addressTone = switch (_addressType) {
-      'unified' || 'sapling' => AppTextFieldTone.success,
-      'invalid' || 'error' => AppTextFieldTone.destructive,
-      _ => AppTextFieldTone.neutral,
+    final addressTone = switch (_znsStatus) {
+      _ZnsStatus.notFound || _ZnsStatus.networkError => AppTextFieldTone.destructive,
+      _ZnsStatus.resolving => AppTextFieldTone.neutral,
+      null => switch (_addressType) {
+        'unified' || 'sapling' => AppTextFieldTone.success,
+        'invalid' || 'error' => AppTextFieldTone.destructive,
+        _ => AppTextFieldTone.neutral,
+      },
     };
-    final addressMessage = switch (_addressType) {
-      'unified' || 'sapling' => 'Shielded Address',
-      'transparent' => 'Transparent Address',
-      'invalid' => 'Invalid address',
-      'error' => 'Address validation failed',
-      _ => null,
+    var addressMessage = switch (_znsStatus) {
+      _ZnsStatus.resolving => 'Resolving...',
+      _ZnsStatus.notFound => 'Zcash Name · Not Found',
+      _ZnsStatus.networkError => 'Could not reach ZNS',
+      null => switch (_addressType) {
+        'unified' || 'sapling' => 'Shielded Address',
+        'transparent' => 'Transparent Address',
+        'invalid' => 'Invalid address',
+        'error' => 'Address validation failed',
+        _ => null,
+      },
     };
-    final addressMessageIcon = switch (_addressType) {
-      'unified' || 'sapling' => AppIcon(
-        AppIcons.shieldKeyhole,
-        size: 16,
-        color: colors.icon.success,
-      ),
-      'invalid' || 'error' => AppIcon(
+    if (_resolvedName != null) addressMessage = 'Zcash Name · $addressMessage';
+    final addressMessageIcon = switch (_znsStatus) {
+      _ZnsStatus.notFound || _ZnsStatus.networkError => AppIcon(
         AppIcons.warning,
         size: 16,
         color: colors.text.destructive,
       ),
-      'transparent' => AppIcon(
-        AppIcons.transparentBalance,
-        size: 16,
-        color: colors.icon.muted,
-      ),
-      _ => null,
+      _ZnsStatus.resolving => null,
+      null => switch (_addressType) {
+        'unified' || 'sapling' => AppIcon(
+          AppIcons.shieldKeyhole,
+          size: 16,
+          color: colors.icon.success,
+        ),
+        'invalid' || 'error' => AppIcon(
+          AppIcons.warning,
+          size: 16,
+          color: colors.text.destructive,
+        ),
+        'transparent' => AppIcon(
+          AppIcons.transparentBalance,
+          size: 16,
+          color: colors.icon.muted,
+        ),
+        _ => null,
+      },
     };
     final addressMessageStyle = switch (_addressType) {
       'transparent' => AppTypography.labelMedium.copyWith(
@@ -785,10 +869,32 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                         AppTextField(
                           key: const ValueKey('send_address_field'),
                           label: 'Send to',
+                          rightSlot: _resolvedName != null
+                              ? MouseRegion(
+                                  cursor: SystemMouseCursors.click,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () {
+                                      final bare = _extractZnsName(_resolvedName!);
+                                      if (bare == null) return;
+                                      launchUrl(
+                                        Uri.parse('https://www.zcashnames.com/explorer?name=$bare'),
+                                        mode: LaunchMode.externalApplication,
+                                      );
+                                    },
+                                    child: Text(
+                                      _resolvedName!,
+                                      style: AppTypography.labelMedium.copyWith(
+                                        color: colors.text.accent,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : null,
                           tone: addressTone,
                           focusNode: _addressFocusNode,
                           controller: _addressController,
-                          hintText: 'Zcash address',
+                          hintText: 'Zcash address or Name',
                           leading: AppIcon(
                             AppIcons.users,
                             size: 20,
@@ -805,8 +911,11 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                           onClear: () {
                             _addressSeq++;
                             _maxDebounceTimer?.cancel();
+                            _znsDebounceTimer?.cancel();
                             setState(() {
                               _addressType = '';
+                              _znsStatus = null;
+                              _resolvedName = null;
                               _error = null;
                               if (_isMaxMode) {
                                 _validateSeq++;

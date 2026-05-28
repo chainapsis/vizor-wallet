@@ -27,13 +27,14 @@ class AppProfilePicture extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final option = resolveProfilePictureOption(profilePictureId);
+    final isZns = isZnsProfilePictureId(profilePictureId);
 
     return Container(
       width: size.dimension,
       height: size.dimension,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: context.colors.background.raised,
+        color: isZns ? const Color(0xFFD4A843) : context.colors.background.raised,
         borderRadius: BorderRadius.circular(size.radius),
       ),
       child: Image.asset(

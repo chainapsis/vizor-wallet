@@ -130,6 +130,21 @@ bool walletExists({required String dbPath}) =>
 bool validateMnemonic({required String mnemonic}) =>
     RustLib.instance.api.crateApiWalletValidateMnemonic(mnemonic: mnemonic);
 
+/// Check whether a Unified Address belongs to a given account.
+/// Uses the account's Orchard FVK: extracts the diversifier from the address
+/// and verifies [ivk] × d == pk_d. Returns false if the UA has no Orchard receiver.
+Future<bool> isAddressFromAccount({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String address,
+}) => RustLib.instance.api.crateApiWalletIsAddressFromAccount(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  address: address,
+);
+
 /// Get the transparent address for a specific account (or first account if uuid is None).
 Future<String> getTransparentAddress({
   required String dbPath,
