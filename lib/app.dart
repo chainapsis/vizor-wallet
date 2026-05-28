@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -1160,12 +1158,6 @@ class _DesktopOpaqueWindowBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb ||
-        (defaultTargetPlatform != TargetPlatform.macOS &&
-            defaultTargetPlatform != TargetPlatform.windows &&
-            defaultTargetPlatform != TargetPlatform.linux)) {
-      return child;
-    }
     return ColoredBox(color: context.colors.background.window, child: child);
   }
 }
