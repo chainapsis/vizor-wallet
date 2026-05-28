@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/formatting/zec_amount.dart';
-import '../models/swap_fiat_amount.dart';
+import '../models/swap_amount_input_mapper.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import '../../../providers/account_provider.dart';
@@ -91,8 +91,8 @@ class SwapNotifier extends Notifier<SwapState> {
 
   void selectDirection(SwapDirection direction) {
     _clearReviewState();
-    state = _withDerivedFiatTexts(
-      _withIndicativeCounterpart(
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
         state.copyWith(
           direction: direction,
           quoteMode: SwapQuoteMode.exactInput,
@@ -101,13 +101,10 @@ class SwapNotifier extends Notifier<SwapState> {
           amountFiatText: '',
           receiveFiatText: '',
           reviewVisible: false,
-          clearPreviewQuote: true,
-          clearPreviewQuoteError: true,
         ),
       ),
     );
     unawaited(_persistComposerPreferences(_currentComposerPreferences));
-    _clearPreviewQuoteState();
   }
 
   void toggleDirection() {
@@ -118,8 +115,8 @@ class SwapNotifier extends Notifier<SwapState> {
         : currentQuote.receiveAsset.formatAmount(currentQuote.receiveAmount);
 
     _clearReviewState();
-    state = _withDerivedFiatTexts(
-      _withIndicativeCounterpart(
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
         state.copyWith(
           direction: nextDirection,
           quoteMode: SwapQuoteMode.exactInput,
@@ -130,41 +127,31 @@ class SwapNotifier extends Notifier<SwapState> {
           amountFiatText: '',
           receiveFiatText: '',
           reviewVisible: false,
-          clearPreviewQuote: true,
-          clearPreviewQuoteError: true,
         ),
       ),
     );
     unawaited(_persistComposerPreferences(_currentComposerPreferences));
-    _clearPreviewQuoteState();
   }
 
   void updateAmount(String value) {
     _clearReviewState();
-    state = _withDerivedFiatTexts(
-      _withIndicativeCounterpart(
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
         state.copyWith(
           quoteMode: SwapQuoteMode.exactInput,
           amountText: value,
           reviewVisible: false,
-          clearPreviewQuote: true,
-          clearPreviewQuoteError: true,
           clearMaxAmountError: true,
         ),
       ),
     );
-    _clearPreviewQuoteState();
   }
 
   void updateAmountFiat(String value) {
     _clearReviewState();
-    final tokenText = swapTokenAmountTextFromFiatText(
-      state,
-      asset: state.direction.fromAsset(state.externalAsset),
-      fiatAmountText: value,
-    );
-    state = _withDerivedFiatTexts(
-      _withIndicativeCounterpart(
+    final tokenText = swapPayTokenTextFromFiatInput(state, value);
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
         state.copyWith(
           quoteMode: SwapQuoteMode.exactInput,
           receiveAmountInputMode: SwapAmountInputMode.fiat,
@@ -172,42 +159,32 @@ class SwapNotifier extends Notifier<SwapState> {
           amountFiatText: value,
           amountText: tokenText ?? '',
           reviewVisible: false,
-          clearPreviewQuote: true,
-          clearPreviewQuoteError: true,
           clearMaxAmountError: true,
         ),
       ),
       preserveAmountFiatInput: true,
     );
-    _clearPreviewQuoteState();
   }
 
   void updateReceiveAmount(String value) {
     _clearReviewState();
-    state = _withDerivedFiatTexts(
-      _withIndicativeCounterpart(
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
         state.copyWith(
           quoteMode: SwapQuoteMode.exactOutput,
           receiveAmountText: value,
           reviewVisible: false,
-          clearPreviewQuote: true,
-          clearPreviewQuoteError: true,
           clearMaxAmountError: true,
         ),
       ),
     );
-    _clearPreviewQuoteState();
   }
 
   void updateReceiveAmountFiat(String value) {
     _clearReviewState();
-    final tokenText = swapTokenAmountTextFromFiatText(
-      state,
-      asset: state.direction.toAsset(state.externalAsset),
-      fiatAmountText: value,
-    );
-    state = _withDerivedFiatTexts(
-      _withIndicativeCounterpart(
+    final tokenText = swapReceiveTokenTextFromFiatInput(state, value);
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
         state.copyWith(
           quoteMode: SwapQuoteMode.exactOutput,
           amountInputMode: SwapAmountInputMode.fiat,
@@ -215,29 +192,17 @@ class SwapNotifier extends Notifier<SwapState> {
           receiveFiatText: value,
           receiveAmountText: tokenText ?? '',
           reviewVisible: false,
-          clearPreviewQuote: true,
-          clearPreviewQuoteError: true,
           clearMaxAmountError: true,
         ),
       ),
       preserveReceiveFiatInput: true,
     );
-    _clearPreviewQuoteState();
   }
 
   void toggleFiatInputMode(SwapAmountInputSide side) {
     _clearReviewState();
-    final next = switch (side) {
-      SwapAmountInputSide.pay => _togglePayInputMode(state),
-      SwapAmountInputSide.receive => _toggleReceiveInputMode(state),
-    };
-    state = next.copyWith(
-      reviewVisible: false,
-      clearPreviewQuote: true,
-      clearPreviewQuoteError: true,
-      clearMaxAmountError: true,
-    );
-    _clearPreviewQuoteState();
+    final next = swapStateWithToggledFiatInputMode(state, side);
+    state = next.copyWith(reviewVisible: false, clearMaxAmountError: true);
   }
 
   void updateDestination(String value) {
@@ -245,11 +210,8 @@ class SwapNotifier extends Notifier<SwapState> {
     state = state.copyWith(
       destinationText: value,
       reviewVisible: false,
-      clearPreviewQuote: true,
-      clearPreviewQuoteError: true,
       clearMaxAmountError: true,
     );
-    _clearPreviewQuoteState();
   }
 
   void selectExternalAsset(SwapAsset asset) {
@@ -259,15 +221,10 @@ class SwapNotifier extends Notifier<SwapState> {
     );
     if (supportedAsset == null) return;
     _clearReviewState();
-    state = _withDerivedFiatTexts(
-      _withIndicativeCounterpart(
-        _withTokenAmountsForFiatModes(
-          state.copyWith(
-            externalAsset: supportedAsset,
-            reviewVisible: false,
-            clearPreviewQuote: true,
-            clearPreviewQuoteError: true,
-          ),
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(
+        swapStateWithTokenAmountsForFiatModes(
+          state.copyWith(externalAsset: supportedAsset, reviewVisible: false),
         ),
       ),
       preserveAmountFiatInput:
@@ -276,7 +233,6 @@ class SwapNotifier extends Notifier<SwapState> {
           state.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
     unawaited(_persistComposerPreferences(_currentComposerPreferences));
-    _clearPreviewQuoteState();
   }
 
   void updateSlippageBps(int value) {
@@ -285,20 +241,17 @@ class SwapNotifier extends Notifier<SwapState> {
     state = state.copyWith(
       slippageBps: normalized,
       reviewVisible: false,
-      clearPreviewQuote: true,
-      clearPreviewQuoteError: true,
       clearQuoteError: true,
       clearStatusError: true,
     );
-    state = _withDerivedFiatTexts(
-      _withIndicativeCounterpart(state),
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(state),
       preserveAmountFiatInput:
           state.amountInputMode == SwapAmountInputMode.fiat,
       preserveReceiveFiatInput:
           state.receiveAmountInputMode == SwapAmountInputMode.fiat,
     );
     unawaited(_persistComposerPreferences(_currentComposerPreferences));
-    _clearPreviewQuoteState();
   }
 
   Future<void> useMaxZecAmount() async {
@@ -346,8 +299,8 @@ class SwapNotifier extends Notifier<SwapState> {
       }
       final amountText = ZecAmount.fromZatoshi(maxZatoshi).pretty().amountText;
       log('SwapMaxAmount: applied amount=$amountText');
-      state = _withDerivedFiatTexts(
-        _withIndicativeCounterpart(
+      state = swapStateWithDerivedFiatTexts(
+        swapStateWithIndicativeCounterpart(
           state.copyWith(
             quoteMode: SwapQuoteMode.exactInput,
             amountText: amountText,
@@ -355,15 +308,12 @@ class SwapNotifier extends Notifier<SwapState> {
             maxAmountLoading: false,
             reviewVisible: false,
             clearReview: true,
-            clearPreviewQuote: true,
-            clearPreviewQuoteError: true,
             clearMaxAmountError: true,
             clearQuoteError: true,
             clearStatusError: true,
           ),
         ),
       );
-      _clearPreviewQuoteState();
     } catch (e) {
       if (accountScopeGeneration != _accountScopeGeneration ||
           !_isAccountActive(accountUuid)) {
@@ -417,11 +367,11 @@ class SwapNotifier extends Notifier<SwapState> {
         clearReview: selectedChanged,
         clearQuoteError: true,
       );
-      nextState = _withTokenAmountsForFiatModes(nextState);
-      if (nextState.reviewQuote == null && nextState.previewQuote == null) {
-        nextState = _withIndicativeCounterpart(nextState);
+      nextState = swapStateWithTokenAmountsForFiatModes(nextState);
+      if (nextState.reviewQuote == null) {
+        nextState = swapStateWithIndicativeCounterpart(nextState);
       }
-      state = _withDerivedFiatTexts(
+      state = swapStateWithDerivedFiatTexts(
         nextState,
         preserveAmountFiatInput:
             nextState.amountInputMode == SwapAmountInputMode.fiat,
@@ -453,11 +403,8 @@ class SwapNotifier extends Notifier<SwapState> {
     state = state.copyWith(
       reviewVisible: false,
       quoteLoading: true,
-      previewQuoteLoading: false,
       clearReview: true,
-      clearPreviewQuote: true,
       clearQuoteError: true,
-      clearPreviewQuoteError: true,
     );
 
     try {
@@ -626,8 +573,6 @@ class SwapNotifier extends Notifier<SwapState> {
       selectedIntentId: intent.id,
       depositTxHashText: '',
       clearReview: true,
-      clearPreviewQuote: true,
-      clearPreviewQuoteError: true,
       clearQuoteError: true,
       clearStatusError: true,
     );
@@ -753,13 +698,12 @@ class SwapNotifier extends Notifier<SwapState> {
       quoteLoading: false,
       depositTxHashText: '',
       clearReview: true,
-      clearPreviewQuote: true,
-      clearPreviewQuoteError: true,
       clearQuoteError: true,
       clearStatusError: true,
     );
-    state = _withDerivedFiatTexts(_withIndicativeCounterpart(state));
-    _clearPreviewQuoteState();
+    state = swapStateWithDerivedFiatTexts(
+      swapStateWithIndicativeCounterpart(state),
+    );
   }
 
   void expireReviewQuote() {
@@ -854,7 +798,7 @@ class SwapNotifier extends Notifier<SwapState> {
       status: broadcastStatus,
       message: broadcastMessage,
     );
-    final checkpointed = _depositCheckpointIntent(
+    final checkpointed = swapIntentWithDepositCheckpoint(
       selected,
       txHash: txHash,
       broadcastNotice: broadcastNotice,
@@ -874,7 +818,7 @@ class SwapNotifier extends Notifier<SwapState> {
         checkpointed,
         txHash,
       );
-      final updated = _depositSnapshotIntent(
+      final updated = swapIntentWithDepositSnapshot(
         checkpointed,
         snapshot,
         txHash: txHash,
@@ -946,7 +890,7 @@ class SwapNotifier extends Notifier<SwapState> {
       status: broadcastStatus,
       message: broadcastMessage,
     );
-    final checkpointed = _depositCheckpointIntent(
+    final checkpointed = swapIntentWithDepositCheckpoint(
       intent,
       txHash: txHash,
       statusError: statusError,
@@ -967,7 +911,7 @@ class SwapNotifier extends Notifier<SwapState> {
         checkpointed,
         txHash,
       );
-      final updated = _depositSnapshotIntent(
+      final updated = swapIntentWithDepositSnapshot(
         checkpointed,
         snapshot,
         txHash: txHash,
@@ -1002,7 +946,7 @@ class SwapNotifier extends Notifier<SwapState> {
       status: broadcastStatus,
       message: broadcastMessage,
     );
-    final updated = _depositSnapshotIntent(
+    final updated = swapIntentWithDepositSnapshot(
       intent,
       snapshot,
       txHash: txHash,
@@ -1068,7 +1012,7 @@ class SwapNotifier extends Notifier<SwapState> {
       );
       return;
     }
-    final checkpointed = _depositCheckpointIntent(
+    final checkpointed = swapIntentWithDepositCheckpoint(
       intent,
       txHash: txHash,
       clearStatusError: false,
@@ -1085,7 +1029,7 @@ class SwapNotifier extends Notifier<SwapState> {
         checkpointed,
         txHash,
       );
-      final updated = _depositSnapshotIntent(
+      final updated = swapIntentWithDepositSnapshot(
         checkpointed,
         snapshot,
         txHash: txHash,
@@ -1143,125 +1087,6 @@ class SwapNotifier extends Notifier<SwapState> {
     );
   }
 
-  SwapState _withIndicativeCounterpart(SwapState next) {
-    final estimate = next.draftQuote;
-    if (estimate == null) {
-      return next.quoteMode == SwapQuoteMode.exactInput
-          ? next.copyWith(receiveAmountText: '')
-          : next.copyWith(amountText: '');
-    }
-    if (next.quoteMode == SwapQuoteMode.exactInput) {
-      return next.copyWith(
-        receiveAmountText: estimate.receiveAsset.formatAmountDown(
-          estimate.receiveAmount,
-        ),
-      );
-    }
-    return next.copyWith(
-      amountText: estimate.sellAsset.formatAmountUp(estimate.sellAmount),
-    );
-  }
-
-  SwapState _withDerivedFiatTexts(
-    SwapState next, {
-    bool preserveAmountFiatInput = false,
-    bool preserveReceiveFiatInput = false,
-  }) {
-    return next.copyWith(
-      amountFiatText: preserveAmountFiatInput
-          ? next.amountFiatText
-          : swapFiatInputTextFromTokenText(
-              next,
-              asset: next.direction.fromAsset(next.externalAsset),
-              tokenAmountText: next.amountText,
-            ),
-      receiveFiatText: preserveReceiveFiatInput
-          ? next.receiveFiatText
-          : swapFiatInputTextFromTokenText(
-              next,
-              asset: next.direction.toAsset(next.externalAsset),
-              tokenAmountText: next.receiveAmountText,
-            ),
-    );
-  }
-
-  SwapState _withTokenAmountsForFiatModes(SwapState current) {
-    var next = current;
-    if (next.amountInputMode == SwapAmountInputMode.fiat) {
-      final tokenText = swapTokenAmountTextFromFiatText(
-        next,
-        asset: next.direction.fromAsset(next.externalAsset),
-        fiatAmountText: next.amountFiatText,
-      );
-      next = next.copyWith(amountText: tokenText ?? '');
-    }
-    if (next.receiveAmountInputMode == SwapAmountInputMode.fiat) {
-      final tokenText = swapTokenAmountTextFromFiatText(
-        next,
-        asset: next.direction.toAsset(next.externalAsset),
-        fiatAmountText: next.receiveFiatText,
-      );
-      next = next.copyWith(receiveAmountText: tokenText ?? '');
-    }
-    return next;
-  }
-
-  SwapState _togglePayInputMode(SwapState current) {
-    final nextMode = current.amountInputMode == SwapAmountInputMode.token
-        ? SwapAmountInputMode.fiat
-        : SwapAmountInputMode.token;
-    return current.copyWith(
-      amountInputMode: nextMode,
-      receiveAmountInputMode: nextMode,
-      amountFiatText: nextMode == SwapAmountInputMode.fiat
-          ? swapFiatInputTextFromTokenText(
-              current,
-              asset: current.direction.fromAsset(current.externalAsset),
-              tokenAmountText: current.amountText,
-            )
-          : current.amountFiatText,
-      receiveFiatText: nextMode == SwapAmountInputMode.fiat
-          ? swapFiatInputTextFromTokenText(
-              current,
-              asset: current.direction.toAsset(current.externalAsset),
-              tokenAmountText: current.receiveAmountText,
-            )
-          : current.receiveFiatText,
-    );
-  }
-
-  SwapState _toggleReceiveInputMode(SwapState current) {
-    final nextMode = current.receiveAmountInputMode == SwapAmountInputMode.token
-        ? SwapAmountInputMode.fiat
-        : SwapAmountInputMode.token;
-    return current.copyWith(
-      amountInputMode: nextMode,
-      receiveAmountInputMode: nextMode,
-      amountFiatText: nextMode == SwapAmountInputMode.fiat
-          ? swapFiatInputTextFromTokenText(
-              current,
-              asset: current.direction.fromAsset(current.externalAsset),
-              tokenAmountText: current.amountText,
-            )
-          : current.amountFiatText,
-      receiveFiatText: nextMode == SwapAmountInputMode.fiat
-          ? swapFiatInputTextFromTokenText(
-              current,
-              asset: current.direction.toAsset(current.externalAsset),
-              tokenAmountText: current.receiveAmountText,
-            )
-          : current.receiveFiatText,
-    );
-  }
-
-  void _clearPreviewQuoteState() {
-    state = state.copyWith(
-      previewQuoteLoading: false,
-      clearPreviewQuote: true,
-      clearPreviewQuoteError: true,
-    );
-  }
-
   void _clearAccountScopedTransientState() {
     _quoteGeneration++;
     _accountScopeGeneration++;
@@ -1276,15 +1101,12 @@ class SwapNotifier extends Notifier<SwapState> {
       destinationText: '',
       reviewVisible: false,
       quoteLoading: false,
-      previewQuoteLoading: false,
       startSubmitting: false,
       maxAmountLoading: false,
       depositSubmitting: false,
       depositTxHashText: '',
       statusRefreshing: false,
       clearReview: true,
-      clearPreviewQuote: true,
-      clearPreviewQuoteError: true,
       clearQuoteError: true,
       clearStatusError: true,
       clearMaxAmountError: true,
@@ -1516,38 +1338,6 @@ class SwapNotifier extends Notifier<SwapState> {
       return error.toString();
     }
     return swapFailureMessage(SwapFailureOperation.quote, error);
-  }
-
-  SwapIntent _depositSnapshotIntent(
-    SwapIntent intent,
-    SwapIntentSnapshot snapshot, {
-    required String txHash,
-    String? broadcastNotice,
-  }) {
-    return swapIntentWithDepositSnapshot(
-      intent,
-      snapshot,
-      txHash: txHash,
-      broadcastNotice: broadcastNotice,
-    );
-  }
-
-  SwapIntent _depositCheckpointIntent(
-    SwapIntent intent, {
-    required String txHash,
-    String? statusError,
-    String? broadcastNotice,
-    required bool clearStatusError,
-    required bool clearBroadcastNotice,
-  }) {
-    return swapIntentWithDepositCheckpoint(
-      intent,
-      txHash: txHash,
-      statusError: statusError,
-      broadcastNotice: broadcastNotice,
-      clearStatusError: clearStatusError,
-      clearBroadcastNotice: clearBroadcastNotice,
-    );
   }
 
   Future<SwapIntentSnapshot> _submitProviderDepositTransaction(

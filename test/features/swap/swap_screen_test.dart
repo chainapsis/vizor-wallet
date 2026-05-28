@@ -42,7 +42,7 @@ import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
-import 'support/swap_preview_intents.dart';
+import 'support/swap_activity_intents.dart';
 
 void main() {
   test('swapIntentProvider uses the Vizor proxy and referral', () {

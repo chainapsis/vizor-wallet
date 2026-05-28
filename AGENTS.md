@@ -23,8 +23,6 @@ flutter_rust_bridge_codegen generate
 # Run in a separate terminal:
 log stream --predicate 'subsystem == "frb_user"' --level info
 
-# Swap UI preview for design QA without wallet bootstrap or a live 1Click provider
-fvm flutter run -d web-server -t lib/swap_preview.dart
 ```
 
 ## UI Copy Conventions

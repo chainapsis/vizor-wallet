@@ -561,8 +561,7 @@ class _SwapComposerBody extends StatelessWidget {
 }
 
 double _effectiveSwapBodyHeight(double height, SwapState state) {
-  final hasQuoteError =
-      state.quoteError != null || state.previewQuoteError != null;
+  final hasQuoteError = state.quoteError != null;
   final clampedHeight = height < _swapBodyDesignHeight
       ? height
       : _swapBodyDesignHeight;

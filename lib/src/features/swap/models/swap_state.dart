@@ -53,9 +53,6 @@ class SwapState {
     this.slippageBps = defaultSwapSlippageBps,
     this.supportedExternalAssets = swapExternalAssets,
     this.indicativeExternalPerZec = const {},
-    this.previewQuote,
-    this.previewQuoteLoading = false,
-    this.previewQuoteError,
     this.reviewQuote,
     this.reviewAddressPlan,
     this.reviewAccountUuid,
@@ -87,9 +84,6 @@ class SwapState {
   final int slippageBps;
   final List<SwapAsset> supportedExternalAssets;
   final Map<SwapAsset, double> indicativeExternalPerZec;
-  final SwapQuote? previewQuote;
-  final bool previewQuoteLoading;
-  final String? previewQuoteError;
   final SwapQuote? reviewQuote;
   final SwapAddressPlan? reviewAddressPlan;
   final String? reviewAccountUuid;
@@ -186,7 +180,7 @@ class SwapState {
   bool get canSubmitDepositTx =>
       depositTxHashText.trim().isNotEmpty && !depositSubmitting;
 
-  SwapQuote? get quote => reviewQuote ?? previewQuote ?? draftQuote;
+  SwapQuote? get quote => reviewQuote ?? draftQuote;
 
   SwapQuote? get draftQuote {
     final amount = quoteAmount;
@@ -301,9 +295,6 @@ class SwapState {
     int? slippageBps,
     List<SwapAsset>? supportedExternalAssets,
     Map<SwapAsset, double>? indicativeExternalPerZec,
-    SwapQuote? previewQuote,
-    bool? previewQuoteLoading,
-    String? previewQuoteError,
     SwapQuote? reviewQuote,
     SwapAddressPlan? reviewAddressPlan,
     String? reviewAccountUuid,
@@ -319,8 +310,6 @@ class SwapState {
     bool? depositSubmitting,
     String? selectedIntentId,
     bool clearReview = false,
-    bool clearPreviewQuote = false,
-    bool clearPreviewQuoteError = false,
     bool clearQuoteError = false,
     bool clearStatusError = false,
     bool clearMaxAmountError = false,
@@ -345,13 +334,6 @@ class SwapState {
           supportedExternalAssets ?? this.supportedExternalAssets,
       indicativeExternalPerZec:
           indicativeExternalPerZec ?? this.indicativeExternalPerZec,
-      previewQuote: clearPreviewQuote
-          ? null
-          : previewQuote ?? this.previewQuote,
-      previewQuoteLoading: previewQuoteLoading ?? this.previewQuoteLoading,
-      previewQuoteError: clearPreviewQuote || clearPreviewQuoteError
-          ? null
-          : previewQuoteError ?? this.previewQuoteError,
       reviewQuote: clearReview ? null : reviewQuote ?? this.reviewQuote,
       reviewAddressPlan: clearReview
           ? null

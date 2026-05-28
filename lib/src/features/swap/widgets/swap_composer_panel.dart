@@ -122,10 +122,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
         state.receiveAmountInputMode == SwapAmountInputMode.fiat;
     final targetDirection = state.direction.toggled;
     final rateText = _rateTextForState(state);
-    final quoteError =
-        state.quoteAmountPrecisionError ??
-        state.quoteError ??
-        state.previewQuoteError;
+    final quoteError = state.quoteAmountPrecisionError ?? state.quoteError;
     final zecAmountOverAvailable = _zecAmountOverAvailable(
       state,
       widget.zecAvailableZatoshi,

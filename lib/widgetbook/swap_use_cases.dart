@@ -1331,7 +1331,6 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
         next.copyWith(
           receiveAmountText: _estimateCounterpart(next),
           quoteMode: SwapQuoteMode.exactInput,
-          clearPreviewQuote: true,
         ),
       );
     });
@@ -1352,10 +1351,7 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
         quoteMode: SwapQuoteMode.exactInput,
       );
       _state = _withDerivedFiatTexts(
-        next.copyWith(
-          receiveAmountText: _estimateCounterpart(next),
-          clearPreviewQuote: true,
-        ),
+        next.copyWith(receiveAmountText: _estimateCounterpart(next)),
         preserveAmountFiatInput: true,
       );
     });
@@ -1371,7 +1367,6 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
         next.copyWith(
           amountText: _estimateCounterpart(next),
           quoteMode: SwapQuoteMode.exactOutput,
-          clearPreviewQuote: true,
         ),
       );
     });
@@ -1392,10 +1387,7 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
         quoteMode: SwapQuoteMode.exactOutput,
       );
       _state = _withDerivedFiatTexts(
-        next.copyWith(
-          amountText: _estimateCounterpart(next),
-          clearPreviewQuote: true,
-        ),
+        next.copyWith(amountText: _estimateCounterpart(next)),
         preserveReceiveFiatInput: true,
       );
     });
@@ -1460,7 +1452,6 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
           receiveFiatText: '',
           destinationText: '',
           quoteMode: SwapQuoteMode.exactInput,
-          clearPreviewQuote: true,
         ),
       );
     });
@@ -1478,7 +1469,6 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
           receiveAmountText: _estimateCounterpart(next),
           quoteMode: SwapQuoteMode.exactInput,
           amountInputMode: SwapAmountInputMode.token,
-          clearPreviewQuote: true,
         ),
       );
     });
