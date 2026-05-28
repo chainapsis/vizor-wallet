@@ -493,7 +493,7 @@ impl From<BundleSetupResult> for ApiVotingBundleSetupResult {
     fn from(result: BundleSetupResult) -> Self {
         Self {
             bundle_count: result.bundle_count,
-            eligible_weight_zatoshi: result.eligible_weight_zatoshi,
+            eligible_weight_zatoshi: result.eligible_weight,
         }
     }
 }
@@ -2070,7 +2070,8 @@ mod tests {
     fn api_bundle_setup_result_preserves_core_fields() {
         let api = ApiVotingBundleSetupResult::from(BundleSetupResult {
             bundle_count: 2,
-            eligible_weight_zatoshi: 50,
+            eligible_weight: 50,
+            dropped_count: 0,
         });
 
         assert_eq!(api.bundle_count, 2);

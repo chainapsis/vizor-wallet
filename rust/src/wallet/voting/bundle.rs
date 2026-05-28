@@ -1,20 +1,17 @@
 use std::borrow::Borrow;
 
-use orchard::note::ExtractedNoteCommitment as OrchardExtractedNoteCommitment;
-use zcash_client_backend::{
-    data_api::{Account, WalletRead},
-    proto::service::TreeState,
-};
-use zcash_client_sqlite::WalletDb;
-use zcash_protocol::consensus::BlockHeight;
-use zip32::Scope;
-
 use crate::wallet::{
     keys::parse_account_uuid,
     network::WalletNetwork,
     sync::{get_sync_progress, open_wallet_db_for_read},
     sync_engine,
 };
+use zcash_client_backend::{
+    data_api::{Account, WalletRead},
+    proto::service::TreeState,
+};
+use zcash_client_sqlite::WalletDb;
+use zcash_protocol::consensus::BlockHeight;
 
 const POOL_ORCHARD: &str = "orchard";
 
@@ -181,10 +178,9 @@ where
     let ufvk = account
         .ufvk()
         .ok_or_else(|| "Voting account has no UFVK".to_string())?;
-    let orchard_fvk = ufvk
-        .orchard()
-        .ok_or_else(|| "Voting account has no Orchard viewing key".to_string())?;
-    let ufvk_str = ufvk.encode(&network);
+    if ufvk.orchard().is_none() {
+        return Err("Voting account has no Orchard viewing key".to_string());
+    }
 
     let height = BlockHeight::from_u32(snapshot_height_u32);
     let selected = db
@@ -195,26 +191,29 @@ where
 
     for note in selected {
         let value = note.note().value().inner();
-        let commitment: OrchardExtractedNoteCommitment = note.note().commitment().into();
-        let nullifier = note.note().nullifier(orchard_fvk);
-        let scope = match note.spending_key_scope() {
-            Scope::External => 0,
-            Scope::Internal => 1,
-        };
+        let position = u64::from(note.note_commitment_tree_position());
+        let voting_note = zcash_voting::NoteInfo::from_orchard_note(
+            note.note(),
+            position,
+            note.spending_key_scope(),
+            ufvk,
+            &network,
+        )
+        .map_err(|e| format!("Failed to build voting note metadata: {e}"))?;
         notes.push(NoteRef {
             pool: POOL_ORCHARD.to_string(),
             txid_hex: note.txid().to_string(),
             output_index: note.output_index().into(),
             value_zatoshi: value,
             voting_weight_zatoshi: value,
-            commitment: commitment.to_bytes().to_vec(),
-            nullifier: nullifier.to_bytes().to_vec(),
-            diversifier: note.note().recipient().diversifier().as_array().to_vec(),
-            rho: note.note().rho().to_bytes().to_vec(),
-            rseed: note.note().rseed().as_bytes().to_vec(),
-            scope,
-            ufvk_str: ufvk_str.clone(),
-            commitment_tree_position: u64::from(note.note_commitment_tree_position()),
+            commitment: voting_note.commitment,
+            nullifier: voting_note.nullifier,
+            diversifier: voting_note.diversifier,
+            rho: voting_note.rho,
+            rseed: voting_note.rseed,
+            scope: voting_note.scope,
+            ufvk_str: voting_note.ufvk_str,
+            commitment_tree_position: position,
             mined_height: note
                 .mined_height()
                 .map(u32::from)
@@ -246,7 +245,18 @@ where
 
 /// Returns quantized zatoshi voting power for the selected note set.
 pub fn voting_power(notes: &SelectedNotes) -> u64 {
-    zcash_voting::chunk_notes(&notes.voting_note_infos()).eligible_weight
+    zcash_voting::round::note_bundles(&notes.voting_note_infos())
+        .map(|bundles| {
+            bundles
+                .into_iter()
+                .map(|bundle| {
+                    let raw = bundle.into_iter().map(|note| note.value).sum::<u64>();
+                    (raw / zcash_voting::governance::BALLOT_DIVISOR)
+                        * zcash_voting::governance::BALLOT_DIVISOR
+                })
+                .sum()
+        })
+        .unwrap_or(0)
 }
 
 /// Validates that `bundle_index` is in `[0, bundle_count)`.
@@ -291,6 +301,7 @@ mod tests {
     use zcash_client_sqlite::{util::SystemClock, wallet::init::init_wallet_db};
     use zcash_primitives::block::BlockHash;
     use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
+    use zip32::Scope;
 
     #[test]
     fn voting_power_uses_smart_bundle_quantization() {

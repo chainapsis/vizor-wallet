@@ -78,7 +78,7 @@ pub struct KeystoneSignatureRecord {
 }
 
 /// Result of preparing bundle rows for a voting round.
-pub type BundleSetupResult = zcash_voting::BundleSetupResult;
+pub type BundleSetupResult = zcash_voting::round::BundleLayout;
 
 /// Result of warming delegation PIR proofs and prepared PCZT material.
 ///
@@ -131,7 +131,7 @@ struct PreparedDelegationNoteInput {
 }
 
 struct PreparedDelegationEntry {
-    governance_pczt: zcash_voting::GovernancePczt,
+    setup: zcash_voting::delegate::DelegationSetup,
     inserted_at: Instant,
 }
 
@@ -287,7 +287,7 @@ fn prepared_pczt_epoch(db_path: &str, account_uuid: &str) -> Result<u64, String>
 fn insert_prepared_pczt_if_current(
     key: PreparedDelegationKey,
     expected_epoch: u64,
-    governance_pczt: zcash_voting::GovernancePczt,
+    setup: zcash_voting::delegate::DelegationSetup,
 ) -> Result<bool, String> {
     let session_key = prepared_delegation_session_key(&key.db_path, &key.account_uuid);
     let now = Instant::now();
@@ -301,7 +301,7 @@ fn insert_prepared_pczt_if_current(
     cache.entries.insert(
         key,
         PreparedDelegationEntry {
-            governance_pczt,
+            setup,
             inserted_at: now,
         },
     );
@@ -315,12 +315,12 @@ fn insert_prepared_pczt_if_current(
 /// precompute result requires running the precompute again.
 fn take_prepared_pczt(
     key: &PreparedDelegationKey,
-) -> Result<Option<zcash_voting::GovernancePczt>, String> {
+) -> Result<Option<zcash_voting::delegate::DelegationSetup>, String> {
     let mut cache = prepared_pczt_cache()
         .lock()
         .map_err(|e| format!("prepared delegation PCZT cache lock poisoned: {e}"))?;
     prune_prepared_pczt_cache_locked(&mut cache, Instant::now());
-    Ok(cache.entries.remove(key).map(|entry| entry.governance_pczt))
+    Ok(cache.entries.remove(key).map(|entry| entry.setup))
 }
 
 /// Clear prepared delegation PCZTs for one voting session.
@@ -440,8 +440,8 @@ async fn prepare_delegation_bundle_context(
     let selected_weight_zatoshi = voting_power(&selected);
 
     let bundle_setup = voting_db
-        .ensure_bundles_for_notes(&round_id, &note_infos)
-        .map_err(|e| format!("ensure_bundles_for_notes failed: {e}"))?;
+        .ensure_bundles(&round_id, &note_infos)
+        .map_err(|e| format!("ensure_bundles failed: {e}"))?;
     if bundle_setup.bundle_count == 0 {
         return Err("No eligible voting bundles were created for delegation".to_string());
     }
@@ -489,27 +489,30 @@ async fn prepare_delegation_bundle_context(
 fn build_governance_pczt_for_context(
     context: &DelegationBundleContext,
     network: WalletNetwork,
-) -> Result<zcash_voting::GovernancePczt, String> {
-    context
-        .voting_db
-        .build_governance_pczt(
-            &context.round_id,
-            context.bundle_index,
-            &context.bundle_note_infos,
-            &context.account.orchard_fvk_bytes,
-            &context.hotkey_raw_address,
-            context.branch_id,
-            network.network_type().coin_type(),
-            &context.account.seed_fingerprint,
-            context.account.account_index,
-            &context.round_name,
-            0,
-        )
-        .map_err(|e| format!("build_governance_pczt failed: {e}"))
+) -> Result<zcash_voting::delegate::DelegationSetup, String> {
+    let hotkey_raw_address = hotkey_raw_address_array(&context.hotkey_raw_address)?;
+    let keys = zcash_voting::delegate::DelegationKeys {
+        fvk_bytes: context.account.orchard_fvk_bytes.to_vec(),
+        hotkey_raw_address,
+        seed_fingerprint: context.account.seed_fingerprint,
+        account_index: context.account.account_index,
+        address_index: 0,
+        consensus_branch_id: context.branch_id,
+        coin_type: network.network_type().coin_type(),
+        round_name: context.round_name.clone(),
+    };
+    zcash_voting::delegate::setup(
+        &context.voting_db,
+        &context.round_id,
+        context.bundle_index,
+        &context.bundle_note_infos,
+        &keys,
+    )
+    .map_err(|e| format!("delegate::setup failed: {e}"))
 }
 
 fn signed_payload_from_submission(
-    submission: zcash_voting::DelegationSubmissionData,
+    submission: zcash_voting::delegate::DelegationSubmission,
     pczt_bytes: Vec<u8>,
     bundle_setup: &BundleSetupResult,
     selected_weight_zatoshi: u64,
@@ -521,21 +524,46 @@ fn signed_payload_from_submission(
         status: "ready_for_submission".to_string(),
         message: None,
         proof: submission.proof,
-        rk: submission.rk,
-        spend_auth_sig: submission.spend_auth_sig,
-        sighash: submission.sighash,
-        nf_signed: submission.nf_signed,
-        cmx_new: submission.cmx_new,
-        gov_comm: submission.gov_comm,
-        gov_nullifiers: submission.gov_nullifiers,
+        rk: submission.rk.to_vec(),
+        spend_auth_sig: submission.spend_auth_sig.to_vec(),
+        sighash: submission.sighash.to_vec(),
+        nf_signed: submission.nf_signed.to_vec(),
+        cmx_new: submission.cmx_new.to_vec(),
+        gov_comm: submission.gov_comm.to_vec(),
+        gov_nullifiers: submission
+            .gov_nullifiers
+            .iter()
+            .map(|nf| nf.to_vec())
+            .collect(),
         vote_round_id: submission.vote_round_id,
-        eligible_weight_zatoshi: bundle_setup
-            .eligible_weight_zatoshi
-            .min(selected_weight_zatoshi),
+        eligible_weight_zatoshi: bundle_setup.eligible_weight.min(selected_weight_zatoshi),
         delegated_weight_zatoshi,
         bundle_count: bundle_setup.bundle_count,
         bundle_index,
     }
+}
+
+fn voting_network(network: WalletNetwork) -> zcash_voting::Network {
+    zcash_voting::Network::from_id(network.voting_id().into())
+        .expect("WalletNetwork::voting_id only returns supported voting network ids")
+}
+
+fn hotkey_raw_address_array(bytes: &[u8]) -> Result<[u8; 43], String> {
+    bytes
+        .try_into()
+        .map_err(|_| format!("hotkey_raw_address must be 43 bytes, got {}", bytes.len()))
+}
+
+fn keystone_sig_array(bytes: &[u8]) -> Result<[u8; 64], String> {
+    bytes
+        .try_into()
+        .map_err(|_| format!("keystone_sig must be 64 bytes, got {}", bytes.len()))
+}
+
+fn sighash_array(bytes: &[u8]) -> Result<[u8; 32], String> {
+    bytes
+        .try_into()
+        .map_err(|_| format!("keystone_sighash must be 32 bytes, got {}", bytes.len()))
 }
 
 async fn prove_delegation_for_context<F>(
@@ -558,15 +586,15 @@ where
     let proof_round_id = context.round_id.clone();
     let proof_bundle_index = context.bundle_index;
     let proof_bundle_note_infos = context.bundle_note_infos.clone();
-    let proof_hotkey_raw_address = context.hotkey_raw_address.clone();
-    let proof_network_id = network.voting_id().into();
+    let proof_hotkey_raw_address = hotkey_raw_address_array(&context.hotkey_raw_address)?;
+    let proof_network = voting_network(network);
     let proof_cancellation = cancellation.clone();
     let proof_progress = on_progress.clone();
     log::info!(
         "voting delegation: starting proof task \
          (bundle_index={}, network_id={})",
         proof_bundle_index,
-        proof_network_id
+        proof_network.id()
     );
     tokio::task::spawn_blocking(move || {
         proof_cancellation.check()?;
@@ -581,18 +609,18 @@ where
         let reporter = ProofProgressBridge::new(proof_cancellation.clone(), move |progress| {
             proof_progress(ProofEvent::ProofProgress { progress });
         });
-        proof_voting_db
-            .build_and_prove_delegation(
-                &proof_round_id,
-                proof_bundle_index,
-                &proof_bundle_note_infos,
-                &proof_hotkey_raw_address,
-                &pir_client,
-                proof_network_id,
-                &reporter,
-            )
-            .map(|_| ())
-            .map_err(|e| format!("build_and_prove_delegation failed: {e}"))
+        zcash_voting::delegate::prove(
+            &proof_voting_db,
+            &proof_round_id,
+            proof_bundle_index,
+            &proof_bundle_note_infos,
+            &proof_hotkey_raw_address,
+            &pir_client,
+            proof_network,
+            &reporter,
+        )
+        .map(|_| ())
+        .map_err(|e| format!("delegate::prove failed: {e}"))
     })
     .await
     .map_err(|e| format!("delegation proof task failed: {e}"))??;
@@ -637,8 +665,8 @@ pub async fn setup_delegation_bundles(
     .await?;
     let note_infos = selected.voting_note_infos();
     voting_db
-        .ensure_bundles_for_notes(round_params.vote_round_id.as_str(), &note_infos)
-        .map_err(|e| format!("ensure_bundles_for_notes failed: {e}"))
+        .ensure_bundles(round_params.vote_round_id.as_str(), &note_infos)
+        .map_err(|e| format!("ensure_bundles failed: {e}"))
 }
 
 /// Warms PIR and governance-PCZT state for a single delegation bundle.
@@ -691,14 +719,14 @@ pub async fn precompute_delegation_pir(
     let proof_round_id = context.round_id.clone();
     let proof_note_infos = context.note_infos.clone();
     let proof_pir_server_url = pir_server_url.to_string();
-    let proof_network_id = network.voting_id().into();
     let proof_orchard_fvk_bytes = context.account.orchard_fvk_bytes;
-    let proof_hotkey_raw_address = context.hotkey_raw_address.clone();
+    let proof_hotkey_raw_address = hotkey_raw_address_array(&context.hotkey_raw_address)?;
     let proof_seed_fingerprint = context.account.seed_fingerprint;
     let proof_account_index = context.account.account_index;
     let proof_round_name = context.round_name.clone();
     let proof_branch_id = context.branch_id;
     let proof_coin_type = network.network_type().coin_type();
+    let proof_network = voting_network(network);
     let proof_cancellation = cancellation.clone();
     let prepared = tokio::task::spawn_blocking(move || {
         proof_cancellation.check()?;
@@ -710,35 +738,48 @@ pub async fn precompute_delegation_pir(
         )
         .map_err(|e| format!("connect to PIR server failed: {e}"))?;
         proof_cancellation.check()?;
-        proof_voting_db
-            .prepare_delegation_pir(
-                zcash_voting::storage::operations::PrepareDelegationPirParams {
-                    round_id: &proof_round_id,
-                    bundle_index,
-                    notes: &proof_note_infos,
-                    fvk_bytes: &proof_orchard_fvk_bytes,
-                    hotkey_raw_address: &proof_hotkey_raw_address,
-                    consensus_branch_id: proof_branch_id,
-                    coin_type: proof_coin_type,
-                    seed_fingerprint: &proof_seed_fingerprint,
-                    account_index: proof_account_index,
-                    round_name: &proof_round_name,
-                    address_index: 0,
-                    pir_client: &pir_client,
-                    network_id: proof_network_id,
-                },
-            )
-            .map_err(|e| format!("prepare_delegation_pir failed: {e}"))
+        let bundle_notes = zcash_voting::round::note_bundles(&proof_note_infos)
+            .and_then(|bundles| {
+                bundles.get(bundle_index as usize).cloned().ok_or_else(|| {
+                    zcash_voting::VotingError::InvalidInput {
+                        message: format!("bundle_index {bundle_index} has no eligible note bundle"),
+                    }
+                })
+            })
+            .map_err(|e| format!("note_bundles failed: {e}"))?;
+        let setup = zcash_voting::delegate::setup(
+            &proof_voting_db,
+            &proof_round_id,
+            bundle_index,
+            &bundle_notes,
+            &zcash_voting::delegate::DelegationKeys {
+                fvk_bytes: proof_orchard_fvk_bytes.to_vec(),
+                hotkey_raw_address: proof_hotkey_raw_address,
+                seed_fingerprint: proof_seed_fingerprint,
+                account_index: proof_account_index,
+                address_index: 0,
+                consensus_branch_id: proof_branch_id,
+                coin_type: proof_coin_type,
+                round_name: proof_round_name,
+            },
+        )
+        .map_err(|e| format!("delegate::setup failed: {e}"))?;
+        let precompute = zcash_voting::precompute::delegation_pir(
+            &proof_voting_db,
+            &proof_round_id,
+            bundle_index,
+            &bundle_notes,
+            &pir_client,
+            proof_network,
+        )
+        .map_err(|e| format!("precompute::delegation_pir failed: {e}"))?;
+        Ok::<_, String>((setup, precompute))
     })
     .await
     .map_err(|e| format!("delegation PIR precompute task failed: {e}"))??;
 
     cancellation.check()?;
-    if insert_prepared_pczt_if_current(
-        prepared_key,
-        prepared_epoch,
-        prepared.governance_pczt.clone(),
-    )? {
+    if insert_prepared_pczt_if_current(prepared_key, prepared_epoch, prepared.0.clone())? {
         log::info!(
             "voting delegation: prepared PCZT cached \
              (round_id={}, account_uuid={}, bundle_index={})",
@@ -760,14 +801,14 @@ pub async fn precompute_delegation_pir(
         "voting delegation: PIR precompute completed \
          (bundle_index={}, cached={}, fetched={}, elapsed={:.2}s)",
         bundle_index,
-        prepared.precompute.cached_count,
-        prepared.precompute.fetched_count,
+        prepared.1.cached,
+        prepared.1.fetched,
         started.elapsed().as_secs_f64()
     );
 
     Ok(DelegationPirPrecomputeResult {
-        cached_count: prepared.precompute.cached_count,
-        fetched_count: prepared.precompute.fetched_count,
+        cached_count: prepared.1.cached,
+        fetched_count: prepared.1.fetched,
         bundle_count: context.bundle_setup.bundle_count,
         bundle_index,
     })
@@ -836,13 +877,13 @@ where
     on_progress(ProofEvent::BuildingPczt);
     let prepared_key = context.prepared_key(db_path, account_uuid, network);
     let prepared_governance_pczt = take_prepared_pczt(&prepared_key)?;
-    let governance_pczt = if let Some(governance_pczt) = prepared_governance_pczt {
+    let delegation_setup = if let Some(setup) = prepared_governance_pczt {
         log::info!(
             "voting delegation: using precomputed governance PCZT \
              (bundle_index={})",
             bundle_index
         );
-        governance_pczt
+        setup
     } else {
         build_governance_pczt_for_context(&context, network)?
     };
@@ -850,8 +891,8 @@ where
         "voting delegation: built governance PCZT \
          (bundle_index={}, action_index={}, pczt_bytes={})",
         bundle_index,
-        governance_pczt.action_index,
-        governance_pczt.pczt_bytes.len()
+        delegation_setup.action_index,
+        delegation_setup.pczt_bytes.len()
     );
 
     prove_delegation_for_context(
@@ -866,21 +907,22 @@ where
     .await?;
 
     on_progress(ProofEvent::SigningPayload);
-    let submission = context
-        .voting_db
-        .get_delegation_submission(
-            &round_id,
-            bundle_index,
-            seed.expose_secret(),
-            network.voting_id().into(),
-            context.account.account_index,
-        )
-        .map_err(|e| format!("get_delegation_submission failed: {e}"))?;
+    let submission = zcash_voting::delegate::submission(
+        &context.voting_db,
+        &round_id,
+        bundle_index,
+        zcash_voting::delegate::DelegationSigner::Seed {
+            seed: seed.expose_secret(),
+            network: voting_network(network),
+            account_index: context.account.account_index,
+        },
+    )
+    .map_err(|e| format!("delegate::submission failed: {e}"))?;
 
     on_progress(ProofEvent::PayloadReady);
     Ok(signed_payload_from_submission(
         submission,
-        governance_pczt.pczt_bytes,
+        delegation_setup.pczt_bytes,
         &context.bundle_setup,
         context.selected_weight_zatoshi,
         context.delegated_weight_zatoshi,
@@ -925,10 +967,10 @@ pub async fn build_keystone_delegation_request(
     )
     .await?;
     cancellation.check()?;
-    let governance_pczt = build_governance_pczt_for_context(&context, network)?;
+    let delegation_setup = build_governance_pczt_for_context(&context, network)?;
     let redacted_pczt_bytes =
-        crate::wallet::sync::redact_pczt_for_signer(&governance_pczt.pczt_bytes)?;
-    let action_index = u32::try_from(governance_pczt.action_index)
+        crate::wallet::sync::redact_pczt_for_signer(&delegation_setup.pczt_bytes)?;
+    let action_index = u32::try_from(delegation_setup.action_index)
         .map_err(|_| "governance PCZT action index does not fit in u32".to_string())?;
     let display_memo = governance_pczt_display_memo(
         &context.round_name,
@@ -936,15 +978,15 @@ pub async fn build_keystone_delegation_request(
     );
 
     Ok(KeystoneDelegationRequest {
-        pczt_bytes: governance_pczt.pczt_bytes,
+        pczt_bytes: delegation_setup.pczt_bytes,
         redacted_pczt_bytes,
-        pczt_sighash: governance_pczt.pczt_sighash,
-        rk: governance_pczt.rk,
+        pczt_sighash: delegation_setup.pczt_sighash.to_vec(),
+        rk: delegation_setup.rk.to_vec(),
         action_index,
         display_memo,
         eligible_weight_zatoshi: context
             .bundle_setup
-            .eligible_weight_zatoshi
+            .eligible_weight
             .min(context.selected_weight_zatoshi),
         delegated_weight_zatoshi: context.delegated_weight_zatoshi,
         bundle_count: context.bundle_setup.bundle_count,
@@ -1013,15 +1055,16 @@ where
     .await?;
 
     on_progress(ProofEvent::SigningPayload);
-    let submission = context
-        .voting_db
-        .get_delegation_submission_with_keystone_sig(
-            &round_id,
-            bundle_index,
-            keystone_sig,
-            keystone_sighash,
-        )
-        .map_err(|e| format!("get_delegation_submission_with_keystone_sig failed: {e}"))?;
+    let submission = zcash_voting::delegate::submission(
+        &context.voting_db,
+        &round_id,
+        bundle_index,
+        zcash_voting::delegate::DelegationSigner::Keystone {
+            sig: keystone_sig_array(keystone_sig)?,
+            sighash: sighash_array(keystone_sighash)?,
+        },
+    )
+    .map_err(|e| format!("delegate::submission failed: {e}"))?;
     on_progress(ProofEvent::PayloadReady);
 
     Ok(signed_payload_from_submission(
@@ -1036,7 +1079,7 @@ where
 
 /// Extract the ZIP-244 shielded sighash from PCZT bytes.
 pub fn extract_pczt_sighash(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
-    zcash_voting::action::extract_pczt_sighash(pczt_bytes)
+    zcash_voting::delegate::pczt_sighash(pczt_bytes)
         .map(|sighash| sighash.to_vec())
         .map_err(|e| format!("extract_pczt_sighash failed: {e}"))
 }
@@ -1046,7 +1089,7 @@ pub fn extract_spend_auth_signature_from_signed_pczt(
     signed_pczt_bytes: &[u8],
     action_index: u32,
 ) -> Result<Vec<u8>, String> {
-    zcash_voting::action::extract_spend_auth_sig(signed_pczt_bytes, action_index as usize)
+    zcash_voting::delegate::spend_auth_signature(signed_pczt_bytes, action_index as usize)
         .map(|sig| sig.to_vec())
         .map_err(|e| format!("extract_spend_auth_sig failed: {e}"))
 }
@@ -1131,9 +1174,8 @@ fn bundle_notes(
     notes: &[zcash_voting::NoteInfo],
     bundle_index: u32,
 ) -> Result<Vec<zcash_voting::NoteInfo>, String> {
-    let chunks = zcash_voting::chunk_notes(notes);
-    chunks
-        .bundles
+    zcash_voting::round::note_bundles(notes)
+        .map_err(|e| format!("note_bundles failed: {e}"))?
         .get(bundle_index as usize)
         .cloned()
         .ok_or_else(|| format!("bundle_index {bundle_index} has no eligible note bundle"))
@@ -1251,7 +1293,7 @@ fn generate_and_cache_bundle_witnesses(
     notes: &[zcash_voting::NoteInfo],
 ) -> Result<(), String> {
     let wallet_db = open_wallet_db_for_read(db_path, network)?;
-    zcash_voting::witness::store_tree_state_and_generate_note_witnesses(
+    zcash_voting::precompute::note_witnesses(
         voting_db,
         round_id,
         bundle_index,
@@ -1494,17 +1536,17 @@ mod tests {
         ensure_voting_round(&voting_db, &params, None).unwrap();
         let notes = vec![test_note_info(42)];
 
-        let created = voting_db.ensure_bundles_for_notes(ROUND_ID, &notes).unwrap();
-        let reused = voting_db.ensure_bundles_for_notes(ROUND_ID, &notes).unwrap();
+        let created = voting_db.ensure_bundles(ROUND_ID, &notes).unwrap();
+        let reused = voting_db.ensure_bundles(ROUND_ID, &notes).unwrap();
 
         assert_eq!(created.bundle_count, 1);
         assert_eq!(
-            created.eligible_weight_zatoshi,
+            created.eligible_weight,
             zcash_voting::governance::BALLOT_DIVISOR
         );
         assert_eq!(reused.bundle_count, 1);
         assert_eq!(
-            reused.eligible_weight_zatoshi,
+            reused.eligible_weight,
             zcash_voting::governance::BALLOT_DIVISOR
         );
     }
@@ -1518,22 +1560,24 @@ mod tests {
         ensure_voting_round(&voting_db, &params, None).unwrap();
 
         voting_db
-            .ensure_bundles_for_notes(ROUND_ID, &[test_note_info(42)])
+            .ensure_bundles(ROUND_ID, &[test_note_info(42)])
             .unwrap();
 
         let shape_err = voting_db
-            .ensure_bundles_for_notes(ROUND_ID, &[])
+            .ensure_bundles(ROUND_ID, &[])
             .unwrap_err()
             .to_string();
-        assert!(shape_err.contains("bundle rows are already persisted"));
+        assert!(
+            shape_err.contains("no eligible notes") || shape_err.contains("planned bundle count")
+        );
 
         let mut substituted = test_note_info(42);
         substituted.nullifier[0] ^= 0x01;
         let identity_err = voting_db
-            .ensure_bundles_for_notes(ROUND_ID, &[substituted])
+            .ensure_bundles(ROUND_ID, &[substituted])
             .unwrap_err()
             .to_string();
-        assert!(identity_err.contains("persisted bundle notes do not match current selection"));
+        assert!(identity_err.contains("note identity mismatch"));
     }
 
     #[test]
@@ -1545,11 +1589,11 @@ mod tests {
         ensure_voting_round(&voting_db, &params, None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
 
-        let setup = voting_db.ensure_bundles_for_notes(ROUND_ID, &notes).unwrap();
+        let setup = voting_db.ensure_bundles(ROUND_ID, &notes).unwrap();
 
         assert_eq!(setup.bundle_count, 2);
         assert_eq!(
-            setup.eligible_weight_zatoshi,
+            setup.eligible_weight,
             6 * zcash_voting::governance::BALLOT_DIVISOR
         );
         assert_eq!(voting_db.get_bundle_count(ROUND_ID).unwrap(), 2);
@@ -1609,7 +1653,7 @@ mod tests {
         let params = test_round_params();
         ensure_voting_round(&voting_db, &params, None).unwrap();
         voting_db
-            .ensure_bundles_for_notes(ROUND_ID, &[test_note_info(42)])
+            .ensure_bundles(ROUND_ID, &[test_note_info(42)])
             .unwrap();
         let selected = SelectedNotes {
             notes: Vec::new(),
@@ -1704,25 +1748,13 @@ mod tests {
         }
     }
 
-    fn test_governance_pczt() -> zcash_voting::GovernancePczt {
-        zcash_voting::GovernancePczt {
+    fn test_governance_pczt() -> zcash_voting::delegate::DelegationSetup {
+        zcash_voting::delegate::DelegationSetup {
             pczt_bytes: vec![1, 2, 3],
-            rk: vec![0; 32],
-            alpha: vec![0; 32],
-            nf_signed: vec![0; 32],
-            cmx_new: vec![0; 32],
-            gov_nullifiers: vec![vec![0; 32]; 5],
-            van: vec![0; 32],
-            van_comm_rand: vec![0; 32],
-            dummy_nullifiers: vec![vec![0; 32]; 5],
-            rho_signed: vec![0; 32],
-            padded_cmx: vec![vec![0; 32]; 5],
-            rseed_signed: vec![0; 32],
-            rseed_output: vec![0; 32],
+            pczt_sighash: [0; 32],
+            rk: [0; 32],
             action_bytes: vec![0; 32],
             action_index: 0,
-            padded_note_secrets: vec![(vec![0; 32], vec![0; 32]); 5],
-            pczt_sighash: vec![0; 32],
         }
     }
 

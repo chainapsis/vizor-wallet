@@ -52,6 +52,17 @@ impl WorkflowPhase {
     }
 }
 
+fn workflow_phase_from_delegation(phase: zcash_voting::phases::DelegationPhase) -> WorkflowPhase {
+    match phase {
+        zcash_voting::phases::DelegationPhase::Prepared => WorkflowPhase::Prepared,
+        zcash_voting::phases::DelegationPhase::PcztBuilt
+        | zcash_voting::phases::DelegationPhase::Proved => WorkflowPhase::Signed,
+        zcash_voting::phases::DelegationPhase::Submitted => WorkflowPhase::SubmittedDelegation,
+        zcash_voting::phases::DelegationPhase::Confirmed => WorkflowPhase::Confirmed,
+        _ => WorkflowPhase::Prepared,
+    }
+}
+
 /// Derived lifecycle state for one delegation bundle.
 ///
 /// The record is keyed by `(round_id, wallet_id, bundle_index)` in storage; the
@@ -115,39 +126,22 @@ pub fn delegation_workflows(
     db: &zcash_voting::storage::VotingDb,
     round_id: &str,
 ) -> Result<Vec<DelegationWorkflowRecord>, String> {
-    let conn = db.conn();
-    let wallet_id = db.wallet_id();
-    let mut stmt = conn
-        .prepare(
-            "SELECT bundle_index, delegation_tx_hash, van_leaf_position,
-                    pczt_sighash IS NOT NULL OR rk IS NOT NULL
-             FROM bundles
-             WHERE round_id = :round_id AND wallet_id = :wallet_id
-             ORDER BY bundle_index",
-        )
-        .map_err(|e| format!("prepare delegation workflow query failed: {e}"))?;
-    let rows = stmt
-        .query_map(
-            named_params! { ":round_id": round_id, ":wallet_id": wallet_id },
-            |row| {
-                let tx_hash: Option<String> = row.get(1)?;
-                let van_leaf_position: Option<i64> = row.get(2)?;
-                let has_signed_fields = row.get::<_, i64>(3)? != 0;
-                Ok(DelegationWorkflowRecord {
-                    bundle_index: row.get::<_, i64>(0)? as u32,
-                    phase: delegation_phase(
-                        tx_hash.as_deref(),
-                        van_leaf_position,
-                        has_signed_fields,
-                    ),
-                    tx_hash,
-                    van_leaf_position: van_leaf_position.map(|v| v as u32),
-                })
-            },
-        )
-        .map_err(|e| format!("query delegation workflow failed: {e}"))?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("read delegation workflow row failed: {e}"))
+    db.delegation_phases(round_id)
+        .map_err(|e| format!("load delegation phases failed: {e}"))?
+        .into_iter()
+        .map(|(bundle_index, phase)| {
+            let tx_hash = db
+                .get_delegation_tx_hash(round_id, bundle_index)
+                .map_err(|e| format!("load delegation tx hash failed: {e}"))?;
+            let van_leaf_position = db.load_van_position(round_id, bundle_index).ok();
+            Ok(DelegationWorkflowRecord {
+                bundle_index,
+                phase: workflow_phase_from_delegation(phase),
+                tx_hash,
+                van_leaf_position,
+            })
+        })
+        .collect()
 }
 
 /// Loads derived vote workflow records for one round.
@@ -534,23 +528,6 @@ pub fn mark_share_confirmed(
     .map_err(|e| format!("mark_share_confirmed failed: {e}"))?;
     tx.commit()
         .map_err(|e| format!("commit share confirmed transaction failed: {e}"))
-}
-
-/// Derives the delegation phase from nullable `bundles` columns.
-fn delegation_phase(
-    tx_hash: Option<&str>,
-    van_leaf_position: Option<i64>,
-    has_signed_fields: bool,
-) -> WorkflowPhase {
-    if tx_hash.is_some() && van_leaf_position.is_some() {
-        WorkflowPhase::Confirmed
-    } else if tx_hash.is_some() {
-        WorkflowPhase::SubmittedDelegation
-    } else if has_signed_fields {
-        WorkflowPhase::Signed
-    } else {
-        WorkflowPhase::Prepared
-    }
 }
 
 /// Derives the vote phase from `votes` submission and recovery columns.
