@@ -660,12 +660,6 @@ class ZcashWalletApp extends ConsumerWidget {
       builder: (context, child) {
         return AppThemeHost(
           themeMode: themeMode,
-          // `DesktopWindowTitlebarSafeArea` pads the app content down past the macOS
-          // titlebar area when the native full-size content view is
-          // enabled, so traffic-light controls don't overlap UI. It is a
-          // no-op on Windows and Linux where the native title strip does
-          // not overlap Flutter content.
-          //
           // The inner `GestureDetector` handles global "tap outside clears
           // focus" — `HitTestBehavior.translucent` lets it receive pointer
           // events over empty regions while descendant GestureDetectors
@@ -677,22 +671,20 @@ class ZcashWalletApp extends ConsumerWidget {
                 router: router,
                 child: _RpcEndpointFailoverToastListener(
                   child: _DesktopOpaqueWindowBackground(
-                    child: DesktopWindowTitlebarSafeArea(
-                      child: GestureDetector(
-                        onTap: () {
-                          // Leaf-only: skip when the primary focus is a
-                          // `FocusScopeNode` rather than a concrete `FocusNode`.
-                          // Unfocusing the scope itself strips the scope's
-                          // "most-recently-focused child" memory, which leaves the
-                          // next Tab with no deterministic starting point.
-                          final primary = FocusManager.instance.primaryFocus;
-                          if (primary != null && primary is! FocusScopeNode) {
-                            primary.unfocus();
-                          }
-                        },
-                        behavior: HitTestBehavior.translucent,
-                        child: child!,
-                      ),
+                    child: GestureDetector(
+                      onTap: () {
+                        // Leaf-only: skip when the primary focus is a
+                        // `FocusScopeNode` rather than a concrete `FocusNode`.
+                        // Unfocusing the scope itself strips the scope's
+                        // "most-recently-focused child" memory, which leaves the
+                        // next Tab with no deterministic starting point.
+                        final primary = FocusManager.instance.primaryFocus;
+                        if (primary != null && primary is! FocusScopeNode) {
+                          primary.unfocus();
+                        }
+                      },
+                      behavior: HitTestBehavior.translucent,
+                      child: child!,
                     ),
                   ),
                 ),
