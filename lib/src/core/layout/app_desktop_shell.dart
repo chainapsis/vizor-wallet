@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/app_back_link.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/app_toast.dart';
 
@@ -144,6 +146,77 @@ class AppDesktopPane extends StatelessWidget {
       child: AppToastHost(
         child: Padding(padding: padding, child: child),
       ),
+    );
+  }
+}
+
+class AppPaneToolbar extends StatelessWidget {
+  const AppPaneToolbar({
+    this.onBeforeNavigate,
+    this.leading,
+    this.trailing,
+    this.height = 48,
+    this.padding = const EdgeInsets.all(AppSpacing.xxs),
+    this.backLinkMinWidth = 0,
+    super.key,
+  });
+
+  final FutureOr<void> Function()? onBeforeNavigate;
+  final Widget? leading;
+  final Widget? trailing;
+  final double height;
+  final EdgeInsetsGeometry padding;
+  final double backLinkMinWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final leadingWidget =
+        leading ??
+        AppRouteBackLink(
+          onBeforeNavigate: onBeforeNavigate,
+          minWidth: backLinkMinWidth,
+        );
+
+    return SizedBox(
+      height: height,
+      child: Padding(
+        padding: padding,
+        child: trailing == null
+            ? Align(alignment: Alignment.centerLeft, child: leadingWidget)
+            : Row(children: [leadingWidget, const Spacer(), trailing!]),
+      ),
+    );
+  }
+}
+
+class AppPaneScrollableFill extends StatelessWidget {
+  const AppPaneScrollableFill({
+    required this.child,
+    this.controller,
+    this.physics,
+    super.key,
+  });
+
+  final Widget child;
+  final ScrollController? controller;
+  final ScrollPhysics? physics;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final minHeight = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : 0.0;
+        return SingleChildScrollView(
+          controller: controller,
+          physics: physics,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: minHeight),
+            child: IntrinsicHeight(child: child),
+          ),
+        );
+      },
     );
   }
 }

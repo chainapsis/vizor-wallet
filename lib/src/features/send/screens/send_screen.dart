@@ -15,7 +15,6 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
@@ -753,9 +752,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
             data: (_) => Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _SendPageToolbar(),
+                const AppPaneToolbar(),
                 Expanded(
-                  child: _SendMainContent(
+                  child: AppPaneScrollableFill(
                     child: _SendComposeLayout(
                       reviewButton: AppButton(
                         key: const ValueKey('send_review_button'),
@@ -986,26 +985,6 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   }
 }
 
-class _SendMainContent extends StatelessWidget {
-  const _SendMainContent({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: IntrinsicHeight(child: child),
-          ),
-        );
-      },
-    );
-  }
-}
-
 class _SendComposeLayout extends StatelessWidget {
   const _SendComposeLayout({required this.child, required this.reviewButton});
 
@@ -1043,24 +1022,6 @@ class _SendComposeLayout extends StatelessWidget {
               SizedBox(width: _reviewButtonWidth, child: reviewButton),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SendPageToolbar extends StatelessWidget {
-  const _SendPageToolbar();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      height: 48,
-      child: Padding(
-        padding: EdgeInsets.all(AppSpacing.xxs),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: AppRouteBackLink(),
         ),
       ),
     );
