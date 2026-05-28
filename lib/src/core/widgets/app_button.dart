@@ -78,6 +78,7 @@ class _VariantPalette {
     required this.label,
     required this.labelHover,
     required this.focusRing,
+    required this.focusRingHover,
   });
 
   final Color bg;
@@ -90,6 +91,7 @@ class _VariantPalette {
   final Color label;
   final Color labelHover;
   final Color focusRing;
+  final Color focusRingHover;
 }
 
 _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
@@ -105,7 +107,8 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         borderWidth: 1.5,
         label: c.button.primary.label,
         labelHover: c.button.primary.labelHover,
-        focusRing: c.state.focusRing,
+        focusRing: c.button.primary.bg,
+        focusRingHover: c.button.primary.bgHover,
       );
     case AppButtonVariant.secondary:
       return _VariantPalette(
@@ -119,6 +122,7 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         label: c.button.secondary.label,
         labelHover: c.button.secondary.label,
         focusRing: c.state.focusRing,
+        focusRingHover: c.state.focusRing,
       );
     case AppButtonVariant.ghost:
       // Ghost's visible base is transparent regardless of the nominal token
@@ -134,6 +138,7 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         label: c.button.ghost.label,
         labelHover: c.button.ghost.label,
         focusRing: c.state.focusRing,
+        focusRingHover: c.state.focusRing,
       );
     case AppButtonVariant.destructive:
       return _VariantPalette(
@@ -147,6 +152,7 @@ _VariantPalette _paletteFor(AppButtonVariant variant, AppColors c) {
         label: c.button.destructive.label,
         labelHover: c.button.destructive.label,
         focusRing: c.state.focusRingDestructive,
+        focusRingHover: c.state.focusRingDestructive,
       );
   }
 }
@@ -347,7 +353,9 @@ class _AppButtonState extends State<AppButton> {
     );
 
     final focusRingWidth = widget.size == AppButtonSize.small ? 1.5 : 2.0;
-    final focusRingColor = widget.focusRingColor ?? palette.focusRing;
+    final focusRingColor =
+        widget.focusRingColor ??
+        (_hovered ? palette.focusRingHover : palette.focusRing);
     final focusRingOutset = switch (widget.variant) {
       AppButtonVariant.primary =>
         widget.size == AppButtonSize.large ? 3.5 : 3.0,
