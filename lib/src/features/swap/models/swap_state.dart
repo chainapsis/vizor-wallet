@@ -120,10 +120,6 @@ class SwapState {
     return intent;
   }
 
-  int get openIntentCount {
-    return intents.where((intent) => !intent.status.isTerminal).length;
-  }
-
   String get walletZecPlaceholderAddress =>
       direction.sendsZec
           ? 'u1wallet-refund-placeholder'

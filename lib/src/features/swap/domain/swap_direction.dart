@@ -18,8 +18,6 @@ extension SwapDirectionLabels on SwapDirection {
   SwapDirection get toggled =>
       sendsZec ? SwapDirection.externalToZec : SwapDirection.zecToExternal;
 
-  String get segmentLabel => sendsZec ? 'Send ZEC' : 'Receive ZEC';
-
   SwapAsset fromAsset(SwapAsset externalAsset) {
     return sendsZec ? SwapAsset.zec : externalAsset;
   }
@@ -31,9 +29,4 @@ extension SwapDirectionLabels on SwapDirection {
   String fromSymbol(SwapAsset externalAsset) => fromAsset(externalAsset).symbol;
 
   String toSymbol(SwapAsset externalAsset) => toAsset(externalAsset).symbol;
-
-  String get destinationLabel => sendsZec ? 'Destination' : 'ZEC destination';
-
-  String get destinationHint =>
-      sendsZec ? 'External address or account' : 'Account or unified address';
 }

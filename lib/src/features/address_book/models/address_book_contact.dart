@@ -62,8 +62,6 @@ enum AddressBookNetwork {
   static AddressBookNetwork? tryFromChainTicker(String chainTicker) {
     return tryFromId(chainTicker);
   }
-
-  static AddressBookNetwork? fromId(String id) => tryFromId(id);
 }
 
 class AddressBookContact {
@@ -135,15 +133,6 @@ class AddressBookContact {
     );
   }
 
-  static AddressBookContact fromJson(Map<String, Object?> json) {
-    final contact = tryFromJson(json);
-    if (contact == null) {
-      throw FormatException(
-        'Unsupported address book network: ${json['network']}',
-      );
-    }
-    return contact;
-  }
 }
 
 String previewAddress(String address) {

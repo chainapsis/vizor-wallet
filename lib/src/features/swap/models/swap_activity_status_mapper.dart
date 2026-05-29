@@ -563,16 +563,6 @@ class SwapActivityDepositQrInstruction {
   final String reuseWarning;
 }
 
-bool swapActivityShowDepositControls(SwapIntentStatus status) {
-  return switch (status) {
-    SwapIntentStatus.complete ||
-    SwapIntentStatus.refunded ||
-    SwapIntentStatus.expired ||
-    SwapIntentStatus.providerStatusUnknown ||
-    SwapIntentStatus.failed => false,
-    _ => true,
-  };
-}
 
 bool canRefreshSwapIntentStatus(SwapIntentStatus status) {
   return status != SwapIntentStatus.complete;

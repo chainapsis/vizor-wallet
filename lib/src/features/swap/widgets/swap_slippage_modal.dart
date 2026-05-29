@@ -73,7 +73,7 @@ class _SwapSlippageModalState extends State<SwapSlippageModal> {
     }
     _selectedPresetBps = null;
     _customController = TextEditingController(
-      text: _formatSlippageValue(normalized),
+      text: formatSwapSlippageValue(normalized),
     );
   }
 
@@ -237,7 +237,7 @@ class _SlippageRadioCard extends StatelessWidget {
                     vertical: 4,
                   ),
                   child: Text(
-                    _formatSlippage(bps),
+                    formatSwapSlippage(bps),
                     style: AppTypography.labelLarge.copyWith(
                       color: colors.text.accent,
                     ),
@@ -450,13 +450,3 @@ class _SlippageCustomInputFormatter extends TextInputFormatter {
   }
 }
 
-String _formatSlippage(int bps) {
-  return '${_formatSlippageValue(bps)}%';
-}
-
-String _formatSlippageValue(int bps) {
-  final value = bps / 100;
-  if (value == value.roundToDouble()) return value.toStringAsFixed(0);
-  if (bps % 10 == 0) return value.toStringAsFixed(1);
-  return value.toStringAsFixed(2);
-}

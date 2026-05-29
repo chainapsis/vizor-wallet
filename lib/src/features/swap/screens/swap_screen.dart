@@ -268,7 +268,6 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                                 swapNotifier.updateReceiveAmountFiat,
                             onToggleFiatInputMode:
                                 swapNotifier.toggleFiatInputMode,
-                            onDirectionChanged: swapNotifier.selectDirection,
                             onToggleDirection: swapNotifier.toggleDirection,
                             onOpenExternalAssetPicker: _openAssetSelector,
                             onOpenDestinationAddress: _openAddressEditor,
@@ -412,7 +411,6 @@ class _SwapComposerStack extends StatelessWidget {
     required this.onReceiveAmountChanged,
     required this.onReceiveAmountFiatChanged,
     required this.onToggleFiatInputMode,
-    required this.onDirectionChanged,
     required this.onToggleDirection,
     required this.onOpenExternalAssetPicker,
     required this.onOpenDestinationAddress,
@@ -432,7 +430,6 @@ class _SwapComposerStack extends StatelessWidget {
   final ValueChanged<String> onReceiveAmountChanged;
   final ValueChanged<String> onReceiveAmountFiatChanged;
   final ValueChanged<SwapAmountInputSide> onToggleFiatInputMode;
-  final ValueChanged<SwapDirection> onDirectionChanged;
   final VoidCallback onToggleDirection;
   final VoidCallback onOpenExternalAssetPicker;
   final VoidCallback onOpenDestinationAddress;
@@ -461,7 +458,6 @@ class _SwapComposerStack extends StatelessWidget {
           onReceiveAmountChanged: onReceiveAmountChanged,
           onReceiveAmountFiatChanged: onReceiveAmountFiatChanged,
           onToggleFiatInputMode: onToggleFiatInputMode,
-          onDirectionChanged: onDirectionChanged,
           onToggleDirection: onToggleDirection,
           onOpenExternalAssetPicker: onOpenExternalAssetPicker,
           onOpenDestinationAddress: onOpenDestinationAddress,

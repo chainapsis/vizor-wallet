@@ -1717,9 +1717,6 @@ class _SwapComposerPreviewState extends State<_SwapComposerPreview> {
           onReceiveAmountChanged: _updateReceiveAmount,
           onReceiveAmountFiatChanged: _updateReceiveAmountFiat,
           onToggleFiatInputMode: _toggleFiatInputMode,
-          onDirectionChanged: (direction) {
-            setState(() => _state = _state.copyWith(direction: direction));
-          },
           onToggleDirection: _toggleDirection,
           onOpenExternalAssetPicker: () {
             setState(() => _assetSelectorOpen = !_assetSelectorOpen);

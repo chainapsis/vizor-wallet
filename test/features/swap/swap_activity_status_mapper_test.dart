@@ -328,11 +328,6 @@ void main() {
       isTrue,
     );
 
-    expect(swapActivityShowDepositControls(SwapIntentStatus.processing), true);
-    expect(
-      swapActivityShowDepositControls(SwapIntentStatus.providerStatusUnknown),
-      false,
-    );
     expect(canRefreshSwapIntentStatus(SwapIntentStatus.complete), false);
     expect(canRefreshSwapIntentStatus(SwapIntentStatus.failed), true);
   });

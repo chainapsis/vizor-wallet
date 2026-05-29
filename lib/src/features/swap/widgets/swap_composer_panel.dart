@@ -18,7 +18,6 @@ class SwapComposerPanel extends StatefulWidget {
     required this.onReceiveAmountChanged,
     required this.onReceiveAmountFiatChanged,
     required this.onToggleFiatInputMode,
-    required this.onDirectionChanged,
     required this.onToggleDirection,
     required this.onOpenExternalAssetPicker,
     required this.onOpenDestinationAddress,
@@ -37,7 +36,6 @@ class SwapComposerPanel extends StatefulWidget {
   final ValueChanged<String> onReceiveAmountChanged;
   final ValueChanged<String> onReceiveAmountFiatChanged;
   final ValueChanged<SwapAmountInputSide> onToggleFiatInputMode;
-  final ValueChanged<SwapDirection> onDirectionChanged;
   final VoidCallback onToggleDirection;
   final VoidCallback onOpenExternalAssetPicker;
   final VoidCallback onOpenDestinationAddress;
@@ -321,7 +319,7 @@ class _SwapTicketFooter extends StatelessWidget {
           Expanded(child: _SwapRateInline(rateText: rateText)),
           const SizedBox(width: 8),
           _SlippageControl(
-            label: _formatSlippage(slippageBps),
+            label: formatSwapSlippage(slippageBps),
             selected: settingsOpen,
             onTap: onSettingsTap,
           ),
@@ -980,15 +978,4 @@ class _SlippageControl extends StatelessWidget {
       ),
     );
   }
-}
-
-String _formatSlippage(int bps) {
-  return '${_formatSlippageValue(bps)}%';
-}
-
-String _formatSlippageValue(int bps) {
-  final value = bps / 100;
-  if (value == value.roundToDouble()) return value.toStringAsFixed(0);
-  if (bps % 10 == 0) return value.toStringAsFixed(1);
-  return value.toStringAsFixed(2);
 }

@@ -40,7 +40,6 @@ void main() {
     );
     expect(plan.oneClickRecipient, '0xrecipient');
     expect(plan.oneClickRefundTo, 'u1fresh-shielded-refund');
-    expect(plan.reviewDeliveryValue, '0xrecipient');
   });
 
   test('uses shielded unified address for external to ZEC delivery', () async {
@@ -64,6 +63,5 @@ void main() {
     );
     expect(plan.oneClickRecipient, 'u1fresh-shielded-recipient');
     expect(plan.oneClickRefundTo, '0xrefund');
-    expect(plan.zecDeliveryIsDirectShielded, isTrue);
   });
 }

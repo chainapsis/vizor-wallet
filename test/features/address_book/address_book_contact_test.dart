@@ -45,11 +45,14 @@ void main() {
   });
 
   test('address book network aliases migrate earlier persisted ids', () {
-    expect(AddressBookNetwork.fromId('zcash'), AddressBookNetwork.zcash);
-    expect(AddressBookNetwork.fromId('solana'), AddressBookNetwork.solana);
-    expect(AddressBookNetwork.fromId('ethereum'), AddressBookNetwork.ethereum);
-    expect(AddressBookNetwork.fromId('usdc'), AddressBookNetwork.ethereum);
-    expect(AddressBookNetwork.fromId('futurechain'), isNull);
+    expect(AddressBookNetwork.tryFromId('zcash'), AddressBookNetwork.zcash);
+    expect(AddressBookNetwork.tryFromId('solana'), AddressBookNetwork.solana);
+    expect(
+      AddressBookNetwork.tryFromId('ethereum'),
+      AddressBookNetwork.ethereum,
+    );
+    expect(AddressBookNetwork.tryFromId('usdc'), AddressBookNetwork.ethereum);
+    expect(AddressBookNetwork.tryFromId('futurechain'), isNull);
   });
 
   test('address book contact JSON rejects unknown persisted networks', () {

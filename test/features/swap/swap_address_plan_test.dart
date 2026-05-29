@@ -15,12 +15,6 @@ void main() {
 
       expect(plan.oneClickRecipient, '0xrecipient');
       expect(plan.oneClickRefundTo, 'u1wallet-refund');
-      expect(plan.userInputLabel, 'Destination');
-      expect(plan.userInputHint, 'External USDC address or account');
-      expect(
-        plan.deliverySummary,
-        'USDC is delivered to the external destination',
-      );
       expect(plan.toQuoteRequest(sellAmount: 1.5).destination, '0xrecipient');
       expect(
         plan.toQuoteRequest(sellAmount: 1.5).refundAddress,
@@ -47,14 +41,6 @@ void main() {
 
     expect(plan.oneClickRecipient, 'u1wallet-recipient');
     expect(plan.oneClickRefundTo, '0xrefund');
-    expect(plan.userInputLabel, 'USDC refund address');
-    expect(plan.userInputHint, 'Refund address on the USDC source chain');
-    expect(plan.zecDeliveryIsDirectShielded, isTrue);
-    expect(
-      plan.deliverySummary,
-      'ZEC arrives at your shielded address',
-    );
-    expect(plan.reviewDeliveryValue, 'shielded wallet address');
     expect(
       plan.toQuoteRequest(sellAmount: 140.35).destination,
       'u1wallet-recipient',

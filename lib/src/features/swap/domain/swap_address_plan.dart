@@ -50,28 +50,6 @@ class SwapAddressPlan {
   final String oneClickRecipient;
   final String oneClickRefundTo;
 
-  bool get zecDeliveryIsDirectShielded => !direction.sendsZec;
-
-  String get userInputLabel => direction.sendsZec
-      ? 'Destination'
-      : '${externalAsset.symbol} refund address';
-
-  String get userInputHint => direction.sendsZec
-      ? 'External ${externalAsset.symbol} address or account'
-      : 'Refund address on the ${externalAsset.symbol} source chain';
-
-  String get deliverySummary {
-    if (zecDeliveryIsDirectShielded) {
-      return 'ZEC arrives at your shielded address';
-    }
-    return '${externalAsset.symbol} is delivered to the external destination';
-  }
-
-  String get reviewDeliveryValue {
-    if (zecDeliveryIsDirectShielded) return 'shielded wallet address';
-    return userExternalAddress;
-  }
-
   SwapQuoteRequest toQuoteRequest({
     double? amount,
     double? sellAmount,
