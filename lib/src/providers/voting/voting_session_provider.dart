@@ -1659,6 +1659,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
 
       final refreshedPlan = await _loadResumePlan(context);
+      final refreshedRoundPlan = await _loadRoundPlan(context);
       if (!refreshedPlan.hasPendingWork) {
         await _clearPersistedDraftChoices(context);
       }
@@ -1668,6 +1669,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ? _phaseForResumePlan(refreshedPlan)
               : VotingSessionPhase.done,
           resumePlan: refreshedPlan,
+          roundPlan: refreshedRoundPlan,
         ),
       );
       _scheduleShareTracking(context, refreshedPlan);
