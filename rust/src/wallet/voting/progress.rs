@@ -108,6 +108,12 @@ impl VotingWorkCancellation {
     }
 }
 
+impl zcash_voting::Cancellation for VotingWorkCancellation {
+    fn is_cancelled(&self) -> bool {
+        self.check().is_err()
+    }
+}
+
 pub fn cancel_voting_work(
     db_path: &str,
     wallet_id: &str,
@@ -135,42 +141,10 @@ pub fn cancel_voting_work(
     Ok(())
 }
 
-pub struct ProofProgressBridge<F>
-where
-    F: Fn(f64) + Send + Sync + 'static,
-{
-    cancellation: VotingWorkCancellation,
-    on_progress: F,
-}
-
-impl<F> ProofProgressBridge<F>
-where
-    F: Fn(f64) + Send + Sync + 'static,
-{
-    pub fn new(cancellation: VotingWorkCancellation, on_progress: F) -> Self {
-        Self {
-            cancellation,
-            on_progress,
-        }
-    }
-}
-
-impl<F> zcash_voting::ProofProgressReporter for ProofProgressBridge<F>
-where
-    F: Fn(f64) + Send + Sync + 'static,
-{
-    fn on_progress(&self, progress: f64) {
-        if self.cancellation.check().is_err() {
-            return;
-        }
-        (self.on_progress)(progress.clamp(0.0, 1.0));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zcash_voting::ProofProgressReporter;
+    use zcash_voting::Cancellation;
 
     #[test]
     fn cancellation_epoch_invalidates_existing_round_work() {
@@ -181,26 +155,6 @@ mod tests {
 
         cancel_voting_work("/tmp/voting-progress.sqlite", "account", Some("round")).unwrap();
         assert!(work.check().unwrap_err().contains("cancelled"));
-    }
-
-    #[test]
-    fn local_cancel_suppresses_later_progress() {
-        let work = VotingWorkCancellation::start(
-            "/tmp/voting-progress-local.sqlite",
-            "account",
-            Some("round"),
-        )
-        .unwrap();
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let seen_for_reporter = seen.clone();
-        let reporter = ProofProgressBridge::new(work.clone(), move |progress| {
-            seen_for_reporter.lock().unwrap().push(progress);
-        });
-
-        reporter.on_progress(1.5);
-        work.cancel_local();
-        reporter.on_progress(0.5);
-
-        assert_eq!(*seen.lock().unwrap(), vec![1.0]);
+        assert!(work.is_cancelled());
     }
 }

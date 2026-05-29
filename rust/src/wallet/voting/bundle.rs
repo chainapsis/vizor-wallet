@@ -1,97 +1,33 @@
-use std::{borrow::Borrow, time::Duration};
+use std::borrow::Borrow;
 
 use crate::wallet::{
-    keys::parse_account_uuid,
+    db::WalletDatabase,
     network::WalletNetwork,
-    sync::{get_sync_progress, open_wallet_db_for_read},
-    sync_engine,
+    sync::{get_sync_progress_from_db, open_wallet_db_for_read},
 };
-use zcash_client_backend::{
-    data_api::{Account, WalletRead},
-    proto::service::TreeState,
-};
+use zcash_client_backend::proto::service::TreeState;
 use zcash_client_sqlite::WalletDb;
-use zcash_protocol::consensus::BlockHeight;
 
+pub use zcash_voting::{voting_power, NoteRef, SelectedNotes};
+
+#[cfg(test)]
 const POOL_ORCHARD: &str = "orchard";
 
-/// A snapshot-eligible Orchard note selected for voting.
+/// Selects voting-eligible Orchard notes using a caller-opened wallet DB and anchor.
 ///
-/// `zcash_voting::NoteInfo` 0.5.x is Orchard-shaped: it carries Orchard
-/// commitment/nullifier material plus `rho` and `rseed`. Sapling values are
-/// therefore not included in the executable ZCA-384 `NoteInfo` input.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NoteRef {
-    pub pool: String,
-    pub txid_hex: String,
-    pub output_index: u32,
-    pub value_zatoshi: u64,
-    /// Compatibility field for callers that display individual note rows.
-    ///
-    /// Voting power is quantized per smart bundle, not per note. This mirrors
-    /// `value_zatoshi` so sub-divisor notes remain visible to callers while
-    /// [`voting_power`] reports the real bundle-quantized total.
-    pub voting_weight_zatoshi: u64,
-    pub commitment: Vec<u8>,
-    pub nullifier: Vec<u8>,
-    pub diversifier: Vec<u8>,
-    pub rho: Vec<u8>,
-    pub rseed: Vec<u8>,
-    pub scope: u32,
-    pub ufvk_str: String,
-    pub commitment_tree_position: u64,
-    pub mined_height: u64,
-    pub anchor_height: u64,
-}
-
-impl NoteRef {
-    /// Converts this wallet-selected note into the core voting note payload.
-    pub fn to_voting_note_info(&self) -> zcash_voting::NoteInfo {
-        zcash_voting::NoteInfo {
-            commitment: self.commitment.clone(),
-            nullifier: self.nullifier.clone(),
-            value: self.value_zatoshi,
-            position: self.commitment_tree_position,
-            diversifier: self.diversifier.clone(),
-            rho: self.rho.clone(),
-            rseed: self.rseed.clone(),
-            scope: self.scope,
-            ufvk_str: self.ufvk_str.clone(),
-        }
-    }
-}
-
-/// Spendable notes at a voting snapshot, plus the anchor tree state for proofs.
-#[derive(Clone, Debug)]
-pub struct SelectedNotes {
-    pub notes: Vec<NoteRef>,
-    pub snapshot_height: u64,
-    pub anchor_tree_state: TreeState,
-}
-
-impl SelectedNotes {
-    /// Returns deterministic notes in the shape expected by `zcash_voting`.
-    pub fn voting_note_infos(&self) -> Vec<zcash_voting::NoteInfo> {
-        self.notes
-            .iter()
-            .map(NoteRef::to_voting_note_info)
-            .collect()
-    }
-}
-
-/// Selects voting-eligible Orchard notes using a placeholder anchor state.
-///
-/// The Linear prototype signature does not include a lightwalletd URL, so callers
-/// that need a real anchor should use [`select_notes_with_lwd`] instead.
-pub fn select_notes(
-    db_path: &str,
+/// Fetch the anchor tree state first, then open the wallet once and pass it
+/// here. The handle must not be held across an `.await` in async callers because
+/// it is not [`Send`].
+pub fn select_notes_with_wallet_db(
+    wallet_db: &WalletDatabase,
     network: WalletNetwork,
     account_uuid: &str,
     snapshot_height: u64,
+    anchor_tree_state: TreeState,
 ) -> Result<SelectedNotes, String> {
-    let anchor_tree_state = placeholder_tree_state(network, snapshot_height);
+    ensure_wallet_scanned_to_snapshot(wallet_db, snapshot_height)?;
     select_notes_with_anchor_tree_state(
-        db_path,
+        wallet_db,
         network,
         account_uuid,
         snapshot_height,
@@ -100,6 +36,10 @@ pub fn select_notes(
 }
 
 /// Selects voting-eligible Orchard notes and fetches the real snapshot anchor.
+///
+/// Opens the wallet database twice internally. Callers that already have a wallet
+/// handle should fetch the anchor state through `zcash_voting::lwd` plus
+/// [`select_notes_with_wallet_db`] for a single open.
 pub async fn select_notes_with_lwd(
     db_path: &str,
     lightwalletd_url: &str,
@@ -107,11 +47,13 @@ pub async fn select_notes_with_lwd(
     account_uuid: &str,
     snapshot_height: u64,
 ) -> Result<SelectedNotes, String> {
-    ensure_wallet_scanned_to_snapshot(db_path, network, snapshot_height)?;
     let anchor_tree_state =
-        fetch_anchor_tree_state_with_retry(lightwalletd_url, snapshot_height).await?;
-    select_notes_with_anchor_tree_state(
-        db_path,
+        zcash_voting::lwd::anchor_tree_state_with_retry(lightwalletd_url, snapshot_height)
+            .await
+            .map_err(|e| e.to_string())?;
+    let wallet_db = open_wallet_db_for_read(db_path, network)?;
+    select_notes_with_wallet_db(
+        &wallet_db,
         network,
         account_uuid,
         snapshot_height,
@@ -119,52 +61,11 @@ pub async fn select_notes_with_lwd(
     )
 }
 
-async fn fetch_anchor_tree_state_with_retry(
-    lightwalletd_url: &str,
-    snapshot_height: u64,
-) -> Result<TreeState, String> {
-    let mut last_error = None;
-    for attempt in 1..=3 {
-        match fetch_anchor_tree_state(lightwalletd_url, snapshot_height).await {
-            Ok(tree_state) => return Ok(tree_state),
-            Err(error) => {
-                if attempt == 3 {
-                    last_error = Some(error);
-                    break;
-                }
-                log::warn!(
-                    "voting bundle: retrying snapshot tree state fetch \
-                     (attempt={}, snapshot_height={}, error={})",
-                    attempt,
-                    snapshot_height,
-                    error
-                );
-                last_error = Some(error);
-                tokio::time::sleep(Duration::from_millis(500 * attempt)).await;
-            }
-        }
-    }
-    Err(last_error.unwrap_or_else(|| "snapshot tree state fetch failed".to_string()))
-}
-
-async fn fetch_anchor_tree_state(
-    lightwalletd_url: &str,
-    snapshot_height: u64,
-) -> Result<TreeState, String> {
-    let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
-        .await
-        .map_err(|e| e.to_string())?;
-    sync_engine::get_tree_state(&mut client, snapshot_height)
-        .await
-        .map_err(|e| e.to_string())
-}
-
 fn ensure_wallet_scanned_to_snapshot(
-    db_path: &str,
-    network: WalletNetwork,
+    wallet_db: &WalletDatabase,
     snapshot_height: u64,
 ) -> Result<(), String> {
-    let progress = get_sync_progress(db_path, network)?;
+    let progress = get_sync_progress_from_db(wallet_db)?;
     if progress.scanned_height >= snapshot_height {
         return Ok(());
     }
@@ -175,26 +76,9 @@ fn ensure_wallet_scanned_to_snapshot(
 }
 
 /// Selects voting-eligible Orchard notes with a caller-supplied anchor state.
-pub fn select_notes_with_anchor_tree_state(
-    db_path: &str,
-    network: WalletNetwork,
-    account_uuid: &str,
-    snapshot_height: u64,
-    anchor_tree_state: TreeState,
-) -> Result<SelectedNotes, String> {
-    let db = open_wallet_db_for_read(db_path, network)?;
-    select_notes_from_db(
-        &db,
-        network,
-        account_uuid,
-        snapshot_height,
-        anchor_tree_state,
-    )
-}
-
-fn select_notes_from_db<C, CL, R>(
-    db: &WalletDb<C, WalletNetwork, CL, R>,
-    network: WalletNetwork,
+pub fn select_notes_with_anchor_tree_state<C, CL, R>(
+    wallet_db: &WalletDb<C, WalletNetwork, CL, R>,
+    _network: WalletNetwork,
     account_uuid: &str,
     snapshot_height: u64,
     anchor_tree_state: TreeState,
@@ -202,97 +86,8 @@ fn select_notes_from_db<C, CL, R>(
 where
     C: Borrow<rusqlite::Connection>,
 {
-    let account_id = parse_account_uuid(account_uuid)?;
-    let snapshot_height_u32 = u32::try_from(snapshot_height)
-        .map_err(|_| format!("Snapshot height out of range: {snapshot_height}"))?;
-
-    let mut notes = Vec::new();
-    let account = db
-        .get_account(account_id)
-        .map_err(|e| format!("Failed to load voting account: {e}"))?
-        .ok_or_else(|| "Voting account not found".to_string())?;
-    let ufvk = account
-        .ufvk()
-        .ok_or_else(|| "Voting account has no UFVK".to_string())?;
-    if ufvk.orchard().is_none() {
-        return Err("Voting account has no Orchard viewing key".to_string());
-    }
-
-    let height = BlockHeight::from_u32(snapshot_height_u32);
-    let selected = db
-        .get_unspent_orchard_notes_at_historical_height(account.id(), height)
-        .map_err(|e| {
-            format!("Failed to select unspent Orchard voting notes at snapshot height: {e}")
-        })?;
-
-    for note in selected {
-        let value = note.note().value().inner();
-        let position = u64::from(note.note_commitment_tree_position());
-        let voting_note = zcash_voting::NoteInfo::from_orchard_note(
-            note.note(),
-            position,
-            note.spending_key_scope(),
-            ufvk,
-            &network,
-        )
-        .map_err(|e| format!("Failed to build voting note metadata: {e}"))?;
-        notes.push(NoteRef {
-            pool: POOL_ORCHARD.to_string(),
-            txid_hex: note.txid().to_string(),
-            output_index: note.output_index().into(),
-            value_zatoshi: value,
-            voting_weight_zatoshi: value,
-            commitment: voting_note.commitment,
-            nullifier: voting_note.nullifier,
-            diversifier: voting_note.diversifier,
-            rho: voting_note.rho,
-            rseed: voting_note.rseed,
-            scope: voting_note.scope,
-            ufvk_str: voting_note.ufvk_str,
-            commitment_tree_position: position,
-            mined_height: note
-                .mined_height()
-                .map(u32::from)
-                .ok_or_else(|| format!("Selected voting note is unmined: {}", note.txid()))?
-                .into(),
-            anchor_height: snapshot_height,
-        });
-    }
-
-    notes.sort_by(|a, b| {
-        a.commitment_tree_position
-            .cmp(&b.commitment_tree_position)
-            .then_with(|| a.pool.cmp(&b.pool))
-            .then_with(|| a.output_index.cmp(&b.output_index))
-    });
-
-    if notes.is_empty() {
-        return Err(format!(
-            "No spendable voting notes at snapshot height {snapshot_height}"
-        ));
-    }
-
-    Ok(SelectedNotes {
-        notes,
-        snapshot_height,
-        anchor_tree_state,
-    })
-}
-
-/// Returns quantized zatoshi voting power for the selected note set.
-pub fn voting_power(notes: &SelectedNotes) -> u64 {
-    zcash_voting::round::note_bundles(&notes.voting_note_infos())
-        .map(|bundles| {
-            bundles
-                .into_iter()
-                .map(|bundle| {
-                    let raw = bundle.into_iter().map(|note| note.value).sum::<u64>();
-                    (raw / zcash_voting::governance::BALLOT_DIVISOR)
-                        * zcash_voting::governance::BALLOT_DIVISOR
-                })
-                .sum()
-        })
-        .unwrap_or(0)
+    zcash_voting::select_snapshot_notes(wallet_db, account_uuid, snapshot_height, anchor_tree_state)
+        .map_err(|e| e.to_string())
 }
 
 /// Validates that `bundle_index` is in `[0, bundle_count)`.
@@ -310,23 +105,23 @@ pub(super) fn validate_bundle_index(
     }
 }
 
-fn placeholder_tree_state(network: WalletNetwork, snapshot_height: u64) -> TreeState {
-    TreeState {
-        network: match network {
-            WalletNetwork::Main => "main".to_string(),
-            WalletNetwork::Test | WalletNetwork::Regtest => "test".to_string(),
-        },
-        height: snapshot_height,
-        hash: String::new(),
-        time: 0,
-        sapling_tree: String::new(),
-        orchard_tree: String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn placeholder_tree_state(network: WalletNetwork, snapshot_height: u64) -> TreeState {
+        TreeState {
+            network: match network {
+                WalletNetwork::Main => "main".to_string(),
+                WalletNetwork::Test | WalletNetwork::Regtest => "test".to_string(),
+            },
+            height: snapshot_height,
+            hash: String::new(),
+            time: 0,
+            sapling_tree: String::new(),
+            orchard_tree: String::new(),
+        }
+    }
     use orchard::{
         note::{RandomSeed, Rho},
         value::NoteValue,
@@ -334,29 +129,10 @@ mod tests {
     use rusqlite::{params, Connection};
     use secrecy::{ExposeSecret, SecretVec};
     use zcash_client_backend::data_api::{chain::ChainState, AccountBirthday, WalletWrite};
-    use zcash_client_sqlite::{util::SystemClock, wallet::init::init_wallet_db};
+    use zcash_client_sqlite::{util::SystemClock, wallet::init::init_wallet_db, WalletDb};
     use zcash_primitives::block::BlockHash;
     use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
     use zip32::Scope;
-
-    #[test]
-    fn voting_power_uses_smart_bundle_quantization() {
-        let divisor = zcash_voting::governance::BALLOT_DIVISOR;
-        let small_note_value = divisor / 5;
-        let selected = SelectedNotes {
-            notes: vec![
-                test_note_ref(POOL_ORCHARD, small_note_value, small_note_value).with_position(1),
-                test_note_ref(POOL_ORCHARD, small_note_value, small_note_value).with_position(2),
-                test_note_ref(POOL_ORCHARD, small_note_value, small_note_value).with_position(3),
-                test_note_ref(POOL_ORCHARD, small_note_value, small_note_value).with_position(4),
-                test_note_ref(POOL_ORCHARD, small_note_value, small_note_value).with_position(5),
-            ],
-            snapshot_height: 100,
-            anchor_tree_state: placeholder_tree_state(WalletNetwork::Regtest, 100),
-        };
-
-        assert_eq!(voting_power(&selected), divisor);
-    }
 
     #[test]
     fn validate_bundle_index_rejects_out_of_range_before_work() {
@@ -425,7 +201,7 @@ mod tests {
         .unwrap();
 
         let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
-        let selected = select_notes_from_db(
+        let selected = select_notes_with_anchor_tree_state(
             &db,
             network,
             &account_uuid.expose_uuid().to_string(),
@@ -475,7 +251,7 @@ mod tests {
         }
 
         let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
-        let selected = select_notes_from_db(
+        let selected = select_notes_with_anchor_tree_state(
             &db,
             network,
             &account_uuid.expose_uuid().to_string(),
@@ -500,7 +276,7 @@ mod tests {
         let (account_uuid, _) = setup_test_account(&mut conn, network);
 
         let db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
-        let err = select_notes_from_db(
+        let err = select_notes_with_anchor_tree_state(
             &db,
             network,
             &account_uuid.expose_uuid().to_string(),
@@ -509,10 +285,9 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_eq!(
-            err,
-            format!("No spendable voting notes at snapshot height {snapshot_height}")
-        );
+        assert!(err.contains(&format!(
+            "no spendable voting notes at snapshot height {snapshot_height}"
+        )));
     }
 
     #[test]
@@ -553,54 +328,19 @@ mod tests {
     }
 
     #[test]
-    fn selected_notes_convert_to_voting_note_info() {
-        let selected = SelectedNotes {
-            notes: vec![NoteRef {
-                pool: POOL_ORCHARD.to_string(),
-                txid_hex: hex::encode([9u8; 32]),
-                output_index: 2,
-                value_zatoshi: 13_000_000,
-                voting_weight_zatoshi: zcash_voting::governance::BALLOT_DIVISOR,
-                commitment: vec![1; 32],
-                nullifier: vec![2; 32],
-                diversifier: vec![3; 11],
-                rho: vec![4; 32],
-                rseed: vec![5; 32],
-                scope: 1,
-                ufvk_str: "uviewtest".to_string(),
-                commitment_tree_position: 42,
-                mined_height: 100,
-                anchor_height: 123,
-            }],
-            snapshot_height: 123,
-            anchor_tree_state: placeholder_tree_state(WalletNetwork::Regtest, 123),
-        };
-
-        let infos = selected.voting_note_infos();
-
-        assert_eq!(infos.len(), 1);
-        assert_eq!(infos[0].value, 13_000_000);
-        assert_eq!(infos[0].position, 42);
-        assert_eq!(infos[0].commitment, vec![1; 32]);
-        assert_eq!(infos[0].nullifier, vec![2; 32]);
-        assert_eq!(infos[0].diversifier, vec![3; 11]);
-        assert_eq!(infos[0].rho, vec![4; 32]);
-        assert_eq!(infos[0].rseed, vec![5; 32]);
-        assert_eq!(infos[0].scope, 1);
-        assert_eq!(infos[0].ufvk_str, "uviewtest");
-    }
-
-    #[test]
     fn select_notes_rejects_snapshot_heights_that_do_not_fit_librustzcash() {
+        let conn = Connection::open_in_memory().unwrap();
+        let network = WalletNetwork::Regtest;
+        let wallet_db = WalletDb::from_connection(&conn, network, SystemClock, rand::rngs::OsRng);
         let result = select_notes_with_anchor_tree_state(
-            "/tmp/not-opened.sqlite",
-            WalletNetwork::Regtest,
+            &wallet_db,
+            network,
             "550e8400-e29b-41d4-a716-446655440000",
             u64::from(u32::MAX) + 1,
-            placeholder_tree_state(WalletNetwork::Regtest, u64::from(u32::MAX) + 1),
+            placeholder_tree_state(network, u64::from(u32::MAX) + 1),
         );
 
-        assert!(result.unwrap_err().contains("Snapshot height out of range"));
+        assert!(result.unwrap_err().contains("does not fit in u32"));
     }
 
     fn account_internal_id(

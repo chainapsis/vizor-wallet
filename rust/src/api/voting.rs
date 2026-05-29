@@ -6,7 +6,7 @@ use crate::wallet::{
     voting::{
         bundle::{self, SelectedNotes},
         delegation,
-        delegation::ProofEvent,
+        delegation::DelegationProgress,
         hotkey,
         progress::{cancel_voting_work, VotingWorkCancellation},
         recovery, state, tree_sync,
@@ -496,36 +496,46 @@ impl From<zcash_voting::storage::KeystoneSignatureRecord> for ApiKeystoneSignatu
     }
 }
 
-impl From<ProofEvent> for ApiDelegationProofEvent {
-    fn from(event: ProofEvent) -> Self {
-        match event {
-            ProofEvent::SelectingNotes => Self {
+impl From<DelegationProgress> for ApiDelegationProofEvent {
+    fn from(progress: DelegationProgress) -> Self {
+        match progress {
+            DelegationProgress::SelectingNotes => Self {
                 phase: "selecting_notes".to_string(),
                 proof_progress: None,
                 signed_delegation_payload: None,
             },
-            ProofEvent::BuildingPczt => Self {
+            DelegationProgress::PcztBuilding | DelegationProgress::PcztBuilt => Self {
                 phase: "building_pczt".to_string(),
                 proof_progress: None,
                 signed_delegation_payload: None,
             },
-            ProofEvent::BuildingProof => Self {
+            DelegationProgress::ProofStarting => Self {
                 phase: "building_proof".to_string(),
                 proof_progress: Some(0.0),
                 signed_delegation_payload: None,
             },
-            ProofEvent::ProofProgress { progress } => Self {
+            DelegationProgress::ProofProgress(value) => Self {
                 phase: "proof_progress".to_string(),
-                proof_progress: Some(progress),
+                proof_progress: Some(value),
                 signed_delegation_payload: None,
             },
-            ProofEvent::SigningPayload => Self {
+            DelegationProgress::ProofComplete => Self {
+                phase: "proof_progress".to_string(),
+                proof_progress: Some(1.0),
+                signed_delegation_payload: None,
+            },
+            DelegationProgress::SigningPayload => Self {
                 phase: "signing_payload".to_string(),
                 proof_progress: Some(1.0),
                 signed_delegation_payload: None,
             },
-            ProofEvent::PayloadReady => Self {
+            DelegationProgress::PayloadReady => Self {
                 phase: "payload_ready".to_string(),
+                proof_progress: None,
+                signed_delegation_payload: None,
+            },
+            _ => Self {
+                phase: "delegation_progress".to_string(),
                 proof_progress: None,
                 signed_delegation_payload: None,
             },
@@ -533,10 +543,10 @@ impl From<ProofEvent> for ApiDelegationProofEvent {
     }
 }
 
-impl From<vote::VoteCommitEvent> for ApiVoteCommitEvent {
-    fn from(event: vote::VoteCommitEvent) -> Self {
+impl From<zcash_voting::vote::VoteCommitStage> for ApiVoteCommitEvent {
+    fn from(event: zcash_voting::vote::VoteCommitStage) -> Self {
         match event {
-            vote::VoteCommitEvent::BuildingProof {
+            zcash_voting::vote::VoteCommitStage::ProofStarting {
                 proposal_id,
                 bundle_index,
             } => Self {
@@ -546,7 +556,7 @@ impl From<vote::VoteCommitEvent> for ApiVoteCommitEvent {
                 proof_progress: Some(0.0),
                 commitments: None,
             },
-            vote::VoteCommitEvent::ProofProgress {
+            zcash_voting::vote::VoteCommitStage::ProofProgress {
                 proposal_id,
                 bundle_index,
                 progress,
@@ -557,7 +567,7 @@ impl From<vote::VoteCommitEvent> for ApiVoteCommitEvent {
                 proof_progress: Some(progress),
                 commitments: None,
             },
-            vote::VoteCommitEvent::BuildingSharePayloads {
+            zcash_voting::vote::VoteCommitStage::SharePayloadsBuilding {
                 proposal_id,
                 bundle_index,
             } => Self {
@@ -567,7 +577,7 @@ impl From<vote::VoteCommitEvent> for ApiVoteCommitEvent {
                 proof_progress: Some(1.0),
                 commitments: None,
             },
-            vote::VoteCommitEvent::Signing {
+            zcash_voting::vote::VoteCommitStage::Signing {
                 proposal_id,
                 bundle_index,
             } => Self {
@@ -577,8 +587,8 @@ impl From<vote::VoteCommitEvent> for ApiVoteCommitEvent {
                 proof_progress: None,
                 commitments: None,
             },
-            vote::VoteCommitEvent::Done => Self {
-                phase: "done".to_string(),
+            _ => Self {
+                phase: "vote_commit_stage".to_string(),
                 proposal_id: None,
                 bundle_index: None,
                 proof_progress: None,
@@ -1448,6 +1458,19 @@ pub async fn build_vote_commitments_with_progress(
 
     if sink
         .add(ApiVoteCommitEvent {
+            phase: "done".to_string(),
+            proposal_id: None,
+            bundle_index: None,
+            proof_progress: None,
+            commitments: None,
+        })
+        .is_err()
+    {
+        log::warn!("voting vote: StreamSink closed before done event");
+    }
+
+    if sink
+        .add(ApiVoteCommitEvent {
             phase: "result".to_string(),
             proposal_id: None,
             bundle_index: Some(commitments.bundle_index),
@@ -2121,19 +2144,19 @@ mod tests {
     #[test]
     fn api_delegation_proof_event_uses_stable_phase_names() {
         assert_eq!(
-            ApiDelegationProofEvent::from(ProofEvent::SelectingNotes).phase,
+            ApiDelegationProofEvent::from(DelegationProgress::SelectingNotes).phase,
             "selecting_notes"
         );
         assert_eq!(
-            ApiDelegationProofEvent::from(ProofEvent::SigningPayload).phase,
+            ApiDelegationProofEvent::from(DelegationProgress::SigningPayload).phase,
             "signing_payload"
         );
-        let ready = ApiDelegationProofEvent::from(ProofEvent::PayloadReady);
+        let ready = ApiDelegationProofEvent::from(DelegationProgress::PayloadReady);
         assert_eq!(ready.phase, "payload_ready");
         assert_eq!(ready.proof_progress, None);
         assert!(ready.signed_delegation_payload.is_none());
 
-        let proof = ApiDelegationProofEvent::from(ProofEvent::ProofProgress { progress: 0.5 });
+        let proof = ApiDelegationProofEvent::from(DelegationProgress::ProofProgress(0.5));
         assert_eq!(proof.phase, "proof_progress");
         assert_eq!(proof.proof_progress, Some(0.5));
 
@@ -2168,7 +2191,7 @@ mod tests {
 
     #[test]
     fn api_vote_commit_event_uses_stable_phase_names() {
-        let event = ApiVoteCommitEvent::from(vote::VoteCommitEvent::BuildingProof {
+        let event = ApiVoteCommitEvent::from(zcash_voting::vote::VoteCommitStage::ProofStarting {
             proposal_id: 1,
             bundle_index: 2,
         });
@@ -2177,17 +2200,13 @@ mod tests {
         assert_eq!(event.proposal_id, Some(1));
         assert_eq!(event.bundle_index, Some(2));
         assert_eq!(event.proof_progress, Some(0.0));
-        let proof = ApiVoteCommitEvent::from(vote::VoteCommitEvent::ProofProgress {
+        let proof = ApiVoteCommitEvent::from(zcash_voting::vote::VoteCommitStage::ProofProgress {
             proposal_id: 1,
             bundle_index: 2,
             progress: 0.5,
         });
         assert_eq!(proof.phase, "proof_progress");
         assert_eq!(proof.proof_progress, Some(0.5));
-        assert_eq!(
-            ApiVoteCommitEvent::from(vote::VoteCommitEvent::Done).phase,
-            "done"
-        );
 
         let result = ApiVoteCommitEvent {
             phase: "result".to_string(),
