@@ -426,6 +426,85 @@ void main() {
     expect(recoveryApi.ballotIntents, isEmpty);
   });
 
+  testWidgets('hardware status screen resumes share recovery without Keystone', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final shareNullifier = Uint8List.fromList(List.filled(32, 1));
+    final shareId = List.filled(32, '01').join();
+    final share = rust_voting.ApiShareDelegationRecord(
+      roundId: _roundId,
+      bundleIndex: 0,
+      proposalId: 1,
+      shareIndex: 0,
+      sentToUrls: const ['https://voting.example'],
+      nullifier: shareNullifier,
+      phase: 'submitted_share',
+      confirmed: false,
+      submitAt: BigInt.zero,
+      createdAt: BigInt.zero,
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(
+        delegationTxHashes: [
+          rust_voting.ApiDelegationTxRecovery(
+            bundleIndex: 0,
+            txHash: 'delegation-0',
+          ),
+        ],
+        shareDelegations: [share],
+        unconfirmedShareDelegations: [share],
+      )
+      ..roundPlan = rust_voting.ApiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: true,
+        nextSteps: const [
+          rust_voting.ApiNextStep(
+            kind: 'confirm_share',
+            bundleIndex: 0,
+            proposalId: 1,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        ],
+        openProposals: Uint32List(0),
+        allDecided: false,
+      );
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['https://voting.example/shielded-vote/v1/share-status/$_roundId/$shareId'] =
+            {'status': 'confirmed'},
+    );
+    final rust = _VotingStatusRustApi(recoveryApi);
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _HardwareAccountNotifier.new,
+      activeAccountUuid: () async => 'hardware-1',
+      accountIsHardware: true,
+      hardwareAccountUuids: const {'hardware-1'},
+      recoveryApi: recoveryApi,
+      rust: rust,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _statusHarness()),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text('submission confirmed route'));
+
+    expect(find.text('submission confirmed route'), findsOne);
+    expect(find.text('Sign Bundle 1 of 1'), findsNothing);
+    expect(find.text('Scan Signature'), findsNothing);
+    expect(rust.setupDelegationBundleCalls, 0);
+    expect(rust.keystoneDelegationRequestCalls, 0);
+    expect(recoveryApi.ballotIntents, isEmpty);
+  });
+
   testWidgets('status screen keeps async session errors specific', (
     tester,
   ) async {
@@ -1700,6 +1779,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   final int bundleCount;
   final storedKeystoneSignatures =
       <int, rust_voting.ApiKeystoneSignatureRecord>{};
+  int setupDelegationBundleCalls = 0;
+  int keystoneDelegationRequestCalls = 0;
 
   @override
   Future<rust_voting.ApiVotingBundleSetupResult> setupDelegationBundles({
@@ -1711,6 +1792,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     String? sessionJson,
     required String accountUuid,
   }) async {
+    setupDelegationBundleCalls++;
     return rust_voting.ApiVotingBundleSetupResult(
       bundleCount: bundleCount,
       eligibleWeightZatoshi: BigInt.from(100),
@@ -1803,6 +1885,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required List<int> hotkeySeed,
     required int bundleIndex,
   }) async {
+    keystoneDelegationRequestCalls++;
     return rust_voting.ApiKeystoneDelegationRequest(
       pcztBytes: Uint8List.fromList(const [1]),
       redactedPcztBytes: Uint8List.fromList(const [2]),
