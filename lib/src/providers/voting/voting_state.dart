@@ -2,6 +2,8 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../../core/formatting/date_format.dart';
+import '../../core/formatting/hex_codec.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/voting.dart' as rust_voting;
 import '../../services/voting/pir_snapshot_resolver.dart';
@@ -449,7 +451,7 @@ String _normalizeRoundId(String value) {
   if (_isHexRoundId(trimmed)) return trimmed.toLowerCase();
   try {
     final bytes = base64Decode(trimmed);
-    if (bytes.length == 32) return _hexFromBytes(bytes);
+    if (bytes.length == 32) return bytesToHex(bytes);
   } on FormatException {
     // Early fixtures used human-readable ids; keep those readable in tests.
   }
@@ -471,10 +473,7 @@ Uint8List _bytesFromJson(Map<String, dynamic> json, List<String> keys) {
   final value = _stringFromJson(json, keys);
   final hex = value.startsWith('0x') ? value.substring(2) : value;
   if (hex.length.isEven && RegExp(r'^[0-9a-fA-F]+$').hasMatch(hex)) {
-    return Uint8List.fromList([
-      for (var i = 0; i < hex.length; i += 2)
-        int.parse(hex.substring(i, i + 2), radix: 16),
-    ]);
+    return hexToBytes(hex);
   }
   return Uint8List.fromList(base64Decode(value));
 }
@@ -482,7 +481,7 @@ Uint8List _bytesFromJson(Map<String, dynamic> json, List<String> keys) {
 DateTime? _dateFromJson(Map<String, dynamic> json, List<String> keys) {
   for (final key in keys) {
     final value = _valueFromJson(json, key);
-    final date = _parseDate(value);
+    final date = parseFlexibleDate(value);
     if (date != null) return date.toUtc();
   }
   return null;
@@ -504,26 +503,7 @@ Object? _valueFromJson(Object? value, String key) {
   return null;
 }
 
-DateTime? _parseDate(Object? value) {
-  if (value == null) return null;
-  if (value is DateTime) return value;
-  if (value is num) {
-    final milliseconds = value > 100000000000
-        ? value.toInt()
-        : (value * 1000).toInt();
-    return DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true);
-  }
-  final text = value.toString().trim();
-  final numeric = num.tryParse(text);
-  if (numeric != null) return _parseDate(numeric);
-  return DateTime.tryParse(text);
-}
-
 bool _isHexRoundId(String value) {
   if (value.length != 64) return false;
   return RegExp(r'^[0-9a-fA-F]+$').hasMatch(value);
-}
-
-String _hexFromBytes(List<int> bytes) {
-  return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 }
