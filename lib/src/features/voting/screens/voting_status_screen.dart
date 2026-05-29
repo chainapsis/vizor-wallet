@@ -125,7 +125,8 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
         return;
       }
 
-      if (activeSession.isHardwareAccount) {
+      if (activeSession.isHardwareAccount &&
+          _sessionNeedsKeystoneSigning(activeSession)) {
         _pendingDraftVotes = draftVotes;
         _pendingProposalIds = intentProposalIds;
         _pendingRecoveryWithoutDraft =
@@ -135,6 +136,14 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       }
 
       if (draftVotes.isNotEmpty || needsDelegation) {
+        if (activeSession.isHardwareAccount) {
+          _pendingDraftVotes = draftVotes;
+          _pendingProposalIds = intentProposalIds;
+          _pendingRecoveryWithoutDraft =
+              canRecoverWithoutDraft || canPollDelegationWithoutDraft;
+          await _submitAfterKeystoneSignatures(sessionNotifier);
+          return;
+        }
         final mnemonic = await ref
             .read(accountProvider.notifier)
             .getMnemonicForAccount(accountUuid);
@@ -401,6 +410,14 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     if (session.roundPlan != null) return false;
     return session.resumePlan?.submittedDelegationBundleIndexes.isNotEmpty ??
         false;
+  }
+
+  bool _sessionNeedsKeystoneSigning(VotingSessionState session) {
+    final roundPlan = session.roundPlan;
+    return (roundPlan?.nextSteps.any((step) => step.kind == 'delegate') ??
+            false) ||
+        (session.resumePlan?.pendingDelegationBundleIndexes.isNotEmpty ??
+            false);
   }
 
   bool _sessionNeedsVotePolling(VotingSessionState? session) {
