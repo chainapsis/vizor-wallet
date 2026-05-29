@@ -1432,6 +1432,13 @@ void main() {
           .castVotes(
             draftVotes: [
               rust_voting.ApiDraftVote(
+                proposalId: 7,
+                choice: 1,
+                numOptions: 2,
+                vcTreePosition: BigInt.zero,
+                singleShare: false,
+              ),
+              rust_voting.ApiDraftVote(
                 proposalId: 8,
                 choice: 1,
                 numOptions: 2,

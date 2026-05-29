@@ -656,12 +656,24 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           ),
         );
       }
+      final recoveredVoteWork = _pendingRecoveredVoteWork(plan, roundPlan);
+      final recoveredVoteKeys = {
+        for (final work in recoveredVoteWork) work.key,
+      };
       final bundleIndexesByProposal = <int, List<int>>{
         for (final draftVote in effectiveDraftVotes)
-          draftVote.proposalId: _pendingVoteBundleIndexesForProposal(
-            plan,
-            draftVote.proposalId,
-          ).toList()..sort(),
+          draftVote.proposalId:
+              _pendingVoteBundleIndexesForProposal(plan, draftVote.proposalId)
+                  .where(
+                    (bundleIndex) => !recoveredVoteKeys.contains(
+                      VotingVoteKey(
+                        bundleIndex: bundleIndex,
+                        proposalId: draftVote.proposalId,
+                      ),
+                    ),
+                  )
+                  .toList()
+                ..sort(),
       };
       final voteWork = [
         for (final draftVote in effectiveDraftVotes)
@@ -670,7 +682,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             bundleIndexes: bundleIndexesByProposal[draftVote.proposalId]!,
           ),
       ].where((work) => work.bundleIndexes.isNotEmpty).toList();
-      final recoveredVoteWork = _pendingRecoveredVoteWork(plan, roundPlan);
       final totalQuestions = recoveredVoteWork.length + voteWork.length;
       final totalBundleTasks =
           recoveredVoteWork.length +
