@@ -206,16 +206,44 @@ Widget buildSwapReviewZecToExternalUseCase(BuildContext context) {
   );
 }
 
-Widget buildSwapReviewLargeAmountsUseCase(BuildContext context) {
+Widget buildSwapReviewLargeLeftAmountUseCase(BuildContext context) {
   return _SwapReviewPageFrame(
     backLabel: 'Swap',
     child: _SwapReviewPreview(
       quote: _figmaReviewLargeQuote,
-      addressPlan: _figmaExternalToZecAddressPlan,
+      addressPlan: _figmaExternalShitToZecAddressPlan,
       accountLabel: 'John',
-      slippageToleranceText: '0.25 USDC (0.5%)',
+      slippageToleranceText: r'0.25 $SHIT (0.5%)',
       payFiatText: r'$999.123M',
       receiveFiatText: r'$110.24',
+    ),
+  );
+}
+
+Widget buildSwapReviewLargeRightAmountUseCase(BuildContext context) {
+  return _SwapReviewPageFrame(
+    backLabel: 'Swap',
+    child: _SwapReviewPreview(
+      quote: _figmaReviewLargeRightQuote,
+      addressPlan: _figmaZecToShitAddressPlan,
+      accountLabel: 'John',
+      slippageToleranceText: '0.001 ZEC (0.5%)',
+      payFiatText: r'$110.24',
+      receiveFiatText: r'$999.123M',
+    ),
+  );
+}
+
+Widget buildSwapReviewLargeAmountsUseCase(BuildContext context) {
+  return _SwapReviewPageFrame(
+    backLabel: 'Swap',
+    child: _SwapReviewPreview(
+      quote: _figmaReviewLargeBothQuote,
+      addressPlan: _figmaExternalShitToZecAddressPlan,
+      accountLabel: 'John',
+      slippageToleranceText: r'0.25 $SHIT (0.5%)',
+      payFiatText: r'$999.123M',
+      receiveFiatText: r'$999.123M',
     ),
   );
 }
@@ -512,6 +540,13 @@ final _figmaUsdc = SwapAsset.live(
   decimals: 6,
 );
 
+final _figmaShit = SwapAsset.live(
+  assetId: 'figma-shit-sol',
+  symbol: r'$SHIT',
+  blockchain: 'sol',
+  decimals: 6,
+);
+
 final _figmaAssetModalAssets = <SwapAsset>[
   _figmaUsdc,
   SwapAsset.eth,
@@ -534,6 +569,20 @@ final _figmaExternalToZecAddressPlan = SwapAddressPlan.fromUserInput(
 final _figmaZecToExternalAddressPlan = SwapAddressPlan.fromUserInput(
   direction: SwapDirection.zecToExternal,
   externalAsset: SwapAsset.usdc,
+  userExternalAddress: '0x123kjhc4e984ac1832f10aa4x98g20',
+  walletZecAddress: 'u1figmareviewwalletzecaddresspreview',
+);
+
+final _figmaExternalShitToZecAddressPlan = SwapAddressPlan.fromUserInput(
+  direction: SwapDirection.externalToZec,
+  externalAsset: _figmaShit,
+  userExternalAddress: '0x123kjhc4e984ac1832f10aa4x98g20',
+  walletZecAddress: 'u1figmareviewwalletzecaddresspreview',
+);
+
+final _figmaZecToShitAddressPlan = SwapAddressPlan.fromUserInput(
+  direction: SwapDirection.zecToExternal,
+  externalAsset: _figmaShit,
   userExternalAddress: '0x123kjhc4e984ac1832f10aa4x98g20',
   walletZecAddress: 'u1figmareviewwalletzecaddresspreview',
 );
@@ -584,19 +633,9 @@ final _figmaReviewZecToExternalQuote = SwapQuote(
 
 final _figmaReviewLargeQuote = SwapQuote(
   direction: SwapDirection.externalToZec,
-  sellAsset: SwapAsset.live(
-    assetId: 'figma-shit-sol',
-    symbol: r'$SHIT',
-    blockchain: 'sol',
-    decimals: 6,
-  ),
+  sellAsset: _figmaShit,
   receiveAsset: SwapAsset.zec,
-  externalAsset: SwapAsset.live(
-    assetId: 'figma-shit-sol',
-    symbol: r'$SHIT',
-    blockchain: 'sol',
-    decimals: 6,
-  ),
+  externalAsset: _figmaShit,
   sellAmount: 999123000,
   receiveAmount: 0.251,
   minimumReceiveAmount: 0.249,
@@ -611,6 +650,50 @@ final _figmaReviewLargeQuote = SwapQuote(
   ),
   receiveEstimateTextOverride: '0.251 ZEC',
   minimumReceiveTextOverride: '0.249 ZEC',
+);
+
+final _figmaReviewLargeRightQuote = SwapQuote(
+  direction: SwapDirection.zecToExternal,
+  sellAsset: SwapAsset.zec,
+  receiveAsset: _figmaShit,
+  externalAsset: _figmaShit,
+  sellAmount: 0.251,
+  receiveAmount: 999123000,
+  minimumReceiveAmount: 999122000,
+  providerLabel: 'NEAR Intents',
+  feeLabel: 'Included in shown rate',
+  expiryLabel: '2hrs',
+  depositInstruction: SwapDepositInstruction(
+    asset: SwapAsset.zec,
+    address: 't1figmareviewdepositaddress',
+    expiresInLabel: '2hrs',
+    reuseWarning: 'Do not reuse this address',
+  ),
+  sellAmountTextOverride: '0.251 ZEC',
+  receiveEstimateTextOverride: r'999,123,000.123456 $SHIT',
+  minimumReceiveTextOverride: r'999,122,000 $SHIT',
+);
+
+final _figmaReviewLargeBothQuote = SwapQuote(
+  direction: SwapDirection.externalToZec,
+  sellAsset: _figmaShit,
+  receiveAsset: SwapAsset.zec,
+  externalAsset: _figmaShit,
+  sellAmount: 999123000,
+  receiveAmount: 888888.88,
+  minimumReceiveAmount: 888000,
+  providerLabel: 'NEAR Intents',
+  feeLabel: 'Included in shown rate',
+  expiryLabel: '2hrs',
+  depositInstruction: SwapDepositInstruction(
+    asset: _figmaShit,
+    address: '0x123kjhc4e984ac1832f10aa4x98g20',
+    expiresInLabel: '2hrs',
+    reuseWarning: 'Do not reuse this address',
+  ),
+  sellAmountTextOverride: r'999,123,000.123456 $SHIT',
+  receiveEstimateTextOverride: '888,888.88 ZEC',
+  minimumReceiveTextOverride: '888,000 ZEC',
 );
 
 final _figmaUsdcPerZec = <SwapAsset, double>{_figmaUsdc: 6.57894737};

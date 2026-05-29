@@ -14,6 +14,7 @@ import '../models/swap_detail_tooltips.dart';
 import '../models/swap_status_presentation.dart';
 import 'swap_amount_text.dart';
 import 'swap_asset_icon.dart';
+import 'swap_summary_amount_text.dart';
 
 export '../models/swap_status_presentation.dart';
 
@@ -448,15 +449,13 @@ class _SummarySide extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          amountText,
-                          maxLines: 1,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: baseColor,
-                          ),
+                      SwapSummaryAmountText(
+                        amountText: amountText,
+                        asset: asset,
+                        keyPrefix:
+                            'swap_status_${label.toLowerCase()}_summary_amount',
+                        style: AppTypography.labelLarge.copyWith(
+                          color: baseColor,
                         ),
                       ),
                       const SizedBox(height: 2),

@@ -13,6 +13,7 @@ import '../models/swap_detail_tooltips.dart';
 import '../models/swap_fiat_value_formatting.dart';
 import 'swap_amount_text.dart';
 import 'swap_asset_icon.dart';
+import 'swap_summary_amount_text.dart';
 
 const _swapReviewDetailIconSize = 14.0;
 
@@ -249,16 +250,20 @@ class _ReviewTradeSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final bothSidesNeedCompact =
-        isLongSwapSummaryAmountText(quote.sellAmountText) &&
-        isLongSwapSummaryAmountText(quote.receiveEstimateText);
+    final sellNeedsCompact = isLongSwapSummaryAmountText(quote.sellAmountText);
+    final receiveNeedsCompact = isLongSwapSummaryAmountText(
+      quote.receiveEstimateText,
+    );
+    final bothSidesNeedCompact = sellNeedsCompact && receiveNeedsCompact;
     final sellAmountText = compactSwapSummaryAmountText(
       quote.sellAmountText,
-      forceCompactThousands: bothSidesNeedCompact,
+      forceCompactThousands: sellNeedsCompact,
+      maxCharacters: swapReviewSummaryMaxChars,
     );
     final receiveAmountText = compactSwapSummaryAmountText(
       quote.receiveEstimateText,
-      forceCompactThousands: bothSidesNeedCompact,
+      forceCompactThousands: receiveNeedsCompact,
+      maxCharacters: swapReviewSummaryMaxChars,
     );
     final receiveNeedsWideSide =
         receiveAmountText.length > sellAmountText.length;
@@ -398,10 +403,11 @@ class _ReviewTradeSide extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        amountText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      SwapSummaryAmountText(
+                        amountText: amountText,
+                        asset: asset,
+                        keyPrefix:
+                            'swap_review_${label.toLowerCase()}_summary_amount',
                         style: AppTypography.labelLarge.copyWith(
                           color: colors.text.homeCard,
                         ),

@@ -197,7 +197,15 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildSwapReviewZecToExternalUseCase,
                     ),
                     WidgetbookUseCase(
-                      name: 'Large amounts',
+                      name: 'Large amount - Left',
+                      builder: buildSwapReviewLargeLeftAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Large amount - Right',
+                      builder: buildSwapReviewLargeRightAmountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Large amounts - Both',
                       builder: buildSwapReviewLargeAmountsUseCase,
                     ),
                   ],

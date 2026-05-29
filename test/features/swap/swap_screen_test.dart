@@ -37,7 +37,9 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_amount_text.dart';
 import 'package:zcash_wallet/src/features/address_scan/widgets/address_qr_scan_modal.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_asset_icon.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_deposit_tokens_page_content.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/swap_review_page_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.dart';
+import 'package:zcash_wallet/src/features/swap/widgets/swap_summary_amount_text.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -95,6 +97,132 @@ void main() {
         maxCharacters: 13,
       ),
       r'999.99K $SHIT',
+    );
+  });
+
+  test('splitSwapSummaryAmountText keeps token symbol separate', () {
+    final parts = splitSwapSummaryAmountText(r'999K $SHIT', _testShitAsset);
+    expect(parts.amount, '999K');
+    expect(parts.symbol, r'$SHIT');
+  });
+
+  testWidgets('review summary compacts long pay amount only', (tester) async {
+    await tester.pumpWidget(
+      _themeHarness(
+        _reviewTestPage(
+          direction: SwapDirection.externalToZec,
+          sellAsset: _testShitAsset,
+          receiveAsset: SwapAsset.zec,
+          sellAmountText: r'999,999.99 $SHIT',
+          receiveAmountText: '0.251 ZEC',
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_review_trade_summary')),
+        matching: find.text(r'999,999.99 $SHIT'),
+      ),
+      findsNothing,
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_review_pay_summary_amount',
+      numberText: '999.99K',
+      symbolText: r'$SHIT',
+      cardKey: const ValueKey('swap_review_trade_summary'),
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_review_receive_summary_amount',
+      numberText: '0.251',
+      symbolText: 'ZEC',
+      cardKey: const ValueKey('swap_review_trade_summary'),
+    );
+  });
+
+  testWidgets('review summary compacts long receive amount only', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _themeHarness(
+        _reviewTestPage(
+          direction: SwapDirection.zecToExternal,
+          sellAsset: SwapAsset.zec,
+          receiveAsset: _testShitAsset,
+          sellAmountText: '0.251 ZEC',
+          receiveAmountText: r'999,999.99 $SHIT',
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_review_trade_summary')),
+        matching: find.text(r'999,999.99 $SHIT'),
+      ),
+      findsNothing,
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_review_pay_summary_amount',
+      numberText: '0.251',
+      symbolText: 'ZEC',
+      cardKey: const ValueKey('swap_review_trade_summary'),
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_review_receive_summary_amount',
+      numberText: '999.99K',
+      symbolText: r'$SHIT',
+      cardKey: const ValueKey('swap_review_trade_summary'),
+    );
+  });
+
+  testWidgets('review summary compacts both long amounts', (tester) async {
+    await tester.pumpWidget(
+      _themeHarness(
+        _reviewTestPage(
+          direction: SwapDirection.externalToZec,
+          sellAsset: _testShitAsset,
+          receiveAsset: SwapAsset.zec,
+          sellAmountText: r'999,999.99 $SHIT',
+          receiveAmountText: '888,888.88 ZEC',
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    final reviewSummary = find.byKey(
+      const ValueKey('swap_review_trade_summary'),
+    );
+    expect(
+      find.descendant(
+        of: reviewSummary,
+        matching: find.text(r'999,999.99 $SHIT'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: reviewSummary, matching: find.text('888,888.88 ZEC')),
+      findsNothing,
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_review_pay_summary_amount',
+      numberText: '999.99K',
+      symbolText: r'$SHIT',
+      cardKey: const ValueKey('swap_review_trade_summary'),
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_review_receive_summary_amount',
+      numberText: '888.888K',
+      symbolText: 'ZEC',
+      cardKey: const ValueKey('swap_review_trade_summary'),
     );
   });
 
@@ -471,11 +599,27 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text(r'999K $SHIT'), findsOneWidget);
-    expect(find.text('0.251 ZEC'), findsOneWidget);
-    expect(find.text(r'999,999.99 $SHIT'), findsNothing);
-    _expectSummaryAmountFitsCard(tester, r'999K $SHIT');
-    _expectSummaryAmountFitsCard(tester, '0.251 ZEC');
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_status_summary_card')),
+        matching: find.text(r'999,999.99 $SHIT'),
+      ),
+      findsNothing,
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_status_pay_summary_amount',
+      numberText: '999K',
+      symbolText: r'$SHIT',
+      cardKey: const ValueKey('swap_status_summary_card'),
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_status_receive_summary_amount',
+      numberText: '0.251',
+      symbolText: 'ZEC',
+      cardKey: const ValueKey('swap_status_summary_card'),
+    );
   });
 
   testWidgets('status summary compacts long receive amount only', (
@@ -491,11 +635,27 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('0.251 ZEC'), findsOneWidget);
-    expect(find.text(r'999K $SHIT'), findsOneWidget);
-    expect(find.text(r'999,999.99 $SHIT'), findsNothing);
-    _expectSummaryAmountFitsCard(tester, '0.251 ZEC');
-    _expectSummaryAmountFitsCard(tester, r'999K $SHIT');
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('swap_status_summary_card')),
+        matching: find.text(r'999,999.99 $SHIT'),
+      ),
+      findsNothing,
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_status_pay_summary_amount',
+      numberText: '0.251',
+      symbolText: 'ZEC',
+      cardKey: const ValueKey('swap_status_summary_card'),
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_status_receive_summary_amount',
+      numberText: '999K',
+      symbolText: r'$SHIT',
+      cardKey: const ValueKey('swap_status_summary_card'),
+    );
   });
 
   testWidgets('status summary compacts both long card amounts', (tester) async {
@@ -509,12 +669,37 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text(r'999K $SHIT'), findsOneWidget);
-    expect(find.text('888K USDC'), findsOneWidget);
-    expect(find.text(r'999,999.99 $SHIT'), findsNothing);
-    expect(find.text('888,888.88 USDC'), findsNothing);
-    _expectSummaryAmountFitsCard(tester, r'999K $SHIT');
-    _expectSummaryAmountFitsCard(tester, '888K USDC');
+    final statusSummary = find.byKey(
+      const ValueKey('swap_status_summary_card'),
+    );
+    expect(
+      find.descendant(
+        of: statusSummary,
+        matching: find.text(r'999,999.99 $SHIT'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: statusSummary,
+        matching: find.text('888,888.88 USDC'),
+      ),
+      findsNothing,
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_status_pay_summary_amount',
+      numberText: '999K',
+      symbolText: r'$SHIT',
+      cardKey: const ValueKey('swap_status_summary_card'),
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_status_receive_summary_amount',
+      numberText: '888K',
+      symbolText: 'USDC',
+      cardKey: const ValueKey('swap_status_summary_card'),
+    );
   });
 
   testWidgets('status terminal cards match completed and failed variants', (
@@ -2614,8 +2799,20 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Current swap'), findsNothing);
-    expect(find.text('2.4000 ZEC'), findsOneWidget);
-    expect(find.text('168.42 USDC'), findsOneWidget);
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_status_pay_summary_amount',
+      numberText: '2.4000',
+      symbolText: 'ZEC',
+      cardKey: const ValueKey('swap_status_summary_card'),
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_status_receive_summary_amount',
+      numberText: '168.42',
+      symbolText: 'USDC',
+      cardKey: const ValueKey('swap_status_summary_card'),
+    );
     expect(
       find.byKey(const ValueKey('swap_activity_route_step_2_active')),
       findsOneWidget,
@@ -3038,8 +3235,20 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('0.7500 ZEC'), findsOneWidget);
-    expect(find.text('37.8 NEAR'), findsOneWidget);
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_status_pay_summary_amount',
+      numberText: '0.7500',
+      symbolText: 'ZEC',
+      cardKey: const ValueKey('swap_status_summary_card'),
+    );
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_status_receive_summary_amount',
+      numberText: '37.8',
+      symbolText: 'NEAR',
+      cardKey: const ValueKey('swap_status_summary_card'),
+    );
     expect(
       find.byKey(const ValueKey('swap_support_details_section')),
       findsNothing,
@@ -4166,7 +4375,13 @@ void main() {
       find.byKey(const ValueKey('swap_review_details_toggle')),
       findsNothing,
     );
-    expect(find.text('1.5000 ZEC'), findsWidgets);
+    _expectSummaryAmountPartsFitCard(
+      tester,
+      keyPrefix: 'swap_review_pay_summary_amount',
+      numberText: '1.5000',
+      symbolText: 'ZEC',
+      cardKey: const ValueKey('swap_review_trade_summary'),
+    );
     expect(find.text('Slippage tolerance'), findsOneWidget);
     expect(find.text('Guaranteed minimum'), findsOneWidget);
     expect(find.text('Swap fee'), findsOneWidget);
@@ -4483,9 +4698,12 @@ void main() {
       final reviewSummary = find.byKey(
         const ValueKey('swap_review_trade_summary'),
       );
-      expect(
-        find.descendant(of: reviewSummary, matching: find.text('1.6000 ZEC')),
-        findsOneWidget,
+      _expectSummaryAmountPartsFitCard(
+        tester,
+        keyPrefix: 'swap_review_pay_summary_amount',
+        numberText: '1.6000',
+        symbolText: 'ZEC',
+        cardKey: const ValueKey('swap_review_trade_summary'),
       );
       expect(
         find.descendant(of: reviewSummary, matching: find.text(r'$105.26')),
@@ -4538,7 +4756,11 @@ void main() {
       const ValueKey('swap_review_trade_summary'),
     );
     expect(
-      find.descendant(of: reviewSummary, matching: find.text('123.45 USDC')),
+      find.descendant(of: reviewSummary, matching: find.text('123.45')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: reviewSummary, matching: find.text('USDC')),
       findsOneWidget,
     );
     expect(
@@ -6373,28 +6595,94 @@ Widget _themeHarnessWithTheme(AppThemeData theme, Widget child) {
   );
 }
 
-void _expectSummaryAmountFitsCard(WidgetTester tester, String text) {
-  final finder = find.text(text);
-  expect(finder, findsOneWidget);
+final _testShitAsset = SwapAsset.live(
+  assetId: 'test-shit-sol',
+  symbol: r'$SHIT',
+  blockchain: 'sol',
+  decimals: 6,
+);
 
+void _expectSummaryAmountPartsFitCard(
+  WidgetTester tester, {
+  required String keyPrefix,
+  required String numberText,
+  required String symbolText,
+  required Key cardKey,
+}) {
+  final cardFinder = find.byKey(cardKey);
+  final numberFinder = find.descendant(
+    of: cardFinder,
+    matching: find.byKey(ValueKey('${keyPrefix}_number')),
+  );
+  final symbolFinder = find.descendant(
+    of: cardFinder,
+    matching: find.byKey(ValueKey('${keyPrefix}_symbol')),
+  );
+  expect(numberFinder, findsOneWidget);
+  expect(symbolFinder, findsOneWidget);
+  expect(tester.widget<Text>(numberFinder).data, numberText);
+  expect(tester.widget<Text>(symbolFinder).data, symbolText);
   expect(
-    find.ancestor(of: finder, matching: find.byType(FittedBox)),
+    find.ancestor(of: numberFinder, matching: find.byType(FittedBox)),
     findsOneWidget,
   );
 
-  final textRect = tester.getRect(finder);
-  final cardRect = tester.getRect(
-    find.byKey(const ValueKey('swap_status_summary_card')),
-  );
-  expect(
-    textRect.left,
-    greaterThanOrEqualTo(cardRect.left),
-    reason: '$text should stay inside the status summary card',
-  );
-  expect(
-    textRect.right,
-    lessThanOrEqualTo(cardRect.right),
-    reason: '$text should stay inside the status summary card',
+  final cardRect = tester.getRect(cardFinder);
+  for (final finder in [numberFinder, symbolFinder]) {
+    final rect = tester.getRect(finder);
+    expect(
+      rect.left,
+      greaterThanOrEqualTo(cardRect.left),
+      reason: '$keyPrefix should stay inside the summary card',
+    );
+    expect(
+      rect.right,
+      lessThanOrEqualTo(cardRect.right),
+      reason: '$keyPrefix should stay inside the summary card',
+    );
+  }
+}
+
+Widget _reviewTestPage({
+  required SwapDirection direction,
+  required SwapAsset sellAsset,
+  required SwapAsset receiveAsset,
+  required String sellAmountText,
+  required String receiveAmountText,
+}) {
+  final externalAsset = direction.sendsZec ? receiveAsset : sellAsset;
+  return SwapReviewPageContent(
+    quote: SwapQuote(
+      direction: direction,
+      sellAsset: sellAsset,
+      receiveAsset: receiveAsset,
+      externalAsset: externalAsset,
+      sellAmount: 1,
+      receiveAmount: 1,
+      minimumReceiveAmount: 1,
+      providerLabel: 'NEAR Intents',
+      feeLabel: 'Included in shown rate',
+      expiryLabel: '2hrs',
+      depositInstruction: SwapDepositInstruction(
+        asset: sellAsset,
+        address: 't1testdepositaddress',
+        expiresInLabel: '2hrs',
+        reuseWarning: 'Do not reuse this address',
+      ),
+      sellAmountTextOverride: sellAmountText,
+      receiveEstimateTextOverride: receiveAmountText,
+      minimumReceiveTextOverride: receiveAmountText,
+    ),
+    addressPlan: SwapAddressPlan.fromUserInput(
+      direction: direction,
+      externalAsset: externalAsset,
+      userExternalAddress: '0xrecipient',
+      walletZecAddress: 'u1wallet',
+    ),
+    accountLabel: 'John',
+    expired: false,
+    amountWarning: null,
+    startError: null,
   );
 }
 

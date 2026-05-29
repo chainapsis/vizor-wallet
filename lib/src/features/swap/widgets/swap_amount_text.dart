@@ -1,5 +1,5 @@
 const swapDisplayMaxFractionDigits = 6;
-const _swapReviewSummaryMaxChars = 13;
+const swapReviewSummaryMaxChars = 13;
 
 String compactSwapAmountText(
   String value, {
@@ -32,7 +32,7 @@ String compactSwapAmountText(
 }
 
 bool isLongSwapSummaryAmountText(String value) {
-  return compactSwapAmountText(value).length > _swapReviewSummaryMaxChars;
+  return compactSwapAmountText(value).length > swapReviewSummaryMaxChars;
 }
 
 String compactSwapSummaryAmountText(
