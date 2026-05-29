@@ -7,8 +7,8 @@ const swapGenericMinimumReceiveTooltip =
     'You may get more, never less.';
 
 const swapFeeTooltip =
-    'Fee for us and the route providers to process this swap. '
-    'Already included in the rate shown above.';
+    "Covers our fee and the route providers' costs to process this swap. "
+    'Already included in the rate above.';
 
 const swapTotalFeesTooltip = swapFeeTooltip;
 

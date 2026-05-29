@@ -85,7 +85,7 @@ class SwapReviewPageContent extends StatelessWidget {
           if (expired) ...[
             const SizedBox(height: AppSpacing.xs),
             const _ReviewNotice(
-              message: 'Quote expired. Review again for a fresh route.',
+              message: 'Quote expired. Review again for an updated rate.',
             ),
           ],
           if (startError != null) ...[
@@ -181,10 +181,10 @@ class SwapReviewPageActions extends StatelessWidget {
     final primaryLabel = expired
         ? 'Review again'
         : startBlockedReason != null
-        ? 'Insufficient ZEC'
+        ? 'Not enough ZEC'
         : starting
         ? startingLabel
-        : 'Review & swap';
+        : 'Confirm swap';
     final showPrimaryArrow =
         !expired && !starting && startBlockedReason == null;
     return SizedBox(
@@ -613,19 +613,24 @@ class _ReviewNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final textStyle = AppTypography.bodySmall.copyWith(
+      color: colors.text.destructive,
+    );
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AppIcon(AppIcons.warning, size: 16, color: colors.icon.destructive),
-        const SizedBox(width: AppSpacing.xs),
-        Expanded(
-          child: Text(
-            message,
-            style: AppTypography.bodySmall.copyWith(
-              color: colors.text.destructive,
+        SizedBox(
+          height: textStyle.fontSize! * textStyle.height!,
+          child: Center(
+            child: AppIcon(
+              AppIcons.warning,
+              size: 16,
+              color: colors.icon.destructive,
             ),
           ),
         ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(child: Text(message, style: textStyle)),
       ],
     );
   }

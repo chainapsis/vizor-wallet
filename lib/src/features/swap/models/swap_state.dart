@@ -217,7 +217,7 @@ class SwapState {
       absoluteDelta >= 0.1 ? 0 : 1,
     );
     final directionLabel = delta < 0 ? 'lower' : 'higher';
-    return 'Live quote is $percent% $directionLabel than the latest estimate. Check the minimum receive before starting.';
+    return 'Live quote is $percent% $directionLabel than the earlier estimate. Check the guaranteed minimum before you continue.';
   }
 
   List<SwapDetailField> get draftExposure {

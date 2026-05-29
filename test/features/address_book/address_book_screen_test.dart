@@ -27,13 +27,13 @@ void main() {
     await tester.pump();
 
     expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.text("It's empty here..."), findsOneWidget);
+    expect(find.text('No contacts yet'), findsOneWidget);
 
     repo.complete(const []);
     await tester.pumpAndSettle();
 
     expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.text("It's empty here..."), findsOneWidget);
+    expect(find.text('No contacts yet'), findsOneWidget);
   });
 
   testWidgets('renders empty state and creates a contact from the form', (
@@ -45,7 +45,7 @@ void main() {
     await tester.pumpWidget(_addressBookHarness(repo));
     await tester.pumpAndSettle();
 
-    expect(find.text("It's empty here..."), findsOneWidget);
+    expect(find.text('No contacts yet'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('address_book_add_contact_button')),
@@ -68,7 +68,7 @@ void main() {
     expect(repo.contacts, hasLength(1));
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('u1alice'), findsOneWidget);
-    expect(find.text("It's empty here..."), findsNothing);
+    expect(find.text('No contacts yet'), findsNothing);
   });
 
   testWidgets('edit contact label x clears the draft label', (tester) async {
@@ -122,7 +122,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('No contacts were found'), findsOneWidget);
+    expect(find.text('No contacts found'), findsOneWidget);
     expect(find.text('Mike'), findsNothing);
   });
 
@@ -143,7 +143,9 @@ void main() {
     await tester.pumpAndSettle();
 
     AppButton updateButton() {
-      return tester.widget<AppButton>(find.widgetWithText(AppButton, 'Update'));
+      return tester.widget<AppButton>(
+        find.widgetWithText(AppButton, 'Use this picture'),
+      );
     }
 
     expect(updateButton().onPressed, isNull);

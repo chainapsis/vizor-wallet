@@ -138,7 +138,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     );
     final startBlockedReason =
         _reviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
-        ? 'Required pay exceeds available ZEC. Review a smaller target amount.'
+        ? "You don't have enough ZEC for this swap. Try a smaller amount."
         : null;
 
     return AppDesktopShell(

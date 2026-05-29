@@ -158,7 +158,7 @@ class _AddressBookContactPickerModalState
                 ),
               ),
               error: (_, _) => const _ContactPickerEmptyResult(
-                title: "Couldn't load contacts",
+                title: "Couldn't load contacts. Try again.",
               ),
               data: (state) {
                 final contacts = _filteredContacts(state);

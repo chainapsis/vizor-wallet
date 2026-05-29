@@ -599,7 +599,7 @@ class _SwapReviewFooter extends StatelessWidget {
     final label = needsDestinationAddress
         ? _destinationAddressActionLabel(state)
         : balanceExceeded
-        ? 'Insufficient ZEC'
+        ? 'Not enough ZEC'
         : state.quoteLoading
         ? 'Getting quote'
         : 'Get a quote';

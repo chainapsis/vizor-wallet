@@ -279,7 +279,7 @@ class _AddressBookPane extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    'Contacts',
+                    'Address book',
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.accent,
@@ -528,7 +528,7 @@ class _AddressBookNoContacts extends StatelessWidget {
                     child: Column(
                       children: [
                         Text(
-                          "It's empty here...",
+                          'No contacts yet',
                           textAlign: TextAlign.center,
                           style: AppTypography.headlineSmall.copyWith(
                             color: context.colors.text.accent,
@@ -536,7 +536,7 @@ class _AddressBookNoContacts extends StatelessWidget {
                         ),
                         const SizedBox(height: AppSpacing.xxs),
                         Text(
-                          'How about adding your first Contact?',
+                          'Add your first contact to get started.',
                           textAlign: TextAlign.center,
                           style: AppTypography.bodyMedium.copyWith(
                             color: context.colors.text.secondary,
@@ -807,7 +807,7 @@ class _EmptySearchResult extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    'No contacts were found',
+                    'No contacts found',
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineSmall.copyWith(
                       color: context.colors.text.accent,
@@ -815,7 +815,7 @@ class _EmptySearchResult extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xxs),
                   Text(
-                    'Try to modify your search',
+                    'Try a different search',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.secondary,
@@ -875,10 +875,10 @@ class _ContactFormModal extends StatelessWidget {
           SizedBox(
             height: _isEdit ? 66 : 86,
             child: AppTextField(
-              label: 'Address label',
+              label: 'Label',
               showLabel: !_isEdit,
               initialValue: _isEdit ? 'Mike' : null,
-              hintText: 'Add label 1-20 characters',
+              hintText: 'Add a label (1-20 characters)',
               trailing: _isEdit ? const AppIcon(AppIcons.cross) : null,
               trailingSlotWidth: 40,
               inputHorizontalPadding: AppSpacing.s,
@@ -893,7 +893,7 @@ class _ContactFormModal extends StatelessWidget {
               label: 'Address',
               showLabel: false,
               initialValue: _isEdit ? 'u1x12adas3l512...31235129812' : null,
-              hintText: 'Add Address',
+              hintText: 'Add address',
               trailing: const AppIcon(AppIcons.qr),
               trailingSlotWidth: 40,
               inputHorizontalPadding: AppSpacing.s,
@@ -976,7 +976,7 @@ class _ChainAddressSelector extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(left: AppSpacing.xxs),
               child: Text(
-                'Chain & Address',
+                'Chain & address',
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -1034,7 +1034,7 @@ class _ContactAvatarPickerModal extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'New Contact',
+            'New contact',
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
               color: context.colors.text.accent,
@@ -1070,7 +1070,7 @@ class _ContactAvatarPickerModal extends StatelessWidget {
             onPressed: null,
             variant: AppButtonVariant.primary,
             minWidth: 280,
-            child: Text('Update'),
+            child: Text('Use this picture'),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(

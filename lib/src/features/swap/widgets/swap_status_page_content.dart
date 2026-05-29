@@ -489,7 +489,7 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final label = switch (kind) {
-      SwapStatusBadgeKind.liveQuote => 'Live Quote',
+      SwapStatusBadgeKind.liveQuote => 'In progress',
       SwapStatusBadgeKind.completed => 'Completed',
       SwapStatusBadgeKind.failed => 'Failed',
     };

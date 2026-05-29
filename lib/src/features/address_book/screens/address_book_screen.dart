@@ -186,7 +186,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
       _closeModal();
     } catch (_) {
       if (!mounted) return;
-      setState(() => _submitError = "Couldn't save contact.");
+      setState(() => _submitError = "Couldn't save contact. Try again.");
     }
   }
 
@@ -199,7 +199,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
       _closeModal();
     } catch (_) {
       if (!mounted) return;
-      setState(() => _submitError = "Couldn't remove contact.");
+      setState(() => _submitError = "Couldn't remove contact. Try again.");
     }
   }
 
@@ -249,7 +249,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
                 loading: () => buildPane(
                   contactsAsync.asData?.value ?? const AddressBookState(),
                 ),
-                error: (error, _) => _AddressBookError(error: error),
+                error: (_, _) => const _AddressBookError(),
                 data: buildPane,
               ),
             ),
@@ -398,7 +398,7 @@ class _AddressBookPane extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    'Contacts',
+                    'Address book',
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineLarge.copyWith(
                       color: colors.text.accent,
@@ -535,7 +535,7 @@ class _AddressBookSearchFieldState extends State<_AddressBookSearchField> {
       showLabel: false,
       controller: _controller,
       focusNode: _focusNode,
-      hintText: 'Search for an address or label ...',
+      hintText: 'Search name or address',
       leading: const AppIcon(AppIcons.search),
       leadingSlotWidth: 40,
       trailingSlotWidth: 40,
@@ -967,7 +967,7 @@ class _AddressBookNoContacts extends StatelessWidget {
                     child: Column(
                       children: [
                         Text(
-                          "It's empty here...",
+                          'No contacts yet',
                           textAlign: TextAlign.center,
                           style: AppTypography.headlineSmall.copyWith(
                             color: context.colors.text.accent,
@@ -975,7 +975,7 @@ class _AddressBookNoContacts extends StatelessWidget {
                         ),
                         const SizedBox(height: AppSpacing.xxs),
                         Text(
-                          'How about adding your first Contact?',
+                          'Add your first contact to get started.',
                           textAlign: TextAlign.center,
                           style: AppTypography.bodyMedium.copyWith(
                             color: context.colors.text.secondary,
@@ -1026,7 +1026,7 @@ class _EmptySearchResult extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    'No contacts were found',
+                    'No contacts found',
                     textAlign: TextAlign.center,
                     style: AppTypography.headlineSmall.copyWith(
                       color: context.colors.text.accent,
@@ -1034,7 +1034,7 @@ class _EmptySearchResult extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xxs),
                   Text(
-                    'Try to modify your search',
+                    'Try a different search',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.secondary,
@@ -1161,10 +1161,10 @@ class _ContactFormModalState extends State<_ContactFormModal> {
             height: widget.editing ? 66 : 86,
             child: AppTextField(
               key: const ValueKey('address_book_contact_label_field'),
-              label: 'Address label',
+              label: 'Label',
               showLabel: !widget.editing,
               controller: _labelController,
-              hintText: 'Add label 1-20 characters',
+              hintText: 'Add a label (1-20 characters)',
               trailing: widget.editing
                   ? _IconButtonLike(
                       semanticLabel: 'Clear contact label',
@@ -1196,7 +1196,7 @@ class _ContactFormModalState extends State<_ContactFormModal> {
               label: 'Address',
               showLabel: false,
               controller: _addressController,
-              hintText: 'Add Address',
+              hintText: 'Add address',
               trailing: _IconButtonLike(
                 semanticLabel: 'Scan address QR',
                 onTap: widget.onScanAddress,
@@ -1303,7 +1303,7 @@ class _ChainAddressSelector extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.only(left: AppSpacing.xxs),
               child: Text(
-                'Chain & Address',
+                'Chain & address',
                 style: AppTypography.labelMedium.copyWith(
                   color: colors.text.secondary,
                 ),
@@ -1399,7 +1399,7 @@ class _ContactAvatarPickerModalState extends State<_ContactAvatarPickerModal> {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'New Contact',
+            'New contact',
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyLarge.copyWith(
               color: context.colors.text.accent,
@@ -1438,7 +1438,7 @@ class _ContactAvatarPickerModalState extends State<_ContactAvatarPickerModal> {
             onPressed: hasChanged ? () => widget.onSelected(selected.id) : null,
             variant: AppButtonVariant.primary,
             minWidth: 280,
-            child: const Text('Update'),
+            child: const Text('Use this picture'),
           ),
           const SizedBox(height: AppSpacing.s),
           AppButton(
@@ -1856,17 +1856,14 @@ class _IconButtonLike extends StatelessWidget {
 }
 
 class _AddressBookError extends StatelessWidget {
-  const _AddressBookError({required this.error});
-
-  final Object error;
+  const _AddressBookError();
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Text(
         "Couldn't load your address book. "
-        'Try again, or contact support if this keeps happening.\n\n'
-        'Details: $error',
+        'Try again, or contact support if this keeps happening.',
         textAlign: TextAlign.center,
         style: AppTypography.bodyMedium.copyWith(
           color: context.colors.text.destructive,
