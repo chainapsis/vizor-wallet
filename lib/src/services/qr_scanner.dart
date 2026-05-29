@@ -51,26 +51,6 @@ class QrScanner {
   }
 }
 
-MobileScannerCameraInfo? preferredQrScannerCamera(
-  List<MobileScannerCameraInfo> cameras, {
-  String? preferredCameraId,
-}) {
-  if (cameras.isEmpty) return null;
-
-  final trimmedPreferredCameraId = preferredCameraId?.trim();
-  if (trimmedPreferredCameraId != null && trimmedPreferredCameraId.isNotEmpty) {
-    for (final camera in cameras) {
-      if (camera.id == trimmedPreferredCameraId) return camera;
-    }
-  }
-
-  for (final camera in cameras) {
-    if (camera.isDefault) return camera;
-  }
-
-  return cameras.first;
-}
-
 class ScanResult {
   final String urType;
   final List<int> data;
