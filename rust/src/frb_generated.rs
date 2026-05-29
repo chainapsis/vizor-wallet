@@ -522,45 +522,6 @@ fn wire__crate__api__voting__clear_recovery_state_impl(
         },
     )
 }
-fn wire__crate__api__voting__compute_share_nullifier_hex_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "compute_share_nullifier_hex",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_vote_commitment = <Vec<u8>>::sse_decode(&mut deserializer);
-            let api_share_index = <u32>::sse_decode(&mut deserializer);
-            let api_primary_blind = <Vec<u8>>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::voting::compute_share_nullifier_hex(
-                        api_vote_commitment,
-                        api_share_index,
-                        api_primary_blind,
-                    )?;
-                    Ok(output_ok)
-                })())
-            }
-        },
-    )
-}
 fn wire__crate__api__sync__create_pczt_from_proposal_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3574,7 +3535,6 @@ fn wire__crate__api__voting__record_share_delegation_impl(
             let api_proposal_id = <u32>::sse_decode(&mut deserializer);
             let api_share_index = <u32>::sse_decode(&mut deserializer);
             let api_sent_to_urls = <Vec<String>>::sse_decode(&mut deserializer);
-            let api_nullifier = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_submit_at = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -3587,7 +3547,6 @@ fn wire__crate__api__voting__record_share_delegation_impl(
                         api_proposal_id,
                         api_share_index,
                         api_sent_to_urls,
-                        api_nullifier,
                         api_submit_at,
                     )?;
                     Ok(output_ok)
@@ -6345,7 +6304,6 @@ fn pde_ffi_dispatcher_primary_impl(
 8 => wire__crate__api__voting__build_vote_commitments_impl(port, ptr, rust_vec_len, data_len),
 9 => wire__crate__api__voting__build_vote_commitments_with_progress_impl(port, ptr, rust_vec_len, data_len),
 11 => wire__crate__api__voting__clear_recovery_state_impl(port, ptr, rust_vec_len, data_len),
-12 => wire__crate__api__voting__compute_share_nullifier_hex_impl(port, ptr, rust_vec_len, data_len),
 13 => wire__crate__api__sync__create_pczt_from_proposal_impl(port, ptr, rust_vec_len, data_len),
 14 => wire__crate__api__sync__create_shield_transparent_pczt_impl(port, ptr, rust_vec_len, data_len),
 15 => wire__crate__api__wallet__create_wallet_impl(port, ptr, rust_vec_len, data_len),

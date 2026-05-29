@@ -3850,7 +3850,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree"
 version = "0.3.1"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=9f343a1dcd67c8dd330adfc2b4ebfbee1fb977dd#9f343a1dcd67c8dd330adfc2b4ebfbee1fb977dd"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=b4a845060ee15999b73e04fbe91e5c272621d440#b4a845060ee15999b73e04fbe91e5c272621d440"
 dependencies = [
  "anyhow",
  "ff",
@@ -3866,7 +3866,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.5.1"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=9f343a1dcd67c8dd330adfc2b4ebfbee1fb977dd#9f343a1dcd67c8dd330adfc2b4ebfbee1fb977dd"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=b4a845060ee15999b73e04fbe91e5c272621d440#b4a845060ee15999b73e04fbe91e5c272621d440"
 dependencies = [
  "base64",
  "ff",
@@ -3875,7 +3875,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting.git?rev=9f343a1dcd67c8dd330adfc2b4ebfbee1fb977dd)",
+ "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting.git?rev=b4a845060ee15999b73e04fbe91e5c272621d440)",
 ]
 
 [[package]]
@@ -4587,7 +4587,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "0.10.1"
-source = "git+https://github.com/valargroup/zcash_voting.git?rev=9f343a1dcd67c8dd330adfc2b4ebfbee1fb977dd#9f343a1dcd67c8dd330adfc2b4ebfbee1fb977dd"
+source = "git+https://github.com/valargroup/zcash_voting.git?rev=b4a845060ee15999b73e04fbe91e5c272621d440#b4a845060ee15999b73e04fbe91e5c272621d440"
 dependencies = [
  "anyhow",
  "blake2b_simd",
@@ -4623,7 +4623,7 @@ dependencies = [
  "uuid",
  "valar-spiral-rs",
  "valar-ypir",
- "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting.git?rev=9f343a1dcd67c8dd330adfc2b4ebfbee1fb977dd)",
+ "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting.git?rev=b4a845060ee15999b73e04fbe91e5c272621d440)",
  "vote-commitment-tree-client",
  "voting-circuits",
  "zcash_client_backend",

@@ -586,19 +586,6 @@ Future<List<ApiVoteRecord>> getVotes({
   roundId: roundId,
 );
 
-/// Compute the deterministic share nullifier as lowercase 64-character hex.
-///
-/// The helper validates the commitment and blind lengths through `zcash_voting`.
-Future<String> computeShareNullifierHex({
-  required List<int> voteCommitment,
-  required int shareIndex,
-  required List<int> primaryBlind,
-}) => RustLib.instance.api.crateApiVotingComputeShareNullifierHex(
-  voteCommitment: voteCommitment,
-  shareIndex: shareIndex,
-  primaryBlind: primaryBlind,
-);
-
 /// Load the full recovery/share-tracking summary for one voting round.
 Future<ApiRoundRecoveryState> getRoundRecoveryState({
   required String dbPath,
@@ -685,7 +672,6 @@ Future<void> recordShareDelegation({
   required int proposalId,
   required int shareIndex,
   required List<String> sentToUrls,
-  required List<int> nullifier,
   required BigInt submitAt,
 }) => RustLib.instance.api.crateApiVotingRecordShareDelegation(
   dbPath: dbPath,
@@ -695,7 +681,6 @@ Future<void> recordShareDelegation({
   proposalId: proposalId,
   shareIndex: shareIndex,
   sentToUrls: sentToUrls,
-  nullifier: nullifier,
   submitAt: submitAt,
 );
 

@@ -343,32 +343,6 @@ pub fn get_votes(
         .map_err(|e| format!("get_votes failed: {e}"))
 }
 
-/// Compute a deterministic share nullifier and return it as 64-character hex.
-///
-/// Used by recovery/share-tracking callers to identify delegated shares without
-/// exposing share plaintext.
-pub fn compute_share_nullifier_hex(
-    vote_commitment: &[u8],
-    share_index: u32,
-    primary_blind: &[u8],
-) -> Result<String, String> {
-    let vote_commitment: [u8; 32] = vote_commitment.try_into().map_err(|_| {
-        format!(
-            "vote_commitment must be 32 bytes, got {}",
-            vote_commitment.len()
-        )
-    })?;
-    let primary_blind: [u8; 32] = primary_blind.try_into().map_err(|_| {
-        format!(
-            "primary_blind must be 32 bytes, got {}",
-            primary_blind.len()
-        )
-    })?;
-    zcash_voting::share::compute_nullifier(&vote_commitment, share_index, &primary_blind)
-        .map(hex::encode)
-        .map_err(|e| format!("compute_share_nullifier failed: {e}"))
-}
-
 fn validate_draft_votes(draft_votes: &[DraftVote]) -> Result<(), String> {
     if draft_votes.is_empty() {
         return Err("draft_votes must not be empty".to_string());
@@ -723,11 +697,18 @@ mod tests {
         let stored_vote_commitment = stored.vote_commitment;
         let stored_primary_blind = stored_payload.primary_blind.clone();
         let stored_share_index = stored_payload.enc_share.share_index;
-        let expected_nullifier = compute_share_nullifier_hex(
-            &commitment.vote_commitment,
+        let expected_vote_commitment: [u8; 32] =
+            commitment.vote_commitment.as_slice().try_into().unwrap();
+        let expected_primary_blind: [u8; 32] =
+            payloads[0].primary_blind.as_slice().try_into().unwrap();
+        let stored_primary_blind_array: [u8; 32] =
+            stored_primary_blind.as_slice().try_into().unwrap();
+        let expected_nullifier = zcash_voting::share::compute_nullifier(
+            &expected_vote_commitment,
             payloads[0].enc_share.share_index,
-            &payloads[0].primary_blind,
+            &expected_primary_blind,
         )
+        .map(hex::encode)
         .unwrap();
 
         assert_eq!(stored_payload.tree_position, 42);
@@ -736,29 +717,14 @@ mod tests {
             payloads[0].all_enc_shares.len()
         );
         assert_eq!(
-            compute_share_nullifier_hex(
+            zcash_voting::share::compute_nullifier(
                 &stored_vote_commitment,
                 stored_share_index,
-                &stored_primary_blind
+                &stored_primary_blind_array
             )
+            .map(hex::encode)
             .unwrap(),
             expected_nullifier
-        );
-    }
-
-    #[test]
-    fn compute_share_nullifier_hex_matches_swift_sdk_fixture() {
-        let nullifier = compute_share_nullifier_hex(&[1; 32], 5, &[2; 32]).unwrap();
-
-        assert_eq!(nullifier.len(), 64);
-        assert!(nullifier.chars().all(|ch| ch.is_ascii_hexdigit()));
-        assert_eq!(
-            nullifier,
-            "8d6d97caa19a20e5e67e7cc24aaaa7beb72b4a513863f6adbe7b62ba1b1b0010"
-        );
-        assert_eq!(
-            nullifier,
-            compute_share_nullifier_hex(&[1; 32], 5, &[2; 32]).unwrap()
         );
     }
 

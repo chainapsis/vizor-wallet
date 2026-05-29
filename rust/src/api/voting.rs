@@ -1407,17 +1407,6 @@ pub fn get_votes(
     catch(|| vote::get_votes(&db_path, &wallet_id, &round_id))
 }
 
-/// Compute the deterministic share nullifier as lowercase 64-character hex.
-///
-/// The helper validates the commitment and blind lengths through `zcash_voting`.
-pub fn compute_share_nullifier_hex(
-    vote_commitment: Vec<u8>,
-    share_index: u32,
-    primary_blind: Vec<u8>,
-) -> Result<String, String> {
-    catch(|| vote::compute_share_nullifier_hex(&vote_commitment, share_index, &primary_blind))
-}
-
 /// Load the full recovery/share-tracking summary for one voting round.
 pub fn get_round_recovery_state(
     db_path: String,
@@ -1505,7 +1494,6 @@ pub fn record_share_delegation(
     proposal_id: u32,
     share_index: u32,
     sent_to_urls: Vec<String>,
-    _nullifier: Vec<u8>,
     submit_at: u64,
 ) -> Result<(), String> {
     catch(|| {
@@ -2415,18 +2403,6 @@ mod tests {
     }
 
     #[test]
-    fn compute_share_nullifier_hex_api_returns_hex() {
-        let nullifier = compute_share_nullifier_hex(vec![1; 32], 3, vec![2; 32]).unwrap();
-
-        assert_eq!(nullifier.len(), 64);
-        assert!(nullifier.chars().all(|ch| ch.is_ascii_hexdigit()));
-        assert_eq!(
-            nullifier,
-            "79d3c56235a9ba06ec95ce8e6d3c264a9b3d14777240c8e1e6a76ca4f885e51d"
-        );
-    }
-
-    #[test]
     fn build_vote_commitments_rejects_invalid_network_before_db_work() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
@@ -2584,7 +2560,6 @@ mod tests {
             2,
             0,
             vec!["https://helper.example".to_string()],
-            vec![7; 32],
             123,
         )
         .unwrap();

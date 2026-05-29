@@ -994,7 +994,6 @@ class FrbVotingRustApi implements VotingRustApi {
       proposalId: proposalId,
       shareIndex: shareIndex,
       sentToUrls: sentToUrls,
-      nullifier: const [],
       submitAt: submitAt,
     );
   }
