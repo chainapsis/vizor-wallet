@@ -1,8 +1,8 @@
 use std::sync::OnceLock;
 
-use zcash_voting::storage::VotingDb;
+use zcash_voting::{storage::VotingDb, validate_bundle_index};
 
-use super::{bundle::validate_bundle_index, state};
+use super::state;
 
 /// FRB-friendly representation of a Vote Authority Note Merkle witness.
 ///
@@ -89,14 +89,7 @@ pub fn generate_van_witness(
         anchor_height
     );
     let db = state::open_voting_db(db_path, wallet_id)?;
-    let witness = generate_van_witness_with_db(
-        db_path,
-        wallet_id,
-        &db,
-        round_id,
-        bundle_index,
-        anchor_height,
-    )?;
+    let witness = generate_van_witness_with_db(&db, round_id, bundle_index, anchor_height)?;
     log::info!(
         "voting tree: VAN witness completed \
          (round_id={}, wallet_id={}, bundle_index={}, position={}, elapsed={:.2}s)",
@@ -115,8 +108,6 @@ pub fn generate_van_witness(
 /// underlying `VoteTreeSync` requires its in-memory `TreeClient` to have synced
 /// the round before witnesses can be produced.
 pub fn generate_van_witness_with_db(
-    _db_path: &str,
-    _wallet_id: &str,
     voting_db: &VotingDb,
     round_id: &str,
     bundle_index: u32,
@@ -126,7 +117,7 @@ pub fn generate_van_witness_with_db(
     let bundle_count = voting_db
         .get_bundle_count(round_id)
         .map_err(|e| format!("get_bundle_count failed: {e}"))?;
-    validate_bundle_index(bundle_count, bundle_index, "voting")?;
+    validate_bundle_index(bundle_count, bundle_index, "voting").map_err(|e| e.to_string())?;
     zcash_voting::precompute::van_witness(voting_db, round_id, bundle_index, anchor_height)
         .map(|witness| VanWitness {
             auth_path: witness.auth_path.iter().map(|h| h.to_vec()).collect(),

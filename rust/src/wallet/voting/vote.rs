@@ -1,10 +1,10 @@
 use crate::wallet::network::WalletNetwork;
 
 use secrecy::{ExposeSecret, SecretVec};
+use zcash_voting::validate_bundle_index;
 
 use super::{
-    bundle::validate_bundle_index, progress::VotingWorkCancellation, state::open_voting_db,
-    tree_sync::VanWitness, voting_network,
+    progress::VotingWorkCancellation, state::open_voting_db, tree_sync::VanWitness, voting_network,
 };
 
 const VAN_AUTH_PATH_LEN: usize = 24;
@@ -102,7 +102,7 @@ where
     let bundle_count = voting_db
         .get_bundle_count(round_id)
         .map_err(|e| format!("get_bundle_count failed: {e}"))?;
-    validate_bundle_index(bundle_count, bundle_index, "voting")?;
+    validate_bundle_index(bundle_count, bundle_index, "voting").map_err(|e| e.to_string())?;
     let van_auth_path = van_auth_path_array(&van_witness)?;
     let mut commitments = Vec::with_capacity(draft_votes.len());
 
@@ -613,11 +613,43 @@ mod tests {
         .unwrap();
         let json = commitment_bundle_recovery_json(&commitment, &payloads, &[0x99; 64]).unwrap();
 
-        workflow::store_signed_vote_commitment(&db, "round-1", 0, 1, &json).unwrap();
-        db.store_commitment_bundle("round-1", 0, 1, &json, 42)
-            .unwrap();
-        let (stored_json, stored_position) =
+        let conn = db.conn();
+        conn.execute(
+            "UPDATE votes SET commitment_bundle_json = :json, vc_tree_position = :pos
+             WHERE round_id = :round_id AND wallet_id = :wallet_id
+               AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+            rusqlite::named_params! {
+                ":json": json,
+                ":pos": 42i64,
+                ":round_id": "round-1",
+                ":wallet_id": "wallet-1",
+                ":bundle_index": 0i64,
+                ":proposal_id": 1i64,
+            },
+        )
+        .unwrap();
+        drop(conn);
+        let (commitment_bundle_json, vc_tree_position) =
             db.get_commitment_bundle("round-1", 0, 1).unwrap().unwrap();
+        assert_eq!(commitment_bundle_json, json);
+        assert_eq!(vc_tree_position, 42);
+
+        let conn = db.conn();
+        let stored_json: String = conn
+            .query_row(
+                "SELECT commitment_bundle_json FROM votes
+                 WHERE round_id = :round_id AND wallet_id = :wallet_id
+                 AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+                rusqlite::named_params! {
+                    ":round_id": "round-1",
+                    ":wallet_id": "wallet-1",
+                    ":bundle_index": 0i64,
+                    ":proposal_id": 1i64,
+                },
+                |row| row.get(0),
+            )
+            .unwrap();
+        drop(conn);
         let stored = zcash_voting::vote::parse_recovery(&stored_json).unwrap();
         let stored_payload = zcash_voting::share::recover_payload(&stored, 0).unwrap();
         let stored_vote_commitment = stored.vote_commitment;
@@ -637,7 +669,6 @@ mod tests {
         .map(hex::encode)
         .unwrap();
 
-        assert_eq!(stored_position, 42);
         assert_eq!(stored_payload.tree_position, 42);
         assert_eq!(
             stored_payload.all_enc_shares.len(),

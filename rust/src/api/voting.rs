@@ -4,7 +4,6 @@ use crate::frb_generated::StreamSink;
 use crate::wallet::{
     keys,
     voting::{
-        bundle::{self, SelectedNotes},
         delegation,
         delegation::DelegationProgress,
         hotkey,
@@ -17,6 +16,7 @@ use crate::wallet::{
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use rand::{rngs::OsRng, RngCore};
 use secrecy::ExposeSecret;
+use zcash_voting::{voting_power, NoteRef, SelectedNotes};
 
 /// FRB-safe voting round parameters loaded from the coordinator/session.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -404,8 +404,8 @@ impl From<ApiVotingRoundParams> for zcash_voting::VotingRoundParams {
     }
 }
 
-impl From<bundle::NoteRef> for ApiVotingNoteRef {
-    fn from(note: bundle::NoteRef) -> Self {
+impl From<NoteRef> for ApiVotingNoteRef {
+    fn from(note: NoteRef) -> Self {
         Self {
             pool: note.pool,
             txid_hex: note.txid_hex,
@@ -812,14 +812,16 @@ pub async fn select_voting_notes(
     snapshot_height: u64,
 ) -> Result<ApiVotingNoteSelectionResult, String> {
     let network = keys::parse_network(&network)?;
-    let selected = bundle::select_notes_with_lwd(
+    let voting_db = state::open_voting_db(&db_path, &account_uuid)?;
+    let selected = zcash_voting::select_notes_with_lwd(
+        &voting_db,
         &db_path,
         &lightwalletd_url,
-        network,
-        &account_uuid,
+        crate::wallet::voting::voting_network(network),
         snapshot_height,
     )
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
     selection_result(selected)
 }
 
@@ -830,7 +832,7 @@ fn selection_result(selected: SelectedNotes) -> Result<ApiVotingNoteSelectionRes
             selected.notes.len()
         )
     })?;
-    let eligible_weight_zatoshi = bundle::voting_power(&selected);
+    let eligible_weight_zatoshi = voting_power(&selected);
     let snapshot_height = selected.snapshot_height;
     let anchor_height = selected.anchor_tree_state.height;
     let notes = selected.notes.into_iter().map(Into::into).collect();
@@ -857,15 +859,15 @@ pub async fn setup_delegation_bundles(
     session_json: Option<String>,
     account_uuid: String,
 ) -> Result<ApiVotingBundleSetupResult, String> {
-    let network = keys::parse_network(&network)?;
+    let voting_db = state::open_voting_db(&db_path, &account_uuid)?;
     delegation::setup_delegation_bundles(
+        &voting_db,
         &db_path,
         &lightwalletd_url,
-        network,
+        &network,
         round_params.into(),
         &round_name,
         session_json.as_deref(),
-        &account_uuid,
     )
     .await
     .map(Into::into)
@@ -2868,8 +2870,8 @@ mod tests {
         value_zatoshi: u64,
         voting_weight_zatoshi: u64,
         commitment_tree_position: u64,
-    ) -> bundle::NoteRef {
-        bundle::NoteRef {
+    ) -> NoteRef {
+        NoteRef {
             pool: "orchard".to_string(),
             txid_hex: hex::encode([commitment_tree_position as u8; 32]),
             output_index: commitment_tree_position as u32,

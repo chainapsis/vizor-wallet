@@ -5,12 +5,12 @@ use secrecy::{ExposeSecret, SecretVec};
 use zcash_protocol::consensus::{NetworkConstants, Parameters};
 
 use crate::wallet::{
+    keys,
     network::WalletNetwork,
     sync::{get_sync_progress_from_db, open_wallet_db_for_read},
 };
 
 use super::{
-    bundle::{select_notes_with_lwd, voting_power},
     hotkey::{derive_hotkey_raw_orchard_address, hotkey_raw_orchard_address_from_secret},
     progress::VotingWorkCancellation,
     state::{ensure_voting_round, open_voting_db},
@@ -23,6 +23,8 @@ use zcash_voting::delegate::{
     GatherDelegationWalletParams, ResolveDelegationLwdParams,
 };
 use zcash_voting::precompute::PrecomputeDelegationInputs;
+use zcash_voting::storage::VotingDb;
+use zcash_voting::voting_power;
 
 #[derive(Clone, Debug)]
 struct RoundContext {
@@ -31,12 +33,9 @@ struct RoundContext {
 }
 
 /// Resolves lightwalletd state, opens the wallet database, and gathers delegation inputs.
-async fn gather_delegation_inputs<N>(
-    params: GatherDelegationParams<'_, N>,
-) -> Result<DelegationInputs, String>
-where
-    N: Copy + Into<WalletNetwork>,
-{
+async fn gather_delegation_inputs(
+    params: GatherDelegationParams<'_, WalletNetwork>,
+) -> Result<DelegationInputs, String> {
     let lwd = zcash_voting::delegate::gather_delegation_lwd_inputs(ResolveDelegationLwdParams {
         lightwalletd_url: params.lightwalletd_url,
         network: params.network,
@@ -52,7 +51,7 @@ where
         anchor_tree_state_bytes,
         branch_id_provider,
     } = lwd;
-    let wallet_db = open_wallet_db_for_read(params.db_path, params.wallet_network.into())?;
+    let wallet_db = open_wallet_db_for_read(params.db_path, params.wallet_network)?;
     let wallet_progress = get_sync_progress_from_db(&wallet_db)?;
     let wallet =
         zcash_voting::delegate::gather_delegation_wallet_inputs(GatherDelegationWalletParams {
@@ -92,14 +91,15 @@ async fn prepare_delegation_bundle_context(
         ensure_round_initialized(&voting_db, &round_params, round_name, session_json)?;
     let round_id = round_params.vote_round_id;
 
-    let selected = select_notes_with_lwd(
+    let selected = zcash_voting::select_notes_with_lwd(
+        &voting_db,
         db_path,
         lightwalletd_url,
-        network,
-        account_uuid,
+        voting_network(network),
         round_context.snapshot_height,
     )
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
     let note_infos = selected.voting_note_infos();
     let selected_weight_zatoshi = voting_power(&selected);
 
@@ -248,25 +248,26 @@ where
 /// bundle setup/validation fails.
 #[allow(clippy::too_many_arguments)]
 pub async fn setup_delegation_bundles(
+    voting_db: &VotingDb,
     db_path: &str,
     lightwalletd_url: &str,
-    network: WalletNetwork,
+    network: &str,
     round_params: zcash_voting::VotingRoundParams,
     round_name: &str,
     session_json: Option<&str>,
-    account_uuid: &str,
 ) -> Result<zcash_voting::round::BundleLayout, String> {
-    let voting_db = open_voting_db(db_path, account_uuid)?;
+    let network = keys::parse_network(network)?;
     let round_context =
-        ensure_round_initialized(&voting_db, &round_params, round_name, session_json)?;
-    let selected = select_notes_with_lwd(
+        ensure_round_initialized(voting_db, &round_params, round_name, session_json)?;
+    let selected = zcash_voting::select_notes_with_lwd(
+        voting_db,
         db_path,
         lightwalletd_url,
-        network,
-        account_uuid,
+        voting_network(network),
         round_context.snapshot_height,
     )
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
     let note_infos = selected.voting_note_infos();
     voting_db
         .ensure_bundles_with_skipped_suffix(round_params.vote_round_id.as_str(), &note_infos)
