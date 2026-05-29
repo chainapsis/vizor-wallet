@@ -41,6 +41,7 @@ abstract final class AppIcons {
   static const crystalBall = 'crystal_ball';
   static const day = 'day';
   static const dragon = 'dragon';
+  static const edit = 'edit';
   static const endpoint = 'endpoint';
   static const eye = 'eye';
   static const eyeClosed = 'eye_closed';

@@ -3,9 +3,11 @@ import 'package:flutter/widgets.dart';
 import '../../../core/security/password_policy.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/password_text_field.dart';
+import 'account_modal_card.dart';
 
 enum AccountRemoveProgress { stoppingSync, removingAccount }
 
@@ -36,8 +38,9 @@ class AccountRemoveModal extends StatefulWidget {
 }
 
 class _AccountRemoveModalState extends State<AccountRemoveModal> {
-  static const _destructiveButtonWidth = 90.0;
-  static const _fieldHeight = 68.0;
+  static const _destructiveButtonWidth = kAccountModalButtonMinWidth;
+  static const _destructiveLabelWidth = 84.0;
+  static const _fieldHeight = 66.0;
 
   final _passwordController = TextEditingController();
   bool _isSubmitting = false;
@@ -154,15 +157,17 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
   Widget build(BuildContext context) {
     final passwordMessage = _passwordMessage;
 
-    return _AccountRemoveModalCard(
-      header: _AccountRemoveModalHeader(
-        accountName: widget.accountName,
-        profilePictureId: widget.profilePictureId,
-      ),
+    return AccountModalCard(
+      bottomPadding: AppSpacing.sm,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _AccountRemoveModalHeader(
+            accountName: widget.accountName,
+            profilePictureId: widget.profilePictureId,
+          ),
+          const SizedBox(height: AppSpacing.md),
           Text(
             _bodyText,
             textAlign: TextAlign.left,
@@ -209,24 +214,34 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
             ),
           ],
           const SizedBox(height: AppSpacing.md),
-          OverflowBar(
-            alignment: MainAxisAlignment.spaceBetween,
-            overflowAlignment: OverflowBarAlignment.end,
-            spacing: AppSpacing.xs,
-            overflowSpacing: AppSpacing.xs,
+          Row(
             children: [
               AppButton(
                 onPressed: _isSubmitting ? null : widget.onCancel,
                 variant: AppButtonVariant.ghost,
                 size: AppButtonSize.medium,
+                height: kAccountModalButtonHeight,
                 child: const Text('Cancel'),
               ),
-              AppButton(
-                onPressed: _canSubmit ? _submit : null,
-                variant: AppButtonVariant.destructive,
-                size: AppButtonSize.medium,
-                minWidth: _destructiveButtonWidth,
-                child: _submitButton,
+              const SizedBox(width: AppSpacing.s),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: AppButton(
+                    onPressed: _canSubmit ? _submit : null,
+                    variant: AppButtonVariant.destructive,
+                    size: AppButtonSize.medium,
+                    height: kAccountModalButtonHeight,
+                    minWidth: _destructiveButtonWidth,
+                    leading: _isSubmitting
+                        ? null
+                        : const AppIcon(
+                            AppIcons.trash,
+                            size: AppIconSize.medium,
+                          ),
+                    child: _submitButton,
+                  ),
+                ),
               ),
             ],
           ),
@@ -263,10 +278,8 @@ class _AccountRemoveModalState extends State<AccountRemoveModal> {
 
   Widget get _submitButton {
     final label = _submitButtonLabel;
-    if (!_isSubmitting) return Text(label);
-
     return SizedBox(
-      width: _destructiveButtonWidth - AppSpacing.sm,
+      width: _destructiveLabelWidth,
       child: Text(
         label,
         maxLines: 1,
@@ -281,55 +294,6 @@ enum _AccountRemoveSubmitPhase {
   checkingPassword,
   stoppingSync,
   removingAccount,
-}
-
-class _AccountRemoveModalCard extends StatelessWidget {
-  const _AccountRemoveModalCard({required this.header, required this.child});
-
-  final Widget header;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      width: 312,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        border: Border.all(
-          color: colors.border.subtleOpacity,
-          strokeAlign: BorderSide.strokeAlignInside,
-        ),
-        boxShadow: _accountRemoveModalShadow(colors),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          header,
-          const SizedBox(height: AppSpacing.md),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-List<BoxShadow> _accountRemoveModalShadow(AppColors colors) {
-  return [
-    BoxShadow(color: colors.shadows.regular, blurRadius: 1),
-    BoxShadow(
-      color: colors.shadows.regular,
-      offset: const Offset(0, 4),
-      blurRadius: 12,
-    ),
-    BoxShadow(
-      color: colors.shadows.regular,
-      offset: const Offset(0, 12),
-      blurRadius: 28,
-    ),
-  ];
 }
 
 class _AccountRemoveModalHeader extends StatelessWidget {

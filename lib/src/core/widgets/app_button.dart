@@ -176,6 +176,7 @@ class AppButton extends StatefulWidget {
     required this.child,
     this.variant = AppButtonVariant.primary,
     this.size = AppButtonSize.large,
+    this.height,
     this.leading,
     this.trailing,
     this.minWidth,
@@ -195,6 +196,10 @@ class AppButton extends StatefulWidget {
 
   final AppButtonVariant variant;
   final AppButtonSize size;
+
+  /// Optional visual height override for one-off composed components that
+  /// use the button palette but have a different fixed height in Figma.
+  final double? height;
 
   /// Optional widget shown before [child]. Auto-sized to 16×16 and tinted
   /// to the label color via [IconTheme].
@@ -250,6 +255,7 @@ class _AppButtonState extends State<AppButton> {
       AppButtonSize.medium => _mediumSizing,
       AppButtonSize.small => _smallSizing,
     };
+    final height = widget.height ?? sizing.height;
     final isGhost = widget.variant == AppButtonVariant.ghost;
 
     final disabled = colors.button.disabled;
@@ -330,7 +336,7 @@ class _AppButtonState extends State<AppButton> {
       child: AnimatedContainer(
         duration: isGhost ? Duration.zero : const Duration(milliseconds: 120),
         curve: Curves.easeOut,
-        height: sizing.height,
+        height: height,
         decoration: ShapeDecoration(
           color: currentBg,
           shape: StadiumBorder(
