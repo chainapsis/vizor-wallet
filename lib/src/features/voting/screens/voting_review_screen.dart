@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,24 +9,72 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../providers/account_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
+import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import '../voting_routes.dart';
 
-class VotingReviewScreen extends ConsumerWidget {
+class VotingReviewScreen extends ConsumerStatefulWidget {
   const VotingReviewScreen({super.key, required this.roundId});
 
   final String roundId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(votingSessionProvider(roundId));
+  ConsumerState<VotingReviewScreen> createState() => _VotingReviewScreenState();
+}
+
+class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
+  bool _precomputeStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_startPirPrecompute());
+    });
+  }
+
+  Future<void> _startPirPrecompute() async {
+    if (_precomputeStarted) return;
+    _precomputeStarted = true;
+    try {
+      final session = await ref.read(
+        votingSessionProvider(widget.roundId).future,
+      );
+      if (!mounted) return;
+      final accountUuid = session.accountUuid;
+      if (accountUuid == null) return;
+      final mnemonic = await ref
+          .read(accountProvider.notifier)
+          .getMnemonicForAccount(accountUuid);
+      if (!mounted) return;
+      if (mnemonic == null || mnemonic.isEmpty) return;
+      final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
+      try {
+        if (!mounted) return;
+        await ref
+            .read(votingSessionProvider(widget.roundId).notifier)
+            .precomputeDelegationPir(seedBytes: seedBytes);
+      } finally {
+        seedBytes.fillRange(0, seedBytes.length, 0);
+      }
+    } catch (e) {
+      debugPrint('[zcash] Voting: delegation PIR precompute skipped: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = ref.watch(votingSessionProvider(widget.roundId));
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: session.when(
+          skipLoadingOnRefresh: false,
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => _Message("Couldn't load review: $error"),
           data: (state) {
@@ -38,7 +88,7 @@ class VotingReviewScreen extends ConsumerWidget {
                 : ref.watch(
                     votingDraftProvider(
                       VotingSessionKey(
-                        roundId: roundId,
+                        roundId: widget.roundId,
                         accountUuid: accountUuid,
                       ),
                     ),
@@ -81,7 +131,7 @@ class VotingReviewScreen extends ConsumerWidget {
                   child: AppButton(
                     onPressed: draft.isEmpty
                         ? null
-                        : () => context.go(votingStatusRoute(roundId)),
+                        : () => context.go(votingStatusRoute(widget.roundId)),
                     variant: AppButtonVariant.primary,
                     minWidth: 240,
                     child: const Text('Confirm & Submit'),

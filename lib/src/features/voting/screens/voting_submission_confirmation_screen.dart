@@ -28,6 +28,7 @@ class VotingSubmissionConfirmationScreen extends ConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.md),
             child: session.when(
+              skipLoadingOnRefresh: false,
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, _) => _ConfirmationScaffold(
                 pollTitle: 'Coinholder Poll',

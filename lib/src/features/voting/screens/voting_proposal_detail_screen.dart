@@ -60,6 +60,7 @@ class _VotingProposalDetailScreenState
       pane: AppDesktopPane(
         padding: EdgeInsets.zero,
         child: session.when(
+          skipLoadingOnRefresh: false,
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) =>
               _Message(title: "Couldn't load poll", message: '$error'),

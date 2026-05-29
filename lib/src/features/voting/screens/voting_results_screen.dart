@@ -48,6 +48,7 @@ class VotingResultsScreen extends ConsumerWidget {
             const SizedBox(height: AppSpacing.md),
             Expanded(
               child: tally.when(
+                skipLoadingOnRefresh: false,
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (error, _) => _Message("Couldn't load results: $error"),
                 data: (result) {

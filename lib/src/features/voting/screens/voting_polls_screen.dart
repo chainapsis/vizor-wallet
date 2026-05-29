@@ -29,20 +29,23 @@ class VotingPollsScreen extends ConsumerStatefulWidget {
 
 class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   bool _showSettings = false;
+  VotingRoundsNotifier? _roundsNotifier;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(votingRoundsProvider.notifier).startPolling();
+      final notifier = ref.read(votingRoundsProvider.notifier);
+      _roundsNotifier = notifier;
+      notifier.startPolling();
       _preSyncLoadedRounds();
     });
   }
 
   @override
   void dispose() {
-    ref.read(votingRoundsProvider.notifier).stopPolling();
+    _roundsNotifier?.stopPolling();
     super.dispose();
   }
 
@@ -61,6 +64,7 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
                 _VotingTopBar(onSettings: _openSettings),
                 Expanded(
                   child: rounds.when(
+                    skipLoadingOnRefresh: false,
                     loading: () =>
                         const Center(child: CircularProgressIndicator()),
                     error: (error, _) => _VotingMessage(
