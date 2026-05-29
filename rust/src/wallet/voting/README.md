@@ -97,8 +97,8 @@ Key: `(round_id, bundle_index, proposal_id, share_index)`
 
 ### Bundle Setup And Reuse
 
-`VotingDb::ensure_bundles_for_notes` owns initial bundle setup through
-`VotingDb::setup_bundles`. If bundle rows already exist, it validates the
+`VotingDb::ensure_bundles` owns initial bundle setup. If bundle rows already
+exist, it validates the
 current note selection using `zcash_voting::storage::queries::require_bundle_notes`
 before any PIR or proof work. A reused bundle must have the same note identity
 and shape as the current selected notes.
@@ -106,7 +106,7 @@ and shape as the current selected notes.
 Transition:
 
 ```text
-no bundle rows --setup_bundles--> prepared
+no bundle rows --ensure_bundles--> prepared
 existing bundle rows --require_bundle_notes ok--> prepared/signed/submitted/confirmed as derived
 existing bundle rows --note mismatch--> error
 ```

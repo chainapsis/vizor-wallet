@@ -173,6 +173,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_box_autoadd_api_commitment_bundle_recovery(dynamic raw);
 
   @protected
+  ApiShareDelegationRecord dco_decode_box_autoadd_api_share_delegation_record(
+    dynamic raw,
+  );
+
+  @protected
   ApiSignedDelegationPayload
   dco_decode_box_autoadd_api_signed_delegation_payload(dynamic raw);
 
@@ -617,6 +622,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   ApiCommitmentBundleRecovery
   sse_decode_box_autoadd_api_commitment_bundle_recovery(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiShareDelegationRecord sse_decode_box_autoadd_api_share_delegation_record(
     SseDeserializer deserializer,
   );
 
@@ -1155,6 +1165,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_api_commitment_bundle_recovery(
     ApiCommitmentBundleRecovery self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_api_share_delegation_record(
+    ApiShareDelegationRecord self,
     SseSerializer serializer,
   );
 

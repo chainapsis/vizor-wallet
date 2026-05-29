@@ -260,6 +260,7 @@ abstract interface class VotingRustApi {
     required String roundName,
     String? sessionJson,
     required String accountUuid,
+    int? maxRealNotesPerBundle,
   });
 
   Future<rust_voting.ApiDelegationPirPrecomputeResult> precomputeDelegationPir({
@@ -273,6 +274,7 @@ abstract interface class VotingRustApi {
     required String accountUuid,
     required List<int> seedBytes,
     required int bundleIndex,
+    int? maxRealNotesPerBundle,
   });
 
   Stream<rust_voting.ApiDelegationProofEvent>
@@ -287,6 +289,7 @@ abstract interface class VotingRustApi {
     required String accountUuid,
     required List<int> seedBytes,
     required int bundleIndex,
+    int? maxRealNotesPerBundle,
   });
 
   Future<List<int>> generateVotingHotkey();
@@ -302,6 +305,7 @@ abstract interface class VotingRustApi {
     required String accountUuid,
     required List<int> hotkeySeed,
     required int bundleIndex,
+    int? maxRealNotesPerBundle,
   });
 
   Future<List<int>> extractPcztSighash({required List<int> pcztBytes});
@@ -348,6 +352,7 @@ abstract interface class VotingRustApi {
     required int bundleIndex,
     required List<int> keystoneSig,
     required List<int> keystoneSighash,
+    int? maxRealNotesPerBundle,
   });
 
   Future<String> delegationSubmissionWireJson({
@@ -530,6 +535,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String roundName,
     String? sessionJson,
     required String accountUuid,
+    int? maxRealNotesPerBundle,
   }) {
     return rust_voting.setupDelegationBundles(
       dbPath: dbPath,
@@ -539,6 +545,7 @@ class FrbVotingRustApi implements VotingRustApi {
       roundName: roundName,
       sessionJson: sessionJson,
       accountUuid: accountUuid,
+      maxRealNotesPerBundle: maxRealNotesPerBundle,
     );
   }
 
@@ -554,6 +561,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String accountUuid,
     required List<int> seedBytes,
     required int bundleIndex,
+    int? maxRealNotesPerBundle,
   }) {
     return rust_voting.precomputeDelegationPir(
       dbPath: dbPath,
@@ -566,6 +574,7 @@ class FrbVotingRustApi implements VotingRustApi {
       accountUuid: accountUuid,
       seedBytes: seedBytes,
       bundleIndex: bundleIndex,
+      maxRealNotesPerBundle: maxRealNotesPerBundle,
     );
   }
 
@@ -582,6 +591,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String accountUuid,
     required List<int> seedBytes,
     required int bundleIndex,
+    int? maxRealNotesPerBundle,
   }) {
     return rust_voting.buildProveAndSignDelegationPayloadWithProgress(
       dbPath: dbPath,
@@ -594,6 +604,7 @@ class FrbVotingRustApi implements VotingRustApi {
       accountUuid: accountUuid,
       seedBytes: seedBytes,
       bundleIndex: bundleIndex,
+      maxRealNotesPerBundle: maxRealNotesPerBundle,
     );
   }
 
@@ -614,6 +625,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String accountUuid,
     required List<int> hotkeySeed,
     required int bundleIndex,
+    int? maxRealNotesPerBundle,
   }) {
     return rust_voting.buildKeystoneDelegationRequest(
       dbPath: dbPath,
@@ -625,6 +637,7 @@ class FrbVotingRustApi implements VotingRustApi {
       accountUuid: accountUuid,
       hotkeySeed: hotkeySeed,
       bundleIndex: bundleIndex,
+      maxRealNotesPerBundle: maxRealNotesPerBundle,
     );
   }
 
@@ -708,6 +721,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required int bundleIndex,
     required List<int> keystoneSig,
     required List<int> keystoneSighash,
+    int? maxRealNotesPerBundle,
   }) {
     return rust_voting
         .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
@@ -723,6 +737,7 @@ class FrbVotingRustApi implements VotingRustApi {
           bundleIndex: bundleIndex,
           keystoneSig: keystoneSig,
           keystoneSighash: keystoneSighash,
+          maxRealNotesPerBundle: maxRealNotesPerBundle,
         );
   }
 

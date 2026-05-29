@@ -150,7 +150,7 @@ mod tests {
         let db = open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
         let params = test_round_params();
         ensure_voting_round(&db, &params, None).unwrap();
-        db.setup_bundles(&params.vote_round_id, &[test_note_info(42)])
+        db.ensure_bundles(&params.vote_round_id, &[test_note_info(42)])
             .unwrap();
 
         db.store_delegation_tx_hash(&params.vote_round_id, 0, "abc123")
@@ -172,7 +172,7 @@ mod tests {
         let params = test_round_params();
         ensure_voting_round(&db, &params, None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
-        db.setup_bundles(&params.vote_round_id, &notes).unwrap();
+        db.ensure_bundles(&params.vote_round_id, &notes).unwrap();
 
         db.store_delegation_tx_hash(&params.vote_round_id, 0, "tx0")
             .unwrap();
@@ -202,7 +202,7 @@ mod tests {
         let params = test_round_params();
         ensure_voting_round(&db, &params, None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
-        db.setup_bundles(&params.vote_round_id, &notes).unwrap();
+        db.ensure_bundles(&params.vote_round_id, &notes).unwrap();
 
         let deleted = db.delete_skipped_bundles(&params.vote_round_id, 1).unwrap();
 

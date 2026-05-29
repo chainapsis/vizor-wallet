@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `b64_hex_field`, `b64_hex`, `b64`, `catch`, `delegation_submission_wire_json_inner`, `hex_list_field`, `json_safe_u64`, `recovered_share_payload_json`, `recovered_vote_share_wire_json_inner`, `recovered_wire_share_json`, `recovered_wire_shares_json`, `selection_result`, `u32_field`, `vote_commitment_wire_json_inner`, `vote_share_wire_json_inner`, `wire_share_json`
+// These functions are ignored because they are not marked as `pub`: `b64_hex`, `b64`, `bundle_policy`, `catch`, `delegation_submission_wire_json_inner`, `json_safe_u64`, `recovered_vote_share_wire_json_inner`, `require_len`, `selection_result`, `share_tracking_record`, `vote_commitment_wire_json_inner`, `vote_share_wire_json_inner`, `wire_share_json`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
@@ -164,12 +164,14 @@ Future<ApiVotingNoteSelectionResult> selectVotingNotes({
   required String network,
   required String accountUuid,
   required BigInt snapshotHeight,
+  int? maxRealNotesPerBundle,
 }) => RustLib.instance.api.crateApiVotingSelectVotingNotes(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
   accountUuid: accountUuid,
   snapshotHeight: snapshotHeight,
+  maxRealNotesPerBundle: maxRealNotesPerBundle,
 );
 
 /// Select notes and persist bundle rows for the delegation pipeline.
@@ -184,6 +186,7 @@ Future<ApiVotingBundleSetupResult> setupDelegationBundles({
   required String roundName,
   String? sessionJson,
   required String accountUuid,
+  int? maxRealNotesPerBundle,
 }) => RustLib.instance.api.crateApiVotingSetupDelegationBundles(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
@@ -192,6 +195,7 @@ Future<ApiVotingBundleSetupResult> setupDelegationBundles({
   roundName: roundName,
   sessionJson: sessionJson,
   accountUuid: accountUuid,
+  maxRealNotesPerBundle: maxRealNotesPerBundle,
 );
 
 /// Build delegation PCZT material and prefetch/cache PIR-backed IMT proofs.
@@ -209,6 +213,7 @@ Future<ApiDelegationPirPrecomputeResult> precomputeDelegationPir({
   required String accountUuid,
   required List<int> seedBytes,
   required int bundleIndex,
+  int? maxRealNotesPerBundle,
 }) => RustLib.instance.api.crateApiVotingPrecomputeDelegationPir(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
@@ -220,6 +225,7 @@ Future<ApiDelegationPirPrecomputeResult> precomputeDelegationPir({
   accountUuid: accountUuid,
   seedBytes: seedBytes,
   bundleIndex: bundleIndex,
+  maxRealNotesPerBundle: maxRealNotesPerBundle,
 );
 
 /// Build, prove, and sign one delegation payload.
@@ -237,6 +243,7 @@ Future<ApiSignedDelegationPayload> buildProveAndSignDelegationPayload({
   required String accountUuid,
   required List<int> seedBytes,
   required int bundleIndex,
+  int? maxRealNotesPerBundle,
 }) => RustLib.instance.api.crateApiVotingBuildProveAndSignDelegationPayload(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
@@ -248,6 +255,7 @@ Future<ApiSignedDelegationPayload> buildProveAndSignDelegationPayload({
   accountUuid: accountUuid,
   seedBytes: seedBytes,
   bundleIndex: bundleIndex,
+  maxRealNotesPerBundle: maxRealNotesPerBundle,
 );
 
 /// Streaming variant of `build_prove_and_sign_delegation_payload`.
@@ -266,6 +274,7 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
   required String accountUuid,
   required List<int> seedBytes,
   required int bundleIndex,
+  int? maxRealNotesPerBundle,
 }) => RustLib.instance.api
     .crateApiVotingBuildProveAndSignDelegationPayloadWithProgress(
       dbPath: dbPath,
@@ -278,6 +287,7 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
       accountUuid: accountUuid,
       seedBytes: seedBytes,
       bundleIndex: bundleIndex,
+      maxRealNotesPerBundle: maxRealNotesPerBundle,
     );
 
 /// Build and redact a voting PCZT that Keystone must sign for one bundle.
@@ -291,6 +301,7 @@ Future<ApiKeystoneDelegationRequest> buildKeystoneDelegationRequest({
   required String accountUuid,
   required List<int> hotkeySeed,
   required int bundleIndex,
+  int? maxRealNotesPerBundle,
 }) => RustLib.instance.api.crateApiVotingBuildKeystoneDelegationRequest(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
@@ -301,6 +312,7 @@ Future<ApiKeystoneDelegationRequest> buildKeystoneDelegationRequest({
   accountUuid: accountUuid,
   hotkeySeed: hotkeySeed,
   bundleIndex: bundleIndex,
+  maxRealNotesPerBundle: maxRealNotesPerBundle,
 );
 
 /// Extract the ZIP-244 sighash from PCZT bytes.
@@ -362,6 +374,7 @@ buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
   required int bundleIndex,
   required List<int> keystoneSig,
   required List<int> keystoneSighash,
+  int? maxRealNotesPerBundle,
 }) => RustLib.instance.api
     .crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress(
       dbPath: dbPath,
@@ -376,6 +389,7 @@ buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
       bundleIndex: bundleIndex,
       keystoneSig: keystoneSig,
       keystoneSighash: keystoneSighash,
+      maxRealNotesPerBundle: maxRealNotesPerBundle,
     );
 
 /// Store the broadcast transaction hash for one delegation bundle.
@@ -1085,7 +1099,7 @@ class ApiKeystoneSignatureRecord {
 
 /// One unit of remaining work for a round, flattened for the FRB boundary.
 class ApiNextStep {
-  /// "delegate" | "poll_delegation" | "cast_vote" | "submit_vote" | "poll_vote" | "confirm_share".
+  /// "delegate" | "poll_delegation" | "cast_vote" | "submit_vote" | "poll_vote" | "submit_shares" | "confirm_share".
   final String kind;
   final int bundleIndex;
 
@@ -1095,7 +1109,7 @@ class ApiNextStep {
   /// 0 unless `cast_vote`.
   final int choice;
 
-  /// 0 unless `confirm_share`.
+  /// 0 unless `submit_shares` or `confirm_share`.
   final int shareIndex;
 
   const ApiNextStep({
@@ -1518,6 +1532,7 @@ class ApiSignedVoteCommitments {
           commitments == other.commitments;
 }
 
+/// FRB-friendly Vote Authority Note Merkle witness.
 class ApiVanWitness {
   /// 24 sibling hashes from the VAN leaf to the vote-tree root.
   final List<Uint8List> authPath;

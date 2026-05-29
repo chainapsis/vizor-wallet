@@ -1772,6 +1772,7 @@ class _FailingVotingPowerRustApi extends _NoopVotingRustApi {
     required String roundName,
     String? sessionJson,
     required String accountUuid,
+    int? maxRealNotesPerBundle,
   }) async {
     throw StateError('snapshot setup unavailable');
   }
@@ -1907,6 +1908,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String roundName,
     String? sessionJson,
     required String accountUuid,
+    int? maxRealNotesPerBundle,
   }) async {
     setupDelegationBundleCalls++;
     return rust_voting.ApiVotingBundleSetupResult(
@@ -1928,6 +1930,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String accountUuid,
     required List<int> seedBytes,
     required int bundleIndex,
+    int? maxRealNotesPerBundle,
   }) async* {
     yield rust_voting.ApiDelegationProofEvent(
       phase: 'result',
@@ -2000,6 +2003,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String accountUuid,
     required List<int> hotkeySeed,
     required int bundleIndex,
+    int? maxRealNotesPerBundle,
   }) async {
     keystoneDelegationRequestCalls++;
     return rust_voting.ApiKeystoneDelegationRequest(
@@ -2064,6 +2068,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int bundleIndex,
     required List<int> keystoneSig,
     required List<int> keystoneSighash,
+    int? maxRealNotesPerBundle,
   }) async* {
     final signature = storedKeystoneSignatures[bundleIndex];
     yield rust_voting.ApiDelegationProofEvent(

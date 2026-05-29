@@ -454,7 +454,7 @@ mod tests {
         let wallet_db_path = temp_dir.path().join("wallet.sqlite");
         let db = open_voting_db(wallet_db_path.to_str().unwrap(), "wallet-1").unwrap();
         db.init_round(&test_round_params(), None).unwrap();
-        db.setup_bundles("round-1", &[test_note_info(0)]).unwrap();
+        db.ensure_bundles("round-1", &[test_note_info(0)]).unwrap();
         let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let captured_events = events.clone();
 
@@ -594,7 +594,7 @@ mod tests {
         db.set_wallet_id("wallet-1");
         db.init_round(&test_round_params(), None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
-        db.setup_bundles("round-1", &notes).unwrap();
+        db.ensure_bundles("round-1", &notes).unwrap();
         let conn = db.conn();
         zcash_voting::storage::queries::store_vote(&conn, "round-1", "wallet-1", 0, 1, 1, b"vc")
             .unwrap();
@@ -695,7 +695,7 @@ mod tests {
         db.set_wallet_id("wallet-1");
         db.init_round(&test_round_params(), None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
-        db.setup_bundles("round-1", &notes).unwrap();
+        db.ensure_bundles("round-1", &notes).unwrap();
         let conn = db.conn();
         zcash_voting::storage::queries::store_vote(&conn, "round-1", "wallet-1", 0, 1, 0, b"a")
             .unwrap();

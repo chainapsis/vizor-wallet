@@ -8,15 +8,13 @@ use crate::wallet::{
         delegation::DelegationProgress,
         hotkey,
         progress::{cancel_voting_work, VotingWorkCancellation},
-        recovery, state, tree_sync,
-        tree_sync::VanWitness,
-        vote, workflow,
+        recovery, state, tree_sync, vote, workflow,
     },
 };
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use rand::{rngs::OsRng, RngCore};
 use secrecy::ExposeSecret;
-use zcash_voting::{voting_power, NoteRef, SelectedNotes};
+use zcash_voting::{voting_power_with_policy, BundlePolicy, NoteRef, SelectedNotes};
 
 /// FRB-safe voting round parameters loaded from the coordinator/session.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -126,7 +124,15 @@ pub struct ApiDelegationProofEvent {
 }
 
 /// FRB-friendly Vote Authority Note Merkle witness.
-pub type ApiVanWitness = VanWitness;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVanWitness {
+    /// 24 sibling hashes from the VAN leaf to the vote-tree root.
+    pub auth_path: Vec<Vec<u8>>,
+    /// VAN leaf position in the vote commitment tree.
+    pub position: u32,
+    /// Vote-tree height at which this witness is valid.
+    pub anchor_height: u32,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 /// Progress event emitted while building ZKP2 vote commitments.
@@ -145,24 +151,67 @@ pub struct ApiVoteCommitEvent {
 ///
 /// `choice` is zero-indexed and must be less than `num_options`. `single_share`
 /// enables the last-moment vote mode where only share 0 is submitted.
-pub type ApiDraftVote = vote::DraftVote;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiDraftVote {
+    pub proposal_id: u32,
+    pub choice: u32,
+    pub num_options: u32,
+    pub vc_tree_position: u64,
+    pub single_share: bool,
+}
 
 /// Public encrypted share fields safe to pass through Dart/REST.
 ///
 /// Plaintext values and encryption randomness intentionally never cross this API.
-pub type ApiWireEncryptedShare = vote::WireEncryptedShare;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiWireEncryptedShare {
+    pub ciphertext1: Vec<u8>,
+    pub ciphertext2: Vec<u8>,
+    pub share_index: u32,
+}
 
 /// Helper-server payload for one encrypted vote share.
 ///
 /// Contains only public inputs and the selected public encrypted share. The
 /// `primary_blind` is included for share tracking/nullifier recovery.
-pub type ApiVoteSharePayload = vote::VoteSharePayload;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVoteSharePayload {
+    pub shares_hash: Vec<u8>,
+    pub proposal_id: u32,
+    pub vote_decision: u32,
+    pub encrypted_share: ApiWireEncryptedShare,
+    pub tree_position: u64,
+    pub all_encrypted_shares: Vec<ApiWireEncryptedShare>,
+    pub share_comms: Vec<Vec<u8>>,
+    pub primary_blind: Vec<u8>,
+}
 
 /// Signed ZKP2 vote commitment and wire-safe share data for one proposal.
-pub type ApiSignedVoteCommitment = vote::SignedVoteCommitment;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiSignedVoteCommitment {
+    pub proposal_id: u32,
+    pub choice: u32,
+    pub vote_round_id: String,
+    pub van_nullifier: Vec<u8>,
+    pub vote_authority_note_new: Vec<u8>,
+    pub vote_commitment: Vec<u8>,
+    pub proof: Vec<u8>,
+    pub encrypted_shares: Vec<ApiWireEncryptedShare>,
+    pub share_payloads: Vec<ApiVoteSharePayload>,
+    pub anchor_height: u32,
+    pub shares_hash: Vec<u8>,
+    pub share_comms: Vec<Vec<u8>>,
+    pub r_vpk_bytes: Vec<u8>,
+    pub vote_auth_sig: Vec<u8>,
+    pub commitment_bundle_json: String,
+}
 
 /// Set of signed vote commitments produced for one bundle index.
-pub type ApiSignedVoteCommitments = vote::SignedVoteCommitments;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiSignedVoteCommitments {
+    pub bundle_index: u32,
+    pub commitments: Vec<ApiSignedVoteCommitment>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// FRB-safe helper-share submission plan from `zcash_voting::share_policy`.
@@ -176,28 +225,332 @@ pub struct ApiShareSubmissionPlan {
 }
 
 /// Stored vote row keyed by `(round_id, wallet_id, bundle_index, proposal_id)`.
-pub type ApiVoteRecord = vote::VoteRecord;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVoteRecord {
+    pub proposal_id: u32,
+    pub bundle_index: u32,
+    pub choice: u32,
+}
 
 /// Stored commitment bundle recovery data for one `(bundle_index, proposal_id)`.
-pub type ApiCommitmentBundleRecovery = recovery::CommitmentBundleRecovery;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiCommitmentBundleRecovery {
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    pub commitment_bundle_json: String,
+    pub vc_tree_position: u64,
+}
 
 /// Stored delegation transaction hash for one bundle.
-pub type ApiDelegationTxRecovery = recovery::DelegationTxRecovery;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiDelegationTxRecovery {
+    pub bundle_index: u32,
+    pub tx_hash: String,
+}
 
 /// Stored vote transaction hash for one `(bundle_index, proposal_id)`.
-pub type ApiVoteTxRecovery = recovery::VoteTxRecovery;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVoteTxRecovery {
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    pub tx_hash: String,
+}
 
 /// Helper-server share delegation state used for retry/resume.
-pub type ApiShareDelegationRecord = recovery::ShareDelegationRecord;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiShareDelegationRecord {
+    pub round_id: String,
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    pub share_index: u32,
+    pub sent_to_urls: Vec<String>,
+    pub nullifier: Vec<u8>,
+    pub phase: String,
+    pub confirmed: bool,
+    pub submit_at: u64,
+    pub created_at: u64,
+}
 
-pub type ApiDelegationWorkflowRecovery = recovery::DelegationWorkflowRecovery;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiDelegationWorkflowRecovery {
+    pub bundle_index: u32,
+    pub phase: String,
+    pub tx_hash: Option<String>,
+    pub van_leaf_position: Option<u32>,
+}
 
-pub type ApiVoteWorkflowRecovery = recovery::VoteWorkflowRecovery;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVoteWorkflowRecovery {
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    pub phase: String,
+    pub tx_hash: Option<String>,
+    pub vc_tree_position: Option<u64>,
+    pub has_commitment_bundle: bool,
+}
 
-pub type ApiShareWorkflowRecovery = recovery::ShareWorkflowRecovery;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiShareWorkflowRecovery {
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    pub share_index: u32,
+    pub phase: String,
+}
 
 /// Recovery summary for resuming one voting round after app restart.
-pub type ApiRoundRecoveryState = recovery::RoundRecoveryState;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiRoundRecoveryState {
+    pub round_id: String,
+    pub bundle_count: u32,
+    pub delegation_workflows: Vec<ApiDelegationWorkflowRecovery>,
+    pub delegation_tx_hashes: Vec<ApiDelegationTxRecovery>,
+    pub votes: Vec<ApiVoteRecord>,
+    pub vote_workflows: Vec<ApiVoteWorkflowRecovery>,
+    pub vote_tx_hashes: Vec<ApiVoteTxRecovery>,
+    pub commitment_bundles: Vec<ApiCommitmentBundleRecovery>,
+    pub share_workflows: Vec<ApiShareWorkflowRecovery>,
+    pub share_delegations: Vec<ApiShareDelegationRecord>,
+    pub unconfirmed_share_delegations: Vec<ApiShareDelegationRecord>,
+}
+
+fn bundle_policy(max_real_notes_per_bundle: Option<u32>) -> Result<BundlePolicy, String> {
+    BundlePolicy::from_optional_max_real_notes_per_bundle(max_real_notes_per_bundle)
+        .map_err(|e| e.to_string())
+}
+
+impl From<tree_sync::VanWitness> for ApiVanWitness {
+    fn from(witness: tree_sync::VanWitness) -> Self {
+        Self {
+            auth_path: witness.auth_path,
+            position: witness.position,
+            anchor_height: witness.anchor_height,
+        }
+    }
+}
+
+impl From<ApiVanWitness> for tree_sync::VanWitness {
+    fn from(witness: ApiVanWitness) -> Self {
+        Self {
+            auth_path: witness.auth_path,
+            position: witness.position,
+            anchor_height: witness.anchor_height,
+        }
+    }
+}
+
+impl From<ApiDraftVote> for vote::DraftVote {
+    fn from(draft: ApiDraftVote) -> Self {
+        Self {
+            proposal_id: draft.proposal_id,
+            choice: draft.choice,
+            num_options: draft.num_options,
+            vc_tree_position: draft.vc_tree_position,
+            single_share: draft.single_share,
+        }
+    }
+}
+
+impl From<vote::WireEncryptedShare> for ApiWireEncryptedShare {
+    fn from(share: vote::WireEncryptedShare) -> Self {
+        Self {
+            ciphertext1: share.ciphertext1,
+            ciphertext2: share.ciphertext2,
+            share_index: share.share_index,
+        }
+    }
+}
+
+impl From<vote::VoteSharePayload> for ApiVoteSharePayload {
+    fn from(payload: vote::VoteSharePayload) -> Self {
+        Self {
+            shares_hash: payload.shares_hash,
+            proposal_id: payload.proposal_id,
+            vote_decision: payload.vote_decision,
+            encrypted_share: payload.encrypted_share.into(),
+            tree_position: payload.tree_position,
+            all_encrypted_shares: payload
+                .all_encrypted_shares
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            share_comms: payload.share_comms,
+            primary_blind: payload.primary_blind,
+        }
+    }
+}
+
+impl From<vote::SignedVoteCommitment> for ApiSignedVoteCommitment {
+    fn from(commitment: vote::SignedVoteCommitment) -> Self {
+        Self {
+            proposal_id: commitment.proposal_id,
+            choice: commitment.choice,
+            vote_round_id: commitment.vote_round_id,
+            van_nullifier: commitment.van_nullifier,
+            vote_authority_note_new: commitment.vote_authority_note_new,
+            vote_commitment: commitment.vote_commitment,
+            proof: commitment.proof,
+            encrypted_shares: commitment
+                .encrypted_shares
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            share_payloads: commitment
+                .share_payloads
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            anchor_height: commitment.anchor_height,
+            shares_hash: commitment.shares_hash,
+            share_comms: commitment.share_comms,
+            r_vpk_bytes: commitment.r_vpk_bytes,
+            vote_auth_sig: commitment.vote_auth_sig,
+            commitment_bundle_json: commitment.commitment_bundle_json,
+        }
+    }
+}
+
+impl From<vote::SignedVoteCommitments> for ApiSignedVoteCommitments {
+    fn from(commitments: vote::SignedVoteCommitments) -> Self {
+        Self {
+            bundle_index: commitments.bundle_index,
+            commitments: commitments
+                .commitments
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        }
+    }
+}
+
+impl From<vote::VoteRecord> for ApiVoteRecord {
+    fn from(record: vote::VoteRecord) -> Self {
+        Self {
+            proposal_id: record.proposal_id,
+            bundle_index: record.bundle_index,
+            choice: record.choice,
+        }
+    }
+}
+
+impl From<recovery::CommitmentBundleRecovery> for ApiCommitmentBundleRecovery {
+    fn from(record: recovery::CommitmentBundleRecovery) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            proposal_id: record.proposal_id,
+            commitment_bundle_json: record.commitment_bundle_json,
+            vc_tree_position: record.vc_tree_position,
+        }
+    }
+}
+
+impl From<recovery::DelegationTxRecovery> for ApiDelegationTxRecovery {
+    fn from(record: recovery::DelegationTxRecovery) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            tx_hash: record.tx_hash,
+        }
+    }
+}
+
+impl From<recovery::VoteTxRecovery> for ApiVoteTxRecovery {
+    fn from(record: recovery::VoteTxRecovery) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            proposal_id: record.proposal_id,
+            tx_hash: record.tx_hash,
+        }
+    }
+}
+
+impl From<recovery::ShareDelegationRecord> for ApiShareDelegationRecord {
+    fn from(record: recovery::ShareDelegationRecord) -> Self {
+        Self {
+            round_id: record.round_id,
+            bundle_index: record.bundle_index,
+            proposal_id: record.proposal_id,
+            share_index: record.share_index,
+            sent_to_urls: record.sent_to_urls,
+            nullifier: record.nullifier,
+            phase: record.phase,
+            confirmed: record.confirmed,
+            submit_at: record.submit_at,
+            created_at: record.created_at,
+        }
+    }
+}
+
+impl From<recovery::DelegationWorkflowRecovery> for ApiDelegationWorkflowRecovery {
+    fn from(record: recovery::DelegationWorkflowRecovery) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            phase: record.phase,
+            tx_hash: record.tx_hash,
+            van_leaf_position: record.van_leaf_position,
+        }
+    }
+}
+
+impl From<recovery::VoteWorkflowRecovery> for ApiVoteWorkflowRecovery {
+    fn from(record: recovery::VoteWorkflowRecovery) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            proposal_id: record.proposal_id,
+            phase: record.phase,
+            tx_hash: record.tx_hash,
+            vc_tree_position: record.vc_tree_position,
+            has_commitment_bundle: record.has_commitment_bundle,
+        }
+    }
+}
+
+impl From<recovery::ShareWorkflowRecovery> for ApiShareWorkflowRecovery {
+    fn from(record: recovery::ShareWorkflowRecovery) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            proposal_id: record.proposal_id,
+            share_index: record.share_index,
+            phase: record.phase,
+        }
+    }
+}
+
+impl From<recovery::RoundRecoveryState> for ApiRoundRecoveryState {
+    fn from(state: recovery::RoundRecoveryState) -> Self {
+        Self {
+            round_id: state.round_id,
+            bundle_count: state.bundle_count,
+            delegation_workflows: state
+                .delegation_workflows
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            delegation_tx_hashes: state
+                .delegation_tx_hashes
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            votes: state.votes.into_iter().map(Into::into).collect(),
+            vote_workflows: state.vote_workflows.into_iter().map(Into::into).collect(),
+            vote_tx_hashes: state.vote_tx_hashes.into_iter().map(Into::into).collect(),
+            commitment_bundles: state
+                .commitment_bundles
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            share_workflows: state.share_workflows.into_iter().map(Into::into).collect(),
+            share_delegations: state
+                .share_delegations
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            unconfirmed_share_delegations: state
+                .unconfirmed_share_delegations
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        }
+    }
+}
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -810,8 +1163,10 @@ pub async fn select_voting_notes(
     network: String,
     account_uuid: String,
     snapshot_height: u64,
+    max_real_notes_per_bundle: Option<u32>,
 ) -> Result<ApiVotingNoteSelectionResult, String> {
     let network = keys::parse_network(&network)?;
+    let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
     let voting_db = state::open_voting_db(&db_path, &account_uuid)?;
     let selected = zcash_voting::select_notes_with_lwd(
         &voting_db,
@@ -822,17 +1177,20 @@ pub async fn select_voting_notes(
     )
     .await
     .map_err(|e| e.to_string())?;
-    selection_result(selected)
+    selection_result(selected, bundle_policy)
 }
 
-fn selection_result(selected: SelectedNotes) -> Result<ApiVotingNoteSelectionResult, String> {
+fn selection_result(
+    selected: SelectedNotes,
+    bundle_policy: BundlePolicy,
+) -> Result<ApiVotingNoteSelectionResult, String> {
     let note_count = u32::try_from(selected.notes.len()).map_err(|_| {
         format!(
             "Selected note count {} does not fit in u32",
             selected.notes.len()
         )
     })?;
-    let eligible_weight_zatoshi = voting_power(&selected);
+    let eligible_weight_zatoshi = voting_power_with_policy(&selected, bundle_policy);
     let snapshot_height = selected.snapshot_height;
     let anchor_height = selected.anchor_tree_state.height;
     let notes = selected.notes.into_iter().map(Into::into).collect();
@@ -858,7 +1216,9 @@ pub async fn setup_delegation_bundles(
     round_name: String,
     session_json: Option<String>,
     account_uuid: String,
+    max_real_notes_per_bundle: Option<u32>,
 ) -> Result<ApiVotingBundleSetupResult, String> {
+    let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
     let voting_db = state::open_voting_db(&db_path, &account_uuid)?;
     delegation::setup_delegation_bundles(
         &voting_db,
@@ -868,6 +1228,7 @@ pub async fn setup_delegation_bundles(
         round_params.into(),
         &round_name,
         session_json.as_deref(),
+        bundle_policy,
     )
     .await
     .map(Into::into)
@@ -889,8 +1250,10 @@ pub async fn precompute_delegation_pir(
     account_uuid: String,
     seed_bytes: Vec<u8>,
     bundle_index: u32,
+    max_real_notes_per_bundle: Option<u32>,
 ) -> Result<ApiDelegationPirPrecomputeResult, String> {
     let network = keys::parse_network(&network)?;
+    let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
     let round_id = round_params.vote_round_id.clone();
     let seed = secrecy::SecretVec::new(seed_bytes);
     let cancellation = VotingWorkCancellation::start(&db_path, &account_uuid, Some(&round_id))?;
@@ -905,6 +1268,7 @@ pub async fn precompute_delegation_pir(
         &account_uuid,
         &seed,
         bundle_index,
+        bundle_policy,
         cancellation,
     )
     .await
@@ -927,8 +1291,10 @@ pub async fn build_prove_and_sign_delegation_payload(
     account_uuid: String,
     seed_bytes: Vec<u8>,
     bundle_index: u32,
+    max_real_notes_per_bundle: Option<u32>,
 ) -> Result<ApiSignedDelegationPayload, String> {
     let network = keys::parse_network(&network)?;
+    let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
     let round_id = round_params.vote_round_id.clone();
     let seed = secrecy::SecretVec::new(seed_bytes);
     let cancellation = VotingWorkCancellation::start(&db_path, &account_uuid, Some(&round_id))?;
@@ -943,6 +1309,7 @@ pub async fn build_prove_and_sign_delegation_payload(
         &account_uuid,
         &seed,
         bundle_index,
+        bundle_policy,
         |_| {},
         cancellation,
     )
@@ -967,9 +1334,11 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     account_uuid: String,
     seed_bytes: Vec<u8>,
     bundle_index: u32,
+    max_real_notes_per_bundle: Option<u32>,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
     let network = keys::parse_network(&network)?;
+    let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
     let round_id = round_params.vote_round_id.clone();
     let seed = secrecy::SecretVec::new(seed_bytes);
     let cancellation = VotingWorkCancellation::start(&db_path, &account_uuid, Some(&round_id))?;
@@ -987,6 +1356,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         &account_uuid,
         &seed,
         bundle_index,
+        bundle_policy,
         move |event| {
             if progress_sink.add(event.into()).is_err() {
                 progress_cancellation.cancel_local();
@@ -1032,8 +1402,10 @@ pub async fn build_keystone_delegation_request(
     account_uuid: String,
     hotkey_seed: Vec<u8>,
     bundle_index: u32,
+    max_real_notes_per_bundle: Option<u32>,
 ) -> Result<ApiKeystoneDelegationRequest, String> {
     let network = keys::parse_network(&network)?;
+    let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
     let round_id = round_params.vote_round_id.clone();
     let hotkey_secret = secrecy::SecretVec::new(hotkey_seed);
     let cancellation = VotingWorkCancellation::start(&db_path, &account_uuid, Some(&round_id))?;
@@ -1047,6 +1419,7 @@ pub async fn build_keystone_delegation_request(
         &account_uuid,
         &hotkey_secret,
         bundle_index,
+        bundle_policy,
         cancellation,
     )
     .await
@@ -1123,9 +1496,11 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     bundle_index: u32,
     keystone_sig: Vec<u8>,
     keystone_sighash: Vec<u8>,
+    max_real_notes_per_bundle: Option<u32>,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
     let network = keys::parse_network(&network)?;
+    let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
     let round_id = round_params.vote_round_id.clone();
     let hotkey_secret = secrecy::SecretVec::new(hotkey_seed);
     let cancellation = VotingWorkCancellation::start(&db_path, &account_uuid, Some(&round_id))?;
@@ -1145,6 +1520,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
         bundle_index,
         &keystone_sig,
         &keystone_sighash,
+        bundle_policy,
         move |event| {
             if progress_sink.add(event.into()).is_err() {
                 progress_cancellation.cancel_local();
@@ -1309,6 +1685,7 @@ pub fn generate_van_witness(
             bundle_index,
             anchor_height,
         )
+        .map(ApiVanWitness::from)
     })
 }
 
@@ -1377,6 +1754,8 @@ pub fn build_vote_commitments(
     let network = keys::parse_network(&network)?;
     let hotkey_seed = secrecy::SecretVec::new(hotkey_seed);
     let cancellation = VotingWorkCancellation::start(&db_path, &wallet_id, Some(&round_id))?;
+    let van_witness = tree_sync::VanWitness::from(van_witness);
+    let draft_votes = draft_votes.into_iter().map(Into::into).collect();
     vote::build_vote_commitments(
         &db_path,
         &wallet_id,
@@ -1389,6 +1768,7 @@ pub fn build_vote_commitments(
         |_| {},
         cancellation,
     )
+    .map(ApiSignedVoteCommitments::from)
 }
 
 /// Recover a committed but unsubmitted vote from persisted local recovery data.
@@ -1401,6 +1781,7 @@ pub fn recover_vote_commitment(
 ) -> Result<ApiSignedVoteCommitments, String> {
     catch(|| {
         vote::recover_vote_commitment(&db_path, &wallet_id, &round_id, bundle_index, proposal_id)
+            .map(ApiSignedVoteCommitments::from)
     })
 }
 
@@ -1426,6 +1807,8 @@ pub async fn build_vote_commitments_with_progress(
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
     let progress_cancellation = cancellation.clone();
+    let van_witness = tree_sync::VanWitness::from(van_witness);
+    let draft_votes = draft_votes.into_iter().map(Into::into).collect();
     let commitment_result = tokio::task::spawn_blocking(move || {
         vote::build_vote_commitments(
             &db_path,
@@ -1449,7 +1832,7 @@ pub async fn build_vote_commitments_with_progress(
     .map_err(|e| format!("vote commitment task failed: {e}"))
     .and_then(|result| result);
     let commitments = match commitment_result {
-        Ok(commitments) => commitments,
+        Ok(commitments) => ApiSignedVoteCommitments::from(commitments),
         Err(error) => {
             if sink.add_error(error.clone()).is_err() {
                 log::warn!("voting vote: StreamSink closed before error delivery");
@@ -1492,7 +1875,10 @@ pub fn get_votes(
     wallet_id: String,
     round_id: String,
 ) -> Result<Vec<ApiVoteRecord>, String> {
-    catch(|| vote::get_votes(&db_path, &wallet_id, &round_id))
+    catch(|| {
+        vote::get_votes(&db_path, &wallet_id, &round_id)
+            .map(|records| records.into_iter().map(Into::into).collect())
+    })
 }
 
 /// Load the full recovery/share-tracking summary for one voting round.
@@ -1501,7 +1887,10 @@ pub fn get_round_recovery_state(
     wallet_id: String,
     round_id: String,
 ) -> Result<ApiRoundRecoveryState, String> {
-    catch(|| recovery::get_round_recovery_state(&db_path, &wallet_id, &round_id))
+    catch(|| {
+        recovery::get_round_recovery_state(&db_path, &wallet_id, &round_id)
+            .map(ApiRoundRecoveryState::from)
+    })
 }
 
 pub fn mark_vote_submitted(
@@ -1569,6 +1958,7 @@ pub fn get_commitment_bundle(
 ) -> Result<Option<ApiCommitmentBundleRecovery>, String> {
     catch(|| {
         recovery::get_commitment_bundle(&db_path, &wallet_id, &round_id, bundle_index, proposal_id)
+            .map(|record| record.map(ApiCommitmentBundleRecovery::from))
     })
 }
 
@@ -1604,7 +1994,10 @@ pub fn get_share_delegations(
     wallet_id: String,
     round_id: String,
 ) -> Result<Vec<ApiShareDelegationRecord>, String> {
-    catch(|| recovery::get_share_delegations(&db_path, &wallet_id, &round_id))
+    catch(|| {
+        recovery::get_share_delegations(&db_path, &wallet_id, &round_id)
+            .map(|records| records.into_iter().map(Into::into).collect())
+    })
 }
 
 /// Load only unconfirmed helper-server share delegation records for retry.
@@ -1613,7 +2006,10 @@ pub fn get_unconfirmed_share_delegations(
     wallet_id: String,
     round_id: String,
 ) -> Result<Vec<ApiShareDelegationRecord>, String> {
-    catch(|| recovery::get_unconfirmed_share_delegations(&db_path, &wallet_id, &round_id))
+    catch(|| {
+        recovery::get_unconfirmed_share_delegations(&db_path, &wallet_id, &round_id)
+            .map(|records| records.into_iter().map(Into::into).collect())
+    })
 }
 
 /// Mark one delegated share as confirmed on-chain.
@@ -2134,7 +2530,7 @@ mod tests {
 
     #[test]
     fn api_van_witness_preserves_core_fields() {
-        let api = ApiVanWitness::from(VanWitness {
+        let api = ApiVanWitness::from(tree_sync::VanWitness {
             auth_path: vec![vec![1; 32], vec![2; 32]],
             position: 7,
             anchor_height: 123,
@@ -2291,7 +2687,7 @@ mod tests {
             anchor_tree_state: test_tree_state(100),
         };
 
-        let api = selection_result(selected).unwrap();
+        let api = selection_result(selected, BundlePolicy::default()).unwrap();
 
         assert_eq!(api.note_count, 2);
         assert_eq!(api.eligible_weight_zatoshi, divisor);
@@ -2346,7 +2742,7 @@ mod tests {
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-api-bundles").unwrap();
         state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
-        db.setup_bundles(ROUND_ID, &notes).unwrap();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
 
         assert_eq!(
             get_bundle_count(
@@ -2422,7 +2818,7 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-api-witness").unwrap();
         state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
-        db.setup_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![1], 3);
 
@@ -2474,7 +2870,7 @@ mod tests {
         let wallet_id = "wallet-api-round-reset";
         let db = state::open_voting_db(db_path.to_str().unwrap(), wallet_id).unwrap();
         state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
-        db.setup_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![1], 3);
 
@@ -2511,7 +2907,7 @@ mod tests {
         let wallet_id = "wallet-api-account-reset";
         let db = state::open_voting_db(db_path.to_str().unwrap(), wallet_id).unwrap();
         state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
-        db.setup_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![1], 3);
 
@@ -2577,7 +2973,7 @@ mod tests {
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
         state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
-        db.setup_bundles(ROUND_ID, &notes).unwrap();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
         let err = build_vote_commitments(
             db_path.to_str().unwrap().to_string(),
             "wallet-1".to_string(),
@@ -2610,7 +3006,7 @@ mod tests {
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-api-votes").unwrap();
         state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
-        db.setup_bundles(ROUND_ID, &notes).unwrap();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
         let conn = db.conn();
         zcash_voting::storage::queries::store_vote(
             &conn,
@@ -2658,7 +3054,7 @@ mod tests {
         let db = state::open_voting_db(db_path.to_str().unwrap(), wallet_id).unwrap();
         state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
-        db.setup_bundles(ROUND_ID, &notes).unwrap();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
         db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx-0")
             .unwrap();
         let conn = db.conn();
@@ -2762,6 +3158,7 @@ mod tests {
                 "bogus".to_string(),
                 "wallet-1".to_string(),
                 100,
+                None,
             ))
             .unwrap_err();
 
@@ -2782,6 +3179,7 @@ mod tests {
                 "Demo".to_string(),
                 None,
                 "wallet-1".to_string(),
+                None,
             ))
             .unwrap_err();
 
@@ -2805,6 +3203,7 @@ mod tests {
                 "wallet-1".to_string(),
                 vec![7; 32],
                 0,
+                None,
             ))
             .unwrap_err();
 

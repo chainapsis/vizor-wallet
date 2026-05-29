@@ -1038,7 +1038,7 @@ mod tests {
         let other_db = state::open_voting_db(fixture.path(), "wallet-recovery-other").unwrap();
         state::init_voting_round(&other_db, &test_round_params(), None).unwrap();
         other_db
-            .setup_bundles(ROUND_ID, &[test_note_info(0)])
+            .ensure_bundles(ROUND_ID, &[test_note_info(0)])
             .unwrap();
         other_db
             .store_delegation_tx_hash(ROUND_ID, 0, "account-2-delegation")
@@ -1138,7 +1138,7 @@ mod tests {
             let db = state::open_voting_db(db_path.to_str().unwrap(), WALLET_ID).unwrap();
             state::init_voting_round(&db, &test_round_params(), None).unwrap();
             let notes: Vec<_> = (0..6).map(test_note_info).collect();
-            db.setup_bundles(ROUND_ID, &notes).unwrap();
+            db.ensure_bundles(ROUND_ID, &notes).unwrap();
             Self {
                 _temp_dir: temp_dir,
                 db_path,

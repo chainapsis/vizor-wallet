@@ -200,7 +200,7 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-witness").unwrap();
         state::init_voting_round(&db, &test_round_params(), None).unwrap();
-        db.setup_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![1], 2);
 
@@ -293,7 +293,7 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-out-of-range").unwrap();
         state::init_voting_round(&db, &test_round_params(), None).unwrap();
-        db.setup_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
 
         let err = generate_van_witness(
             db_path.to_str().unwrap(),

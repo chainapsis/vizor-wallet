@@ -24,7 +24,7 @@ use zcash_voting::delegate::{
 };
 use zcash_voting::precompute::PrecomputeDelegationInputs;
 use zcash_voting::storage::VotingDb;
-use zcash_voting::voting_power;
+use zcash_voting::{voting_power_with_policy, BundlePolicy};
 
 #[derive(Clone, Debug)]
 struct RoundContext {
@@ -85,6 +85,7 @@ async fn prepare_delegation_bundle_context(
     account_uuid: &str,
     hotkey_raw_address: Vec<u8>,
     bundle_index: u32,
+    bundle_policy: BundlePolicy,
 ) -> Result<DelegationBundleContext, String> {
     let voting_db = open_voting_db(db_path, account_uuid)?;
     let round_context =
@@ -101,14 +102,18 @@ async fn prepare_delegation_bundle_context(
     .await
     .map_err(|e| e.to_string())?;
     let note_infos = selected.voting_note_infos();
-    let selected_weight_zatoshi = voting_power(&selected);
+    let selected_weight_zatoshi = voting_power_with_policy(&selected, bundle_policy);
 
     let bundle_setup = voting_db
-        .ensure_bundles_with_skipped_suffix(&round_id, &note_infos)
+        .ensure_bundles_with_skipped_suffix_with_policy(&round_id, &note_infos, bundle_policy)
         .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))?;
-    let bundle_note_infos =
-        zcash_voting::round::bundle_notes_for_index(&note_infos, &bundle_setup, bundle_index)
-            .map_err(|e| e.to_string())?;
+    let bundle_note_infos = zcash_voting::round::bundle_notes_for_index_with_policy(
+        &note_infos,
+        &bundle_setup,
+        bundle_index,
+        bundle_policy,
+    )
+    .map_err(|e| e.to_string())?;
     let delegated_weight_zatoshi = zcash_voting::round::quantized_bundle_weight(&bundle_note_infos)
         .map_err(|e| format!("quantized_bundle_weight failed: {e}"))?;
 
@@ -255,6 +260,7 @@ pub async fn setup_delegation_bundles(
     round_params: zcash_voting::VotingRoundParams,
     round_name: &str,
     session_json: Option<&str>,
+    bundle_policy: BundlePolicy,
 ) -> Result<zcash_voting::round::BundleLayout, String> {
     let network = keys::parse_network(network)?;
     let round_context =
@@ -270,7 +276,11 @@ pub async fn setup_delegation_bundles(
     .map_err(|e| e.to_string())?;
     let note_infos = selected.voting_note_infos();
     voting_db
-        .ensure_bundles_with_skipped_suffix(round_params.vote_round_id.as_str(), &note_infos)
+        .ensure_bundles_with_skipped_suffix_with_policy(
+            round_params.vote_round_id.as_str(),
+            &note_infos,
+            bundle_policy,
+        )
         .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))
 }
 
@@ -297,6 +307,7 @@ pub async fn precompute_delegation_pir(
     account_uuid: &str,
     seed: &SecretVec<u8>,
     bundle_index: u32,
+    bundle_policy: BundlePolicy,
     cancellation: VotingWorkCancellation,
 ) -> Result<zcash_voting::delegate::PreparedDelegationReport, String> {
     cancellation.check()?;
@@ -349,12 +360,13 @@ pub async fn precompute_delegation_pir(
             network: voting_network(network),
             cancellation: &cancellation,
         };
-        zcash_voting::precompute::precompute_delegation(
+        zcash_voting::precompute::precompute_delegation_with_policy(
             &voting_db,
             &wallet_db,
             precompute_inputs,
             &pir_client,
             &noop_stages,
+            bundle_policy,
         )
         .map_err(|e| e.to_string())
     })
@@ -385,6 +397,7 @@ pub async fn build_prove_and_sign_delegation_payload<F>(
     account_uuid: &str,
     seed: &SecretVec<u8>,
     bundle_index: u32,
+    bundle_policy: BundlePolicy,
     on_progress: F,
     cancellation: VotingWorkCancellation,
 ) -> Result<zcash_voting::delegate::SignedDelegationBundle, String>
@@ -410,6 +423,7 @@ where
         account_uuid,
         hotkey_raw_address,
         bundle_index,
+        bundle_policy,
     )
     .await?;
 
@@ -496,6 +510,7 @@ pub async fn build_keystone_delegation_request(
     account_uuid: &str,
     hotkey_secret: &SecretVec<u8>,
     bundle_index: u32,
+    bundle_policy: BundlePolicy,
     cancellation: VotingWorkCancellation,
 ) -> Result<zcash_voting::delegate::KeystoneSigningRequest, String> {
     let hotkey_raw_address = hotkey_raw_orchard_address_from_secret(hotkey_secret, network)?;
@@ -510,6 +525,7 @@ pub async fn build_keystone_delegation_request(
         account_uuid,
         hotkey_raw_address,
         bundle_index,
+        bundle_policy,
     )
     .await?;
     let delegation_keys = delegation_keys_for_context(&context, network)?;
@@ -571,6 +587,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature<F>(
     bundle_index: u32,
     keystone_sig: &[u8],
     keystone_sighash: &[u8],
+    bundle_policy: BundlePolicy,
     on_progress: F,
     cancellation: VotingWorkCancellation,
 ) -> Result<zcash_voting::delegate::SignedDelegationBundle, String>
@@ -593,6 +610,7 @@ where
         account_uuid,
         hotkey_raw_address,
         bundle_index,
+        bundle_policy,
     )
     .await?;
 
@@ -844,6 +862,7 @@ mod tests {
                 ACCOUNT_UUID,
                 &seed,
                 0,
+                BundlePolicy::default(),
                 move |event| events_for_callback.lock().unwrap().push(event),
                 VotingWorkCancellation::start(
                     db_path.to_str().unwrap(),

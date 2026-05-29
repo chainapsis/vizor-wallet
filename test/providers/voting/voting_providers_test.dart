@@ -3258,6 +3258,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required String roundName,
     String? sessionJson,
     required String accountUuid,
+    int? maxRealNotesPerBundle,
   }) async {
     accountUuids.add(accountUuid);
     _activeSetups++;
@@ -3288,6 +3289,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required String accountUuid,
     required List<int> seedBytes,
     required int bundleIndex,
+    int? maxRealNotesPerBundle,
   }) async* {
     accountUuids.add(accountUuid);
     delegationBundleCalls.add(bundleIndex);
@@ -3337,6 +3339,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required String accountUuid,
     required List<int> hotkeySeed,
     required int bundleIndex,
+    int? maxRealNotesPerBundle,
   }) async {
     accountUuids.add(accountUuid);
     keystoneDelegationRequestCalls.add(bundleIndex);
@@ -3432,6 +3435,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required int bundleIndex,
     required List<int> keystoneSig,
     required List<int> keystoneSighash,
+    int? maxRealNotesPerBundle,
   }) async* {
     accountUuids.add(accountUuid);
     keystoneProofBundleCalls.add(bundleIndex);
@@ -3494,6 +3498,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required String accountUuid,
     required List<int> seedBytes,
     required int bundleIndex,
+    int? maxRealNotesPerBundle,
   }) async {
     accountUuids.add(accountUuid);
     precomputedDelegationPir.add(bundleIndex);
