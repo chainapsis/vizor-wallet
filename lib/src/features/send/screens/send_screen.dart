@@ -26,8 +26,16 @@ import '../../../providers/wallet_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import 'send_review_screen.dart';
 
+class SendScreenArgs {
+  const SendScreenArgs({this.initialRecipientAddress});
+
+  final String? initialRecipientAddress;
+}
+
 class SendScreen extends ConsumerStatefulWidget {
-  const SendScreen({super.key});
+  const SendScreen({super.key, this.initialRecipientAddress});
+
+  final String? initialRecipientAddress;
 
   @override
   ConsumerState<SendScreen> createState() => _SendScreenState();
@@ -53,6 +61,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       walletAsync: walletAsync,
       activeAccountUuid: activeAccountUuid,
       spendableBalance: spendableBalance,
+      initialRecipientAddress: widget.initialRecipientAddress,
     );
   }
 }
@@ -63,11 +72,13 @@ class _SendComposeBody extends ConsumerStatefulWidget {
     required this.walletAsync,
     required this.activeAccountUuid,
     required this.spendableBalance,
+    required this.initialRecipientAddress,
   });
 
   final AsyncValue<WalletState> walletAsync;
   final String? activeAccountUuid;
   final BigInt spendableBalance;
+  final String? initialRecipientAddress;
 
   @override
   ConsumerState<_SendComposeBody> createState() => _SendComposeBodyState();
@@ -168,6 +179,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   int _addressSeq = 0;
   int _maxSeq = 0;
   int _validateSeq = 0;
+  String? _appliedInitialRecipientAddress;
 
   @override
   void initState() {
@@ -176,6 +188,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
     _addressFocusNode.addListener(_handleFieldVisualStateChanged);
     _amountFocusNode.addListener(_handleFieldVisualStateChanged);
     _memoFocusNode.addListener(_handleFieldVisualStateChanged);
+    _applyInitialRecipientAddress(rebuild: false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(appLayoutProvider.notifier).setMode(AppLayoutMode.large);
@@ -218,6 +231,9 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   @override
   void didUpdateWidget(covariant _SendComposeBody oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialRecipientAddress != widget.initialRecipientAddress) {
+      _applyInitialRecipientAddress(rebuild: true);
+    }
     if (oldWidget.spendableBalance != widget.spendableBalance) {
       if (_isMaxMode) {
         _scheduleMaxEstimate(immediate: true);
@@ -225,6 +241,38 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
         _validateAmount();
       }
     }
+  }
+
+  void _applyInitialRecipientAddress({required bool rebuild}) {
+    final address = widget.initialRecipientAddress?.trim();
+    if (address == null || address.isEmpty) return;
+    if (_appliedInitialRecipientAddress == address) return;
+    _appliedInitialRecipientAddress = address;
+
+    void apply() {
+      _addressController.text = address;
+      _addressController.selection = TextSelection.collapsed(
+        offset: address.length,
+      );
+      _addressSeq++;
+      _maxDebounceTimer?.cancel();
+      _addressType = '';
+      _error = null;
+      if (_isMaxMode) {
+        _validateSeq++;
+        _maxSeq++;
+        _maxQuote = null;
+        _isResolvingMax = false;
+        _amountError = '';
+      }
+    }
+
+    if (rebuild) {
+      setState(apply);
+    } else {
+      apply();
+    }
+    unawaited(_validateAddress());
   }
 
   Future<void> _validateAddress() async {

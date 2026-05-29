@@ -561,7 +561,17 @@ final _routerProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
-      GoRoute(path: '/send', builder: (_, _) => const SendScreen()),
+      GoRoute(
+        path: '/send',
+        builder: (_, state) {
+          final args = state.extra;
+          return SendScreen(
+            initialRecipientAddress: args is SendScreenArgs
+                ? args.initialRecipientAddress
+                : null,
+          );
+        },
+      ),
       GoRoute(
         path: '/send/review',
         builder: (_, state) {

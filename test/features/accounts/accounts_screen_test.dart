@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
+import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
@@ -351,6 +352,41 @@ void main() {
     ]);
     expect(copiedTexts, ['u1accountsaddress']);
     expect(find.text('Address Copied'), findsOneWidget);
+  });
+
+  testWidgets('send zec opens send route with the selected account address', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    late _FakeReceiveAddressService receiveAddressService;
+    final accountNotifier = _FakeAccountNotifier(
+      _bootstrap.initialAccountState,
+    );
+
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => accountNotifier,
+        receiveAddressService: (ref) =>
+            receiveAddressService = _FakeReceiveAddressService(ref),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send ZEC'));
+    await tester.pumpAndSettle();
+
+    expect(receiveAddressService.calls, [
+      const _ShieldedAddressCall(accountUuid: 'account-2'),
+    ]);
+    expect(accountNotifier.switchedUuid, isNull);
+    expect(find.text('send route u1address-account-2'), findsOneWidget);
   });
 
   testWidgets('account row hover is limited to other accounts', (tester) async {
@@ -946,7 +982,16 @@ Widget _accountsHarness({
         builder: (_, _) => const Text('add account route'),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
-      GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
+      GoRoute(
+        path: '/send',
+        builder: (_, state) {
+          final args = state.extra;
+          final address = args is SendScreenArgs
+              ? args.initialRecipientAddress
+              : null;
+          return Text(address == null ? 'send route' : 'send route $address');
+        },
+      ),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
       GoRoute(
         path: '/activity',

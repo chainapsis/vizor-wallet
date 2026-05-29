@@ -20,6 +20,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
+import '../../send/screens/send_screen.dart';
 import '../widgets/account_name_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';
 import '../widgets/account_remove_modal.dart';
@@ -49,6 +50,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   String? _modalAccountUuid;
   _AccountModalType? _activeModal;
   final Set<String> _copyingAddressUuids = {};
+  final Set<String> _sendingZecAddressUuids = {};
 
   void _showAccountNameModal(AccountInfo account) {
     _showModal(_AccountModalType.accountName, account);
@@ -194,7 +196,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                       otherAccounts: otherAccounts,
                       onSelectAccount: _handleAccountSelected,
                       onCopyAddress: _copyAddress,
-                      onSendZec: _sendZecTodo,
+                      onSendZec: _sendZec,
                       onEditAccountName: _showAccountNameModal,
                       onChangeProfilePicture: _showProfilePictureModal,
                       onRemoveAccount: _showRemoveAccountModal,
@@ -270,17 +272,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     });
 
     try {
-      final accountState = ref.read(accountProvider).value;
-      final currentShieldedAddress =
-          accountState?.activeAccountUuid == account.uuid
-          ? accountState?.activeAddress
-          : null;
-      final address = await ref
-          .read(receiveAddressServiceProvider)
-          .loadShieldedAddress(
-            accountUuid: account.uuid,
-            currentShieldedAddress: currentShieldedAddress,
-          );
+      final address = await _loadShieldedAddressForAccount(account);
       if (!mounted) return;
       if (address.trim().isEmpty) {
         showAppToast(context, "Address couldn't be copied");
@@ -303,8 +295,50 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     }
   }
 
-  void _sendZecTodo() {
-    // TODO: route to the send flow with the selected account preselected.
+  Future<void> _sendZec(AccountInfo account) async {
+    if (_sendingZecAddressUuids.contains(account.uuid)) return;
+
+    setState(() {
+      _sendingZecAddressUuids.add(account.uuid);
+    });
+
+    try {
+      final address = (await _loadShieldedAddressForAccount(account)).trim();
+      if (!mounted) return;
+      if (address.isEmpty) {
+        showAppToast(context, "Send couldn't be started");
+        return;
+      }
+
+      context.go(
+        '/send',
+        extra: SendScreenArgs(initialRecipientAddress: address),
+      );
+    } catch (e) {
+      log('AccountsScreen: ERROR opening send flow for account address: $e');
+      if (!mounted) return;
+      showAppToast(context, "Send couldn't be started");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sendingZecAddressUuids.remove(account.uuid);
+        });
+      }
+    }
+  }
+
+  Future<String> _loadShieldedAddressForAccount(AccountInfo account) {
+    final accountState = ref.read(accountProvider).value;
+    final currentShieldedAddress =
+        accountState?.activeAccountUuid == account.uuid
+        ? accountState?.activeAddress
+        : null;
+    return ref
+        .read(receiveAddressServiceProvider)
+        .loadShieldedAddress(
+          accountUuid: account.uuid,
+          currentShieldedAddress: currentShieldedAddress,
+        );
   }
 
   Future<void> _refreshAfterAccountSwitch(SyncNotifier syncNotifier) async {
@@ -354,7 +388,7 @@ class _AccountsPane extends StatelessWidget {
   final List<AccountInfo> otherAccounts;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
-  final VoidCallback onSendZec;
+  final ValueChanged<AccountInfo> onSendZec;
   final ValueChanged<AccountInfo> onEditAccountName;
   final ValueChanged<AccountInfo> onChangeProfilePicture;
   final ValueChanged<AccountInfo> onRemoveAccount;
@@ -533,7 +567,7 @@ class _AccountsList extends StatelessWidget {
   final List<AccountInfo> otherAccounts;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
-  final VoidCallback onSendZec;
+  final ValueChanged<AccountInfo> onSendZec;
   final ValueChanged<AccountInfo> onEditAccountName;
   final ValueChanged<AccountInfo> onChangeProfilePicture;
   final ValueChanged<AccountInfo> onRemoveAccount;
@@ -679,7 +713,7 @@ class _OtherAccountsRows extends StatelessWidget {
   final int seedAnchorCount;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
-  final VoidCallback onSendZec;
+  final ValueChanged<AccountInfo> onSendZec;
   final ValueChanged<AccountInfo> onEditAccountName;
   final ValueChanged<AccountInfo> onChangeProfilePicture;
   final ValueChanged<AccountInfo> onRemoveAccount;
@@ -767,7 +801,7 @@ class _AccountRow extends StatefulWidget {
   final VoidCallback? onTap;
   final bool showSendZec;
   final ValueChanged<AccountInfo> onCopyAddress;
-  final VoidCallback onSendZec;
+  final ValueChanged<AccountInfo> onSendZec;
   final ValueChanged<AccountInfo> onEditName;
   final ValueChanged<AccountInfo> onChangePicture;
   final ValueChanged<AccountInfo> onRemove;
@@ -830,7 +864,7 @@ class _AccountRowState extends State<_AccountRow> {
               key: ValueKey('accounts_row_menu_button_${widget.account.uuid}'),
               showSendZec: widget.showSendZec,
               onCopyAddress: () => widget.onCopyAddress(widget.account),
-              onSendZec: widget.onSendZec,
+              onSendZec: () => widget.onSendZec(widget.account),
               onEditName: () => widget.onEditName(widget.account),
               onChangePicture: () => widget.onChangePicture(widget.account),
               onRemove: () => widget.onRemove(widget.account),
