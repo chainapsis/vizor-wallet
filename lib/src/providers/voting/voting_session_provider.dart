@@ -571,7 +571,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final progress = Map<VotingVoteKey, VotingSessionProgress>.from(
         current.voteProgress,
       );
-      final plan = current.resumePlan ?? context.resumePlan;
+      var plan = context.resumePlan;
+      var roundPlan = context.roundPlan;
       final api = ref.read(votingApiClientProvider(context.config.apiBaseUrl));
       final rust = ref.read(votingRustApiProvider);
       final effectiveDraftVotes = VotingShareTimingPolicy.applyLastMomentMode(
@@ -603,6 +604,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               );
         }
       }
+      var confirmedSubmittedVotes = false;
       for (final key in plan.submittedVoteConfirmationKeys) {
         final txHash = plan.voteTxHashFor(key);
         final commitmentBundle = plan.commitmentBundleFor(key);
@@ -641,6 +643,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           proposalId: key.proposalId,
           message: txHash,
         );
+        confirmedSubmittedVotes = true;
+      }
+      if (confirmedSubmittedVotes) {
+        plan = await _loadResumePlan(context);
+        roundPlan = await _loadRoundPlan(context);
+        state = AsyncData(
+          (state.value ?? current).copyWith(
+            resumePlan: plan,
+            roundPlan: roundPlan,
+            voteProgress: progress,
+          ),
+        );
       }
       final bundleIndexesByProposal = <int, List<int>>{
         for (final draftVote in effectiveDraftVotes)
@@ -656,10 +670,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             bundleIndexes: bundleIndexesByProposal[draftVote.proposalId]!,
           ),
       ].where((work) => work.bundleIndexes.isNotEmpty).toList();
-      final recoveredVoteWork = _pendingRecoveredVoteWork(
-        plan,
-        context.roundPlan,
-      );
+      final recoveredVoteWork = _pendingRecoveredVoteWork(plan, roundPlan);
       final totalQuestions = recoveredVoteWork.length + voteWork.length;
       final totalBundleTasks =
           recoveredVoteWork.length +

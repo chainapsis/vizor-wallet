@@ -1567,6 +1567,174 @@ void main() {
     ]);
   });
 
+  test(
+    'resume refreshes planner after vote confirmation before later proposal casts',
+    () async {
+      final httpResponses = votingHttpResponses()
+        ..['/shielded-vote/v1/tx/submitted-vote-tx'] = {
+          'height': 11,
+          'code': 0,
+          'log': '',
+          'events': [
+            {
+              'type': 'cast_vote',
+              'attributes': [
+                {'key': 'leaf_index', 'value': '1,55'},
+              ],
+            },
+          ],
+        };
+      final rust = FakeVotingRustApi(
+        emitCommitments: true,
+        bundleCount: 2,
+        commitmentShareCount: 2,
+      );
+      final beforeConfirmation = rust_voting.ApiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: true,
+        nextSteps: const [
+          rust_voting.ApiNextStep(
+            kind: 'poll_vote',
+            bundleIndex: 1,
+            proposalId: 7,
+            shareIndex: 0,
+            choice: 0,
+          ),
+          rust_voting.ApiNextStep(
+            kind: 'cast_vote',
+            bundleIndex: 0,
+            proposalId: 8,
+            shareIndex: 0,
+            choice: 1,
+          ),
+          rust_voting.ApiNextStep(
+            kind: 'cast_vote',
+            bundleIndex: 1,
+            proposalId: 8,
+            shareIndex: 0,
+            choice: 1,
+          ),
+        ],
+        openProposals: Uint32List(0),
+        allDecided: false,
+      );
+      final afterConfirmation = rust_voting.ApiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: true,
+        nextSteps: const [
+          rust_voting.ApiNextStep(
+            kind: 'submit_shares',
+            bundleIndex: 1,
+            proposalId: 7,
+            shareIndex: 0,
+            choice: 0,
+          ),
+          rust_voting.ApiNextStep(
+            kind: 'cast_vote',
+            bundleIndex: 0,
+            proposalId: 8,
+            shareIndex: 0,
+            choice: 1,
+          ),
+          rust_voting.ApiNextStep(
+            kind: 'cast_vote',
+            bundleIndex: 1,
+            proposalId: 8,
+            shareIndex: 0,
+            choice: 1,
+          ),
+        ],
+        openProposals: Uint32List(0),
+        allDecided: false,
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        roundPlanSequence: [
+          beforeConfirmation,
+          beforeConfirmation,
+          afterConfirmation,
+        ],
+        state: recoveryState(
+          bundleCount: 2,
+          delegationTxHashes: [
+            rust_voting.ApiDelegationTxRecovery(
+              bundleIndex: 0,
+              txHash: 'delegation-0',
+            ),
+            rust_voting.ApiDelegationTxRecovery(
+              bundleIndex: 1,
+              txHash: 'delegation-1',
+            ),
+          ],
+          votes: [vote(bundleIndex: 1, proposalId: 7)],
+          voteWorkflows: [
+            rust_voting.ApiVoteWorkflowRecovery(
+              bundleIndex: 1,
+              proposalId: 7,
+              phase: VotingWorkflowPhase.submittedVote,
+              txHash: 'submitted-vote-tx',
+              vcTreePosition: null,
+              hasCommitmentBundle: true,
+            ),
+          ],
+          voteTxHashes: [
+            rust_voting.ApiVoteTxRecovery(
+              bundleIndex: 1,
+              proposalId: 7,
+              txHash: 'submitted-vote-tx',
+            ),
+          ],
+          commitmentBundles: [
+            rust_voting.ApiCommitmentBundleRecovery(
+              bundleIndex: 1,
+              proposalId: 7,
+              commitmentBundleJson: commitmentBundleRecoveryJson(proposalId: 7),
+              vcTreePosition: BigInt.from(55),
+            ),
+          ],
+        ),
+      );
+      final container = _sessionContainer(
+        http: FakeVotingHttpClient(responses: httpResponses),
+        rust: rust,
+        recoveryApi: recoveryApi,
+        txConfirmationPolling: _fastTxConfirmationPolling,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .castVotes(
+            draftVotes: [
+              rust_voting.ApiDraftVote(
+                proposalId: 8,
+                choice: 1,
+                numOptions: 2,
+                vcTreePosition: BigInt.zero,
+                singleShare: false,
+              ),
+            ],
+          );
+
+      expect(rust.recoveredVoteCommitmentKeys, ['1:7']);
+      expect(
+        rust.recordedShares
+            .where((share) => share.bundleIndex == 1 && share.proposalId == 7)
+            .map((share) => share.shareIndex)
+            .toList(),
+        [0, 1],
+      );
+      expect(rust.voteCommitmentKeys, ['0:8', '1:8']);
+      expect(rust.operationLog.take(5).toList(), [
+        'mark_vote_confirmed:1:7',
+        'recover_vote:1:7',
+        'record_share:1:7:0',
+        'record_share:1:7:1',
+        'build_vote:0:8',
+      ]);
+    },
+  );
+
   test('submitted vote timeout surfaces resumable tx context', () async {
     final httpResponses = votingHttpResponses()
       ..['/shielded-vote/v1/tx/submitted-vote-tx'] = jsonResponse({
@@ -2744,14 +2912,17 @@ List<int> _bytesFromHex(String hex) {
 class FakeVotingRecoveryApi implements VotingRecoveryApi {
   rust_voting.ApiRoundRecoveryState state;
   rust_voting.ApiRoundPlan? roundPlan;
+  final List<rust_voting.ApiRoundPlan>? roundPlanSequence;
   final walletIds = <String>[];
   final addedSentServers = <_AddedSentServers>[];
   final ballotIntents = <String>[];
   final Object? setBallotIntentError;
+  var _roundPlanCallCount = 0;
 
   FakeVotingRecoveryApi({
     required this.state,
     this.roundPlan,
+    this.roundPlanSequence,
     this.setBallotIntentError,
   });
 
@@ -2794,6 +2965,13 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required String roundId,
     required List<int> proposalIds,
   }) async {
+    final sequence = roundPlanSequence;
+    if (sequence != null && sequence.isNotEmpty) {
+      var index = _roundPlanCallCount;
+      _roundPlanCallCount++;
+      if (index >= sequence.length) index = sequence.length - 1;
+      return sequence[index];
+    }
     return roundPlan ??
         rust_voting.ApiRoundPlan(
           roundId: roundId,
