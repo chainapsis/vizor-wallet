@@ -143,7 +143,7 @@ String _newSendFlowId() {
 
 class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
   static const _singleLineFieldOverlayReserve = 20.0;
-  static const _singleLineFieldGap = AppSpacing.xs;
+  static const _singleLineFieldGap = AppSpacing.s;
   static const _multilineFieldOverlayReserve = 24.0;
   static const _maxDebounceDuration = Duration(milliseconds: 300);
   final _addressController = _AddressTextEditingController();
@@ -762,7 +762,7 @@ class _SendComposeBodyState extends ConsumerState<_SendComposeBody> {
                         key: const ValueKey('send_review_button'),
                         onPressed: _canReview ? _openReview : null,
                         variant: AppButtonVariant.primary,
-                        minWidth: 256,
+                        minWidth: 196,
                         trailing: _isSending
                             ? null
                             : const AppIcon(AppIcons.chevronForward),
@@ -979,9 +979,9 @@ class _SendComposeLayout extends StatelessWidget {
   const _SendComposeLayout({required this.child, required this.reviewButton});
 
   static const _contentMaxWidth = 420.0;
-  static const _formWidth = 352.0;
-  static const _reviewButtonWidth = 256.0;
-  static const _fieldsVerticalGap = AppSpacing.md;
+  static const _formWidth = 396.0;
+  static const _reviewButtonWidth = 196.0;
+  static const _sectionGap = AppSpacing.base;
 
   final Widget child;
   final Widget reviewButton;
@@ -997,18 +997,15 @@ class _SendComposeLayout extends StatelessWidget {
             vertical: AppSpacing.sm,
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const _SendTitle(),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: _fieldsVerticalGap,
-                  ),
-                  child: Center(
-                    child: SizedBox(width: _formWidth, child: child),
-                  ),
-                ),
+              const SizedBox(height: _sectionGap),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                child: SizedBox(width: _formWidth, child: child),
               ),
+              const SizedBox(height: _sectionGap),
               SizedBox(width: _reviewButtonWidth, child: reviewButton),
             ],
           ),
@@ -1101,8 +1098,8 @@ class _SendAddMessageCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final card = Container(
-      width: 352,
-      height: 96,
+      width: double.infinity,
+      height: 128,
       decoration: BoxDecoration(
         color: colors.background.base,
         borderRadius: BorderRadius.circular(AppRadii.medium),
