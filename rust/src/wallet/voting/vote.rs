@@ -3,36 +3,11 @@ use crate::wallet::network::WalletNetwork;
 use secrecy::{ExposeSecret, SecretVec};
 
 use super::{
-    bundle::validate_bundle_index,
-    progress::{ProofProgressBridge, VotingWorkCancellation},
-    state::open_voting_db,
+    bundle::validate_bundle_index, progress::VotingWorkCancellation, state::open_voting_db,
     tree_sync::VanWitness,
 };
 
 const VAN_AUTH_PATH_LEN: usize = 24;
-
-#[derive(Clone, Debug, PartialEq)]
-/// Internal progress phases for ZKP2 vote commitment generation.
-pub enum VoteCommitEvent {
-    BuildingProof {
-        proposal_id: u32,
-        bundle_index: u32,
-    },
-    ProofProgress {
-        proposal_id: u32,
-        bundle_index: u32,
-        progress: f64,
-    },
-    BuildingSharePayloads {
-        proposal_id: u32,
-        bundle_index: u32,
-    },
-    Signing {
-        proposal_id: u32,
-        bundle_index: u32,
-    },
-    Done,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// One proposal choice to turn into a signed vote commitment.
@@ -119,7 +94,7 @@ pub fn build_vote_commitments<F>(
     cancellation: VotingWorkCancellation,
 ) -> Result<SignedVoteCommitments, String>
 where
-    F: Fn(VoteCommitEvent) + Send + Sync + 'static,
+    F: Fn(zcash_voting::vote::VoteCommitStage) + Send + Sync + 'static,
 {
     validate_draft_votes(&draft_votes)?;
     let on_progress = std::sync::Arc::new(on_progress);
@@ -134,19 +109,12 @@ where
     for draft in draft_votes {
         let total_start = std::time::Instant::now();
         cancellation.check()?;
-        on_progress(VoteCommitEvent::BuildingProof {
-            proposal_id: draft.proposal_id,
-            bundle_index,
-        });
         let progress_cancellation = cancellation.clone();
-        let proof_progress = on_progress.clone();
-        let proposal_id = draft.proposal_id;
-        let reporter = ProofProgressBridge::new(progress_cancellation, move |progress| {
-            proof_progress(VoteCommitEvent::ProofProgress {
-                proposal_id,
-                bundle_index,
-                progress,
-            });
+        let vote_stages = on_progress.clone();
+        let reporter = zcash_voting::VoteCommitStageBridge::new(move |stage| {
+            if progress_cancellation.check().is_ok() {
+                vote_stages(stage);
+            }
         });
         let proof_start = std::time::Instant::now();
         log::info!(
@@ -196,10 +164,6 @@ where
             proof_start.elapsed().as_secs_f64(),
         );
 
-        on_progress(VoteCommitEvent::BuildingSharePayloads {
-            proposal_id: draft.proposal_id,
-            bundle_index,
-        });
         let payload_start = std::time::Instant::now();
         let share_payloads = commit.share_payloads;
         log::info!(
@@ -209,10 +173,6 @@ where
             payload_start.elapsed().as_secs_f64(),
         );
 
-        on_progress(VoteCommitEvent::Signing {
-            proposal_id: draft.proposal_id,
-            bundle_index,
-        });
         let signing_start = std::time::Instant::now();
         log::info!(
             "voting vote: commitment signed \
@@ -257,7 +217,6 @@ where
         );
     }
 
-    on_progress(VoteCommitEvent::Done);
     Ok(SignedVoteCommitments {
         bundle_index,
         commitments,
