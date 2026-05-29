@@ -1487,7 +1487,7 @@ void main() {
             kind: 'submit_shares',
             bundleIndex: 1,
             proposalId: 7,
-            shareIndex: 0,
+            shareIndex: 1,
             choice: 0,
           ),
           rust_voting.ApiNextStep(
@@ -1634,6 +1634,13 @@ void main() {
             bundleIndex: 1,
             proposalId: 7,
             shareIndex: 0,
+            choice: 0,
+          ),
+          rust_voting.ApiNextStep(
+            kind: 'submit_shares',
+            bundleIndex: 1,
+            proposalId: 7,
+            shareIndex: 1,
             choice: 0,
           ),
           rust_voting.ApiNextStep(

@@ -737,8 +737,33 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               'bundle=${key.bundleIndex} proposal=${key.proposalId}.',
             );
           }
+          final shareIndexes = recoveredWork.shareIndexes;
+          if (shareIndexes == null || shareIndexes.isEmpty) {
+            throw StateError(
+              'Missing planned share indexes for submitted shares '
+              'bundle=${key.bundleIndex} proposal=${key.proposalId}.',
+            );
+          }
+          final recoveredShareIndexes = {
+            for (final commitment in commitments.commitments)
+              if (commitment.proposalId == key.proposalId)
+                for (final payload in commitment.sharePayloads)
+                  payload.encryptedShare.shareIndex,
+          };
+          final missingRecoveredShares = shareIndexes
+              .where(
+                (shareIndex) => !recoveredShareIndexes.contains(shareIndex),
+              )
+              .toList(growable: false);
+          if (missingRecoveredShares.isNotEmpty) {
+            throw StateError(
+              'Recovered commitment did not contain planned share(s) '
+              '${missingRecoveredShares.join(', ')} '
+              'for bundle=${key.bundleIndex} proposal=${key.proposalId}.',
+            );
+          }
           vcTreePositions = {key.proposalId: commitmentBundle.vcTreePosition};
-          shareIndexFilter = _missingShareIndexesFor(plan, key, commitments);
+          shareIndexFilter = Set<int>.unmodifiable(shareIndexes);
         }
         await _submitCommitmentShares(
           context,
@@ -2360,12 +2385,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             ),
           );
         } else if (step.kind == 'submit_shares') {
-          work.add(
-            _RecoveredVoteWork(
-              kind: _RecoveredVoteWorkKind.submitShares,
-              key: key,
-            ),
+          final existingIndex = work.indexWhere(
+            (item) =>
+                item.kind == _RecoveredVoteWorkKind.submitShares &&
+                item.key == key,
           );
+          if (existingIndex >= 0) {
+            work[existingIndex].shareIndexes!.add(step.shareIndex);
+          } else {
+            work.add(
+              _RecoveredVoteWork(
+                kind: _RecoveredVoteWorkKind.submitShares,
+                key: key,
+                shareIndexes: {step.shareIndex},
+              ),
+            );
+          }
         }
       }
       return work;
@@ -2379,28 +2414,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           ),
         )
         .toList(growable: false);
-  }
-
-  static Set<int> _missingShareIndexesFor(
-    VotingResumePlan plan,
-    VotingVoteKey key,
-    rust_voting.ApiSignedVoteCommitments commitments,
-  ) {
-    final recordedShareIndexes = {
-      for (final share in plan.shareDelegations)
-        if (share.bundleIndex == key.bundleIndex &&
-            share.proposalId == key.proposalId)
-          share.shareIndex,
-    };
-    return {
-      for (final commitment in commitments.commitments)
-        if (commitment.proposalId == key.proposalId)
-          for (final payload in commitment.sharePayloads)
-            if (!recordedShareIndexes.contains(
-              payload.encryptedShare.shareIndex,
-            ))
-              payload.encryptedShare.shareIndex,
-    };
   }
 
   static bool _commitmentsUseSingleShare(
@@ -2517,10 +2530,15 @@ class _DraftVoteWork {
 enum _RecoveredVoteWorkKind { submitVote, submitShares }
 
 class _RecoveredVoteWork {
-  const _RecoveredVoteWork({required this.kind, required this.key});
+  const _RecoveredVoteWork({
+    required this.kind,
+    required this.key,
+    this.shareIndexes,
+  });
 
   final _RecoveredVoteWorkKind kind;
   final VotingVoteKey key;
+  final Set<int>? shareIndexes;
 
   String get logLabel {
     switch (kind) {

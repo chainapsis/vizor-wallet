@@ -1606,7 +1606,7 @@ pub struct ApiNextStep {
     pub proposal_id: u32,
     /// 0 unless `cast_vote`.
     pub choice: u32,
-    /// 0 unless `confirm_share`.
+    /// 0 unless `submit_shares` or `confirm_share`.
     pub share_index: u32,
 }
 
@@ -1686,12 +1686,13 @@ pub fn get_round_plan(
                     zcash_voting::session::NextStep::SubmitShares {
                         bundle_index,
                         proposal_id,
+                        share_index,
                     } => ApiNextStep {
                         kind: "submit_shares".to_string(),
                         bundle_index,
                         proposal_id,
                         choice: 0,
-                        share_index: 0,
+                        share_index,
                     },
                     zcash_voting::session::NextStep::ConfirmShare {
                         bundle_index,
