@@ -4,8 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
+import '../../providers/privacy_mode_provider.dart';
 import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
+import '../config/network_config.dart';
+import '../formatting/zec_amount.dart';
+import '../privacy/privacy_mask.dart';
 import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
@@ -79,6 +83,14 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
     }
     final accountName = activeAccount?.name ?? 'Username';
     final sync = ref.watch(syncProvider).value ?? SyncState();
+    final accountSync = sync.scopedToAccount(activeAccountUuid);
+    final balanceText =
+        '${ZecAmount.fromZatoshi(accountSync.totalBalance).balance.amountText} '
+        '$kZcashDefaultCurrencyTicker';
+    final balanceLabel = hideAmountIfPrivacyMode(
+      balanceText,
+      privacyModeEnabled: ref.watch(privacyModeProvider),
+    );
     final accountsActive = _matches('/accounts');
 
     return AppDesktopSidebarSurface(
@@ -106,7 +118,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     profilePictureId:
                         activeAccount?.profilePictureId ??
                         kDefaultProfilePictureId,
-                    balanceLabel: '0.00 ZEC',
+                    balanceLabel: balanceLabel,
                     onTap: accountsActive ? null : _openAccounts,
                   ),
                   const SizedBox(height: AppSpacing.md),
