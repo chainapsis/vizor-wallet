@@ -11,78 +11,207 @@ enum SwapFailureOperation {
   sendZecDeposit,
 }
 
-extension SwapFailureOperationCopy on SwapFailureOperation {
-  String get prefix => switch (this) {
-    SwapFailureOperation.tokenList => 'Could not load swap token list',
-    SwapFailureOperation.quote => 'Could not load quote',
-    SwapFailureOperation.start => 'Could not start swap',
-    SwapFailureOperation.refreshStatus => 'Could not refresh status',
-    SwapFailureOperation.submitDeposit => 'Could not submit deposit tx',
-    SwapFailureOperation.sendZecDeposit => 'Could not send ZEC deposit',
-  };
+enum SwapFailureCategory {
+  unsupportedAsset,
+  amountPrecision,
+  invalidRouteOrAddress,
+  noQuoteOrLiquidity,
+  serviceUnavailable,
+  networkTimeout,
+  unverifiedResponse,
+  retryLater,
+  walletPreflight,
+  depositNotFound,
+  depositRejected,
+  unknown,
 }
 
 String swapFailureMessage(SwapFailureOperation operation, Object error) {
-  return '${operation.prefix}. ${_recoveryFor(operation, error)}';
+  final category = swapFailureCategory(operation, error);
+  return _messageFor(operation, category);
 }
 
-String _recoveryFor(SwapFailureOperation operation, Object error) {
+SwapFailureCategory swapFailureCategory(
+  SwapFailureOperation operation,
+  Object error,
+) {
   if (error is TimeoutException) {
-    return 'The swap service timed out. Check the network connection and retry.';
+    return SwapFailureCategory.networkTimeout;
   }
   if (error is FormatException) {
-    return 'The swap service returned an unexpected response. Keep the current draft or receipt and retry later.';
+    return SwapFailureCategory.unverifiedResponse;
   }
   if (error is OneClickApiException) {
-    return _oneClickRecovery(operation, error);
+    return _oneClickCategory(operation, error);
   }
-  final detail = error.toString().replaceFirst(RegExp(r'^Exception: '), '');
-  return 'Retry once. If it repeats, keep the current receipt and wait before trying again. Detail: $detail';
+
+  return switch (operation) {
+    SwapFailureOperation.sendZecDeposit => SwapFailureCategory.walletPreflight,
+    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
+      SwapFailureCategory.serviceUnavailable,
+    _ => SwapFailureCategory.unknown,
+  };
 }
 
-String _oneClickRecovery(
+SwapFailureCategory _oneClickCategory(
   SwapFailureOperation operation,
   OneClickApiException error,
 ) {
+  if (_isUnsupportedAssetError(error)) {
+    return SwapFailureCategory.unsupportedAsset;
+  }
+  if (_isAmountPrecisionError(error)) {
+    return SwapFailureCategory.amountPrecision;
+  }
+  if (_isUnverifiedResponseError(error)) {
+    return SwapFailureCategory.unverifiedResponse;
+  }
+  if (_isNoQuoteOrLiquidityError(error)) {
+    return SwapFailureCategory.noQuoteOrLiquidity;
+  }
+
   final statusCode = error.statusCode;
   if (statusCode == 401 || statusCode == 403) {
-    return 'The swap service is temporarily unavailable. Retry later.';
-  }
-  if (_isUnsupportedAssetError(error)) {
-    return switch (operation) {
-      SwapFailureOperation.quote =>
-        'This route uses an asset the current swap token list does not support. Choose another asset or retry after token support changes.',
-      SwapFailureOperation.refreshStatus ||
-      SwapFailureOperation.submitDeposit =>
-        'The swap service returned a status for an unsupported asset pair. Keep the receipt, do not resend funds, and retry status later.',
-      _ =>
-        'This route uses an asset the current swap token list does not support. Choose another asset or retry later.',
-    };
+    return SwapFailureCategory.serviceUnavailable;
   }
   if (statusCode == 404 && operation == SwapFailureOperation.refreshStatus) {
-    return 'The swap service cannot find this deposit yet. Verify the one-time address and memo, then refresh after the source-chain transaction appears.';
+    return SwapFailureCategory.depositNotFound;
+  }
+  if (operation == SwapFailureOperation.submitDeposit &&
+      (statusCode == 400 || statusCode == 404 || statusCode == 422)) {
+    return SwapFailureCategory.depositRejected;
   }
   if (statusCode == 400 || statusCode == 422) {
-    return switch (operation) {
-      SwapFailureOperation.quote =>
-        'The swap service rejected this route or address. Edit the amount, asset, destination, or refund address and request a new quote.',
-      SwapFailureOperation.submitDeposit =>
-        'The swap service rejected the submitted tx hash. Check the deposit address, memo, and source-chain tx hash before submitting again.',
-      _ =>
-        'The swap service rejected the request. Review the route details and try again with a fresh quote.',
-    };
+    return SwapFailureCategory.invalidRouteOrAddress;
   }
   if (statusCode == 409 || statusCode == 429) {
-    return 'The swap service is not ready for this request yet. Wait a moment, then retry without changing the deposit details.';
+    return SwapFailureCategory.retryLater;
   }
   if (statusCode != null && statusCode >= 500) {
-    return 'The swap service returned a server error. Wait before retrying; do not resend funds while status is unclear.';
+    return SwapFailureCategory.serviceUnavailable;
   }
-  return 'The swap service returned an error. Keep the current draft or receipt and retry after checking the route details.';
+  return SwapFailureCategory.unknown;
+}
+
+String _messageFor(
+  SwapFailureOperation operation,
+  SwapFailureCategory category,
+) {
+  return switch (category) {
+    SwapFailureCategory.unsupportedAsset => _unsupportedAssetMessage(operation),
+    SwapFailureCategory.amountPrecision =>
+      'Amount has too many decimal places.\nUse fewer decimals and try again.',
+    SwapFailureCategory.invalidRouteOrAddress =>
+      'This route or address was rejected.\nEdit the details and request a new quote.',
+    SwapFailureCategory.noQuoteOrLiquidity =>
+      'No quote is available for this route or amount.\nTry a smaller amount or another asset.',
+    SwapFailureCategory.serviceUnavailable => _serviceUnavailableMessage(
+      operation,
+    ),
+    SwapFailureCategory.networkTimeout => _timeoutMessage(operation),
+    SwapFailureCategory.unverifiedResponse => _unverifiedResponseMessage(
+      operation,
+    ),
+    SwapFailureCategory.retryLater => _retryLaterMessage(operation),
+    SwapFailureCategory.walletPreflight =>
+      'ZEC deposit could not be prepared.\nCheck your balance and try again.',
+    SwapFailureCategory.depositNotFound =>
+      'Deposit is not indexed yet.\nCheck again in a few minutes.',
+    SwapFailureCategory.depositRejected =>
+      'Deposit transaction was rejected.\nCheck the address, memo, and tx hash.',
+    SwapFailureCategory.unknown => _unknownMessage(operation),
+  };
+}
+
+String _unsupportedAssetMessage(SwapFailureOperation operation) {
+  return switch (operation) {
+    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
+      'Swap status uses an unsupported asset pair.\nDo not resend funds. Try again later.',
+    _ =>
+      'This asset is not available for swap right now.\nChoose another asset or try again later.',
+  };
+}
+
+String _serviceUnavailableMessage(SwapFailureOperation operation) {
+  return switch (operation) {
+    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
+      'Swap service is temporarily unavailable.\nDo not resend funds. Try again later.',
+    _ => 'Swap service is temporarily unavailable.\nTry again later.',
+  };
+}
+
+String _timeoutMessage(SwapFailureOperation operation) {
+  return switch (operation) {
+    SwapFailureOperation.quote =>
+      'Quote request timed out.\nCheck your connection and try again.',
+    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
+      'Request timed out.\nDo not resend funds. Try again later.',
+    _ => 'Request timed out.\nCheck your connection and try again.',
+  };
+}
+
+String _retryLaterMessage(SwapFailureOperation operation) {
+  return switch (operation) {
+    SwapFailureOperation.refreshStatus || SwapFailureOperation.submitDeposit =>
+      'Swap service is still processing.\nDo not resend funds. Try again later.',
+    _ => 'Swap service is still processing.\nWait a moment and try again.',
+  };
+}
+
+String _unverifiedResponseMessage(SwapFailureOperation operation) {
+  return switch (operation) {
+    SwapFailureOperation.quote =>
+      'Quote response could not be verified.\nTry again later.',
+    _ => 'Swap response could not be verified.\nTry again later.',
+  };
+}
+
+String _unknownMessage(SwapFailureOperation operation) {
+  return switch (operation) {
+    SwapFailureOperation.tokenList =>
+      'Swap tokens could not be loaded.\nTry again later.',
+    SwapFailureOperation.quote =>
+      'Quote is unavailable right now.\nTry again later.',
+    SwapFailureOperation.start =>
+      'Swap could not be started.\nTry again later.',
+    SwapFailureOperation.refreshStatus =>
+      'Could not refresh swap status.\nTry again later.',
+    SwapFailureOperation.submitDeposit =>
+      'Deposit status could not be submitted.\nTry again later.',
+    SwapFailureOperation.sendZecDeposit =>
+      'ZEC deposit could not be sent.\nTry again later.',
+  };
 }
 
 bool _isUnsupportedAssetError(OneClickApiException error) {
   final message = error.message.toLowerCase();
   return message.contains('does not currently list') ||
       message.contains('unsupported 1click status pair');
+}
+
+bool _isAmountPrecisionError(OneClickApiException error) {
+  final message = error.message.toLowerCase();
+  return message.contains('amount exceeds token precision') ||
+      message.contains('too many decimal');
+}
+
+bool _isUnverifiedResponseError(OneClickApiException error) {
+  final message = error.message.toLowerCase();
+  return message.contains('did not match the requested route') ||
+      message.contains('malformed 1click') ||
+      message.contains('expected a json') ||
+      message.contains('missing string field') ||
+      message.contains('invalid amount field');
+}
+
+bool _isNoQuoteOrLiquidityError(OneClickApiException error) {
+  final message = error.message.toLowerCase();
+  return message.contains('liquidity') ||
+      message.contains('no quote') ||
+      message.contains('no route') ||
+      message.contains('route not found') ||
+      message.contains('solver') ||
+      message.contains('market maker') ||
+      message.contains('cannot fulfill') ||
+      message.contains("can't fulfill");
 }

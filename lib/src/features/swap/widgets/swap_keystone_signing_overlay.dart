@@ -273,12 +273,12 @@ class _SwapKeystoneSigningOverlayState
                 ? null
                 : _pcztWithProofs == null
                 ? 'Scan now. Signature import unlocks after proofs are ready.'
-                : 'After you scanned, click Get Signature.',
+                : 'After you scanned, click Get signature.',
             primaryLabel: _phase == _SwapKeystonePhase.failed || isBroadcasting
                 ? null
                 : _pcztWithProofs == null
                 ? 'Preparing'
-                : 'Get Signature',
+                : 'Get signature',
             onPrimary:
                 _phase == _SwapKeystonePhase.ready && _pcztWithProofs != null
                 ? () => unawaited(_getSignature())
@@ -286,7 +286,7 @@ class _SwapKeystoneSigningOverlayState
             secondaryLabel: isBroadcasting
                 ? null
                 : _phase == _SwapKeystonePhase.failed
-                ? 'Back to Activity'
+                ? 'Back to activity'
                 : 'Reject',
             onSecondary: _cancel,
           ),

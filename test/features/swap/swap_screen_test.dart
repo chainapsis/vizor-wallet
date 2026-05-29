@@ -4728,12 +4728,12 @@ void main() {
 
     expect(find.text('Review swap'), findsNothing);
     expect(
-      find.byKey(const ValueKey('swap_quote_error_banner')),
+      find.byKey(const ValueKey('swap_quote_error_message')),
       findsOneWidget,
     );
-    expect(find.text('Quote unavailable'), findsOneWidget);
+    expect(find.text('Quote unavailable'), findsNothing);
     expect(
-      find.textContaining('Could not load quote. Retry once.'),
+      find.textContaining('Quote is unavailable right now.'),
       findsOneWidget,
     );
     expect(_fieldText(tester, 'swap_amount_field'), '1.5');
@@ -4773,10 +4773,7 @@ void main() {
 
     expect(swapProvider.startedQuotes, hasLength(1));
     expect(find.byKey(const ValueKey('swap_review_panel')), findsOneWidget);
-    expect(
-      find.textContaining('Could not start swap. Retry once.'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Swap could not be started.'), findsOneWidget);
     expect(find.byKey(const ValueKey('swap_queue_title')), findsNothing);
   });
 
@@ -5652,10 +5649,10 @@ void main() {
     expect(sessionStore.savedIntents, isEmpty);
     expect(find.byKey(const ValueKey('swap_review_panel')), findsOneWidget);
     expect(
-      find.textContaining('Could not send ZEC deposit. Retry once.'),
+      find.textContaining('ZEC deposit could not be prepared.'),
       findsOneWidget,
     );
-    expect(find.textContaining('Insufficient balance'), findsOneWidget);
+    expect(find.textContaining('Insufficient balance'), findsNothing);
   });
 
   testWidgets('hardware ZEC swaps open deposit page before Keystone signing', (
@@ -5811,13 +5808,13 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Preparing'), findsOneWidget);
-      expect(find.text('Get Signature'), findsNothing);
+      expect(find.text('Get signature'), findsNothing);
 
       proofCompleter.complete(const [7, 8, 9]);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.text('Get Signature'), findsOneWidget);
+      expect(find.text('Get signature'), findsOneWidget);
     },
   );
 
@@ -5942,7 +5939,7 @@ void main() {
       expect(hardwareSigningService.proofDrafts, hasLength(1));
       await tester.pump();
 
-      await tester.tap(find.text('Get Signature'));
+      await tester.tap(find.text('Get signature'));
       for (
         var i = 0;
         i < 20 &&

@@ -36,6 +36,7 @@ void main() {
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.usdc,
         sellAmount: 1.5,
+        sellAmountText: '1.5',
         destination: '0xrecipient',
         refundAddress: 'u1refund',
       ),
@@ -102,6 +103,7 @@ void main() {
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.usdc,
         sellAmount: 1,
+        sellAmountText: '1',
         destination: '0xrecipient',
         refundAddress: 'u1refund',
       ),
@@ -109,6 +111,117 @@ void main() {
 
     expect(quote.fiatValueBasis?.sellUsdUnitPrice, 72.5);
     expect(quote.fiatValueBasis?.receiveUsdUnitPrice, 0.98);
+  });
+
+  test('quote requires explicit amount text before posting', () async {
+    final transport = _FakeOneClickTransport([]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    await expectLater(
+      provider.quote(
+        const SwapQuoteRequest(
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: 1.5,
+          destination: '0xrecipient',
+          refundAddress: 'u1refund',
+        ),
+      ),
+      throwsA(
+        isA<OneClickApiException>()
+            .having((error) => error.operation, 'operation', 'quote')
+            .having(
+              (error) => error.message,
+              'message',
+              'Quote amount text is required',
+            ),
+      ),
+    );
+
+    expect(transport.requests, isEmpty);
+  });
+
+  test('quote rejects response with a mismatched asset route', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokens),
+      _FakeResponse.post(
+        '/v0/quote',
+        _quoteResponse(
+          originAsset: 'nep141:zec.omft.near',
+          destinationAsset: 'nep141:wrap.near',
+          amountInFormatted: '1.5',
+          amountOutFormatted: '1.25',
+          minAmountOut: '1237500000000000000000000',
+          depositAddress: 't1deposit',
+          status: null,
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    await expectLater(
+      provider.quote(
+        const SwapQuoteRequest(
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: 1.5,
+          sellAmountText: '1.5',
+          destination: '0xrecipient',
+          refundAddress: 'u1refund',
+        ),
+      ),
+      throwsA(
+        isA<OneClickApiException>()
+            .having((error) => error.operation, 'operation', 'quote')
+            .having(
+              (error) => error.message,
+              'message',
+              contains('did not match the requested route'),
+            ),
+      ),
+    );
+  });
+
+  test('quote rejects response with a mismatched swap type', () async {
+    final transport = _FakeOneClickTransport([
+      _FakeResponse.get('/v0/tokens', _tokens),
+      _FakeResponse.post(
+        '/v0/quote',
+        _quoteResponse(
+          originAsset: 'nep141:zec.omft.near',
+          destinationAsset: 'nep141:usdc.example',
+          swapType: 'EXACT_OUTPUT',
+          amountInFormatted: '1.5',
+          amountOutFormatted: '105.25',
+          minAmountOut: '104750000',
+          depositAddress: 't1deposit',
+          status: null,
+        ),
+      ),
+    ]);
+    final provider = NearIntentsOneClickSwapAdapter(transport: transport);
+
+    await expectLater(
+      provider.quote(
+        const SwapQuoteRequest(
+          direction: SwapDirection.zecToExternal,
+          externalAsset: SwapAsset.usdc,
+          sellAmount: 1.5,
+          sellAmountText: '1.5',
+          destination: '0xrecipient',
+          refundAddress: 'u1refund',
+        ),
+      ),
+      throwsA(
+        isA<OneClickApiException>()
+            .having((error) => error.operation, 'operation', 'quote')
+            .having(
+              (error) => error.message,
+              'message',
+              contains('did not match the requested route'),
+            ),
+      ),
+    );
   });
 
   test(
@@ -139,6 +252,7 @@ void main() {
           direction: SwapDirection.zecToExternal,
           externalAsset: SwapAsset.usdc,
           sellAmount: 1,
+          sellAmountText: '1',
           destination: '0xrecipient',
           refundAddress: 'u1refund',
           slippageBps: 200,
@@ -316,6 +430,7 @@ void main() {
         direction: SwapDirection.externalToZec,
         externalAsset: SwapAsset.usdc,
         sellAmount: 140.35,
+        sellAmountText: '140.35',
         destination: 'u1fresh-shielded-recipient',
         refundAddress: '0xexternal-refund',
       ),
@@ -363,6 +478,7 @@ void main() {
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.usdc,
         sellAmount: 1.5,
+        sellAmountText: '1.5',
         destination: '0xrecipient',
         refundAddress: 'u1refund',
       ),
@@ -428,6 +544,7 @@ void main() {
         direction: SwapDirection.zecToExternal,
         externalAsset: baseUsdc,
         sellAmount: 1.5,
+        sellAmountText: '1.5',
         destination: '0xrecipient',
         refundAddress: 'u1refund',
       ),
@@ -505,6 +622,7 @@ void main() {
           direction: SwapDirection.zecToExternal,
           externalAsset: SwapAsset.btc,
           sellAmount: 1.5,
+          sellAmountText: '1.5',
           destination: 'bc1recipient',
           refundAddress: 'u1refund',
         ),
@@ -689,6 +807,7 @@ void main() {
           direction: SwapDirection.externalToZec,
           externalAsset: SwapAsset.near,
           sellAmount: 0.01,
+          sellAmountText: '0.01',
           destination: 'u1shielded-zec-recipient',
           refundAddress: 'rowan.near',
         ),
@@ -781,6 +900,7 @@ void main() {
           direction: SwapDirection.zecToExternal,
           externalAsset: secondaryEthUsdc,
           sellAmount: 1.5,
+          sellAmountText: '1.5',
           destination: '0xrecipient',
           refundAddress: 'u1refund',
         ),
@@ -947,6 +1067,7 @@ void main() {
           direction: SwapDirection.zecToExternal,
           externalAsset: SwapAsset.usdc,
           sellAmount: 1.5,
+          sellAmountText: '1.5',
           destination: '0xrecipient',
           refundAddress: 'u1refund',
         ),
@@ -971,6 +1092,7 @@ void main() {
           direction: SwapDirection.zecToExternal,
           externalAsset: SwapAsset.usdc,
           sellAmount: 1.5,
+          sellAmountText: '1.5',
           destination: '0xrecipient',
           refundAddress: 'u1refund',
         ),

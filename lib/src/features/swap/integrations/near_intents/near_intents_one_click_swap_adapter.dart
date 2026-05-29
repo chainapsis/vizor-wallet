@@ -67,6 +67,7 @@ class NearIntentsOneClickSwapAdapter
   @override
   Future<SwapQuote> quote(SwapQuoteRequest request) async {
     _validateQuoteRequest(request);
+    final amountText = _requiredQuoteAmountText(request);
 
     final tokens = await _ensureTokens();
     final sellToken = _requireToken(
@@ -90,10 +91,7 @@ class NearIntentsOneClickSwapAdapter
       'originAsset': sellToken.assetId,
       'depositType': 'ORIGIN_CHAIN',
       'destinationAsset': receiveToken.assetId,
-      'amount': _toBaseUnits(
-        request.amountText ?? request.amount.toString(),
-        amountToken.decimals,
-      ),
+      'amount': _toBaseUnits(amountText, amountToken.decimals),
       'refundTo': request.refundAddress!.trim(),
       'refundType': 'ORIGIN_CHAIN',
       'recipient': request.destination.trim(),
@@ -112,6 +110,12 @@ class NearIntentsOneClickSwapAdapter
     _expectSuccess(response, 'quote');
 
     final quoteResponse = _OneClickQuoteResponse.fromJson(response.jsonObject);
+    _validateQuoteResponseRequest(
+      quoteResponse,
+      expectedOriginAsset: sellToken.assetId,
+      expectedDestinationAsset: receiveToken.assetId,
+      expectedMode: request.mode,
+    );
     return _quoteFromOneClick(
       quoteResponse,
       direction: request.direction,
@@ -684,6 +688,35 @@ class NearIntentsOneClickSwapAdapter
         request.refundAddress!.trim().isEmpty) {
       throw const OneClickApiException('Refund address is required');
     }
+  }
+
+  String _requiredQuoteAmountText(SwapQuoteRequest request) {
+    final amountText = request.amountText?.trim();
+    if (amountText == null || amountText.isEmpty) {
+      throw const OneClickApiException(
+        'Quote amount text is required',
+        operation: 'quote',
+      );
+    }
+    return amountText;
+  }
+
+  void _validateQuoteResponseRequest(
+    _OneClickQuoteResponse response, {
+    required String expectedOriginAsset,
+    required String expectedDestinationAsset,
+    required SwapQuoteMode expectedMode,
+  }) {
+    final actual = response.quoteRequest;
+    if (actual.originAsset == expectedOriginAsset &&
+        actual.destinationAsset == expectedDestinationAsset &&
+        actual.mode == expectedMode) {
+      return;
+    }
+    throw OneClickApiException(
+      '1Click quote response did not match the requested route',
+      operation: 'quote',
+    );
   }
 
   _OneClickToken _requireToken(

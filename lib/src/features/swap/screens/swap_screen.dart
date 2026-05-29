@@ -545,7 +545,7 @@ class _SwapComposerBody extends StatelessWidget {
       );
     }
 
-    final effectiveHeight = _effectiveSwapBodyHeight(height, state);
+    final effectiveHeight = _effectiveSwapBodyHeight(height);
     return SizedBox(
       height: effectiveHeight,
       child: Padding(
@@ -562,12 +562,11 @@ class _SwapComposerBody extends StatelessWidget {
   }
 }
 
-double _effectiveSwapBodyHeight(double height, SwapState state) {
-  final hasQuoteError = state.quoteError != null;
+double _effectiveSwapBodyHeight(double height) {
   final clampedHeight = height < _swapBodyDesignHeight
       ? height
       : _swapBodyDesignHeight;
-  return hasQuoteError ? clampedHeight + 72 : clampedHeight;
+  return clampedHeight;
 }
 
 class _SwapReviewFooter extends StatelessWidget {

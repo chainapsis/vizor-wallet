@@ -76,8 +76,8 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
     final sendsZec = widget.state.direction.sendsZec;
     final asset = widget.state.externalAsset;
     final title = sendsZec
-        ? '${asset.symbol} Recipient Address'
-        : '${asset.symbol} Refund Address';
+        ? '${asset.symbol} recipient address'
+        : '${asset.symbol} refund address';
     final fieldLabel = sendsZec ? 'Recipient' : 'Refund to';
     final hint = widget.state.destinationFieldHint;
     final description = sendsZec

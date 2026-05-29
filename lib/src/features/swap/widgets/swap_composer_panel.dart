@@ -288,7 +288,7 @@ class _SwapComposerPanelState extends State<SwapComposerPanel> {
             ),
             if (quoteError != null) ...[
               const SizedBox(height: AppSpacing.xs),
-              _QuoteErrorBanner(message: quoteError),
+              _QuoteErrorMessage(message: quoteError),
             ],
           ],
         ),
@@ -793,59 +793,21 @@ class _DecimalAmountInputFormatter extends TextInputFormatter {
   }
 }
 
-class _QuoteErrorBanner extends StatelessWidget {
-  const _QuoteErrorBanner({required this.message});
+class _QuoteErrorMessage extends StatelessWidget {
+  const _QuoteErrorMessage({required this.message});
 
   final String message;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
-      key: const ValueKey('swap_quote_error_banner'),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: AppSpacing.xxs,
-      ),
-      decoration: BoxDecoration(
-        color: colors.text.destructive.withValues(alpha: 0.08),
-        border: Border.all(
-          color: colors.text.destructive.withValues(alpha: 0.28),
-        ),
-        borderRadius: BorderRadius.circular(AppRadii.xSmall),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AppIcon(AppIcons.warning, size: 16, color: colors.icon.destructive),
-          const SizedBox(width: AppSpacing.xxs),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Quote unavailable',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.destructive,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  message,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: colors.text.primary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return Text(
+      message,
+      key: const ValueKey('swap_quote_error_message'),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: AppTypography.bodySmall.copyWith(color: colors.text.destructive),
     );
   }
 }
