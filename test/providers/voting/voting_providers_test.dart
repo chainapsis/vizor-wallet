@@ -1069,6 +1069,45 @@ void main() {
     expect(rust.resetVotingSessionStateCalls, contains('account-1:$kRoundId'));
   });
 
+  test(
+    'ignores stale session UI updates after active account changes',
+    () async {
+      final setupGate = Completer<void>();
+      final rust = FakeVotingRustApi(setupGate: setupGate);
+      final activeAccountProvider =
+          NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+            _ActiveVotingAccountNotifier.new,
+          );
+      final container = _sessionContainer(
+        rust: rust,
+        activeAccountUuidListenable: activeAccountProvider,
+      );
+      final subscription = container.listen(
+        votingSessionProvider(kRoundId),
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final prepare = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareDelegation();
+      await rust.setupStarted.future;
+
+      container.read(activeAccountProvider.notifier).set('account-2');
+      await Future<void>.delayed(Duration.zero);
+      setupGate.complete();
+      await prepare;
+      await Future<void>.delayed(Duration.zero);
+      await container.read(votingSessionProvider(kRoundId).future);
+
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
+      expect(state.accountUuid, 'account-2');
+      expect(state.eligibleWeightZatoshi, isNull);
+    },
+  );
+
   test('draft choices are isolated by pinned voting account', () async {
     final activeAccount = _MutableActiveAccount('account-1');
     final container = _sessionContainer(activeAccountUuid: activeAccount.call);
@@ -3310,6 +3349,7 @@ class FakeVotingWalletSyncReadinessChecker
 class FakeVotingRustApi implements VotingRustApi {
   FakeVotingRustApi({
     this.setupDelay = Duration.zero,
+    this.setupGate,
     this.emitCommitments = false,
     this.precomputeGate,
     this.failPrecompute = false,
@@ -3321,6 +3361,7 @@ class FakeVotingRustApi implements VotingRustApi {
   });
 
   final Duration setupDelay;
+  final Completer<void>? setupGate;
   final bool emitCommitments;
   final Completer<void>? precomputeGate;
   final bool failPrecompute;
@@ -3345,6 +3386,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final syncedVoteTrees = <String>[];
   final precomputedDelegationPir = <int>[];
   final precomputeSeedRefs = <List<int>>[];
+  final setupStarted = Completer<void>();
   final precomputeStarted = Completer<void>();
   final precomputeFinished = Completer<void>();
   final resetVotingSessionStateCalls = <String>[];
@@ -3375,6 +3417,10 @@ class FakeVotingRustApi implements VotingRustApi {
     if (_activeSetups > maxConcurrentSetups) {
       maxConcurrentSetups = _activeSetups;
     }
+    if (!setupStarted.isCompleted) {
+      setupStarted.complete();
+    }
+    await setupGate?.future;
     if (setupDelay > Duration.zero) {
       await Future<void>.delayed(setupDelay);
     }
