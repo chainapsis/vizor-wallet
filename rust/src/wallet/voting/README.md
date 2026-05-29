@@ -47,7 +47,7 @@ stateDiagram-v2
 
     state "Vote Commitment" as Vote {
         [*] --> PreparedVote
-        PreparedVote --> SignedVote: store_signed_vote_commitment
+        PreparedVote --> SignedVote: vote::commit stores recovery
         SignedVote --> SubmittedVote: mark_vote_submitted
         SubmittedVote --> ConfirmedVote: mark_vote_confirmed
         ConfirmedVote --> [*]
@@ -80,7 +80,7 @@ Key: `(round_id, bundle_index, proposal_id)`
 | Phase | Derived From | Resume Behavior |
 | --- | --- | --- |
 | `prepared` | `votes` row exists without `tx_hash` or commitment recovery data | Build and sign vote commitment. |
-| `signed` | `commitment_bundle_json` exists without submitted vote transaction state. New writes also store `vc_tree_position = 0` as a zodl-ios-compatible placeholder. | Submit cast-vote transaction. Legacy rows with no tree position are rebuilt before submission. |
+| `signed` | `commitment_bundle_json` exists without submitted vote transaction state. | Submit cast-vote transaction. |
 | `submitted_vote` | `tx_hash` exists and `submitted = 1`, but confirmation data is incomplete | Poll transaction confirmation and store vote confirmation data. Do not resubmit. |
 | `confirmed` | `tx_hash`, `submitted = 1`, `vc_tree_position`, and `commitment_bundle_json` exist | No vote recovery work remains. |
 
@@ -141,30 +141,18 @@ confirmed --conflicting tx_hash or van_leaf_position--> error
 
 ### Vote Signing Recovery
 
-`vote::build_vote_commitments` builds the vote commitment, share payloads, and
-signature first. Only after `sign_cast_vote` succeeds does it call
-`workflow::store_signed_vote_commitment`.
-
-`workflow::store_signed_vote_commitment` opens a transaction and stores the
-commitment recovery fields through `zcash_voting` queries with a temporary
-`vc_tree_position = 0`. This mirrors zodl-ios. It keeps the bundle loadable if
-the app exits before the cast-vote transaction is confirmed and later replaced
-with the real vote commitment tree position.
-
-Before a cast-vote transaction hash exists, retry may overwrite the signed
-commitment JSON because no network submission has happened yet. After a tx hash
-exists, retry must only accept the same commitment JSON.
-
-This ordering prevents recovery from seeing a commitment bundle that was built
-but never successfully signed.
+`vote::build_vote_commitments` calls `zcash_voting::vote::commit`, which builds
+the vote commitment, share payloads, signature, and crate-owned recovery JSON in
+one lifecycle API. A retry for the same vote key reuses the stored recovery
+bundle when the persisted vote identity still matches the requested draft.
 
 Transition:
 
 ```text
-prepared --sign_cast_vote ok + store commitment recovery--> signed
-signed --retry before tx hash--> signed
-submitted_vote --same commitment_json--> submitted_vote
-submitted_vote --conflicting commitment_json--> error
+prepared --vote::commit ok--> signed
+signed --same draft retry--> signed
+submitted_vote --same draft retry--> submitted_vote
+submitted_vote --changed draft--> error
 sign_cast_vote error --> prepared
 ```
 
@@ -184,12 +172,11 @@ submitted_vote --different tx_hash--> error
 
 ### Vote Confirmation
 
-`workflow::mark_vote_confirmed` atomically stores:
+`workflow::mark_vote_confirmed` stores:
 
 - `votes.tx_hash`
 - `votes.submitted = 1`
 - `bundles.van_leaf_position`
-- `votes.commitment_bundle_json`
 - `votes.vc_tree_position`
 
 It is idempotent for repeated same-data confirmation and rejects conflicts.

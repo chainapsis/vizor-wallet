@@ -1662,27 +1662,33 @@ pub fn get_vote_tx_hash(
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Store commitment bundle recovery JSON and confirmed vote-tree position for one vote.
+/// Record the confirmed vote-tree position for an already stored vote recovery bundle.
 pub fn store_commitment_bundle(
     db_path: String,
     wallet_id: String,
     round_id: String,
     bundle_index: u32,
     proposal_id: u32,
-    commitment_bundle_json: String,
+    _commitment_bundle_json: String,
     vc_tree_position: u64,
 ) -> Result<(), String> {
     catch(|| {
         let db = state::open_voting_db(&db_path, &wallet_id)?;
-        #[allow(deprecated)]
-        db.store_commitment_bundle(
+        zcash_voting::vote::recovery_bundle(&db, &round_id, bundle_index, proposal_id)
+            .map_err(|e| format!("load vote recovery bundle failed: {e}"))?
+            .ok_or_else(|| {
+                format!(
+                    "vote recovery bundle missing for round={round_id}, bundle={bundle_index}, proposal={proposal_id}"
+                )
+            })?;
+        zcash_voting::vote::record_vc_position(
+            &db,
             &round_id,
             bundle_index,
             proposal_id,
-            &commitment_bundle_json,
             vc_tree_position,
         )
-        .map_err(|e| format!("store_commitment_bundle failed: {e}"))
+        .map_err(|e| format!("record_vc_position failed: {e}"))
     })
 }
 
@@ -2773,8 +2779,23 @@ mod tests {
             "vote-tx-1-2".to_string(),
         )
         .unwrap();
-        db.store_commitment_bundle(ROUND_ID, 1, 2, r#"{"bundle":"two"}"#, 99)
+        {
+            let conn = db.conn();
+            conn.execute(
+                "UPDATE votes SET commitment_bundle_json = :json, vc_tree_position = :pos
+                 WHERE round_id = :round_id AND wallet_id = :wallet_id
+                   AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+                rusqlite::named_params! {
+                    ":json": r#"{"bundle":"two"}"#,
+                    ":pos": 99i64,
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": wallet_id,
+                    ":bundle_index": 1i64,
+                    ":proposal_id": 2i64,
+                },
+            )
             .unwrap();
+        }
         record_share_delegation(
             db_path.to_str().unwrap().to_string(),
             wallet_id.to_string(),

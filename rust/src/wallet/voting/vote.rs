@@ -445,7 +445,6 @@ fn share_payload_from_upstream(payload: &zcash_voting::SharePayload) -> VoteShar
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wallet::voting::workflow;
 
     fn commitment_bundle_recovery_json(
         bundle: &zcash_voting::VoteCommitmentBundle,

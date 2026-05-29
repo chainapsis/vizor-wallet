@@ -581,10 +581,7 @@ mod tests {
         let fixture = RecoveryFixture::new();
         fixture.insert_vote(0, 1, 0, b"vote-0-1");
         fixture.insert_vote(1, 1, 1, b"vote-1-1");
-        fixture
-            .db
-            .store_commitment_bundle(ROUND_ID, 1, 1, r#"{"bundle":"one"}"#, 42)
-            .unwrap();
+        fixture.insert_commitment_bundle(1, 1, r#"{"bundle":"one"}"#, Some(42));
 
         assert!(
             get_commitment_bundle(fixture.path(), WALLET_ID, ROUND_ID, 0, 1)
@@ -602,63 +599,12 @@ mod tests {
     }
 
     #[test]
-    fn signed_vote_commitment_stores_loadable_placeholder_tree_position() {
-        let fixture = RecoveryFixture::new();
-        fixture.insert_vote(0, 1, 0, b"vote-0-1");
-
-        workflow::store_signed_vote_commitment(&fixture.db, ROUND_ID, 0, 1, r#"{"bundle":"one"}"#)
-            .unwrap();
-
-        let state = get_round_recovery_state(fixture.path(), WALLET_ID, ROUND_ID).unwrap();
-        assert_eq!(state.vote_workflows.len(), 1);
-        assert_eq!(state.vote_workflows[0].phase, "signed");
-        assert!(state.vote_workflows[0].has_commitment_bundle);
-        assert_eq!(state.vote_workflows[0].vc_tree_position, Some(0));
-
-        let bundle = get_commitment_bundle(fixture.path(), WALLET_ID, ROUND_ID, 0, 1)
-            .unwrap()
-            .unwrap();
-        assert_eq!(bundle.commitment_bundle_json, r#"{"bundle":"one"}"#);
-        assert_eq!(bundle.vc_tree_position, 0);
-    }
-
-    #[test]
-    fn signed_vote_commitment_can_be_rebuilt_until_tx_hash_is_stored() {
-        let fixture = RecoveryFixture::new();
-        fixture.insert_vote(0, 1, 0, b"vote-0-1");
-
-        workflow::store_signed_vote_commitment(&fixture.db, ROUND_ID, 0, 1, r#"{"bundle":"one"}"#)
-            .unwrap();
-        workflow::store_signed_vote_commitment(&fixture.db, ROUND_ID, 0, 1, r#"{"bundle":"two"}"#)
-            .unwrap();
-
-        let bundle = get_commitment_bundle(fixture.path(), WALLET_ID, ROUND_ID, 0, 1)
-            .unwrap()
-            .unwrap();
-        assert_eq!(bundle.commitment_bundle_json, r#"{"bundle":"two"}"#);
-        assert_eq!(bundle.vc_tree_position, 0);
-
-        store_vote_tx_hash(fixture.path(), WALLET_ID, ROUND_ID, 0, 1, "vote-tx-0-1").unwrap();
-        assert!(workflow::store_signed_vote_commitment(
-            &fixture.db,
-            ROUND_ID,
-            0,
-            1,
-            r#"{"bundle":"three"}"#
-        )
-        .unwrap_err()
-        .contains("vote commitment_bundle_json conflict"));
-    }
-
-    #[test]
-    fn vote_confirmation_replaces_legacy_zero_tree_position_placeholder() {
+    fn vote_confirmation_records_tree_position_for_stored_recovery() {
         let fixture = RecoveryFixture::new();
         fixture.insert_vote(0, 1, 0, b"vote-0-1");
         store_vote_tx_hash(fixture.path(), WALLET_ID, ROUND_ID, 0, 1, "vote-tx-0-1").unwrap();
-        fixture
-            .db
-            .store_commitment_bundle(ROUND_ID, 0, 1, r#"{"bundle":"one"}"#, 0)
-            .unwrap();
+        let recovery_json = vote_recovery_json(0, 1, 0, 0);
+        fixture.insert_commitment_bundle(0, 1, &recovery_json, None);
 
         mark_vote_confirmed(
             fixture.path(),
@@ -669,7 +615,7 @@ mod tests {
             "vote-tx-0-1",
             1,
             2,
-            r#"{"bundle":"one"}"#,
+            &recovery_json,
         )
         .unwrap();
 
@@ -797,10 +743,7 @@ mod tests {
         fixture.insert_vote(0, 1, 0, b"vote-0-1");
         fixture.insert_vote(1, 2, 1, b"vote-1-2");
         store_vote_tx_hash(fixture.path(), WALLET_ID, ROUND_ID, 1, 2, "vote-tx-1-2").unwrap();
-        fixture
-            .db
-            .store_commitment_bundle(ROUND_ID, 1, 2, r#"{"bundle":"two"}"#, 77)
-            .unwrap();
+        fixture.insert_commitment_bundle(1, 2, r#"{"bundle":"two"}"#, Some(77));
         record_share_delegation(
             fixture.path(),
             WALLET_ID,
@@ -905,7 +848,8 @@ mod tests {
         workflow::mark_delegation_confirmed(&path, WALLET_ID, ROUND_ID, 0, "delegation-tx-0", 5)
             .unwrap();
         insert_vote(&db, 0, 1, 0, b"vote-0-1");
-        workflow::store_signed_vote_commitment(&db, ROUND_ID, 0, 1, r#"{"bundle":"one"}"#).unwrap();
+        let recovery_json = vote_recovery_json(0, 1, 0, 0);
+        store_commitment_bundle_fixture(&db, 0, 1, &recovery_json, None);
         mark_vote_confirmed(
             &path,
             WALLET_ID,
@@ -915,7 +859,7 @@ mod tests {
             "vote-tx-0-1",
             5,
             9,
-            r#"{"bundle":"one"}"#,
+            &recovery_json,
         )
         .unwrap();
         record_share_delegation(
@@ -1134,10 +1078,7 @@ mod tests {
             .unwrap();
         fixture.insert_vote(0, 1, 0, b"vote-0-1");
         store_vote_tx_hash(fixture.path(), WALLET_ID, ROUND_ID, 0, 1, "vote-tx-0-1").unwrap();
-        fixture
-            .db
-            .store_commitment_bundle(ROUND_ID, 0, 1, r#"{"bundle":"one"}"#, 11)
-            .unwrap();
+        fixture.insert_commitment_bundle(0, 1, r#"{"bundle":"one"}"#, Some(11));
         record_share_delegation(
             fixture.path(),
             WALLET_ID,
@@ -1206,28 +1147,29 @@ mod tests {
             insert_vote(&self.db, bundle_index, proposal_id, choice, commitment);
         }
 
+        fn insert_commitment_bundle(
+            &self,
+            bundle_index: u32,
+            proposal_id: u32,
+            commitment_bundle_json: &str,
+            vc_tree_position: Option<u64>,
+        ) {
+            store_commitment_bundle_fixture(
+                &self.db,
+                bundle_index,
+                proposal_id,
+                commitment_bundle_json,
+                vc_tree_position,
+            );
+        }
+
         fn insert_legacy_commitment_bundle_without_position(
             &self,
             bundle_index: u32,
             proposal_id: u32,
             commitment_bundle_json: &str,
         ) {
-            let conn = self.db.conn();
-            let wallet_id = self.db.wallet_id();
-            conn.execute(
-                "UPDATE votes SET commitment_bundle_json = :commitment_bundle_json,
-                        vc_tree_position = NULL
-                 WHERE round_id = :round_id AND wallet_id = :wallet_id
-                 AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
-                rusqlite::named_params! {
-                    ":commitment_bundle_json": commitment_bundle_json,
-                    ":round_id": ROUND_ID,
-                    ":wallet_id": wallet_id,
-                    ":bundle_index": bundle_index as i64,
-                    ":proposal_id": proposal_id as i64,
-                },
-            )
-            .unwrap();
+            self.insert_commitment_bundle(bundle_index, proposal_id, commitment_bundle_json, None);
         }
     }
 
@@ -1250,6 +1192,71 @@ mod tests {
             commitment,
         )
         .unwrap();
+    }
+
+    fn store_commitment_bundle_fixture(
+        db: &zcash_voting::storage::VotingDb,
+        bundle_index: u32,
+        proposal_id: u32,
+        commitment_bundle_json: &str,
+        vc_tree_position: Option<u64>,
+    ) {
+        let conn = db.conn();
+        let wallet_id = db.wallet_id();
+        let rows = conn
+            .execute(
+                "UPDATE votes SET commitment_bundle_json = :commitment_bundle_json,
+                        vc_tree_position = :vc_tree_position
+                 WHERE round_id = :round_id AND wallet_id = :wallet_id
+                 AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
+                rusqlite::named_params! {
+                    ":commitment_bundle_json": commitment_bundle_json,
+                    ":vc_tree_position": vc_tree_position.map(|position| position as i64),
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": wallet_id,
+                    ":bundle_index": bundle_index as i64,
+                    ":proposal_id": proposal_id as i64,
+                },
+            )
+            .unwrap();
+        assert_eq!(rows, 1);
+    }
+
+    fn vote_recovery_json(
+        bundle_index: u32,
+        proposal_id: u32,
+        vote_decision: u32,
+        vc_tree_position: u64,
+    ) -> String {
+        serde_json::json!({
+            "format": "zcash_voting_vote_recovery_v1",
+            "vote_round_id": ROUND_ID,
+            "bundle_index": bundle_index,
+            "proposal_id": proposal_id,
+            "vote_decision": vote_decision,
+            "anchor_height": 100,
+            "vc_tree_position": vc_tree_position,
+            "single_share": false,
+            "num_options": 2,
+            "van_nullifier": vec![1u8; 32],
+            "vote_authority_note_new": vec![2u8; 32],
+            "vote_commitment": vec![3u8; 32],
+            "proof": vec![4u8; 8],
+            "shares_hash": vec![5u8; 32],
+            "r_vpk": vec![6u8; 32],
+            "alpha_v": vec![7u8; 32],
+            "vote_auth_sig": vec![8u8; 64],
+            "encrypted_shares": [{
+                "c1": vec![9u8; 32],
+                "c2": vec![10u8; 32],
+                "share_index": 0,
+                "plaintext_value": 1,
+                "randomness": vec![11u8; 32],
+            }],
+            "share_blinds": [vec![12u8; 32]],
+            "share_comms": [vec![13u8; 32]],
+        })
+        .to_string()
     }
 
     fn test_round_params() -> zcash_voting::VotingRoundParams {
