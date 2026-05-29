@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/formatting/number_format.dart';
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
@@ -14,7 +16,6 @@ import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 
 const int _ballotDivisorZatoshi = 12500000;
-const int _zatoshiPerZec = 100000000;
 
 final _roundTallyProvider = FutureProvider.family((ref, String roundId) async {
   final config = await ref.watch(votingConfigProvider.future);
@@ -183,7 +184,7 @@ class _ResultsHeaderState extends State<_ResultsHeader> {
             ),
             const SizedBox(width: AppSpacing.sm),
             Text(
-              '#${_formatHeight(widget.snapshotHeight)}',
+              '#${formatGroupedInteger(widget.snapshotHeight)}',
               style: titleStyle.copyWith(fontWeight: FontWeight.w500),
             ),
           ],
@@ -671,19 +672,11 @@ Color _optionColor(
 }
 
 String _formatTallyZec(num ballotUnits) {
-  final zec = ballotUnits * _ballotDivisorZatoshi / _zatoshiPerZec;
+  // Ballot tallies are multiples of 0.125 ZEC, so they are rounded to two
+  // decimals (e.g. 0.125 -> 0.13). This intentionally does not route through
+  // ZecAmount, which truncates fractions rather than rounding.
+  final zec = ballotUnits * _ballotDivisorZatoshi / zatoshiPerZec.toInt();
   return '${zec.toStringAsFixed(2)} ZEC';
-}
-
-String _formatHeight(int height) {
-  final text = height.toString();
-  final buffer = StringBuffer();
-  for (var i = 0; i < text.length; i++) {
-    final remaining = text.length - i;
-    buffer.write(text[i]);
-    if (remaining > 1 && remaining % 3 == 1) buffer.write(',');
-  }
-  return buffer.toString();
 }
 
 Map<String, dynamic> _objectFromValue(Object? value) {

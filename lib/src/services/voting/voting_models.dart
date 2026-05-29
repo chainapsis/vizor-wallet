@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../../core/formatting/hex_codec.dart';
+
 /// Hash-pinned trust anchor fetched before the mutable service config.
 ///
 /// This config should be small and stable: it tells the app where to fetch the
@@ -691,7 +693,7 @@ String _normalizeRoundId(String value) {
   if (_isHexRoundId(trimmed)) return trimmed.toLowerCase();
   try {
     final bytes = base64Decode(trimmed);
-    if (bytes.length == 32) return _hexFromBytes(bytes);
+    if (bytes.length == 32) return bytesToHex(bytes);
   } on FormatException {
     // Early fixtures used human-readable ids; keep those readable in tests.
   }
@@ -734,10 +736,7 @@ List<int> _bytesFromJson(Map<String, dynamic> json, List<String> keys) {
   final value = _stringFromJson(json, keys);
   final hex = value.startsWith('0x') ? value.substring(2) : value;
   if (hex.length.isEven && RegExp(r'^[0-9a-fA-F]+$').hasMatch(hex)) {
-    return [
-      for (var i = 0; i < hex.length; i += 2)
-        int.parse(hex.substring(i, i + 2), radix: 16),
-    ];
+    return hexToBytes(hex);
   }
   return base64Decode(value);
 }
@@ -758,8 +757,4 @@ bool _isLowercaseHexRoundId(String value) {
 bool _isHexRoundId(String value) {
   if (value.length != 64) return false;
   return RegExp(r'^[0-9a-fA-F]+$').hasMatch(value);
-}
-
-String _hexFromBytes(List<int> bytes) {
-  return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 }

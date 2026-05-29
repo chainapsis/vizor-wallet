@@ -5,6 +5,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/formatting/duration_format.dart';
+import '../../core/formatting/hex_codec.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../features/voting/voting_share_timing.dart';
@@ -199,7 +201,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         debugPrint(
           '[zcash] Voting: delegation proof stream completed '
           'round=${context.round.roundId} bundle=$bundleIndex '
-          'elapsed=${_formatElapsed(bundleTimer.elapsed)}',
+          'elapsed=${formatElapsedSeconds(bundleTimer.elapsed)}',
         );
         final submission = signedDelegationPayload;
         if (submission == null) {
@@ -215,7 +217,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         debugPrint(
           '[zcash] Voting: delegation bundle completed '
           'round=${context.round.roundId} bundle=$bundleIndex '
-          'leafIndex=${result.leafIndex} total=${_formatElapsed(bundleTimer.elapsed)}',
+          'leafIndex=${result.leafIndex} total=${formatElapsedSeconds(bundleTimer.elapsed)}',
         );
         completedBundleIndexes.add(bundleIndex);
         progress[bundleIndex] = VotingSessionProgress(
@@ -241,7 +243,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'pendingDelegations=${refreshedPlan.pendingDelegationBundleIndexes.length} '
         'pendingVotes=${refreshedPlan.pendingVoteSubmissionKeys.length} '
         'pendingRecovery=${refreshedRoundPlan.pendingRecovery} '
-        'elapsed=${_formatElapsed(resumeTimer.elapsed)}',
+        'elapsed=${formatElapsedSeconds(resumeTimer.elapsed)}',
       );
       final nextPhase =
           refreshedPlan.pendingDelegationBundleIndexes
@@ -496,7 +498,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         debugPrint(
           '[zcash] Voting: Keystone delegation proof stream completed '
           'round=${context.round.roundId} bundle=$bundleIndex '
-          'elapsed=${_formatElapsed(bundleTimer.elapsed)}',
+          'elapsed=${formatElapsedSeconds(bundleTimer.elapsed)}',
         );
         final submission = signedDelegationPayload;
         if (submission == null) {
@@ -517,7 +519,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         debugPrint(
           '[zcash] Voting: Keystone delegation bundle completed '
           'round=${context.round.roundId} bundle=$bundleIndex '
-          'leafIndex=${result.leafIndex} total=${_formatElapsed(bundleTimer.elapsed)}',
+          'leafIndex=${result.leafIndex} total=${formatElapsedSeconds(bundleTimer.elapsed)}',
         );
         completedBundleIndexes.add(bundleIndex);
         progress[bundleIndex] = VotingSessionProgress(
@@ -810,7 +812,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           '[zcash] Voting: recovered ${recoveredWork.logLabel} completed '
           'round=${context.round.roundId} bundle=${key.bundleIndex} '
           'proposal=${key.proposalId} '
-          'total=${_formatElapsed(voteTimer.elapsed)}',
+          'total=${formatElapsedSeconds(voteTimer.elapsed)}',
         );
       }
       for (final work in voteWork) {
@@ -852,7 +854,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             '[zcash] Voting: vote tree sync completed '
             'round=${context.round.roundId} bundle=$bundleIndex '
             'proposal=${draftVote.proposalId} anchorHeight=$anchorHeight '
-            'elapsed=${_formatElapsed(syncTimer.elapsed)}',
+            'elapsed=${formatElapsedSeconds(syncTimer.elapsed)}',
           );
 
           final witnessTimer = Stopwatch()..start();
@@ -874,7 +876,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             '[zcash] Voting: VAN witness generation completed '
             'round=${context.round.roundId} bundle=$bundleIndex '
             'proposal=${draftVote.proposalId} position=${witness.position} '
-            'elapsed=${_formatElapsed(witnessTimer.elapsed)}',
+            'elapsed=${formatElapsedSeconds(witnessTimer.elapsed)}',
           );
           state = AsyncData(
             (state.value ?? current).copyWith(
@@ -985,7 +987,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             '[zcash] Voting: vote flow completed '
             'round=${context.round.roundId} bundle=$bundleIndex '
             'proposal=${draftVote.proposalId} '
-            'total=${_formatElapsed(voteTimer.elapsed)}',
+            'total=${formatElapsedSeconds(voteTimer.elapsed)}',
           );
         }
         completedQuestions++;
@@ -1016,7 +1018,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'pendingVotes=${refreshedPlan.pendingVoteSubmissionKeys.length} '
         'unconfirmedShares=${refreshedPlan.unconfirmedShareDelegations.length} '
         'pendingRecovery=${refreshedRoundPlan.pendingRecovery} '
-        'elapsed=${_formatElapsed(resumeTimer.elapsed)}',
+        'elapsed=${formatElapsedSeconds(resumeTimer.elapsed)}',
       );
       state = AsyncData(
         (state.value ?? current).copyWith(
@@ -1469,7 +1471,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       '[zcash] Voting: delegation submit response '
       'round=${context.round.roundId} bundle=$bundleIndex '
       'txHash=${result.txHash} code=${result.code} '
-      'elapsed=${_formatElapsed(submitTimer.elapsed)}',
+      'elapsed=${formatElapsedSeconds(submitTimer.elapsed)}',
     );
     if (result.code != 0) {
       throw StateError(
@@ -1546,7 +1548,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         debugPrint(
           '[zcash] Voting: tx confirmation found txHash=$txHash '
           'attempt=${attempt + 1} code=${confirmation.code} '
-          'elapsed=${_formatElapsed(timer.elapsed)}',
+          'elapsed=${formatElapsedSeconds(timer.elapsed)}',
         );
         return confirmation;
       }
@@ -1562,7 +1564,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
     debugPrint(
       '[zcash] Voting: tx confirmation wait timed out txHash=$txHash '
-      'elapsed=${_formatElapsed(timer.elapsed)}',
+      'elapsed=${formatElapsedSeconds(timer.elapsed)}',
     );
     return null;
   }
@@ -1725,7 +1727,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       return const [];
     }
-    final shareId = _hexFromBytes(share.nullifier);
+    final shareId = bytesToHex(share.nullifier);
     final acceptedUrls = <String>[];
     final helperHealth = ref.read(votingHelperHealthTrackerProvider);
     for (final serverUrl in helperHealth.candidateServers(serverUrls)) {
@@ -1788,7 +1790,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required rust_voting.ApiShareDelegationRecord share,
     required Iterable<String> serverUrls,
   }) async {
-    final shareId = _hexFromBytes(share.nullifier);
+    final shareId = bytesToHex(share.nullifier);
     for (final serverUrl in helperHealth.candidateServers(serverUrls)) {
       try {
         final status = await api.getShareStatus(
@@ -1863,13 +1865,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         '[zcash] Voting: delegation PIR precompute completed '
         'round=${context.round.roundId} bundle=$bundleIndex '
         'cached=${result.cachedCount} fetched=${result.fetchedCount} '
-        'elapsed=${_formatElapsed(timer.elapsed)}',
+        'elapsed=${formatElapsedSeconds(timer.elapsed)}',
       );
     } catch (e) {
       debugPrint(
         '[zcash] Voting: delegation PIR precompute failed '
         'round=${context.round.roundId} bundle=$bundleIndex '
-        'elapsed=${_formatElapsed(timer.elapsed)} error=$e '
+        'elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e '
         'reason=cache-miss',
       );
     } finally {
@@ -2485,10 +2487,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return !plan.voteTxHashesByKey.containsKey(key);
   }
 
-  static String _hexFromBytes(List<int> bytes) {
-    return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-  }
-
   static Future<Map<String, dynamic>> _wireJsonMap(
     Future<String> wireJson,
   ) async {
@@ -2553,10 +2551,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (left[i] != right[i]) return false;
     }
     return true;
-  }
-
-  static String _formatElapsed(Duration duration) {
-    return '${(duration.inMicroseconds / Duration.microsecondsPerSecond).toStringAsFixed(2)}s';
   }
 }
 

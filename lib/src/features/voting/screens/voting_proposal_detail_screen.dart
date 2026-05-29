@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/formatting/date_format.dart';
+import '../../../core/formatting/number_format.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/navigation/app_back_resolver.dart';
@@ -547,7 +549,7 @@ class _PollSummary extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.sm),
               Text(
-                '#${_formatHeight(snapshotHeight)}',
+                '#${formatGroupedInteger(snapshotHeight)}',
                 style: AppTypography.headlineMedium.copyWith(
                   color: colors.text.accent,
                   fontFamily: 'Geist',
@@ -569,7 +571,7 @@ class _PollSummary extends StatelessWidget {
             _MetaText(
               endDate == null
                   ? 'Voting active'
-                  : 'Ends ${_formatDate(endDate!)}',
+                  : 'Ends ${formatMonthDayYear(endDate!)}',
             ),
             const _MetaText('·'),
             _VotingPowerMeta(
@@ -808,7 +810,7 @@ class _PendingVoteContent extends StatelessWidget {
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       Text(
-                        '#${_formatHeight(snapshotHeight)}',
+                        '#${formatGroupedInteger(snapshotHeight)}',
                         style: AppTypography.headlineSmall.copyWith(
                           color: colors.text.accent,
                         ),
@@ -894,7 +896,7 @@ class _VotedPollHeader extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.sm),
             Text(
-              '#${_formatHeight(snapshotHeight)}',
+              '#${formatGroupedInteger(snapshotHeight)}',
               style: AppTypography.headlineSmall.copyWith(
                 color: colors.text.accent,
               ),
@@ -907,7 +909,7 @@ class _VotedPollHeader extends StatelessWidget {
           runSpacing: AppSpacing.xxs,
           children: [
             _MetaText(
-              votedAt == null ? 'Voted' : 'Voted ${_formatDate(votedAt!)}',
+              votedAt == null ? 'Voted' : 'Voted ${formatMonthDayYear(votedAt!)}',
             ),
             const _MetaText('·'),
             _VotingPowerMeta(
@@ -1317,36 +1319,10 @@ DateTime? _roundEndDate(Map<String, dynamic> json) {
 
 DateTime? _dateFromJson(Map<String, dynamic> json, List<String> keys) {
   for (final key in keys) {
-    final date = _parseDate(json[key]);
+    final date = parseFlexibleDate(json[key]);
     if (date != null) return date;
   }
   return null;
-}
-
-DateTime? _parseDate(Object? value) {
-  if (value == null) return null;
-  if (value is DateTime) return value;
-  if (value is num) {
-    final milliseconds = value > 100000000000
-        ? value.toInt()
-        : (value * 1000).toInt();
-    return DateTime.fromMillisecondsSinceEpoch(milliseconds);
-  }
-  final text = value.toString().trim();
-  final numeric = num.tryParse(text);
-  if (numeric != null) return _parseDate(numeric);
-  return DateTime.tryParse(text);
-}
-
-String _formatHeight(int height) {
-  final text = height.toString();
-  final buffer = StringBuffer();
-  for (var i = 0; i < text.length; i++) {
-    final remaining = text.length - i;
-    buffer.write(text[i]);
-    if (remaining > 1 && remaining % 3 == 1) buffer.write(',');
-  }
-  return buffer.toString();
 }
 
 String _daysLeftLabel(DateTime endDate) {
@@ -1376,30 +1352,7 @@ DateTime? _submittedAtFromPlan(VotingResumePlan plan) {
       .toList();
   if (timestamps.isEmpty) return null;
   timestamps.sort();
-  final raw = timestamps.last;
-  final milliseconds = raw > BigInt.from(100000000000)
-      ? raw.toInt()
-      : (raw * BigInt.from(1000)).toInt();
-  return DateTime.fromMillisecondsSinceEpoch(milliseconds);
-}
-
-String _formatDate(DateTime date) {
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  final local = date.toLocal();
-  return '${months[local.month - 1]} ${local.day}, ${local.year}';
+  return parseFlexibleDate(timestamps.last.toInt());
 }
 
 class _OptionRow extends StatelessWidget {

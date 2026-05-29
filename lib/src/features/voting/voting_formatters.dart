@@ -1,10 +1,11 @@
+import '../../core/formatting/zec_amount.dart';
+
+/// Formats raw zatoshi voting power as e.g. `12.5 ZEC`.
+///
+/// Delegates to [ZecAmount] for the decimal formatting. The denomination is
+/// kept as the literal `ZEC` to preserve existing output across networks.
 String formatVotingPower(BigInt zatoshi) {
-  const zatoshiPerZec = 100000000;
-  final whole = zatoshi ~/ BigInt.from(zatoshiPerZec);
-  final fraction = (zatoshi % BigInt.from(zatoshiPerZec))
-      .toInt()
-      .toString()
-      .padLeft(8, '0')
-      .replaceFirst(RegExp(r'0+$'), '');
-  return fraction.isEmpty ? '$whole ZEC' : '$whole.$fraction ZEC';
+  return ZecAmount.fromZatoshi(zatoshi)
+      .pretty(denomStyle: ZecDenomStyle.upper, denomination: 'ZEC')
+      .toString();
 }

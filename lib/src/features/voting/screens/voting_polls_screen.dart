@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/formatting/date_format.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/navigation/app_back_resolver.dart';
@@ -535,29 +536,10 @@ String? _roundDateLabel(Map<String, dynamic> json, _PollCardState state) {
       _PollCardState.voted => 'Closes',
       _PollCardState.tallying || _PollCardState.closed => 'Closed',
     };
-    return '$label ${_formatPollDate(end)}';
+    return '$label ${formatMonthDay(end)}';
   }
-  if (start != null) return 'Starts ${_formatPollDate(start)}';
+  if (start != null) return 'Starts ${formatMonthDay(start)}';
   return null;
-}
-
-String _formatPollDate(DateTime date) {
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  final local = date.toLocal();
-  return '${months[local.month - 1]} ${local.day}';
 }
 
 String _statusLabel(_PollCardState state) {
