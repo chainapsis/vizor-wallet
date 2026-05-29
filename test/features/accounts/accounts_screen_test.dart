@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -16,6 +17,7 @@ import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
+import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 const _validDeletePassword = 'Correct123!';
@@ -282,6 +284,73 @@ void main() {
       'Edit Name',
       'Change Picture',
     ]);
+  });
+
+  testWidgets('copy address uses the selected other account uuid', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final copiedTexts = _captureClipboardWrites(tester);
+    late _FakeReceiveAddressService receiveAddressService;
+
+    await tester.pumpWidget(
+      _accountsHarness(
+        receiveAddressService: (ref) =>
+            receiveAddressService = _FakeReceiveAddressService(ref),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-2')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Copy Address'));
+    await tester.pumpAndSettle();
+
+    expect(receiveAddressService.calls, [
+      const _ShieldedAddressCall(accountUuid: 'account-2'),
+    ]);
+    expect(copiedTexts, ['u1address-account-2']);
+    expect(find.text('Address Copied'), findsOneWidget);
+  });
+
+  testWidgets('copy address reuses the active account address cache', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final copiedTexts = _captureClipboardWrites(tester);
+    late _FakeReceiveAddressService receiveAddressService;
+
+    await tester.pumpWidget(
+      _accountsHarness(
+        receiveAddressService: (ref) =>
+            receiveAddressService = _FakeReceiveAddressService(ref),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Copy Address'));
+    await tester.pumpAndSettle();
+
+    expect(receiveAddressService.calls, [
+      const _ShieldedAddressCall(
+        accountUuid: 'account-1',
+        currentShieldedAddress: 'u1accountsaddress',
+      ),
+    ]);
+    expect(copiedTexts, ['u1accountsaddress']);
+    expect(find.text('Address Copied'), findsOneWidget);
   });
 
   testWidgets('account row hover is limited to other accounts', (tester) async {
@@ -865,6 +934,7 @@ Widget _accountsHarness({
   AccountNotifier Function()? accountNotifier,
   SyncNotifier Function()? syncNotifier,
   AppSecurityNotifier Function()? securityNotifier,
+  ReceiveAddressService Function(Ref ref)? receiveAddressService,
 }) {
   final router = GoRouter(
     initialLocation: '/accounts',
@@ -899,12 +969,35 @@ Widget _accountsHarness({
         securityNotifier ?? _FakeAppSecurityNotifier.new,
       ),
       syncProvider.overrideWith(syncNotifier ?? _FakeSyncNotifier.new),
+      if (receiveAddressService != null)
+        receiveAddressServiceProvider.overrideWith(receiveAddressService),
     ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
+}
+
+List<String> _captureClipboardWrites(WidgetTester tester) {
+  final copiedTexts = <String>[];
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async {
+      if (call.method == 'Clipboard.setData') {
+        final arguments = call.arguments as Map<Object?, Object?>;
+        copiedTexts.add(arguments['text']! as String);
+      }
+      return null;
+    },
+  );
+  addTearDown(() {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    );
+  });
+  return copiedTexts;
 }
 
 Widget _sidebarHarness() {
@@ -1081,6 +1174,49 @@ class _FakeAppSecurityNotifier extends AppSecurityNotifier {
   Future<bool> confirmPassword(String password) async {
     confirmedPasswords.add(password);
     return password == validPassword;
+  }
+}
+
+class _ShieldedAddressCall {
+  const _ShieldedAddressCall({
+    required this.accountUuid,
+    this.currentShieldedAddress,
+  });
+
+  final String accountUuid;
+  final String? currentShieldedAddress;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _ShieldedAddressCall &&
+          other.accountUuid == accountUuid &&
+          other.currentShieldedAddress == currentShieldedAddress;
+
+  @override
+  int get hashCode => Object.hash(accountUuid, currentShieldedAddress);
+}
+
+class _FakeReceiveAddressService extends ReceiveAddressService {
+  _FakeReceiveAddressService(super.ref);
+
+  final List<_ShieldedAddressCall> calls = [];
+
+  @override
+  Future<String> loadShieldedAddress({
+    required String accountUuid,
+    String? currentShieldedAddress,
+  }) async {
+    calls.add(
+      _ShieldedAddressCall(
+        accountUuid: accountUuid,
+        currentShieldedAddress: currentShieldedAddress,
+      ),
+    );
+    if (currentShieldedAddress != null && currentShieldedAddress.isNotEmpty) {
+      return currentShieldedAddress;
+    }
+    return 'u1address-$accountUuid';
   }
 }
 

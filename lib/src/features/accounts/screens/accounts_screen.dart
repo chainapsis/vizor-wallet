@@ -14,8 +14,10 @@ import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
+import '../../../providers/receive_address_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../widgets/account_name_modal.dart';
@@ -46,6 +48,7 @@ enum _AccountModalType { accountName, profilePicture, removeAccount }
 class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   String? _modalAccountUuid;
   _AccountModalType? _activeModal;
+  final Set<String> _copyingAddressUuids = {};
 
   void _showAccountNameModal(AccountInfo account) {
     _showModal(_AccountModalType.accountName, account);
@@ -190,7 +193,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                       activeAccount: activeAccount,
                       otherAccounts: otherAccounts,
                       onSelectAccount: _handleAccountSelected,
-                      onCopyAddress: _copyAddressTodo,
+                      onCopyAddress: _copyAddress,
                       onSendZec: _sendZecTodo,
                       onEditAccountName: _showAccountNameModal,
                       onChangeProfilePicture: _showProfilePictureModal,
@@ -259,8 +262,45 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     unawaited(_refreshAfterAccountSwitch(syncNotifier));
   }
 
-  void _copyAddressTodo() {
-    // TODO: wire account-row address copy once the product behavior is final.
+  Future<void> _copyAddress(AccountInfo account) async {
+    if (_copyingAddressUuids.contains(account.uuid)) return;
+
+    setState(() {
+      _copyingAddressUuids.add(account.uuid);
+    });
+
+    try {
+      final accountState = ref.read(accountProvider).value;
+      final currentShieldedAddress =
+          accountState?.activeAccountUuid == account.uuid
+          ? accountState?.activeAddress
+          : null;
+      final address = await ref
+          .read(receiveAddressServiceProvider)
+          .loadShieldedAddress(
+            accountUuid: account.uuid,
+            currentShieldedAddress: currentShieldedAddress,
+          );
+      if (!mounted) return;
+      if (address.trim().isEmpty) {
+        showAppToast(context, "Address couldn't be copied");
+        return;
+      }
+
+      await Clipboard.setData(ClipboardData(text: address));
+      if (!mounted) return;
+      showAppToast(context, 'Address Copied');
+    } catch (e) {
+      log('AccountsScreen: ERROR copying shielded address: $e');
+      if (!mounted) return;
+      showAppToast(context, "Address couldn't be copied");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _copyingAddressUuids.remove(account.uuid);
+        });
+      }
+    }
   }
 
   void _sendZecTodo() {
@@ -313,7 +353,7 @@ class _AccountsPane extends StatelessWidget {
   final AccountInfo? activeAccount;
   final List<AccountInfo> otherAccounts;
   final Future<void> Function(String uuid) onSelectAccount;
-  final VoidCallback onCopyAddress;
+  final ValueChanged<AccountInfo> onCopyAddress;
   final VoidCallback onSendZec;
   final ValueChanged<AccountInfo> onEditAccountName;
   final ValueChanged<AccountInfo> onChangeProfilePicture;
@@ -492,7 +532,7 @@ class _AccountsList extends StatelessWidget {
   final AccountInfo? activeAccount;
   final List<AccountInfo> otherAccounts;
   final Future<void> Function(String uuid) onSelectAccount;
-  final VoidCallback onCopyAddress;
+  final ValueChanged<AccountInfo> onCopyAddress;
   final VoidCallback onSendZec;
   final ValueChanged<AccountInfo> onEditAccountName;
   final ValueChanged<AccountInfo> onChangeProfilePicture;
@@ -638,7 +678,7 @@ class _OtherAccountsRows extends StatelessWidget {
   final int accountCount;
   final int seedAnchorCount;
   final Future<void> Function(String uuid) onSelectAccount;
-  final VoidCallback onCopyAddress;
+  final ValueChanged<AccountInfo> onCopyAddress;
   final VoidCallback onSendZec;
   final ValueChanged<AccountInfo> onEditAccountName;
   final ValueChanged<AccountInfo> onChangeProfilePicture;
@@ -726,7 +766,7 @@ class _AccountRow extends StatefulWidget {
   final AccountInfo account;
   final VoidCallback? onTap;
   final bool showSendZec;
-  final VoidCallback onCopyAddress;
+  final ValueChanged<AccountInfo> onCopyAddress;
   final VoidCallback onSendZec;
   final ValueChanged<AccountInfo> onEditName;
   final ValueChanged<AccountInfo> onChangePicture;
@@ -789,7 +829,7 @@ class _AccountRowState extends State<_AccountRow> {
             _AccountRowMenuButton(
               key: ValueKey('accounts_row_menu_button_${widget.account.uuid}'),
               showSendZec: widget.showSendZec,
-              onCopyAddress: widget.onCopyAddress,
+              onCopyAddress: () => widget.onCopyAddress(widget.account),
               onSendZec: widget.onSendZec,
               onEditName: () => widget.onEditName(widget.account),
               onChangePicture: () => widget.onChangePicture(widget.account),
