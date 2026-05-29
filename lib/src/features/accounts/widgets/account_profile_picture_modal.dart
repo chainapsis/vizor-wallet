@@ -25,7 +25,7 @@ class AccountProfilePictureModal extends StatefulWidget {
 
 class _AccountProfilePictureModalState
     extends State<AccountProfilePictureModal> {
-  static const _buttonWidth = 280.0;
+  static const _primaryButtonWidth = 112.0;
   static const _optionSize = AppProfilePictureSize.large;
   static const _gridWidth = 184.0;
 
@@ -122,18 +122,23 @@ class _AccountProfilePictureModalState
             const SizedBox(height: AppSpacing.xs),
           ],
           const SizedBox(height: AppSpacing.sm),
-          AppButton(
-            onPressed: _canUpdate ? _submit : null,
-            variant: AppButtonVariant.primary,
-            minWidth: _buttonWidth,
-            child: Text(_isSubmitting ? 'Updating...' : 'Update'),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: _isSubmitting ? null : widget.onCancel,
-            variant: AppButtonVariant.ghost,
-            minWidth: _buttonWidth,
-            child: const Text('Cancel'),
+          Row(
+            children: [
+              AppButton(
+                onPressed: _isSubmitting ? null : widget.onCancel,
+                variant: AppButtonVariant.ghost,
+                size: AppButtonSize.medium,
+                child: const Text('Cancel'),
+              ),
+              const Spacer(),
+              AppButton(
+                onPressed: _canUpdate ? _submit : null,
+                variant: AppButtonVariant.primary,
+                size: AppButtonSize.medium,
+                minWidth: _primaryButtonWidth,
+                child: Text(_isSubmitting ? 'Updating...' : 'Update'),
+              ),
+            ],
           ),
         ],
       ),
@@ -154,22 +159,45 @@ class _AccountProfilePictureModalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Container(
       width: 312,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.md,
-      ),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: context.colors.background.ground,
+        color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        border: Border.all(
+          color: colors.border.subtleOpacity,
+          strokeAlign: BorderSide.strokeAlignInside,
+        ),
+        boxShadow: _accountProfilePictureModalShadow(colors),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [header, SizedBox(height: gap), child],
+        children: [
+          header,
+          SizedBox(height: gap),
+          child,
+        ],
       ),
     );
   }
+}
+
+List<BoxShadow> _accountProfilePictureModalShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.regular, blurRadius: 1),
+    BoxShadow(
+      color: colors.shadows.regular,
+      offset: const Offset(0, 4),
+      blurRadius: 12,
+    ),
+    BoxShadow(
+      color: colors.shadows.regular,
+      offset: const Offset(0, 12),
+      blurRadius: 28,
+    ),
+  ];
 }
 
 class _AccountProfilePictureModalHeader extends StatelessWidget {
@@ -256,8 +284,9 @@ class _ProfilePictureOptionButtonState
 
     return FocusableActionDetector(
       enabled: widget.enabled,
-      mouseCursor:
-          widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      mouseCursor: widget.enabled
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
       onShowFocusHighlight: _setFocused,
       child: MouseRegion(
         onEnter: (_) => _setHovered(true),

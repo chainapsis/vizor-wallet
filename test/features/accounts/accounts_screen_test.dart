@@ -52,11 +52,12 @@ void main() {
     );
     expect(find.text('Current'), findsOneWidget);
     expect(find.text('Other'), findsOneWidget);
-    expect(find.text('Keystone'), findsOneWidget);
+    expect(find.text('Keystone'), findsNothing);
     final keystoneIcon = tester
         .widgetList<AppIcon>(find.byType(AppIcon))
         .singleWhere((icon) => icon.name == AppIcons.keystone);
-    expect(keystoneIcon.color, AppThemeData.light.colors.icon.accent);
+    expect(keystoneIcon.size, 14);
+    expect(keystoneIcon.color, AppThemeData.light.colors.icon.inverse);
 
     await tester.tap(find.text('Add Account'));
     await tester.pumpAndSettle();
@@ -101,7 +102,7 @@ void main() {
     },
   );
 
-  testWidgets('other accounts list scrolls while add account stays pinned', (
+  testWidgets('other accounts render without an internal scroll list', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -134,34 +135,16 @@ void main() {
     );
     await tester.pump();
 
-    final addButton = find.text('Add Account');
-    final addButtonTop = tester.getTopLeft(addButton).dy;
-
-    expect(
-      find.byKey(const ValueKey('accounts_list_scrollbar')),
-      findsOneWidget,
-    );
+    expect(find.byType(ListView), findsNothing);
     expect(
       find.byKey(const ValueKey('accounts_active_row_account-1')),
       findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey('accounts_other_row_account-20')),
-      findsNothing,
-    );
-
-    await tester.drag(find.byType(ListView), const Offset(0, -900));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.byKey(const ValueKey('accounts_active_row_account-1')),
       findsOneWidget,
     );
-    expect(tester.getTopLeft(addButton).dy, moreOrLessEquals(addButtonTop));
-    expect(
-      find.byKey(const ValueKey('accounts_other_row_account-20')),
-      findsOneWidget,
-    );
+    expect(find.text('Add Account'), findsOneWidget);
   });
 
   testWidgets('sidebar account selector opens accounts screen', (tester) async {
@@ -240,9 +223,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Copy Address'), findsOneWidget);
+    expect(find.text('Send ZEC'), findsOneWidget);
     expect(find.text('Edit Name'), findsOneWidget);
     expect(find.text('Change Picture'), findsOneWidget);
     expect(find.text('Remove Account'), findsOneWidget);
+    _expectVerticalTextOrder(tester, const [
+      'Copy Address',
+      'Send ZEC',
+      'Edit Name',
+      'Change Picture',
+      'Remove Account',
+    ]);
     expect(
       find.byKey(const ValueKey('accounts_active_row_account-1')),
       findsOneWidget,
@@ -260,9 +252,36 @@ void main() {
     await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
 
+    expect(find.text('Copy Address'), findsNothing);
+    expect(find.text('Send ZEC'), findsNothing);
     expect(find.text('Edit Name'), findsNothing);
     expect(find.text('Change Picture'), findsNothing);
     expect(find.text('Remove Account'), findsNothing);
+  });
+
+  testWidgets('current account menu omits send zec', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_accountsHarness());
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-1')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Copy Address'), findsOneWidget);
+    expect(find.text('Send ZEC'), findsNothing);
+    expect(find.text('Edit Name'), findsOneWidget);
+    expect(find.text('Change Picture'), findsOneWidget);
+    _expectVerticalTextOrder(tester, const [
+      'Copy Address',
+      'Edit Name',
+      'Change Picture',
+    ]);
   });
 
   testWidgets('account row hover is limited to other accounts', (tester) async {
@@ -398,14 +417,19 @@ void main() {
     await tester.tap(find.text('Edit Name'));
     await tester.pumpAndSettle();
 
-    expect(find.text('New Account Name'), findsOneWidget);
+    expect(find.text('Account name'), findsWidgets);
     expect(find.byType(AppPaneModalOverlay), findsOneWidget);
+    final modalBackdrop = find.descendant(
+      of: find.byType(AppPaneModalOverlay),
+      matching: find.byType(BackdropFilter),
+    );
+    expect(modalBackdrop, findsOneWidget);
     expect(
-      tester.getTopLeft(find.byType(BackdropFilter)),
+      tester.getTopLeft(modalBackdrop),
       tester.getTopLeft(find.byType(AppDesktopPane)),
     );
     expect(
-      tester.getSize(find.byType(BackdropFilter)),
+      tester.getSize(modalBackdrop),
       tester.getSize(find.byType(AppDesktopPane)),
     );
 
@@ -823,6 +847,18 @@ Future<void> _submitRemovePassword(
   await tester.enterText(find.byType(EditableText), password);
   await tester.pump();
   await tester.tap(find.text(buttonLabel));
+}
+
+void _expectVerticalTextOrder(WidgetTester tester, List<String> labels) {
+  for (var index = 1; index < labels.length; index += 1) {
+    final previous = labels[index - 1];
+    final current = labels[index];
+    expect(
+      tester.getTopLeft(find.text(previous)).dy,
+      lessThan(tester.getTopLeft(find.text(current)).dy),
+      reason: '$previous should appear above $current',
+    );
+  }
 }
 
 Widget _accountsHarness({

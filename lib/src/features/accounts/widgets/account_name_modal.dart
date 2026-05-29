@@ -26,7 +26,7 @@ class AccountNameModal extends StatefulWidget {
 
 class _AccountNameModalState extends State<AccountNameModal> {
   static const _fieldHeight = 86.0;
-  static const _buttonWidth = 280.0;
+  static const _primaryButtonWidth = 112.0;
 
   final _controller = TextEditingController();
   bool _isSubmitting = false;
@@ -47,6 +47,21 @@ class _AccountNameModalState extends State<AccountNameModal> {
       return null;
     }
     return kAccountNameLengthMessage;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.text = widget.accountName;
+  }
+
+  @override
+  void didUpdateWidget(covariant AccountNameModal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.accountName != widget.accountName) {
+      _controller.text = widget.accountName;
+      _submitError = null;
+    }
   }
 
   @override
@@ -87,21 +102,16 @@ class _AccountNameModalState extends State<AccountNameModal> {
   @override
   Widget build(BuildContext context) {
     return _AccountNameModalCard(
-      header: _AccountNameModalHeader(
-        leading: _AccountNameModalAvatar(
-          profilePictureId: widget.profilePictureId,
-        ),
-        title: widget.accountName,
-      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          _AccountNameModalHeader(profilePictureId: widget.profilePictureId),
+          const SizedBox(height: AppSpacing.md),
           SizedBox(
             height: _fieldHeight,
             child: AppTextField(
-              label: 'New Account Name',
-              hintText:
-                  '$kAccountNameMinCharacters-$kAccountNameMaxCharacters Characters',
+              label: 'Account name',
+              hintText: 'Account name',
               controller: _controller,
               autofocus: true,
               enabled: !_isSubmitting,
@@ -116,18 +126,23 @@ class _AccountNameModalState extends State<AccountNameModal> {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          AppButton(
-            onPressed: _canUpdate ? _submit : null,
-            variant: AppButtonVariant.primary,
-            minWidth: _buttonWidth,
-            child: Text(_isSubmitting ? 'Updating...' : 'Update'),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          AppButton(
-            onPressed: _isSubmitting ? null : widget.onCancel,
-            variant: AppButtonVariant.ghost,
-            minWidth: _buttonWidth,
-            child: const Text('Cancel'),
+          Row(
+            children: [
+              AppButton(
+                onPressed: _isSubmitting ? null : widget.onCancel,
+                variant: AppButtonVariant.ghost,
+                size: AppButtonSize.medium,
+                child: const Text('Cancel'),
+              ),
+              const Spacer(),
+              AppButton(
+                onPressed: _canUpdate ? _submit : null,
+                variant: AppButtonVariant.primary,
+                size: AppButtonSize.medium,
+                minWidth: _primaryButtonWidth,
+                child: Text(_isSubmitting ? 'Updating...' : 'Update'),
+              ),
+            ],
           ),
         ],
       ),
@@ -136,55 +151,51 @@ class _AccountNameModalState extends State<AccountNameModal> {
 }
 
 class _AccountNameModalCard extends StatelessWidget {
-  const _AccountNameModalCard({required this.header, required this.child});
+  const _AccountNameModalCard({required this.child});
 
-  final Widget header;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Container(
       width: 312,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.md,
-      ),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: context.colors.background.ground,
+        color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
+        border: Border.all(
+          color: colors.border.subtleOpacity,
+          strokeAlign: BorderSide.strokeAlignInside,
+        ),
+        boxShadow: _accountNameModalShadow(colors),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          header,
-          const SizedBox(height: AppSpacing.md),
-          child,
-        ],
-      ),
+      child: child,
     );
   }
 }
 
 class _AccountNameModalHeader extends StatelessWidget {
-  const _AccountNameModalHeader({required this.leading, required this.title});
+  const _AccountNameModalHeader({required this.profilePictureId});
 
-  final Widget leading;
-  final String title;
+  final String profilePictureId;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        leading,
-        const SizedBox(width: AppSpacing.xs),
-        Flexible(
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            style: AppTypography.bodyLarge.copyWith(
-              color: context.colors.text.accent,
-              fontWeight: FontWeight.w500,
-            ),
+        AppProfilePicture(
+          profilePictureId: profilePictureId,
+          size: AppProfilePictureSize.xLarge,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Edit Name',
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.bodyLarge.copyWith(
+            color: context.colors.text.accent,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
@@ -192,16 +203,18 @@ class _AccountNameModalHeader extends StatelessWidget {
   }
 }
 
-class _AccountNameModalAvatar extends StatelessWidget {
-  const _AccountNameModalAvatar({required this.profilePictureId});
-
-  final String profilePictureId;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppProfilePicture(
-      profilePictureId: profilePictureId,
-      size: AppProfilePictureSize.large,
-    );
-  }
+List<BoxShadow> _accountNameModalShadow(AppColors colors) {
+  return [
+    BoxShadow(color: colors.shadows.regular, blurRadius: 1),
+    BoxShadow(
+      color: colors.shadows.regular,
+      offset: const Offset(0, 4),
+      blurRadius: 12,
+    ),
+    BoxShadow(
+      color: colors.shadows.regular,
+      offset: const Offset(0, 12),
+      blurRadius: 28,
+    ),
+  ];
 }
