@@ -4,7 +4,7 @@ use secrecy::{ExposeSecret, SecretVec};
 
 use super::{
     bundle::validate_bundle_index, progress::VotingWorkCancellation, state::open_voting_db,
-    tree_sync::VanWitness,
+    tree_sync::VanWitness, voting_network,
 };
 
 const VAN_AUTH_PATH_LEN: usize = 24;
@@ -139,8 +139,7 @@ where
             },
             zcash_voting::vote::VoteSigner::Seed {
                 seed: hotkey_seed.expose_secret(),
-                network: zcash_voting::Network::from_id(network.voting_id().into())
-                    .map_err(|e| format!("network conversion failed: {e}"))?,
+                network: voting_network(network),
                 account_index: 0,
             },
             &reporter,

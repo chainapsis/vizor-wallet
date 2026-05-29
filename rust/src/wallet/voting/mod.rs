@@ -10,27 +10,10 @@ pub mod tree_sync;
 pub mod vote;
 pub mod workflow;
 
-impl WalletNetwork {
-    /// Returns the network identifier used by shielded-voting services.
-    ///
-    /// Mainnet maps to `1`; testnet and regtest map to `0` so local and test
-    /// voting workflows share the non-mainnet voting namespace.
-    pub fn voting_id(&self) -> u8 {
-        match self {
-            WalletNetwork::Main => 1,
-            WalletNetwork::Test | WalletNetwork::Regtest => 0,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn voting_id_mapping() {
-        assert_eq!(WalletNetwork::Main.voting_id(), 1);
-        assert_eq!(WalletNetwork::Test.voting_id(), 0);
-        assert_eq!(WalletNetwork::Regtest.voting_id(), 0);
+fn voting_network(network: WalletNetwork) -> zcash_voting::Network {
+    match network {
+        WalletNetwork::Main => zcash_voting::Network::Mainnet,
+        WalletNetwork::Test => zcash_voting::Network::Testnet,
+        WalletNetwork::Regtest => zcash_voting::Network::Regtest,
     }
 }

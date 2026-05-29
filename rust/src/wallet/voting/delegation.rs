@@ -14,6 +14,7 @@ use super::{
     hotkey::{derive_hotkey_raw_orchard_address, hotkey_raw_orchard_address_from_secret},
     progress::VotingWorkCancellation,
     state::{ensure_voting_round, open_voting_db},
+    voting_network,
 };
 
 pub use zcash_voting::delegate::DelegationProgress;
@@ -178,14 +179,6 @@ fn signed_payload_from_submission(
         delegated_weight_zatoshi,
         bundle_count: bundle_setup.bundle_count,
         bundle_index,
-    }
-}
-
-fn voting_network(network: WalletNetwork) -> zcash_voting::Network {
-    match network {
-        WalletNetwork::Main => zcash_voting::Network::Mainnet,
-        WalletNetwork::Test => zcash_voting::Network::Testnet,
-        WalletNetwork::Regtest => zcash_voting::Network::Regtest,
     }
 }
 
