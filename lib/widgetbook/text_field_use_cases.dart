@@ -80,7 +80,14 @@ Widget buildTextFieldGalleryUseCase(BuildContext context) {
                 initialValue: 'Value',
                 leading: const AppIcon(AppIcons.users, size: 20),
                 messageText: 'Shielded Address',
-                tone: AppTextFieldTone.brandCrimson,
+                messageIcon: AppIcon(
+                  AppIcons.shieldKeyholeOutline,
+                  size: 16,
+                  color: context.colors.text.brandCrimson,
+                ),
+                messageStyle: AppTypography.labelMedium.copyWith(
+                  color: context.colors.text.brandCrimson,
+                ),
               ),
             ),
             SizedBox(
@@ -191,7 +198,7 @@ Widget buildTextFieldInteractiveUseCase(BuildContext context) {
     label: 'Tone',
     options: const [
       AppTextFieldTone.neutral,
-      AppTextFieldTone.brandCrimson,
+      AppTextFieldTone.success,
       AppTextFieldTone.destructive,
     ],
     initialOption: AppTextFieldTone.neutral,
