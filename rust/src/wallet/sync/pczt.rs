@@ -12,8 +12,7 @@
 //!         │       (Orchard proof always; Sapling output proofs if
 //!         │        the proposal has a non-empty Sapling bundle)
 //!         │
-//!         └── 2b. zcash_voting::delegate::redact_for_signer(base)
-//!                                                      → redactedPczt     (phone)
+//!         └── 2b. redact_pczt_for_signer(base)        → redactedPczt     (phone)
 //!                 → Keystone device (animated QR)
 //!                 → device signs Orchard spend_auth_sig
 //!                 → signed PCZT back to phone          → pcztWithSignatures
@@ -221,8 +220,32 @@ pub fn add_proofs_to_pczt(
 /// (witnesses, proprietary metadata). Produces the bytes to send to
 /// the hardware wallet for signing.
 pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
-    zcash_voting::delegate::redact_for_signer(pczt_bytes)
-        .map_err(|e| format!("redact_for_signer failed: {e}"))
+    use pczt::roles::redactor::Redactor;
+
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse PCZT: {e:?}"))?;
+
+    let redacted = Redactor::new(pczt)
+        .redact_global_with(|mut r| r.redact_proprietary("zcash_client_backend:proposal_info"))
+        .redact_orchard_with(|mut r| {
+            r.redact_actions(|mut ar| {
+                ar.clear_spend_witness();
+                ar.redact_output_proprietary("zcash_client_backend:output_info");
+            });
+        })
+        .redact_sapling_with(|mut r| {
+            r.redact_spends(|mut sr| sr.clear_witness());
+            r.redact_outputs(|mut or| {
+                or.redact_proprietary("zcash_client_backend:output_info");
+            });
+        })
+        .redact_transparent_with(|mut r| {
+            r.redact_outputs(|mut or| {
+                or.redact_proprietary("zcash_client_backend:output_info");
+            });
+        })
+        .finish();
+
+    Ok(redacted.serialize())
 }
 
 /// Combine a PCZT-with-proofs and a PCZT-with-signatures, broadcast
