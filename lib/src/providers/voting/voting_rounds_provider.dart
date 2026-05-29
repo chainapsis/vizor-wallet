@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/voting.dart' as rust_voting;
+import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_models.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
@@ -67,7 +68,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
 
     final rounds = await api.listRounds();
     final endorsedIds = await endorser.getEndorsedSet();
-    final recoveryStates = await _roundListRecoveryStates(rounds);
+    final recoveryStates = await _roundListRecoveryStates(rounds, api: api);
     return [
       for (final round in rounds)
         VotingRoundView.fromSummary(
@@ -80,8 +81,9 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
   }
 
   Future<Map<String, _RoundListRecoveryState>> _roundListRecoveryStates(
-    Iterable<VotingRoundSummary> rounds,
-  ) async {
+    Iterable<VotingRoundSummary> rounds, {
+    required VotingApiClient api,
+  }) async {
     final String accountUuid;
     final String dbPath;
     try {
@@ -99,6 +101,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     for (final round in rounds) {
       try {
         final recoveryState = await _roundListRecoveryState(
+          api: api,
           dbPath: dbPath,
           accountUuid: accountUuid,
           round: round,
@@ -118,6 +121,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
   }
 
   Future<_RoundListRecoveryState> _roundListRecoveryState({
+    required VotingApiClient api,
     required VotingRoundSummary round,
     required String dbPath,
     required String accountUuid,
@@ -128,7 +132,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       walletId: accountUuid,
       roundId: round.roundId,
     );
-    final proposalIds = _proposalIdsFromRoundJson(round.rawJson);
+    final proposalIds = await _proposalIdsForRound(api, round);
     var hasBlockingRecovery = false;
     rust_voting.ApiRoundPlan? roundPlan;
     if (proposalIds.isNotEmpty) {
@@ -177,6 +181,25 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     } catch (error) {
       debugPrint(
         '[zcash] Voting: skipped proposal-id lookup for poll list row: $error',
+      );
+      return const [];
+    }
+  }
+
+  Future<List<int>> _proposalIdsForRound(
+    VotingApiClient api,
+    VotingRoundSummary round,
+  ) async {
+    final summaryProposalIds = _proposalIdsFromRoundJson(round.rawJson);
+    if (summaryProposalIds.isNotEmpty) return summaryProposalIds;
+
+    try {
+      final status = await api.getRoundStatus(round.roundId);
+      return _proposalIdsFromRoundJson(status.rawJson);
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: skipped round detail lookup for poll-state lookup '
+        'for round ${round.roundId}: $error',
       );
       return const [];
     }

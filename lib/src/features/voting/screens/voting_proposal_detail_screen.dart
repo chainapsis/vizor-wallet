@@ -909,7 +909,9 @@ class _VotedPollHeader extends StatelessWidget {
           runSpacing: AppSpacing.xxs,
           children: [
             _MetaText(
-              votedAt == null ? 'Voted' : 'Voted ${formatMonthDayYear(votedAt!)}',
+              votedAt == null
+                  ? 'Voted'
+                  : 'Voted ${formatMonthDayYear(votedAt!)}',
             ),
             const _MetaText('·'),
             _VotingPowerMeta(

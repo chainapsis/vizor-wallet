@@ -710,9 +710,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_list_api_keystone_signature_record(SseDeserializer deserializer);
 
   @protected
-  List<ApiNextStep> sse_decode_list_api_next_step(
-    SseDeserializer deserializer,
-  );
+  List<ApiNextStep> sse_decode_list_api_next_step(SseDeserializer deserializer);
 
   @protected
   List<ApiShareDelegationRecord> sse_decode_list_api_share_delegation_record(

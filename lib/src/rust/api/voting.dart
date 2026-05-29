@@ -61,6 +61,29 @@ Future<List<ApiShareSubmissionPlan>> planShareSubmissions({
   singleShare: singleShare,
 );
 
+/// Return share-tracking action flags using `zcash_voting::share_policy`.
+///
+/// Bit 0 means the share is ready for status polling. Bit 1 means it is overdue
+/// and should be retried against helpers that missed the initial submission.
+Future<int> shareTrackingFlags({
+  required ApiShareDelegationRecord share,
+  required BigInt nowSeconds,
+  BigInt? voteEndTimeSeconds,
+}) => RustLib.instance.api.crateApiVotingShareTrackingFlags(
+  share: share,
+  nowSeconds: nowSeconds,
+  voteEndTimeSeconds: voteEndTimeSeconds,
+);
+
+/// Return the next share-tracking delay in seconds using crate policy.
+Future<BigInt?> nextShareTrackingDelaySeconds({
+  required List<ApiShareDelegationRecord> shares,
+  required BigInt nowSeconds,
+}) => RustLib.instance.api.crateApiVotingNextShareTrackingDelaySeconds(
+  shares: shares,
+  nowSeconds: nowSeconds,
+);
+
 /// Extract and validate one helper-share payload from stored recovery JSON.
 ///
 /// The stored recovery blob is hex-encoded and also contains local-only

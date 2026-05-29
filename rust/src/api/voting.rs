@@ -285,6 +285,55 @@ pub fn plan_share_submissions(
     })
 }
 
+/// Return share-tracking action flags using `zcash_voting::share_policy`.
+///
+/// Bit 0 means the share is ready for status polling. Bit 1 means it is overdue
+/// and should be retried against helpers that missed the initial submission.
+pub fn share_tracking_flags(
+    share: ApiShareDelegationRecord,
+    now_seconds: u64,
+    vote_end_time_seconds: Option<u64>,
+) -> Result<u32, String> {
+    catch(|| {
+        let share = share_tracking_record(&share);
+        let policy = zcash_voting::share::ShareTimingPolicy::default();
+        let mut flags = 0u32;
+        if zcash_voting::share::policy::is_share_ready_for_status_check(&share, now_seconds, policy)
+        {
+            flags |= 1;
+        }
+        if vote_end_time_seconds
+            .map(|vote_end_time_seconds| {
+                zcash_voting::share::policy::should_resubmit_share(
+                    &share,
+                    now_seconds,
+                    vote_end_time_seconds,
+                    policy,
+                )
+            })
+            .unwrap_or(false)
+        {
+            flags |= 2;
+        }
+        Ok(flags)
+    })
+}
+
+/// Return the next share-tracking delay in seconds using crate policy.
+pub fn next_share_tracking_delay_seconds(
+    shares: Vec<ApiShareDelegationRecord>,
+    now_seconds: u64,
+) -> Result<Option<u64>, String> {
+    catch(|| {
+        let shares = shares.iter().map(share_tracking_record).collect::<Vec<_>>();
+        Ok(zcash_voting::share::policy::next_tracking_delay_seconds(
+            &shares,
+            now_seconds,
+            zcash_voting::share::ShareTimingPolicy::default(),
+        ))
+    })
+}
+
 /// Extract and validate one helper-share payload from stored recovery JSON.
 ///
 /// The stored recovery blob is hex-encoded and also contains local-only
@@ -668,6 +717,20 @@ fn recovered_vote_share_wire_json_inner(
         primary_blind: payload.primary_blind,
     };
     vote_share_wire_json_inner(&api_payload, Some(vc_tree_position), submit_at)
+}
+
+fn share_tracking_record(share: &ApiShareDelegationRecord) -> zcash_voting::ShareDelegationRecord {
+    zcash_voting::ShareDelegationRecord {
+        round_id: share.round_id.clone(),
+        bundle_index: share.bundle_index,
+        proposal_id: share.proposal_id,
+        share_index: share.share_index,
+        sent_to_urls: share.sent_to_urls.clone(),
+        nullifier: share.nullifier.clone(),
+        confirmed: share.confirmed,
+        submit_at: share.submit_at,
+        created_at: share.created_at,
+    }
 }
 
 fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
@@ -1985,6 +2048,61 @@ mod tests {
 
         let err = vote_share_wire_json(payload, None, 123).unwrap_err();
         assert!(err.contains("tree_position"));
+    }
+
+    #[test]
+    fn share_tracking_flags_use_crate_policy() {
+        let share = ApiShareDelegationRecord {
+            round_id: ROUND_ID.to_string(),
+            bundle_index: 0,
+            proposal_id: 7,
+            share_index: 0,
+            sent_to_urls: vec!["https://helper.example".to_string()],
+            nullifier: vec![1; 32],
+            phase: "submitted_share".to_string(),
+            confirmed: false,
+            submit_at: 100,
+            created_at: 50,
+        };
+
+        assert_eq!(
+            share_tracking_flags(share.clone(), 109, Some(500)).unwrap(),
+            0
+        );
+        assert_eq!(
+            share_tracking_flags(share.clone(), 110, Some(500)).unwrap(),
+            1
+        );
+        assert_eq!(share_tracking_flags(share, 200, Some(500)).unwrap(), 3);
+    }
+
+    #[test]
+    fn next_share_tracking_delay_uses_crate_ready_interval() {
+        let ready = ApiShareDelegationRecord {
+            round_id: ROUND_ID.to_string(),
+            bundle_index: 0,
+            proposal_id: 7,
+            share_index: 0,
+            sent_to_urls: vec!["https://helper.example".to_string()],
+            nullifier: vec![1; 32],
+            phase: "submitted_share".to_string(),
+            confirmed: false,
+            submit_at: 100,
+            created_at: 50,
+        };
+        let future = ApiShareDelegationRecord {
+            submit_at: 140,
+            ..ready.clone()
+        };
+
+        assert_eq!(
+            next_share_tracking_delay_seconds(vec![ready], 130).unwrap(),
+            Some(15)
+        );
+        assert_eq!(
+            next_share_tracking_delay_seconds(vec![future], 120).unwrap(),
+            Some(30)
+        );
     }
 
     #[test]

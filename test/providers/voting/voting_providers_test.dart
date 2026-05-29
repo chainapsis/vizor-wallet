@@ -9,7 +9,6 @@ import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
-import 'package:zcash_wallet/src/features/voting/voting_share_timing.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_rounds_provider.dart';
@@ -241,6 +240,66 @@ void main() {
     },
   );
 
+  test(
+    'rounds provider loads planner state when summaries omit proposals',
+    () async {
+      final roundStatusWithProposals = roundStatusJson(roundId: kRoundId)
+        ..['proposals'] = [
+          {
+            'proposal_id': 7,
+            'title': 'Question',
+            'options': ['Yes', 'No'],
+          },
+        ];
+      final http = FakeVotingHttpClient(
+        responses: {
+          ...votingHttpResponses(roundStatus: roundStatusWithProposals),
+          '/shielded-vote/v1/rounds': [
+            {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+          ],
+          '/shielded-vote/v1/endorsed-rounds/zodl': {
+            'endorsed_round_ids': [kRoundId],
+          },
+        },
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(),
+        roundPlan: rust_voting.ApiRoundPlan(
+          roundId: kRoundId,
+          pendingRecovery: true,
+          nextSteps: const [
+            rust_voting.ApiNextStep(
+              kind: 'vote',
+              bundleIndex: 0,
+              proposalId: 7,
+              choice: 1,
+              shareIndex: 0,
+            ),
+          ],
+          openProposals: Uint32List(0),
+          allDecided: false,
+        ),
+      );
+      final container = _sessionContainer(http: http, recoveryApi: recoveryApi);
+      addTearDown(container.dispose);
+
+      final rounds = await container.read(votingRoundsProvider.future);
+
+      expect(rounds.single.inProgress, isTrue);
+      expect(recoveryApi.roundPlanProposalIds, [
+        [7],
+      ]);
+      expect(
+        http.requests.any(
+          (request) =>
+              request.method == 'GET' &&
+              request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+        ),
+        isTrue,
+      );
+    },
+  );
+
   test('rounds refresh keeps previous data when polling fails', () async {
     final responses = {
       'https://voting.example/static-voting-config.json': staticConfigJson(),
@@ -329,71 +388,6 @@ void main() {
         DateTime.fromMillisecondsSinceEpoch(1500000, isUtc: true),
       ),
       isFalse,
-    );
-  });
-
-  test('share timing policy schedules before last-moment buffer', () {
-    final round = VotingRoundDetails.fromStatus(
-      VotingRoundStatus.fromJson(
-        roundStatusJson(roundId: kRoundId, ceremonyStart: 1000, voteEnd: 1600),
-      ),
-    );
-    final submitAt = VotingShareTimingPolicy.scheduledShareSubmitAt(
-      round,
-      now: DateTime.fromMillisecondsSinceEpoch(1100000, isUtc: true),
-      randomDouble: () => 0.5,
-    );
-
-    expect(submitAt, 1230);
-  });
-
-  test('share timing policy gates status checks and overdue retries', () {
-    final share = rust_voting.ApiShareDelegationRecord(
-      roundId: kRoundId,
-      bundleIndex: 0,
-      proposalId: 7,
-      shareIndex: 0,
-      sentToUrls: const ['https://helper-a.example'],
-      nullifier: Uint8List.fromList(List.filled(32, 1)),
-      phase: VotingWorkflowPhase.submittedShare,
-      confirmed: false,
-      submitAt: BigInt.from(100),
-      createdAt: BigInt.from(50),
-    );
-
-    expect(
-      VotingShareTimingPolicy.isShareReadyForStatusCheck(
-        share,
-        nowSeconds: 109,
-      ),
-      isFalse,
-    );
-    expect(
-      VotingShareTimingPolicy.isShareReadyForStatusCheck(
-        share,
-        nowSeconds: 110,
-      ),
-      isTrue,
-    );
-    expect(
-      VotingShareTimingPolicy.overdueThreshold(share, voteEndTimeSeconds: 500),
-      const Duration(seconds: 100),
-    );
-    expect(
-      VotingShareTimingPolicy.shouldResubmitShare(
-        share,
-        nowSeconds: 199,
-        voteEndTimeSeconds: 500,
-      ),
-      isFalse,
-    );
-    expect(
-      VotingShareTimingPolicy.shouldResubmitShare(
-        share,
-        nowSeconds: 200,
-        voteEndTimeSeconds: 500,
-      ),
-      isTrue,
     );
   });
 
@@ -2930,6 +2924,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   final walletIds = <String>[];
   final addedSentServers = <_AddedSentServers>[];
   final ballotIntents = <String>[];
+  final roundPlanProposalIds = <List<int>>[];
   final Object? setBallotIntentError;
   var _roundPlanCallCount = 0;
 
@@ -2979,6 +2974,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required String roundId,
     required List<int> proposalIds,
   }) async {
+    roundPlanProposalIds.add(List<int>.from(proposalIds));
     final sequence = roundPlanSequence;
     if (sequence != null && sequence.isNotEmpty) {
       var index = _roundPlanCallCount;
@@ -3720,6 +3716,56 @@ class FakeVotingRustApi implements VotingRustApi {
           targetServers: serverUrls.take(targetCount).toList(growable: false),
         ),
     ];
+  }
+
+  @override
+  Future<int> shareTrackingFlags({
+    required rust_voting.ApiShareDelegationRecord share,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  }) async {
+    final now = nowSeconds.toInt();
+    final base = share.submitAt > BigInt.zero
+        ? share.submitAt.toInt()
+        : share.createdAt.toInt();
+    var flags = 0;
+    if (!share.confirmed && now >= base + 10) {
+      flags |= 1;
+    }
+    final voteEnd = voteEndTimeSeconds?.toInt();
+    if (!share.confirmed && voteEnd != null) {
+      final remaining = (voteEnd - base).clamp(0, 1 << 31).toInt();
+      final threshold = (remaining ~/ 4).clamp(30, 3600).toInt();
+      if (now >= base + threshold && voteEnd > now + 10) {
+        flags |= 2;
+      }
+    }
+    return flags;
+  }
+
+  @override
+  Future<BigInt?> nextShareTrackingDelaySeconds({
+    required List<rust_voting.ApiShareDelegationRecord> shares,
+    required BigInt nowSeconds,
+  }) async {
+    final now = nowSeconds.toInt();
+    int? nextSecond;
+    var hasUnconfirmed = false;
+    for (final share in shares.where((share) => !share.confirmed)) {
+      hasUnconfirmed = true;
+      final base = share.submitAt > BigInt.zero
+          ? share.submitAt.toInt()
+          : share.createdAt.toInt();
+      final checkAt = base + 10;
+      if (checkAt > now && (nextSecond == null || checkAt < nextSecond)) {
+        nextSecond = checkAt;
+      }
+    }
+    if (!hasUnconfirmed) return null;
+    final delay = nextSecond == null
+        ? 15
+        : (nextSecond - now).clamp(0, 30).toInt();
+    return BigInt.from(delay < 3 ? 3 : delay);
   }
 
   @override

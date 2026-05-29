@@ -611,6 +611,17 @@ abstract class RustLibApi extends BaseApi {
     required bool singleShare,
   });
 
+  Future<int> crateApiVotingShareTrackingFlags({
+    required ApiShareDelegationRecord share,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  });
+
+  Future<BigInt?> crateApiVotingNextShareTrackingDelaySeconds({
+    required List<ApiShareDelegationRecord> shares,
+    required BigInt nowSeconds,
+  });
+
   Future<ApiDelegationPirPrecomputeResult>
   crateApiVotingPrecomputeDelegationPir({
     required String dbPath,
@@ -4279,6 +4290,78 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "lastMomentBufferSeconds",
           "singleShare",
         ],
+      );
+
+  @override
+  Future<int> crateApiVotingShareTrackingFlags({
+    required ApiShareDelegationRecord share,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_api_share_delegation_record(share, serializer);
+          sse_encode_u_64(nowSeconds, serializer);
+          sse_encode_opt_box_autoadd_u_64(voteEndTimeSeconds, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 122,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_32,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVotingShareTrackingFlagsConstMeta,
+        argValues: [share, nowSeconds, voteEndTimeSeconds],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVotingShareTrackingFlagsConstMeta =>
+      const TaskConstMeta(
+        debugName: "share_tracking_flags",
+        argNames: ["share", "nowSeconds", "voteEndTimeSeconds"],
+      );
+
+  @override
+  Future<BigInt?> crateApiVotingNextShareTrackingDelaySeconds({
+    required List<ApiShareDelegationRecord> shares,
+    required BigInt nowSeconds,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_api_share_delegation_record(shares, serializer);
+          sse_encode_u_64(nowSeconds, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 123,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_u_64,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVotingNextShareTrackingDelaySecondsConstMeta,
+        argValues: [shares, nowSeconds],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVotingNextShareTrackingDelaySecondsConstMeta =>
+      const TaskConstMeta(
+        debugName: "next_share_tracking_delay_seconds",
+        argNames: ["shares", "nowSeconds"],
       );
 
   @override

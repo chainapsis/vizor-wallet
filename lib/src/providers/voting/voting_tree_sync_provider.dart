@@ -102,5 +102,4 @@ class VotingTreePreSyncService {
       _inFlight.remove(key);
     }
   }
-
 }

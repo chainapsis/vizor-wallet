@@ -2247,6 +2247,56 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
+  Future<int> shareTrackingFlags({
+    required rust_voting.ApiShareDelegationRecord share,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  }) async {
+    final now = nowSeconds.toInt();
+    final base = share.submitAt > BigInt.zero
+        ? share.submitAt.toInt()
+        : share.createdAt.toInt();
+    var flags = 0;
+    if (!share.confirmed && now >= base + 10) {
+      flags |= 1;
+    }
+    final voteEnd = voteEndTimeSeconds?.toInt();
+    if (!share.confirmed && voteEnd != null) {
+      final remaining = (voteEnd - base).clamp(0, 1 << 31).toInt();
+      final threshold = (remaining ~/ 4).clamp(30, 3600).toInt();
+      if (now >= base + threshold && voteEnd > now + 10) {
+        flags |= 2;
+      }
+    }
+    return flags;
+  }
+
+  @override
+  Future<BigInt?> nextShareTrackingDelaySeconds({
+    required List<rust_voting.ApiShareDelegationRecord> shares,
+    required BigInt nowSeconds,
+  }) async {
+    final now = nowSeconds.toInt();
+    int? nextSecond;
+    var hasUnconfirmed = false;
+    for (final share in shares.where((share) => !share.confirmed)) {
+      hasUnconfirmed = true;
+      final base = share.submitAt > BigInt.zero
+          ? share.submitAt.toInt()
+          : share.createdAt.toInt();
+      final checkAt = base + 10;
+      if (checkAt > now && (nextSecond == null || checkAt < nextSecond)) {
+        nextSecond = checkAt;
+      }
+    }
+    if (!hasUnconfirmed) return null;
+    final delay = nextSecond == null
+        ? 15
+        : (nextSecond - now).clamp(0, 30).toInt();
+    return BigInt.from(delay < 3 ? 3 : delay);
+  }
+
+  @override
   Future<String> recoveredVoteShareWireJson({
     required String commitmentBundleJson,
     required int proposalId,

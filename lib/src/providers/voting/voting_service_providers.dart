@@ -451,6 +451,17 @@ abstract interface class VotingRustApi {
     required bool singleShare,
   });
 
+  Future<int> shareTrackingFlags({
+    required rust_voting.ApiShareDelegationRecord share,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  });
+
+  Future<BigInt?> nextShareTrackingDelaySeconds({
+    required List<rust_voting.ApiShareDelegationRecord> shares,
+    required BigInt nowSeconds,
+  });
+
   Future<String> recoveredVoteShareWireJson({
     required String commitmentBundleJson,
     required int proposalId,
@@ -913,6 +924,30 @@ class FrbVotingRustApi implements VotingRustApi {
       voteEndTimeSeconds: voteEndTimeSeconds,
       lastMomentBufferSeconds: lastMomentBufferSeconds,
       singleShare: singleShare,
+    );
+  }
+
+  @override
+  Future<int> shareTrackingFlags({
+    required rust_voting.ApiShareDelegationRecord share,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  }) {
+    return rust_voting.shareTrackingFlags(
+      share: share,
+      nowSeconds: nowSeconds,
+      voteEndTimeSeconds: voteEndTimeSeconds,
+    );
+  }
+
+  @override
+  Future<BigInt?> nextShareTrackingDelaySeconds({
+    required List<rust_voting.ApiShareDelegationRecord> shares,
+    required BigInt nowSeconds,
+  }) {
+    return rust_voting.nextShareTrackingDelaySeconds(
+      shares: shares,
+      nowSeconds: nowSeconds,
     );
   }
 
