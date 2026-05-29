@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
-import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -68,7 +68,7 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
 
     final amountZatoshi = zecDepositAmountZatoshiForIntent(intent);
     final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointProvider);
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     final sendFlowId = _newSwapHardwareFlowId('deposit');
     BigInt? proposalId;
     var proposalConsumed = false;
@@ -158,7 +158,7 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
     String? outputParamsPath,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointProvider);
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     final result = await rust_sync.extractAndBroadcastPczt(
       dbPath: dbPath,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,

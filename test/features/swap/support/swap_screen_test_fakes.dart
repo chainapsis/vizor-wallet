@@ -24,6 +24,7 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
   _FakeSwapSyncNotifier(this.spendableBalance);
 
   final BigInt spendableBalance;
+  var restartCount = 0;
 
   @override
   Future<SyncState> build() async => SyncState(
@@ -32,6 +33,11 @@ class _FakeSwapSyncNotifier extends SyncNotifier {
     spendableBalance: spendableBalance,
     totalBalance: spendableBalance,
   );
+
+  @override
+  Future<void> restartSync() async {
+    restartCount++;
+  }
 }
 
 class _FakeSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
@@ -64,8 +70,11 @@ class _CompletingSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
 }
 
 class _FakeSwapProvider implements SwapProvider {
-  _FakeSwapProvider({List<SwapAsset>? supportedAssets, this.submitDepositError})
-    : supportedAssets = supportedAssets ?? swapExternalAssets;
+  _FakeSwapProvider({
+    List<SwapAsset>? supportedAssets,
+    this.submitDepositError,
+    this.quoteExpiresAt,
+  }) : supportedAssets = supportedAssets ?? swapExternalAssets;
 
   final requests = <SwapQuoteRequest>[];
   final startedQuotes = <SwapQuote>[];
@@ -73,6 +82,10 @@ class _FakeSwapProvider implements SwapProvider {
   final submittedDeposits = <_SubmittedDeposit>[];
   final List<SwapAsset> supportedAssets;
   final Object? submitDepositError;
+
+  /// When set, every quote carries this expiry so tests can exercise the
+  /// review-quote expiry guard in [SwapNotifier.startIntent].
+  final DateTime? quoteExpiresAt;
 
   @override
   String get providerLabel => 'NEAR Intents';
@@ -109,6 +122,7 @@ class _FakeSwapProvider implements SwapProvider {
         estimate.sellAmount,
       ),
       providerQuoteId: 'quote-live',
+      quoteExpiresAt: quoteExpiresAt,
       providerRefundInfo:
           request.mode == SwapQuoteMode.exactOutput
               ? const SwapProviderRefundInfo(

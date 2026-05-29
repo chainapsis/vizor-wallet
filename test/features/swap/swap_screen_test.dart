@@ -42,6 +42,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.
 import 'package:zcash_wallet/src/features/swap/widgets/swap_summary_amount_text.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -1529,6 +1530,125 @@ void main() {
     );
   });
 
+  testWidgets('swap address modal blocks a malformed recipient address', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0xnope',
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text("Invalid EVM address"),
+      findsOneWidget,
+    );
+    final blockedButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('swap_address_update_button')),
+    );
+    expect(blockedButton.onPressed, isNull);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text("Invalid EVM address"),
+      findsNothing,
+    );
+    final allowedButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('swap_address_update_button')),
+    );
+    expect(allowedButton.onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_update_button')));
+    await tester.pumpAndSettle();
+
+    expect(_destinationSummaryText(tester), '0x529084...169ee7');
+  });
+
+  testWidgets('swap address modal ignores keyboard submit of a bad address', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_address_summary')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_destination_field')),
+      '0xnope',
+    );
+    await tester.pumpAndSettle();
+
+    // Pressing keyboard "done" must not commit the malformed address.
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('swap_address_modal')), findsOneWidget);
+    expect(_destinationSummaryText(tester), isEmpty);
+  });
+
+  testWidgets('swap review button surfaces an invalid destination address', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Simulate a non-modal path (contact picker / retry) setting a malformed
+    // address directly into state.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SwapScreen)),
+      listen: false,
+    );
+    container.read(swapStateProvider.notifier).updateDestination('0xnope');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid EVM address'), findsOneWidget);
+    final button = tester.widget<AppButton>(
+      find.byKey(const ValueKey('swap_review_button')),
+    );
+    expect(button.onPressed, isNull);
+  });
+
   testWidgets('swap address modal loads recipient address from contacts', (
     tester,
   ) async {
@@ -1546,7 +1666,7 @@ void main() {
             id: 'usdc',
             label: 'USDC Friend',
             network: AddressBookNetwork.ethereum,
-            address: '0xusdc-recipient',
+            address: '0xd1220a0cf47c7b9be7a2e6ba89f429762e7b9adb',
           ),
           _addressBookContact(
             id: 'zcash',
@@ -1582,7 +1702,7 @@ void main() {
       find.byKey(const ValueKey('address_book_contact_picker_modal')),
       findsNothing,
     );
-    expect(_destinationSummaryText(tester), '0xusdc-recipient');
+    expect(_destinationSummaryText(tester), '0xd1220a...7b9adb');
   });
 
   testWidgets('swap address modal remembers submitted recipient', (
@@ -1607,7 +1727,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('swap_destination_field')),
-      '0xremembered-recipient',
+      '0xdbf03b407c01e7cd3cbea99509d93f8dddc8c6fb',
     );
     await tester.tap(
       find.byKey(const ValueKey('swap_address_remember_toggle')),
@@ -1619,7 +1739,7 @@ void main() {
     expect(addressBookRepository.contacts, hasLength(1));
     expect(
       addressBookRepository.contacts.single.address,
-      '0xremembered-recipient',
+      '0xdbf03b407c01e7cd3cbea99509d93f8dddc8c6fb',
     );
     expect(
       addressBookRepository.contacts.single.network,
@@ -1652,13 +1772,13 @@ void main() {
             id: 'base',
             label: 'Base USDC Friend',
             network: AddressBookNetwork.base,
-            address: '0xbase-usdc-recipient',
+            address: '0xdc2d3454f7baf9f15c98e8f5d6a3cb5a5f1b2c3d',
           ),
           _addressBookContact(
             id: 'ethereum',
             label: 'Ethereum USDC Friend',
             network: AddressBookNetwork.ethereum,
-            address: '0xeth-usdc-recipient',
+            address: '0x583031d1113ad414f02576bd6afabfb302140225',
           ),
         ]),
       ),
@@ -1829,7 +1949,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -1895,7 +2015,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await container.read(accountProvider.notifier).switchAccount('account-2');
@@ -2117,7 +2237,7 @@ void main() {
         find.byKey(const ValueKey('swap_amount_field')),
         '1',
       );
-      await _enterDestinationText(tester, '0xrecipient');
+      await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
       await tester.pumpAndSettle();
 
       expect(find.text('Max: 1 ZEC'), findsOneWidget);
@@ -2444,7 +2564,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -2529,7 +2649,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -2626,7 +2746,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '0.01',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     expect(swapProvider.pricingRequests, 1);
@@ -2661,7 +2781,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     expect(_fieldText(tester, 'swap_receive_amount_field'), '100.00');
@@ -2699,7 +2819,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     expect(_fieldText(tester, 'swap_receive_amount_field'), '100.00');
@@ -2737,7 +2857,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -4042,7 +4162,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
@@ -4086,7 +4206,7 @@ void main() {
       depositMemo:
           'memo-with-a-long-routing-tag-and-provider-reference-9876543210',
       oneClickRefundTo:
-          '0xrefund-address-with-a-very-long-source-chain-suffix-abcdef1234567890',
+          '0xfb6916095ca1df60bb79ce92ce3ea74c37c5d359',
     );
 
     await tester.pumpWidget(
@@ -4142,7 +4262,7 @@ void main() {
     );
     await _enterDestinationText(
       tester,
-      '0xrefund-address-with-a-very-long-source-chain-suffix-abcdef1234567890',
+      '0xfb6916095ca1df60bb79ce92ce3ea74c37c5d359',
     );
     await tester.pumpAndSettle();
 
@@ -4189,7 +4309,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '0.002',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -4239,7 +4359,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xabc123');
+    await _enterDestinationText(tester, '0xde709f2102306220921060314715629080e2fb77');
     await tester.pumpAndSettle();
 
     expect(_fieldText(tester, 'swap_receive_amount_field'), '105.26');
@@ -4247,7 +4367,7 @@ void main() {
     expect(find.byKey(const ValueKey('swap_rate_line')), findsOneWidget);
     expect(find.byKey(const ValueKey('swap_address_summary')), findsOneWidget);
     expect(find.text('Ethereum recipient'), findsNothing);
-    expect(find.text('0xabc123'), findsWidgets);
+    expect(find.text('0xde709f...e2fb77'), findsWidgets);
     expect(find.text('Settlement path'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -4406,7 +4526,7 @@ void main() {
         find.byKey(const ValueKey('swap_amount_field')),
         '1.5',
       );
-      await _enterDestinationText(tester, '0xrecipient');
+      await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -4419,7 +4539,7 @@ void main() {
       expect(request.externalAsset, SwapAsset.usdc);
       expect(request.sellAmount, 1.5);
       expect(request.sellAmountText, '1.5');
-      expect(request.destination, '0xrecipient');
+      expect(request.destination, '0x52908400098527886e0f7030069857d2e4169ee7');
       expect(request.refundAddress, 'u1actualshieldedrecipient');
 
       expect(find.byKey(const ValueKey('swap_review_panel')), findsOneWidget);
@@ -4448,7 +4568,7 @@ void main() {
       final reviewDetails = find.byKey(const ValueKey('swap_review_details'));
       final reviewDetailsRect = tester.getRect(reviewDetails);
       final recipientValueRect = tester.getRect(
-        find.descendant(of: reviewDetails, matching: find.text('0xrecipient')),
+        find.descendant(of: reviewDetails, matching: find.text('0x5290840 ... 4169ee7')),
       );
       final feeValueRect = tester.getRect(
         find.descendant(
@@ -4502,7 +4622,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '105',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     expect(_fieldText(tester, 'swap_amount_field'), '105');
@@ -4519,7 +4639,7 @@ void main() {
     expect(liveRequest.amount, 1.5);
     expect(liveRequest.amountText, '1.5000');
     expect(liveRequest.amountAsset, SwapAsset.zec);
-    expect(liveRequest.destination, '0xrecipient');
+    expect(liveRequest.destination, '0x52908400098527886e0f7030069857d2e4169ee7');
   });
 
   testWidgets('token amount fields cap fractional digits by asset decimals', (
@@ -4593,7 +4713,7 @@ void main() {
       find.byKey(const ValueKey('swap_receive_amount_field')),
       '105.26',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     expect(_fieldText(tester, 'swap_receive_amount_field'), '105.26');
@@ -4624,7 +4744,7 @@ void main() {
         find.byKey(const ValueKey('swap_receive_amount_field')),
         '105.27',
       );
-      await _enterDestinationText(tester, '0xrecipient');
+      await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
       await tester.pumpAndSettle();
 
       expect(_fieldText(tester, 'swap_receive_amount_field'), '105.27');
@@ -4640,7 +4760,7 @@ void main() {
       expect(liveRequest.mode, SwapQuoteMode.exactOutput);
       expect(liveRequest.amount, 105.27);
       expect(liveRequest.amountText, '105.27');
-      expect(liveRequest.destination, '0xrecipient');
+      expect(liveRequest.destination, '0x52908400098527886e0f7030069857d2e4169ee7');
       expect(liveRequest.refundAddress, 'u1actualshieldedrecipient');
       expect(find.text('Review swap'), findsOneWidget);
       expect(find.text('Slippage tolerance'), findsOneWidget);
@@ -4670,7 +4790,7 @@ void main() {
         find.byKey(const ValueKey('swap_receive_amount_field')),
         '105.26',
       );
-      await _enterDestinationText(tester, '0xrecipient');
+      await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -4727,7 +4847,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -4773,7 +4893,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -4790,7 +4910,7 @@ void main() {
 
     expect(find.text('Review swap'), findsNothing);
     expect(_fieldText(tester, 'swap_amount_field'), '1.5');
-    expect(_destinationSummaryText(tester), '0xrecipient');
+    expect(_destinationSummaryText(tester), '0x529084...169ee7');
   });
 
   testWidgets('quote loading separates draft estimate from live review', (
@@ -4814,7 +4934,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('swap_rate_line')), findsOneWidget);
@@ -4886,7 +5006,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -4919,6 +5039,142 @@ void main() {
     expect(find.text('Confirm swap'), findsOneWidget);
   });
 
+  testWidgets('startIntent blocks a quote whose deadline has already passed', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider(
+      quoteExpiresAt: DateTime.utc(2020, 1, 1),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+    expect(swapProvider.requests, hasLength(1));
+
+    final notifier = ProviderScope.containerOf(
+      tester.element(find.byType(SwapReviewScreen)),
+    ).read(swapStateProvider.notifier);
+
+    final started = await notifier.startIntent();
+    await tester.pumpAndSettle();
+
+    expect(started, isFalse);
+    expect(swapProvider.startedQuotes, isEmpty);
+    expect(
+      find.text('Quote expired. Review again for an updated rate.'),
+      findsOneWidget,
+    );
+    expect(find.byType(SwapActivityDetailScreen), findsNothing);
+  });
+
+  testWidgets('startIntent blocks a quote inside the expiry safety buffer', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    // Within the 5s pre-deadline buffer in SwapNotifier.startIntent.
+    final swapProvider = _FakeSwapProvider(
+      quoteExpiresAt: DateTime.now().toUtc().add(const Duration(seconds: 2)),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+
+    final notifier = ProviderScope.containerOf(
+      tester.element(find.byType(SwapReviewScreen)),
+    ).read(swapStateProvider.notifier);
+
+    final started = await notifier.startIntent();
+    await tester.pumpAndSettle();
+
+    expect(started, isFalse);
+    expect(swapProvider.startedQuotes, isEmpty);
+  });
+
+  testWidgets('startIntent allows a quote whose deadline is in the future', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _FakeSwapProvider(
+      quoteExpiresAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+    );
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('swap_amount_field')),
+      '1.5',
+    );
+    await _enterDestinationText(
+      tester,
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+    await tester.pumpAndSettle();
+
+    final notifier = ProviderScope.containerOf(
+      tester.element(find.byType(SwapReviewScreen)),
+    ).read(swapStateProvider.notifier);
+
+    final started = await notifier.startIntent();
+    await tester.pumpAndSettle();
+
+    expect(started, isTrue);
+    expect(swapProvider.startedQuotes, hasLength(1));
+  });
+
   testWidgets('quote failure shows an inline error and preserves the draft', (
     tester,
   ) async {
@@ -4939,7 +5195,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -4956,7 +5212,7 @@ void main() {
       findsOneWidget,
     );
     expect(_fieldText(tester, 'swap_amount_field'), '1.5');
-    expect(_destinationSummaryText(tester), '0xrecipient');
+    expect(_destinationSummaryText(tester), '0x529084...169ee7');
   });
 
   testWidgets('start failure stays on review and shows an inline error', (
@@ -4980,7 +5236,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5028,12 +5284,12 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '140.35',
     );
-    await _enterDestinationText(tester, '0xexternal-refund');
+    await _enterDestinationText(tester, '0x8617e340b3d01fa5f11f306f4090fd50e238070d');
     await tester.pumpAndSettle();
 
     expect(find.text('Ethereum refund'), findsNothing);
     expect(find.byKey(const ValueKey('swap_address_summary')), findsOneWidget);
-    expect(find.text('0xexternal-refund'), findsWidgets);
+    expect(find.text('0x8617e3...38070d'), findsWidgets);
     expect(find.text('ZEC delivery'), findsNothing);
     expect(find.text('u1wallet-refund-placeholder'), findsNothing);
     expect(find.text('USDC source deposit'), findsNothing);
@@ -5106,7 +5362,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5145,7 +5401,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '140.35',
     );
-    await _enterDestinationText(tester, '0xexternal-refund');
+    await _enterDestinationText(tester, '0x8617e340b3d01fa5f11f306f4090fd50e238070d');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5157,7 +5413,7 @@ void main() {
       swapProvider.requests.single.destination,
       'u1actualshieldedrecipient',
     );
-    expect(swapProvider.requests.single.refundAddress, '0xexternal-refund');
+    expect(swapProvider.requests.single.refundAddress, '0x8617e340b3d01fa5f11f306f4090fd50e238070d');
     expect(find.text('Review swap'), findsOneWidget);
     expect(
       find.textContaining('ZEC arrives at your shielded address'),
@@ -5190,7 +5446,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '140.35',
     );
-    await _enterDestinationText(tester, '0xexternal-refund');
+    await _enterDestinationText(tester, '0x8617e340b3d01fa5f11f306f4090fd50e238070d');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5206,7 +5462,7 @@ void main() {
       swapProvider.requests.single.destination,
       isNot(_hardwareBootstrap.initialAccountState.activeAddress),
     );
-    expect(swapProvider.requests.single.refundAddress, '0xexternal-refund');
+    expect(swapProvider.requests.single.refundAddress, '0x8617e340b3d01fa5f11f306f4090fd50e238070d');
   });
 
   testWidgets('started swap can refresh status from provider', (tester) async {
@@ -5228,7 +5484,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5276,7 +5532,7 @@ void main() {
         find.byKey(const ValueKey('swap_amount_field')),
         '140.35',
       );
-      await _enterDestinationText(tester, '0xexternal-refund');
+      await _enterDestinationText(tester, '0x8617e340b3d01fa5f11f306f4090fd50e238070d');
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5342,7 +5598,7 @@ void main() {
         find.byKey(const ValueKey('swap_amount_field')),
         '140.35',
       );
-      await _enterDestinationText(tester, '0xexternal-refund');
+      await _enterDestinationText(tester, '0x8617e340b3d01fa5f11f306f4090fd50e238070d');
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5427,7 +5683,7 @@ void main() {
         find.byKey(const ValueKey('swap_amount_field')),
         '140.35',
       );
-      await _enterDestinationText(tester, '0xexternal-refund');
+      await _enterDestinationText(tester, '0x8617e340b3d01fa5f11f306f4090fd50e238070d');
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5550,7 +5806,7 @@ void main() {
       );
       expect(
         sessionStore.savedIntents.single.oneClickRefundTo,
-        '0xexternal-refund',
+        '0x8617e340b3d01fa5f11f306f4090fd50e238070d',
       );
     },
   );
@@ -5580,7 +5836,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5616,14 +5872,14 @@ void main() {
       sessionStore.savedIntents.single.direction,
       SwapDirection.zecToExternal,
     );
-    expect(sessionStore.savedIntents.single.oneClickRecipient, '0xrecipient');
+    expect(sessionStore.savedIntents.single.oneClickRecipient, '0x52908400098527886e0f7030069857d2e4169ee7');
     expect(
       sessionStore.savedIntents.single.oneClickRefundTo,
       'u1actualshieldedrecipient',
     );
     await _openSwapStatusDetails(tester, expand: true);
     expect(find.text('USDC recipient'), findsOneWidget);
-    expect(find.text('0xrecipient'), findsOneWidget);
+    expect(find.text('0x5290840 ... 4169ee7'), findsOneWidget);
     expect(find.text('t1live-deposit'), findsWidgets);
     expect(find.text('ZEC deposit tx hash'), findsNothing);
     expect(find.text('Submit ZEC deposit'), findsNothing);
@@ -5658,7 +5914,7 @@ void main() {
         find.byKey(const ValueKey('swap_amount_field')),
         '1.5',
       );
-      await _enterDestinationText(tester, '0xrecipient');
+      await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5687,6 +5943,73 @@ void main() {
     },
   );
 
+  testWidgets(
+    'pending ZEC deposit broadcast switches to a fallback endpoint',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final swapProvider = _FakeSwapProvider();
+      final depositSender = _FakeSwapDepositSender(
+        broadcastStatus: SwapDepositBroadcastStatus.pendingBroadcast,
+        broadcastMessage: 'gRPC connect failed: connection refused',
+      );
+      final sessionStore = _FakeSwapPersistenceStore();
+      final primary = defaultRpcEndpointConfig('main');
+      final fallback = fallbackRpcEndpointCandidatesFor(primary).first;
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: swapProvider,
+          depositSender: depositSender,
+          sessionStore: sessionStore,
+          failoverChainNameGetter: (url) async => 'main',
+          failoverHeightGetter: (url) async =>
+              url == fallback.normalizedLightwalletdUrl
+              ? BigInt.from(100)
+              : BigInt.from(100),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '1.5',
+      );
+      await _enterDestinationText(
+        tester,
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pumpAndSettle();
+
+      final failoverState = container.read(rpcEndpointFailoverProvider);
+      expect(depositSender.requests, hasLength(1));
+      expect(failoverState.isUsingFallback, isTrue);
+      expect(
+        failoverState.current.normalizedLightwalletdUrl,
+        fallback.normalizedLightwalletdUrl,
+      );
+      final syncNotifier =
+          container.read(syncProvider.notifier) as _FakeSwapSyncNotifier;
+      expect(syncNotifier.restartCount, 1);
+    },
+  );
+
   testWidgets('ZEC swap opens activity before deposit broadcast finishes', (
     tester,
   ) async {
@@ -5712,7 +6035,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5769,7 +6092,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5818,7 +6141,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '0.002',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5869,7 +6192,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '0.003',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -5964,7 +6287,7 @@ void main() {
         find.byKey(const ValueKey('swap_amount_field')),
         '0.003',
       );
-      await _enterDestinationText(tester, '0xrecipient');
+      await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -6032,7 +6355,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '0.003',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -6100,7 +6423,7 @@ void main() {
         find.byKey(const ValueKey('swap_amount_field')),
         '0.003',
       );
-      await _enterDestinationText(tester, '0xrecipient');
+      await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -6202,7 +6525,7 @@ void main() {
         find.byKey(const ValueKey('swap_amount_field')),
         '0.003',
       );
-      await _enterDestinationText(tester, '0xrecipient');
+      await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -6269,6 +6592,120 @@ void main() {
     },
   );
 
+  testWidgets(
+    'hardware unknown ZEC broadcast switches to a fallback endpoint',
+    (tester) async {
+      // pending_broadcast/partial_broadcast are dropped by the Keystone
+      // overlay's _hasBroadcastTxid gate (no txid to forward), so the only
+      // non-certain status that reaches submitDepositTransactionForIntent on
+      // the hardware path is broadcast_unknown.
+      await _setDesktopViewport(tester);
+      final swapProvider = _FakeSwapProvider();
+      final depositSender = _FakeSwapDepositSender();
+      final hardwareSigningService = _FakeSwapHardwareSigningService(
+        broadcastStatus: SwapDepositBroadcastStatus.broadcastUnknown,
+        broadcastMessage: 'gRPC connect failed: connection refused',
+      );
+      final sessionStore = _FakeSwapPersistenceStore();
+      final primary = defaultRpcEndpointConfig('main');
+      final fallback = fallbackRpcEndpointCandidatesFor(primary).first;
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [
+              _swapRoute(),
+              _swapActivityRoute(),
+              GoRoute(
+                path: '/send/keystone/scan',
+                builder: (_, _) => const _FakeKeystoneScanScreen(),
+              ),
+            ],
+          ),
+          bootstrap: _hardwareBootstrap,
+          swapProvider: swapProvider,
+          depositSender: depositSender,
+          hardwareSigningService: hardwareSigningService,
+          sessionStore: sessionStore,
+          failoverChainNameGetter: (_) async => 'main',
+          failoverHeightGetter: (_) async => BigInt.from(100),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SwapScreen)),
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('swap_amount_field')),
+        '0.003',
+      );
+      await _enterDestinationText(
+        tester,
+        '0x52908400098527886e0f7030069857d2e4169ee7',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('swap_review_button')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('swap_start_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('swap_start_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('swap_deposit_confirm_button')),
+      );
+      await tester.pump();
+      for (
+        var i = 0;
+        i < 20 && hardwareSigningService.proofDrafts.isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(hardwareSigningService.proofDrafts, hasLength(1));
+      await tester.pump();
+
+      await tester.tap(find.text('Get signature'));
+      for (
+        var i = 0;
+        i < 20 &&
+            find
+                .byKey(const ValueKey('fake_keystone_signature_done'))
+                .evaluate()
+                .isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(
+        find.byKey(const ValueKey('fake_keystone_signature_done')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('fake_keystone_signature_done')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump();
+
+      expect(hardwareSigningService.broadcasts, hasLength(1));
+      final failoverState = container.read(rpcEndpointFailoverProvider);
+      expect(failoverState.isUsingFallback, isTrue);
+      expect(
+        failoverState.current.normalizedLightwalletdUrl,
+        fallback.normalizedLightwalletdUrl,
+      );
+      final syncNotifier =
+          container.read(syncProvider.notifier) as _FakeSwapSyncNotifier;
+      expect(syncNotifier.restartCount, 1);
+    },
+  );
+
   testWidgets('hardware receive-ZEC swaps start without automatic signing', (
     tester,
   ) async {
@@ -6300,7 +6737,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '8.5',
     );
-    await _enterDestinationText(tester, '0xexternal-refund');
+    await _enterDestinationText(tester, '0x8617e340b3d01fa5f11f306f4090fd50e238070d');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -6364,7 +6801,7 @@ void main() {
       find.byKey(const ValueKey('swap_amount_field')),
       '1.5',
     );
-    await _enterDestinationText(tester, '0xrecipient');
+    await _enterDestinationText(tester, '0x52908400098527886e0f7030069857d2e4169ee7');
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('swap_review_button')));
@@ -6406,6 +6843,8 @@ Widget _routerHarness(
   AppBootstrapState? bootstrap,
   AccountNotifier Function()? accountNotifier,
   AddressBookRepository? addressBookRepository,
+  RpcEndpointChainNameGetter? failoverChainNameGetter,
+  RpcEndpointLatestBlockHeightGetter? failoverHeightGetter,
 }) {
   final fixtureIntents =
       seedSwapActivityFixtures
@@ -6471,6 +6910,16 @@ Widget _routerHarness(
         ),
       if (statusPollInterval != null)
         swapStatusPollIntervalProvider.overrideWithValue(statusPollInterval),
+      // Always override the failover health probes so no test reaches real
+      // FFI/network. The defaults report a non-matching chain, so fallback
+      // health checks fail and failover stays inert unless a test opts in
+      // with passing getters.
+      rpcEndpointFailoverChainNameGetterProvider.overrideWithValue(
+        failoverChainNameGetter ?? (_) async => 'inert-no-failover',
+      ),
+      rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
+        failoverHeightGetter ?? (_) async => BigInt.zero,
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -6618,7 +7067,7 @@ Widget _reviewTestPage({
     addressPlan: SwapAddressPlan.fromUserInput(
       direction: direction,
       externalAsset: externalAsset,
-      userExternalAddress: '0xrecipient',
+      userExternalAddress: '0x52908400098527886e0f7030069857d2e4169ee7',
       walletZecAddress: 'u1wallet',
     ),
     accountLabel: 'John',
@@ -6746,7 +7195,7 @@ SwapIntent _persistedIntent({
     depositMemo: 'memo-7',
     depositTxHash: txHash,
     providerQuoteId: 'quote-1',
-    oneClickRecipient: '0xrecipient',
+    oneClickRecipient: '0x52908400098527886e0f7030069857d2e4169ee7',
     oneClickRefundTo: 'u1refund',
     accountUuid: accountUuid,
   );

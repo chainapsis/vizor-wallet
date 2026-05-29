@@ -6,7 +6,7 @@ import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
-import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../domain/swap_contract.dart';
@@ -44,7 +44,7 @@ class RustSwapDepositSender implements SwapDepositSender {
 
     final amountZatoshi = zecDepositAmountZatoshiForQuote(quote);
     final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointProvider);
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
 
     log(
       'SwapDepositSender: preflight begin '
@@ -73,7 +73,7 @@ class RustSwapDepositSender implements SwapDepositSender {
 
     final amountZatoshi = zecDepositAmountZatoshiForQuote(quote);
     final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointProvider);
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     final sendFlowId = _newSwapSendFlowId();
     BigInt? proposalId;
     var proposalConsumed = false;

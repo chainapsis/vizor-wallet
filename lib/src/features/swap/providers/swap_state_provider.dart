@@ -9,6 +9,8 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/rpc_endpoint_failover_provider.dart';
+import '../../../providers/sync_provider.dart';
 import 'swap_activity_tracker.dart';
 import 'swap_deposit_sender.dart';
 import 'swap_failure_policy.dart';
@@ -466,6 +468,15 @@ class SwapNotifier extends Notifier<SwapState> {
       );
       return false;
     }
+    final quoteExpiresAt = quote.quoteExpiresAt;
+    if (quoteExpiresAt != null &&
+        !DateTime.now()
+            .toUtc()
+            .isBefore(quoteExpiresAt.subtract(const Duration(seconds: 5)))) {
+      log('Swap: start blocked; quote expired at $quoteExpiresAt');
+      expireReviewQuote();
+      return false;
+    }
     if (state.startSubmitting) {
       log('Swap: duplicate start ignored while start is already in flight');
       return false;
@@ -754,6 +765,9 @@ class SwapNotifier extends Notifier<SwapState> {
     final submitProviderStatus = _shouldSubmitProviderDepositStatus(
       broadcastStatus,
     );
+    if (!submitProviderStatus) {
+      await _switchEndpointAfterUncertainBroadcast(broadcastMessage);
+    }
     if (selected == null) {
       await _submitDepositTransactionForStoredIntent(
         accountUuid: accountUuid,
@@ -1067,6 +1081,7 @@ class SwapNotifier extends Notifier<SwapState> {
     await _persistCurrentIntents();
 
     if (!broadcast.isCertain) {
+      await _switchEndpointAfterUncertainBroadcast(broadcast.message);
       state = state.copyWith(
         depositSubmitting: false,
         intents: state.intents.replaceSwapIntent(intentId, checkpointed),
@@ -1408,6 +1423,27 @@ class SwapNotifier extends Notifier<SwapState> {
     final accountUuid = _accountUuidForIntent(intent);
     if (accountUuid == null || accountUuid.trim().isEmpty) return false;
     return ref.read(accountProvider.notifier).isHardwareAccount(accountUuid);
+  }
+
+  /// Fails over to a healthy lightwalletd endpoint after an uncertain deposit
+  /// broadcast, mirroring `send_status_screen.dart`.
+  ///
+  /// [message] MUST be the raw broadcast error detail (the `message` field
+  /// straight off the Rust broadcast result), not a remapped/friendly notice
+  /// such as the output of [_depositBroadcastNotice]. `switchToFallbackFor`
+  /// classifies the string via `shouldFallbackFromLightwalletdError`, which
+  /// keyword-matches transport errors ("connection refused", "timeout", …);
+  /// passing a localized/friendly string would silently stop failover from
+  /// ever triggering.
+  Future<void> _switchEndpointAfterUncertainBroadcast(String? message) async {
+    final trimmed = message?.trim();
+    if (trimmed == null || trimmed.isEmpty) return;
+    final switched = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .switchToFallbackFor(trimmed, operation: 'swap deposit broadcast');
+    if (switched) {
+      unawaited(ref.read(syncProvider.notifier).restartSync());
+    }
   }
 
   String? _depositBroadcastNotice({String? status, String? message}) {
