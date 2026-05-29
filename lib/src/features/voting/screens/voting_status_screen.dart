@@ -17,6 +17,7 @@ import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../../rust/api/voting.dart' as rust_voting;
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../voting_flow_models.dart';
+import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 
 class VotingStatusScreen extends ConsumerStatefulWidget {
@@ -35,6 +36,8 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   List<String> _keystoneUrParts = const [];
   String? _keystoneQrError;
   List<rust_voting.ApiDraftVote>? _pendingDraftVotes;
+  List<int> _pendingProposalIds = const [];
+  bool _pendingRecoveryWithoutDraft = false;
 
   @override
   void initState() {
@@ -57,8 +60,18 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       }
 
       final roundId = widget.roundId;
-      final sessionNotifier = ref.read(votingSessionProvider(roundId).notifier);
-      final session = await ref.read(votingSessionProvider(roundId).future);
+      final sessionProvider = votingSessionProvider(roundId);
+      final sessionNotifier = ref.read(sessionProvider.notifier);
+      final loadedSession =
+          ref.read(sessionProvider).value ??
+          await ref.read(sessionProvider.future);
+      if (loadedSession == null) {
+        _setRunError(
+          'Voting round details are not available yet. Retry in a moment.',
+        );
+        return;
+      }
+      final session = loadedSession;
       if (!mounted) return;
       final round = session.round;
       if (round == null) {
@@ -81,11 +94,8 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
           .read(votingDraftProvider(draftKey).notifier)
           .ensureLoaded();
       if (!mounted) return;
-      final draftVotes = draft.toDraftVotes(proposals);
-      if (draftVotes.isEmpty) {
-        _setRunError('Choose at least one vote before submitting.');
-        return;
-      }
+      final userDraftVotes = draft.toDraftVotes(proposals);
+      final proposalIds = proposals.map((proposal) => proposal.id).toList();
       await sessionNotifier.ensureWalletReadyForVoting();
       if (!mounted) return;
       final afterWalletSync = ref.read(votingSessionProvider(roundId)).value;
@@ -93,42 +103,85 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
           afterWalletSync?.phase == VotingSessionPhase.waitingForWalletSync) {
         return;
       }
+      final activeSession = afterWalletSync ?? session;
+      final recoveredDraftVotes =
+          userDraftVotes.isEmpty && _roundPlanHasNoOpenProposals(activeSession)
+          ? _draftVotesFromRoundPlan(activeSession.roundPlan, proposals)
+          : const <rust_voting.ApiDraftVote>[];
+      final draftVotes = userDraftVotes.isNotEmpty
+          ? userDraftVotes
+          : recoveredDraftVotes;
+      final intentProposalIds = userDraftVotes.isNotEmpty
+          ? proposalIds
+          : const <int>[];
+      final canRecoverWithoutDraft = _canRecoverWithoutDraft(activeSession);
+      final canPollDelegationWithoutDraft = _canPollDelegationWithoutDraft(
+        activeSession,
+      );
+      final needsDelegation = _sessionNeedsDelegation(activeSession);
+      if (draftVotes.isEmpty &&
+          !canRecoverWithoutDraft &&
+          !canPollDelegationWithoutDraft) {
+        _setRunError('Choose at least one vote before submitting.');
+        return;
+      }
 
-      if (session.isHardwareAccount) {
+      if (activeSession.isHardwareAccount &&
+          _sessionNeedsKeystoneSigning(activeSession)) {
         _pendingDraftVotes = draftVotes;
+        _pendingProposalIds = intentProposalIds;
+        _pendingRecoveryWithoutDraft =
+            canRecoverWithoutDraft || canPollDelegationWithoutDraft;
         await _prepareKeystoneSigning(sessionNotifier);
         return;
       }
 
-      final mnemonic = await ref
-          .read(accountProvider.notifier)
-          .getMnemonicForAccount(accountUuid);
-      if (!mounted) return;
-      if (mnemonic == null || mnemonic.isEmpty) {
-        setState(() {
-          _softwareAccountRequired = true;
-        });
-        return;
-      }
-      final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
-      try {
+      if (draftVotes.isNotEmpty || needsDelegation) {
+        if (activeSession.isHardwareAccount) {
+          if (needsDelegation) {
+            _pendingDraftVotes = draftVotes;
+            _pendingProposalIds = intentProposalIds;
+            _pendingRecoveryWithoutDraft =
+                canRecoverWithoutDraft || canPollDelegationWithoutDraft;
+            await _submitAfterKeystoneSignatures(sessionNotifier);
+          } else {
+            await _submitVotesAndShares(
+              sessionNotifier,
+              draftVotes: draftVotes,
+              intentProposalIds: intentProposalIds,
+              initialSession: activeSession,
+            );
+          }
+          return;
+        }
+        final mnemonic = await ref
+            .read(accountProvider.notifier)
+            .getMnemonicForAccount(accountUuid);
         if (!mounted) return;
-        await sessionNotifier.delegatePendingBundles(seedBytes: seedBytes);
-      } finally {
-        seedBytes.fillRange(0, seedBytes.length, 0);
+        if (mnemonic == null || mnemonic.isEmpty) {
+          setState(() {
+            _softwareAccountRequired = true;
+          });
+          return;
+        }
+        final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
+        try {
+          if (!mounted) return;
+          await sessionNotifier.delegatePendingBundles(seedBytes: seedBytes);
+        } finally {
+          seedBytes.fillRange(0, seedBytes.length, 0);
+        }
+        if (!mounted) return;
+        final afterDelegation = ref.read(votingSessionProvider(roundId)).value;
+        if (afterDelegation?.phase == VotingSessionPhase.error) return;
       }
-      if (!mounted) return;
       final afterDelegation = ref.read(votingSessionProvider(roundId)).value;
-      if (afterDelegation?.phase == VotingSessionPhase.error) return;
-      await sessionNotifier.castVotes(draftVotes: draftVotes);
-      if (!mounted) return;
-      final afterVotes = ref.read(votingSessionProvider(roundId)).value;
-      if (afterVotes?.phase == VotingSessionPhase.error) return;
-      await sessionNotifier.submitPendingShares();
-      if (!mounted) return;
-      final done = ref.read(votingSessionProvider(roundId)).value;
-      if (done?.phase != VotingSessionPhase.done) return;
-      _navigateToConfirmation();
+      await _submitVotesAndShares(
+        sessionNotifier,
+        draftVotes: draftVotes,
+        intentProposalIds: intentProposalIds,
+        initialSession: afterDelegation ?? activeSession,
+      );
     } catch (error) {
       _setRunError(_messageFromError(error));
     }
@@ -245,7 +298,8 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   ) async {
     if (!mounted) return;
     final draftVotes = _pendingDraftVotes;
-    if (draftVotes == null || draftVotes.isEmpty) {
+    if (draftVotes == null ||
+        (draftVotes.isEmpty && !_pendingRecoveryWithoutDraft)) {
       _setRunError('Choose at least one vote before submitting.');
       return;
     }
@@ -253,13 +307,52 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       _keystoneUrParts = const [];
       _keystoneQrError = null;
     });
-    await sessionNotifier.delegatePendingBundlesWithKeystoneSignatures();
-    if (!mounted) return;
-    final afterDelegation = ref
+    final beforeDelegation = ref
         .read(votingSessionProvider(widget.roundId))
         .value;
-    if (afterDelegation?.phase == VotingSessionPhase.error) return;
-    await sessionNotifier.castVotes(draftVotes: draftVotes);
+    if (_sessionNeedsDelegationSubmission(beforeDelegation)) {
+      await sessionNotifier.delegatePendingBundlesWithKeystoneSignatures();
+      if (!mounted) return;
+      final afterDelegation = ref
+          .read(votingSessionProvider(widget.roundId))
+          .value;
+      if (afterDelegation?.phase == VotingSessionPhase.error) return;
+      await _submitVotesAndShares(
+        sessionNotifier,
+        draftVotes: draftVotes,
+        intentProposalIds: _pendingProposalIds,
+        initialSession: afterDelegation ?? beforeDelegation,
+      );
+      return;
+    }
+    await _submitVotesAndShares(
+      sessionNotifier,
+      draftVotes: draftVotes,
+      intentProposalIds: _pendingProposalIds,
+      initialSession: beforeDelegation,
+    );
+  }
+
+  Future<void> _submitVotesAndShares(
+    VotingSessionNotifier sessionNotifier, {
+    required List<rust_voting.ApiDraftVote> draftVotes,
+    required List<int> intentProposalIds,
+    VotingSessionState? initialSession,
+  }) async {
+    final votePollingSession =
+        ref.read(votingSessionProvider(widget.roundId)).value ?? initialSession;
+    if (draftVotes.isEmpty &&
+        (votePollingSession == null ||
+            !_canRecoverWithoutDraft(votePollingSession))) {
+      _setRunError('Choose at least one vote before submitting.');
+      return;
+    }
+    if (draftVotes.isNotEmpty || _sessionNeedsVotePolling(votePollingSession)) {
+      await sessionNotifier.castVotes(
+        draftVotes: draftVotes,
+        allProposalIds: intentProposalIds,
+      );
+    }
     if (!mounted) return;
     final afterVotes = ref.read(votingSessionProvider(widget.roundId)).value;
     if (afterVotes?.phase == VotingSessionPhase.error) return;
@@ -293,6 +386,129 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       }
     }
     return text.isEmpty ? 'Voting session action failed.' : text;
+  }
+
+  bool _canRecoverWithoutDraft(VotingSessionState session) {
+    final roundPlan = session.roundPlan;
+    if (roundPlan != null) {
+      return _roundPlanHasNoOpenProposals(session) &&
+          roundPlan.nextSteps.any(_stepCanRecoverWithoutDraft);
+    }
+    final resumePlan = session.resumePlan;
+    return resumePlan != null &&
+        (resumePlan.pendingVoteSubmissionKeys.isNotEmpty ||
+            resumePlan.submittedVoteConfirmationKeys.isNotEmpty ||
+            resumePlan.unconfirmedShareDelegations.isNotEmpty);
+  }
+
+  bool _roundPlanHasNoOpenProposals(VotingSessionState session) {
+    final roundPlan = session.roundPlan;
+    return roundPlan != null && roundPlan.openProposals.isEmpty;
+  }
+
+  bool _canPollDelegationWithoutDraft(VotingSessionState session) {
+    final roundPlan = session.roundPlan;
+    if (roundPlan != null) {
+      var hasSubmittedDelegation = false;
+      for (final step in roundPlan.nextSteps) {
+        if (step.kind == 'delegate') return false;
+        if (step.kind == 'poll_delegation') hasSubmittedDelegation = true;
+      }
+      return hasSubmittedDelegation;
+    }
+    final resumePlan = session.resumePlan;
+    return resumePlan != null &&
+        resumePlan.submittedDelegationBundleIndexes.isNotEmpty &&
+        resumePlan.pendingDelegationBundleIndexes.isEmpty;
+  }
+
+  bool _stepCanRecoverWithoutDraft(rust_voting.ApiNextStep step) {
+    return step.kind == 'submit_vote' ||
+        step.kind == 'submit_shares' ||
+        step.kind == 'poll_vote' ||
+        step.kind == 'confirm_share';
+  }
+
+  bool _sessionNeedsDelegation(VotingSessionState? session) {
+    if (session == null) return false;
+    final roundPlan = session.roundPlan;
+    if (_planNeedsDelegation(roundPlan)) return true;
+    if (roundPlan != null && !roundPlanNeedsDraftSetup(roundPlan)) {
+      return false;
+    }
+    return session.resumePlan?.submittedDelegationBundleIndexes.isNotEmpty ??
+        false;
+  }
+
+  bool _sessionNeedsDelegationSubmission(VotingSessionState? session) {
+    if (session == null) return false;
+    final roundPlan = session.roundPlan;
+    if (_planNeedsDelegation(roundPlan)) return true;
+    if (roundPlan != null && !roundPlanNeedsDraftSetup(roundPlan)) {
+      return false;
+    }
+    final plan = session.resumePlan;
+    return (plan?.pendingDelegationBundleIndexes.isNotEmpty ?? false) ||
+        (plan?.submittedDelegationBundleIndexes.isNotEmpty ?? false);
+  }
+
+  bool _sessionNeedsKeystoneSigning(VotingSessionState session) {
+    final roundPlan = session.roundPlan;
+    if (roundPlan != null) {
+      return roundPlan.nextSteps.any((step) => step.kind == 'delegate') ||
+          roundPlanNeedsDraftSetup(roundPlan);
+    }
+    return session.resumePlan?.pendingDelegationBundleIndexes.isNotEmpty ??
+        false;
+  }
+
+  bool _sessionNeedsVotePolling(VotingSessionState? session) {
+    if (session == null) return false;
+    if (_planNeedsVotePolling(session.roundPlan)) return true;
+    if (session.roundPlan != null) return false;
+    return session.resumePlan?.submittedVoteConfirmationKeys.isNotEmpty ??
+        false;
+  }
+
+  bool _planNeedsDelegation(rust_voting.ApiRoundPlan? roundPlan) {
+    return roundPlan?.nextSteps.any(
+          (step) => step.kind == 'delegate' || step.kind == 'poll_delegation',
+        ) ??
+        false;
+  }
+
+  bool _planNeedsVotePolling(rust_voting.ApiRoundPlan? roundPlan) {
+    return roundPlan?.nextSteps.any(
+          (step) =>
+              step.kind == 'submit_vote' ||
+              step.kind == 'submit_shares' ||
+              step.kind == 'poll_vote',
+        ) ??
+        false;
+  }
+
+  List<rust_voting.ApiDraftVote> _draftVotesFromRoundPlan(
+    rust_voting.ApiRoundPlan? roundPlan,
+    List<VotingProposalView> proposals,
+  ) {
+    if (roundPlan == null) return const [];
+    final choicesByProposal = <int, int>{};
+    for (final step in roundPlan.nextSteps) {
+      if (step.kind != 'cast_vote') continue;
+      choicesByProposal.putIfAbsent(step.proposalId, () => step.choice);
+    }
+    if (choicesByProposal.isEmpty) return const [];
+    return [
+      for (final proposal in proposals)
+        if (choicesByProposal[proposal.id] != null)
+          rust_voting.ApiDraftVote(
+            proposalId: proposal.id,
+            choice: choicesByProposal[proposal.id]!,
+            numOptions: proposal.options.length,
+            vcTreePosition: BigInt.zero,
+            singleShare: false,
+          ),
+    ];
   }
 
   @override
@@ -424,6 +640,8 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     _keystoneUrParts = const [];
     _keystoneQrError = null;
     _pendingDraftVotes = null;
+    _pendingProposalIds = const [];
+    _pendingRecoveryWithoutDraft = false;
     unawaited(_run());
   }
 }

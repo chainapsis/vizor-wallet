@@ -16,6 +16,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../../../rust/api/voting.dart' as rust_voting;
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
@@ -80,9 +81,32 @@ class _VotingProposalDetailScreenState
                 : ref.watch(votingDraftProvider(draftKey));
             final proposals = proposalsFromRound(round);
             final completedVote = draft.isEmpty
-                ? _CompletedVote.fromPlan(state.resumePlan, proposals)
+                ? _CompletedVote.fromPlan(
+                    state.resumePlan,
+                    state.roundPlan,
+                    proposals,
+                  )
                 : null;
             _maybePrepareVotingPower(state);
+            // Foreground recovery takes precedence over the read-only voted view.
+            // Accepted helper shares may still be tracked after submission, but
+            // that background work should not keep this screen resumable.
+            if (hasBlockingRoundRecoveryWork(
+              roundPlan: state.roundPlan,
+              resumePlan: state.resumePlan,
+            )) {
+              return Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: _PendingVoteContent(
+                  roundTitle: round.title.isEmpty
+                      ? 'Coinholder Poll'
+                      : round.title,
+                  snapshotHeight: round.snapshotHeight,
+                  description: _roundDescription(round.rawJson),
+                  roundId: roundId,
+                ),
+              );
+            }
             if (completedVote != null) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
@@ -100,7 +124,10 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            final pendingVote = _PendingVoteRecovery.fromPlan(state.resumePlan);
+            final pendingVote = _PendingVoteRecovery.fromPlan(
+              state.resumePlan,
+              state.roundPlan,
+            );
             if (pendingVote != null) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
@@ -110,7 +137,7 @@ class _VotingProposalDetailScreenState
                       : round.title,
                   snapshotHeight: round.snapshotHeight,
                   description: _roundDescription(round.rawJson),
-                  recovery: pendingVote,
+                  roundId: roundId,
                 ),
               );
             }
@@ -741,13 +768,13 @@ class _PendingVoteContent extends StatelessWidget {
     required this.roundTitle,
     required this.snapshotHeight,
     required this.description,
-    required this.recovery,
+    required this.roundId,
   });
 
   final String roundTitle;
   final int snapshotHeight;
   final String description;
-  final _PendingVoteRecovery recovery;
+  final String roundId;
 
   @override
   Widget build(BuildContext context) {
@@ -803,23 +830,24 @@ class _PendingVoteContent extends StatelessWidget {
                   ],
                   const SizedBox(height: AppSpacing.md),
                   Text(
-                    'Vote still finalizing',
+                    'Vote in progress',
                     style: AppTypography.headlineSmall.copyWith(
                       color: colors.text.accent,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xxs),
                   Text(
-                    recovery.message,
+                    'You have an unfinished vote for this round. '
+                    'Resume to complete the submission.',
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
                   AppButton(
-                    onPressed: () => context.go('/voting'),
-                    variant: AppButtonVariant.secondary,
-                    child: const Text('Back to polls'),
+                    onPressed: () => context.go(votingStatusRoute(roundId)),
+                    variant: AppButtonVariant.primary,
+                    child: const Text('Continue voting'),
                   ),
                 ],
               ),
@@ -881,7 +909,9 @@ class _VotedPollHeader extends StatelessWidget {
           runSpacing: AppSpacing.xxs,
           children: [
             _MetaText(
-              votedAt == null ? 'Voted' : 'Voted ${formatMonthDayYear(votedAt!)}',
+              votedAt == null
+                  ? 'Voted'
+                  : 'Voted ${formatMonthDayYear(votedAt!)}',
             ),
             const _MetaText('·'),
             _VotingPowerMeta(
@@ -1175,13 +1205,13 @@ class _CompletedVote {
 
   static _CompletedVote? fromPlan(
     VotingResumePlan? plan,
+    rust_voting.ApiRoundPlan? roundPlan,
     List<VotingProposalView> proposals,
   ) {
-    if (plan == null ||
-        _hasBlockingRecoveryWork(plan) ||
-        !_hasCompletedVoteArtifact(plan)) {
+    if (!hasCompletedVoteForDisplay(roundPlan: roundPlan, resumePlan: plan)) {
       return null;
     }
+    if (plan == null) return null;
     final choices = <int, int?>{};
     for (final proposal in proposals) {
       final proposalChoices = plan.votesByKey.values
@@ -1204,20 +1234,31 @@ class _PendingVoteRecovery {
 
   final String message;
 
-  static _PendingVoteRecovery? fromPlan(VotingResumePlan? plan) {
+  static _PendingVoteRecovery? fromPlan(
+    VotingResumePlan? plan,
+    rust_voting.ApiRoundPlan? roundPlan,
+  ) {
     if (plan == null ||
-        !_hasBlockingRecoveryWork(plan) ||
+        !hasBlockingRoundRecoveryWork(roundPlan: roundPlan, resumePlan: plan) ||
         !_hasCompletedVoteArtifact(plan)) {
       return null;
     }
-    if (plan.pendingDelegationBundleIndexes.isNotEmpty) {
+    if (_roundPlanHasStep(roundPlan, const {'delegate', 'poll_delegation'}) ||
+        (roundPlan == null && plan.pendingDelegationBundleIndexes.isNotEmpty)) {
       return const _PendingVoteRecovery(
         message:
             'This vote has local progress, but delegation is not fully confirmed yet. The app should continue recovery before accepting another vote.',
       );
     }
-    if (plan.pendingVoteSubmissionKeys.isNotEmpty ||
-        plan.incompleteVoteRecoveryKeys.isNotEmpty) {
+    if (_roundPlanHasStep(roundPlan, const {
+          'cast_vote',
+          'submit_vote',
+          'poll_vote',
+          'submit_shares',
+        }) ||
+        (roundPlan == null &&
+            (plan.pendingVoteSubmissionKeys.isNotEmpty ||
+                plan.incompleteVoteRecoveryKeys.isNotEmpty))) {
       return const _PendingVoteRecovery(
         message:
             'This vote has been started, but its commitment transaction recovery data is not complete yet. Do not vote again from this account.',
@@ -1230,12 +1271,12 @@ class _PendingVoteRecovery {
   }
 }
 
-bool _hasCompletedVoteArtifact(VotingResumePlan plan) {
-  return plan.hasCompletedVoteArtifact;
+bool _roundPlanHasStep(rust_voting.ApiRoundPlan? roundPlan, Set<String> kinds) {
+  return roundPlan?.nextSteps.any((step) => kinds.contains(step.kind)) ?? false;
 }
 
-bool _hasBlockingRecoveryWork(VotingResumePlan plan) {
-  return plan.hasBlockingCompletedVoteDisplay;
+bool _hasCompletedVoteArtifact(VotingResumePlan plan) {
+  return plan.hasCompletedVoteArtifact;
 }
 
 String _choiceLabel(VotingProposalView proposal, int? choice) {

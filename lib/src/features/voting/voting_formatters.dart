@@ -5,7 +5,7 @@ import '../../core/formatting/zec_amount.dart';
 /// Delegates to [ZecAmount] for the decimal formatting. The denomination is
 /// kept as the literal `ZEC` to preserve existing output across networks.
 String formatVotingPower(BigInt zatoshi) {
-  return ZecAmount.fromZatoshi(zatoshi)
-      .pretty(denomStyle: ZecDenomStyle.upper, denomination: 'ZEC')
-      .toString();
+  return ZecAmount.fromZatoshi(
+    zatoshi,
+  ).pretty(denomStyle: ZecDenomStyle.upper, denomination: 'ZEC').toString();
 }

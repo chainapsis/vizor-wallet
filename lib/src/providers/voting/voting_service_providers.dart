@@ -424,6 +424,14 @@ abstract interface class VotingRustApi {
     required List<rust_voting.ApiDraftVote> draftVotes,
   });
 
+  Future<rust_voting.ApiSignedVoteCommitments> recoverVoteCommitment({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+  });
+
   Future<String> voteCommitmentWireJson({
     required rust_voting.ApiSignedVoteCommitment commitment,
   });
@@ -443,21 +451,23 @@ abstract interface class VotingRustApi {
     required bool singleShare,
   });
 
+  Future<int> shareTrackingFlags({
+    required rust_voting.ApiShareDelegationRecord share,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  });
+
+  Future<BigInt?> nextShareTrackingDelaySeconds({
+    required List<rust_voting.ApiShareDelegationRecord> shares,
+    required BigInt nowSeconds,
+  });
+
   Future<String> recoveredVoteShareWireJson({
     required String commitmentBundleJson,
     required int proposalId,
     required int shareIndex,
     required BigInt vcTreePosition,
     required BigInt submitAt,
-  });
-
-  Future<void> storeVoteTxHash({
-    required String dbPath,
-    required String walletId,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required String txHash,
   });
 
   Future<void> markVoteSubmitted({
@@ -478,17 +488,6 @@ abstract interface class VotingRustApi {
     required String txHash,
     required int vanPosition,
     required BigInt vcTreePosition,
-    required String commitmentBundleJson,
-  });
-
-  Future<void> storeCommitmentBundle({
-    required String dbPath,
-    required String walletId,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required String commitmentBundleJson,
-    required BigInt vcTreePosition,
   });
 
   Future<void> recordShareDelegation({
@@ -499,7 +498,6 @@ abstract interface class VotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> sentToUrls,
-    required List<int> nullifier,
     required BigInt submitAt,
   });
 
@@ -510,12 +508,6 @@ abstract interface class VotingRustApi {
     required int bundleIndex,
     required int proposalId,
     required int shareIndex,
-  });
-
-  Future<String> computeShareNullifierHex({
-    required List<int> voteCommitment,
-    required int shareIndex,
-    required List<int> primaryBlind,
   });
 
   Future<List<int>> deriveHotkey({
@@ -880,6 +872,23 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
+  Future<rust_voting.ApiSignedVoteCommitments> recoverVoteCommitment({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+  }) {
+    return rust_voting.recoverVoteCommitment(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+    );
+  }
+
+  @override
   Future<String> voteCommitmentWireJson({
     required rust_voting.ApiSignedVoteCommitment commitment,
   }) {
@@ -919,6 +928,30 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
+  Future<int> shareTrackingFlags({
+    required rust_voting.ApiShareDelegationRecord share,
+    required BigInt nowSeconds,
+    BigInt? voteEndTimeSeconds,
+  }) {
+    return rust_voting.shareTrackingFlags(
+      share: share,
+      nowSeconds: nowSeconds,
+      voteEndTimeSeconds: voteEndTimeSeconds,
+    );
+  }
+
+  @override
+  Future<BigInt?> nextShareTrackingDelaySeconds({
+    required List<rust_voting.ApiShareDelegationRecord> shares,
+    required BigInt nowSeconds,
+  }) {
+    return rust_voting.nextShareTrackingDelaySeconds(
+      shares: shares,
+      nowSeconds: nowSeconds,
+    );
+  }
+
+  @override
   Future<String> recoveredVoteShareWireJson({
     required String commitmentBundleJson,
     required int proposalId,
@@ -932,25 +965,6 @@ class FrbVotingRustApi implements VotingRustApi {
       shareIndex: shareIndex,
       vcTreePosition: vcTreePosition,
       submitAt: submitAt,
-    );
-  }
-
-  @override
-  Future<void> storeVoteTxHash({
-    required String dbPath,
-    required String walletId,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required String txHash,
-  }) {
-    return rust_voting.storeVoteTxHash(
-      dbPath: dbPath,
-      walletId: walletId,
-      roundId: roundId,
-      bundleIndex: bundleIndex,
-      proposalId: proposalId,
-      txHash: txHash,
     );
   }
 
@@ -983,7 +997,6 @@ class FrbVotingRustApi implements VotingRustApi {
     required String txHash,
     required int vanPosition,
     required BigInt vcTreePosition,
-    required String commitmentBundleJson,
   }) {
     return rust_voting.markVoteConfirmed(
       dbPath: dbPath,
@@ -993,28 +1006,6 @@ class FrbVotingRustApi implements VotingRustApi {
       proposalId: proposalId,
       txHash: txHash,
       vanPosition: vanPosition,
-      vcTreePosition: vcTreePosition,
-      commitmentBundleJson: commitmentBundleJson,
-    );
-  }
-
-  @override
-  Future<void> storeCommitmentBundle({
-    required String dbPath,
-    required String walletId,
-    required String roundId,
-    required int bundleIndex,
-    required int proposalId,
-    required String commitmentBundleJson,
-    required BigInt vcTreePosition,
-  }) {
-    return rust_voting.storeCommitmentBundle(
-      dbPath: dbPath,
-      walletId: walletId,
-      roundId: roundId,
-      bundleIndex: bundleIndex,
-      proposalId: proposalId,
-      commitmentBundleJson: commitmentBundleJson,
       vcTreePosition: vcTreePosition,
     );
   }
@@ -1028,7 +1019,6 @@ class FrbVotingRustApi implements VotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> sentToUrls,
-    required List<int> nullifier,
     required BigInt submitAt,
   }) {
     return rust_voting.recordShareDelegation(
@@ -1039,7 +1029,6 @@ class FrbVotingRustApi implements VotingRustApi {
       proposalId: proposalId,
       shareIndex: shareIndex,
       sentToUrls: sentToUrls,
-      nullifier: nullifier,
       submitAt: submitAt,
     );
   }
@@ -1060,19 +1049,6 @@ class FrbVotingRustApi implements VotingRustApi {
       bundleIndex: bundleIndex,
       proposalId: proposalId,
       shareIndex: shareIndex,
-    );
-  }
-
-  @override
-  Future<String> computeShareNullifierHex({
-    required List<int> voteCommitment,
-    required int shareIndex,
-    required List<int> primaryBlind,
-  }) {
-    return rust_voting.computeShareNullifierHex(
-      voteCommitment: voteCommitment,
-      shareIndex: shareIndex,
-      primaryBlind: primaryBlind,
     );
   }
 

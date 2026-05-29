@@ -3,7 +3,7 @@ import '../../providers/voting/voting_state.dart';
 
 enum VotingPollListStatus { active, tallying, closed }
 
-enum VotingPollOrderingState { active, voted, closed }
+enum VotingPollOrderingState { inProgress, active, voted, closed }
 
 List<VotingRoundView> sortVotingRoundsForPollList(
   List<VotingRoundView> rounds,
@@ -30,7 +30,9 @@ List<VotingRoundView> sortVotingRoundsForPollList(
 VotingPollOrderingState votingPollOrderingState(VotingRoundView round) {
   return switch (votingPollListStatus(round.status)) {
     VotingPollListStatus.active =>
-      round.voted
+      round.inProgress
+          ? VotingPollOrderingState.inProgress
+          : round.voted
           ? VotingPollOrderingState.voted
           : VotingPollOrderingState.active,
     VotingPollListStatus.tallying ||
@@ -110,9 +112,10 @@ DateTime? votingRoundEndDate(Map<String, dynamic> json) {
 
 int _orderingRank(VotingPollOrderingState state) {
   return switch (state) {
-    VotingPollOrderingState.active => 0,
-    VotingPollOrderingState.voted => 1,
-    VotingPollOrderingState.closed => 2,
+    VotingPollOrderingState.inProgress => 0,
+    VotingPollOrderingState.active => 1,
+    VotingPollOrderingState.voted => 2,
+    VotingPollOrderingState.closed => 3,
   };
 }
 
@@ -148,4 +151,3 @@ Object? _valueFromJson(Object? value, String key) {
   }
   return null;
 }
-

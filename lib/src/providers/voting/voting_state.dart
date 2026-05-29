@@ -20,6 +20,7 @@ class VotingRoundView {
   final bool endorsed;
   final bool unverified;
   final bool voted;
+  final bool inProgress;
   final Map<String, dynamic> rawJson;
 
   const VotingRoundView({
@@ -29,6 +30,7 @@ class VotingRoundView {
     this.endorsed = false,
     this.unverified = false,
     this.voted = false,
+    this.inProgress = false,
     this.rawJson = const {},
   });
 
@@ -36,6 +38,7 @@ class VotingRoundView {
     VotingRoundSummary summary, {
     required bool endorsed,
     bool voted = false,
+    bool inProgress = false,
   }) {
     return VotingRoundView(
       roundId: summary.roundId,
@@ -44,11 +47,17 @@ class VotingRoundView {
       endorsed: endorsed,
       unverified: !endorsed,
       voted: voted,
+      inProgress: inProgress,
       rawJson: summary.rawJson,
     );
   }
 
-  VotingRoundView copyWith({bool? endorsed, bool? unverified, bool? voted}) {
+  VotingRoundView copyWith({
+    bool? endorsed,
+    bool? unverified,
+    bool? voted,
+    bool? inProgress,
+  }) {
     return VotingRoundView(
       roundId: roundId,
       title: title,
@@ -56,6 +65,7 @@ class VotingRoundView {
       endorsed: endorsed ?? this.endorsed,
       unverified: unverified ?? this.unverified,
       voted: voted ?? this.voted,
+      inProgress: inProgress ?? this.inProgress,
       rawJson: rawJson,
     );
   }
@@ -234,6 +244,13 @@ class VotingSessionState {
   final VotingConfig? config;
   final VotingRoundDetails? round;
   final VotingResumePlan? resumePlan;
+
+  /// Crate planner's derived resume plan for this round.
+  ///
+  /// Null before the crate planner has loaded for this session.
+  /// When [pendingRecovery] is true the proposal-detail screen shows a
+  /// "Continue voting" button instead of the dead-end _PendingVoteContent.
+  final rust_voting.ApiRoundPlan? roundPlan;
   final Uri? pirEndpoint;
   final BigInt? eligibleWeightZatoshi;
   final int? walletScannedHeight;
@@ -261,6 +278,7 @@ class VotingSessionState {
     this.config,
     this.round,
     this.resumePlan,
+    this.roundPlan,
     this.pirEndpoint,
     this.eligibleWeightZatoshi,
     this.walletScannedHeight,
@@ -311,6 +329,8 @@ class VotingSessionState {
     VotingConfig? config,
     VotingRoundDetails? round,
     VotingResumePlan? resumePlan,
+    rust_voting.ApiRoundPlan? roundPlan,
+    bool clearRoundPlan = false,
     Uri? pirEndpoint,
     BigInt? eligibleWeightZatoshi,
     int? walletScannedHeight,
@@ -344,6 +364,7 @@ class VotingSessionState {
       config: config ?? this.config,
       round: round ?? this.round,
       resumePlan: resumePlan ?? this.resumePlan,
+      roundPlan: clearRoundPlan ? null : roundPlan ?? this.roundPlan,
       pirEndpoint: pirEndpoint ?? this.pirEndpoint,
       eligibleWeightZatoshi:
           eligibleWeightZatoshi ?? this.eligibleWeightZatoshi,

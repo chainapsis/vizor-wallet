@@ -98,7 +98,6 @@ pub struct VoteRecord {
     pub proposal_id: u32,
     pub bundle_index: u32,
     pub choice: u32,
-    pub submitted: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -265,6 +264,63 @@ where
     })
 }
 
+/// Reconstruct a signed vote commitment from persisted recovery state.
+pub fn recover_vote_commitment(
+    db_path: &str,
+    wallet_id: &str,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+) -> Result<SignedVoteCommitments, String> {
+    let voting_db = open_voting_db(db_path, wallet_id)?;
+    let recovery =
+        zcash_voting::vote::recovery_bundle(&voting_db, round_id, bundle_index, proposal_id)
+            .map_err(|e| format!("load vote recovery bundle failed: {e}"))?
+            .ok_or_else(|| {
+                format!(
+                    "vote recovery bundle not found for round={round_id}, bundle={bundle_index}, proposal={proposal_id}"
+                )
+            })?;
+    let commit =
+        zcash_voting::vote::recover_commit(&voting_db, round_id, bundle_index, proposal_id)
+            .map_err(|e| format!("vote commitment recovery failed: {e}"))?;
+    let commitment_json = zcash_voting::vote::serialize_recovery(&recovery)
+        .map_err(|e| format!("serialize vote recovery failed: {e}"))?;
+
+    Ok(SignedVoteCommitments {
+        bundle_index,
+        commitments: vec![SignedVoteCommitment {
+            proposal_id,
+            choice: recovery.vote_decision,
+            vote_round_id: recovery.vote_round_id,
+            van_nullifier: commit.van_nullifier.to_vec(),
+            vote_authority_note_new: commit.vote_authority_note_new.to_vec(),
+            vote_commitment: commit.vote_commitment.to_vec(),
+            proof: commit.proof,
+            encrypted_shares: commit
+                .encrypted_shares
+                .iter()
+                .map(wire_share_from_upstream)
+                .collect(),
+            share_payloads: commit
+                .share_payloads
+                .iter()
+                .map(share_payload_from_upstream)
+                .collect(),
+            anchor_height: commit.anchor_height,
+            shares_hash: recovery.shares_hash.to_vec(),
+            share_comms: recovery
+                .share_comms
+                .iter()
+                .map(|comm| comm.to_vec())
+                .collect(),
+            r_vpk_bytes: commit.r_vpk.to_vec(),
+            vote_auth_sig: commit.vote_auth_sig.to_vec(),
+            commitment_bundle_json: commitment_json,
+        }],
+    })
+}
+
 /// Load stored vote rows for `round_id` in this wallet.
 pub fn get_votes(
     db_path: &str,
@@ -281,37 +337,10 @@ pub fn get_votes(
                     proposal_id: record.proposal_id,
                     bundle_index: record.bundle_index,
                     choice: record.choice,
-                    submitted: record.submitted,
                 })
                 .collect()
         })
         .map_err(|e| format!("get_votes failed: {e}"))
-}
-
-/// Compute a deterministic share nullifier and return it as 64-character hex.
-///
-/// Used by recovery/share-tracking callers to identify delegated shares without
-/// exposing share plaintext.
-pub fn compute_share_nullifier_hex(
-    vote_commitment: &[u8],
-    share_index: u32,
-    primary_blind: &[u8],
-) -> Result<String, String> {
-    let vote_commitment: [u8; 32] = vote_commitment.try_into().map_err(|_| {
-        format!(
-            "vote_commitment must be 32 bytes, got {}",
-            vote_commitment.len()
-        )
-    })?;
-    let primary_blind: [u8; 32] = primary_blind.try_into().map_err(|_| {
-        format!(
-            "primary_blind must be 32 bytes, got {}",
-            primary_blind.len()
-        )
-    })?;
-    zcash_voting::share::compute_nullifier(&vote_commitment, share_index, &primary_blind)
-        .map(hex::encode)
-        .map_err(|e| format!("compute_share_nullifier failed: {e}"))
 }
 
 fn validate_draft_votes(draft_votes: &[DraftVote]) -> Result<(), String> {
@@ -388,7 +417,6 @@ fn share_payload_from_upstream(payload: &zcash_voting::SharePayload) -> VoteShar
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wallet::voting::workflow;
 
     fn commitment_bundle_recovery_json(
         bundle: &zcash_voting::VoteCommitmentBundle,
@@ -637,11 +665,18 @@ mod tests {
         let stored_vote_commitment = stored.vote_commitment;
         let stored_primary_blind = stored_payload.primary_blind.clone();
         let stored_share_index = stored_payload.enc_share.share_index;
-        let expected_nullifier = compute_share_nullifier_hex(
-            &commitment.vote_commitment,
+        let expected_vote_commitment: [u8; 32] =
+            commitment.vote_commitment.as_slice().try_into().unwrap();
+        let expected_primary_blind: [u8; 32] =
+            payloads[0].primary_blind.as_slice().try_into().unwrap();
+        let stored_primary_blind_array: [u8; 32] =
+            stored_primary_blind.as_slice().try_into().unwrap();
+        let expected_nullifier = zcash_voting::share::compute_nullifier(
+            &expected_vote_commitment,
             payloads[0].enc_share.share_index,
-            &payloads[0].primary_blind,
+            &expected_primary_blind,
         )
+        .map(hex::encode)
         .unwrap();
 
         assert_eq!(stored_position, 42);
@@ -651,29 +686,14 @@ mod tests {
             payloads[0].all_enc_shares.len()
         );
         assert_eq!(
-            compute_share_nullifier_hex(
+            zcash_voting::share::compute_nullifier(
                 &stored_vote_commitment,
                 stored_share_index,
-                &stored_primary_blind
+                &stored_primary_blind_array
             )
+            .map(hex::encode)
             .unwrap(),
             expected_nullifier
-        );
-    }
-
-    #[test]
-    fn compute_share_nullifier_hex_matches_swift_sdk_fixture() {
-        let nullifier = compute_share_nullifier_hex(&[1; 32], 5, &[2; 32]).unwrap();
-
-        assert_eq!(nullifier.len(), 64);
-        assert!(nullifier.chars().all(|ch| ch.is_ascii_hexdigit()));
-        assert_eq!(
-            nullifier,
-            "8d6d97caa19a20e5e67e7cc24aaaa7beb72b4a513863f6adbe7b62ba1b1b0010"
-        );
-        assert_eq!(
-            nullifier,
-            compute_share_nullifier_hex(&[1; 32], 5, &[2; 32]).unwrap()
         );
     }
 

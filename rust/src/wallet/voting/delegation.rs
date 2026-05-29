@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use prost::Message;
 use secrecy::{ExposeSecret, SecretVec};
@@ -708,6 +708,30 @@ fn ensure_round_initialized(
 
 /// Fetches the current lightwalletd chain height.
 async fn current_chain_height(lightwalletd_url: &str) -> Result<u64, String> {
+    let mut last_error = None;
+    for attempt in 1..=3 {
+        match current_chain_height_once(lightwalletd_url).await {
+            Ok(height) => return Ok(height),
+            Err(error) => {
+                if attempt == 3 {
+                    last_error = Some(error);
+                    break;
+                }
+                log::warn!(
+                    "voting delegation: retrying chain height fetch \
+                     (attempt={}, error={})",
+                    attempt,
+                    error
+                );
+                last_error = Some(error);
+                tokio::time::sleep(Duration::from_millis(500 * attempt)).await;
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "chain height fetch failed".to_string()))
+}
+
+async fn current_chain_height_once(lightwalletd_url: &str) -> Result<u64, String> {
     let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;

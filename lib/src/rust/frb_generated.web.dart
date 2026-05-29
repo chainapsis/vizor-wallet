@@ -94,6 +94,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiMempoolTxEvent dco_decode_api_mempool_tx_event(dynamic raw);
 
   @protected
+  ApiNextStep dco_decode_api_next_step(dynamic raw);
+
+  @protected
+  ApiRoundPlan dco_decode_api_round_plan(dynamic raw);
+
+  @protected
   ApiRoundRecoveryState dco_decode_api_round_recovery_state(dynamic raw);
 
   @protected
@@ -246,6 +252,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_list_api_keystone_signature_record(dynamic raw);
 
   @protected
+  List<ApiNextStep> dco_decode_list_api_next_step(dynamic raw);
+
+  @protected
   List<ApiShareDelegationRecord> dco_decode_list_api_share_delegation_record(
     dynamic raw,
   );
@@ -295,6 +304,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<int> dco_decode_list_prim_u_32_loose(dynamic raw);
+
+  @protected
+  Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -499,6 +514,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiNextStep sse_decode_api_next_step(SseDeserializer deserializer);
+
+  @protected
+  ApiRoundPlan sse_decode_api_round_plan(SseDeserializer deserializer);
+
+  @protected
   ApiRoundRecoveryState sse_decode_api_round_recovery_state(
     SseDeserializer deserializer,
   );
@@ -691,6 +712,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   sse_decode_list_api_keystone_signature_record(SseDeserializer deserializer);
 
   @protected
+  List<ApiNextStep> sse_decode_list_api_next_step(SseDeserializer deserializer);
+
+  @protected
   List<ApiShareDelegationRecord> sse_decode_list_api_share_delegation_record(
     SseDeserializer deserializer,
   );
@@ -754,6 +778,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<Uint8List> sse_decode_list_list_prim_u_8_strict(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<int> sse_decode_list_prim_u_32_loose(SseDeserializer deserializer);
+
+  @protected
+  Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
   @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
@@ -1003,6 +1033,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_next_step(ApiNextStep self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_api_round_plan(ApiRoundPlan self, SseSerializer serializer);
+
+  @protected
   void sse_encode_api_round_recovery_state(
     ApiRoundRecoveryState self,
     SseSerializer serializer,
@@ -1231,6 +1267,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_api_next_step(
+    List<ApiNextStep> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_api_share_delegation_record(
     List<ApiShareDelegationRecord> self,
     SseSerializer serializer,
@@ -1305,6 +1347,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_list_prim_u_8_strict(
     List<Uint8List> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_u_32_loose(
+    List<int> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_u_32_strict(
+    Uint32List self,
     SseSerializer serializer,
   );
 

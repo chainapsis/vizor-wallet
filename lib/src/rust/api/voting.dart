@@ -61,6 +61,29 @@ Future<List<ApiShareSubmissionPlan>> planShareSubmissions({
   singleShare: singleShare,
 );
 
+/// Return share-tracking action flags using `zcash_voting::share_policy`.
+///
+/// Bit 0 means the share is ready for status polling. Bit 1 means it is overdue
+/// and should be retried against helpers that missed the initial submission.
+Future<int> shareTrackingFlags({
+  required ApiShareDelegationRecord share,
+  required BigInt nowSeconds,
+  BigInt? voteEndTimeSeconds,
+}) => RustLib.instance.api.crateApiVotingShareTrackingFlags(
+  share: share,
+  nowSeconds: nowSeconds,
+  voteEndTimeSeconds: voteEndTimeSeconds,
+);
+
+/// Return the next share-tracking delay in seconds using crate policy.
+Future<BigInt?> nextShareTrackingDelaySeconds({
+  required List<ApiShareDelegationRecord> shares,
+  required BigInt nowSeconds,
+}) => RustLib.instance.api.crateApiVotingNextShareTrackingDelaySeconds(
+  shares: shares,
+  nowSeconds: nowSeconds,
+);
+
 /// Extract and validate one helper-share payload from stored recovery JSON.
 ///
 /// The stored recovery blob is hex-encoded and also contains local-only
@@ -536,6 +559,21 @@ Future<ApiSignedVoteCommitments> buildVoteCommitments({
   draftVotes: draftVotes,
 );
 
+/// Recover a committed but unsubmitted vote from persisted local recovery data.
+Future<ApiSignedVoteCommitments> recoverVoteCommitment({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+}) => RustLib.instance.api.crateApiVotingRecoverVoteCommitment(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+);
+
 /// Streaming variant of `build_vote_commitments`.
 ///
 /// Emits per-proposal progress events, then a terminal `"result"` event carrying
@@ -571,19 +609,6 @@ Future<List<ApiVoteRecord>> getVotes({
   roundId: roundId,
 );
 
-/// Compute the deterministic share nullifier as lowercase 64-character hex.
-///
-/// The helper validates the commitment and blind lengths through `zcash_voting`.
-Future<String> computeShareNullifierHex({
-  required List<int> voteCommitment,
-  required int shareIndex,
-  required List<int> primaryBlind,
-}) => RustLib.instance.api.crateApiVotingComputeShareNullifierHex(
-  voteCommitment: voteCommitment,
-  shareIndex: shareIndex,
-  primaryBlind: primaryBlind,
-);
-
 /// Load the full recovery/share-tracking summary for one voting round.
 Future<ApiRoundRecoveryState> getRoundRecoveryState({
   required String dbPath,
@@ -593,26 +618,6 @@ Future<ApiRoundRecoveryState> getRoundRecoveryState({
   dbPath: dbPath,
   walletId: walletId,
   roundId: roundId,
-);
-
-/// Store the broadcast transaction hash for one vote.
-///
-/// Keyed by `(round_id, wallet_id, bundle_index, proposal_id)` so multi-bundle
-/// and multi-proposal rounds can resume without ambiguous "current vote" state.
-Future<void> storeVoteTxHash({
-  required String dbPath,
-  required String walletId,
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required String txHash,
-}) => RustLib.instance.api.crateApiVotingStoreVoteTxHash(
-  dbPath: dbPath,
-  walletId: walletId,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  txHash: txHash,
 );
 
 Future<void> markVoteSubmitted({
@@ -640,7 +645,6 @@ Future<void> markVoteConfirmed({
   required String txHash,
   required int vanPosition,
   required BigInt vcTreePosition,
-  required String commitmentBundleJson,
 }) => RustLib.instance.api.crateApiVotingMarkVoteConfirmed(
   dbPath: dbPath,
   walletId: walletId,
@@ -650,7 +654,6 @@ Future<void> markVoteConfirmed({
   txHash: txHash,
   vanPosition: vanPosition,
   vcTreePosition: vcTreePosition,
-  commitmentBundleJson: commitmentBundleJson,
 );
 
 /// Load the broadcast transaction hash for one vote, if present.
@@ -666,25 +669,6 @@ Future<String?> getVoteTxHash({
   roundId: roundId,
   bundleIndex: bundleIndex,
   proposalId: proposalId,
-);
-
-/// Store commitment bundle recovery JSON and confirmed vote-tree position for one vote.
-Future<void> storeCommitmentBundle({
-  required String dbPath,
-  required String walletId,
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required String commitmentBundleJson,
-  required BigInt vcTreePosition,
-}) => RustLib.instance.api.crateApiVotingStoreCommitmentBundle(
-  dbPath: dbPath,
-  walletId: walletId,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  commitmentBundleJson: commitmentBundleJson,
-  vcTreePosition: vcTreePosition,
 );
 
 /// Load commitment bundle recovery JSON and vote-tree position for one vote.
@@ -711,7 +695,6 @@ Future<void> recordShareDelegation({
   required int proposalId,
   required int shareIndex,
   required List<String> sentToUrls,
-  required List<int> nullifier,
   required BigInt submitAt,
 }) => RustLib.instance.api.crateApiVotingRecordShareDelegation(
   dbPath: dbPath,
@@ -721,7 +704,6 @@ Future<void> recordShareDelegation({
   proposalId: proposalId,
   shareIndex: shareIndex,
   sentToUrls: sentToUrls,
-  nullifier: nullifier,
   submitAt: submitAt,
 );
 
@@ -795,6 +777,38 @@ Future<void> clearRecoveryState({
   dbPath: dbPath,
   walletId: walletId,
   roundId: roundId,
+);
+
+/// Compute the resumable voting-session plan for a round. The plan reports the
+/// ordered remaining work (`next_steps`) and which proposals are still open.
+Future<ApiRoundPlan> getRoundPlan({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required List<int> proposalIds,
+}) => RustLib.instance.api.crateApiVotingGetRoundPlan(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  proposalIds: proposalIds,
+);
+
+/// Persist (insert or replace) the voter's ballot intent for one proposal.
+/// Pass `skipped: true` for `Decision::Skipped`; otherwise `choice` must be set.
+Future<void> setBallotIntent({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int proposalId,
+  required bool skipped,
+  int? choice,
+}) => RustLib.instance.api.crateApiVotingSetBallotIntent(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  proposalId: proposalId,
+  skipped: skipped,
+  choice: choice,
 );
 
 /// Stored commitment bundle recovery data for one `(bundle_index, proposal_id)`.
@@ -1067,6 +1081,85 @@ class ApiKeystoneSignatureRecord {
           sig == other.sig &&
           sighash == other.sighash &&
           rk == other.rk;
+}
+
+/// One unit of remaining work for a round, flattened for the FRB boundary.
+class ApiNextStep {
+  /// "delegate" | "poll_delegation" | "cast_vote" | "submit_vote" | "poll_vote" | "confirm_share".
+  final String kind;
+  final int bundleIndex;
+
+  /// 0 for delegation steps.
+  final int proposalId;
+
+  /// 0 unless `cast_vote`.
+  final int choice;
+
+  /// 0 unless `confirm_share`.
+  final int shareIndex;
+
+  const ApiNextStep({
+    required this.kind,
+    required this.bundleIndex,
+    required this.proposalId,
+    required this.choice,
+    required this.shareIndex,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      bundleIndex.hashCode ^
+      proposalId.hashCode ^
+      choice.hashCode ^
+      shareIndex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiNextStep &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          bundleIndex == other.bundleIndex &&
+          proposalId == other.proposalId &&
+          choice == other.choice &&
+          shareIndex == other.shareIndex;
+}
+
+/// Derived resume state for one round, produced by the crate's `resume_plan`.
+class ApiRoundPlan {
+  final String roundId;
+  final bool pendingRecovery;
+  final List<ApiNextStep> nextSteps;
+  final Uint32List openProposals;
+  final bool allDecided;
+
+  const ApiRoundPlan({
+    required this.roundId,
+    required this.pendingRecovery,
+    required this.nextSteps,
+    required this.openProposals,
+    required this.allDecided,
+  });
+
+  @override
+  int get hashCode =>
+      roundId.hashCode ^
+      pendingRecovery.hashCode ^
+      nextSteps.hashCode ^
+      openProposals.hashCode ^
+      allDecided.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiRoundPlan &&
+          runtimeType == other.runtimeType &&
+          roundId == other.roundId &&
+          pendingRecovery == other.pendingRecovery &&
+          nextSteps == other.nextSteps &&
+          openProposals == other.openProposals &&
+          allDecided == other.allDecided;
 }
 
 /// Recovery summary for resuming one voting round after app restart.
@@ -1499,21 +1592,16 @@ class ApiVoteRecord {
   final int proposalId;
   final int bundleIndex;
   final int choice;
-  final bool submitted;
 
   const ApiVoteRecord({
     required this.proposalId,
     required this.bundleIndex,
     required this.choice,
-    required this.submitted,
   });
 
   @override
   int get hashCode =>
-      proposalId.hashCode ^
-      bundleIndex.hashCode ^
-      choice.hashCode ^
-      submitted.hashCode;
+      proposalId.hashCode ^ bundleIndex.hashCode ^ choice.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1522,8 +1610,7 @@ class ApiVoteRecord {
           runtimeType == other.runtimeType &&
           proposalId == other.proposalId &&
           bundleIndex == other.bundleIndex &&
-          choice == other.choice &&
-          submitted == other.submitted;
+          choice == other.choice;
 }
 
 /// Helper-server payload for one encrypted vote share.

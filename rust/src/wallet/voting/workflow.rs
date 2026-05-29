@@ -69,59 +69,7 @@ pub fn mark_delegation_confirmed(
         .map_err(|e| format!("commit delegation confirmed transaction failed: {e}"))
 }
 
-/// Persists signed vote commitment recovery data after signing succeeds.
-///
-/// Stores `commitment_bundle_json` for the vote key with a temporary vote tree
-/// position placeholder.
-///
-/// zodl-ios stores `0` before cast-vote submission so the bundle remains
-/// loadable if the app is killed between signing, broadcast, confirmation, and
-/// share delegation. The confirmed cast-vote event later replaces this with the
-/// real vote commitment tree position.
-///
-/// # Errors
-///
-/// Returns an error if the vote row is missing, the transaction cannot be
-/// committed, or existing commitment JSON conflicts with the requested value.
-pub fn store_signed_vote_commitment(
-    db: &zcash_voting::storage::VotingDb,
-    round_id: &str,
-    bundle_index: u32,
-    proposal_id: u32,
-    commitment_bundle_json: &str,
-) -> Result<(), String> {
-    let mut conn = db.conn();
-    let wallet_id = db.wallet_id();
-    let tx = conn
-        .transaction()
-        .map_err(|e| format!("begin signed vote transaction failed: {e}"))?;
-    let stored_hash =
-        queries::get_vote_tx_hash(&tx, round_id, &wallet_id, bundle_index, proposal_id)
-            .map_err(|e| format!("get_vote_tx_hash failed: {e}"))?;
-    let (stored_json, _) =
-        load_vote_recovery_fields(&tx, round_id, &wallet_id, bundle_index, proposal_id)?;
-    if stored_hash.is_some() {
-        check_text_conflict(
-            stored_json.as_deref(),
-            commitment_bundle_json,
-            "vote commitment_bundle_json",
-        )?;
-    }
-    queries::store_commitment_bundle(
-        &tx,
-        round_id,
-        &wallet_id,
-        bundle_index,
-        proposal_id,
-        commitment_bundle_json,
-        0,
-    )
-    .map_err(|e| format!("store signed vote commitment failed: {e}"))?;
-    tx.commit()
-        .map_err(|e| format!("commit signed vote transaction failed: {e}"))
-}
-
-/// Marks a vote as submitted by storing its tx hash and `submitted = 1`.
+/// Marks a vote as submitted by storing its tx hash.
 ///
 /// The write is atomic and idempotent for the same `tx_hash`. A different
 /// existing hash for the same vote key is rejected.
@@ -146,26 +94,23 @@ pub fn mark_vote_submitted(
     let stored = queries::get_vote_tx_hash(&tx, round_id, wallet_id, bundle_index, proposal_id)
         .map_err(|e| format!("get_vote_tx_hash failed: {e}"))?;
     check_text_conflict(stored.as_deref(), tx_hash, "vote tx_hash")?;
-    queries::store_vote_tx_hash(&tx, round_id, wallet_id, bundle_index, proposal_id, tx_hash)
-        .map_err(|e| format!("store_vote_tx_hash failed: {e}"))?;
-    queries::mark_vote_submitted(&tx, round_id, wallet_id, bundle_index, proposal_id)
-        .map_err(|e| format!("mark_vote_submitted failed: {e}"))?;
+    queries::record_vote_submission(&tx, round_id, wallet_id, bundle_index, proposal_id, tx_hash)
+        .map_err(|e| format!("record_vote_submission failed: {e}"))?;
     tx.commit()
         .map_err(|e| format!("commit vote submitted transaction failed: {e}"))
 }
 
-/// Marks a vote as confirmed and persists all vote recovery fields atomically.
+/// Marks a vote as confirmed and persists the confirmation fields.
 ///
-/// Stores the vote tx hash, `submitted = 1`, VAN position, vote commitment tree
-/// position, and commitment bundle JSON. Repeated calls with identical data are
-/// accepted; any conflicting existing value is rejected.
+/// Stores the vote tx hash, VAN position, and vote commitment tree position.
+/// Repeated calls with identical data are accepted; any
+/// conflicting existing value is rejected.
 ///
 /// # Errors
 ///
 /// Returns an error if the voting DB cannot be opened, the vote row is missing,
 /// the transaction cannot be committed, `vc_tree_position` does not fit SQLite's
 /// signed integer representation, or stored data conflicts.
-#[allow(clippy::too_many_arguments)]
 pub fn mark_vote_confirmed(
     db_path: &str,
     wallet_id: &str,
@@ -175,54 +120,53 @@ pub fn mark_vote_confirmed(
     tx_hash: &str,
     van_position: u32,
     vc_tree_position: u64,
-    commitment_bundle_json: &str,
 ) -> Result<(), String> {
     let db = super::state::open_voting_db(db_path, wallet_id)?;
-    let mut conn = db.conn();
-    let tx = conn
-        .transaction()
-        .map_err(|e| format!("begin vote confirmed transaction failed: {e}"))?;
-    let stored_hash =
-        queries::get_vote_tx_hash(&tx, round_id, wallet_id, bundle_index, proposal_id)
-            .map_err(|e| format!("get_vote_tx_hash failed: {e}"))?;
-    check_text_conflict(stored_hash.as_deref(), tx_hash, "vote tx_hash")?;
-    let (stored_json, stored_position) =
-        load_vote_recovery_fields(&tx, round_id, wallet_id, bundle_index, proposal_id)?;
-    check_text_conflict(
-        stored_json.as_deref(),
-        commitment_bundle_json,
-        "vote commitment_bundle_json",
-    )?;
-    check_vote_position_conflict(stored_position, vc_tree_position)?;
-    queries::store_vote_tx_hash(&tx, round_id, wallet_id, bundle_index, proposal_id, tx_hash)
-        .map_err(|e| format!("store_vote_tx_hash failed: {e}"))?;
-    queries::mark_vote_submitted(&tx, round_id, wallet_id, bundle_index, proposal_id)
-        .map_err(|e| format!("mark_vote_submitted failed: {e}"))?;
-    queries::store_van_position(&tx, round_id, wallet_id, bundle_index, van_position)
-        .map_err(|e| format!("store_van_position failed: {e}"))?;
-    queries::store_commitment_bundle(
-        &tx,
+    {
+        let mut conn = db.conn();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("begin vote confirmed transaction failed: {e}"))?;
+        let stored_hash =
+            queries::get_vote_tx_hash(&tx, round_id, wallet_id, bundle_index, proposal_id)
+                .map_err(|e| format!("get_vote_tx_hash failed: {e}"))?;
+        check_text_conflict(stored_hash.as_deref(), tx_hash, "vote tx_hash")?;
+        let (_, stored_position) =
+            load_vote_recovery_fields(&tx, round_id, wallet_id, bundle_index, proposal_id)?;
+        check_vote_position_conflict(stored_position, vc_tree_position)?;
+        queries::record_vote_submission(
+            &tx,
+            round_id,
+            wallet_id,
+            bundle_index,
+            proposal_id,
+            tx_hash,
+        )
+        .map_err(|e| format!("record_vote_submission failed: {e}"))?;
+        queries::store_van_position(&tx, round_id, wallet_id, bundle_index, van_position)
+            .map_err(|e| format!("store_van_position failed: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("commit vote confirmed transaction failed: {e}"))?;
+    }
+    zcash_voting::vote::record_vc_position(
+        &db,
         round_id,
-        wallet_id,
         bundle_index,
         proposal_id,
-        commitment_bundle_json,
         vc_tree_position,
     )
-    .map_err(|e| format!("store_commitment_bundle failed: {e}"))?;
-    tx.commit()
-        .map_err(|e| format!("commit vote confirmed transaction failed: {e}"))
+    .map_err(|e| format!("record_vc_position failed: {e}"))
 }
 
 /// Records helper-server share submission state for retry/recovery.
 ///
-/// The write is atomic. Repeated calls for the same share key may update
-/// sent-server history, but the stored nullifier must not change.
+/// The shared voting crate reconstructs the share payload and nullifier from the
+/// stored vote recovery bundle, so callers only provide helper delivery state.
 ///
 /// # Errors
 ///
-/// Returns an error if the voting DB cannot be opened, the transaction cannot be
-/// committed, the upstream share write fails, or an existing nullifier conflicts.
+/// Returns an error if the voting DB cannot be opened or the upstream share
+/// write fails.
 #[allow(clippy::too_many_arguments)]
 pub fn record_share_delegation(
     db_path: &str,
@@ -232,37 +176,20 @@ pub fn record_share_delegation(
     proposal_id: u32,
     share_index: u32,
     sent_to_urls: &[String],
-    nullifier: &[u8],
     submit_at: u64,
 ) -> Result<(), String> {
     let db = super::state::open_voting_db(db_path, wallet_id)?;
-    let mut conn = db.conn();
-    let tx = conn
-        .transaction()
-        .map_err(|e| format!("begin share delegation transaction failed: {e}"))?;
-    let stored_nullifier = load_share_nullifier(
-        &tx,
+    zcash_voting::share::record(
+        &db,
         round_id,
-        wallet_id,
-        bundle_index,
-        proposal_id,
-        share_index,
-    )?;
-    check_blob_conflict(stored_nullifier.as_deref(), nullifier, "share nullifier")?;
-    queries::record_share_delegation(
-        &tx,
-        round_id,
-        wallet_id,
         bundle_index,
         proposal_id,
         share_index,
         sent_to_urls,
-        nullifier,
         submit_at,
     )
     .map_err(|e| format!("record_share_delegation failed: {e}"))?;
-    tx.commit()
-        .map_err(|e| format!("commit share delegation transaction failed: {e}"))
+    Ok(())
 }
 
 /// Marks a helper-server share delegation as confirmed.
@@ -343,33 +270,6 @@ fn load_vote_recovery_fields(
     })
 }
 
-/// Loads a stored helper-share nullifier, if the share row already exists.
-fn load_share_nullifier(
-    tx: &Transaction<'_>,
-    round_id: &str,
-    wallet_id: &str,
-    bundle_index: u32,
-    proposal_id: u32,
-    share_index: u32,
-) -> Result<Option<Vec<u8>>, String> {
-    tx.query_row(
-        "SELECT nullifier FROM share_delegations
-         WHERE round_id = :round_id AND wallet_id = :wallet_id
-         AND bundle_index = :bundle_index AND proposal_id = :proposal_id
-         AND share_index = :share_index",
-        named_params! {
-            ":round_id": round_id,
-            ":wallet_id": wallet_id,
-            ":bundle_index": bundle_index as i64,
-            ":proposal_id": proposal_id as i64,
-            ":share_index": share_index as i64,
-        },
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(|e| format!("load share nullifier failed: {e}"))
-}
-
 /// Accepts missing or matching text fields and rejects conflicting values.
 fn check_text_conflict(existing: Option<&str>, requested: &str, field: &str) -> Result<(), String> {
     if let Some(existing) = existing {
@@ -377,20 +277,6 @@ fn check_text_conflict(existing: Option<&str>, requested: &str, field: &str) -> 
             return Err(format!(
                 "{field} conflict: stored {existing}, requested {requested}"
             ));
-        }
-    }
-    Ok(())
-}
-
-/// Accepts missing or matching binary fields and rejects conflicting values.
-fn check_blob_conflict(
-    existing: Option<&[u8]>,
-    requested: &[u8],
-    field: &str,
-) -> Result<(), String> {
-    if let Some(existing) = existing {
-        if existing != requested {
-            return Err(format!("{field} conflict"));
         }
     }
     Ok(())

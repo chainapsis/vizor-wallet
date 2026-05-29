@@ -15,6 +15,41 @@ abstract final class VotingWorkflowPhase {
   static const confirmed = 'confirmed';
 }
 
+bool hasBlockingRoundRecoveryWork({
+  required rust_voting.ApiRoundPlan? roundPlan,
+  required VotingResumePlan? resumePlan,
+}) {
+  if (roundPlan?.pendingRecovery != true) return false;
+  final steps = roundPlan!.nextSteps;
+  if (steps.any((step) => step.kind != 'confirm_share')) return true;
+  if (steps.isEmpty) return false;
+
+  // Share confirmations for already accepted helper shares are tracked for
+  // later polling, but they should not keep the foreground vote flow open.
+  return resumePlan?.hasBlockingShareWork ?? true;
+}
+
+bool hasCompletedVoteForDisplay({
+  required rust_voting.ApiRoundPlan? roundPlan,
+  required VotingResumePlan? resumePlan,
+}) {
+  if (resumePlan == null) return false;
+  if (roundPlan == null) return resumePlan.hasCompletedVoteForDisplay;
+  return resumePlan.hasCompletedVoteArtifact &&
+      !hasBlockingRoundRecoveryWork(
+        roundPlan: roundPlan,
+        resumePlan: resumePlan,
+      );
+}
+
+bool roundPlanNeedsDraftSetup(rust_voting.ApiRoundPlan? roundPlan) {
+  return roundPlan != null &&
+      !roundPlan.pendingRecovery &&
+      !roundPlan.allDecided &&
+      roundPlan.nextSteps.isEmpty &&
+      roundPlan.openProposals.isNotEmpty;
+}
+
 /// Stable key for per-proposal vote state within one note bundle.
 ///
 /// A round can split voting power across bundles, and every bundle/proposal pair

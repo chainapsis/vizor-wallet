@@ -3,6 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/voting/voting_flow_models.dart';
+import '../../features/voting/voting_resume_plan.dart';
+import '../../rust/api/voting.dart' as rust_voting;
+import '../../services/voting/voting_api_client.dart';
+import '../../services/voting/voting_models.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
@@ -63,20 +68,22 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
 
     final rounds = await api.listRounds();
     final endorsedIds = await endorser.getEndorsedSet();
-    final votedIds = await _completedVoteRoundIds(
-      rounds.map((round) => round.roundId),
-    );
+    final recoveryStates = await _roundListRecoveryStates(rounds, api: api);
     return [
       for (final round in rounds)
         VotingRoundView.fromSummary(
           round,
           endorsed: endorsedIds.contains(round.roundId),
-          voted: votedIds.contains(round.roundId),
+          voted: recoveryStates[round.roundId]?.voted ?? false,
+          inProgress: recoveryStates[round.roundId]?.inProgress ?? false,
         ),
     ];
   }
 
-  Future<Set<String>> _completedVoteRoundIds(Iterable<String> roundIds) async {
+  Future<Map<String, _RoundListRecoveryState>> _roundListRecoveryStates(
+    Iterable<VotingRoundSummary> rounds, {
+    required VotingApiClient api,
+  }) async {
     final String accountUuid;
     final String dbPath;
     try {
@@ -87,29 +94,115 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       accountUuid = activeAccountUuid;
       dbPath = await ref.read(votingWalletDbPathProvider).call();
     } catch (error) {
-      debugPrint('[zcash] Voting: skipped voted-state lookup: $error');
+      debugPrint('[zcash] Voting: skipped poll-state lookup: $error');
       return const {};
     }
-    final recovery = ref.read(votingRecoveryServiceProvider);
-    final votedIds = <String>{};
-    for (final roundId in roundIds) {
+    final states = <String, _RoundListRecoveryState>{};
+    for (final round in rounds) {
       try {
-        final plan = await recovery.loadResumePlan(
+        final recoveryState = await _roundListRecoveryState(
+          api: api,
           dbPath: dbPath,
-          walletId: accountUuid,
-          roundId: roundId,
+          accountUuid: accountUuid,
+          round: round,
         );
-        if (plan.hasCompletedVoteForDisplay) {
-          votedIds.add(roundId);
+        if (recoveryState.voted || recoveryState.inProgress) {
+          states[round.roundId] = recoveryState;
         }
       } catch (error) {
         debugPrint(
-          '[zcash] Voting: skipped voted-state lookup for round $roundId: '
+          '[zcash] Voting: skipped poll-state lookup for round '
+          '${round.roundId}: '
           '$error',
         );
       }
     }
-    return votedIds;
+    return states;
+  }
+
+  Future<_RoundListRecoveryState> _roundListRecoveryState({
+    required VotingApiClient api,
+    required VotingRoundSummary round,
+    required String dbPath,
+    required String accountUuid,
+  }) async {
+    final recovery = ref.read(votingRecoveryServiceProvider);
+    final resumePlan = await recovery.loadResumePlan(
+      dbPath: dbPath,
+      walletId: accountUuid,
+      roundId: round.roundId,
+    );
+    final proposalIds = await _proposalIdsForRound(api, round);
+    var hasBlockingRecovery = false;
+    rust_voting.ApiRoundPlan? roundPlan;
+    if (proposalIds.isNotEmpty) {
+      try {
+        roundPlan = await recovery.loadRoundPlan(
+          dbPath: dbPath,
+          walletId: accountUuid,
+          roundId: round.roundId,
+          proposalIds: proposalIds,
+        );
+        hasBlockingRecovery = hasBlockingRoundRecoveryWork(
+          roundPlan: roundPlan,
+          resumePlan: resumePlan,
+        );
+      } catch (error) {
+        debugPrint(
+          '[zcash] Voting: skipped in-progress lookup for round '
+          '${round.roundId}: $error',
+        );
+      }
+    }
+    if (hasBlockingRecovery) {
+      return const _RoundListRecoveryState(voted: false, inProgress: true);
+    }
+    if (hasCompletedVoteForDisplay(
+      roundPlan: roundPlan,
+      resumePlan: resumePlan,
+    )) {
+      return const _RoundListRecoveryState(voted: true, inProgress: false);
+    }
+
+    return _RoundListRecoveryState(
+      voted: false,
+      inProgress: roundPlan != null
+          ? roundPlan.pendingRecovery ||
+                (roundPlanNeedsDraftSetup(roundPlan) &&
+                    resumePlan.hasPendingWork)
+          : resumePlan.hasPendingWork ||
+                resumePlan.hasBlockingCompletedVoteDisplay,
+    );
+  }
+
+  List<int> _proposalIdsFromRoundJson(Map<String, dynamic> json) {
+    try {
+      return proposalsFromJson(json).map((proposal) => proposal.id).toList();
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: skipped proposal-id lookup for poll list row: $error',
+      );
+      return const [];
+    }
+  }
+
+  Future<List<int>> _proposalIdsForRound(
+    VotingApiClient api,
+    VotingRoundSummary round,
+  ) async {
+    final summaryProposalIds = _proposalIdsFromRoundJson(round.rawJson);
+    if (summaryProposalIds.isNotEmpty) return summaryProposalIds;
+
+    try {
+      final status = await api.getRoundStatus(round.roundId);
+      return _proposalIdsFromRoundJson(status.rawJson);
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: skipped round detail lookup for poll-state lookup '
+        'for round ${round.roundId}: $error',
+      );
+      return const [];
+    }
   }
 }
 
@@ -117,3 +210,13 @@ final votingRoundsProvider =
     AsyncNotifierProvider<VotingRoundsNotifier, List<VotingRoundView>>(
       VotingRoundsNotifier.new,
     );
+
+class _RoundListRecoveryState {
+  const _RoundListRecoveryState({
+    required this.voted,
+    required this.inProgress,
+  });
+
+  final bool voted;
+  final bool inProgress;
+}

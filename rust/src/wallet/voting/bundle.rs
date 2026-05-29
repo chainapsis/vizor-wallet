@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::{borrow::Borrow, time::Duration};
 
 use crate::wallet::{
     keys::parse_account_uuid,
@@ -108,12 +108,8 @@ pub async fn select_notes_with_lwd(
     snapshot_height: u64,
 ) -> Result<SelectedNotes, String> {
     ensure_wallet_scanned_to_snapshot(db_path, network, snapshot_height)?;
-    let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
-        .await
-        .map_err(|e| e.to_string())?;
-    let anchor_tree_state = sync_engine::get_tree_state(&mut client, snapshot_height)
-        .await
-        .map_err(|e| e.to_string())?;
+    let anchor_tree_state =
+        fetch_anchor_tree_state_with_retry(lightwalletd_url, snapshot_height).await?;
     select_notes_with_anchor_tree_state(
         db_path,
         network,
@@ -121,6 +117,46 @@ pub async fn select_notes_with_lwd(
         snapshot_height,
         anchor_tree_state,
     )
+}
+
+async fn fetch_anchor_tree_state_with_retry(
+    lightwalletd_url: &str,
+    snapshot_height: u64,
+) -> Result<TreeState, String> {
+    let mut last_error = None;
+    for attempt in 1..=3 {
+        match fetch_anchor_tree_state(lightwalletd_url, snapshot_height).await {
+            Ok(tree_state) => return Ok(tree_state),
+            Err(error) => {
+                if attempt == 3 {
+                    last_error = Some(error);
+                    break;
+                }
+                log::warn!(
+                    "voting bundle: retrying snapshot tree state fetch \
+                     (attempt={}, snapshot_height={}, error={})",
+                    attempt,
+                    snapshot_height,
+                    error
+                );
+                last_error = Some(error);
+                tokio::time::sleep(Duration::from_millis(500 * attempt)).await;
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "snapshot tree state fetch failed".to_string()))
+}
+
+async fn fetch_anchor_tree_state(
+    lightwalletd_url: &str,
+    snapshot_height: u64,
+) -> Result<TreeState, String> {
+    let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| e.to_string())?;
+    sync_engine::get_tree_state(&mut client, snapshot_height)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 fn ensure_wallet_scanned_to_snapshot(

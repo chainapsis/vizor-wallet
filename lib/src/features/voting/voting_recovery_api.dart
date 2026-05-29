@@ -12,6 +12,22 @@ abstract interface class VotingRecoveryApi {
     required String roundId,
   });
 
+  Future<rust_voting.ApiRoundPlan> getRoundPlan({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required List<int> proposalIds,
+  });
+
+  Future<void> setBallotIntent({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int proposalId,
+    required bool skipped,
+    int? choice,
+  });
+
   Future<void> addSentServers({
     required String dbPath,
     required String walletId,
@@ -43,6 +59,40 @@ class RustVotingRecoveryApi implements VotingRecoveryApi {
       dbPath: dbPath,
       walletId: walletId,
       roundId: roundId,
+    );
+  }
+
+  @override
+  Future<rust_voting.ApiRoundPlan> getRoundPlan({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required List<int> proposalIds,
+  }) {
+    return rust_voting.getRoundPlan(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      proposalIds: proposalIds,
+    );
+  }
+
+  @override
+  Future<void> setBallotIntent({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int proposalId,
+    required bool skipped,
+    int? choice,
+  }) {
+    return rust_voting.setBallotIntent(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      proposalId: proposalId,
+      skipped: skipped,
+      choice: choice,
     );
   }
 

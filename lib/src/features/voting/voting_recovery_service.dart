@@ -13,6 +13,44 @@ class VotingRecoveryService {
   const VotingRecoveryService({VotingRecoveryApi? api})
     : _api = api ?? const RustVotingRecoveryApi();
 
+  /// Loads the crate planner's derived resume plan for a round.
+  ///
+  /// `proposalIds` must be the full set of proposal IDs for the round (as
+  /// returned by [proposalsFromRound]). Errors propagate so voting cannot
+  /// proceed without durable intent and recovery planning.
+  Future<rust_voting.ApiRoundPlan> loadRoundPlan({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required List<int> proposalIds,
+  }) {
+    return _api.getRoundPlan(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      proposalIds: proposalIds,
+    );
+  }
+
+  /// Persists the voter's ballot intent for one proposal before casting.
+  Future<void> setBallotIntent({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int proposalId,
+    required bool skipped,
+    int? choice,
+  }) {
+    return _api.setBallotIntent(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      proposalId: proposalId,
+      skipped: skipped,
+      choice: choice,
+    );
+  }
+
   /// Loads the raw round recovery state and derives the next resume actions.
   Future<VotingResumePlan> loadResumePlan({
     required String dbPath,

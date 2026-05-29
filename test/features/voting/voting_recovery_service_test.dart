@@ -280,6 +280,62 @@ void main() {
   );
 
   test(
+    'share-only round planner work does not block accepted share completion',
+    () async {
+      final accepted = share(shareIndex: 0, confirmed: false);
+      final plan = VotingRecoveryService().buildResumePlan(
+        recoveryState(
+          shareDelegations: [accepted],
+          unconfirmedShareDelegations: [accepted],
+        ),
+      );
+      final roundPlan = rust_voting.ApiRoundPlan(
+        roundId: 'round-1',
+        pendingRecovery: true,
+        nextSteps: const [
+          rust_voting.ApiNextStep(
+            kind: 'confirm_share',
+            bundleIndex: 0,
+            proposalId: 1,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        ],
+        openProposals: Uint32List(0),
+        allDecided: true,
+      );
+
+      expect(
+        hasBlockingRoundRecoveryWork(roundPlan: roundPlan, resumePlan: plan),
+        isFalse,
+      );
+    },
+  );
+
+  test('round planner vote work blocks foreground completion', () {
+    final roundPlan = rust_voting.ApiRoundPlan(
+      roundId: 'round-1',
+      pendingRecovery: true,
+      nextSteps: const [
+        rust_voting.ApiNextStep(
+          kind: 'poll_vote',
+          bundleIndex: 0,
+          proposalId: 1,
+          choice: 0,
+          shareIndex: 0,
+        ),
+      ],
+      openProposals: Uint32List(0),
+      allDecided: false,
+    );
+
+    expect(
+      hasBlockingRoundRecoveryWork(roundPlan: roundPlan, resumePlan: null),
+      isTrue,
+    );
+  });
+
+  test(
     'unaccepted share recovery still blocks foreground completion',
     () async {
       final unaccepted = share(
@@ -401,6 +457,32 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   }
 
   @override
+  Future<rust_voting.ApiRoundPlan> getRoundPlan({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required List<int> proposalIds,
+  }) async {
+    return rust_voting.ApiRoundPlan(
+      roundId: roundId,
+      pendingRecovery: false,
+      nextSteps: const [],
+      openProposals: Uint32List(0),
+      allDecided: false,
+    );
+  }
+
+  @override
+  Future<void> setBallotIntent({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int proposalId,
+    required bool skipped,
+    int? choice,
+  }) async {}
+
+  @override
   Future<void> clearRecoveryState({
     required String dbPath,
     required String walletId,
@@ -508,7 +590,6 @@ rust_voting.ApiVoteRecord vote({
     proposalId: proposalId,
     bundleIndex: bundleIndex,
     choice: choice,
-    submitted: false,
   );
 }
 
