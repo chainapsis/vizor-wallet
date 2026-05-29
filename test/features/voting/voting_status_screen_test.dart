@@ -505,6 +505,106 @@ void main() {
     expect(recoveryApi.ballotIntents, isEmpty);
   });
 
+  testWidgets('hardware status screen casts after delegated without Keystone', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..addAll({
+          '/shielded-vote/v1/cast-vote': {
+            'tx_hash': 'vote-tx',
+            'code': 0,
+            'log': '',
+          },
+          '/shielded-vote/v1/tx/vote-tx': {
+            'height': 11,
+            'code': 0,
+            'log': '',
+            'events': [
+              {
+                'type': 'cast_vote',
+                'attributes': [
+                  {'key': 'leaf_index', 'value': '1,2'},
+                ],
+              },
+            ],
+          },
+          '/shielded-vote/v1/shares': {'share_id': '0102'},
+        }),
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(
+        delegationTxHashes: [
+          rust_voting.ApiDelegationTxRecovery(
+            bundleIndex: 0,
+            txHash: 'delegation-0',
+          ),
+        ],
+      )
+      ..roundPlan = rust_voting.ApiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: true,
+        nextSteps: const [
+          rust_voting.ApiNextStep(
+            kind: 'cast_vote',
+            bundleIndex: 0,
+            proposalId: 1,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        ],
+        openProposals: Uint32List(0),
+        allDecided: false,
+      );
+    final rust = _VotingStatusRustApi(recoveryApi);
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _HardwareAccountNotifier.new,
+      activeAccountUuid: () async => 'hardware-1',
+      accountIsHardware: true,
+      hardwareAccountUuids: const {'hardware-1'},
+      recoveryApi: recoveryApi,
+      rust: rust,
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
+    );
+    addTearDown(container.dispose);
+    container
+        .read(
+          votingDraftProvider(
+            const VotingSessionKey(
+              roundId: _roundId,
+              accountUuid: 'hardware-1',
+            ),
+          ).notifier,
+        )
+        .setChoice(1, 0);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _statusHarness()),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text('submission confirmed route'));
+
+    expect(find.text('submission confirmed route'), findsOne);
+    expect(find.text('Sign Bundle 1 of 1'), findsNothing);
+    expect(find.text('Scan Signature'), findsNothing);
+    expect(rust.setupDelegationBundleCalls, 0);
+    expect(rust.keystoneDelegationRequestCalls, 0);
+    expect(
+      http.requests.any(
+        (request) =>
+            request.method == 'POST' &&
+            request.uri.path == '/shielded-vote/v1/delegate-vote',
+      ),
+      isFalse,
+    );
+  });
+
   testWidgets('status screen keeps async session errors specific', (
     tester,
   ) async {
@@ -983,6 +1083,14 @@ void main() {
     await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
     expect(find.text('submission confirmed route'), findsOneWidget);
+    expect(
+      http.requests.any(
+        (request) =>
+            request.method == 'POST' &&
+            request.uri.path == '/shielded-vote/v1/delegate-vote',
+      ),
+      isTrue,
+    );
   });
 
   testWidgets('hardware status screen can skip unsigned Keystone bundles', (
@@ -1084,6 +1192,14 @@ void main() {
     await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
     expect(find.text('submission confirmed route'), findsOneWidget);
+    expect(
+      http.requests.any(
+        (request) =>
+            request.method == 'POST' &&
+            request.uri.path == '/shielded-vote/v1/delegate-vote',
+      ),
+      isTrue,
+    );
   });
 
   testWidgets('hardware status screen scrolls in a short window', (
