@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/formatting/duration_format.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
 
@@ -90,19 +91,16 @@ class VotingTreePreSyncService {
       _completed.add(key);
       debugPrint(
         '[zcash] Voting: vote tree pre-sync completed '
-        'round=$roundId height=$height elapsed=${_formatElapsed(timer.elapsed)}',
+        'round=$roundId height=$height elapsed=${formatElapsedSeconds(timer.elapsed)}',
       );
     } catch (e) {
       debugPrint(
         '[zcash] Voting: vote tree pre-sync failed '
-        'round=$roundId elapsed=${_formatElapsed(timer.elapsed)} error=$e',
+        'round=$roundId elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e',
       );
     } finally {
       _inFlight.remove(key);
     }
   }
 
-  static String _formatElapsed(Duration duration) {
-    return '${(duration.inMicroseconds / Duration.microsecondsPerSecond).toStringAsFixed(2)}s';
-  }
 }
