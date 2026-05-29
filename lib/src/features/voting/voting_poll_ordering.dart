@@ -58,56 +58,11 @@ VotingPollListStatus votingPollListStatus(String value) {
 }
 
 DateTime? votingRoundStartDate(Map<String, dynamic> json) {
-  return _dateFromJson(json, const [
-    'start_date',
-    'startDate',
-    'starts_at',
-    'startsAt',
-    'open_date',
-    'openDate',
-    'opens_at',
-    'opensAt',
-    'start_time',
-    'startTime',
-    'starts',
-    'start',
-    'voting_start',
-    'votingStart',
-    'poll_start',
-    'pollStart',
-    'vote_start_time',
-    'voteStartTime',
-    'ceremony_phase_start',
-    'ceremonyPhaseStart',
-    'created_at',
-    'createdAt',
-    'published_at',
-    'publishedAt',
-  ]);
+  return _dateFromJson(json, 'ceremony_phase_start');
 }
 
 DateTime? votingRoundEndDate(Map<String, dynamic> json) {
-  return _dateFromJson(json, const [
-    'end_date',
-    'endDate',
-    'ends_at',
-    'endsAt',
-    'close_date',
-    'closeDate',
-    'closes_at',
-    'closesAt',
-    'end_time',
-    'endTime',
-    'ends',
-    'end',
-    'deadline',
-    'voting_end',
-    'votingEnd',
-    'poll_end',
-    'pollEnd',
-    'vote_end_time',
-    'voteEndTime',
-  ]);
+  return _dateFromJson(json, 'vote_end_time');
 }
 
 int _orderingRank(VotingPollOrderingState state) {
@@ -127,13 +82,8 @@ int _compareDates(DateTime? a, DateTime? b, {required bool ascending}) {
   return ascending ? comparison : -comparison;
 }
 
-DateTime? _dateFromJson(Map<String, dynamic> json, List<String> keys) {
-  for (final key in keys) {
-    final value = _valueFromJson(json, key);
-    final date = parseFlexibleDate(value);
-    if (date != null) return date;
-  }
-  return null;
+DateTime? _dateFromJson(Map<String, dynamic> json, String key) {
+  return parseFlexibleDate(_valueFromJson(json, key));
 }
 
 Object? _valueFromJson(Object? value, String key) {

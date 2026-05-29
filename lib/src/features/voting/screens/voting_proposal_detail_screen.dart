@@ -1300,31 +1300,7 @@ String _roundDescription(Map<String, dynamic> json) {
 }
 
 DateTime? _roundEndDate(Map<String, dynamic> json) {
-  return _dateFromJson(json, const [
-    'end_date',
-    'endDate',
-    'ends_at',
-    'endsAt',
-    'close_date',
-    'closeDate',
-    'closes_at',
-    'closesAt',
-    'deadline',
-    'voting_end',
-    'votingEnd',
-    'poll_end',
-    'pollEnd',
-    'vote_end_time',
-    'voteEndTime',
-  ]);
-}
-
-DateTime? _dateFromJson(Map<String, dynamic> json, List<String> keys) {
-  for (final key in keys) {
-    final date = parseFlexibleDate(json[key]);
-    if (date != null) return date;
-  }
-  return null;
+  return parseFlexibleDate(json['vote_end_time']);
 }
 
 String _daysLeftLabel(DateTime endDate) {

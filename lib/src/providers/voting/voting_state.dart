@@ -184,24 +184,9 @@ class VotingRoundDetails {
 
   String get sessionJson => jsonEncode(rawJson);
 
-  DateTime? get voteEndTime => _dateFromJson(rawJson, const [
-    'vote_end_time',
-    'voteEndTime',
-    'end_time',
-    'endTime',
-    'ends_at',
-    'endsAt',
-    'deadline',
-  ]);
+  DateTime? get voteEndTime => _dateFromJson(rawJson, 'vote_end_time');
 
-  DateTime? get ceremonyStart => _dateFromJson(rawJson, const [
-    'ceremony_phase_start',
-    'ceremonyPhaseStart',
-    'start_time',
-    'startTime',
-    'starts_at',
-    'startsAt',
-  ]);
+  DateTime? get ceremonyStart => _dateFromJson(rawJson, 'ceremony_phase_start');
 
   Duration? get lastMomentBuffer {
     final start = ceremonyStart;
@@ -499,13 +484,8 @@ Uint8List _bytesFromJson(Map<String, dynamic> json, List<String> keys) {
   return Uint8List.fromList(base64Decode(value));
 }
 
-DateTime? _dateFromJson(Map<String, dynamic> json, List<String> keys) {
-  for (final key in keys) {
-    final value = _valueFromJson(json, key);
-    final date = parseFlexibleDate(value);
-    if (date != null) return date.toUtc();
-  }
-  return null;
+DateTime? _dateFromJson(Map<String, dynamic> json, String key) {
+  return parseFlexibleDate(_valueFromJson(json, key))?.toUtc();
 }
 
 Object? _valueFromJson(Object? value, String key) {
