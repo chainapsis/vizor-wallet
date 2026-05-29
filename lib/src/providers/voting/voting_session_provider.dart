@@ -59,7 +59,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       round: context.round,
       resumePlan: context.resumePlan,
       roundPlan: context.roundPlan,
-      phase: _phaseForResumePlan(context.resumePlan),
+      phase: _phaseForPlans(context.resumePlan, context.roundPlan),
     );
     _scheduleShareTracking(context, context.resumePlan);
     return initialState;
@@ -234,11 +234,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'round=${context.round.roundId}',
       );
       final refreshedPlan = await _loadResumePlan(context);
+      final refreshedRoundPlan = await _loadRoundPlan(context);
       debugPrint(
         '[zcash] Voting: resume plan after delegation loaded '
         'round=${context.round.roundId} '
         'pendingDelegations=${refreshedPlan.pendingDelegationBundleIndexes.length} '
         'pendingVotes=${refreshedPlan.pendingVoteSubmissionKeys.length} '
+        'pendingRecovery=${refreshedRoundPlan.pendingRecovery} '
         'elapsed=${_formatElapsed(resumeTimer.elapsed)}',
       );
       final nextPhase =
@@ -251,6 +253,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         (state.value ?? current).copyWith(
           phase: nextPhase,
           resumePlan: refreshedPlan,
+          roundPlan: refreshedRoundPlan,
           delegationProgress: progress,
           clearCurrentBundleIndex: true,
         ),
@@ -376,6 +379,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             keepCount: signedPrefixCount,
           );
       final refreshedPlan = await _loadResumePlan(context);
+      final refreshedRoundPlan = await _loadRoundPlan(context);
       final retainedSignatures = {
         for (final entry in signatures.entries)
           if (entry.key < signedPrefixCount) entry.key: entry.value,
@@ -384,6 +388,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         (state.value ?? current).copyWith(
           phase: VotingSessionPhase.readyToDelegate,
           resumePlan: refreshedPlan,
+          roundPlan: refreshedRoundPlan,
           keystoneSignatures: retainedSignatures,
           clearKeystoneSigningRequest: true,
           clearKeystoneScanError: true,
@@ -526,6 +531,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
 
       final refreshedPlan = await _loadResumePlan(context);
+      final refreshedRoundPlan = await _loadRoundPlan(context);
       final nextPhase =
           refreshedPlan.pendingDelegationBundleIndexes
               .where((index) => !completedBundleIndexes.contains(index))
@@ -536,6 +542,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         (state.value ?? current).copyWith(
           phase: nextPhase,
           resumePlan: refreshedPlan,
+          roundPlan: refreshedRoundPlan,
           delegationProgress: progress,
           keystoneSignatures: signatures,
           clearKeystoneSigningRequest: true,
@@ -1212,11 +1219,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           );
         }
 
-        final nullifierHex = await rust.computeShareNullifierHex(
-          voteCommitment: commitment.voteCommitment,
-          shareIndex: payload.encryptedShare.shareIndex,
-          primaryBlind: payload.primaryBlind,
-        );
         await rust.recordShareDelegation(
           dbPath: context.dbPath,
           walletId: context.accountUuid,
@@ -1225,7 +1227,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           proposalId: payload.proposalId,
           shareIndex: payload.encryptedShare.shareIndex,
           sentToUrls: acceptedServers,
-          nullifier: _bytesFromHex(nullifierHex),
           submitAt: plan.submitAt,
         );
       }
@@ -1573,10 +1574,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final current = await future;
       final context = await _loadContext(_roundId);
       final plan = await _loadResumePlan(context);
+      final roundPlan = await _loadRoundPlan(context);
       state = AsyncData(
         current.copyWith(
           phase: VotingSessionPhase.submittingShares,
           resumePlan: plan,
+          roundPlan: roundPlan,
         ),
       );
 
@@ -1660,13 +1663,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
       final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
-      if (!refreshedPlan.hasPendingWork) {
+      final hasBlockingWork = hasBlockingRoundRecoveryWork(
+        roundPlan: refreshedRoundPlan,
+        resumePlan: refreshedPlan,
+      );
+      if (!hasBlockingWork) {
         await _clearPersistedDraftChoices(context);
       }
       state = AsyncData(
         (state.value ?? current).copyWith(
-          phase: refreshedPlan.hasPendingWork
-              ? _phaseForResumePlan(refreshedPlan)
+          phase: hasBlockingWork
+              ? _phaseForPlans(refreshedPlan, refreshedRoundPlan)
               : VotingSessionPhase.done,
           resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
@@ -2079,10 +2086,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           accountUuid: context.accountUuid,
         );
     final refreshedPlan = await _loadResumePlan(context);
+    final refreshedRoundPlan = await _loadRoundPlan(context);
     state = AsyncData(
       (state.value ?? current).copyWith(
         phase: VotingSessionPhase.readyToDelegate,
         resumePlan: refreshedPlan,
+        roundPlan: refreshedRoundPlan,
         eligibleWeightZatoshi: bundleSetup.eligibleWeightZatoshi,
         isHardwareAccount: context.isHardwareAccount,
       ),
@@ -2243,6 +2252,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         config: context.config,
         round: context.round,
         resumePlan: context.resumePlan,
+        roundPlan: context.roundPlan,
         isHardwareAccount: context.isHardwareAccount,
         walletScannedHeight: readiness.scannedHeight,
         walletSnapshotHeight: readiness.snapshotHeight,
@@ -2320,6 +2330,42 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         'reason=$reason error=$e',
       );
     }
+  }
+
+  static VotingSessionPhase _phaseForPlans(
+    VotingResumePlan plan,
+    rust_voting.ApiRoundPlan? roundPlan,
+  ) {
+    if (roundPlan != null) {
+      final hasBlockingWork = hasBlockingRoundRecoveryWork(
+        roundPlan: roundPlan,
+        resumePlan: plan,
+      );
+      if (!hasBlockingWork &&
+          (roundPlan.allDecided || plan.hasCompletedVoteArtifact)) {
+        return VotingSessionPhase.done;
+      }
+      if (hasBlockingWork) {
+        if (roundPlan.nextSteps.any(
+          (step) => step.kind == 'delegate' || step.kind == 'poll_delegation',
+        )) {
+          return VotingSessionPhase.readyToDelegate;
+        }
+        if (roundPlan.nextSteps.any(
+          (step) =>
+              step.kind == 'cast_vote' ||
+              step.kind == 'submit_vote' ||
+              step.kind == 'poll_vote' ||
+              step.kind == 'submit_shares',
+        )) {
+          return VotingSessionPhase.readyToVote;
+        }
+        if (plan.hasBlockingShareWork) {
+          return VotingSessionPhase.submittingShares;
+        }
+      }
+    }
+    return _phaseForResumePlan(plan);
   }
 
   static VotingSessionPhase _phaseForResumePlan(VotingResumePlan plan) {
@@ -2441,14 +2487,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   static String _hexFromBytes(List<int> bytes) {
     return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-  }
-
-  static List<int> _bytesFromHex(String hex) {
-    final normalized = hex.startsWith('0x') ? hex.substring(2) : hex;
-    return [
-      for (var i = 0; i < normalized.length; i += 2)
-        int.parse(normalized.substring(i, i + 2), radix: 16),
-    ];
   }
 
   static Future<Map<String, dynamic>> _wireJsonMap(

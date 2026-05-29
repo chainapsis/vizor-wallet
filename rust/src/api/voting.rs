@@ -1505,7 +1505,7 @@ pub fn record_share_delegation(
     proposal_id: u32,
     share_index: u32,
     sent_to_urls: Vec<String>,
-    nullifier: Vec<u8>,
+    _nullifier: Vec<u8>,
     submit_at: u64,
 ) -> Result<(), String> {
     catch(|| {
@@ -1517,7 +1517,6 @@ pub fn record_share_delegation(
             proposal_id,
             share_index,
             &sent_to_urls,
-            &nullifier,
             submit_at,
         )
     })
@@ -2565,7 +2564,7 @@ mod tests {
                  WHERE round_id = :round_id AND wallet_id = :wallet_id
                    AND bundle_index = :bundle_index AND proposal_id = :proposal_id",
                 rusqlite::named_params! {
-                    ":json": r#"{"bundle":"two"}"#,
+                    ":json": test_vote_recovery_json(1, 2, 1, 99),
                     ":pos": 99i64,
                     ":round_id": ROUND_ID,
                     ":wallet_id": wallet_id,
@@ -2704,6 +2703,42 @@ mod tests {
             nc_root: vec![2; 32],
             nullifier_imt_root: vec![3; 32],
         }
+    }
+
+    fn test_vote_recovery_json(
+        bundle_index: u32,
+        proposal_id: u32,
+        vote_decision: u32,
+        vc_tree_position: u64,
+    ) -> String {
+        zcash_voting::vote::serialize_recovery(&zcash_voting::vote::VoteRecoveryBundle {
+            vote_round_id: ROUND_ID.to_string(),
+            bundle_index,
+            proposal_id,
+            vote_decision,
+            anchor_height: 100,
+            vc_tree_position,
+            single_share: false,
+            num_options: 2,
+            van_nullifier: [1u8; 32],
+            vote_authority_note_new: [2u8; 32],
+            vote_commitment: [3u8; 32],
+            proof: vec![4u8; 8],
+            shares_hash: [5u8; 32],
+            r_vpk: [6u8; 32],
+            alpha_v: [7u8; 32],
+            vote_auth_sig: [8u8; 64],
+            encrypted_shares: vec![zcash_voting::EncryptedShare {
+                c1: vec![9u8; 32],
+                c2: vec![10u8; 32],
+                share_index: 0,
+                plaintext_value: 1,
+                randomness: vec![11u8; 32],
+            }],
+            share_blinds: vec![[12u8; 32]],
+            share_comms: vec![[13u8; 32]],
+        })
+        .unwrap()
     }
 
     fn test_tree_state(height: u64) -> TreeState {

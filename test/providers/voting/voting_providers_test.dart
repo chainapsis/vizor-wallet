@@ -2991,7 +2991,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
           roundId: roundId,
           pendingRecovery: false,
           nextSteps: const [],
-          openProposals: Uint32List(0),
+          openProposals: Uint32List.fromList(proposalIds),
           allDecided: false,
         );
   }
@@ -3813,7 +3813,6 @@ class FakeVotingRustApi implements VotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> sentToUrls,
-    required List<int> nullifier,
     required BigInt submitAt,
   }) async {
     operationLog.add('record_share:$bundleIndex:$proposalId:$shareIndex');
@@ -3838,18 +3837,6 @@ class FakeVotingRustApi implements VotingRustApi {
     required int shareIndex,
   }) async {
     confirmedShares.add('$bundleIndex:$proposalId:$shareIndex');
-  }
-
-  @override
-  Future<String> computeShareNullifierHex({
-    required List<int> voteCommitment,
-    required int shareIndex,
-    required List<int> primaryBlind,
-  }) async {
-    return List.filled(
-      32,
-      shareIndex,
-    ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
   }
 
   @override

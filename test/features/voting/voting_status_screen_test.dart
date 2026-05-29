@@ -1691,7 +1691,7 @@ class _FakeVotingRecoveryApi implements VotingRecoveryApi {
       roundId: roundId,
       pendingRecovery: false,
       nextSteps: const [],
-      openProposals: Uint32List(0),
+      openProposals: Uint32List.fromList(proposalIds),
       allDecided: false,
     );
   }
@@ -2304,9 +2304,19 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> sentToUrls,
-    required List<int> nullifier,
     required BigInt submitAt,
-  }) async {}
+  }) async {
+    final roundPlan = recoveryApi.roundPlan;
+    if (roundPlan != null && roundPlan.openProposals.isEmpty) {
+      recoveryApi.roundPlan = rust_voting.ApiRoundPlan(
+        roundId: roundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List(0),
+        allDecided: true,
+      );
+    }
+  }
 
   @override
   Future<void> markShareConfirmed({
@@ -2342,6 +2352,10 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       );
     }
 
+    final nextUnconfirmed = [
+      for (final share in current.unconfirmedShareDelegations)
+        if (!matches(share)) share,
+    ];
     recoveryApi.state = _recoveryState(
       bundleCount: current.bundleCount,
       delegationTxHashes: current.delegationTxHashes,
@@ -2354,23 +2368,20 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         for (final share in current.shareDelegations)
           if (matches(share)) confirmed(share) else share,
       ],
-      unconfirmedShareDelegations: [
-        for (final share in current.unconfirmedShareDelegations)
-          if (!matches(share)) share,
-      ],
+      unconfirmedShareDelegations: nextUnconfirmed,
     );
-  }
-
-  @override
-  Future<String> computeShareNullifierHex({
-    required List<int> voteCommitment,
-    required int shareIndex,
-    required List<int> primaryBlind,
-  }) async {
-    return List.filled(
-      32,
-      shareIndex,
-    ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+    final roundPlan = recoveryApi.roundPlan;
+    if (roundPlan != null &&
+        nextUnconfirmed.isEmpty &&
+        roundPlan.openProposals.isEmpty) {
+      recoveryApi.roundPlan = rust_voting.ApiRoundPlan(
+        roundId: roundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List(0),
+        allDecided: true,
+      );
+    }
   }
 }
 

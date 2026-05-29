@@ -487,7 +487,6 @@ abstract interface class VotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> sentToUrls,
-    required List<int> nullifier,
     required BigInt submitAt,
   });
 
@@ -498,12 +497,6 @@ abstract interface class VotingRustApi {
     required int bundleIndex,
     required int proposalId,
     required int shareIndex,
-  });
-
-  Future<String> computeShareNullifierHex({
-    required List<int> voteCommitment,
-    required int shareIndex,
-    required List<int> primaryBlind,
   });
 
   Future<List<int>> deriveHotkey({
@@ -991,7 +984,6 @@ class FrbVotingRustApi implements VotingRustApi {
     required int proposalId,
     required int shareIndex,
     required List<String> sentToUrls,
-    required List<int> nullifier,
     required BigInt submitAt,
   }) {
     return rust_voting.recordShareDelegation(
@@ -1002,7 +994,7 @@ class FrbVotingRustApi implements VotingRustApi {
       proposalId: proposalId,
       shareIndex: shareIndex,
       sentToUrls: sentToUrls,
-      nullifier: nullifier,
+      nullifier: const [],
       submitAt: submitAt,
     );
   }
@@ -1023,19 +1015,6 @@ class FrbVotingRustApi implements VotingRustApi {
       bundleIndex: bundleIndex,
       proposalId: proposalId,
       shareIndex: shareIndex,
-    );
-  }
-
-  @override
-  Future<String> computeShareNullifierHex({
-    required List<int> voteCommitment,
-    required int shareIndex,
-    required List<int> primaryBlind,
-  }) {
-    return rust_voting.computeShareNullifierHex(
-      voteCommitment: voteCommitment,
-      shareIndex: shareIndex,
-      primaryBlind: primaryBlind,
     );
   }
 

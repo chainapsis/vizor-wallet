@@ -14,6 +14,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../../../rust/api/voting.dart' as rust_voting;
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
@@ -78,7 +79,11 @@ class _VotingProposalDetailScreenState
                 : ref.watch(votingDraftProvider(draftKey));
             final proposals = proposalsFromRound(round);
             final completedVote = draft.isEmpty
-                ? _CompletedVote.fromPlan(state.resumePlan, proposals)
+                ? _CompletedVote.fromPlan(
+                    state.resumePlan,
+                    state.roundPlan,
+                    proposals,
+                  )
                 : null;
             _maybePrepareVotingPower(state);
             // Foreground recovery takes precedence over the read-only voted view.
@@ -117,7 +122,10 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            final pendingVote = _PendingVoteRecovery.fromPlan(state.resumePlan);
+            final pendingVote = _PendingVoteRecovery.fromPlan(
+              state.resumePlan,
+              state.roundPlan,
+            );
             if (pendingVote != null) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
@@ -1193,13 +1201,13 @@ class _CompletedVote {
 
   static _CompletedVote? fromPlan(
     VotingResumePlan? plan,
+    rust_voting.ApiRoundPlan? roundPlan,
     List<VotingProposalView> proposals,
   ) {
-    if (plan == null ||
-        _hasBlockingRecoveryWork(plan) ||
-        !_hasCompletedVoteArtifact(plan)) {
+    if (!hasCompletedVoteForDisplay(roundPlan: roundPlan, resumePlan: plan)) {
       return null;
     }
+    if (plan == null) return null;
     final choices = <int, int?>{};
     for (final proposal in proposals) {
       final proposalChoices = plan.votesByKey.values
@@ -1222,20 +1230,31 @@ class _PendingVoteRecovery {
 
   final String message;
 
-  static _PendingVoteRecovery? fromPlan(VotingResumePlan? plan) {
+  static _PendingVoteRecovery? fromPlan(
+    VotingResumePlan? plan,
+    rust_voting.ApiRoundPlan? roundPlan,
+  ) {
     if (plan == null ||
-        !_hasBlockingRecoveryWork(plan) ||
+        !hasBlockingRoundRecoveryWork(roundPlan: roundPlan, resumePlan: plan) ||
         !_hasCompletedVoteArtifact(plan)) {
       return null;
     }
-    if (plan.pendingDelegationBundleIndexes.isNotEmpty) {
+    if (_roundPlanHasStep(roundPlan, const {'delegate', 'poll_delegation'}) ||
+        (roundPlan == null && plan.pendingDelegationBundleIndexes.isNotEmpty)) {
       return const _PendingVoteRecovery(
         message:
             'This vote has local progress, but delegation is not fully confirmed yet. The app should continue recovery before accepting another vote.',
       );
     }
-    if (plan.pendingVoteSubmissionKeys.isNotEmpty ||
-        plan.incompleteVoteRecoveryKeys.isNotEmpty) {
+    if (_roundPlanHasStep(roundPlan, const {
+          'cast_vote',
+          'submit_vote',
+          'poll_vote',
+          'submit_shares',
+        }) ||
+        (roundPlan == null &&
+            (plan.pendingVoteSubmissionKeys.isNotEmpty ||
+                plan.incompleteVoteRecoveryKeys.isNotEmpty))) {
       return const _PendingVoteRecovery(
         message:
             'This vote has been started, but its commitment transaction recovery data is not complete yet. Do not vote again from this account.',
@@ -1248,12 +1267,12 @@ class _PendingVoteRecovery {
   }
 }
 
-bool _hasCompletedVoteArtifact(VotingResumePlan plan) {
-  return plan.hasCompletedVoteArtifact;
+bool _roundPlanHasStep(rust_voting.ApiRoundPlan? roundPlan, Set<String> kinds) {
+  return roundPlan?.nextSteps.any((step) => kinds.contains(step.kind)) ?? false;
 }
 
-bool _hasBlockingRecoveryWork(VotingResumePlan plan) {
-  return plan.hasBlockingCompletedVoteDisplay;
+bool _hasCompletedVoteArtifact(VotingResumePlan plan) {
+  return plan.hasCompletedVoteArtifact;
 }
 
 String _choiceLabel(VotingProposalView proposal, int? choice) {

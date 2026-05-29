@@ -626,6 +626,8 @@ mod tests {
     #[test]
     fn share_delegation_record_add_and_mark_confirmed_flow() {
         let fixture = RecoveryFixture::new();
+        fixture.insert_vote(0, 1, 0, b"vote-0-1");
+        fixture.insert_commitment_bundle(0, 1, &vote_recovery_json(0, 1, 0, 0), Some(0));
         record_share_delegation(
             fixture.path(),
             WALLET_ID,
@@ -634,7 +636,6 @@ mod tests {
             1,
             0,
             &["https://helper-a.example".to_string()],
-            &[7; 32],
             1234,
         )
         .unwrap();
@@ -649,11 +650,10 @@ mod tests {
                 "https://helper-a.example".to_string(),
                 "https://helper-b.example".to_string(),
             ],
-            &[7; 32],
             5678,
         )
         .unwrap();
-        let conflict = record_share_delegation(
+        record_share_delegation(
             fixture.path(),
             WALLET_ID,
             ROUND_ID,
@@ -664,10 +664,9 @@ mod tests {
                 "https://helper-a.example".to_string(),
                 "https://helper-b.example".to_string(),
             ],
-            &[8; 32],
             5678,
-        );
-        assert!(conflict.unwrap_err().contains("share nullifier conflict"));
+        )
+        .unwrap();
 
         let shares = get_share_delegations(fixture.path(), WALLET_ID, ROUND_ID).unwrap();
         assert_eq!(shares.len(), 1);
@@ -678,7 +677,7 @@ mod tests {
                 "https://helper-b.example".to_string()
             ]
         );
-        assert_eq!(shares[0].nullifier, vec![7; 32]);
+        assert_eq!(shares[0].nullifier, expected_share_nullifier());
         assert_eq!(shares[0].submit_at, 5678);
 
         mark_share_confirmed(fixture.path(), WALLET_ID, ROUND_ID, 0, 1, 0).unwrap();
@@ -693,6 +692,8 @@ mod tests {
     #[test]
     fn add_sent_servers_merges_and_deduplicates_urls() {
         let fixture = RecoveryFixture::new();
+        fixture.insert_vote(0, 1, 0, b"vote-0-1");
+        fixture.insert_commitment_bundle(0, 1, &vote_recovery_json(0, 1, 0, 0), Some(0));
         record_share_delegation(
             fixture.path(),
             WALLET_ID,
@@ -701,7 +702,6 @@ mod tests {
             1,
             0,
             &["https://helper-a.example".to_string()],
-            &[7; 32],
             1234,
         )
         .unwrap();
@@ -741,7 +741,7 @@ mod tests {
         fixture.insert_vote(0, 1, 0, b"vote-0-1");
         fixture.insert_vote(1, 2, 1, b"vote-1-2");
         mark_vote_submitted(fixture.path(), WALLET_ID, ROUND_ID, 1, 2, "vote-tx-1-2").unwrap();
-        fixture.insert_commitment_bundle(1, 2, r#"{"bundle":"two"}"#, Some(77));
+        fixture.insert_commitment_bundle(1, 2, &vote_recovery_json(1, 2, 1, 77), Some(77));
         record_share_delegation(
             fixture.path(),
             WALLET_ID,
@@ -750,7 +750,6 @@ mod tests {
             2,
             0,
             &["https://helper-a.example".to_string()],
-            &[9; 32],
             0,
         )
         .unwrap();
@@ -857,7 +856,6 @@ mod tests {
             1,
             0,
             &["https://helper-a.example".to_string()],
-            &[7; 32],
             1234,
         )
         .unwrap();
@@ -917,7 +915,10 @@ mod tests {
         assert_eq!(state.share_delegations[0].bundle_index, 0);
         assert_eq!(state.share_delegations[0].proposal_id, 1);
         assert_eq!(state.share_delegations[0].share_index, 0);
-        assert_eq!(state.share_delegations[0].nullifier, vec![7; 32]);
+        assert_eq!(
+            state.share_delegations[0].nullifier,
+            expected_share_nullifier()
+        );
         assert_eq!(state.share_delegations[0].phase, "submitted_share");
         assert!(!state.share_delegations[0].confirmed);
         assert_eq!(state.share_delegations[0].submit_at, 0);
@@ -932,6 +933,7 @@ mod tests {
     fn recovery_writes_are_idempotent_and_reject_conflicts() {
         let fixture = RecoveryFixture::new();
         fixture.insert_vote(0, 1, 0, b"vote-0-1");
+        fixture.insert_commitment_bundle(0, 1, &vote_recovery_json(0, 1, 0, 0), Some(0));
 
         workflow::mark_delegation_submitted(
             fixture.path(),
@@ -980,7 +982,6 @@ mod tests {
             1,
             0,
             &["https://helper-a.example".to_string()],
-            &[7; 32],
             1234,
         )
         .unwrap();
@@ -992,10 +993,26 @@ mod tests {
             1,
             0,
             &["https://helper-a.example".to_string()],
-            &[7; 32],
             1234,
         )
         .unwrap();
+        fixture
+            .db
+            .conn()
+            .execute(
+                "UPDATE share_delegations SET nullifier = :nullifier
+                 WHERE round_id = :round_id
+                   AND wallet_id = :wallet_id
+                   AND bundle_index = 0
+                   AND proposal_id = 1
+                   AND share_index = 0",
+                rusqlite::named_params! {
+                    ":nullifier": vec![0xEE_u8; 32],
+                    ":round_id": ROUND_ID,
+                    ":wallet_id": WALLET_ID,
+                },
+            )
+            .unwrap();
         assert!(record_share_delegation(
             fixture.path(),
             WALLET_ID,
@@ -1004,7 +1021,6 @@ mod tests {
             1,
             0,
             &["https://helper-a.example".to_string()],
-            &[8; 32],
             1234,
         )
         .unwrap_err()
@@ -1070,7 +1086,7 @@ mod tests {
             .unwrap();
         fixture.insert_vote(0, 1, 0, b"vote-0-1");
         mark_vote_submitted(fixture.path(), WALLET_ID, ROUND_ID, 0, 1, "vote-tx-0-1").unwrap();
-        fixture.insert_commitment_bundle(0, 1, r#"{"bundle":"one"}"#, Some(11));
+        fixture.insert_commitment_bundle(0, 1, &vote_recovery_json(0, 1, 0, 11), Some(11));
         record_share_delegation(
             fixture.path(),
             WALLET_ID,
@@ -1079,7 +1095,6 @@ mod tests {
             1,
             0,
             &["https://helper-a.example".to_string()],
-            &[7; 32],
             0,
         )
         .unwrap();
@@ -1249,6 +1264,12 @@ mod tests {
             "share_comms": [vec![13u8; 32]],
         })
         .to_string()
+    }
+
+    fn expected_share_nullifier() -> Vec<u8> {
+        zcash_voting::share::compute_nullifier(&[3u8; 32], 0, &[12u8; 32])
+            .unwrap()
+            .to_vec()
     }
 
     fn test_round_params() -> zcash_voting::VotingRoundParams {

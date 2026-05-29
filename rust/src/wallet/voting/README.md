@@ -190,10 +190,10 @@ confirmed --conflicting tx_hash, position, or commitment JSON--> error
 ### Share Submission
 
 `workflow::record_share_delegation` records helper-server share submission in
-`share_delegations`. It wraps the upstream write in a SQLite transaction and
-checks that a repeated share key does not change the share nullifier. The
-`submit_at` value stored with the row is the Unix-second reveal time sent to the
-helper server for that encrypted share.
+`share_delegations`. It delegates share payload recovery and nullifier derivation
+to `zcash_voting::share::record`, so the app only supplies helper delivery
+state. The `submit_at` value stored with the row is the Unix-second reveal time
+sent to the helper server for that encrypted share.
 
 Dart computes `submit_at` from the round timing metadata before calling this
 Rust transition:

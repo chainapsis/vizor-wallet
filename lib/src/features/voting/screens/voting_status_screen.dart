@@ -17,6 +17,7 @@ import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../../../rust/api/voting.dart' as rust_voting;
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../voting_flow_models.dart';
+import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 
 class VotingStatusScreen extends ConsumerStatefulWidget {
@@ -430,8 +431,11 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
 
   bool _sessionNeedsDelegation(VotingSessionState? session) {
     if (session == null) return false;
-    if (_planNeedsDelegation(session.roundPlan)) return true;
-    if (session.roundPlan != null) return false;
+    final roundPlan = session.roundPlan;
+    if (_planNeedsDelegation(roundPlan)) return true;
+    if (roundPlan != null && !roundPlanNeedsDraftSetup(roundPlan)) {
+      return false;
+    }
     return session.resumePlan?.submittedDelegationBundleIndexes.isNotEmpty ??
         false;
   }
@@ -439,22 +443,23 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   bool _sessionNeedsDelegationSubmission(VotingSessionState? session) {
     if (session == null) return false;
     final roundPlan = session.roundPlan;
+    if (_planNeedsDelegation(roundPlan)) return true;
+    if (roundPlan != null && !roundPlanNeedsDraftSetup(roundPlan)) {
+      return false;
+    }
     final plan = session.resumePlan;
-    return (roundPlan?.nextSteps.any(
-              (step) =>
-                  step.kind == 'delegate' || step.kind == 'poll_delegation',
-            ) ??
-            false) ||
-        (plan?.pendingDelegationBundleIndexes.isNotEmpty ?? false) ||
+    return (plan?.pendingDelegationBundleIndexes.isNotEmpty ?? false) ||
         (plan?.submittedDelegationBundleIndexes.isNotEmpty ?? false);
   }
 
   bool _sessionNeedsKeystoneSigning(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    return (roundPlan?.nextSteps.any((step) => step.kind == 'delegate') ??
-            false) ||
-        (session.resumePlan?.pendingDelegationBundleIndexes.isNotEmpty ??
-            false);
+    if (roundPlan != null) {
+      return roundPlan.nextSteps.any((step) => step.kind == 'delegate') ||
+          roundPlanNeedsDraftSetup(roundPlan);
+    }
+    return session.resumePlan?.pendingDelegationBundleIndexes.isNotEmpty ??
+        false;
   }
 
   bool _sessionNeedsVotePolling(VotingSessionState? session) {

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
+import '../../rust/api/voting.dart' as rust_voting;
 import '../../services/voting/voting_models.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
@@ -129,9 +130,10 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     );
     final proposalIds = _proposalIdsFromRoundJson(round.rawJson);
     var hasBlockingRecovery = false;
+    rust_voting.ApiRoundPlan? roundPlan;
     if (proposalIds.isNotEmpty) {
       try {
-        final roundPlan = await recovery.loadRoundPlan(
+        roundPlan = await recovery.loadRoundPlan(
           dbPath: dbPath,
           walletId: accountUuid,
           roundId: round.roundId,
@@ -151,15 +153,21 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     if (hasBlockingRecovery) {
       return const _RoundListRecoveryState(voted: false, inProgress: true);
     }
-    if (resumePlan.hasCompletedVoteForDisplay) {
+    if (hasCompletedVoteForDisplay(
+      roundPlan: roundPlan,
+      resumePlan: resumePlan,
+    )) {
       return const _RoundListRecoveryState(voted: true, inProgress: false);
     }
 
     return _RoundListRecoveryState(
       voted: false,
-      inProgress:
-          resumePlan.hasPendingWork ||
-          resumePlan.hasBlockingCompletedVoteDisplay,
+      inProgress: roundPlan != null
+          ? roundPlan.pendingRecovery ||
+                (roundPlanNeedsDraftSetup(roundPlan) &&
+                    resumePlan.hasPendingWork)
+          : resumePlan.hasPendingWork ||
+                resumePlan.hasBlockingCompletedVoteDisplay,
     );
   }
 

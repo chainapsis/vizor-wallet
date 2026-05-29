@@ -29,6 +29,27 @@ bool hasBlockingRoundRecoveryWork({
   return resumePlan?.hasBlockingShareWork ?? true;
 }
 
+bool hasCompletedVoteForDisplay({
+  required rust_voting.ApiRoundPlan? roundPlan,
+  required VotingResumePlan? resumePlan,
+}) {
+  if (resumePlan == null) return false;
+  if (roundPlan == null) return resumePlan.hasCompletedVoteForDisplay;
+  return resumePlan.hasCompletedVoteArtifact &&
+      !hasBlockingRoundRecoveryWork(
+        roundPlan: roundPlan,
+        resumePlan: resumePlan,
+      );
+}
+
+bool roundPlanNeedsDraftSetup(rust_voting.ApiRoundPlan? roundPlan) {
+  return roundPlan != null &&
+      !roundPlan.pendingRecovery &&
+      !roundPlan.allDecided &&
+      roundPlan.nextSteps.isEmpty &&
+      roundPlan.openProposals.isNotEmpty;
+}
+
 /// Stable key for per-proposal vote state within one note bundle.
 ///
 /// A round can split voting power across bundles, and every bundle/proposal pair
