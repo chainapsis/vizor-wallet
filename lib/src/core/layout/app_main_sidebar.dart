@@ -1,10 +1,15 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../main.dart' show log;
 import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
 import '../../providers/privacy_mode_provider.dart';
+import '../../providers/receive_address_provider.dart';
 import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
 import '../config/network_config.dart';
@@ -14,6 +19,7 @@ import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/app_profile_picture.dart';
+import '../widgets/app_toast.dart';
 import 'app_desktop_shell.dart';
 
 class AppMainSidebar extends ConsumerStatefulWidget {
@@ -25,6 +31,7 @@ class AppMainSidebar extends ConsumerStatefulWidget {
 
 class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   bool _isSigningOut = false;
+  bool _isCopyingAddress = false;
 
   String get _matchedLocation => GoRouterState.of(context).matchedLocation;
 
@@ -35,6 +42,52 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
   void _openAccounts() {
     if (!_matches('/accounts')) {
       context.go('/accounts');
+    }
+  }
+
+  Future<void> _copyShieldedAddress() async {
+    if (_isCopyingAddress) return;
+
+    final accountState = ref.read(accountProvider).value;
+    final accountUuid = accountState?.activeAccountUuid;
+    if (accountUuid == null) {
+      showAppToast(context, "Address couldn't be copied");
+      return;
+    }
+
+    setState(() {
+      _isCopyingAddress = true;
+    });
+
+    try {
+      final address = await ref
+          .read(receiveAddressServiceProvider)
+          .loadShieldedAddress(
+            accountUuid: accountUuid,
+            currentShieldedAddress: accountState?.activeAddress,
+          );
+      if (!mounted) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
+      if (address.trim().isEmpty) {
+        showAppToast(context, "Address couldn't be copied");
+        return;
+      }
+
+      await Clipboard.setData(ClipboardData(text: address));
+      if (!mounted) return;
+      showAppToast(context, 'Address Copied');
+    } catch (e) {
+      log('AppMainSidebar: ERROR copying shielded address: $e');
+      if (!mounted) return;
+      showAppToast(context, "Address couldn't be copied");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCopyingAddress = false;
+        });
+      }
     }
   }
 
@@ -119,6 +172,10 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         activeAccount?.profilePictureId ??
                         kDefaultProfilePictureId,
                     balanceLabel: balanceLabel,
+                    onCopyAddress:
+                        activeAccountUuid == null || _isCopyingAddress
+                        ? null
+                        : () => unawaited(_copyShieldedAddress()),
                     onTap: accountsActive ? null : _openAccounts,
                   ),
                   const SizedBox(height: AppSpacing.md),
@@ -209,6 +266,7 @@ class _SidebarAccountHeader extends StatelessWidget {
     required this.accountName,
     required this.profilePictureId,
     required this.balanceLabel,
+    this.onCopyAddress,
     this.onTap,
     super.key,
   });
@@ -216,6 +274,7 @@ class _SidebarAccountHeader extends StatelessWidget {
   final String accountName;
   final String profilePictureId;
   final String balanceLabel;
+  final VoidCallback? onCopyAddress;
   final VoidCallback? onTap;
 
   @override
@@ -246,11 +305,7 @@ class _SidebarAccountHeader extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: AppSpacing.xxs),
-                      AppIcon(
-                        AppIcons.copy,
-                        size: 16,
-                        color: colors.icon.regular.withValues(alpha: 0.72),
-                      ),
+                      _SidebarCopyAddressButton(onTap: onCopyAddress),
                     ],
                   ),
                   const SizedBox(height: AppSpacing.xxs),
@@ -292,6 +347,41 @@ class _SidebarAccountAvatar extends StatelessWidget {
     return AppProfilePicture(
       profilePictureId: profilePictureId,
       size: AppProfilePictureSize.navLarge,
+    );
+  }
+}
+
+class _SidebarCopyAddressButton extends StatelessWidget {
+  const _SidebarCopyAddressButton({this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final enabled = onTap != null;
+    final iconColor = colors.icon.regular.withValues(
+      alpha: enabled ? 0.72 : 0.38,
+    );
+
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: 'Copy shielded address',
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: SizedBox(
+            width: 16,
+            height: 18,
+            child: Center(
+              child: AppIcon(AppIcons.copy, size: 16, color: iconColor),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
