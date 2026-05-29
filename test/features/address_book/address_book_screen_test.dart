@@ -71,6 +71,66 @@ void main() {
     expect(find.text('No contacts yet'), findsNothing);
   });
 
+  testWidgets('warns about a malformed address but still allows saving', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final repo = _FakeAddressBookRepository();
+
+    await tester.pumpWidget(_addressBookHarness(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_add_contact_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('address_book_contact_label_field')),
+      'Eve',
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_network_selector_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('address_book_network_search_field')),
+      'ethereu',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ethereum'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('address_book_contact_address_field')),
+      '0xnope',
+    );
+    await tester.pump();
+
+    expect(
+      find.text("Invalid EVM address"),
+      findsOneWidget,
+    );
+    // Soft warning: the save button stays enabled.
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('address_book_contact_submit_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('address_book_contact_submit_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repo.contacts, hasLength(1));
+    expect(repo.contacts.single.address, '0xnope');
+  });
+
   testWidgets('edit contact label x clears the draft label', (tester) async {
     await _setDesktopViewport(tester);
     final repo = _FakeAddressBookRepository([

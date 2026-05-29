@@ -4,6 +4,8 @@ import 'package:flutter/widgets.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_format_validator.dart';
 import '../models/swap_models.dart';
 import 'swap_modal_controls.dart';
 
@@ -67,7 +69,20 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
   }
 
   void _submit() {
+    // Guard the keyboard "done"/enter path the same way the primary button is
+    // gated, so a malformed address cannot be committed by pressing enter.
+    if (_formatError != null) return;
     widget.onSubmitted(_controller.text.trim(), _rememberAddress);
+  }
+
+  String? get _formatError {
+    final trimmed = _controller.text.trim();
+    if (trimmed.isEmpty) return null;
+    final network = AddressBookNetwork.tryFromChainTicker(
+      widget.state.externalAsset.chainTicker,
+    );
+    if (network == null) return null;
+    return addressFormatIssue(network, trimmed);
   }
 
   @override
@@ -86,6 +101,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
     final rememberLabel = sendsZec
         ? 'Remember this address for recipients'
         : 'Remember this address for refunds';
+    final formatError = _formatError;
 
     return Container(
       key: const ValueKey('swap_address_modal'),
@@ -157,6 +173,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                                 focusNode: _focusNode,
                                 textInputAction: TextInputAction.done,
                                 onSubmitted: (_) => _submit(),
+                                onChanged: (_) => setState(() {}),
                                 style: AppTypography.labelLarge.copyWith(
                                   color: colors.text.accent,
                                 ),
@@ -196,6 +213,16 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
                         ],
                       ),
                     ),
+                    if (formatError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        formatError,
+                        key: const ValueKey('swap_destination_format_error'),
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.destructive,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     Text(
                       description,
@@ -221,6 +248,7 @@ class _SwapAddressEditModalState extends State<SwapAddressEditModal> {
             cancelKey: const ValueKey('swap_address_cancel_button'),
             onPrimary: _submit,
             onCancel: widget.onCancel,
+            primaryEnabled: formatError == null,
           ),
         ],
       ),

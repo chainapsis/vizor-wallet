@@ -22,6 +22,7 @@ import '../../../core/widgets/app_toast.dart';
 import '../../send/models/send_prefill_args.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../models/address_book_contact.dart';
+import '../models/address_format_validator.dart';
 import '../providers/address_book_provider.dart';
 import '../widgets/address_book_network_icon.dart';
 
@@ -1148,6 +1149,13 @@ class _ContactFormModalState extends State<_ContactFormModal> {
     final showAddressError =
         widget.draft.address.trim().isEmpty &&
         _addressController.text.trim().isNotEmpty;
+    // Soft warning: surface a chain format mismatch without blocking save.
+    final addressFormatWarning = addressFormatIssue(
+      widget.draft.network,
+      widget.draft.address,
+    );
+    final addressMessage = showAddressError ? addressError : addressFormatWarning;
+    final addressHasIssue = showAddressError || addressFormatWarning != null;
 
     return _AddressBookModalCard(
       header: _EditableContactAvatar(
@@ -1204,8 +1212,8 @@ class _ContactFormModalState extends State<_ContactFormModal> {
               ),
               trailingSlotWidth: 40,
               inputHorizontalPadding: AppSpacing.s,
-              messageText: showAddressError ? addressError : null,
-              tone: showAddressError
+              messageText: addressMessage,
+              tone: addressHasIssue
                   ? AppTextFieldTone.destructive
                   : AppTextFieldTone.neutral,
               onChanged: _emitAddress,

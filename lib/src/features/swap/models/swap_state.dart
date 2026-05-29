@@ -1,3 +1,5 @@
+import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_format_validator.dart';
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import 'swap_intent.dart';
@@ -177,10 +179,26 @@ class SwapState {
           ? 'External ${externalAsset.symbol} address or account'
           : 'Refund address on the ${externalAsset.symbol} source chain';
 
+  /// Best-effort format check of [destinationText] against the external asset's
+  /// chain. Returns null when empty, when the chain has no validator, or when
+  /// the address looks valid; otherwise a short reason. Used as a hard gate on
+  /// the swap review path so a malformed recipient/refund address cannot be
+  /// committed into a 1Click quote.
+  String? get destinationAddressFormatError {
+    final trimmed = destinationText.trim();
+    if (trimmed.isEmpty) return null;
+    final network = AddressBookNetwork.tryFromChainTicker(
+      externalAsset.chainTicker,
+    );
+    if (network == null) return null;
+    return addressFormatIssue(network, trimmed);
+  }
+
   bool get canReviewQuote =>
       quoteAmount != null &&
       quoteAmountPrecisionError == null &&
       draftAddressPlan != null &&
+      destinationAddressFormatError == null &&
       !quoteLoading;
 
   bool get canSubmitDepositTx =>

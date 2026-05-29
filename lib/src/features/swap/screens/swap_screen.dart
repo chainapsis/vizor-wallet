@@ -589,6 +589,7 @@ class _SwapReviewFooter extends StatelessWidget {
       zecAvailableZatoshi,
     );
     final needsDestinationAddress = state.destinationText.trim().isEmpty;
+    final destinationFormatError = state.destinationAddressFormatError;
     final canReview = state.canReviewQuote && !balanceExceeded;
     final onPressed = needsDestinationAddress
         ? onOpenDestinationAddress
@@ -597,11 +598,12 @@ class _SwapReviewFooter extends StatelessWidget {
         : null;
     final label = needsDestinationAddress
         ? _destinationAddressActionLabel(state)
-        : balanceExceeded
-        ? 'Not enough ZEC'
-        : state.quoteLoading
-        ? 'Getting quote'
-        : 'Get a quote';
+        : destinationFormatError ??
+              (balanceExceeded
+                  ? 'Not enough ZEC'
+                  : state.quoteLoading
+                  ? 'Getting quote'
+                  : 'Get a quote');
 
     return Center(
       child: SizedBox(
