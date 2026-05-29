@@ -1,7 +1,6 @@
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import 'swap_intent.dart';
-import 'swap_presentation_models.dart';
 
 const defaultSwapSlippageBps = 100;
 const swapSlippagePresetBps = <int>[50, 100, 200];
@@ -123,9 +122,10 @@ class SwapState {
     return intents.where((intent) => !intent.status.isTerminal).length;
   }
 
-  String get walletZecPlaceholderAddress => direction.sendsZec
-      ? 'u1wallet-refund-placeholder'
-      : 'u1wallet-shielded-placeholder';
+  String get walletZecPlaceholderAddress =>
+      direction.sendsZec
+          ? 'u1wallet-refund-placeholder'
+          : 'u1wallet-shielded-placeholder';
 
   double? get sellAmount {
     final amount = double.tryParse(amountText);
@@ -142,14 +142,16 @@ class SwapState {
   double? get quoteAmount =>
       quoteMode == SwapQuoteMode.exactInput ? sellAmount : receiveAmount;
 
-  String get quoteAmountText => quoteMode == SwapQuoteMode.exactInput
-      ? amountText.trim()
-      : receiveAmountText.trim();
+  String get quoteAmountText =>
+      quoteMode == SwapQuoteMode.exactInput
+          ? amountText.trim()
+          : receiveAmountText.trim();
 
   String? get quoteAmountPrecisionError => swapTokenAmountPrecisionError(
-    asset: quoteMode == SwapQuoteMode.exactInput
-        ? direction.fromAsset(externalAsset)
-        : direction.toAsset(externalAsset),
+    asset:
+        quoteMode == SwapQuoteMode.exactInput
+            ? direction.fromAsset(externalAsset)
+            : direction.toAsset(externalAsset),
     amountText: quoteAmountText,
   );
 
@@ -165,13 +167,15 @@ class SwapState {
     );
   }
 
-  String get destinationFieldLabel => direction.sendsZec
-      ? 'Destination'
-      : '${externalAsset.symbol} refund address';
+  String get destinationFieldLabel =>
+      direction.sendsZec
+          ? 'Destination'
+          : '${externalAsset.symbol} refund address';
 
-  String get destinationFieldHint => direction.sendsZec
-      ? 'External ${externalAsset.symbol} address or account'
-      : 'Refund address on the ${externalAsset.symbol} source chain';
+  String get destinationFieldHint =>
+      direction.sendsZec
+          ? 'External ${externalAsset.symbol} address or account'
+          : 'Refund address on the ${externalAsset.symbol} source chain';
 
   bool get canReviewQuote =>
       quoteAmount != null &&
@@ -218,67 +222,6 @@ class SwapState {
     );
     final directionLabel = delta < 0 ? 'lower' : 'higher';
     return 'Live quote is $percent% $directionLabel than the earlier estimate. Check the guaranteed minimum before you continue.';
-  }
-
-  List<SwapDetailField> get draftExposure {
-    final hasQuote = quote != null;
-    if (!direction.sendsZec) {
-      return [
-        SwapDetailField(
-          label: 'Deposit address',
-          value: hasQuote
-              ? 'one-time ${externalAsset.symbol} address prepared at review'
-              : 'prepared after quote review',
-        ),
-        const SwapDetailField(
-          label: 'ZEC destination',
-          value: 'ZEC arrives directly at this wallet shielded address',
-        ),
-        SwapDetailField(
-          label: 'Refund path',
-          value: addressPlan == null
-              ? '${externalAsset.symbol} refund address required'
-              : '${externalAsset.symbol} refunds return to entered address',
-        ),
-        SwapDetailField(
-          label: 'Source-chain visibility',
-          value: hasQuote
-              ? 'external deposit is public on source chain'
-              : 'not open yet',
-        ),
-        SwapDetailField(
-          label: 'Third-party data',
-          value: 'solver sees ${externalAsset.symbol} deposit and ZEC route',
-        ),
-        const SwapDetailField(
-          label: 'Network disclosure',
-          value: 'direct connection; Tor not enabled',
-        ),
-      ];
-    }
-    return [
-      SwapDetailField(
-        label: 'Deposit address',
-        value: hasQuote
-            ? 'one-time transparent address prepared at review'
-            : 'prepared after quote review',
-      ),
-      const SwapDetailField(label: 'Address reuse', value: '0 previous uses'),
-      SwapDetailField(
-        label: 'Transparent window',
-        value: hasQuote
-            ? 'opens only after ZEC deposit is sent'
-            : 'not open yet',
-      ),
-      const SwapDetailField(
-        label: 'Third-party data',
-        value: 'solver sees ZEC deposit tx and route after start',
-      ),
-      const SwapDetailField(
-        label: 'Network disclosure',
-        value: 'direct connection; Tor not enabled',
-      ),
-    ];
   }
 
   SwapState copyWith({
@@ -339,12 +282,10 @@ class SwapState {
           indicativeExternalPerZec ?? this.indicativeExternalPerZec,
       indicativeUsdPrices: indicativeUsdPrices ?? this.indicativeUsdPrices,
       reviewQuote: clearReview ? null : reviewQuote ?? this.reviewQuote,
-      reviewAddressPlan: clearReview
-          ? null
-          : reviewAddressPlan ?? this.reviewAddressPlan,
-      reviewAccountUuid: clearReview
-          ? null
-          : reviewAccountUuid ?? this.reviewAccountUuid,
+      reviewAddressPlan:
+          clearReview ? null : reviewAddressPlan ?? this.reviewAddressPlan,
+      reviewAccountUuid:
+          clearReview ? null : reviewAccountUuid ?? this.reviewAccountUuid,
       quoteLoading: quoteLoading ?? this.quoteLoading,
       quoteExpired: clearReview ? false : quoteExpired ?? this.quoteExpired,
       quoteError: clearQuoteError ? null : quoteError ?? this.quoteError,
@@ -352,14 +293,14 @@ class SwapState {
       statusError: clearStatusError ? null : statusError ?? this.statusError,
       startSubmitting: startSubmitting ?? this.startSubmitting,
       maxAmountLoading: maxAmountLoading ?? this.maxAmountLoading,
-      maxAmountError: clearMaxAmountError
-          ? null
-          : maxAmountError ?? this.maxAmountError,
+      maxAmountError:
+          clearMaxAmountError ? null : maxAmountError ?? this.maxAmountError,
       depositTxHashText: depositTxHashText ?? this.depositTxHashText,
       depositSubmitting: depositSubmitting ?? this.depositSubmitting,
-      selectedIntentId: clearSelectedIntent
-          ? null
-          : selectedIntentId ?? this.selectedIntentId,
+      selectedIntentId:
+          clearSelectedIntent
+              ? null
+              : selectedIntentId ?? this.selectedIntentId,
     );
   }
 }

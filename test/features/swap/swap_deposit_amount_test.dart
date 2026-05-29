@@ -70,7 +70,6 @@ SwapQuote _quote({
 SwapIntent _intent({required String sellAmount, BigInt? sellAmountBaseUnits}) {
   return SwapIntent(
     id: 't1deposit',
-    title: 'ZEC to USDC',
     pair: 'ZEC -> USDC',
     sellAmount: sellAmount,
     sellAmountBaseUnits: sellAmountBaseUnits,
@@ -78,9 +77,6 @@ SwapIntent _intent({required String sellAmount, BigInt? sellAmountBaseUnits}) {
     provider: 'NEAR Intents',
     status: SwapIntentStatus.awaitingDeposit,
     nextAction: 'Sign deposit',
-    steps: const [],
-    exposure: const [],
-    receipt: const [],
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositAddress: 't1deposit',

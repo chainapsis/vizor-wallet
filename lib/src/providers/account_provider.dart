@@ -13,6 +13,7 @@ import '../core/config/network_config.dart';
 import '../core/profile_pictures.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
+import '../features/swap/providers/swap_activity_store.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'app_security_provider.dart';
@@ -373,6 +374,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     } catch (e, st) {
       log('removeAccount: failed to delete mnemonic for $uuid: $e\n$st');
     }
+    try {
+      await ref
+          .read(swapActivityStoreProvider)
+          .deleteForAccount(accountUuid: uuid);
+    } catch (_) {}
 
     final updated = [
       for (var i = 0; i < remaining.length; i++)

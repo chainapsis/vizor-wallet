@@ -138,8 +138,8 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     );
     final startBlockedReason =
         _reviewQuoteExceedsAvailableZec(quote, sync.spendableBalance)
-        ? "You don't have enough ZEC for this swap. Try a smaller amount."
-        : null;
+            ? "You don't have enough ZEC for this swap. Try a smaller amount."
+            : null;
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),

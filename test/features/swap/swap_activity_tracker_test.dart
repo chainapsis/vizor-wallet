@@ -225,16 +225,12 @@ SwapIntent _intent({
 }) {
   return SwapIntent(
     id: id,
-    title: 'ZEC to USDC',
     pair: 'ZEC -> USDC',
     sellAmount: '1.0000 ZEC',
     receiveEstimate: '70.00 USDC',
     provider: 'NEAR Intents',
     status: status,
     nextAction: 'Checking swap status',
-    steps: const [],
-    exposure: const [],
-    receipt: const [],
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositAddress: depositAddress,
@@ -283,6 +279,11 @@ class _MemorySwapActivityStore implements SwapActivityStore {
   }) async {
     saveCount++;
     savedRecords = records;
+  }
+
+  @override
+  Future<void> deleteForAccount({required String accountUuid}) async {
+    savedRecords = const [];
   }
 }
 

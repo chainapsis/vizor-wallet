@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dar
 
 void main() {
   test('exposes persisted swap records as activity row items', () async {
+    final createdAt = DateTime.utc(2026, 5, 7, 10);
     final updatedAt = DateTime.utc(2026, 5, 7, 10, 30);
     final store = _FakeSwapActivityStore({
       'account-1': [
@@ -20,6 +21,7 @@ void main() {
           direction: SwapDirection.zecToExternal,
           externalAsset: SwapAsset.usdc,
           depositTxHash: 'zec-deposit-txid',
+          createdAt: createdAt,
           updatedAt: updatedAt,
         ),
       ],
@@ -42,8 +44,73 @@ void main() {
     expect(items.single.direction, SwapDirection.zecToExternal);
     expect(items.single.externalAsset, SwapAsset.usdc);
     expect(items.single.depositTxHash, 'zec-deposit-txid');
-    expect(items.single.activityTimestamp, updatedAt);
+    expect(items.single.activityTimestamp, createdAt);
   });
+
+  test(
+    'pending count uses resolved status so an expired-on-reload swap does not block',
+    () async {
+      // Deadline safely in the past relative to the wall clock the provider
+      // resolves against.
+      final past = DateTime.utc(2020, 1, 1);
+      final store = _FakeSwapActivityStore({
+        'account-1': [
+          // Past deadline, no on-chain evidence -> resolves to expired
+          // (terminal) -> must NOT count as a pending swap.
+          _pendingCountRecord(id: 'no-evidence', depositDeadline: past),
+          // Past deadline but a deposit tx exists -> carve-out keeps it
+          // non-terminal -> still counts (funds may be in flight).
+          _pendingCountRecord(
+            id: 'with-evidence',
+            depositDeadline: past,
+            depositTxHash: 'zec-deposit-txid',
+          ),
+          // Genuinely terminal -> must NOT count.
+          _pendingCountRecord(
+            id: 'done',
+            status: SwapIntentStatus.complete,
+            depositDeadline: past,
+          ),
+        ],
+      });
+      final container = ProviderContainer(
+        overrides: [swapActivityStoreProvider.overrideWithValue(store)],
+      );
+      addTearDown(container.dispose);
+
+      final count = await container.read(
+        swapPendingIntentCountProvider('account-1').future,
+      );
+
+      // Counting raw persisted status would yield 2 (both awaiting); resolving
+      // the deadline drops the no-evidence one, so the gate sees only 1.
+      expect(count, 1);
+    },
+  );
+}
+
+SwapIntentRecord _pendingCountRecord({
+  required String id,
+  SwapIntentStatus status = SwapIntentStatus.awaitingDeposit,
+  DateTime? depositDeadline,
+  String? depositTxHash,
+}) {
+  final createdAt = DateTime.utc(2020, 1, 1);
+  return SwapIntentRecord(
+    id: id,
+    providerLabel: 'NEAR Intents',
+    pairText: 'ZEC -> USDC',
+    sellAmountText: '0.0030 ZEC',
+    receiveEstimateText: '0.21 USDC',
+    status: status,
+    nextAction: 'Swap',
+    direction: SwapDirection.zecToExternal,
+    externalAsset: SwapAsset.usdc,
+    depositDeadline: depositDeadline,
+    depositTxHash: depositTxHash,
+    createdAt: createdAt,
+    updatedAt: createdAt,
+  );
 }
 
 class _FakeSwapActivityStore implements SwapActivityStore {
@@ -64,5 +131,10 @@ class _FakeSwapActivityStore implements SwapActivityStore {
     required List<SwapIntentRecord> records,
   }) async {
     throw UnsupportedError('saveRecords is not used by this test');
+  }
+
+  @override
+  Future<void> deleteForAccount({required String accountUuid}) async {
+    throw UnsupportedError('deleteForAccount is not used by this test');
   }
 }

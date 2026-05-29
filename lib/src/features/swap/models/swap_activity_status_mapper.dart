@@ -113,15 +113,18 @@ int _swapActivityStatusProgressIndex(SwapIntent intent) {
 List<SwapStatusStepData> _swapActivityProgressSteps(SwapIntent intent) {
   final sourceSymbol = swapActivityPairSymbol(intent.pair, 0);
   final receiveSymbol = swapActivityPairSymbol(intent.pair, 1);
-  final sourceVerb = intent.direction == SwapDirection.zecToExternal
-      ? 'Sending'
-      : 'Depositing';
-  final sourceDone = intent.direction == SwapDirection.zecToExternal
-      ? '$sourceSymbol sent'
-      : '$sourceSymbol Deposited';
-  final deliveryTitle = intent.direction == SwapDirection.zecToExternal
-      ? 'Deliver $receiveSymbol'
-      : 'Send $receiveSymbol';
+  final sourceVerb =
+      intent.direction == SwapDirection.zecToExternal
+          ? 'Sending'
+          : 'Depositing';
+  final sourceDone =
+      intent.direction == SwapDirection.zecToExternal
+          ? '$sourceSymbol sent'
+          : '$sourceSymbol Deposited';
+  final deliveryTitle =
+      intent.direction == SwapDirection.zecToExternal
+          ? 'Deliver $receiveSymbol'
+          : 'Send $receiveSymbol';
 
   final lastCheckedLabel =
       _swapActivityLastRelativeStatusCheckedLabel(intent.lastStatusCheckedAt) ??
@@ -133,9 +136,10 @@ List<SwapStatusStepData> _swapActivityProgressSteps(SwapIntent intent) {
       state: SwapStatusStepState.pending,
       completeTitle: sourceDone,
       activeTitle: '$sourceVerb $sourceSymbol...',
-      pendingTitle: intent.direction == SwapDirection.zecToExternal
-          ? 'Send $sourceSymbol'
-          : 'Deposit $sourceSymbol',
+      pendingTitle:
+          intent.direction == SwapDirection.zecToExternal
+              ? 'Send $sourceSymbol'
+              : 'Deposit $sourceSymbol',
       lastCheckedLabel: lastCheckedLabel,
       description:
           'Confirm waiting for the source chain and provider to recognise the deposit',
@@ -321,9 +325,10 @@ List<SwapStatusDetailRowData> _swapActivityIncompleteDepositDetails(
 }) {
   final sourceAsset = swapActivitySellAsset(intent);
   final providerInfo = intent.providerRefundInfo;
-  final missingDepositText = sourceAsset == null
-      ? null
-      : _swapActivityMissingDepositText(intent, sourceAsset);
+  final missingDepositText =
+      sourceAsset == null
+          ? null
+          : _swapActivityMissingDepositText(intent, sourceAsset);
   final deadlineText = _swapActivityTimestampLabel(intent.depositDeadline);
 
   return [
@@ -498,14 +503,16 @@ class SwapActivityDepositInstruction {
     }
 
     final depositSymbol = direction.fromSymbol(externalAsset);
-    final depositAddressLabel = direction.sendsZec
-        ? '$depositSymbol deposit'
-        : '$depositSymbol source deposit';
+    final depositAddressLabel =
+        direction.sendsZec
+            ? '$depositSymbol deposit'
+            : '$depositSymbol source deposit';
 
     return SwapActivityDepositInstruction(
-      sendLabel: direction.sendsZec
-          ? 'Send $depositSymbol'
-          : 'Send $depositSymbol from source chain',
+      sendLabel:
+          direction.sendsZec
+              ? 'Send $depositSymbol'
+              : 'Send $depositSymbol from source chain',
       depositSymbol: depositSymbol,
       depositAddressLabel: depositAddressLabel,
       address: depositAddress,
@@ -513,12 +520,13 @@ class SwapActivityDepositInstruction {
       txHashLabel: '$depositSymbol deposit tx hash',
       txHashHint: '$depositSymbol source-chain transaction hash',
       submitLabel: 'Submit $depositSymbol deposit',
-      qr: direction.sendsZec
-          ? null
-          : SwapActivityDepositQrInstruction(
-              railLabel: externalAsset.railLabel,
-              reuseWarning: 'Do not reuse this address',
-            ),
+      qr:
+          direction.sendsZec
+              ? null
+              : SwapActivityDepositQrInstruction(
+                railLabel: externalAsset.railLabel,
+                reuseWarning: 'Do not reuse this address',
+              ),
     );
   }
 

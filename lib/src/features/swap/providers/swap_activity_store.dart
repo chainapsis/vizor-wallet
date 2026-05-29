@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/app_secure_store.dart';
+import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 
 const _swapActivityKey = 'zcash_swap_activities_v1';
@@ -47,7 +48,13 @@ final swapPendingIntentCountProvider = FutureProvider.family<int, String>((
   final records = await ref.watch(
     swapActivityRecordsProvider(accountUuid).future,
   );
-  return records.where((record) => !record.status.isTerminal).length;
+  // Resolve each record the same way the UI does (e.g. a past-deadline
+  // awaiting deposit with no on-chain evidence becomes `expired`), so the
+  // account-removal gate counts the status the user actually sees instead of
+  // the raw persisted status. Otherwise a swap shown as Expired would still
+  // hard-block account removal with an instruction the user cannot follow.
+  final intents = swapIntentsFromRecords(records);
+  return intents.where((intent) => !intent.status.isTerminal).length;
 });
 
 abstract interface class SwapActivityStore {
@@ -57,6 +64,8 @@ abstract interface class SwapActivityStore {
     required String accountUuid,
     required List<SwapIntentRecord> records,
   });
+
+  Future<void> deleteForAccount({required String accountUuid});
 }
 
 class AppSecureStoreSwapActivityStore implements SwapActivityStore {
@@ -113,6 +122,11 @@ class AppSecureStoreSwapActivityStore implements SwapActivityStore {
       }),
     );
   }
+
+  @override
+  Future<void> deleteForAccount({required String accountUuid}) async {
+    await _storage.delete(_swapActivityKeyFor(accountUuid));
+  }
 }
 
 @visibleForTesting
@@ -163,9 +177,8 @@ Map<String, Object?> _recordToJson(SwapIntentRecord record) {
     'destinationChainTxHash': record.destinationChainTxHash,
     'providerRefundInfo': _providerRefundInfoToJson(record.providerRefundInfo),
     'fiatValueBasis': _fiatValueBasisToJson(record.fiatValueBasis),
-    'lastStatusCheckedAt': record.lastStatusCheckedAt
-        ?.toUtc()
-        .toIso8601String(),
+    'lastStatusCheckedAt':
+        record.lastStatusCheckedAt?.toUtc().toIso8601String(),
     'statusError': record.statusError,
     'broadcastNotice': record.broadcastNotice,
     'oneClickRecipient': record.oneClickRecipient,

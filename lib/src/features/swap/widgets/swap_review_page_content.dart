@@ -179,13 +179,14 @@ class SwapReviewPageActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final startingLabel = sendsZec ? 'Sending' : 'Locking quote';
-    final primaryLabel = expired
-        ? 'Review again'
-        : startBlockedReason != null
-        ? 'Not enough ZEC'
-        : starting
-        ? startingLabel
-        : 'Confirm swap';
+    final primaryLabel =
+        expired
+            ? 'Review again'
+            : startBlockedReason != null
+            ? 'Not enough ZEC'
+            : starting
+            ? startingLabel
+            : 'Confirm swap';
     final showPrimaryArrow =
         !expired && !starting && startBlockedReason == null;
     return SizedBox(
@@ -196,22 +197,25 @@ class SwapReviewPageActions extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AppButton(
-            key: expired
-                ? const ValueKey('swap_review_again_button')
-                : const ValueKey('swap_start_button'),
-            onPressed: startBlockedReason != null
-                ? null
-                : expired
-                ? onReviewAgain
-                : starting
-                ? null
-                : onStartIntent,
+            key:
+                expired
+                    ? const ValueKey('swap_review_again_button')
+                    : const ValueKey('swap_start_button'),
+            onPressed:
+                startBlockedReason != null
+                    ? null
+                    : expired
+                    ? onReviewAgain
+                    : starting
+                    ? null
+                    : onStartIntent,
             variant: AppButtonVariant.primary,
             size: AppButtonSize.large,
             minWidth: 256,
-            trailing: showPrimaryArrow
-                ? const AppIcon(AppIcons.arrowForwardIos)
-                : null,
+            trailing:
+                showPrimaryArrow
+                    ? const AppIcon(AppIcons.arrowForwardIos)
+                    : null,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 184),
               child: Text(
@@ -267,26 +271,30 @@ class _ReviewTradeSummaryCard extends StatelessWidget {
     );
     final receiveNeedsWideSide =
         receiveAmountText.length > sellAmountText.length;
-    final leftWidth = bothSidesNeedCompact
-        ? 184.0
-        : receiveNeedsWideSide
-        ? 160.0
-        : 205.0;
-    final arrowLeft = bothSidesNeedCompact
-        ? 184.0
-        : receiveNeedsWideSide
-        ? 161.5
-        : 206.5;
-    final rightLeft = bothSidesNeedCompact
-        ? 216.0
-        : receiveNeedsWideSide
-        ? 195.0
-        : 240.0;
-    final rightWidth = bothSidesNeedCompact
-        ? 184.0
-        : receiveNeedsWideSide
-        ? 205.0
-        : 160.0;
+    final leftWidth =
+        bothSidesNeedCompact
+            ? 184.0
+            : receiveNeedsWideSide
+            ? 160.0
+            : 205.0;
+    final arrowLeft =
+        bothSidesNeedCompact
+            ? 184.0
+            : receiveNeedsWideSide
+            ? 161.5
+            : 206.5;
+    final rightLeft =
+        bothSidesNeedCompact
+            ? 216.0
+            : receiveNeedsWideSide
+            ? 195.0
+            : 240.0;
+    final rightWidth =
+        bothSidesNeedCompact
+            ? 184.0
+            : receiveNeedsWideSide
+            ? 205.0
+            : 160.0;
     return Container(
       key: const ValueKey('swap_review_trade_summary'),
       width: 400,

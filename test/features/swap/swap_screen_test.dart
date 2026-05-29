@@ -928,15 +928,17 @@ void main() {
         Overlay(
           initialEntries: [
             OverlayEntry(
-              builder: (_) => StatefulBuilder(
-                builder: (context, setState) {
-                  return _statusTestPage(
-                    activeTab: SwapStatusTab.details,
-                    detailsExpanded: expanded,
-                    onToggleDetails: () => setState(() => expanded = !expanded),
-                  );
-                },
-              ),
+              builder:
+                  (_) => StatefulBuilder(
+                    builder: (context, setState) {
+                      return _statusTestPage(
+                        activeTab: SwapStatusTab.details,
+                        detailsExpanded: expanded,
+                        onToggleDetails:
+                            () => setState(() => expanded = !expanded),
+                      );
+                    },
+                  ),
             ),
           ],
         ),
@@ -1100,17 +1102,18 @@ void main() {
       routes: [
         GoRoute(
           path: '/home',
-          builder: (_, _) => AppDesktopShell(
-            sidebar: const AppMainSidebar(),
-            pane: AppDesktopPane(
-              child: Text(
-                'home route',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: AppThemeData.light.colors.text.primary,
+          builder:
+              (_, _) => AppDesktopShell(
+                sidebar: const AppMainSidebar(),
+                pane: AppDesktopPane(
+                  child: Text(
+                    'home route',
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: AppThemeData.light.colors.text.primary,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
         ),
         GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
         _swapRoute(),
@@ -1169,12 +1172,14 @@ void main() {
       findsWidgets,
     );
     expect(find.byKey(const ValueKey('swap_address_summary')), findsOneWidget);
-    final addressFieldHeight = tester
-        .getSize(find.byKey(const ValueKey('swap_address_summary')))
-        .height;
-    final addressFieldWidth = tester
-        .getSize(find.byKey(const ValueKey('swap_address_summary')))
-        .width;
+    final addressFieldHeight =
+        tester
+            .getSize(find.byKey(const ValueKey('swap_address_summary')))
+            .height;
+    final addressFieldWidth =
+        tester
+            .getSize(find.byKey(const ValueKey('swap_address_summary')))
+            .width;
     expect(addressFieldHeight, 32);
     expect(addressFieldWidth, closeTo(196, 1));
     expect(find.text('Ethereum recipient'), findsNothing);
@@ -2340,9 +2345,10 @@ void main() {
     final selectorCursor = tester.widget<MouseRegion>(
       find
           .ancestor(
-            of: find
-                .byKey(const ValueKey('swap_external_asset_selector'))
-                .first,
+            of:
+                find
+                    .byKey(const ValueKey('swap_external_asset_selector'))
+                    .first,
             matching: find.byType(MouseRegion),
           )
           .first,
@@ -2381,12 +2387,12 @@ void main() {
       assetListGutter.padding,
       const EdgeInsets.only(right: AppSpacing.sm),
     );
-    final assetMenuWidth = tester
-        .getSize(find.byKey(const ValueKey('swap_external_asset_menu')))
-        .width;
-    final usdcRowWidth = tester
-        .getSize(find.byKey(const ValueKey('swap_asset_row_usdc')))
-        .width;
+    final assetMenuWidth =
+        tester
+            .getSize(find.byKey(const ValueKey('swap_external_asset_menu')))
+            .width;
+    final usdcRowWidth =
+        tester.getSize(find.byKey(const ValueKey('swap_asset_row_usdc'))).width;
     expect(usdcRowWidth, assetMenuWidth - 48);
 
     await tester.tapAt(const Offset(1200, 64));
@@ -2470,12 +2476,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('swap_settings_button')));
     await tester.pumpAndSettle();
 
-    final slippageModalTop = tester
-        .getTopLeft(find.byKey(const ValueKey('swap_slippage_modal')))
-        .dy;
-    final customCardTop = tester
-        .getTopLeft(find.byKey(const ValueKey('swap_slippage_custom_card')))
-        .dy;
+    final slippageModalTop =
+        tester.getTopLeft(find.byKey(const ValueKey('swap_slippage_modal'))).dy;
+    final customCardTop =
+        tester
+            .getTopLeft(find.byKey(const ValueKey('swap_slippage_custom_card')))
+            .dy;
     expect(customCardTop - slippageModalTop, 218);
     expect(
       tester.getSize(find.byKey(const ValueKey('swap_slippage_50bps'))).height,
@@ -4062,53 +4068,26 @@ void main() {
   ) async {
     await _setViewport(tester, const Size(940, 720));
 
-    final longIntent =
-        _persistedIntent(
-          id: 'swap-long-provider-data',
-          txHash:
-              '0xdeposit-transaction-hash-with-a-very-long-source-chain-suffix-9876543210',
-          depositAddress:
-              '0xone-time-usdc-deposit-address-with-a-long-provider-suffix-abcdef1234567890',
-          status: SwapIntentStatus.awaitingExternalDeposit,
-          nextAction:
-              'Send the external deposit, then submit the source-chain transaction hash after confirmation.',
-        ).copyWith(
-          title: 'USDC to ZEC',
-          pair: 'USDC -> ZEC',
-          sellAmount: '12345.678901 USDC',
-          receiveEstimate: '175.9421 ZEC',
-          direction: SwapDirection.externalToZec,
-          externalAsset: SwapAsset.usdc,
-          depositMemo:
-              'memo-with-a-long-routing-tag-and-provider-reference-9876543210',
-          oneClickRefundTo:
-              '0xrefund-address-with-a-very-long-source-chain-suffix-abcdef1234567890',
-          exposure: const [
-            SwapDetailField(
-              label: 'USDC source deposit',
-              value:
-                  'one-time USDC address with source-chain routing metadata visible',
-            ),
-            SwapDetailField(
-              label: 'Refund path',
-              value:
-                  'USDC refunds return to the long source-chain address entered during review',
-            ),
-          ],
-          receipt: const [
-            SwapDetailField(label: 'Swap id', value: 'swap-long-provider-data'),
-            SwapDetailField(
-              label: 'Deposit',
-              value:
-                  '0xone-time-usdc-deposit-address-with-a-long-provider-suffix-abcdef1234567890',
-            ),
-            SwapDetailField(
-              label: 'Memo',
-              value:
-                  'memo-with-a-long-routing-tag-and-provider-reference-9876543210',
-            ),
-          ],
-        );
+    final longIntent = _persistedIntent(
+      id: 'swap-long-provider-data',
+      txHash:
+          '0xdeposit-transaction-hash-with-a-very-long-source-chain-suffix-9876543210',
+      depositAddress:
+          '0xone-time-usdc-deposit-address-with-a-long-provider-suffix-abcdef1234567890',
+      status: SwapIntentStatus.awaitingExternalDeposit,
+      nextAction:
+          'Send the external deposit, then submit the source-chain transaction hash after confirmation.',
+    ).copyWith(
+      pair: 'USDC -> ZEC',
+      sellAmount: '12345.678901 USDC',
+      receiveEstimate: '175.9421 ZEC',
+      direction: SwapDirection.externalToZec,
+      externalAsset: SwapAsset.usdc,
+      depositMemo:
+          'memo-with-a-long-routing-tag-and-provider-reference-9876543210',
+      oneClickRefundTo:
+          '0xrefund-address-with-a-very-long-source-chain-suffix-abcdef1234567890',
+    );
 
     await tester.pumpWidget(
       _routerHarness(
@@ -4330,12 +4309,12 @@ void main() {
           .height,
       greaterThanOrEqualTo(44),
     );
-    final startButtonWidth = tester
-        .getSize(find.byKey(const ValueKey('swap_start_button')))
-        .width;
-    final cancelButtonWidth = tester
-        .getSize(find.byKey(const ValueKey('swap_review_cancel_button')))
-        .width;
+    final startButtonWidth =
+        tester.getSize(find.byKey(const ValueKey('swap_start_button'))).width;
+    final cancelButtonWidth =
+        tester
+            .getSize(find.byKey(const ValueKey('swap_review_cancel_button')))
+            .width;
     expect(startButtonWidth, greaterThanOrEqualTo(148));
     expect(cancelButtonWidth, greaterThanOrEqualTo(148));
     expect(
@@ -4385,6 +4364,8 @@ void main() {
     expect(find.text('Slippage tolerance'), findsOneWidget);
     expect(find.text('Guaranteed minimum'), findsOneWidget);
     expect(find.text('Swap fee'), findsOneWidget);
+    expect(find.text('Third-party data'), findsNothing);
+    expect(find.text('Network disclosure'), findsNothing);
     expect(find.text('Confirm swap'), findsOneWidget);
 
     await tester.ensureVisible(find.byKey(const ValueKey('swap_start_button')));
@@ -5655,14 +5636,6 @@ void main() {
     );
     expect(sessionStore.savedIntents.single.oneClickRecipient, '0xrecipient');
     expect(
-      sessionStore.savedIntents.single.receipt,
-      contains(
-        isA<SwapDetailField>()
-            .having((field) => field.label, 'label', 'USDC recipient')
-            .having((field) => field.value, 'value', '0xrecipient'),
-      ),
-    );
-    expect(
       sessionStore.savedIntents.single.oneClickRefundTo,
       'u1actualshieldedrecipient',
     );
@@ -5829,13 +5802,6 @@ void main() {
     expect(sessionStore.savedIntents, hasLength(1));
     expect(sessionStore.savedIntents.single.depositTxHash, 'zec-auto-txid');
     expect(sessionStore.savedIntents.single.accountUuid, 'account-1');
-    expect(
-      sessionStore.savedIntents.single.receipt
-          .where((field) => field.label == 'Deposit tx')
-          .single
-          .value,
-      'zec-auto-txid',
-    );
     await _openSwapStatusDetails(tester, expand: true);
     expect(find.text('zec-auto-txid'), findsWidgets);
     expect(find.textContaining('Could not send ZEC deposit'), findsNothing);
@@ -6212,14 +6178,6 @@ void main() {
       );
       await _openSwapStatusDetails(tester, expand: true);
       expect(find.text('hardware- ... st-txid'), findsWidgets);
-      expect(
-        sessionStore.savedIntents.single.receipt.any(
-          (field) =>
-              field.label == 'Broadcast status' &&
-              field.value == 'local storage failed after broadcast',
-        ),
-        isTrue,
-      );
       expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
     },
   );
@@ -6467,9 +6425,10 @@ Widget _routerHarness(
   AccountNotifier Function()? accountNotifier,
   AddressBookRepository? addressBookRepository,
 }) {
-  final fixtureIntents = seedSwapActivityFixtures
-      ? _accountScopedSwapActivityFixtureIntents()
-      : const <SwapIntent>[];
+  final fixtureIntents =
+      seedSwapActivityFixtures
+          ? _accountScopedSwapActivityFixtureIntents()
+          : const <SwapIntent>[];
   final effectiveSessionStore =
       sessionStore ?? _FakeSwapPersistenceStore(initialIntents: fixtureIntents);
   return ProviderScope(
@@ -6563,15 +6522,16 @@ GoRoute _swapActivityRoute() {
     routes: [
       GoRoute(
         path: 'swap/:swapId',
-        builder: (_, state) => SwapActivityDetailScreen(
-          swapIntentId: state.pathParameters['swapId'] ?? '',
-          returnTarget: SwapActivityReturnTarget.fromQueryValue(
-            state.uri.queryParameters[swapActivityReturnQueryKey],
-          ),
-          autoSignZecDeposit:
-              state.uri.queryParameters[swapActivitySignQueryKey] ==
-              swapActivitySignZecDepositValue,
-        ),
+        builder:
+            (_, state) => SwapActivityDetailScreen(
+              swapIntentId: state.pathParameters['swapId'] ?? '',
+              returnTarget: SwapActivityReturnTarget.fromQueryValue(
+                state.uri.queryParameters[swapActivityReturnQueryKey],
+              ),
+              autoSignZecDeposit:
+                  state.uri.queryParameters[swapActivitySignQueryKey] ==
+                  swapActivitySignZecDepositValue,
+            ),
       ),
     ],
   );
@@ -6792,27 +6752,12 @@ SwapIntent _persistedIntent({
   final effectiveNextAction = nextAction ?? status.label;
   return SwapIntent(
     id: id,
-    title: 'ZEC to USDC',
     pair: 'ZEC -> USDC',
     sellAmount: '1.5000 ZEC',
     receiveEstimate: '105.25 USDC',
     provider: 'NEAR Intents',
     status: status,
     nextAction: effectiveNextAction,
-    steps: [
-      SwapStep(
-        label: status.label,
-        state: SwapStepState.active,
-        evidence: effectiveNextAction,
-      ),
-    ],
-    exposure: const [
-      SwapDetailField(label: 'Deposit address', value: 'persisted-deposit'),
-    ],
-    receipt: [
-      SwapDetailField(label: 'Swap id', value: id),
-      SwapDetailField(label: 'Deposit tx', value: txHash),
-    ],
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositAddress: depositAddress ?? id,
@@ -6850,27 +6795,12 @@ SwapIntent _persistedExternalToZecIntent({
 }) {
   return SwapIntent(
     id: id,
-    title: 'USDC to ZEC',
     pair: 'USDC -> ZEC',
     sellAmount: '140.350000 USDC',
     receiveEstimate: '2.0000 ZEC',
     provider: 'NEAR Intents',
     status: SwapIntentStatus.awaitingExternalDeposit,
     nextAction: 'Waiting for the stored source-chain deposit',
-    steps: const [
-      SwapStep(
-        label: 'Awaiting external deposit',
-        state: SwapStepState.active,
-        evidence: 'Waiting for the stored source-chain deposit',
-      ),
-    ],
-    exposure: [
-      SwapDetailField(label: 'ZEC destination', value: stagingAddress),
-    ],
-    receipt: [
-      SwapDetailField(label: 'Swap id', value: id),
-      SwapDetailField(label: 'Receive address', value: stagingAddress),
-    ],
     direction: SwapDirection.externalToZec,
     externalAsset: SwapAsset.usdc,
     depositAddress: id,

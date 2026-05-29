@@ -1,18 +1,23 @@
 import 'swap_models.dart';
 
-SwapIntent _swapIntentFromRecord(SwapIntentRecord record) {
+SwapIntent _swapIntentFromRecord(SwapIntentRecord record, {DateTime? now}) {
+  final timestamp = now ?? DateTime.now().toUtc();
+  final status = _resolveDepositDeadlineStatus(
+    providerStatus: record.status,
+    deadline: record.depositDeadline,
+    hasDepositEvidence:
+        _hasText(record.depositTxHash) || _hasText(record.originChainTxHash),
+    now: timestamp,
+  );
+  final nextAction = _nextActionForRestoredStatus(status, record);
   return SwapIntent(
     id: record.id,
-    title: _swapIntentTitle(record),
     pair: record.pairText,
     sellAmount: record.sellAmountText,
     receiveEstimate: record.receiveEstimateText,
     provider: record.providerLabel,
-    status: record.status,
-    nextAction: record.nextAction,
-    steps: _swapStepsForRecord(record),
-    exposure: _swapExposureForRecord(record),
-    receipt: _swapReceiptForRecord(record),
+    status: status,
+    nextAction: nextAction,
     sellAmountBaseUnits: record.sellAmountBaseUnits,
     direction: record.direction,
     externalAsset: record.externalAsset,
@@ -40,12 +45,19 @@ SwapIntent _swapIntentFromRecord(SwapIntentRecord record) {
     accountUuid: record.accountUuid,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
-    completedAt: record.completedAt,
+    completedAt:
+        record.completedAt ??
+        (status.isTerminal && record.status != status ? timestamp : null),
   );
 }
 
-List<SwapIntent> swapIntentsFromRecords(Iterable<SwapIntentRecord> records) {
-  return [for (final record in records) _swapIntentFromRecord(record)];
+List<SwapIntent> swapIntentsFromRecords(
+  Iterable<SwapIntentRecord> records, {
+  DateTime? now,
+}) {
+  return [
+    for (final record in records) _swapIntentFromRecord(record, now: now),
+  ];
 }
 
 SwapIntentRecord swapIntentRecordForPersistence(
@@ -253,225 +265,16 @@ String _nextActionForResolvedStatus(
   return snapshot.nextAction;
 }
 
+String _nextActionForRestoredStatus(
+  SwapIntentStatus status,
+  SwapIntentRecord record,
+) {
+  if (status == SwapIntentStatus.expired &&
+      record.status != SwapIntentStatus.expired) {
+    return 'Start a fresh quote';
+  }
+  return record.nextAction;
+}
+
 bool _hasText(String? value) => value?.trim().isNotEmpty ?? false;
 
-String _swapIntentTitle(SwapIntentRecord record) {
-  final direction = record.direction;
-  final externalAsset = record.externalAsset;
-  if (direction != null && externalAsset != null) {
-    return direction.sendsZec
-        ? 'ZEC to ${externalAsset.symbol}'
-        : '${externalAsset.symbol} to ZEC';
-  }
-  return record.pairText.replaceAll(' -> ', ' to ');
-}
-
-List<SwapStep> _swapStepsForRecord(SwapIntentRecord record) {
-  final direction = record.direction;
-  final externalAsset = record.externalAsset;
-  final useInitialSteps =
-      record.lastStatusCheckedAt == null &&
-      record.depositTxHash == null &&
-      (record.status == SwapIntentStatus.awaitingDeposit ||
-          record.status == SwapIntentStatus.awaitingExternalDeposit) &&
-      !record.nextAction.toLowerCase().contains('keystone');
-  if (!useInitialSteps || direction == null || externalAsset == null) {
-    return swapStepsForStatus(record.status, record.nextAction);
-  }
-
-  final sendsZec = direction.sendsZec;
-  return [
-    const SwapStep(
-      label: 'Quote locked',
-      state: SwapStepState.done,
-      evidence: 'Quote saved locally',
-    ),
-    SwapStep(
-      label: sendsZec
-          ? 'One-time transparent address prepared'
-          : 'One-time ${externalAsset.chainLabel} address prepared for ${externalAsset.symbol}',
-      state: SwapStepState.active,
-      evidence: '0 previous uses',
-    ),
-    SwapStep(
-      label: sendsZec
-          ? 'Awaiting ZEC deposit'
-          : 'Awaiting ${externalAsset.symbol} deposit',
-      state: SwapStepState.pending,
-      evidence: 'Do not reuse this address',
-    ),
-    SwapStep(
-      label: sendsZec ? 'Deposit observed' : 'External deposit observed',
-      state: SwapStepState.pending,
-      evidence: 'Waiting for chain observation',
-    ),
-    SwapStep(
-      label: sendsZec ? 'Refund path monitored' : 'Shielded receive',
-      state: SwapStepState.pending,
-      evidence: sendsZec
-          ? 'Wallet unified address is used only if a refund arrives'
-          : _deliverySummary(record),
-    ),
-  ];
-}
-
-List<SwapStep> swapStepsForStatus(SwapIntentStatus status, String nextAction) {
-  final doneBeforeProcessing = switch (status) {
-    SwapIntentStatus.awaitingDeposit ||
-    SwapIntentStatus.awaitingExternalDeposit ||
-    SwapIntentStatus.providerStatusUnknown ||
-    SwapIntentStatus.expired => false,
-    _ => true,
-  };
-  final complete = status == SwapIntentStatus.complete;
-  final failed =
-      status == SwapIntentStatus.failed ||
-      status == SwapIntentStatus.expired ||
-      status == SwapIntentStatus.refunded;
-  return [
-    const SwapStep(
-      label: 'Quote locked',
-      state: SwapStepState.done,
-      evidence: 'Stored locally',
-    ),
-    SwapStep(
-      label: 'Deposit observed',
-      state: doneBeforeProcessing ? SwapStepState.done : SwapStepState.active,
-      evidence: doneBeforeProcessing ? 'Deposit confirmed' : nextAction,
-    ),
-    SwapStep(
-      label: status.label,
-      state: failed
-          ? SwapStepState.warning
-          : complete
-          ? SwapStepState.done
-          : SwapStepState.active,
-      evidence: nextAction,
-    ),
-  ];
-}
-
-List<SwapDetailField> _swapExposureForRecord(SwapIntentRecord record) {
-  final direction = record.direction;
-  final externalAsset = record.externalAsset;
-  if (direction == null || externalAsset == null) return const [];
-  final sendsZec = direction.sendsZec;
-  if (!sendsZec) {
-    return [
-      SwapDetailField(
-        label: '${externalAsset.symbol} source deposit',
-        value: 'one-time ${externalAsset.symbol} address',
-      ),
-      SwapDetailField(
-        label: 'ZEC destination',
-        value: _deliverySummary(record),
-      ),
-      SwapDetailField(
-        label: 'Third-party data',
-        value: 'solver sees ${externalAsset.symbol} deposit and ZEC route',
-      ),
-      const SwapDetailField(
-        label: 'Network disclosure',
-        value: 'direct connection; Tor not enabled',
-      ),
-    ];
-  }
-  return [
-    const SwapDetailField(
-      label: 'ZEC deposit',
-      value: 'one-time transparent address',
-    ),
-    const SwapDetailField(label: 'Address reuse', value: '0 previous uses'),
-    const SwapDetailField(
-      label: 'Refund path',
-      value: 'wallet unified address',
-    ),
-    SwapDetailField(
-      label: 'Third-party data',
-      value: 'solver sees ZEC deposit and ${externalAsset.symbol} route',
-    ),
-    const SwapDetailField(
-      label: 'Network disclosure',
-      value: 'direct connection; Tor not enabled',
-    ),
-  ];
-}
-
-List<SwapDetailField> _swapReceiptForRecord(SwapIntentRecord record) {
-  final direction = record.direction;
-  final externalAsset = record.externalAsset;
-  final sendsZec = direction?.sendsZec ?? true;
-  final fields = <SwapDetailField>[
-    SwapDetailField(label: 'Pair', value: record.pairText),
-    if (record.providerQuoteId != null)
-      SwapDetailField(label: 'Provider quote', value: record.providerQuoteId!),
-    if (record.oneClickRecipient != null)
-      SwapDetailField(
-        label: sendsZec
-            ? '${externalAsset?.symbol ?? 'External'} recipient'
-            : 'ZEC recipient',
-        value: record.oneClickRecipient!,
-      ),
-    if (record.depositAddress != null)
-      SwapDetailField(
-        label: sendsZec
-            ? 'ZEC deposit'
-            : '${externalAsset?.symbol ?? 'External'} source deposit',
-        value: record.depositAddress!,
-      ),
-    if (record.depositMemo != null)
-      SwapDetailField(label: 'Memo', value: record.depositMemo!),
-    if (record.oneClickRefundTo != null)
-      SwapDetailField(label: 'Refund to', value: record.oneClickRefundTo!),
-    ..._swapProviderRefundFields(record.providerRefundInfo),
-    if (record.providerStatusRaw != null)
-      SwapDetailField(
-        label: 'Provider status',
-        value: record.providerStatusRaw!,
-      ),
-    if (record.depositTxHash != null)
-      SwapDetailField(label: 'Deposit tx', value: record.depositTxHash!),
-    if (record.broadcastNotice != null &&
-        record.broadcastNotice!.trim().isNotEmpty)
-      SwapDetailField(
-        label: 'Broadcast status',
-        value: record.broadcastNotice!,
-      ),
-  ];
-  return fields;
-}
-
-List<SwapDetailField> _swapProviderRefundFields(SwapProviderRefundInfo? info) {
-  if (info == null || !info.hasAny) return const [];
-  return [
-    if (info.minimumDepositText != null)
-      SwapDetailField(
-        label: 'Minimum deposit',
-        value: info.minimumDepositText!,
-      ),
-    if (info.refundFeeText != null)
-      SwapDetailField(label: 'Refund fee', value: info.refundFeeText!),
-    if (info.depositedAmountText != null)
-      SwapDetailField(
-        label: 'Detected deposit',
-        value: info.depositedAmountText!,
-      ),
-    if (info.refundedAmountText != null)
-      SwapDetailField(
-        label: 'Provider refunded',
-        value: info.refundedAmountText!,
-      ),
-    if (info.refundReason != null)
-      SwapDetailField(label: 'Refund reason', value: info.refundReason!),
-  ];
-}
-
-String _deliverySummary(SwapIntentRecord record) {
-  final direction = record.direction;
-  final externalAsset = record.externalAsset;
-  if (direction == null || externalAsset == null) return 'prepared destination';
-  if (!direction.sendsZec) {
-    return 'ZEC arrives at your shielded address';
-  }
-  return '${externalAsset.symbol} is delivered to the external destination';
-}

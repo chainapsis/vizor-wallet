@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/activity/activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/activity/models/activity_row_data.dart';
 import 'package:zcash_wallet/src/features/activity/swap_activity_row_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -268,6 +269,7 @@ void main() {
   });
 
   test('maps persisted swap records to activity row items', () {
+    final createdAt = DateTime.utc(2026, 5, 7, 10);
     final updatedAt = DateTime.utc(2026, 5, 7, 10, 30);
     final checkedAt = DateTime.utc(2026, 5, 7, 10, 31);
     final item = swapActivityRowItemsFromRecords([
@@ -282,6 +284,7 @@ void main() {
         direction: SwapDirection.zecToExternal,
         externalAsset: SwapAsset.usdc,
         depositTxHash: 'zec-deposit-txid',
+        createdAt: createdAt,
         updatedAt: updatedAt,
         lastStatusCheckedAt: checkedAt,
       ),
@@ -295,7 +298,48 @@ void main() {
     expect(item.direction, SwapDirection.zecToExternal);
     expect(item.externalAsset, SwapAsset.usdc);
     expect(item.depositTxHash, 'zec-deposit-txid');
-    expect(item.activityTimestamp, updatedAt);
+    expect(item.activityTimestamp, createdAt);
     expect(item.lastStatusCheckedAt, checkedAt);
+  });
+
+  testWidgets('keeps completed swap row timestamp separate from receive leg', (
+    tester,
+  ) async {
+    ActivityRowData? row;
+    final createdAt = DateTime.now().subtract(const Duration(hours: 2));
+    final completedAt = DateTime.now().subtract(const Duration(minutes: 1));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppTheme(
+          data: AppThemeData.light,
+          child: Builder(
+            builder: (context) {
+              row = buildSwapActivityRow(
+                context: context,
+                item: SwapActivityRowItem(
+                  intentId: 'swap-complete',
+                  providerLabel: 'NEAR Intents',
+                  sellAmountText: '0.0030 ZEC',
+                  receiveEstimateText: '0.21 USDC',
+                  status: SwapIntentStatus.complete,
+                  direction: SwapDirection.zecToExternal,
+                  externalAsset: SwapAsset.usdc,
+                  activityTimestamp: createdAt,
+                  completedAt: completedAt,
+                ),
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(row!.timestampText, formatActivityTimestamp(createdAt));
+    expect(row!.childRows, hasLength(1));
+    expect(row!.childRows.single.title, 'USDC Deposited');
+    expect(row!.childRows.single.amountText, '+0.21 USDC');
+    expect(row!.childRows.single.timestampText, '1m ago');
   });
 }

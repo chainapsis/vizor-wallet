@@ -34,21 +34,11 @@ void main() {
       ),
     );
 
-    expect(intent.title, 'ZEC to USDC');
-    expect(intent.steps.map((step) => step.label), contains('Processing'));
     expect(intent.swapFeeText, 'Included in shown rate');
     expect(intent.totalFeesText, '0.00002 ZEC');
     expect(intent.realisedSlippageText, '0.000758 USDC (0.07%)');
     expect(intent.slippageToleranceText, '0.00003 ZEC (1.0%)');
     expect(intent.minimumReceiveText, '0.2079 USDC');
-    expect(_receiptValue(intent, 'Deposit tx'), 'deposit-txid');
-    expect(_receiptValue(intent, 'Provider status'), 'PROCESSING');
-    expect(_receiptValue(intent, 'Minimum deposit'), '0.0029 ZEC');
-    expect(_receiptValue(intent, 'Refund fee'), '0.0001 ZEC');
-    expect(
-      _receiptValue(intent, 'Broadcast status'),
-      'local storage failed after broadcast',
-    );
   });
 
   test('updates raw lifecycle facts from provider status snapshots', () {
@@ -113,7 +103,6 @@ void main() {
     expect(updated.updatedAt, checkedAt);
     expect(updated.completedAt, checkedAt);
     expect(updated.lastStatusCheckedAt, checkedAt);
-    expect(_receiptValue(updated, 'Provider status'), 'SUCCESS');
   });
 
   test(
@@ -142,6 +131,58 @@ void main() {
       expect(intent.completedAt, now);
     },
   );
+
+  test('expires restored pending deposit records without evidence', () {
+    final now = DateTime.utc(2026, 5, 7, 12, 1);
+    final intent = _intentFromRecord(
+      SwapIntentRecord(
+        id: 'swap-record',
+        providerLabel: 'NEAR Intents',
+        pairText: 'ZEC -> USDC',
+        sellAmountText: '0.0030 ZEC',
+        receiveEstimateText: '0.21 USDC',
+        status: SwapIntentStatus.awaitingDeposit,
+        nextAction: 'Deposit ZEC',
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: 't1deposit',
+        depositDeadline: DateTime.utc(2026, 5, 7, 12),
+        createdAt: DateTime.utc(2026, 5, 7, 10),
+        updatedAt: DateTime.utc(2026, 5, 7, 10),
+      ),
+      now: now,
+    );
+
+    expect(intent.status, SwapIntentStatus.expired);
+    expect(intent.nextAction, 'Start a fresh quote');
+    expect(intent.completedAt, now);
+  });
+
+  test('keeps restored pending deposit records live with tx evidence', () {
+    final intent = _intentFromRecord(
+      SwapIntentRecord(
+        id: 'swap-record',
+        providerLabel: 'NEAR Intents',
+        pairText: 'ZEC -> USDC',
+        sellAmountText: '0.0030 ZEC',
+        receiveEstimateText: '0.21 USDC',
+        status: SwapIntentStatus.awaitingDeposit,
+        nextAction: 'Deposit ZEC',
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: 't1deposit',
+        depositTxHash: 'local-deposit-txid',
+        depositDeadline: DateTime.utc(2026, 5, 7, 12),
+        createdAt: DateTime.utc(2026, 5, 7, 10),
+        updatedAt: DateTime.utc(2026, 5, 7, 10),
+      ),
+      now: DateTime.utc(2026, 5, 7, 12, 1),
+    );
+
+    expect(intent.status, SwapIntentStatus.awaitingDeposit);
+    expect(intent.status.isTerminal, false);
+    expect(intent.depositTxHash, 'local-deposit-txid');
+  });
 
   test('keeps expired pending deposit non-terminal when a local tx exists', () {
     final createdAt = DateTime.utc(2026, 5, 7, 10);
@@ -279,11 +320,6 @@ void main() {
     expect(updated.createdAt, createdAt);
     expect(updated.updatedAt, completedAt);
     expect(updated.completedAt, completedAt);
-    expect(_receiptValue(updated, 'Deposit tx'), 'deposit-txid');
-    expect(
-      _receiptValue(updated, 'Broadcast status'),
-      'local storage failed after broadcast',
-    );
   });
 
   test('persistence records force the scoped account uuid', () {
@@ -313,12 +349,8 @@ void main() {
   });
 }
 
-String _receiptValue(SwapIntent intent, String label) {
-  return intent.receipt.where((field) => field.label == label).single.value;
-}
-
-SwapIntent _intentFromRecord(SwapIntentRecord record) {
-  return swapIntentsFromRecords([record]).single;
+SwapIntent _intentFromRecord(SwapIntentRecord record, {DateTime? now}) {
+  return swapIntentsFromRecords([record], now: now).single;
 }
 
 SwapQuote _quoteWithDepositDeadline(DateTime deadline) {

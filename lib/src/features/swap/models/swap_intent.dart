@@ -1,5 +1,4 @@
 import '../domain/swap_contract.dart';
-import 'swap_presentation_models.dart';
 
 class SwapIntentRecord {
   const SwapIntentRecord({
@@ -117,7 +116,7 @@ class SwapIntentRecord {
   final DateTime? completedAt;
 
   DateTime? get activityTimestamp =>
-      updatedAt ?? createdAt ?? lastStatusCheckedAt;
+      createdAt ?? updatedAt ?? lastStatusCheckedAt;
 
   SwapIntentRecord copyWith({
     String? id,
@@ -205,16 +204,12 @@ class SwapIntentRecord {
 class SwapIntent {
   const SwapIntent({
     required this.id,
-    required this.title,
     required this.pair,
     required this.sellAmount,
     required this.receiveEstimate,
     required this.provider,
     required this.status,
     required this.nextAction,
-    required this.steps,
-    required this.exposure,
-    required this.receipt,
     this.sellAmountBaseUnits,
     this.direction,
     this.externalAsset,
@@ -246,16 +241,12 @@ class SwapIntent {
   });
 
   final String id;
-  final String title;
   final String pair;
   final String sellAmount;
   final String receiveEstimate;
   final String provider;
   final SwapIntentStatus status;
   final String nextAction;
-  final List<SwapStep> steps;
-  final List<SwapDetailField> exposure;
-  final List<SwapDetailField> receipt;
   final BigInt? sellAmountBaseUnits;
   final SwapDirection? direction;
   final SwapAsset? externalAsset;
@@ -289,16 +280,12 @@ class SwapIntent {
 
   SwapIntent copyWith({
     String? id,
-    String? title,
     String? pair,
     String? sellAmount,
     String? receiveEstimate,
     String? provider,
     SwapIntentStatus? status,
     String? nextAction,
-    List<SwapStep>? steps,
-    List<SwapDetailField>? exposure,
-    List<SwapDetailField>? receipt,
     BigInt? sellAmountBaseUnits,
     SwapDirection? direction,
     SwapAsset? externalAsset,
@@ -332,16 +319,12 @@ class SwapIntent {
   }) {
     return SwapIntent(
       id: id ?? this.id,
-      title: title ?? this.title,
       pair: pair ?? this.pair,
       sellAmount: sellAmount ?? this.sellAmount,
       receiveEstimate: receiveEstimate ?? this.receiveEstimate,
       provider: provider ?? this.provider,
       status: status ?? this.status,
       nextAction: nextAction ?? this.nextAction,
-      steps: steps ?? this.steps,
-      exposure: exposure ?? this.exposure,
-      receipt: receipt ?? this.receipt,
       sellAmountBaseUnits: sellAmountBaseUnits ?? this.sellAmountBaseUnits,
       direction: direction ?? this.direction,
       externalAsset: externalAsset ?? this.externalAsset,

@@ -551,7 +551,6 @@ class SwapNotifier extends Notifier<SwapState> {
       const nextAction = 'Sign and send the ZEC deposit with Keystone.';
       intent = intent.copyWith(
         nextAction: nextAction,
-        steps: swapStepsForStatus(intent.status, nextAction),
       );
     }
     log(

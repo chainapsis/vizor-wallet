@@ -374,16 +374,12 @@ SwapIntent _intent({
 }) {
   return SwapIntent(
     id: 'swap-activity',
-    title: 'ZEC to USDC',
     pair: pair,
     sellAmount: sellAmount,
     receiveEstimate: receiveEstimate,
     provider: 'NEAR Intents',
     status: status,
     nextAction: nextAction ?? 'Next action',
-    steps: const [],
-    exposure: const [],
-    receipt: const [],
     direction: direction,
     externalAsset: externalAsset,
     depositAddress: depositAddress,

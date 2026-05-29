@@ -247,6 +247,9 @@ class _FakeSwapActivityStore implements SwapActivityStore {
     required String accountUuid,
     required List<SwapIntentRecord> records,
   }) async {}
+
+  @override
+  Future<void> deleteForAccount({required String accountUuid}) async {}
 }
 
 class _CountingSwapActivityStore extends _FakeSwapActivityStore {

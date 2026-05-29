@@ -29,7 +29,6 @@ void main() {
   test('round-trips the swap activity fields needed for recovery', () async {
     final intent = SwapIntent(
       id: 't1deposit',
-      title: 'ZEC to USDC',
       pair: 'ZEC -> USDC',
       sellAmount: '1.5000 ZEC',
       sellAmountBaseUnits: BigInt.from(150000000),
@@ -37,23 +36,6 @@ void main() {
       provider: 'NEAR Intents',
       status: SwapIntentStatus.processing,
       nextAction: 'Swap is processing',
-      steps: const [
-        SwapStep(
-          label: 'Deposit observed',
-          state: SwapStepState.done,
-          evidence: 'tx submitted',
-        ),
-      ],
-      exposure: const [
-        SwapDetailField(
-          label: 'Third-party data',
-          value: 'solver sees deposit tx and route',
-        ),
-      ],
-      receipt: const [
-        SwapDetailField(label: 'Swap id', value: 't1deposit'),
-        SwapDetailField(label: 'Refund to', value: 'u1refund'),
-      ],
       direction: SwapDirection.zecToExternal,
       externalAsset: SwapAsset.usdc,
       depositAddress: 't1deposit',
@@ -172,6 +154,33 @@ void main() {
     expect(accountTwo.single.accountUuid, 'account-2');
   });
 
+  test('deletes persisted swap activity for one account', () async {
+    await activityStore.saveRecords(
+      accountUuid: 'account-1',
+      records: [
+        SwapIntentRecord.fromIntent(
+          _minimalIntent(id: 'swap-account-1', accountUuid: 'account-1'),
+        ),
+      ],
+    );
+    await activityStore.saveRecords(
+      accountUuid: 'account-2',
+      records: [
+        SwapIntentRecord.fromIntent(
+          _minimalIntent(id: 'swap-account-2', accountUuid: 'account-2'),
+        ),
+      ],
+    );
+
+    await activityStore.deleteForAccount(accountUuid: 'account-1');
+
+    expect(await activityStore.loadRecords(accountUuid: 'account-1'), isEmpty);
+    final accountTwo = await activityStore.loadRecords(
+      accountUuid: 'account-2',
+    );
+    expect(accountTwo.single.id, 'swap-account-2');
+  });
+
   test('persists swap activity in account-scoped secure storage', () async {
     final intent = _minimalIntent(
       id: 'swap-raw-record',
@@ -198,7 +207,6 @@ void main() {
     );
     expect(raw, isNot(contains('"title"')));
     expect(raw, isNot(contains('"steps"')));
-    expect(raw, isNot(contains('"exposure"')));
     expect(raw, isNot(contains('"receipt"')));
   });
 
@@ -363,16 +371,12 @@ void main() {
 SwapIntent _minimalIntent({required String id, required String accountUuid}) {
   return SwapIntent(
     id: id,
-    title: 'ZEC to USDC',
     pair: 'ZEC -> USDC',
     sellAmount: '1.0000 ZEC',
     receiveEstimate: '100.00 USDC',
     provider: 'NEAR Intents',
     status: SwapIntentStatus.processing,
     nextAction: 'Processing',
-    steps: const [],
-    exposure: const [],
-    receipt: const [],
     direction: SwapDirection.zecToExternal,
     externalAsset: SwapAsset.usdc,
     depositAddress: id,
