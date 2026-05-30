@@ -2192,11 +2192,13 @@ pub fn get_round_plan(
 
 /// Persist (insert or replace) the voter's ballot intent for one proposal.
 /// Pass `skipped: true` for `Decision::Skipped`; otherwise `choice` must be set.
+/// `num_options` is the proposal's declared option count.
 pub fn set_ballot_intent(
     db_path: String,
     wallet_id: String,
     round_id: String,
     proposal_id: u32,
+    num_options: u32,
     skipped: bool,
     choice: Option<u32>,
 ) -> Result<(), String> {
@@ -2210,7 +2212,7 @@ pub fn set_ballot_intent(
             })?;
             zcash_voting::session::Decision::Choice(c)
         };
-        db.set_ballot_intent(&round_id, proposal_id, decision)
+        db.set_ballot_intent(&round_id, proposal_id, decision, num_options)
             .map_err(|e| format!("set_ballot_intent failed: {e}"))
     })
 }
@@ -2343,7 +2345,7 @@ mod tests {
     #[test]
     fn cast_vote_wire_json_matches_vote_chain_shape() {
         let wire = vote_commitment_wire_json(ApiSignedVoteCommitment {
-            proposal_id: 42,
+            proposal_id: 7,
             choice: 1,
             vote_round_id: "00010203".to_string(),
             van_nullifier: vec![1],
@@ -2363,7 +2365,7 @@ mod tests {
 
         assert_eq!(
             wire,
-            r#"{"proof":"BA==","proposal_id":42,"r_vpk":"BQ==","van_nullifier":"AQ==","vote_auth_sig":"Bg==","vote_authority_note_new":"Ag==","vote_comm_tree_anchor_height":77,"vote_commitment":"Aw==","vote_round_id":"AAECAw=="}"#
+            r#"{"proof":"BA==","proposal_id":7,"r_vpk":"BQ==","van_nullifier":"AQ==","vote_auth_sig":"Bg==","vote_authority_note_new":"Ag==","vote_comm_tree_anchor_height":77,"vote_commitment":"Aw==","vote_round_id":"AAECAw=="}"#
         );
     }
 
@@ -2371,7 +2373,7 @@ mod tests {
     fn share_wire_json_matches_helper_shape_for_live_and_recovery_payloads() {
         let payload = ApiVoteSharePayload {
             shares_hash: vec![1],
-            proposal_id: 42,
+            proposal_id: 7,
             vote_decision: 2,
             encrypted_share: ApiWireEncryptedShare {
                 ciphertext1: vec![3],
@@ -2395,14 +2397,14 @@ mod tests {
             primary_blind: vec![9],
         };
         let live = vote_share_wire_json(payload, Some(99), 123).unwrap();
-        let expected = r#"{"all_enc_shares":[{"c1":"Aw==","c2":"BA==","share_index":1},{"c1":"BQ==","c2":"Bg==","share_index":2}],"enc_share":{"c1":"Aw==","c2":"BA==","share_index":1},"primary_blind":"CQ==","proposal_id":42,"share_comms":["Bw==","CA=="],"share_index":1,"shares_hash":"AQ==","submit_at":123,"tree_position":99,"vote_decision":2}"#;
+        let expected = r#"{"all_enc_shares":[{"c1":"Aw==","c2":"BA==","share_index":1},{"c1":"BQ==","c2":"Bg==","share_index":2}],"enc_share":{"c1":"Aw==","c2":"BA==","share_index":1},"primary_blind":"CQ==","proposal_id":7,"share_comms":["Bw==","CA=="],"share_index":1,"shares_hash":"AQ==","submit_at":123,"tree_position":99,"vote_decision":2}"#;
         assert_eq!(live, expected);
 
         let recovery_json =
             zcash_voting::vote::serialize_recovery(&zcash_voting::vote::VoteRecoveryBundle {
                 vote_round_id: "00".repeat(32),
                 bundle_index: 0,
-                proposal_id: 42,
+                proposal_id: 7,
                 vote_decision: 2,
                 anchor_height: 10,
                 vc_tree_position: 55,
@@ -2436,9 +2438,9 @@ mod tests {
                 share_comms: vec![[7; 32], [8; 32]],
             })
             .unwrap();
-        let recovered = recovered_vote_share_wire_json(recovery_json, 42, 1, 99, 0).unwrap();
+        let recovered = recovered_vote_share_wire_json(recovery_json, 7, 1, 99, 0).unwrap();
         let recovered: serde_json::Value = serde_json::from_str(&recovered).unwrap();
-        assert_eq!(recovered["proposal_id"], 42);
+        assert_eq!(recovered["proposal_id"], 7);
         assert_eq!(recovered["vote_decision"], 2);
         assert_eq!(recovered["share_index"], 1);
         assert_eq!(recovered["tree_position"], 99);
@@ -2454,7 +2456,7 @@ mod tests {
     fn share_wire_json_rejects_json_unsafe_integer_fields() {
         let payload = ApiVoteSharePayload {
             shares_hash: vec![1],
-            proposal_id: 42,
+            proposal_id: 7,
             vote_decision: 2,
             encrypted_share: ApiWireEncryptedShare {
                 ciphertext1: vec![3],

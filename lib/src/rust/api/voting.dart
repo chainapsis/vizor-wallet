@@ -536,10 +536,9 @@ Future<void> resetTreeClient({
 
 /// Clear process-local voting state for a wallet or round.
 ///
-/// Passing a non-empty round ID clears prepared delegation PCZTs only for that
-/// round. Passing `None` or an empty round ID performs account-wide cleanup:
-/// prepared PCZTs for the wallet are cleared and the cached vote-tree client is
-/// dropped.
+/// Passing a non-empty round ID cancels in-flight work for that round. Passing
+/// `None` or an empty round ID also drops the cached vote-tree client for the
+/// wallet.
 Future<void> resetVotingSessionState({
   required String dbPath,
   required String walletId,
@@ -811,11 +810,13 @@ Future<ApiRoundPlan> getRoundPlan({
 
 /// Persist (insert or replace) the voter's ballot intent for one proposal.
 /// Pass `skipped: true` for `Decision::Skipped`; otherwise `choice` must be set.
+/// `num_options` is the proposal's declared option count.
 Future<void> setBallotIntent({
   required String dbPath,
   required String walletId,
   required String roundId,
   required int proposalId,
+  required int numOptions,
   required bool skipped,
   int? choice,
 }) => RustLib.instance.api.crateApiVotingSetBallotIntent(
@@ -823,6 +824,7 @@ Future<void> setBallotIntent({
   walletId: walletId,
   roundId: roundId,
   proposalId: proposalId,
+  numOptions: numOptions,
   skipped: skipped,
   choice: choice,
 );

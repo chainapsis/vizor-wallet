@@ -743,6 +743,7 @@ abstract class RustLibApi extends BaseApi {
     required String walletId,
     required String roundId,
     required int proposalId,
+    required int numOptions,
     required bool skipped,
     int? choice,
   });
@@ -5065,6 +5066,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String walletId,
     required String roundId,
     required int proposalId,
+    required int numOptions,
     required bool skipped,
     int? choice,
   }) {
@@ -5076,6 +5078,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(walletId, serializer);
           sse_encode_String(roundId, serializer);
           sse_encode_u_32(proposalId, serializer);
+          sse_encode_u_32(numOptions, serializer);
           sse_encode_bool(skipped, serializer);
           sse_encode_opt_box_autoadd_u_32(choice, serializer);
           pdeCallFfi(
@@ -5090,7 +5093,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVotingSetBallotIntentConstMeta,
-        argValues: [dbPath, walletId, roundId, proposalId, skipped, choice],
+        argValues: [
+          dbPath,
+          walletId,
+          roundId,
+          proposalId,
+          numOptions,
+          skipped,
+          choice,
+        ],
         apiImpl: this,
       ),
     );
@@ -5104,6 +5115,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "walletId",
           "roundId",
           "proposalId",
+          "numOptions",
           "skipped",
           "choice",
         ],

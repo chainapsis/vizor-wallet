@@ -478,6 +478,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required String walletId,
     required String roundId,
     required int proposalId,
+    required int numOptions,
     required bool skipped,
     int? choice,
   }) async {}

@@ -123,17 +123,12 @@ where
             "voting vote: starting proof generation (bundle_index={bundle_index}, proposal_id={})",
             draft.proposal_id
         );
+        let upstream_draft = upstream_draft_vote(&draft);
         let commit = zcash_voting::vote::commit(
             &voting_db,
             round_id,
             bundle_index,
-            &zcash_voting::vote::DraftVote {
-                proposal_id: draft.proposal_id,
-                choice: draft.choice,
-                num_options: draft.num_options,
-                vc_tree_position: draft.vc_tree_position,
-                single_share: draft.single_share,
-            },
+            &upstream_draft,
             &zcash_voting::vote::VanWitness {
                 auth_path: van_auth_path,
                 position: van_witness.position,
@@ -300,30 +295,21 @@ pub fn get_votes(
 }
 
 fn validate_draft_votes(draft_votes: &[DraftVote]) -> Result<(), String> {
-    if draft_votes.is_empty() {
-        return Err("draft_votes must not be empty".to_string());
+    let upstream = draft_votes
+        .iter()
+        .map(upstream_draft_vote)
+        .collect::<Vec<_>>();
+    zcash_voting::vote::validate_draft_votes(&upstream).map_err(|e| e.to_string())
+}
+
+fn upstream_draft_vote(draft: &DraftVote) -> zcash_voting::vote::DraftVote {
+    zcash_voting::vote::DraftVote {
+        proposal_id: draft.proposal_id,
+        choice: draft.choice,
+        num_options: draft.num_options,
+        vc_tree_position: draft.vc_tree_position,
+        single_share: draft.single_share,
     }
-    for draft in draft_votes {
-        if draft.proposal_id < 1 || draft.proposal_id > 15 {
-            return Err(format!(
-                "proposal_id must be 1..15, got {}",
-                draft.proposal_id
-            ));
-        }
-        if draft.num_options < 2 || draft.num_options > 8 {
-            return Err(format!(
-                "num_options must be 2..8, got {}",
-                draft.num_options
-            ));
-        }
-        if draft.choice >= draft.num_options {
-            return Err(format!(
-                "choice must be in [0, {}), got {}",
-                draft.num_options, draft.choice
-            ));
-        }
-    }
-    Ok(())
 }
 
 fn van_auth_path_array(witness: &VanWitness) -> Result<[[u8; 32]; VAN_AUTH_PATH_LEN], String> {
@@ -443,7 +429,7 @@ mod tests {
             single_share: false,
         }])
         .unwrap_err()
-        .contains("choice"));
+        .contains("vote_decision"));
     }
 
     #[test]

@@ -24,6 +24,7 @@ abstract interface class VotingRecoveryApi {
     required String walletId,
     required String roundId,
     required int proposalId,
+    required int numOptions,
     required bool skipped,
     int? choice,
   });
@@ -83,6 +84,7 @@ class RustVotingRecoveryApi implements VotingRecoveryApi {
     required String walletId,
     required String roundId,
     required int proposalId,
+    required int numOptions,
     required bool skipped,
     int? choice,
   }) {
@@ -91,6 +93,7 @@ class RustVotingRecoveryApi implements VotingRecoveryApi {
       walletId: walletId,
       roundId: roundId,
       proposalId: proposalId,
+      numOptions: numOptions,
       skipped: skipped,
       choice: choice,
     );

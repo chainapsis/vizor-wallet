@@ -513,8 +513,22 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
+    final round = _roundStatusJson()
+      ..['proposals'] = [
+        {
+          'proposal_id': 1,
+          'title': 'First proposal',
+          'options': ['Yes', 'No'],
+        },
+        {
+          'proposal_id': 2,
+          'title': 'Second proposal',
+          'options': ['Aye', 'Nay', 'Abstain'],
+        },
+      ];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round}
         ..addAll({
           '/shielded-vote/v1/cast-vote': {
             'tx_hash': 'vote-tx',
@@ -919,8 +933,22 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
+    final round = _roundStatusJson()
+      ..['proposals'] = [
+        {
+          'proposal_id': 1,
+          'title': 'First proposal',
+          'options': ['Yes', 'No'],
+        },
+        {
+          'proposal_id': 2,
+          'title': 'Second proposal',
+          'options': ['Aye', 'Nay', 'Abstain'],
+        },
+      ];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round}
         ..addAll({
           '/shielded-vote/v1/delegate-vote': {
             'tx_hash': 'delegation-tx',
@@ -984,6 +1012,7 @@ void main() {
       find.text('Choose at least one vote before submitting.'),
       findsNothing,
     );
+    expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
   });
 
   testWidgets('hardware status screen scans Keystone signature and submits', (
@@ -994,8 +1023,22 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
+    final round = _roundStatusJson()
+      ..['proposals'] = [
+        {
+          'proposal_id': 1,
+          'title': 'First proposal',
+          'options': ['Yes', 'No'],
+        },
+        {
+          'proposal_id': 2,
+          'title': 'Second proposal',
+          'options': ['Aye', 'Nay', 'Abstain'],
+        },
+      ];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round}
         ..addAll({
           '/shielded-vote/v1/delegate-vote': {
             'tx_hash': 'delegation-tx',
@@ -1091,6 +1134,7 @@ void main() {
       ),
       isTrue,
     );
+    expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
   });
 
   testWidgets('hardware status screen can skip unsigned Keystone bundles', (
@@ -1101,8 +1145,22 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
+    final round = _roundStatusJson()
+      ..['proposals'] = [
+        {
+          'proposal_id': 1,
+          'title': 'First proposal',
+          'options': ['Yes', 'No'],
+        },
+        {
+          'proposal_id': 2,
+          'title': 'Second proposal',
+          'options': ['Aye', 'Nay', 'Abstain'],
+        },
+      ];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round}
         ..addAll({
           '/shielded-vote/v1/delegate-vote': {
             'tx_hash': 'delegation-tx',
@@ -1200,6 +1258,7 @@ void main() {
       ),
       isTrue,
     );
+    expect(recoveryApi.ballotIntents, ['1:2:false:0', '2:3:true:null']);
   });
 
   testWidgets('hardware status screen scrolls in a short window', (
@@ -1702,6 +1761,7 @@ class _FakeVotingRecoveryApi implements VotingRecoveryApi {
     required String walletId,
     required String roundId,
     required int proposalId,
+    required int numOptions,
     required bool skipped,
     int? choice,
   }) async {}
@@ -1743,10 +1803,11 @@ class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
     required String walletId,
     required String roundId,
     required int proposalId,
+    required int numOptions,
     required bool skipped,
     int? choice,
   }) async {
-    ballotIntents.add('$proposalId:$skipped:${choice ?? 'null'}');
+    ballotIntents.add('$proposalId:$numOptions:$skipped:${choice ?? 'null'}');
   }
 }
 

@@ -558,6 +558,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> castVotes({
     required List<rust_voting.ApiDraftVote> draftVotes,
     List<int>? allProposalIds,
+    Map<int, int>? proposalOptionCounts,
   }) {
     return _enqueue(() async {
       final current = await future;
@@ -601,6 +602,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }.toList()..sort();
         for (final proposalId in intentProposalIds) {
           final draftVote = draftVotesByProposal[proposalId];
+          final numOptions =
+              draftVote?.numOptions ?? proposalOptionCounts?[proposalId];
+          if (numOptions == null) {
+            _setError(
+              'Voting proposal details are missing. Retry after the round reloads.',
+              cause: StateError(
+                'missing numOptions for proposal_id $proposalId',
+              ),
+            );
+            return;
+          }
           await ref
               .read(votingRecoveryServiceProvider)
               .setBallotIntent(
@@ -608,6 +620,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 walletId: context.accountUuid,
                 roundId: context.round.roundId,
                 proposalId: proposalId,
+                numOptions: numOptions,
                 skipped: draftVote == null,
                 choice: draftVote?.choice,
               );
