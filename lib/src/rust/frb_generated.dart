@@ -485,13 +485,6 @@ abstract class RustLibApi extends BaseApi {
     String? accountUuid,
   });
 
-  Future<List<ApiShareDelegationRecord>>
-  crateApiVotingGetUnconfirmedShareDelegations({
-    required String dbPath,
-    required String walletId,
-    required String roundId,
-  });
-
   Future<String> crateApiWalletGetUnifiedAddress({
     required String dbPath,
     required String network,
@@ -3447,44 +3440,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "get_transparent_address",
         argNames: ["dbPath", "network", "accountUuid"],
-      );
-
-  @override
-  Future<List<ApiShareDelegationRecord>>
-  crateApiVotingGetUnconfirmedShareDelegations({
-    required String dbPath,
-    required String walletId,
-    required String roundId,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(dbPath, serializer);
-          sse_encode_String(walletId, serializer);
-          sse_encode_String(roundId, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 64,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_list_api_share_delegation_record,
-          decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiVotingGetUnconfirmedShareDelegationsConstMeta,
-        argValues: [dbPath, walletId, roundId],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiVotingGetUnconfirmedShareDelegationsConstMeta =>
-      const TaskConstMeta(
-        debugName: "get_unconfirmed_share_delegations",
-        argNames: ["dbPath", "walletId", "roundId"],
       );
 
   @override

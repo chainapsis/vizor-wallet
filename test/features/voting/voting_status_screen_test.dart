@@ -17,6 +17,7 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confi
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
+import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
@@ -893,7 +894,13 @@ void main() {
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
         votes: const [
-          rust_voting.ApiVoteRecord(proposalId: 1, bundleIndex: 0, choice: 0),
+          rust_voting.ApiVoteRecovery(
+            proposalId: 1,
+            bundleIndex: 0,
+            choice: 0,
+            phase: VotingWorkflowPhase.confirmed,
+            hasCommitmentBundle: true,
+          ),
         ],
       );
     final container = _statusContainer(
@@ -1828,8 +1835,7 @@ rust_voting.ApiRoundRecoveryState _recoveryState({
       phase: current?.phase ?? VotingWorkflowPhase.submittedVote,
       txHash: record.txHash,
       vcTreePosition: current?.vcTreePosition,
-      hasCommitmentBundle:
-          current?.hasCommitmentBundle ?? false,
+      hasCommitmentBundle: current?.hasCommitmentBundle ?? false,
     );
   }
 
@@ -2686,14 +2692,13 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       for (final share in current.unconfirmedShareDelegations)
         if (!matches(share)) share,
     ];
-    recoveryApi.state = _recoveryState(
+    recoveryApi.state = rust_voting.ApiRoundRecoveryState(
+      roundId: current.roundId,
       bundleCount: current.bundleCount,
-      delegationTxHashes: current.delegation,
+      delegation: current.delegation,
       votes: current.votes,
-      voteWorkflows: current.votes,
-      voteTxHashes: current.votes,
       commitmentBundles: current.commitmentBundles,
-      shareWorkflows: current.shares,
+      shares: current.shares,
       shareDelegations: [
         for (final share in current.shareDelegations)
           if (matches(share)) confirmed(share) else share,
