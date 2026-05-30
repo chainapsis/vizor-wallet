@@ -5,29 +5,10 @@
 
 import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'types.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
-
-class BundleSetupResultView {
-  final int bundleCount;
-  final BigInt eligibleWeightZatoshi;
-
-  const BundleSetupResultView({
-    required this.bundleCount,
-    required this.eligibleWeightZatoshi,
-  });
-
-  @override
-  int get hashCode => bundleCount.hashCode ^ eligibleWeightZatoshi.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is BundleSetupResultView &&
-          runtimeType == other.runtimeType &&
-          bundleCount == other.bundleCount &&
-          eligibleWeightZatoshi == other.eligibleWeightZatoshi;
-}
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BoundedU32`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `try_from`, `try_from`
 
 class CompletedVoteChoiceView {
   final int proposalId;
@@ -263,61 +244,6 @@ class DraftVote {
           numOptions == other.numOptions &&
           vcTreePosition == other.vcTreePosition &&
           singleShare == other.singleShare;
-}
-
-class KeystoneDelegationRequestView {
-  final Uint8List pcztBytes;
-  final Uint8List redactedPcztBytes;
-  final Uint8List pcztSighash;
-  final Uint8List rk;
-  final int actionIndex;
-  final String displayMemo;
-  final BigInt eligibleWeightZatoshi;
-  final BigInt delegatedWeightZatoshi;
-  final int bundleCount;
-  final int bundleIndex;
-
-  const KeystoneDelegationRequestView({
-    required this.pcztBytes,
-    required this.redactedPcztBytes,
-    required this.pcztSighash,
-    required this.rk,
-    required this.actionIndex,
-    required this.displayMemo,
-    required this.eligibleWeightZatoshi,
-    required this.delegatedWeightZatoshi,
-    required this.bundleCount,
-    required this.bundleIndex,
-  });
-
-  @override
-  int get hashCode =>
-      pcztBytes.hashCode ^
-      redactedPcztBytes.hashCode ^
-      pcztSighash.hashCode ^
-      rk.hashCode ^
-      actionIndex.hashCode ^
-      displayMemo.hashCode ^
-      eligibleWeightZatoshi.hashCode ^
-      delegatedWeightZatoshi.hashCode ^
-      bundleCount.hashCode ^
-      bundleIndex.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is KeystoneDelegationRequestView &&
-          runtimeType == other.runtimeType &&
-          pcztBytes == other.pcztBytes &&
-          redactedPcztBytes == other.redactedPcztBytes &&
-          pcztSighash == other.pcztSighash &&
-          rk == other.rk &&
-          actionIndex == other.actionIndex &&
-          displayMemo == other.displayMemo &&
-          eligibleWeightZatoshi == other.eligibleWeightZatoshi &&
-          delegatedWeightZatoshi == other.delegatedWeightZatoshi &&
-          bundleCount == other.bundleCount &&
-          bundleIndex == other.bundleIndex;
 }
 
 class KeystoneSignatureRecord {
@@ -595,31 +521,6 @@ class ShareDelegationRecordView {
           createdAt == other.createdAt;
 }
 
-class ShareSubmissionPlanView {
-  final BigInt submitAt;
-  final int targetCount;
-  final List<String> targetServers;
-
-  const ShareSubmissionPlanView({
-    required this.submitAt,
-    required this.targetCount,
-    required this.targetServers,
-  });
-
-  @override
-  int get hashCode =>
-      submitAt.hashCode ^ targetCount.hashCode ^ targetServers.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ShareSubmissionPlanView &&
-          runtimeType == other.runtimeType &&
-          submitAt == other.submitAt &&
-          targetCount == other.targetCount &&
-          targetServers == other.targetServers;
-}
-
 class ShareWorkflowRecoveryView {
   final int bundleIndex;
   final int proposalId;
@@ -741,31 +642,6 @@ class SignedVoteCommitmentsView {
           runtimeType == other.runtimeType &&
           bundleIndex == other.bundleIndex &&
           commitments == other.commitments;
-}
-
-class VanWitnessView {
-  final List<Uint8List> authPath;
-  final int position;
-  final int anchorHeight;
-
-  const VanWitnessView({
-    required this.authPath,
-    required this.position,
-    required this.anchorHeight,
-  });
-
-  @override
-  int get hashCode =>
-      authPath.hashCode ^ position.hashCode ^ anchorHeight.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is VanWitnessView &&
-          runtimeType == other.runtimeType &&
-          authPath == other.authPath &&
-          position == other.position &&
-          anchorHeight == other.anchorHeight;
 }
 
 class VoteCommitmentWire {
@@ -930,10 +806,10 @@ class VoteShareWire {
   final String sharesHash;
   final int proposalId;
   final int voteDecision;
-  final WireEncryptedShareJson encryptedShare;
+  final WireEncryptedShare encryptedShare;
   final int shareIndex;
   final BigInt vcTreePosition;
-  final List<WireEncryptedShareJson> allEncryptedShares;
+  final List<WireEncryptedShare> allEncryptedShares;
   final List<String> shareComms;
   final String primaryBlind;
   final BigInt submitAt;
@@ -1097,28 +973,4 @@ class VotingRoundParams {
           eaPk == other.eaPk &&
           ncRoot == other.ncRoot &&
           nullifierImtRoot == other.nullifierImtRoot;
-}
-
-class WireEncryptedShareJson {
-  final String c1;
-  final String c2;
-  final int shareIndex;
-
-  const WireEncryptedShareJson({
-    required this.c1,
-    required this.c2,
-    required this.shareIndex,
-  });
-
-  @override
-  int get hashCode => c1.hashCode ^ c2.hashCode ^ shareIndex.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is WireEncryptedShareJson &&
-          runtimeType == other.runtimeType &&
-          c1 == other.c1 &&
-          c2 == other.c2 &&
-          shareIndex == other.shareIndex;
 }

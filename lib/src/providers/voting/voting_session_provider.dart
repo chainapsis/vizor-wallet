@@ -442,7 +442,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
       final context = await _loadContext(_roundId);
       final rust = ref.read(votingRustApiProvider);
-      final signatures = Map<int, rust_wire.KeystoneSignatureRecordView>.from(
+      final signatures = Map<int, rust_wire.KeystoneSignatureRecord>.from(
         current.keystoneSignatures,
       );
       if (signatures.isEmpty) {
@@ -737,7 +737,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<void> castVotes({
-    required List<rust_wire.DraftVoteView> draftVotes,
+    required List<rust_wire.DraftVote> draftVotes,
     List<int>? allProposalIds,
     Map<int, int>? proposalOptionCounts,
   }) {
@@ -1585,8 +1585,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return vcTreePositions;
   }
 
-  Future<Map<int, rust_wire.KeystoneSignatureRecordView>>
-  _loadKeystoneSignatures(_VotingSessionContext context) async {
+  Future<Map<int, rust_wire.KeystoneSignatureRecord>> _loadKeystoneSignatures(
+    _VotingSessionContext context,
+  ) async {
     final records = await ref
         .read(votingRustApiProvider)
         .getKeystoneSignatures(
@@ -2390,7 +2391,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         phase: VotingSessionPhase.readyToDelegate,
         resumePlan: refreshedPlan,
         roundPlan: refreshedRoundPlan,
-        eligibleWeightZatoshi: bundleSetup.eligibleWeightZatoshi,
+        eligibleWeightZatoshi: bundleSetup.eligibleWeight,
         isHardwareAccount: context.isHardwareAccount,
       ),
     );
@@ -2894,7 +2895,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   static void _verifyKeystoneDelegationSignature({
     required rust_wire.SignedDelegationPayloadView submission,
-    required rust_wire.KeystoneSignatureRecordView signature,
+    required rust_wire.KeystoneSignatureRecord signature,
     required int bundleIndex,
   }) {
     final wire = submission.submission;
@@ -2929,7 +2930,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 class _DraftVoteWork {
   const _DraftVoteWork({required this.draftVote, required this.bundleIndexes});
 
-  final rust_wire.DraftVoteView draftVote;
+  final rust_wire.DraftVote draftVote;
   final List<int> bundleIndexes;
 }
 

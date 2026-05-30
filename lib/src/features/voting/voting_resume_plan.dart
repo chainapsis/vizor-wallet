@@ -77,7 +77,7 @@ class VotingResumePlan {
   final UnmodifiableMapView<VotingVoteKey, String> voteTxHashesByKey;
   final UnmodifiableMapView<
     VotingVoteKey,
-    rust_wire.CommitmentBundleRecoveryView
+    rust_wire.RecoverableCommitmentBundle
   >
   commitmentBundlesByKey;
   final UnmodifiableListView<VotingVoteKey> pendingVoteSubmissionKeys;
@@ -96,7 +96,7 @@ class VotingResumePlan {
     required Map<VotingVoteKey, rust_wire.VoteRecoveryView> votesByKey,
     required Map<VotingVoteKey, String> votePhasesByKey,
     required Map<VotingVoteKey, String> voteTxHashesByKey,
-    required Map<VotingVoteKey, rust_wire.CommitmentBundleRecoveryView>
+    required Map<VotingVoteKey, rust_wire.RecoverableCommitmentBundle>
     commitmentBundlesByKey,
     required List<VotingVoteKey> pendingVoteSubmissionKeys,
     required List<VotingVoteKey> submittedVoteConfirmationKeys,
@@ -165,7 +165,7 @@ class VotingResumePlan {
       submittedVoteConfirmationKeys.isNotEmpty ||
       hasBlockingShareWork;
 
-  rust_wire.CommitmentBundleRecoveryView? commitmentBundleFor(
+  rust_wire.RecoverableCommitmentBundle? commitmentBundleFor(
     VotingVoteKey key,
   ) => commitmentBundlesByKey[key];
 
