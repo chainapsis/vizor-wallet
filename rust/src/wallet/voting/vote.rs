@@ -1,10 +1,11 @@
 use crate::wallet::network::WalletNetwork;
 
-use secrecy::{ExposeSecret, SecretVec};
+use secrecy::SecretVec;
 use zcash_voting::validate_bundle_index;
 
 use super::{
-    progress::VotingWorkCancellation, state::open_voting_db, tree_sync::VanWitness, voting_network,
+    hotkey::voting_hotkey_from_secret, progress::VotingWorkCancellation, state::open_voting_db,
+    tree_sync::VanWitness,
 };
 
 const VAN_AUTH_PATH_LEN: usize = 24;
@@ -104,6 +105,7 @@ where
         .map_err(|e| format!("get_bundle_count failed: {e}"))?;
     validate_bundle_index(bundle_count, bundle_index, "voting").map_err(|e| e.to_string())?;
     let van_auth_path = van_auth_path_array(&van_witness)?;
+    let voting_hotkey = voting_hotkey_from_secret(hotkey_seed, network)?;
     let mut commitments = Vec::with_capacity(draft_votes.len());
 
     for draft in draft_votes {
@@ -137,11 +139,7 @@ where
                 position: van_witness.position,
                 anchor_height: van_witness.anchor_height,
             },
-            zcash_voting::vote::VoteSigner::Seed {
-                seed: hotkey_seed.expose_secret(),
-                network: voting_network(network),
-                account_index: 0,
-            },
+            zcash_voting::vote::VoteSigner::hotkey(&voting_hotkey),
             &reporter,
         )
         .map_err(|e| format!("vote commit failed: {e}"))?;

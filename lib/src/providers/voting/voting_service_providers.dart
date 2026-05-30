@@ -292,7 +292,7 @@ abstract interface class VotingRustApi {
     int? maxRealNotesPerBundle,
   });
 
-  Future<List<int>> generateVotingHotkey();
+  Future<List<int>> generateVotingHotkey({required String network});
 
   Future<rust_voting.ApiKeystoneDelegationRequest>
   buildKeystoneDelegationRequest({
@@ -519,6 +519,7 @@ abstract interface class VotingRustApi {
     required List<int> seedBytes,
     required String roundId,
     required String accountUuid,
+    required String network,
   });
 }
 
@@ -609,8 +610,8 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<List<int>> generateVotingHotkey() {
-    return rust_voting.generateVotingHotkey();
+  Future<List<int>> generateVotingHotkey({required String network}) {
+    return rust_voting.generateVotingHotkey(network: network);
   }
 
   @override
@@ -1072,11 +1073,13 @@ class FrbVotingRustApi implements VotingRustApi {
     required List<int> seedBytes,
     required String roundId,
     required String accountUuid,
+    required String network,
   }) {
     return rust_voting.deriveVotingHotkey(
       seedBytes: seedBytes,
       roundId: roundId,
       accountUuid: accountUuid,
+      network: network,
     );
   }
 }

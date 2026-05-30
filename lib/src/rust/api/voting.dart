@@ -112,10 +112,12 @@ Future<Uint8List> deriveVotingHotkey({
   required List<int> seedBytes,
   required String roundId,
   required String accountUuid,
+  required String network,
 }) => RustLib.instance.api.crateApiVotingDeriveVotingHotkey(
   seedBytes: seedBytes,
   roundId: roundId,
   accountUuid: accountUuid,
+  network: network,
 );
 
 /// Generate opaque voting hotkey bytes for a hardware account.
@@ -123,8 +125,8 @@ Future<Uint8List> deriveVotingHotkey({
 /// Hardware accounts cannot expose their wallet seed to derive the deterministic
 /// software hotkey, so the app persists this random per-round hotkey in secure
 /// storage and reuses it for vote commitment signing.
-Future<Uint8List> generateVotingHotkey() =>
-    RustLib.instance.api.crateApiVotingGenerateVotingHotkey();
+Future<Uint8List> generateVotingHotkey({required String network}) =>
+    RustLib.instance.api.crateApiVotingGenerateVotingHotkey(network: network);
 
 /// Initialize or load a voting round in the local voting database.
 ///

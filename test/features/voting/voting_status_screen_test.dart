@@ -1959,7 +1959,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<List<int>> generateVotingHotkey() async {
+  Future<List<int>> generateVotingHotkey({required String network}) async {
     return [42, 43, 44];
   }
 

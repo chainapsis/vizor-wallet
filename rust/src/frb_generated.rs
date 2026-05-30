@@ -1106,6 +1106,7 @@ fn wire__crate__api__voting__derive_voting_hotkey_impl(
             let api_seed_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_round_id = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
+            let api_network = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -1113,6 +1114,7 @@ fn wire__crate__api__voting__derive_voting_hotkey_impl(
                         api_seed_bytes,
                         api_round_id,
                         api_account_uuid,
+                        api_network,
                     )?;
                     Ok(output_ok)
                 })())
@@ -1663,10 +1665,11 @@ fn wire__crate__api__voting__generate_voting_hotkey_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_network = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::voting::generate_voting_hotkey()?;
+                    let output_ok = crate::api::voting::generate_voting_hotkey(api_network)?;
                     Ok(output_ok)
                 })())
             }

@@ -3322,7 +3322,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<List<int>> generateVotingHotkey() async {
+  Future<List<int>> generateVotingHotkey({required String network}) async {
     generateVotingHotkeyCalls++;
     return [42, 43, 44];
   }
@@ -3895,8 +3895,14 @@ class FakeVotingRustApi implements VotingRustApi {
     required List<int> seedBytes,
     required String roundId,
     required String accountUuid,
+    required String network,
   }) async {
-    return [roundId.length, accountUuid.length, ...seedBytes.take(2)];
+    return [
+      roundId.length,
+      accountUuid.length,
+      network.length,
+      ...seedBytes.take(2),
+    ];
   }
 }
 

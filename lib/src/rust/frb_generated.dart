@@ -278,6 +278,7 @@ abstract class RustLibApi extends BaseApi {
     required List<int> seedBytes,
     required String roundId,
     required String accountUuid,
+    required String network,
   });
 
   Future<void> crateApiSyncDiscardProposal({
@@ -365,7 +366,9 @@ abstract class RustLibApi extends BaseApi {
     required int anchorHeight,
   });
 
-  Future<Uint8List> crateApiVotingGenerateVotingHotkey();
+  Future<Uint8List> crateApiVotingGenerateVotingHotkey({
+    required String network,
+  });
 
   Future<WalletBalance> crateApiSyncGetBalance({
     required String dbPath,
@@ -2100,6 +2103,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<int> seedBytes,
     required String roundId,
     required String accountUuid,
+    required String network,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -2108,6 +2112,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_list_prim_u_8_loose(seedBytes, serializer);
           sse_encode_String(roundId, serializer);
           sse_encode_String(accountUuid, serializer);
+          sse_encode_String(network, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2120,7 +2125,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVotingDeriveVotingHotkeyConstMeta,
-        argValues: [seedBytes, roundId, accountUuid],
+        argValues: [seedBytes, roundId, accountUuid, network],
         apiImpl: this,
       ),
     );
@@ -2129,7 +2134,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiVotingDeriveVotingHotkeyConstMeta =>
       const TaskConstMeta(
         debugName: "derive_voting_hotkey",
-        argNames: ["seedBytes", "roundId", "accountUuid"],
+        argNames: ["seedBytes", "roundId", "accountUuid", "network"],
       );
 
   @override
@@ -2694,11 +2699,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<Uint8List> crateApiVotingGenerateVotingHotkey() {
+  Future<Uint8List> crateApiVotingGenerateVotingHotkey({
+    required String network,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(network, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2711,14 +2719,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVotingGenerateVotingHotkeyConstMeta,
-        argValues: [],
+        argValues: [network],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateApiVotingGenerateVotingHotkeyConstMeta =>
-      const TaskConstMeta(debugName: "generate_voting_hotkey", argNames: []);
+      const TaskConstMeta(
+        debugName: "generate_voting_hotkey",
+        argNames: ["network"],
+      );
 
   @override
   Future<WalletBalance> crateApiSyncGetBalance({

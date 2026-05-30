@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use prost::Message;
 use secrecy::{ExposeSecret, SecretVec};
-use zcash_protocol::consensus::{NetworkConstants, Parameters};
 
 use crate::wallet::{
     keys,
@@ -11,7 +10,7 @@ use crate::wallet::{
 };
 
 use super::{
-    hotkey::{derive_hotkey_raw_orchard_address, hotkey_raw_orchard_address_from_secret},
+    hotkey::{derive_voting_hotkey, voting_hotkey_from_secret},
     progress::VotingWorkCancellation,
     state::{ensure_voting_round, open_voting_db},
     voting_network,
@@ -57,7 +56,7 @@ async fn gather_delegation_inputs(
         zcash_voting::delegate::gather_delegation_wallet_inputs(GatherDelegationWalletParams {
             wallet_db: &wallet_db,
             account_uuid: params.account_uuid,
-            hotkey_raw_address: params.hotkey_raw_address,
+            voting_hotkey: params.voting_hotkey,
             snapshot_height: round_params.snapshot_height,
             scanned_height: wallet_progress.scanned_height,
             anchor_tree_state_bytes,
@@ -83,7 +82,7 @@ async fn prepare_delegation_bundle_context(
     round_name: &str,
     session_json: Option<&str>,
     account_uuid: &str,
-    hotkey_raw_address: Vec<u8>,
+    voting_hotkey: zcash_voting::VotingHotkey,
     bundle_index: u32,
     bundle_policy: BundlePolicy,
 ) -> Result<DelegationBundleContext, String> {
@@ -147,7 +146,7 @@ async fn prepare_delegation_bundle_context(
         bundle_note_infos,
         delegated_weight_zatoshi,
         account,
-        hotkey_raw_address,
+        voting_hotkey,
         branch_id_provider,
         round_name: round_context.round_name,
     })
@@ -155,15 +154,12 @@ async fn prepare_delegation_bundle_context(
 
 fn delegation_keys_for_context(
     context: &DelegationBundleContext,
-    network: WalletNetwork,
 ) -> Result<zcash_voting::delegate::DelegationKeys, String> {
-    zcash_voting::delegate::DelegationKeys::with_hotkey_bytes(
+    zcash_voting::delegate::DelegationKeys::with_voting_hotkey(
         context.account.orchard_fvk_bytes.to_vec(),
-        &context.hotkey_raw_address,
+        &context.voting_hotkey,
         context.account.seed_fingerprint,
         context.account.account_index,
-        0,
-        network.network_type().coin_type(),
         context.round_name.clone(),
     )
     .map_err(|e| format!("delegation key construction failed: {e}"))
@@ -191,7 +187,6 @@ async fn prove_delegation_for_context<F>(
     db_path: &str,
     pir_server_url: &str,
     account_uuid: &str,
-    network: WalletNetwork,
     context: &DelegationBundleContext,
     on_progress: Arc<F>,
     cancellation: VotingWorkCancellation,
@@ -206,9 +201,7 @@ where
     let proof_round_id = context.round_id.clone();
     let proof_bundle_index = context.bundle_index;
     let proof_bundle_note_infos = context.bundle_note_infos.clone();
-    let proof_hotkey_raw_address =
-        delegation_keys_for_context(context, network)?.hotkey_raw_address;
-    let proof_network = voting_network(network);
+    let proof_keys = delegation_keys_for_context(context)?;
     let proof_cancellation = cancellation.clone();
     let proof_progress = on_progress.clone();
     tokio::task::spawn_blocking(move || {
@@ -228,9 +221,8 @@ where
             &proof_round_id,
             proof_bundle_index,
             &proof_bundle_note_infos,
-            &proof_hotkey_raw_address,
+            &proof_keys,
             &pir_client,
-            proof_network,
             &reporter,
         )
         .map(|_| ())
@@ -312,8 +304,7 @@ pub async fn precompute_delegation_pir(
 ) -> Result<zcash_voting::delegate::PreparedDelegationReport, String> {
     cancellation.check()?;
     let round_id = round_params.vote_round_id.clone();
-    let hotkey_raw_address =
-        derive_hotkey_raw_orchard_address(seed, &round_id, account_uuid, network)?;
+    let voting_hotkey = derive_voting_hotkey(seed, &round_id, account_uuid, network)?;
     let gathered = gather_delegation_inputs(GatherDelegationParams {
         db_path,
         lightwalletd_url,
@@ -322,7 +313,7 @@ pub async fn precompute_delegation_pir(
         round_params,
         round_name,
         account_uuid,
-        hotkey_raw_address,
+        voting_hotkey: &voting_hotkey,
         cancellation: &cancellation,
     })
     .await?;
@@ -357,7 +348,6 @@ pub async fn precompute_delegation_pir(
             anchor_tree_state_bytes: &anchor_tree_state_bytes,
             keys: &delegation_keys,
             branch_id_provider: &branch_id_provider,
-            network: voting_network(network),
             cancellation: &cancellation,
         };
         zcash_voting::precompute::precompute_delegation_with_policy(
@@ -411,8 +401,7 @@ where
     zcash_voting::validate_round_params(&round_params)
         .map_err(|e| format!("Invalid voting round params: {e}"))?;
     on_progress(DelegationProgress::SelectingNotes);
-    let hotkey_raw_address =
-        derive_hotkey_raw_orchard_address(seed, &round_id, account_uuid, network)?;
+    let voting_hotkey = derive_voting_hotkey(seed, &round_id, account_uuid, network)?;
     let context = prepare_delegation_bundle_context(
         db_path,
         lightwalletd_url,
@@ -421,13 +410,13 @@ where
         round_name,
         session_json,
         account_uuid,
-        hotkey_raw_address,
+        voting_hotkey,
         bundle_index,
         bundle_policy,
     )
     .await?;
 
-    let delegation_keys = delegation_keys_for_context(&context, network)?;
+    let delegation_keys = delegation_keys_for_context(&context)?;
     let prepared_governance_pczt = zcash_voting::delegate::take_prepared_setup(
         &context.voting_db,
         &round_id,
@@ -459,7 +448,6 @@ where
         db_path,
         pir_server_url,
         account_uuid,
-        network,
         &context,
         on_progress.clone(),
         cancellation.clone(),
@@ -471,11 +459,7 @@ where
         &context.voting_db,
         &round_id,
         bundle_index,
-        zcash_voting::delegate::DelegationSigner::Seed {
-            seed: seed.expose_secret(),
-            network: voting_network(network),
-            account_index: context.account.account_index,
-        },
+        zcash_voting::delegate::DelegationSigner::seed(seed.expose_secret(), &delegation_keys),
     )
     .map_err(|e| format!("delegate::submission failed: {e}"))?;
 
@@ -513,7 +497,7 @@ pub async fn build_keystone_delegation_request(
     bundle_policy: BundlePolicy,
     cancellation: VotingWorkCancellation,
 ) -> Result<zcash_voting::delegate::KeystoneSigningRequest, String> {
-    let hotkey_raw_address = hotkey_raw_orchard_address_from_secret(hotkey_secret, network)?;
+    let voting_hotkey = voting_hotkey_from_secret(hotkey_secret, network)?;
     cancellation.check()?;
     let context = prepare_delegation_bundle_context(
         db_path,
@@ -523,12 +507,12 @@ pub async fn build_keystone_delegation_request(
         round_name,
         session_json,
         account_uuid,
-        hotkey_raw_address,
+        voting_hotkey,
         bundle_index,
         bundle_policy,
     )
     .await?;
-    let delegation_keys = delegation_keys_for_context(&context, network)?;
+    let delegation_keys = delegation_keys_for_context(&context)?;
     let noop_stages = zcash_voting::NoopProgressReporter;
     let delegation_setup = zcash_voting::delegate::setup(
         &context.voting_db,
@@ -596,7 +580,7 @@ where
 {
     let on_progress = Arc::new(on_progress);
     let round_id = round_params.vote_round_id.clone();
-    let hotkey_raw_address = hotkey_raw_orchard_address_from_secret(hotkey_secret, network)?;
+    let voting_hotkey = voting_hotkey_from_secret(hotkey_secret, network)?;
 
     cancellation.check()?;
     on_progress(DelegationProgress::SelectingNotes);
@@ -608,7 +592,7 @@ where
         round_name,
         session_json,
         account_uuid,
-        hotkey_raw_address,
+        voting_hotkey,
         bundle_index,
         bundle_policy,
     )
@@ -618,7 +602,6 @@ where
         db_path,
         pir_server_url,
         account_uuid,
-        network,
         &context,
         on_progress.clone(),
         cancellation.clone(),
@@ -674,9 +657,16 @@ mod tests {
     const ACCOUNT_UUID: &str = "550e8400-e29b-41d4-a716-446655440000";
     const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
+    fn temp_voting_db(account_uuid: &str) -> (tempfile::TempDir, VotingDb) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("zcash_wallet.db");
+        let db = open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap();
+        (temp_dir, db)
+    }
+
     #[test]
     fn prepared_delegation_pczt_cache_is_consume_on_entry() {
-        let db = open_voting_db("/tmp/voting-pczt.sqlite", ACCOUNT_UUID).unwrap();
+        let (_temp_dir, db) = temp_voting_db("550e8400-e29b-41d4-a716-446655440101");
         zcash_voting::delegate::clear_prepared_setups(&db, None).unwrap();
         let keys = test_delegation_keys("Demo Round");
         let notes = vec![test_note_info(42)];
@@ -706,7 +696,7 @@ mod tests {
 
     #[test]
     fn prepared_delegation_pczt_cache_key_binds_full_pczt_inputs() {
-        let db = open_voting_db("/tmp/voting-input-key.sqlite", ACCOUNT_UUID).unwrap();
+        let (_temp_dir, db) = temp_voting_db("550e8400-e29b-41d4-a716-446655440102");
         zcash_voting::delegate::clear_prepared_setups(&db, None).unwrap();
         let keys = test_delegation_keys("Demo Round");
         let notes = vec![test_note_info(42)];
@@ -745,8 +735,7 @@ mod tests {
         .unwrap()
         .is_none());
 
-        let mut different_account = keys.clone();
-        different_account.seed_fingerprint[0] ^= 0x01;
+        let different_account = test_delegation_keys_with_fingerprint("Demo Round", [0xA5; 32]);
         assert!(zcash_voting::delegate::take_prepared_setup(
             &db,
             ROUND_ID,
@@ -765,7 +754,7 @@ mod tests {
 
     #[test]
     fn prepared_delegation_pczt_reset_blocks_late_precompute_insert() {
-        let db = open_voting_db("/tmp/voting-late.sqlite", ACCOUNT_UUID).unwrap();
+        let (_temp_dir, db) = temp_voting_db("550e8400-e29b-41d4-a716-446655440103");
         zcash_voting::delegate::clear_prepared_setups(&db, None).unwrap();
         let keys = test_delegation_keys("Demo Round");
         let notes = vec![test_note_info(42)];
@@ -792,7 +781,7 @@ mod tests {
 
     #[test]
     fn clear_prepared_setups_can_target_round() {
-        let db = open_voting_db("/tmp/voting-round-clear.sqlite", ACCOUNT_UUID).unwrap();
+        let (_temp_dir, db) = temp_voting_db("550e8400-e29b-41d4-a716-446655440104");
         zcash_voting::delegate::clear_prepared_setups(&db, None).unwrap();
         let keys = test_delegation_keys("Demo Round");
         let notes = vec![test_note_info(42)];
@@ -1129,13 +1118,21 @@ mod tests {
     }
 
     fn test_delegation_keys(round_name: &str) -> zcash_voting::delegate::DelegationKeys {
-        zcash_voting::delegate::DelegationKeys::with_hotkey_bytes(
+        test_delegation_keys_with_fingerprint(round_name, [9; 32])
+    }
+
+    fn test_delegation_keys_with_fingerprint(
+        round_name: &str,
+        seed_fingerprint: [u8; 32],
+    ) -> zcash_voting::delegate::DelegationKeys {
+        let hotkey =
+            zcash_voting::hotkey::voting_hotkey_from_seed(&[7; 64], zcash_voting::Network::Regtest)
+                .unwrap();
+        zcash_voting::delegate::DelegationKeys::with_voting_hotkey(
             vec![8; 96],
-            &[7; 43],
-            [9; 32],
+            &hotkey,
+            seed_fingerprint,
             0,
-            0,
-            WalletNetwork::Regtest.network_type().coin_type(),
             round_name.to_string(),
         )
         .unwrap()

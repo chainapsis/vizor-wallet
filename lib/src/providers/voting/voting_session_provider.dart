@@ -1056,12 +1056,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           'missing stored Keystone voting hotkey',
         );
       }
-      hotkey = await rust.generateVotingHotkey();
+      hotkey = await rust.generateVotingHotkey(network: context.network);
     } else {
       hotkey = await rust.deriveHotkey(
         seedBytes: seedBytes ?? (throw StateError('Missing wallet seed.')),
         roundId: context.round.roundId,
         accountUuid: context.accountUuid,
+        network: context.network,
       );
     }
     await ref

@@ -719,10 +719,12 @@ pub fn derive_voting_hotkey(
     seed_bytes: Vec<u8>,
     round_id: String,
     account_uuid: String,
+    network: String,
 ) -> Result<Vec<u8>, String> {
     catch(|| {
+        let network = keys::parse_network(&network)?;
         let seed = secrecy::SecretVec::new(seed_bytes);
-        hotkey::derive_hotkey(&seed, &round_id, &account_uuid).map(|hotkey| {
+        hotkey::derive_hotkey(&seed, &round_id, &account_uuid, network).map(|hotkey| {
             // FRB returns owned bytes, so this copy cannot be zeroized by Rust
             // after Dart receives it.
             hotkey.expose_secret().to_vec()
@@ -735,9 +737,10 @@ pub fn derive_voting_hotkey(
 /// Hardware accounts cannot expose their wallet seed to derive the deterministic
 /// software hotkey, so the app persists this random per-round hotkey in secure
 /// storage and reuses it for vote commitment signing.
-pub fn generate_voting_hotkey() -> Result<Vec<u8>, String> {
+pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, String> {
     catch(|| {
-        hotkey::generate_random_hotkey().map(|hotkey| {
+        let network = keys::parse_network(&network)?;
+        hotkey::generate_random_hotkey(network).map(|hotkey| {
             // FRB returns owned bytes, so this copy cannot be zeroized by Rust
             // after Dart receives it.
             hotkey.expose_secret().to_vec()

@@ -11,11 +11,12 @@ logic.
 
 ## Account Invariants
 
-Coinholder voting is software-account only. The delegation and vote flows need
-the active account's mnemonic-derived seed to derive the voting hotkey and sign
-the delegation payload. Hardware accounts, locked wallets, and accounts without
-a stored mnemonic must fail before proof or recovery work starts, with a
-user-facing message that voting requires a software account.
+Coinholder voting uses a crate-owned voting hotkey for delegation outputs and
+vote signing. Software accounts derive that hotkey from the active account seed,
+round, account UUID, and network. Hardware accounts generate and store a random
+per-round hotkey seed because the wallet seed is not available to the host app.
+Locked wallets and software accounts without a stored mnemonic must fail before
+proof or recovery work starts.
 
 A `votingSessionProvider(roundId)` instance is pinned to the active account UUID
 captured when the session is built. All later context reloads, recovery reads,
@@ -254,7 +255,7 @@ process.
 `precompute_delegation_pir`, keyed by:
 
 ```text
-(db_path, account_uuid, round_id, bundle_index, branch_id, hotkey_raw_address)
+(db_path, account_uuid, round_id, bundle_index, branch_id, delegation keys)
 ```
 
 They are intentionally short-lived because the values depend on a specific
