@@ -350,26 +350,26 @@ impl From<ApiDraftVote> for vote::DraftVote {
     }
 }
 
-impl From<vote::WireEncryptedShare> for ApiWireEncryptedShare {
-    fn from(share: vote::WireEncryptedShare) -> Self {
+impl From<zcash_voting::WireEncryptedShare> for ApiWireEncryptedShare {
+    fn from(share: zcash_voting::WireEncryptedShare) -> Self {
         Self {
-            ciphertext1: share.ciphertext1,
-            ciphertext2: share.ciphertext2,
+            ciphertext1: share.c1,
+            ciphertext2: share.c2,
             share_index: share.share_index,
         }
     }
 }
 
-impl From<vote::VoteSharePayload> for ApiVoteSharePayload {
-    fn from(payload: vote::VoteSharePayload) -> Self {
+impl From<zcash_voting::SharePayload> for ApiVoteSharePayload {
+    fn from(payload: zcash_voting::SharePayload) -> Self {
         Self {
             shares_hash: payload.shares_hash,
             proposal_id: payload.proposal_id,
             vote_decision: payload.vote_decision,
-            encrypted_share: payload.encrypted_share.into(),
+            encrypted_share: payload.enc_share.into(),
             tree_position: payload.tree_position,
             all_encrypted_shares: payload
-                .all_encrypted_shares
+                .all_enc_shares
                 .into_iter()
                 .map(Into::into)
                 .collect(),
@@ -379,15 +379,15 @@ impl From<vote::VoteSharePayload> for ApiVoteSharePayload {
     }
 }
 
-impl From<vote::SignedVoteCommitment> for ApiSignedVoteCommitment {
-    fn from(commitment: vote::SignedVoteCommitment) -> Self {
+impl From<zcash_voting::vote::SignedVoteCommitment> for ApiSignedVoteCommitment {
+    fn from(commitment: zcash_voting::vote::SignedVoteCommitment) -> Self {
         Self {
             proposal_id: commitment.proposal_id,
             choice: commitment.choice,
             vote_round_id: commitment.vote_round_id,
-            van_nullifier: commitment.van_nullifier,
-            vote_authority_note_new: commitment.vote_authority_note_new,
-            vote_commitment: commitment.vote_commitment,
+            van_nullifier: commitment.van_nullifier.to_vec(),
+            vote_authority_note_new: commitment.vote_authority_note_new.to_vec(),
+            vote_commitment: commitment.vote_commitment.to_vec(),
             proof: commitment.proof,
             encrypted_shares: commitment
                 .encrypted_shares
@@ -400,10 +400,14 @@ impl From<vote::SignedVoteCommitment> for ApiSignedVoteCommitment {
                 .map(Into::into)
                 .collect(),
             anchor_height: commitment.anchor_height,
-            shares_hash: commitment.shares_hash,
-            share_comms: commitment.share_comms,
-            r_vpk_bytes: commitment.r_vpk_bytes,
-            vote_auth_sig: commitment.vote_auth_sig,
+            shares_hash: commitment.shares_hash.to_vec(),
+            share_comms: commitment
+                .share_comms
+                .into_iter()
+                .map(|comm| comm.to_vec())
+                .collect(),
+            r_vpk_bytes: commitment.r_vpk.to_vec(),
+            vote_auth_sig: commitment.vote_auth_sig.to_vec(),
             commitment_bundle_json: commitment.commitment_bundle_json,
         }
     }
@@ -2632,38 +2636,38 @@ mod tests {
     fn api_signed_vote_commitments_preserve_public_wire_fields() {
         let api = ApiSignedVoteCommitments::from(vote::SignedVoteCommitments {
             bundle_index: 1,
-            commitments: vec![vote::SignedVoteCommitment {
+            commitments: vec![zcash_voting::vote::SignedVoteCommitment {
                 proposal_id: 2,
                 choice: 1,
                 vote_round_id: ROUND_ID.to_string(),
-                van_nullifier: vec![1; 32],
-                vote_authority_note_new: vec![2; 32],
-                vote_commitment: vec![3; 32],
+                van_nullifier: [1; 32],
+                vote_authority_note_new: [2; 32],
+                vote_commitment: [3; 32],
                 proof: vec![4; 10],
-                encrypted_shares: vec![vote::WireEncryptedShare {
-                    ciphertext1: vec![5; 32],
-                    ciphertext2: vec![6; 32],
+                encrypted_shares: vec![zcash_voting::WireEncryptedShare {
+                    c1: vec![5; 32],
+                    c2: vec![6; 32],
                     share_index: 0,
                 }],
-                share_payloads: vec![vote::VoteSharePayload {
+                share_payloads: vec![zcash_voting::SharePayload {
                     shares_hash: vec![7; 32],
                     proposal_id: 2,
                     vote_decision: 1,
-                    encrypted_share: vote::WireEncryptedShare {
-                        ciphertext1: vec![5; 32],
-                        ciphertext2: vec![6; 32],
+                    enc_share: zcash_voting::WireEncryptedShare {
+                        c1: vec![5; 32],
+                        c2: vec![6; 32],
                         share_index: 0,
                     },
                     tree_position: 9,
-                    all_encrypted_shares: vec![],
+                    all_enc_shares: vec![],
                     share_comms: vec![vec![8; 32]],
                     primary_blind: vec![9; 32],
                 }],
                 anchor_height: 100,
-                shares_hash: vec![7; 32],
-                share_comms: vec![vec![8; 32]],
-                r_vpk_bytes: vec![10; 32],
-                vote_auth_sig: vec![9; 64],
+                shares_hash: [7; 32],
+                share_comms: vec![[8; 32]],
+                r_vpk: [10; 32],
+                vote_auth_sig: [9; 64],
                 commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
             }],
         });
