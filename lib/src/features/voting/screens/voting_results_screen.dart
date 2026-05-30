@@ -483,13 +483,14 @@ String? _roundDescription(VotingRoundDetails round) {
 }
 
 int? _selectedChoiceForProposal(VotingSessionState? state, int proposalId) {
-  final records = state?.resumePlan?.votesByKey.values
-      .where((vote) => vote.proposalId == proposalId)
-      .toList(growable: false);
-  if (records == null || records.isEmpty) return null;
-
-  final choice = records.first.choice;
-  return records.every((record) => record.choice == choice) ? choice : null;
+  final display = state?.roundPlan?.completedVoteDisplay;
+  if (state?.roundPlan?.completedForDisplay != true || display == null) {
+    return null;
+  }
+  for (final choice in display.choices) {
+    if (choice.proposalId == proposalId) return choice.choice;
+  }
+  return null;
 }
 
 bool _textExceedsSingleLine({

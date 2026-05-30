@@ -86,11 +86,7 @@ class _VotingProposalDetailScreenState
                 : ref.watch(votingDraftProvider(draftKey));
             final proposals = proposalsFromRound(round);
             final completedVote = draft.isEmpty
-                ? _CompletedVote.fromPlan(
-                    state.resumePlan,
-                    state.roundPlan,
-                    proposals,
-                  )
+                ? _CompletedVote.fromPlan(state.resumePlan, state.roundPlan)
                 : null;
             _maybePrepareVotingPower(state);
             // Foreground recovery takes precedence over the read-only voted view.
@@ -129,10 +125,7 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            final pendingVote = _PendingVoteRecovery.fromPlan(
-              state.resumePlan,
-              state.roundPlan,
-            );
+            final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
             if (pendingVote != null) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
@@ -1255,25 +1248,18 @@ class _CompletedVote {
   static _CompletedVote? fromPlan(
     VotingResumePlan? plan,
     rust_wire.RoundPlanView? roundPlan,
-    List<VotingProposalView> proposals,
   ) {
-    if (!hasCompletedVoteForDisplay(roundPlan: roundPlan, resumePlan: plan)) {
+    final display = roundPlan?.completedVoteDisplay;
+    if (display == null ||
+        !hasCompletedVoteForDisplay(roundPlan: roundPlan, resumePlan: plan)) {
       return null;
     }
-    if (plan == null) return null;
-    final choices = <int, int?>{};
-    for (final proposal in proposals) {
-      final proposalChoices = plan.votesByKey.values
-          .where((vote) => vote.proposalId == proposal.id)
-          .map((vote) => vote.choice)
-          .toSet();
-      choices[proposal.id] = proposalChoices.length == 1
-          ? proposalChoices.single
-          : null;
-    }
+    final choices = {
+      for (final choice in display.choices) choice.proposalId: choice.choice,
+    };
     return _CompletedVote(
       choicesByProposalId: choices,
-      votedAt: _submittedAtFromPlan(plan),
+      votedAt: parseFlexibleDate(display.votedAt?.toInt()),
     );
   }
 }
@@ -1283,31 +1269,23 @@ class _PendingVoteRecovery {
 
   final String message;
 
-  static _PendingVoteRecovery? fromPlan(
-    VotingResumePlan? plan,
-    rust_wire.RoundPlanView? roundPlan,
-  ) {
-    if (plan == null ||
-        !hasBlockingRoundRecoveryWork(roundPlan: roundPlan, resumePlan: plan) ||
-        !_hasCompletedVoteArtifact(plan)) {
+  static _PendingVoteRecovery? fromPlan(rust_wire.RoundPlanView? roundPlan) {
+    if (roundPlan == null ||
+        !roundPlan.blockingRecovery ||
+        !roundPlan.completedVoteArtifact) {
       return null;
     }
-    if (_roundPlanHasStep(roundPlan, const {'delegate', 'poll_delegation'}) ||
-        (roundPlan == null && plan.pendingDelegationBundleIndexes.isNotEmpty)) {
+    if (roundPlan.primaryAction == 'delegate' ||
+        roundPlan.recoveredDelegationWork.isNotEmpty) {
       return const _PendingVoteRecovery(
         message:
             'This vote has local progress, but delegation is not fully confirmed yet. The app should continue recovery before accepting another vote.',
       );
     }
-    if (_roundPlanHasStep(roundPlan, const {
-          'cast_vote',
-          'submit_vote',
-          'poll_vote',
-          'submit_shares',
-        }) ||
-        (roundPlan == null &&
-            (plan.pendingVoteSubmissionKeys.isNotEmpty ||
-                plan.incompleteVoteRecoveryKeys.isNotEmpty))) {
+    if (roundPlan.primaryAction == 'vote' ||
+        roundPlan.recoveredVoteWork.any(
+          (work) => work.kind != 'submit_shares',
+        )) {
       return const _PendingVoteRecovery(
         message:
             'This vote has been started, but its commitment transaction recovery data is not complete yet. Do not vote again from this account.',
@@ -1318,14 +1296,6 @@ class _PendingVoteRecovery {
           'This vote was submitted, but some helper-server shares are still waiting for confirmation. Do not vote again from this account.',
     );
   }
-}
-
-bool _roundPlanHasStep(rust_wire.RoundPlanView? roundPlan, Set<String> kinds) {
-  return roundPlan?.nextSteps.any((step) => kinds.contains(step.kind)) ?? false;
-}
-
-bool _hasCompletedVoteArtifact(VotingResumePlan plan) {
-  return plan.hasCompletedVoteArtifact;
 }
 
 String _choiceLabel(VotingProposalView proposal, int? choice) {
@@ -1370,16 +1340,6 @@ String? _proposalBadge(VotingProposalView proposal) {
   ).firstMatch('${proposal.title} ${proposal.description}');
   if (match == null) return null;
   return match.group(0)!.toUpperCase().replaceAll(RegExp(r'\s+'), '-');
-}
-
-DateTime? _submittedAtFromPlan(VotingResumePlan plan) {
-  final timestamps = plan.shareDelegations
-      .map((record) => record.createdAt)
-      .where((value) => value > BigInt.zero)
-      .toList();
-  if (timestamps.isEmpty) return null;
-  timestamps.sort();
-  return parseFlexibleDate(timestamps.last.toInt());
 }
 
 class _OptionRow extends StatelessWidget {

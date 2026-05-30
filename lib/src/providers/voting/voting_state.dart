@@ -232,9 +232,9 @@ class VotingSessionState {
 
   /// Crate planner's derived resume plan for this round.
   ///
-  /// Null before the crate planner has loaded for this session.
-  /// When [pendingRecovery] is true the proposal-detail screen shows a
-  /// "Continue voting" button instead of the dead-end _PendingVoteContent.
+  /// Null before the crate planner has loaded for this session. Its projection
+  /// fields drive foreground recovery, completed vote display, and next action
+  /// selection.
   final rust_wire.RoundPlanView? roundPlan;
   final Uri? pirEndpoint;
   final BigInt? eligibleWeightZatoshi;

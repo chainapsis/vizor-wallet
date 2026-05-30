@@ -29,6 +29,7 @@ import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 
+import '../../features/voting/round_plan_test_utils.dart';
 import '../../services/voting/fake_voting_http.dart';
 
 void main() {
@@ -224,9 +225,17 @@ void main() {
             ),
           ],
         ),
-        roundPlan: rust_wire.RoundPlanView(
+        roundPlan: apiRoundPlan(
           roundId: kRoundId,
           pendingRecovery: true,
+          blockingRecovery: false,
+          completedVoteArtifact: true,
+          completedForDisplay: true,
+          completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
+            choices: const [
+              rust_wire.CompletedVoteChoiceView(proposalId: 7, choice: null),
+            ],
+          ),
           nextSteps: const [
             rust_wire.NextStepView(
               kind: 'confirm_share',
@@ -273,7 +282,7 @@ void main() {
       );
       final recoveryApi = FakeVotingRecoveryApi(
         state: recoveryState(),
-        roundPlan: rust_wire.RoundPlanView(
+        roundPlan: apiRoundPlan(
           roundId: kRoundId,
           pendingRecovery: true,
           nextSteps: const [
@@ -403,7 +412,7 @@ void main() {
   test('empty all-decided plan is not a completed submission', () async {
     final recoveryApi = FakeVotingRecoveryApi(
       state: recoveryState(bundleCount: 0),
-      roundPlan: rust_wire.RoundPlanView(
+      roundPlan: apiRoundPlan(
         roundId: kRoundId,
         pendingRecovery: false,
         nextSteps: const [],
@@ -1778,7 +1787,7 @@ void main() {
     () async {
       final rust = FakeVotingRustApi(emitCommitments: true, bundleCount: 2);
       final recoveryApi = FakeVotingRecoveryApi(
-        roundPlan: rust_wire.RoundPlanView(
+        roundPlan: apiRoundPlan(
           roundId: kRoundId,
           pendingRecovery: true,
           nextSteps: const [
@@ -1910,7 +1919,7 @@ void main() {
       createdAt: BigInt.zero,
     );
     final recoveryApi = FakeVotingRecoveryApi(
-      roundPlan: rust_wire.RoundPlanView(
+      roundPlan: apiRoundPlan(
         roundId: kRoundId,
         pendingRecovery: true,
         nextSteps: const [
@@ -2036,7 +2045,7 @@ void main() {
         bundleCount: 2,
         commitmentShareCount: 2,
       );
-      final beforeConfirmation = rust_wire.RoundPlanView(
+      final beforeConfirmation = apiRoundPlan(
         roundId: kRoundId,
         pendingRecovery: true,
         nextSteps: const [
@@ -2065,7 +2074,7 @@ void main() {
         openProposals: Uint32List(0),
         allDecided: false,
       );
-      final afterConfirmation = rust_wire.RoundPlanView(
+      final afterConfirmation = apiRoundPlan(
         roundId: kRoundId,
         pendingRecovery: true,
         nextSteps: const [
@@ -3609,12 +3618,10 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
       return sequence[index];
     }
     return roundPlan ??
-        rust_wire.RoundPlanView(
+        apiRoundPlanFromRecoveryState(
+          state: state,
           roundId: roundId,
-          pendingRecovery: false,
-          nextSteps: const [],
-          openProposals: Uint32List.fromList(proposalIds),
-          allDecided: false,
+          proposalIds: proposalIds,
         );
   }
 

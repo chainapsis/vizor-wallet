@@ -7,6 +7,8 @@ import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_frb_types;
 
+import 'round_plan_test_utils.dart';
+
 void main() {
   test('empty round resumes delegation for every bundle', () async {
     final api = FakeVotingRecoveryApi(state: recoveryState(bundleCount: 3));
@@ -290,7 +292,7 @@ void main() {
           unconfirmedShareDelegations: [accepted],
         ),
       );
-      final roundPlan = rust_frb_types.RoundPlanView(
+      final roundPlan = apiRoundPlan(
         roundId: 'round-1',
         pendingRecovery: true,
         nextSteps: const [
@@ -314,7 +316,7 @@ void main() {
   );
 
   test('round planner vote work blocks foreground completion', () {
-    final roundPlan = rust_frb_types.RoundPlanView(
+    final roundPlan = apiRoundPlan(
       roundId: 'round-1',
       pendingRecovery: true,
       nextSteps: const [
@@ -464,7 +466,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required String roundId,
     required List<int> proposalIds,
   }) async {
-    return rust_frb_types.RoundPlanView(
+    return apiRoundPlan(
       roundId: roundId,
       pendingRecovery: false,
       nextSteps: const [],
@@ -533,12 +535,12 @@ class AddSentServersCall {
 rust_frb_types.RoundRecoveryStateView recoveryState({
   int bundleCount = 0,
   List<rust_frb_types.DelegationRecoveryView> delegationTxHashes = const [],
-  List<rust_frb_types.DelegationRecoveryView> delegationWorkflows =
-      const [],
+  List<rust_frb_types.DelegationRecoveryView> delegationWorkflows = const [],
   List<rust_frb_types.VoteRecoveryView> votes = const [],
   List<rust_frb_types.VoteRecoveryView> voteWorkflows = const [],
   List<rust_frb_types.VoteRecoveryView> voteTxHashes = const [],
-  List<rust_frb_types.CommitmentBundleRecoveryView> commitmentBundles = const [],
+  List<rust_frb_types.CommitmentBundleRecoveryView> commitmentBundles =
+      const [],
   List<rust_frb_types.ShareWorkflowRecoveryView> shareWorkflows = const [],
   List<rust_frb_types.ShareDelegationRecordView> shareDelegations = const [],
   List<rust_frb_types.ShareDelegationRecordView> unconfirmedShareDelegations =
@@ -548,12 +550,13 @@ rust_frb_types.RoundRecoveryStateView recoveryState({
     for (final record in delegationWorkflows) record.bundleIndex: record,
   };
   for (final record in delegationTxHashes) {
-    delegationByBundle[record.bundleIndex] = rust_frb_types.DelegationRecoveryView(
-      bundleIndex: record.bundleIndex,
-      phase: record.phase,
-      txHash: record.txHash,
-      vanLeafPosition: record.vanLeafPosition,
-    );
+    delegationByBundle[record.bundleIndex] =
+        rust_frb_types.DelegationRecoveryView(
+          bundleIndex: record.bundleIndex,
+          phase: record.phase,
+          txHash: record.txHash,
+          vanLeafPosition: record.vanLeafPosition,
+        );
   }
 
   final votesByKey = <String, rust_frb_types.VoteRecoveryView>{

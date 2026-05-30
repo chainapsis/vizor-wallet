@@ -168,7 +168,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     return _RoundListRecoveryState(
       voted: false,
       inProgress: roundPlan != null
-          ? roundPlan.pendingRecovery ||
+          ? roundPlan.blockingRecovery ||
                 (roundPlanNeedsDraftSetup(roundPlan) &&
                     resumePlan.hasPendingWork)
           : resumePlan.hasPendingWork ||
