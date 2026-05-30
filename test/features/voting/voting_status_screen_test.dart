@@ -33,6 +33,16 @@ import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_voting;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
+    as rust_delegate;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/round.dart'
+    as rust_round;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
+    as rust_share_policy;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/types.dart'
+    as rust_types;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/vote.dart'
+    as rust_vote;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_frb_types;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
@@ -2158,8 +2168,7 @@ rust_frb_types.RoundRecoveryStateView _recoveryState({
   List<rust_frb_types.VoteRecoveryView> votes = const [],
   List<rust_frb_types.VoteRecoveryView> voteWorkflows = const [],
   List<rust_frb_types.VoteRecoveryView> voteTxHashes = const [],
-  List<rust_frb_types.CommitmentBundleRecoveryView> commitmentBundles =
-      const [],
+  List<rust_frb_types.RecoverableCommitmentBundle> commitmentBundles = const [],
   List<rust_frb_types.ShareWorkflowRecoveryView> shareWorkflows = const [],
   List<rust_frb_types.ShareDelegationRecordView> shareDelegations = const [],
   List<rust_frb_types.ShareDelegationRecordView> unconfirmedShareDelegations =
@@ -2399,7 +2408,7 @@ class _NoopVotingRustApi implements VotingRustApi {
 
 class _FailingVotingPowerRustApi extends _NoopVotingRustApi {
   @override
-  Future<rust_wire.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_round.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2415,7 +2424,7 @@ class _FailingVotingPowerRustApi extends _NoopVotingRustApi {
 
 class _IneligibleVotingRustApi extends _NoopVotingRustApi {
   @override
-  Future<rust_wire.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_round.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2547,13 +2556,12 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
 
   final _MutableVotingRecoveryApi recoveryApi;
   final int bundleCount;
-  final storedKeystoneSignatures =
-      <int, rust_wire.KeystoneSignatureRecordView>{};
+  final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int setupDelegationBundleCalls = 0;
   int keystoneDelegationRequestCalls = 0;
 
   @override
-  Future<rust_wire.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_round.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2564,9 +2572,10 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     int? maxRealNotesPerBundle,
   }) async {
     setupDelegationBundleCalls++;
-    return rust_wire.BundleSetupResultView(
+    return rust_round.BundleLayout(
       bundleCount: bundleCount,
-      eligibleWeightZatoshi: BigInt.from(100),
+      eligibleWeight: BigInt.from(100),
+      droppedCount: 0,
     );
   }
 
@@ -2641,7 +2650,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<List<rust_wire.KeystoneSignatureRecordView>> getKeystoneSignatures({
+  Future<List<rust_wire.KeystoneSignatureRecord>> getKeystoneSignatures({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -2669,8 +2678,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<rust_wire.KeystoneDelegationRequestView>
-  buildKeystoneDelegationRequest({
+  Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2683,7 +2691,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     int? maxRealNotesPerBundle,
   }) async {
     keystoneDelegationRequestCalls++;
-    return rust_wire.KeystoneDelegationRequestView(
+    return rust_delegate.KeystoneSigningRequest(
       pcztBytes: Uint8List.fromList(const [1]),
       redactedPcztBytes: Uint8List.fromList(const [2]),
       pcztSighash: Uint8List.fromList(const [3]),
@@ -2721,13 +2729,12 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required List<int> sighash,
     required List<int> rk,
   }) async {
-    storedKeystoneSignatures[bundleIndex] =
-        rust_wire.KeystoneSignatureRecordView(
-          bundleIndex: bundleIndex,
-          sig: Uint8List.fromList(sig),
-          sighash: Uint8List.fromList(sighash),
-          rk: Uint8List.fromList(rk),
-        );
+    storedKeystoneSignatures[bundleIndex] = rust_wire.KeystoneSignatureRecord(
+      bundleIndex: bundleIndex,
+      sig: Uint8List.fromList(sig),
+      sighash: Uint8List.fromList(sighash),
+      rk: Uint8List.fromList(rk),
+    );
   }
 
   @override
@@ -2803,15 +2810,11 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String txHash,
   }) async {}
 
-  @override
-  Future<void> markDelegationConfirmed({
-    required String dbPath,
-    required String walletId,
-    required String roundId,
+  void _recordDelegationConfirmed({
     required int bundleIndex,
     required String txHash,
     required int vanLeafPosition,
-  }) async {
+  }) {
     recoveryApi.state = _recoveryState(
       delegationWorkflows: [
         rust_frb_types.DelegationRecoveryView(
@@ -2840,10 +2843,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       roundId,
       'leaf_index',
     );
-    await markDelegationConfirmed(
-      dbPath: dbPath,
-      walletId: walletId,
-      roundId: roundId,
+    _recordDelegationConfirmed(
       bundleIndex: bundleIndex,
       txHash: txHash,
       vanLeafPosition: vanLeafPosition,
@@ -2865,14 +2865,14 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<rust_wire.VanWitnessView> generateVanWitness({
+  Future<rust_vote.VanWitness> generateVanWitness({
     required String dbPath,
     required String walletId,
     required String roundId,
     required int bundleIndex,
     required int anchorHeight,
   }) async {
-    return rust_wire.VanWitnessView(
+    return rust_vote.VanWitness(
       authPath: const [],
       position: bundleIndex,
       anchorHeight: anchorHeight,
@@ -2887,8 +2887,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String roundId,
     required int bundleIndex,
     required List<int> hotkeySeed,
-    required rust_wire.VanWitnessView vanWitness,
-    required List<rust_wire.DraftVoteView> draftVotes,
+    required rust_vote.VanWitness vanWitness,
+    required List<rust_wire.DraftVote> draftVotes,
   }) async* {
     for (final draft in draftVotes) {
       yield rust_voting.ApiVoteCommitEvent(
@@ -2934,8 +2934,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       'proposal_id': share.proposalId,
       'vote_decision': share.voteDecision,
       'enc_share': {
-        'c1': share.encryptedShare.c1,
-        'c2': share.encryptedShare.c2,
+        'c1': base64Encode(share.encryptedShare.c1),
+        'c2': base64Encode(share.encryptedShare.c2),
         'share_index': share.encryptedShare.shareIndex,
       },
       'share_index': share.shareIndex,
@@ -2943,8 +2943,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       'all_enc_shares': share.allEncryptedShares
           .map(
             (share) => {
-              'c1': share.c1,
-              'c2': share.c2,
+              'c1': base64Encode(share.c1),
+              'c2': base64Encode(share.c2),
               'share_index': share.shareIndex,
             },
           )
@@ -2956,7 +2956,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<List<rust_frb_types.ShareSubmissionPlanView>> planShareSubmissions({
+  Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
     required BigInt nowSeconds,
@@ -2967,7 +2967,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     final targetCount = serverUrls.isEmpty ? 0 : (serverUrls.length / 2).ceil();
     return [
       for (var i = 0; i < shareCount; i++)
-        rust_frb_types.ShareSubmissionPlanView(
+        rust_share_policy.ShareSubmissionPlan(
           submitAt: BigInt.zero,
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),
@@ -3027,17 +3027,13 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String txHash,
   }) async {}
 
-  @override
-  Future<void> markVoteConfirmed({
-    required String dbPath,
-    required String walletId,
-    required String roundId,
+  void _recordVoteConfirmed({
     required int bundleIndex,
     required int proposalId,
     required String txHash,
     required int vanPosition,
     required BigInt vcTreePosition,
-  }) async {
+  }) {
     recoveryApi.state = _recoveryState(
       delegationWorkflows: [
         rust_frb_types.DelegationRecoveryView(
@@ -3073,10 +3069,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required List<rust_voting.ApiTxEvent> events,
   }) async {
     final leafPositions = _castVoteLeafPositions(events, roundId);
-    await markVoteConfirmed(
-      dbPath: dbPath,
-      walletId: walletId,
-      roundId: roundId,
+    _recordVoteConfirmed(
       bundleIndex: bundleIndex,
       proposalId: proposalId,
       txHash: txHash,
@@ -3271,9 +3264,9 @@ rust_wire.SignedVoteCommitmentsView _commitments({
   required int proposalId,
   required int choice,
 }) {
-  final wireShare = rust_wire.WireEncryptedShareJson(
-    c1: base64Encode(Uint8List.fromList(const [8])),
-    c2: base64Encode(Uint8List.fromList(const [9])),
+  final wireShare = rust_types.WireEncryptedShare(
+    c1: Uint8List.fromList(const [8]),
+    c2: Uint8List.fromList(const [9]),
     shareIndex: 0,
   );
   return rust_wire.SignedVoteCommitmentsView(
