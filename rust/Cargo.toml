@@ -27,12 +27,14 @@ zcash_client_backend = { version = "0.22", features = [
 ] }
 zcash_client_sqlite = { version = "0.20", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "20b0e73ed0d2c8ad0b7a2ca3582b2611e37ea1b4", features = ["pir", "tree-sync"] }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "37cc1d9874227263e7bf159c8da0ebf8ae755d89", features = ["pir", "tree-sync"] }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
 orchard = { version = "=0.13.1", features = ["unstable-voting-circuits"] }
 sapling-crypto = { version = "0.7", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
+pasta_curves = "0.5"
+ff = "0.13"
 # Required by no-op Sapling prover trait impls
 jubjub = "0.10"
 bls12_381 = "0.8"
@@ -58,6 +60,7 @@ base64 = "0.22"
 pbkdf2 = "0.12"
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
+blake2b_simd = "1"
 
 # Random number generation
 rand = "0.8"
@@ -93,7 +96,6 @@ security-framework = { version = "3.7", features = ["OSX_10_15"] }
 [dev-dependencies]
 tempfile = "3"
 hex = "0.4"
-pasta_curves = "0.5"
 vote-commitment-tree = "0.3"
 
 # Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`

@@ -712,8 +712,8 @@ pub fn recovered_vote_share_wire_json(
 
 /// Derive the opaque per-account, per-round voting hotkey bytes.
 ///
-/// The seed stays platform-owned; Rust only applies the same zcash_voting
-/// hotkey derivation used by delegation and returns bytes for secure storage.
+/// The seed stays inside Vizor's wallet boundary. Rust derives scoped hotkey
+/// seed material locally and returns bytes for secure storage.
 /// The returned `Vec<u8>` is an unavoidable FRB copy boundary
 pub fn derive_voting_hotkey(
     seed_bytes: Vec<u8>,
