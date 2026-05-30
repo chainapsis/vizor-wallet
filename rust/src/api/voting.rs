@@ -2210,6 +2210,14 @@ pub fn set_ballot_intent(
             let c = choice.ok_or_else(|| {
                 "set_ballot_intent: choice must be Some when skipped is false".to_string()
             })?;
+            if num_options < 2 {
+                return Err("set_ballot_intent: num_options must be at least 2".to_string());
+            }
+            if c >= num_options {
+                return Err(format!(
+                    "set_ballot_intent: choice {c} is out of range for {num_options} options"
+                ));
+            }
             zcash_voting::session::Decision::Choice(c)
         };
         db.set_ballot_intent(&round_id, proposal_id, decision, num_options)
