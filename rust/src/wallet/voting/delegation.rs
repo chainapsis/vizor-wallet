@@ -18,7 +18,7 @@ use super::{
 pub use zcash_voting::delegate::DelegationProgress;
 use zcash_voting::delegate::{
     DelegationBundleContext, DelegationInputs, DelegationLwdInputs, GatherDelegationParams,
-    GatherDelegationWalletParams, ResolveDelegationLwdParams,
+    GatherDelegationWalletParams, PrepareDelegationBundleParams, ResolveDelegationLwdParams,
 };
 use zcash_voting::precompute::PrecomputeDelegationInputs;
 use zcash_voting::selection::select_notes_with_lwd;
@@ -102,64 +102,42 @@ async fn prepare_delegation_bundle_context(
     })
     .await
     .map_err(|e| e.to_string())?;
-    let DelegationLwdInputs {
-        round_params,
-        resolved_round_name,
-        anchor_tree_state_bytes,
-        branch_id_provider,
-    } = lwd;
-    let round_id = round_params.vote_round_id.clone();
-
     // 2. Open the wallet once and do all wallet-DB work synchronously: snapshot
     //    notes plus account keys, and (only on a cold cache) the witnesses.
     let wallet_db = open_wallet_db_for_read(db_path, network)?;
     let wallet_progress = get_sync_progress_from_db(&wallet_db)?;
-    let wallet_inputs =
-        zcash_voting::delegate::gather_delegation_wallet_inputs(GatherDelegationWalletParams {
+    let prepared = zcash_voting::delegate::prepare_delegation_bundle(
+        &voting_db,
+        lwd,
+        PrepareDelegationBundleParams {
             wallet_db: &wallet_db,
             account_uuid,
             voting_hotkey: &voting_hotkey,
-            snapshot_height: round_params.snapshot_height,
             scanned_height: wallet_progress.scanned_height,
-            anchor_tree_state_bytes,
-            resolved_round_name,
-        })
-        .map_err(|e| e.to_string())?;
-    let account = zcash_voting::delegate::load_account_keys(&wallet_db, account_uuid)
-        .map_err(|e| format!("load_account_keys failed: {e}"))?;
-
-    let note_infos = wallet_inputs.round_note_infos;
-    let bundles = zcash_voting::round::note_bundles_with_policy(&note_infos, bundle_policy)
-        .map_err(|e| format!("note_bundles_with_policy failed: {e}"))?;
-    let selected_weight_zatoshi = zcash_voting::round::quantized_bundle_set_weight(&bundles)
-        .map_err(|e| format!("quantized_bundle_set_weight failed: {e}"))?;
-
-    let bundle_setup = voting_db
-        .ensure_bundles_with_skipped_suffix_with_policy(&round_id, &note_infos, bundle_policy)
-        .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))?;
-    let bundle_note_infos = zcash_voting::round::bundle_notes_for_index_with_policy(
-        &note_infos,
-        &bundle_setup,
-        bundle_index,
-        bundle_policy,
+            bundle_index,
+            bundle_policy,
+        },
     )
     .map_err(|e| e.to_string())?;
-    let delegated_weight_zatoshi = zcash_voting::round::quantized_bundle_weight(&bundle_note_infos)
-        .map_err(|e| format!("quantized_bundle_weight failed: {e}"))?;
+    let account = zcash_voting::delegate::load_account_keys(&wallet_db, account_uuid)
+        .map_err(|e| format!("load_account_keys failed: {e}"))?;
+    let delegated_weight_zatoshi =
+        zcash_voting::round::quantized_bundle_weight(&prepared.bundle_note_infos)
+            .map_err(|e| format!("quantized_bundle_weight failed: {e}"))?;
 
     // 3. Skip the expensive Orchard witness walk when a prior precompute pass
     //    already cached witnesses for this bundle. `store_witnesses`
     //    short-circuits, but `note_witnesses` would still regenerate first.
     if !voting_db
-        .has_witnesses(&round_id, bundle_index)
+        .has_witnesses(&prepared.round_id, bundle_index)
         .map_err(|e| format!("has_witnesses failed: {e}"))?
     {
         zcash_voting::precompute::note_witnesses(
             &voting_db,
-            &round_id,
+            &prepared.round_id,
             bundle_index,
-            &wallet_inputs.anchor_tree_state_bytes,
-            &bundle_note_infos,
+            &prepared.anchor_tree_state_bytes,
+            &prepared.bundle_note_infos,
             &wallet_db,
         )
         .map(|_| ())
@@ -168,15 +146,15 @@ async fn prepare_delegation_bundle_context(
 
     Ok(DelegationBundleContext {
         voting_db,
-        round_id,
+        round_id: prepared.round_id,
         bundle_index,
-        bundle_setup,
-        selected_weight_zatoshi,
-        bundle_note_infos,
+        bundle_setup: prepared.layout.clone(),
+        selected_weight_zatoshi: prepared.layout.eligible_weight,
+        bundle_note_infos: prepared.bundle_note_infos,
         delegated_weight_zatoshi,
         account,
         voting_hotkey,
-        branch_id_provider,
+        branch_id_provider: prepared.branch_id_provider,
         round_name: round_context.round_name,
     })
 }
