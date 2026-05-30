@@ -43,6 +43,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   @override
   Future<VotingSessionState> build() async {
+    _reactivateForBuild();
     _registerDisposeHandler();
     _registerActiveAccountListener();
     await _refreshSessionAccountFromActiveAccount();
@@ -63,11 +64,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return initialState;
   }
 
+  void _reactivateForBuild() {
+    // Riverpod runs ref.onDispose before every notifier rebuild, not only on
+    // permanent provider teardown. Re-arm this reused notifier so account
+    // reloads can still accept queued actions after a dependency changes.
+    _isDisposed = false;
+  }
+
   void _registerDisposeHandler() {
     if (_disposeHandlerRegistered) return;
     _disposeHandlerRegistered = true;
     final rust = ref.read(votingRustApiProvider);
     ref.onDispose(() {
+      _disposeHandlerRegistered = false;
+      _activeAccountListenerRegistered = false;
       // Provider disposal is round-scoped: clear abandoned prepared PCZTs but
       // keep account-wide vote-tree sync state reusable across rounds.
       final context = _currentContext;

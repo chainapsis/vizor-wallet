@@ -1096,6 +1096,44 @@ void main() {
     expect(rust.resetVotingSessionStateCalls, contains('account-1:$kRoundId'));
   });
 
+  test('Keystone signing starts after active account reload', () async {
+    final rust = FakeVotingRustApi();
+    final activeAccountProvider =
+        NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+          _ActiveVotingAccountNotifier.new,
+        );
+    final container = _sessionContainer(
+      rust: rust,
+      activeAccountUuidListenable: activeAccountProvider,
+      hardwareAccountUuids: {'account-2'},
+    );
+    final subscription = container.listen(
+      votingSessionProvider(kRoundId),
+      (_, _) {},
+    );
+    addTearDown(subscription.close);
+    addTearDown(container.dispose);
+
+    final first = await container.read(votingSessionProvider(kRoundId).future);
+    expect(first.accountUuid, 'account-1');
+    expect(first.isHardwareAccount, isFalse);
+
+    container.read(activeAccountProvider.notifier).set('account-2');
+    final second = await container.read(votingSessionProvider(kRoundId).future);
+    expect(second.accountUuid, 'account-2');
+    expect(second.isHardwareAccount, isTrue);
+
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareKeystoneSigning();
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.keystoneSigning);
+    expect(state.keystoneSigningRequest?.bundleIndex, 0);
+    expect(rust.keystoneDelegationRequestCalls, [0]);
+    expect(rust.accountUuids, contains('account-2'));
+  });
+
   test(
     'ignores stale session UI updates after active account changes',
     () async {
