@@ -1,6 +1,6 @@
 use rusqlite::{named_params, OptionalExtension};
 
-use super::{state::open_voting_db, vote::VoteRecord};
+use super::state::open_voting_db;
 
 /// Stored commitment bundle recovery data for one `(bundle_index, proposal_id)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,6 +65,14 @@ pub struct ShareWorkflowRecovery {
     pub proposal_id: u32,
     pub share_index: u32,
     pub phase: String,
+}
+
+/// Stored vote row keyed by `(round_id, wallet_id, bundle_index, proposal_id)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VoteRecord {
+    pub proposal_id: u32,
+    pub bundle_index: u32,
+    pub choice: u32,
 }
 
 /// Recovery summary for one round.

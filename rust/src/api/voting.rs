@@ -413,8 +413,8 @@ impl From<zcash_voting::vote::SignedVoteCommitment> for ApiSignedVoteCommitment 
     }
 }
 
-impl From<vote::SignedVoteCommitments> for ApiSignedVoteCommitments {
-    fn from(commitments: vote::SignedVoteCommitments) -> Self {
+impl From<zcash_voting::vote::SignedVoteCommitments> for ApiSignedVoteCommitments {
+    fn from(commitments: zcash_voting::vote::SignedVoteCommitments) -> Self {
         Self {
             bundle_index: commitments.bundle_index,
             commitments: commitments
@@ -426,8 +426,18 @@ impl From<vote::SignedVoteCommitments> for ApiSignedVoteCommitments {
     }
 }
 
-impl From<vote::VoteRecord> for ApiVoteRecord {
-    fn from(record: vote::VoteRecord) -> Self {
+impl From<zcash_voting::storage::VoteRecord> for ApiVoteRecord {
+    fn from(record: zcash_voting::storage::VoteRecord) -> Self {
+        Self {
+            proposal_id: record.proposal_id,
+            bundle_index: record.bundle_index,
+            choice: record.choice,
+        }
+    }
+}
+
+impl From<recovery::VoteRecord> for ApiVoteRecord {
+    fn from(record: recovery::VoteRecord) -> Self {
         Self {
             proposal_id: record.proposal_id,
             bundle_index: record.bundle_index,

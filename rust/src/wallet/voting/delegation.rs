@@ -115,24 +115,6 @@ async fn prepare_delegation_bundle_context(
     })
 }
 
-fn signed_payload_from_submission(
-    submission: zcash_voting::delegate::DelegationSubmission,
-    pczt_bytes: Vec<u8>,
-    bundle_setup: &zcash_voting::round::BundleLayout,
-    selected_weight_zatoshi: u64,
-    delegated_weight_zatoshi: u64,
-    bundle_index: u32,
-) -> zcash_voting::delegate::SignedDelegationBundle {
-    zcash_voting::delegate::SignedDelegationBundle {
-        submission,
-        pczt_bytes,
-        eligible_weight_zatoshi: bundle_setup.eligible_weight.min(selected_weight_zatoshi),
-        delegated_weight_zatoshi,
-        bundle_count: bundle_setup.bundle_count,
-        bundle_index,
-    }
-}
-
 async fn prove_delegation_for_context<F>(
     db_path: &str,
     pir_server_url: &str,
@@ -404,14 +386,17 @@ where
     .map_err(|e| format!("delegate::submission failed: {e}"))?;
 
     on_progress(DelegationProgress::PayloadReady);
-    Ok(signed_payload_from_submission(
+    Ok(zcash_voting::delegate::SignedDelegationBundle {
         submission,
-        delegation_setup.pczt_bytes,
-        &context.bundle_setup,
-        context.selected_weight_zatoshi,
-        context.delegated_weight_zatoshi,
+        pczt_bytes: delegation_setup.pczt_bytes,
+        eligible_weight_zatoshi: context
+            .bundle_setup
+            .eligible_weight
+            .min(context.selected_weight_zatoshi),
+        delegated_weight_zatoshi: context.delegated_weight_zatoshi,
+        bundle_count: context.bundle_setup.bundle_count,
         bundle_index,
-    ))
+    })
 }
 
 /// Build one voting PCZT request for Keystone signing.
@@ -561,14 +546,17 @@ where
     .map_err(|e| format!("delegate::submission failed: {e}"))?;
     on_progress(DelegationProgress::PayloadReady);
 
-    Ok(signed_payload_from_submission(
+    Ok(zcash_voting::delegate::SignedDelegationBundle {
         submission,
-        Vec::new(),
-        &context.bundle_setup,
-        context.selected_weight_zatoshi,
-        context.delegated_weight_zatoshi,
+        pczt_bytes: Vec::new(),
+        eligible_weight_zatoshi: context
+            .bundle_setup
+            .eligible_weight
+            .min(context.selected_weight_zatoshi),
+        delegated_weight_zatoshi: context.delegated_weight_zatoshi,
+        bundle_count: context.bundle_setup.bundle_count,
         bundle_index,
-    ))
+    })
 }
 
 fn sign_delegation_request(

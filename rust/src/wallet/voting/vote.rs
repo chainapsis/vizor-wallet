@@ -1,7 +1,6 @@
 use crate::wallet::network::WalletNetwork;
 
 use secrecy::SecretVec;
-use zcash_voting::validate_bundle_index;
 
 use super::{
     hotkey::voting_hotkey_from_secret, progress::VotingWorkCancellation, state::open_voting_db,
@@ -10,21 +9,8 @@ use super::{
 
 /// One proposal choice to turn into a signed vote commitment.
 pub use zcash_voting::vote::DraftVote;
-
-#[derive(Clone, Debug)]
 /// Vote commitments produced for a single bundle index.
-pub struct SignedVoteCommitments {
-    pub bundle_index: u32,
-    pub commitments: Vec<zcash_voting::vote::SignedVoteCommitment>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-/// Stored vote status for one `(bundle_index, proposal_id)` pair.
-pub struct VoteRecord {
-    pub proposal_id: u32,
-    pub bundle_index: u32,
-    pub choice: u32,
-}
+pub use zcash_voting::vote::SignedVoteCommitments;
 
 #[allow(clippy::too_many_arguments)]
 /// Build signed vote commitments and public share payloads for one bundle.
@@ -47,13 +33,8 @@ pub fn build_vote_commitments<F>(
 where
     F: Fn(zcash_voting::vote::VoteCommitStage) + Send + Sync + 'static,
 {
-    zcash_voting::vote::validate_draft_votes(&draft_votes).map_err(|e| e.to_string())?;
     let on_progress = std::sync::Arc::new(on_progress);
     let voting_db = open_voting_db(db_path, wallet_id)?;
-    let bundle_count = voting_db
-        .get_bundle_count(round_id)
-        .map_err(|e| format!("get_bundle_count failed: {e}"))?;
-    validate_bundle_index(bundle_count, bundle_index, "voting").map_err(|e| e.to_string())?;
     let typed_van_witness = zcash_voting::vote::VanWitness::from_wire(
         &van_witness.auth_path,
         van_witness.position,
@@ -61,74 +42,25 @@ where
     )
     .map_err(|e| e.to_string())?;
     let voting_hotkey = voting_hotkey_from_secret(hotkey_seed, network)?;
-    let mut commitments = Vec::with_capacity(draft_votes.len());
+    let progress_cancellation = cancellation.clone();
+    let vote_stages = on_progress.clone();
+    let reporter = zcash_voting::VoteCommitStageBridge::new(move |stage| {
+        if progress_cancellation.check().is_ok() {
+            vote_stages(stage);
+        }
+    });
 
-    for draft in draft_votes {
-        let total_start = std::time::Instant::now();
-        cancellation.check()?;
-        let progress_cancellation = cancellation.clone();
-        let vote_stages = on_progress.clone();
-        let reporter = zcash_voting::VoteCommitStageBridge::new(move |stage| {
-            if progress_cancellation.check().is_ok() {
-                vote_stages(stage);
-            }
-        });
-        let proof_start = std::time::Instant::now();
-        log::info!(
-            "voting vote: starting proof generation (bundle_index={bundle_index}, proposal_id={})",
-            draft.proposal_id
-        );
-        let committed = zcash_voting::vote::CommittedVote::commit(
-            &voting_db,
-            round_id,
-            bundle_index,
-            &draft,
-            &typed_van_witness,
-            zcash_voting::vote::VoteSigner::hotkey(&voting_hotkey),
-            &reporter,
-        )
-        .map_err(|e| format!("vote commit failed: {e}"))?;
-        cancellation.check()?;
-        log::info!(
-            "voting vote: proof generation completed \
-             (bundle_index={bundle_index}, proposal_id={}, elapsed={:.2}s)",
-            draft.proposal_id,
-            proof_start.elapsed().as_secs_f64(),
-        );
-
-        let payload_start = std::time::Instant::now();
-        log::info!(
-            "voting vote: share payloads built \
-             (bundle_index={bundle_index}, proposal_id={}, elapsed={:.2}s)",
-            draft.proposal_id,
-            payload_start.elapsed().as_secs_f64(),
-        );
-
-        let signing_start = std::time::Instant::now();
-        log::info!(
-            "voting vote: commitment signed \
-             (bundle_index={bundle_index}, proposal_id={}, elapsed={:.2}s)",
-            draft.proposal_id,
-            signing_start.elapsed().as_secs_f64(),
-        );
-
-        commitments.push(
-            committed
-                .signed_commitment(&voting_db)
-                .map_err(|e| format!("build signed vote commitment failed: {e}"))?,
-        );
-        log::info!(
-            "voting vote: commitment completed \
-             (bundle_index={bundle_index}, proposal_id={}, elapsed={:.2}s)",
-            draft.proposal_id,
-            total_start.elapsed().as_secs_f64(),
-        );
-    }
-
-    Ok(SignedVoteCommitments {
+    zcash_voting::vote::commit_batch(
+        &voting_db,
+        round_id,
         bundle_index,
-        commitments,
-    })
+        &draft_votes,
+        &typed_van_witness,
+        zcash_voting::vote::VoteSigner::hotkey(&voting_hotkey),
+        &cancellation,
+        &reporter,
+    )
+    .map_err(|e| format!("vote commit batch failed: {e}"))
 }
 
 /// Reconstruct a signed vote commitment from persisted recovery state.
@@ -140,18 +72,8 @@ pub fn recover_vote_commitment(
     proposal_id: u32,
 ) -> Result<SignedVoteCommitments, String> {
     let voting_db = open_voting_db(db_path, wallet_id)?;
-    let committed =
-        zcash_voting::vote::CommittedVote::recover(&voting_db, round_id, bundle_index, proposal_id)
-            .map_err(|e| format!("vote commitment recovery failed: {e}"))?;
-
-    Ok(SignedVoteCommitments {
-        bundle_index,
-        commitments: vec![
-            committed
-                .signed_commitment(&voting_db)
-                .map_err(|e| format!("build signed vote commitment failed: {e}"))?,
-        ],
-    })
+    zcash_voting::vote::recover_signed_commitments(&voting_db, round_id, bundle_index, proposal_id)
+        .map_err(|e| format!("vote commitment recovery failed: {e}"))
 }
 
 /// Load stored vote rows for `round_id` in this wallet.
@@ -159,20 +81,10 @@ pub fn get_votes(
     db_path: &str,
     wallet_id: &str,
     round_id: &str,
-) -> Result<Vec<VoteRecord>, String> {
+) -> Result<Vec<zcash_voting::storage::VoteRecord>, String> {
     let voting_db = open_voting_db(db_path, wallet_id)?;
     voting_db
         .get_votes(round_id)
-        .map(|records| {
-            records
-                .into_iter()
-                .map(|record| VoteRecord {
-                    proposal_id: record.proposal_id,
-                    bundle_index: record.bundle_index,
-                    choice: record.choice,
-                })
-                .collect()
-        })
         .map_err(|e| format!("get_votes failed: {e}"))
 }
 
