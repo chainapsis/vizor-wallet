@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use prost::Message;
 use secrecy::{ExposeSecret, SecretVec};
 
 use crate::wallet::{
@@ -24,7 +23,7 @@ use zcash_voting::delegate::{
 use zcash_voting::precompute::PrecomputeDelegationInputs;
 use zcash_voting::selection::select_notes_with_lwd;
 use zcash_voting::storage::VotingDb;
-use zcash_voting::{voting_power_with_policy, BundlePolicy};
+use zcash_voting::BundlePolicy;
 
 #[derive(Clone, Debug)]
 struct RoundContext {
@@ -90,19 +89,50 @@ async fn prepare_delegation_bundle_context(
     let voting_db = open_voting_db(db_path, account_uuid)?;
     let round_context =
         ensure_round_initialized(&voting_db, &round_params, round_name, session_json)?;
-    let round_id = round_params.vote_round_id;
 
-    let selected = select_notes_with_lwd(
-        &voting_db,
-        db_path,
+    // 1. Resolve the round anchor and consensus branch id in one lightwalletd
+    //    pass before any wallet-DB handle exists. This await happens before the
+    //    wallet is opened so the non-Send handle never crosses an await point.
+    let lwd = zcash_voting::delegate::gather_delegation_lwd_inputs(ResolveDelegationLwdParams {
         lightwalletd_url,
-        voting_network(network),
-        round_context.snapshot_height,
-    )
+        network: voting_network(network),
+        round_params,
+        round_name,
+        cancellation: &zcash_voting::NoopCancellation,
+    })
     .await
     .map_err(|e| e.to_string())?;
-    let note_infos = selected.voting_note_infos();
-    let selected_weight_zatoshi = voting_power_with_policy(&selected, bundle_policy);
+    let DelegationLwdInputs {
+        round_params,
+        resolved_round_name,
+        anchor_tree_state_bytes,
+        branch_id_provider,
+    } = lwd;
+    let round_id = round_params.vote_round_id.clone();
+
+    // 2. Open the wallet once and do all wallet-DB work synchronously: snapshot
+    //    notes plus account keys, and (only on a cold cache) the witnesses.
+    let wallet_db = open_wallet_db_for_read(db_path, network)?;
+    let wallet_progress = get_sync_progress_from_db(&wallet_db)?;
+    let wallet_inputs =
+        zcash_voting::delegate::gather_delegation_wallet_inputs(GatherDelegationWalletParams {
+            wallet_db: &wallet_db,
+            account_uuid,
+            voting_hotkey: &voting_hotkey,
+            snapshot_height: round_params.snapshot_height,
+            scanned_height: wallet_progress.scanned_height,
+            anchor_tree_state_bytes,
+            resolved_round_name,
+        })
+        .map_err(|e| e.to_string())?;
+    let account = zcash_voting::delegate::load_account_keys(&wallet_db, account_uuid)
+        .map_err(|e| format!("load_account_keys failed: {e}"))?;
+
+    let note_infos = wallet_inputs.round_note_infos;
+    let bundles = zcash_voting::round::note_bundles_with_policy(&note_infos, bundle_policy)
+        .map_err(|e| format!("note_bundles_with_policy failed: {e}"))?;
+    let selected_weight_zatoshi = zcash_voting::round::quantized_bundle_set_weight(&bundles)
+        .map_err(|e| format!("quantized_bundle_set_weight failed: {e}"))?;
 
     let bundle_setup = voting_db
         .ensure_bundles_with_skipped_suffix_with_policy(&round_id, &note_infos, bundle_policy)
@@ -117,26 +147,24 @@ async fn prepare_delegation_bundle_context(
     let delegated_weight_zatoshi = zcash_voting::round::quantized_bundle_weight(&bundle_note_infos)
         .map_err(|e| format!("quantized_bundle_weight failed: {e}"))?;
 
-    let wallet_db = open_wallet_db_for_read(db_path, network)?;
-    zcash_voting::precompute::note_witnesses(
-        &voting_db,
-        &round_id,
-        bundle_index,
-        &selected.anchor_tree_state.encode_to_vec(),
-        &bundle_note_infos,
-        &wallet_db,
-    )
-    .map(|_| ())
-    .map_err(|e| e.to_string())?;
-
-    let account = zcash_voting::delegate::load_account_keys(&wallet_db, account_uuid)
-        .map_err(|e| format!("load_account_keys failed: {e}"))?;
-    let branch_id_provider = zcash_voting::delegate::LightwalletdBranchIdProvider::resolve(
-        lightwalletd_url,
-        voting_network(network),
-    )
-    .await
-    .map_err(|e| format!("LightwalletdBranchIdProvider::resolve failed: {e}"))?;
+    // 3. Skip the expensive Orchard witness walk when a prior precompute pass
+    //    already cached witnesses for this bundle. `store_witnesses`
+    //    short-circuits, but `note_witnesses` would still regenerate first.
+    if !voting_db
+        .has_witnesses(&round_id, bundle_index)
+        .map_err(|e| format!("has_witnesses failed: {e}"))?
+    {
+        zcash_voting::precompute::note_witnesses(
+            &voting_db,
+            &round_id,
+            bundle_index,
+            &wallet_inputs.anchor_tree_state_bytes,
+            &bundle_note_infos,
+            &wallet_db,
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())?;
+    }
 
     Ok(DelegationBundleContext {
         voting_db,
@@ -637,6 +665,7 @@ fn ensure_round_initialized(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use prost::Message;
     use std::sync::{Arc, Mutex};
 
     const ACCOUNT_UUID: &str = "550e8400-e29b-41d4-a716-446655440000";
