@@ -27,7 +27,7 @@ zcash_client_backend = { version = "0.22", features = [
 ] }
 zcash_client_sqlite = { version = "0.20", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "7d8bd6786bb001f44d1006edd5879f9e6dadb062", features = ["pir", "tree-sync"] }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "e5977004e6f1a4aec6c95716da569ec296dba8cb", features = ["pir", "tree-sync"] }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
 orchard = { version = "=0.13.1", features = ["unstable-voting-circuits"] }
 sapling-crypto = { version = "0.7", default-features = false, features = ["circuit"] }

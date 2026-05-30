@@ -6,6 +6,7 @@ import '../../core/formatting/date_format.dart';
 import '../../core/formatting/hex_codec.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/voting.dart' as rust_voting;
+import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/voting_models.dart';
 
@@ -172,8 +173,8 @@ class VotingRoundDetails {
     );
   }
 
-  rust_voting.ApiVotingRoundParams toRoundParams() {
-    return rust_voting.ApiVotingRoundParams(
+  rust_wire.VotingRoundParams toRoundParams() {
+    return rust_wire.VotingRoundParams(
       voteRoundId: roundId,
       snapshotHeight: BigInt.from(snapshotHeight),
       eaPk: eaPk,

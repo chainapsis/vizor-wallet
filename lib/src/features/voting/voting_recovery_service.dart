@@ -1,4 +1,5 @@
 import '../../rust/api/voting.dart' as rust_voting;
+import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import 'voting_recovery_api.dart';
 import 'voting_resume_plan.dart';
 
@@ -72,7 +73,7 @@ class VotingRecoveryService {
   ///
   /// Bundle/proposal pairs are keyed together because voting is bundle-indexed:
   /// one proposal can have independent state for each note bundle.
-  VotingResumePlan buildResumePlan(rust_voting.ApiRoundRecoveryState state) {
+  VotingResumePlan buildResumePlan(rust_wire.RoundRecoveryStateView state) {
     final delegationPhasesByIndex = <int, String>{
       for (final record in state.delegation)
         record.bundleIndex: record.phase,
@@ -98,7 +99,7 @@ class VotingRecoveryService {
           index,
     ];
 
-    final votesByKey = <VotingVoteKey, rust_voting.ApiVoteRecovery>{
+    final votesByKey = <VotingVoteKey, rust_wire.VoteRecoveryView>{
       for (final vote in state.votes)
         VotingVoteKey(
           bundleIndex: vote.bundleIndex,
@@ -121,7 +122,7 @@ class VotingRecoveryService {
         ): record.phase,
     };
     final commitmentBundlesByKey =
-        <VotingVoteKey, rust_voting.ApiCommitmentBundleRecovery>{
+        <VotingVoteKey, rust_wire.CommitmentBundleRecoveryView>{
           for (final record in state.commitmentBundles)
             VotingVoteKey(
               bundleIndex: record.bundleIndex,
@@ -184,7 +185,7 @@ class VotingRecoveryService {
   Future<void> addSentServersForShare({
     required String dbPath,
     required String walletId,
-    required rust_voting.ApiShareDelegationRecord share,
+    required rust_wire.ShareDelegationRecordView share,
     required List<String> newUrls,
   }) {
     return _api.addSentServers(
@@ -243,8 +244,8 @@ class VotingRecoveryService {
   }
 
   static int _compareShareDelegations(
-    rust_voting.ApiShareDelegationRecord a,
-    rust_voting.ApiShareDelegationRecord b,
+    rust_wire.ShareDelegationRecordView a,
+    rust_wire.ShareDelegationRecordView b,
   ) {
     final bundleCompare = a.bundleIndex.compareTo(b.bundleIndex);
     if (bundleCompare != 0) return bundleCompare;
