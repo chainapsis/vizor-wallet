@@ -688,7 +688,10 @@ final _routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/voting/poll/:roundId/status',
         builder: (_, state) => _guardVotingScreen(
-          VotingStatusScreen(roundId: state.pathParameters['roundId'] ?? ''),
+          VotingStatusScreen(
+            roundId: state.pathParameters['roundId'] ?? '',
+            accountUuid: state.uri.queryParameters['account'],
+          ),
         ),
       ),
       GoRoute(
@@ -700,6 +703,7 @@ final _routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => _guardVotingScreen(
           VotingSubmissionConfirmationScreen(
             roundId: state.pathParameters['roundId'] ?? '',
+            accountUuid: state.uri.queryParameters['account'],
           ),
         ),
       ),

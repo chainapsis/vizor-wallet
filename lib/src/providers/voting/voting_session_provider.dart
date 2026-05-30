@@ -41,6 +41,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   _VotingSessionContext? _currentContext;
   bool _disposeHandlerRegistered = false;
   bool _activeAccountListenerRegistered = false;
+  bool _submissionGuardListenerRegistered = false;
+  List<VotingSubmissionGuard> _activeSubmissionGuards = const [];
   int _sessionGeneration = 0;
   Completer<void> _sessionInvalidated = Completer<void>();
   int? _runningActionGeneration;
@@ -49,6 +51,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   @override
   Future<VotingSessionState> build() async {
     _reactivateForBuild();
+    _registerSubmissionGuardListener();
     _registerDisposeHandler();
     _registerActiveAccountListener();
     await _refreshSessionAccountFromActiveAccount();
@@ -83,6 +86,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     ref.onDispose(() {
       _disposeHandlerRegistered = false;
       _activeAccountListenerRegistered = false;
+      _submissionGuardListenerRegistered = false;
       // Provider disposal is round-scoped: clear abandoned prepared PCZTs but
       // keep account-wide vote-tree sync state reusable across rounds.
       final context = _currentContext;
@@ -91,6 +95,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _delegationPirPrecomputes.clear();
       _shareTrackingTimer?.cancel();
       if (context == null) return;
+      if (_activeSubmissionOwnsContext(context)) {
+        debugPrint(
+          '[zcash] Voting: process-local state reset skipped '
+          'round=${context.round.roundId} account=${context.accountUuid} '
+          'reason=provider-dispose activeSubmission=true',
+        );
+        return;
+      }
       unawaited(
         _resetVotingSessionState(
           rust: rust,
@@ -99,6 +111,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
     });
+  }
+
+  void _registerSubmissionGuardListener() {
+    if (_submissionGuardListenerRegistered) return;
+    _submissionGuardListenerRegistered = true;
+    ref.listen<List<VotingSubmissionGuard>>(votingSubmissionGuardProvider, (
+      _,
+      guards,
+    ) {
+      _activeSubmissionGuards = guards;
+    }, fireImmediately: true);
   }
 
   void _registerActiveAccountListener() {
@@ -136,11 +159,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final hadSessionAccount = _sessionAccountUuid != null;
     final previousContext = _currentContext;
     if (previousContext != null) {
-      final activeSubmission = ref.read(votingSubmissionGuardProvider);
-      final submissionOwnsContext =
-          activeSubmission?.accountUuid == previousContext.accountUuid &&
-          activeSubmission?.roundId == previousContext.round.roundId;
-      if (!submissionOwnsContext) {
+      if (!_activeSubmissionOwnsContext(previousContext)) {
         unawaited(
           _resetVotingSessionState(
             rust: ref.read(votingRustApiProvider),
@@ -2622,6 +2641,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   bool _isCurrentGeneration(int generation) {
     return !_isDisposed && generation == _sessionGeneration;
+  }
+
+  bool _activeSubmissionOwnsContext(_VotingSessionContext context) {
+    for (final guard in _activeSubmissionGuards) {
+      if (guard.accountUuid == context.accountUuid &&
+          guard.roundId == context.round.roundId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void _advanceSessionGeneration() {

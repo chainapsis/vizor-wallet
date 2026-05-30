@@ -38,8 +38,8 @@ class _VotingQuitGuardHostState extends ConsumerState<VotingQuitGuardHost> {
   }
 
   Future<bool> _confirmQuitIfNeeded() async {
-    final job = ref.read(votingSubmissionJobProvider);
-    if (!job.shouldWarnBeforeQuit) return true;
+    final hasInFlightJobs = ref.read(votingSubmissionHasInFlightJobsProvider);
+    if (!hasInFlightJobs) return true;
     if (!mounted) return false;
 
     final quit = await showDialog<bool>(

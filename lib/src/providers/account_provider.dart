@@ -277,8 +277,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<void> switchAccount(String uuid) async {
     final previousActiveUuid = state.value?.activeAccountUuid;
     if (previousActiveUuid != null && previousActiveUuid != uuid) {
-      final activeVotingSubmission = ref.read(votingSubmissionGuardProvider);
-      if (activeVotingSubmission?.accountUuid != previousActiveUuid) {
+      final guardedSubmission = ref
+          .read(votingSubmissionGuardProvider.notifier)
+          .guardForAccount(previousActiveUuid);
+      if (guardedSubmission == null) {
         await _resetVotingProcessStateForAccount(previousActiveUuid);
       }
     }

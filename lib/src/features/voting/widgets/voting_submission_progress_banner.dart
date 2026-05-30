@@ -9,6 +9,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../voting_flow_models.dart';
 import '../voting_routes.dart';
 
 class VotingSubmissionProgressBanner extends ConsumerWidget {
@@ -16,104 +17,133 @@ class VotingSubmissionProgressBanner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final job = ref.watch(votingSubmissionJobProvider);
-    final key = job.key;
-    if (key == null || !job.hasVisibleJob) {
-      return const SizedBox.shrink();
-    }
+    final jobs = ref.watch(votingSubmissionVisibleJobsProvider);
+    if (jobs.isEmpty) return const SizedBox.shrink();
 
-    final session = ref.watch(votingSubmissionJobSessionProvider);
-    final sessionState = session?.value;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < jobs.length; i++) ...[
+            _VotingSubmissionProgressBannerItem(
+              key: ValueKey(jobs[i].key),
+              jobKey: jobs[i].key!,
+            ),
+            if (i != jobs.length - 1) const SizedBox(height: AppSpacing.xs),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _VotingSubmissionProgressBannerItem extends ConsumerWidget {
+  const _VotingSubmissionProgressBannerItem({super.key, required this.jobKey});
+
+  final VotingSessionKey jobKey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final job = ref.watch(votingSubmissionJobProvider(jobKey));
+    if (!job.hasVisibleJob) return const SizedBox.shrink();
+
+    final session = ref.watch(votingSubmissionJobSessionProvider(jobKey));
+    final sessionState = session.value;
     final title = _titleFor(job.status);
-    final accountName = _accountName(ref, key.accountUuid);
+    final accountName = _accountName(ref, jobKey.accountUuid);
     final detail = _detailFor(job, sessionState, accountName);
     final progress = _progressFor(job, sessionState);
     final colors = context.colors;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.background.raised.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(AppRadii.xSmall),
-          border: Border.all(color: colors.border.subtle),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.raised.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+        border: Border.all(color: colors.border.subtle),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s,
+          vertical: AppSpacing.xs,
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s,
-            vertical: AppSpacing.xs,
-          ),
-          child: Row(
-            children: [
-              AppIcon(
-                job.status == VotingSubmissionJobStatus.error
-                    ? AppIcons.warning
-                    : job.status == VotingSubmissionJobStatus.complete
-                    ? AppIcons.checkCircle
-                    : AppIcons.sync,
-                size: 18,
-                color: job.status == VotingSubmissionJobStatus.error
-                    ? colors.icon.destructive
-                    : colors.icon.accent,
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.labelLarge.copyWith(
-                              color: colors.text.accent,
-                            ),
+        child: Row(
+          children: [
+            AppIcon(
+              job.status == VotingSubmissionJobStatus.error
+                  ? AppIcons.warning
+                  : job.status == VotingSubmissionJobStatus.complete
+                  ? AppIcons.checkCircle
+                  : AppIcons.sync,
+              size: 18,
+              color: job.status == VotingSubmissionJobStatus.error
+                  ? colors.icon.destructive
+                  : colors.icon.accent,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
                           ),
                         ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Flexible(
-                          child: Text(
-                            detail,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.end,
-                            style: AppTypography.bodySmall.copyWith(
-                              color: colors.text.secondary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(AppRadii.full),
-                      child: LinearProgressIndicator(
-                        minHeight: 4,
-                        value: progress,
-                        backgroundColor: colors.border.subtle,
                       ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Flexible(
+                        child: Text(
+                          detail,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.end,
+                          style: AppTypography.bodySmall.copyWith(
+                            color: colors.text.secondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadii.full),
+                    child: LinearProgressIndicator(
+                      minHeight: 4,
+                      value: progress,
+                      backgroundColor: colors.border.subtle,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(width: AppSpacing.s),
-              AppButton(
-                onPressed: () {
-                  final route = job.status == VotingSubmissionJobStatus.complete
-                      ? votingSubmissionConfirmedRoute(key.roundId)
-                      : votingStatusRoute(key.roundId);
-                  context.go(route);
-                },
-                variant: AppButtonVariant.secondary,
-                size: AppButtonSize.small,
-                child: const Text('View'),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: AppSpacing.s),
+            AppButton(
+              onPressed: () {
+                final route = job.status == VotingSubmissionJobStatus.complete
+                    ? votingSubmissionConfirmedRoute(
+                        jobKey.roundId,
+                        accountUuid: jobKey.accountUuid,
+                      )
+                    : votingStatusRoute(
+                        jobKey.roundId,
+                        accountUuid: jobKey.accountUuid,
+                      );
+                context.go(route);
+              },
+              variant: AppButtonVariant.secondary,
+              size: AppButtonSize.small,
+              child: const Text('View'),
+            ),
+          ],
         ),
       ),
     );

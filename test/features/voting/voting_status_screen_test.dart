@@ -802,8 +802,14 @@ void main() {
       ProviderScope(
         overrides: [
           accountProvider.overrideWith(_MnemonicAccountNotifier.new),
-          votingSubmissionJobProvider.overrideWith(
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(
             () => _StaticVotingSubmissionJobNotifier(
+              key,
               const VotingSubmissionJobState(
                 key: key,
                 status: VotingSubmissionJobStatus.running,
@@ -811,7 +817,7 @@ void main() {
               ),
             ),
           ),
-          votingSubmissionJobSessionProvider.overrideWithValue(
+          votingSubmissionJobSessionProvider(key).overrideWithValue(
             AsyncValue.data(
               VotingSessionState(
                 roundId: _roundId,
@@ -841,19 +847,10 @@ void main() {
   });
 
   testWidgets('quit guard confirms while submission is active', (tester) async {
-    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          votingSubmissionJobProvider.overrideWith(
-            () => _StaticVotingSubmissionJobNotifier(
-              const VotingSubmissionJobState(
-                key: key,
-                status: VotingSubmissionJobStatus.running,
-                generation: 1,
-              ),
-            ),
-          ),
+          votingSubmissionHasInFlightJobsProvider.overrideWithValue(true),
         ],
         child: AppTheme(
           data: AppThemeData.light,
@@ -2055,12 +2052,21 @@ class _HardwareAccountNotifier extends AccountNotifier {
 }
 
 class _StaticVotingSubmissionJobNotifier extends VotingSubmissionJobNotifier {
-  _StaticVotingSubmissionJobNotifier(this._initial);
+  _StaticVotingSubmissionJobNotifier(super.key, this._initial);
 
   final VotingSubmissionJobState _initial;
 
   @override
   VotingSubmissionJobState build() => _initial;
+}
+
+class _StaticVotingSubmissionJobsNotifier extends VotingSubmissionJobsNotifier {
+  _StaticVotingSubmissionJobsNotifier(this._initial);
+
+  final VotingSubmissionJobsState _initial;
+
+  @override
+  VotingSubmissionJobsState build() => _initial;
 }
 
 class _FakeVotingRecoveryApi implements VotingRecoveryApi {

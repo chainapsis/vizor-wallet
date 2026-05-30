@@ -31,47 +31,68 @@ class VotingSubmissionInProgressException implements Exception {
   String toString() => message;
 }
 
-class VotingSubmissionGuardNotifier extends Notifier<VotingSubmissionGuard?> {
+class VotingSubmissionGuardNotifier
+    extends Notifier<List<VotingSubmissionGuard>> {
   int _nextToken = 0;
 
   @override
-  VotingSubmissionGuard? build() => null;
+  List<VotingSubmissionGuard> build() => const [];
 
   VotingSubmissionGuard acquire({
     required String accountUuid,
     required String roundId,
   }) {
-    final current = state;
-    if (current != null &&
-        current.accountUuid == accountUuid &&
-        current.roundId == roundId) {
-      return current;
-    }
-    if (current != null) {
-      throw VotingSubmissionInProgressException(current);
+    final existing = guardFor(accountUuid: accountUuid, roundId: roundId);
+    if (existing != null) {
+      return existing;
     }
     final guard = VotingSubmissionGuard(
       token: _nextToken++,
       accountUuid: accountUuid,
       roundId: roundId,
     );
-    state = guard;
+    state = [...state, guard];
     return guard;
   }
 
   void release(VotingSubmissionGuard guard) {
-    if (state?.token != guard.token) return;
-    state = null;
+    state = [
+      for (final activeGuard in state)
+        if (activeGuard.token != guard.token) activeGuard,
+    ];
+  }
+
+  VotingSubmissionGuard? guardFor({
+    required String accountUuid,
+    required String roundId,
+  }) {
+    for (final guard in state) {
+      if (guard.accountUuid == accountUuid && guard.roundId == roundId) {
+        return guard;
+      }
+    }
+    return null;
+  }
+
+  VotingSubmissionGuard? guardForAccount(String accountUuid) {
+    for (final guard in state) {
+      if (guard.accountUuid == accountUuid) return guard;
+    }
+    return null;
+  }
+
+  bool isGuarded({required String accountUuid, required String roundId}) {
+    return guardFor(accountUuid: accountUuid, roundId: roundId) != null;
   }
 
   void throwIfActive() {
-    final guard = state;
-    if (guard == null) return;
-    throw VotingSubmissionInProgressException(guard);
+    if (state.isEmpty) return;
+    throw VotingSubmissionInProgressException(state.first);
   }
 }
 
 final votingSubmissionGuardProvider =
-    NotifierProvider<VotingSubmissionGuardNotifier, VotingSubmissionGuard?>(
-      VotingSubmissionGuardNotifier.new,
-    );
+    NotifierProvider<
+      VotingSubmissionGuardNotifier,
+      List<VotingSubmissionGuard>
+    >(VotingSubmissionGuardNotifier.new);

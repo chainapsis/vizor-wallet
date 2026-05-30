@@ -9,21 +9,26 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../../services/voting/pir_snapshot_resolver.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../voting_error_messages.dart';
+import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 
 class VotingStatusScreen extends ConsumerStatefulWidget {
-  const VotingStatusScreen({super.key, required this.roundId});
+  const VotingStatusScreen({
+    super.key,
+    required this.roundId,
+    this.accountUuid,
+  });
 
   final String roundId;
+  final String? accountUuid;
 
   @override
   ConsumerState<VotingStatusScreen> createState() => _VotingStatusScreenState();
@@ -31,6 +36,7 @@ class VotingStatusScreen extends ConsumerStatefulWidget {
 
 class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   bool _startScheduled = false;
+  VotingSessionKey? _jobKey;
 
   @override
   void initState() {
@@ -41,8 +47,17 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   @override
   void didUpdateWidget(covariant VotingStatusScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.roundId == widget.roundId) return;
+    if (oldWidget.roundId == widget.roundId &&
+        oldWidget.accountUuid == widget.accountUuid) {
+      return;
+    }
     _startScheduled = false;
+    _jobKey = widget.accountUuid == null
+        ? null
+        : VotingSessionKey(
+            roundId: widget.roundId,
+            accountUuid: widget.accountUuid!,
+          );
     _scheduleStart();
   }
 
@@ -52,20 +67,42 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(
-        ref.read(votingSubmissionJobProvider.notifier).start(widget.roundId),
+        ref
+            .read(votingSubmissionJobsProvider.notifier)
+            .start(widget.roundId, accountUuid: widget.accountUuid)
+            .then((key) {
+              if (!mounted || key == null) return;
+              setState(() {
+                _jobKey = key;
+              });
+            }),
       );
     });
   }
 
+  VotingSessionKey? _selectedJobKey() {
+    return _jobKey ??
+        (widget.accountUuid == null
+            ? null
+            : VotingSessionKey(
+                roundId: widget.roundId,
+                accountUuid: widget.accountUuid!,
+              ));
+  }
+
   Future<void> _scanKeystoneSignature() async {
+    final key = _selectedJobKey();
+    if (key == null) return;
     final signedPczt = await context.push<List<int>>('/voting/keystone/scan');
     if (signedPczt == null || signedPczt.isEmpty) return;
     await ref
-        .read(votingSubmissionJobProvider.notifier)
-        .handleKeystoneSignedPczt(signedPczt);
+        .read(votingSubmissionJobsProvider.notifier)
+        .handleKeystoneSignedPczt(key, signedPczt);
   }
 
   Future<void> _skipRemainingKeystoneBundles() async {
+    final key = _selectedJobKey();
+    if (key == null) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -89,8 +126,8 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     );
     if (confirmed != true) return;
     await ref
-        .read(votingSubmissionJobProvider.notifier)
-        .skipRemainingKeystoneBundles();
+        .read(votingSubmissionJobsProvider.notifier)
+        .skipRemainingKeystoneBundles(key);
   }
 
   bool _hasCompletedSubmission(VotingSessionState? session) {
@@ -107,26 +144,40 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<VotingSubmissionJobState>(votingSubmissionJobProvider, (
-      previous,
-      next,
-    ) {
-      if (!mounted ||
-          previous?.status == VotingSubmissionJobStatus.complete ||
-          next.status != VotingSubmissionJobStatus.complete ||
-          next.key?.roundId != widget.roundId) {
-        return;
-      }
-      context.go(votingSubmissionConfirmedRoute(widget.roundId));
-    });
-    final job = ref.watch(votingSubmissionJobProvider);
-    final jobKey = job.key;
-    final session =
-        jobKey != null &&
-            jobKey.accountUuid.isNotEmpty &&
-            jobKey.roundId == widget.roundId
-        ? ref.watch(votingSubmissionSessionProvider(jobKey))
-        : const AsyncValue<VotingSessionState>.loading();
+    final selectedKey = _selectedJobKey();
+    if (selectedKey != null) {
+      ref.listen<VotingSubmissionJobState>(
+        votingSubmissionJobProvider(selectedKey),
+        (previous, next) {
+          if (!mounted ||
+              previous?.status == VotingSubmissionJobStatus.complete ||
+              next.status != VotingSubmissionJobStatus.complete) {
+            return;
+          }
+          context.go(
+            votingSubmissionConfirmedRoute(
+              widget.roundId,
+              accountUuid: selectedKey.accountUuid,
+            ),
+          );
+        },
+      );
+    }
+    final startError = ref.watch(
+      votingSubmissionJobsProvider.select(
+        (state) => state.startErrorForRound(widget.roundId),
+      ),
+    );
+    final job = selectedKey == null
+        ? null
+        : ref.watch(votingSubmissionJobProvider(selectedKey));
+    final session = selectedKey == null
+        ? const AsyncValue<VotingSessionState>.loading()
+        : ref.watch(votingSubmissionJobSessionProvider(selectedKey));
+    if (selectedKey != null &&
+        job?.status == VotingSubmissionJobStatus.complete) {
+      _scheduleConfirmationNavigation(selectedKey);
+    }
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
@@ -138,11 +189,18 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
             child: session.when(
               skipLoadingOnRefresh: false,
               loading: () {
-                if (job.status == VotingSubmissionJobStatus.error &&
-                    job.key?.roundId == widget.roundId) {
+                if (startError != null) {
                   return _StatusContent(
                     phase: VotingSessionPhase.error,
-                    errorMessage: job.errorMessage,
+                    errorMessage: startError,
+                    onRetry: _retry,
+                  );
+                }
+                if (job?.status == VotingSubmissionJobStatus.error &&
+                    job?.key?.roundId == widget.roundId) {
+                  return _StatusContent(
+                    phase: VotingSessionPhase.error,
+                    errorMessage: job?.errorMessage,
                     onRetry: _retry,
                   );
                 }
@@ -150,15 +208,15 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
               },
               error: (error, _) => _StatusContent(
                 phase: VotingSessionPhase.error,
-                errorMessage: job.errorMessage ?? _messageFromError(error),
+                errorMessage: job?.errorMessage ?? _messageFromError(error),
                 onRetry: _retry,
               ),
               data: (state) {
-                final localError = job.errorMessage;
+                final localError = job?.errorMessage;
                 final completedSubmission =
-                    job.status == VotingSubmissionJobStatus.complete ||
+                    job?.status == VotingSubmissionJobStatus.complete ||
                     _hasCompletedSubmission(state);
-                final phase = job.status != VotingSubmissionJobStatus.error
+                final phase = job?.status != VotingSubmissionJobStatus.error
                     ? _displayPhase(
                         state.phase,
                         completedSubmission: completedSubmission,
@@ -173,13 +231,14 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
                   ),
                   delegationProgress: _delegationProgress(state),
                   completedSubmission: completedSubmission,
-                  softwareAccountRequired: job.softwareAccountRequired,
+                  softwareAccountRequired:
+                      job?.softwareAccountRequired ?? false,
                   isHardwareAccount: state.isHardwareAccount,
                   keystoneSigningRequest: state.keystoneSigningRequest,
                   canSkipRemainingKeystoneBundles:
                       state.canSkipRemainingKeystoneBundles,
-                  keystoneUrParts: job.keystoneUrParts,
-                  keystoneQrError: job.keystoneQrError,
+                  keystoneUrParts: job?.keystoneUrParts ?? const [],
+                  keystoneQrError: job?.keystoneQrError,
                   keystoneScanError: state.keystoneScanError,
                   walletScannedHeight: state.walletScannedHeight,
                   walletSnapshotHeight: state.walletSnapshotHeight,
@@ -328,7 +387,25 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   }
 
   void _retry() {
-    unawaited(ref.read(votingSubmissionJobProvider.notifier).retry());
+    final key = _selectedJobKey();
+    if (key == null) {
+      _startScheduled = false;
+      _scheduleStart();
+      return;
+    }
+    unawaited(ref.read(votingSubmissionJobsProvider.notifier).retry(key));
+  }
+
+  void _scheduleConfirmationNavigation(VotingSessionKey key) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _selectedJobKey() != key) return;
+      context.go(
+        votingSubmissionConfirmedRoute(
+          widget.roundId,
+          accountUuid: key.accountUuid,
+        ),
+      );
+    });
   }
 }
 

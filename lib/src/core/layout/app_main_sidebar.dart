@@ -32,8 +32,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       _matchedLocation.startsWith('$routePath/');
 
   bool _blockIfVotingSubmissionInProgress() {
-    final guard = ref.read(votingSubmissionGuardProvider);
-    if (guard == null) return false;
+    final guards = ref.read(votingSubmissionGuardProvider);
+    if (guards.isEmpty) return false;
+    final guard = guards.first;
     showAppToast(context, guard.message);
     return true;
   }

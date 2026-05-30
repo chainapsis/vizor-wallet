@@ -1187,54 +1187,140 @@ void main() {
       walletSyncPollInterval: const Duration(milliseconds: 1),
     );
     final subscription = container.listen(
-      votingSubmissionJobProvider,
+      votingSubmissionVisibleJobsProvider,
       (_, _) {},
     );
     addTearDown(subscription.close);
     addTearDown(container.dispose);
 
-    unawaited(
-      container.read(votingSubmissionJobProvider.notifier).start(kRoundId),
-    );
+    final key = await container
+        .read(votingSubmissionJobsProvider.notifier)
+        .start(kRoundId);
+    expect(key, isNotNull);
     await readiness.firstCheck.future;
     await _waitForJobSessionPhase(
       container,
+      key!,
       VotingSessionPhase.waitingForWalletSync,
     );
 
-    final key = container.read(votingSubmissionJobProvider).key!;
     expect(key.accountUuid, 'account-1');
     expect(
-      container.read(votingSubmissionJobProvider).status,
+      container.read(votingSubmissionJobProvider(key)).status,
       VotingSubmissionJobStatus.running,
     );
     expect(
-      container.read(votingSubmissionGuardProvider)?.accountUuid,
+      container
+          .read(votingSubmissionGuardProvider.notifier)
+          .guardForAccount('account-1')
+          ?.accountUuid,
       'account-1',
     );
     expect(
-      container.read(votingSubmissionJobSessionProvider)?.value?.phase,
+      container.read(votingSubmissionJobSessionProvider(key)).value?.phase,
       VotingSessionPhase.waitingForWalletSync,
     );
 
     container.read(activeAccountProvider.notifier).set('account-2');
     await Future<void>.delayed(Duration.zero);
 
-    expect(container.read(votingSubmissionJobProvider).key, key);
+    expect(container.read(votingSubmissionJobProvider(key)).key, key);
     expect(
-      container.read(votingSubmissionJobSessionProvider)?.value?.accountUuid,
+      container
+          .read(votingSubmissionJobSessionProvider(key))
+          .value
+          ?.accountUuid,
       'account-1',
     );
 
     readiness.allowReady();
     final failed = await _waitForJobStatus(
       container,
+      key,
       VotingSubmissionJobStatus.error,
     );
 
     expect(failed.key, key);
     expect(failed.errorMessage, 'Choose at least one vote before submitting.');
-    expect(container.read(votingSubmissionGuardProvider), isNull);
+    expect(
+      container
+          .read(votingSubmissionGuardProvider.notifier)
+          .guardForAccount('account-1'),
+      isNull,
+    );
+  });
+
+  test('submission jobs run independently for multiple accounts', () async {
+    final readiness = _GatedVotingWalletSyncReadinessChecker();
+    final container = _sessionContainer(
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 1),
+    );
+    final subscription = container.listen(
+      votingSubmissionVisibleJobsProvider,
+      (_, _) {},
+    );
+    addTearDown(subscription.close);
+    addTearDown(container.dispose);
+
+    final manager = container.read(votingSubmissionJobsProvider.notifier);
+    final firstKey = await manager.start(kRoundId, accountUuid: 'account-1');
+    final secondKey = await manager.start(kRoundId, accountUuid: 'account-2');
+    expect(firstKey, isNotNull);
+    expect(secondKey, isNotNull);
+
+    await _waitForJobSessionPhase(
+      container,
+      firstKey!,
+      VotingSessionPhase.waitingForWalletSync,
+    );
+    await _waitForJobSessionPhase(
+      container,
+      secondKey!,
+      VotingSessionPhase.waitingForWalletSync,
+    );
+
+    expect(container.read(votingSubmissionJobsProvider).jobKeys, [
+      firstKey,
+      secondKey,
+    ]);
+    expect(
+      container
+          .read(votingSubmissionGuardProvider.notifier)
+          .guardForAccount('account-1')
+          ?.roundId,
+      kRoundId,
+    );
+    expect(
+      container
+          .read(votingSubmissionGuardProvider.notifier)
+          .guardForAccount('account-2')
+          ?.roundId,
+      kRoundId,
+    );
+
+    readiness.allowReady();
+    final firstFailed = await _waitForJobStatus(
+      container,
+      firstKey,
+      VotingSubmissionJobStatus.error,
+    );
+    final secondFailed = await _waitForJobStatus(
+      container,
+      secondKey,
+      VotingSubmissionJobStatus.error,
+    );
+
+    expect(firstFailed.key, firstKey);
+    expect(secondFailed.key, secondKey);
+    expect(
+      firstFailed.errorMessage,
+      'Choose at least one vote before submitting.',
+    );
+    expect(
+      secondFailed.errorMessage,
+      'Choose at least one vote before submitting.',
+    );
   });
 
   test('Keystone signing starts after active account reload', () async {
@@ -3154,32 +3240,34 @@ ProviderContainer _sessionContainer({
 
 Future<VotingSubmissionJobState> _waitForJobStatus(
   ProviderContainer container,
+  VotingSessionKey key,
   VotingSubmissionJobStatus status,
 ) async {
   for (var i = 0; i < 100; i++) {
-    final state = container.read(votingSubmissionJobProvider);
+    final state = container.read(votingSubmissionJobProvider(key));
     if (state.status == status) return state;
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
   fail(
     'Timed out waiting for voting submission job status $status. '
-    'Last state: ${container.read(votingSubmissionJobProvider).status}',
+    'Last state: ${container.read(votingSubmissionJobProvider(key)).status}',
   );
 }
 
 Future<VotingSessionState> _waitForJobSessionPhase(
   ProviderContainer container,
+  VotingSessionKey key,
   VotingSessionPhase phase,
 ) async {
   for (var i = 0; i < 100; i++) {
-    final state = container.read(votingSubmissionJobSessionProvider)?.value;
+    final state = container.read(votingSubmissionJobSessionProvider(key)).value;
     if (state?.phase == phase) return state!;
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
   fail(
     'Timed out waiting for voting submission job session phase $phase. '
     'Last phase: '
-    '${container.read(votingSubmissionJobSessionProvider)?.value?.phase}',
+    '${container.read(votingSubmissionJobSessionProvider(key)).value?.phase}',
   );
 }
 

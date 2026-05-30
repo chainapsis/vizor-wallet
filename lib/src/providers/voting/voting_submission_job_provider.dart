@@ -101,8 +101,126 @@ class VotingSubmissionJobState {
   }
 }
 
+@immutable
+class VotingSubmissionJobsState {
+  const VotingSubmissionJobsState({
+    this.jobKeys = const [],
+    this.startErrorsByRoundId = const {},
+  });
+
+  final List<VotingSessionKey> jobKeys;
+  final Map<String, String> startErrorsByRoundId;
+
+  bool get hasJobs => jobKeys.isNotEmpty;
+
+  String? startErrorForRound(String roundId) => startErrorsByRoundId[roundId];
+
+  VotingSubmissionJobsState copyWith({
+    List<VotingSessionKey>? jobKeys,
+    Map<String, String>? startErrorsByRoundId,
+  }) {
+    return VotingSubmissionJobsState(
+      jobKeys: jobKeys ?? this.jobKeys,
+      startErrorsByRoundId: startErrorsByRoundId ?? this.startErrorsByRoundId,
+    );
+  }
+
+  VotingSubmissionJobsState addJobKey(VotingSessionKey key) {
+    if (jobKeys.contains(key)) {
+      return clearStartError(key.roundId);
+    }
+    return copyWith(
+      jobKeys: [...jobKeys, key],
+      startErrorsByRoundId: _withoutStartError(key.roundId),
+    );
+  }
+
+  VotingSubmissionJobsState setStartError(String roundId, String message) {
+    return copyWith(
+      startErrorsByRoundId: {...startErrorsByRoundId, roundId: message},
+    );
+  }
+
+  VotingSubmissionJobsState clearStartError(String roundId) {
+    if (!startErrorsByRoundId.containsKey(roundId)) return this;
+    return copyWith(startErrorsByRoundId: _withoutStartError(roundId));
+  }
+
+  Map<String, String> _withoutStartError(String roundId) {
+    return {
+      for (final entry in startErrorsByRoundId.entries)
+        if (entry.key != roundId) entry.key: entry.value,
+    };
+  }
+}
+
+class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
+  @override
+  VotingSubmissionJobsState build() => const VotingSubmissionJobsState();
+
+  Future<VotingSessionKey?> start(String roundId, {String? accountUuid}) async {
+    final String? resolvedAccountUuid;
+    try {
+      resolvedAccountUuid = accountUuid ?? await _activeAccountUuid();
+    } catch (error) {
+      state = state.setStartError(roundId, friendlyVotingErrorMessage(error));
+      return null;
+    }
+    if (resolvedAccountUuid == null) {
+      state = state.setStartError(
+        roundId,
+        'No active account for voting session.',
+      );
+      return null;
+    }
+
+    final key = VotingSessionKey(
+      roundId: roundId,
+      accountUuid: resolvedAccountUuid,
+    );
+    state = state.addJobKey(key);
+    await ref.read(votingSubmissionJobProvider(key).notifier).start();
+    return key;
+  }
+
+  Future<void> retry(VotingSessionKey key) async {
+    state = state.addJobKey(key);
+    await ref.read(votingSubmissionJobProvider(key).notifier).retry();
+  }
+
+  Future<void> handleKeystoneSignedPczt(
+    VotingSessionKey key,
+    List<int> signedPczt,
+  ) {
+    return ref
+        .read(votingSubmissionJobProvider(key).notifier)
+        .handleKeystoneSignedPczt(signedPczt);
+  }
+
+  Future<void> skipRemainingKeystoneBundles(VotingSessionKey key) {
+    return ref
+        .read(votingSubmissionJobProvider(key).notifier)
+        .skipRemainingKeystoneBundles();
+  }
+
+  Future<String?> _activeAccountUuid() async {
+    final votingAccountUuid = await ref
+        .read(votingActiveAccountUuidProvider)
+        .call();
+    if (votingAccountUuid != null) return votingAccountUuid;
+    final immediate = ref.read(accountProvider).value?.activeAccountUuid;
+    if (immediate != null) return immediate;
+    return (await ref.read(accountProvider.future)).activeAccountUuid;
+  }
+}
+
 class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
+  VotingSubmissionJobNotifier(this._key);
+
+  final VotingSessionKey _key;
   VotingSubmissionGuard? _guard;
+  ProviderSubscription<AsyncValue<VotingSessionState>>? _sessionSubscription;
+  VotingSessionKey? _retainedSessionKey;
   Timer? _completionPollTimer;
   int _nextGeneration = 0;
 
@@ -111,43 +229,27 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     ref.onDispose(() {
       _completionPollTimer?.cancel();
       _completionPollTimer = null;
+      _releaseSessionSubscription();
     });
-    return const VotingSubmissionJobState();
+    return VotingSubmissionJobState(key: _key);
   }
 
-  Future<void> start(String roundId) async {
+  Future<void> start() async {
     final current = state;
-    if (current.key?.roundId == roundId && current.hasVisibleJob) return;
-    if (current.isInFlight) {
-      ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
-    }
-
-    final String? accountUuid;
-    try {
-      accountUuid = await _activeAccountUuid();
-    } catch (error) {
-      _setInitialError(roundId, _messageFromError(error));
-      return;
-    }
-    if (accountUuid == null) {
-      _setInitialError(roundId, 'No active account for voting session.');
-      return;
-    }
-
-    _startJob(VotingSessionKey(roundId: roundId, accountUuid: accountUuid));
+    if (current.hasVisibleJob) return;
+    _startJob(_key);
   }
 
   Future<void> retry() async {
-    final key = state.key;
-    if (key == null) return;
     _releaseGuard();
-    state = const VotingSubmissionJobState();
-    _startJob(key);
+    state = VotingSubmissionJobState(key: _key);
+    _startJob(_key);
   }
 
   void _startJob(VotingSessionKey key) {
     _cancelCompletionPoll();
     _replaceGuard(accountUuid: key.accountUuid, roundId: key.roundId);
+    _retainSession(key);
     final generation = ++_nextGeneration;
     state = VotingSubmissionJobState(
       key: key,
@@ -597,6 +699,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     _cancelCompletionPoll();
     _releaseGuard();
+    _releaseSessionSubscription();
     state = state.copyWith(
       status: VotingSubmissionJobStatus.complete,
       clearErrorMessage: true,
@@ -631,6 +734,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     _cancelCompletionPoll();
     _releaseGuard();
+    _releaseSessionSubscription();
     state = state.copyWith(
       status: VotingSubmissionJobStatus.error,
       errorMessage: message,
@@ -642,27 +746,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       pendingProposalOptionCounts: const {},
       pendingRecoveryWithoutDraft: false,
     );
-  }
-
-  void _setInitialError(String roundId, String message) {
-    _cancelCompletionPoll();
-    final generation = ++_nextGeneration;
-    state = VotingSubmissionJobState(
-      key: VotingSessionKey(roundId: roundId, accountUuid: ''),
-      status: VotingSubmissionJobStatus.error,
-      generation: generation,
-      errorMessage: message,
-    );
-  }
-
-  Future<String?> _activeAccountUuid() async {
-    final votingAccountUuid = await ref
-        .read(votingActiveAccountUuidProvider)
-        .call();
-    if (votingAccountUuid != null) return votingAccountUuid;
-    final immediate = ref.read(accountProvider).value?.activeAccountUuid;
-    if (immediate != null) return immediate;
-    return (await ref.read(accountProvider.future)).activeAccountUuid;
   }
 
   VotingSessionState? _sessionForJob(VotingSessionKey key) {
@@ -682,6 +765,23 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _guard = ref
         .read(votingSubmissionGuardProvider.notifier)
         .acquire(accountUuid: accountUuid, roundId: roundId);
+  }
+
+  void _retainSession(VotingSessionKey key) {
+    if (_retainedSessionKey == key && _sessionSubscription != null) return;
+    _releaseSessionSubscription();
+    _retainedSessionKey = key;
+    _sessionSubscription = ref.listen<AsyncValue<VotingSessionState>>(
+      votingSubmissionSessionProvider(key),
+      (_, _) {},
+      fireImmediately: true,
+    );
+  }
+
+  void _releaseSessionSubscription() {
+    _sessionSubscription?.close();
+    _sessionSubscription = null;
+    _retainedSessionKey = null;
   }
 
   void _releaseGuard() {
@@ -864,16 +964,38 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 }
 
-final votingSubmissionJobProvider =
-    NotifierProvider<VotingSubmissionJobNotifier, VotingSubmissionJobState>(
-      VotingSubmissionJobNotifier.new,
+final votingSubmissionJobsProvider =
+    NotifierProvider<VotingSubmissionJobsNotifier, VotingSubmissionJobsState>(
+      VotingSubmissionJobsNotifier.new,
     );
 
+final votingSubmissionJobProvider =
+    NotifierProvider.family<
+      VotingSubmissionJobNotifier,
+      VotingSubmissionJobState,
+      VotingSessionKey
+    >(VotingSubmissionJobNotifier.new);
+
+final votingSubmissionVisibleJobsProvider =
+    Provider<List<VotingSubmissionJobState>>((ref) {
+      final jobsState = ref.watch(votingSubmissionJobsProvider);
+      final jobs = <VotingSubmissionJobState>[];
+      for (final key in jobsState.jobKeys) {
+        final job = ref.watch(votingSubmissionJobProvider(key));
+        if (job.hasVisibleJob) jobs.add(job);
+      }
+      return jobs;
+    });
+
+final votingSubmissionHasInFlightJobsProvider = Provider<bool>((ref) {
+  final jobs = ref.watch(votingSubmissionVisibleJobsProvider);
+  return jobs.any((job) => job.isInFlight);
+});
+
 final votingSubmissionJobSessionProvider =
-    Provider<AsyncValue<VotingSessionState>?>((ref) {
-      final key = ref.watch(
-        votingSubmissionJobProvider.select((state) => state.key),
-      );
-      if (key == null || key.accountUuid.isEmpty) return null;
+    Provider.family<AsyncValue<VotingSessionState>, VotingSessionKey>((
+      ref,
+      key,
+    ) {
       return ref.watch(votingSubmissionSessionProvider(key));
     });

@@ -10,24 +10,28 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
+import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
 
 class VotingSubmissionConfirmationScreen extends ConsumerWidget {
-  const VotingSubmissionConfirmationScreen({super.key, required this.roundId});
+  const VotingSubmissionConfirmationScreen({
+    super.key,
+    required this.roundId,
+    this.accountUuid,
+  });
 
   final String roundId;
+  final String? accountUuid;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final job = ref.watch(votingSubmissionJobProvider);
-    final jobKey = job.key;
-    final session =
-        jobKey != null &&
-            jobKey.accountUuid.isNotEmpty &&
-            jobKey.roundId == roundId
-        ? ref.watch(votingSubmissionSessionProvider(jobKey))
-        : ref.watch(votingSessionProvider(roundId));
+    final jobKey = accountUuid == null || accountUuid!.isEmpty
+        ? null
+        : VotingSessionKey(roundId: roundId, accountUuid: accountUuid!);
+    final session = jobKey == null
+        ? ref.watch(votingSessionProvider(roundId))
+        : ref.watch(votingSubmissionJobSessionProvider(jobKey));
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
