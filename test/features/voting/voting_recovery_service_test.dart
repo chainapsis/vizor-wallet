@@ -539,8 +539,7 @@ rust_frb_types.RoundRecoveryStateView recoveryState({
   List<rust_frb_types.VoteRecoveryView> votes = const [],
   List<rust_frb_types.VoteRecoveryView> voteWorkflows = const [],
   List<rust_frb_types.VoteRecoveryView> voteTxHashes = const [],
-  List<rust_frb_types.CommitmentBundleRecoveryView> commitmentBundles =
-      const [],
+  List<rust_frb_types.RecoverableCommitmentBundle> commitmentBundles = const [],
   List<rust_frb_types.ShareWorkflowRecoveryView> shareWorkflows = const [],
   List<rust_frb_types.ShareDelegationRecordView> shareDelegations = const [],
   List<rust_frb_types.ShareDelegationRecordView> unconfirmedShareDelegations =
@@ -666,13 +665,13 @@ rust_frb_types.VoteRecoveryView voteWorkflow({
   );
 }
 
-rust_frb_types.CommitmentBundleRecoveryView commitmentBundle({
+rust_frb_types.RecoverableCommitmentBundle commitmentBundle({
   required int bundleIndex,
   required int proposalId,
   String commitmentBundleJson = '{}',
   int vcTreePosition = 0,
 }) {
-  return rust_frb_types.CommitmentBundleRecoveryView(
+  return rust_frb_types.RecoverableCommitmentBundle(
     bundleIndex: bundleIndex,
     proposalId: proposalId,
     commitmentBundleJson: commitmentBundleJson,

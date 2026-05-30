@@ -270,7 +270,8 @@ abstract interface class VotingRustApi {
     int? maxRealNotesPerBundle,
   });
 
-  Future<rust_voting.DelegationPirPrecomputeResultView> precomputeDelegationPir({
+  Future<rust_voting.DelegationPirPrecomputeResultView>
+  precomputeDelegationPir({
     required String dbPath,
     required String lightwalletdUrl,
     required String pirServerUrl,
@@ -332,7 +333,7 @@ abstract interface class VotingRustApi {
     required List<int> rk,
   });
 
-  Future<List<rust_voting.KeystoneSignatureRecordView>> getKeystoneSignatures({
+  Future<List<rust_voting.KeystoneSignatureRecord>> getKeystoneSignatures({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -442,7 +443,7 @@ abstract interface class VotingRustApi {
     required int bundleIndex,
     required List<int> hotkeySeed,
     required rust_voting.VanWitnessView vanWitness,
-    required List<rust_voting.DraftVoteView> draftVotes,
+    required List<rust_voting.DraftVote> draftVotes,
   });
 
   Future<rust_voting.SignedVoteCommitmentsView> recoverVoteCommitment({
@@ -577,7 +578,8 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_voting.DelegationPirPrecomputeResultView> precomputeDelegationPir({
+  Future<rust_voting.DelegationPirPrecomputeResultView>
+  precomputeDelegationPir({
     required String dbPath,
     required String lightwalletdUrl,
     required String pirServerUrl,
@@ -706,7 +708,7 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<List<rust_voting.KeystoneSignatureRecordView>> getKeystoneSignatures({
+  Future<List<rust_voting.KeystoneSignatureRecord>> getKeystoneSignatures({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -918,7 +920,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required int bundleIndex,
     required List<int> hotkeySeed,
     required rust_voting.VanWitnessView vanWitness,
-    required List<rust_voting.DraftVoteView> draftVotes,
+    required List<rust_voting.DraftVote> draftVotes,
   }) {
     return rust_voting.buildVoteCommitmentsWithProgress(
       dbPath: dbPath,
