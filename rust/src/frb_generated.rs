@@ -4550,7 +4550,7 @@ fn wire__crate__api__voting__vote_commitment_wire_json_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_commitment =
-                <crate::api::voting::ApiSignedVoteCommitment>::sse_decode(&mut deserializer);
+                <crate::api::voting::ApiVoteCommitmentWire>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -4583,15 +4583,14 @@ fn wire__crate__api__voting__vote_share_wire_json_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_payload =
-                <crate::api::voting::ApiVoteSharePayload>::sse_decode(&mut deserializer);
+            let api_share = <crate::api::voting::ApiVoteShareWire>::sse_decode(&mut deserializer);
             let api_vc_tree_position = <Option<u64>>::sse_decode(&mut deserializer);
             let api_submit_at = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::voting::vote_share_wire_json(
-                        api_payload,
+                        api_share,
                         api_vc_tree_position,
                         api_submit_at,
                     )?;
@@ -4841,6 +4840,32 @@ impl SseDecode for crate::api::voting::ApiDelegationRecovery {
     }
 }
 
+impl SseDecode for crate::api::voting::ApiDelegationSubmissionWire {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_rk = <String>::sse_decode(deserializer);
+        let mut var_spendAuthSig = <String>::sse_decode(deserializer);
+        let mut var_sighash = <String>::sse_decode(deserializer);
+        let mut var_nfSigned = <String>::sse_decode(deserializer);
+        let mut var_cmxNew = <String>::sse_decode(deserializer);
+        let mut var_govComm = <String>::sse_decode(deserializer);
+        let mut var_govNullifiers = <Vec<String>>::sse_decode(deserializer);
+        let mut var_proof = <String>::sse_decode(deserializer);
+        let mut var_voteRoundId = <String>::sse_decode(deserializer);
+        return crate::api::voting::ApiDelegationSubmissionWire {
+            rk: var_rk,
+            spend_auth_sig: var_spendAuthSig,
+            sighash: var_sighash,
+            nf_signed: var_nfSigned,
+            cmx_new: var_cmxNew,
+            gov_comm: var_govComm,
+            gov_nullifiers: var_govNullifiers,
+            proof: var_proof,
+            vote_round_id: var_voteRoundId,
+        };
+    }
+}
+
 impl SseDecode for crate::api::voting::ApiDraftVote {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5046,15 +5071,8 @@ impl SseDecode for crate::api::voting::ApiSignedDelegationPayload {
         let mut var_pcztBytes = <Vec<u8>>::sse_decode(deserializer);
         let mut var_status = <String>::sse_decode(deserializer);
         let mut var_message = <Option<String>>::sse_decode(deserializer);
-        let mut var_proof = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_rk = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_spendAuthSig = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_sighash = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_nfSigned = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_cmxNew = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_govComm = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_govNullifiers = <Vec<Vec<u8>>>::sse_decode(deserializer);
-        let mut var_voteRoundId = <String>::sse_decode(deserializer);
+        let mut var_submission =
+            <crate::api::voting::ApiDelegationSubmissionWire>::sse_decode(deserializer);
         let mut var_eligibleWeightZatoshi = <u64>::sse_decode(deserializer);
         let mut var_delegatedWeightZatoshi = <u64>::sse_decode(deserializer);
         let mut var_bundleCount = <u32>::sse_decode(deserializer);
@@ -5063,15 +5081,7 @@ impl SseDecode for crate::api::voting::ApiSignedDelegationPayload {
             pczt_bytes: var_pcztBytes,
             status: var_status,
             message: var_message,
-            proof: var_proof,
-            rk: var_rk,
-            spend_auth_sig: var_spendAuthSig,
-            sighash: var_sighash,
-            nf_signed: var_nfSigned,
-            cmx_new: var_cmxNew,
-            gov_comm: var_govComm,
-            gov_nullifiers: var_govNullifiers,
-            vote_round_id: var_voteRoundId,
+            submission: var_submission,
             eligible_weight_zatoshi: var_eligibleWeightZatoshi,
             delegated_weight_zatoshi: var_delegatedWeightZatoshi,
             bundle_count: var_bundleCount,
@@ -5084,38 +5094,12 @@ impl SseDecode for crate::api::voting::ApiSignedVoteCommitment {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_proposalId = <u32>::sse_decode(deserializer);
-        let mut var_choice = <u32>::sse_decode(deserializer);
-        let mut var_voteRoundId = <String>::sse_decode(deserializer);
-        let mut var_vanNullifier = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_voteAuthorityNoteNew = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_voteCommitment = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_proof = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_encryptedShares =
-            <Vec<crate::api::voting::ApiWireEncryptedShare>>::sse_decode(deserializer);
-        let mut var_sharePayloads =
-            <Vec<crate::api::voting::ApiVoteSharePayload>>::sse_decode(deserializer);
-        let mut var_anchorHeight = <u32>::sse_decode(deserializer);
-        let mut var_sharesHash = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_shareComms = <Vec<Vec<u8>>>::sse_decode(deserializer);
-        let mut var_rVpkBytes = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_voteAuthSig = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_commitmentBundleJson = <String>::sse_decode(deserializer);
+        let mut var_wire = <crate::api::voting::ApiVoteCommitmentWire>::sse_decode(deserializer);
+        let mut var_shares = <Vec<crate::api::voting::ApiVoteShareWire>>::sse_decode(deserializer);
         return crate::api::voting::ApiSignedVoteCommitment {
             proposal_id: var_proposalId,
-            choice: var_choice,
-            vote_round_id: var_voteRoundId,
-            van_nullifier: var_vanNullifier,
-            vote_authority_note_new: var_voteAuthorityNoteNew,
-            vote_commitment: var_voteCommitment,
-            proof: var_proof,
-            encrypted_shares: var_encryptedShares,
-            share_payloads: var_sharePayloads,
-            anchor_height: var_anchorHeight,
-            shares_hash: var_sharesHash,
-            share_comms: var_shareComms,
-            r_vpk_bytes: var_rVpkBytes,
-            vote_auth_sig: var_voteAuthSig,
-            commitment_bundle_json: var_commitmentBundleJson,
+            wire: var_wire,
+            shares: var_shares,
         };
     }
 }
@@ -5192,6 +5176,32 @@ impl SseDecode for crate::api::voting::ApiVoteCommitEvent {
     }
 }
 
+impl SseDecode for crate::api::voting::ApiVoteCommitmentWire {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_vanNullifier = <String>::sse_decode(deserializer);
+        let mut var_voteAuthorityNoteNew = <String>::sse_decode(deserializer);
+        let mut var_voteCommitment = <String>::sse_decode(deserializer);
+        let mut var_proposalId = <u32>::sse_decode(deserializer);
+        let mut var_proof = <String>::sse_decode(deserializer);
+        let mut var_voteRoundId = <String>::sse_decode(deserializer);
+        let mut var_anchorHeight = <u32>::sse_decode(deserializer);
+        let mut var_rVpk = <String>::sse_decode(deserializer);
+        let mut var_voteAuthSig = <String>::sse_decode(deserializer);
+        return crate::api::voting::ApiVoteCommitmentWire {
+            van_nullifier: var_vanNullifier,
+            vote_authority_note_new: var_voteAuthorityNoteNew,
+            vote_commitment: var_voteCommitment,
+            proposal_id: var_proposalId,
+            proof: var_proof,
+            vote_round_id: var_voteRoundId,
+            anchor_height: var_anchorHeight,
+            r_vpk: var_rVpk,
+            vote_auth_sig: var_voteAuthSig,
+        };
+    }
+}
+
 impl SseDecode for crate::api::voting::ApiVoteRecord {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5228,28 +5238,32 @@ impl SseDecode for crate::api::voting::ApiVoteRecovery {
     }
 }
 
-impl SseDecode for crate::api::voting::ApiVoteSharePayload {
+impl SseDecode for crate::api::voting::ApiVoteShareWire {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_sharesHash = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_sharesHash = <String>::sse_decode(deserializer);
         let mut var_proposalId = <u32>::sse_decode(deserializer);
         let mut var_voteDecision = <u32>::sse_decode(deserializer);
         let mut var_encryptedShare =
-            <crate::api::voting::ApiWireEncryptedShare>::sse_decode(deserializer);
-        let mut var_treePosition = <u64>::sse_decode(deserializer);
+            <crate::api::voting::ApiWireEncryptedShareJson>::sse_decode(deserializer);
+        let mut var_shareIndex = <u32>::sse_decode(deserializer);
+        let mut var_vcTreePosition = <u64>::sse_decode(deserializer);
         let mut var_allEncryptedShares =
-            <Vec<crate::api::voting::ApiWireEncryptedShare>>::sse_decode(deserializer);
-        let mut var_shareComms = <Vec<Vec<u8>>>::sse_decode(deserializer);
-        let mut var_primaryBlind = <Vec<u8>>::sse_decode(deserializer);
-        return crate::api::voting::ApiVoteSharePayload {
+            <Vec<crate::api::voting::ApiWireEncryptedShareJson>>::sse_decode(deserializer);
+        let mut var_shareComms = <Vec<String>>::sse_decode(deserializer);
+        let mut var_primaryBlind = <String>::sse_decode(deserializer);
+        let mut var_submitAt = <u64>::sse_decode(deserializer);
+        return crate::api::voting::ApiVoteShareWire {
             shares_hash: var_sharesHash,
             proposal_id: var_proposalId,
             vote_decision: var_voteDecision,
             encrypted_share: var_encryptedShare,
-            tree_position: var_treePosition,
+            share_index: var_shareIndex,
+            vc_tree_position: var_vcTreePosition,
             all_encrypted_shares: var_allEncryptedShares,
             share_comms: var_shareComms,
             primary_blind: var_primaryBlind,
+            submit_at: var_submitAt,
         };
     }
 }
@@ -5326,15 +5340,15 @@ impl SseDecode for crate::api::voting::ApiVotingRoundParams {
     }
 }
 
-impl SseDecode for crate::api::voting::ApiWireEncryptedShare {
+impl SseDecode for crate::api::voting::ApiWireEncryptedShareJson {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_ciphertext1 = <Vec<u8>>::sse_decode(deserializer);
-        let mut var_ciphertext2 = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_c1 = <String>::sse_decode(deserializer);
+        let mut var_c2 = <String>::sse_decode(deserializer);
         let mut var_shareIndex = <u32>::sse_decode(deserializer);
-        return crate::api::voting::ApiWireEncryptedShare {
-            ciphertext1: var_ciphertext1,
-            ciphertext2: var_ciphertext2,
+        return crate::api::voting::ApiWireEncryptedShareJson {
+            c1: var_c1,
+            c2: var_c2,
             share_index: var_shareIndex,
         };
     }
@@ -5597,13 +5611,13 @@ impl SseDecode for Vec<crate::api::voting::ApiVoteRecovery> {
     }
 }
 
-impl SseDecode for Vec<crate::api::voting::ApiVoteSharePayload> {
+impl SseDecode for Vec<crate::api::voting::ApiVoteShareWire> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut len_ = <i32>::sse_decode(deserializer);
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
-            ans_.push(<crate::api::voting::ApiVoteSharePayload>::sse_decode(
+            ans_.push(<crate::api::voting::ApiVoteShareWire>::sse_decode(
                 deserializer,
             ));
         }
@@ -5625,13 +5639,13 @@ impl SseDecode for Vec<crate::api::voting::ApiVotingNoteRef> {
     }
 }
 
-impl SseDecode for Vec<crate::api::voting::ApiWireEncryptedShare> {
+impl SseDecode for Vec<crate::api::voting::ApiWireEncryptedShareJson> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut len_ = <i32>::sse_decode(deserializer);
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
-            ans_.push(<crate::api::voting::ApiWireEncryptedShare>::sse_decode(
+            ans_.push(<crate::api::voting::ApiWireEncryptedShareJson>::sse_decode(
                 deserializer,
             ));
         }
@@ -6478,6 +6492,34 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiDelegationRecovery
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiDelegationSubmissionWire {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.rk.into_into_dart().into_dart(),
+            self.spend_auth_sig.into_into_dart().into_dart(),
+            self.sighash.into_into_dart().into_dart(),
+            self.nf_signed.into_into_dart().into_dart(),
+            self.cmx_new.into_into_dart().into_dart(),
+            self.gov_comm.into_into_dart().into_dart(),
+            self.gov_nullifiers.into_into_dart().into_dart(),
+            self.proof.into_into_dart().into_dart(),
+            self.vote_round_id.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::voting::ApiDelegationSubmissionWire
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiDelegationSubmissionWire>
+    for crate::api::voting::ApiDelegationSubmissionWire
+{
+    fn into_into_dart(self) -> crate::api::voting::ApiDelegationSubmissionWire {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiDraftVote {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -6733,15 +6775,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiSignedDelegationPa
             self.pczt_bytes.into_into_dart().into_dart(),
             self.status.into_into_dart().into_dart(),
             self.message.into_into_dart().into_dart(),
-            self.proof.into_into_dart().into_dart(),
-            self.rk.into_into_dart().into_dart(),
-            self.spend_auth_sig.into_into_dart().into_dart(),
-            self.sighash.into_into_dart().into_dart(),
-            self.nf_signed.into_into_dart().into_dart(),
-            self.cmx_new.into_into_dart().into_dart(),
-            self.gov_comm.into_into_dart().into_dart(),
-            self.gov_nullifiers.into_into_dart().into_dart(),
-            self.vote_round_id.into_into_dart().into_dart(),
+            self.submission.into_into_dart().into_dart(),
             self.eligible_weight_zatoshi.into_into_dart().into_dart(),
             self.delegated_weight_zatoshi.into_into_dart().into_dart(),
             self.bundle_count.into_into_dart().into_dart(),
@@ -6766,20 +6800,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiSignedVoteCommitme
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.proposal_id.into_into_dart().into_dart(),
-            self.choice.into_into_dart().into_dart(),
-            self.vote_round_id.into_into_dart().into_dart(),
-            self.van_nullifier.into_into_dart().into_dart(),
-            self.vote_authority_note_new.into_into_dart().into_dart(),
-            self.vote_commitment.into_into_dart().into_dart(),
-            self.proof.into_into_dart().into_dart(),
-            self.encrypted_shares.into_into_dart().into_dart(),
-            self.share_payloads.into_into_dart().into_dart(),
-            self.anchor_height.into_into_dart().into_dart(),
-            self.shares_hash.into_into_dart().into_dart(),
-            self.share_comms.into_into_dart().into_dart(),
-            self.r_vpk_bytes.into_into_dart().into_dart(),
-            self.vote_auth_sig.into_into_dart().into_dart(),
-            self.commitment_bundle_json.into_into_dart().into_dart(),
+            self.wire.into_into_dart().into_dart(),
+            self.shares.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -6891,6 +6913,34 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteCommitEvent>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteCommitmentWire {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.van_nullifier.into_into_dart().into_dart(),
+            self.vote_authority_note_new.into_into_dart().into_dart(),
+            self.vote_commitment.into_into_dart().into_dart(),
+            self.proposal_id.into_into_dart().into_dart(),
+            self.proof.into_into_dart().into_dart(),
+            self.vote_round_id.into_into_dart().into_dart(),
+            self.anchor_height.into_into_dart().into_dart(),
+            self.r_vpk.into_into_dart().into_dart(),
+            self.vote_auth_sig.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::voting::ApiVoteCommitmentWire
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteCommitmentWire>
+    for crate::api::voting::ApiVoteCommitmentWire
+{
+    fn into_into_dart(self) -> crate::api::voting::ApiVoteCommitmentWire {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteRecord {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -6939,29 +6989,31 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteRecovery>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteSharePayload {
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiVoteShareWire {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.shares_hash.into_into_dart().into_dart(),
             self.proposal_id.into_into_dart().into_dart(),
             self.vote_decision.into_into_dart().into_dart(),
             self.encrypted_share.into_into_dart().into_dart(),
-            self.tree_position.into_into_dart().into_dart(),
+            self.share_index.into_into_dart().into_dart(),
+            self.vc_tree_position.into_into_dart().into_dart(),
             self.all_encrypted_shares.into_into_dart().into_dart(),
             self.share_comms.into_into_dart().into_dart(),
             self.primary_blind.into_into_dart().into_dart(),
+            self.submit_at.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiVoteSharePayload
+    for crate::api::voting::ApiVoteShareWire
 {
 }
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteSharePayload>
-    for crate::api::voting::ApiVoteSharePayload
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVoteShareWire>
+    for crate::api::voting::ApiVoteShareWire
 {
-    fn into_into_dart(self) -> crate::api::voting::ApiVoteSharePayload {
+    fn into_into_dart(self) -> crate::api::voting::ApiVoteShareWire {
         self
     }
 }
@@ -7062,24 +7114,24 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiVotingRoundParams>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiWireEncryptedShare {
+impl flutter_rust_bridge::IntoDart for crate::api::voting::ApiWireEncryptedShareJson {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
-            self.ciphertext1.into_into_dart().into_dart(),
-            self.ciphertext2.into_into_dart().into_dart(),
+            self.c1.into_into_dart().into_dart(),
+            self.c2.into_into_dart().into_dart(),
             self.share_index.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::voting::ApiWireEncryptedShare
+    for crate::api::voting::ApiWireEncryptedShareJson
 {
 }
-impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiWireEncryptedShare>
-    for crate::api::voting::ApiWireEncryptedShare
+impl flutter_rust_bridge::IntoIntoDart<crate::api::voting::ApiWireEncryptedShareJson>
+    for crate::api::voting::ApiWireEncryptedShareJson
 {
-    fn into_into_dart(self) -> crate::api::voting::ApiWireEncryptedShare {
+    fn into_into_dart(self) -> crate::api::voting::ApiWireEncryptedShareJson {
         self
     }
 }
@@ -7713,6 +7765,21 @@ impl SseEncode for crate::api::voting::ApiDelegationRecovery {
     }
 }
 
+impl SseEncode for crate::api::voting::ApiDelegationSubmissionWire {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.rk, serializer);
+        <String>::sse_encode(self.spend_auth_sig, serializer);
+        <String>::sse_encode(self.sighash, serializer);
+        <String>::sse_encode(self.nf_signed, serializer);
+        <String>::sse_encode(self.cmx_new, serializer);
+        <String>::sse_encode(self.gov_comm, serializer);
+        <Vec<String>>::sse_encode(self.gov_nullifiers, serializer);
+        <String>::sse_encode(self.proof, serializer);
+        <String>::sse_encode(self.vote_round_id, serializer);
+    }
+}
+
 impl SseEncode for crate::api::voting::ApiDraftVote {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7845,15 +7912,7 @@ impl SseEncode for crate::api::voting::ApiSignedDelegationPayload {
         <Vec<u8>>::sse_encode(self.pczt_bytes, serializer);
         <String>::sse_encode(self.status, serializer);
         <Option<String>>::sse_encode(self.message, serializer);
-        <Vec<u8>>::sse_encode(self.proof, serializer);
-        <Vec<u8>>::sse_encode(self.rk, serializer);
-        <Vec<u8>>::sse_encode(self.spend_auth_sig, serializer);
-        <Vec<u8>>::sse_encode(self.sighash, serializer);
-        <Vec<u8>>::sse_encode(self.nf_signed, serializer);
-        <Vec<u8>>::sse_encode(self.cmx_new, serializer);
-        <Vec<u8>>::sse_encode(self.gov_comm, serializer);
-        <Vec<Vec<u8>>>::sse_encode(self.gov_nullifiers, serializer);
-        <String>::sse_encode(self.vote_round_id, serializer);
+        <crate::api::voting::ApiDelegationSubmissionWire>::sse_encode(self.submission, serializer);
         <u64>::sse_encode(self.eligible_weight_zatoshi, serializer);
         <u64>::sse_encode(self.delegated_weight_zatoshi, serializer);
         <u32>::sse_encode(self.bundle_count, serializer);
@@ -7865,23 +7924,8 @@ impl SseEncode for crate::api::voting::ApiSignedVoteCommitment {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.proposal_id, serializer);
-        <u32>::sse_encode(self.choice, serializer);
-        <String>::sse_encode(self.vote_round_id, serializer);
-        <Vec<u8>>::sse_encode(self.van_nullifier, serializer);
-        <Vec<u8>>::sse_encode(self.vote_authority_note_new, serializer);
-        <Vec<u8>>::sse_encode(self.vote_commitment, serializer);
-        <Vec<u8>>::sse_encode(self.proof, serializer);
-        <Vec<crate::api::voting::ApiWireEncryptedShare>>::sse_encode(
-            self.encrypted_shares,
-            serializer,
-        );
-        <Vec<crate::api::voting::ApiVoteSharePayload>>::sse_encode(self.share_payloads, serializer);
-        <u32>::sse_encode(self.anchor_height, serializer);
-        <Vec<u8>>::sse_encode(self.shares_hash, serializer);
-        <Vec<Vec<u8>>>::sse_encode(self.share_comms, serializer);
-        <Vec<u8>>::sse_encode(self.r_vpk_bytes, serializer);
-        <Vec<u8>>::sse_encode(self.vote_auth_sig, serializer);
-        <String>::sse_encode(self.commitment_bundle_json, serializer);
+        <crate::api::voting::ApiVoteCommitmentWire>::sse_encode(self.wire, serializer);
+        <Vec<crate::api::voting::ApiVoteShareWire>>::sse_encode(self.shares, serializer);
     }
 }
 
@@ -7934,6 +7978,21 @@ impl SseEncode for crate::api::voting::ApiVoteCommitEvent {
     }
 }
 
+impl SseEncode for crate::api::voting::ApiVoteCommitmentWire {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.van_nullifier, serializer);
+        <String>::sse_encode(self.vote_authority_note_new, serializer);
+        <String>::sse_encode(self.vote_commitment, serializer);
+        <u32>::sse_encode(self.proposal_id, serializer);
+        <String>::sse_encode(self.proof, serializer);
+        <String>::sse_encode(self.vote_round_id, serializer);
+        <u32>::sse_encode(self.anchor_height, serializer);
+        <String>::sse_encode(self.r_vpk, serializer);
+        <String>::sse_encode(self.vote_auth_sig, serializer);
+    }
+}
+
 impl SseEncode for crate::api::voting::ApiVoteRecord {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7956,20 +8015,25 @@ impl SseEncode for crate::api::voting::ApiVoteRecovery {
     }
 }
 
-impl SseEncode for crate::api::voting::ApiVoteSharePayload {
+impl SseEncode for crate::api::voting::ApiVoteShareWire {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Vec<u8>>::sse_encode(self.shares_hash, serializer);
+        <String>::sse_encode(self.shares_hash, serializer);
         <u32>::sse_encode(self.proposal_id, serializer);
         <u32>::sse_encode(self.vote_decision, serializer);
-        <crate::api::voting::ApiWireEncryptedShare>::sse_encode(self.encrypted_share, serializer);
-        <u64>::sse_encode(self.tree_position, serializer);
-        <Vec<crate::api::voting::ApiWireEncryptedShare>>::sse_encode(
+        <crate::api::voting::ApiWireEncryptedShareJson>::sse_encode(
+            self.encrypted_share,
+            serializer,
+        );
+        <u32>::sse_encode(self.share_index, serializer);
+        <u64>::sse_encode(self.vc_tree_position, serializer);
+        <Vec<crate::api::voting::ApiWireEncryptedShareJson>>::sse_encode(
             self.all_encrypted_shares,
             serializer,
         );
-        <Vec<Vec<u8>>>::sse_encode(self.share_comms, serializer);
-        <Vec<u8>>::sse_encode(self.primary_blind, serializer);
+        <Vec<String>>::sse_encode(self.share_comms, serializer);
+        <String>::sse_encode(self.primary_blind, serializer);
+        <u64>::sse_encode(self.submit_at, serializer);
     }
 }
 
@@ -8017,11 +8081,11 @@ impl SseEncode for crate::api::voting::ApiVotingRoundParams {
     }
 }
 
-impl SseEncode for crate::api::voting::ApiWireEncryptedShare {
+impl SseEncode for crate::api::voting::ApiWireEncryptedShareJson {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Vec<u8>>::sse_encode(self.ciphertext1, serializer);
-        <Vec<u8>>::sse_encode(self.ciphertext2, serializer);
+        <String>::sse_encode(self.c1, serializer);
+        <String>::sse_encode(self.c2, serializer);
         <u32>::sse_encode(self.share_index, serializer);
     }
 }
@@ -8218,12 +8282,12 @@ impl SseEncode for Vec<crate::api::voting::ApiVoteRecovery> {
     }
 }
 
-impl SseEncode for Vec<crate::api::voting::ApiVoteSharePayload> {
+impl SseEncode for Vec<crate::api::voting::ApiVoteShareWire> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
-            <crate::api::voting::ApiVoteSharePayload>::sse_encode(item, serializer);
+            <crate::api::voting::ApiVoteShareWire>::sse_encode(item, serializer);
         }
     }
 }
@@ -8238,12 +8302,12 @@ impl SseEncode for Vec<crate::api::voting::ApiVotingNoteRef> {
     }
 }
 
-impl SseEncode for Vec<crate::api::voting::ApiWireEncryptedShare> {
+impl SseEncode for Vec<crate::api::voting::ApiWireEncryptedShareJson> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
-            <crate::api::voting::ApiWireEncryptedShare>::sse_encode(item, serializer);
+            <crate::api::voting::ApiWireEncryptedShareJson>::sse_encode(item, serializer);
         }
     }
 }

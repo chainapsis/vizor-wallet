@@ -148,4 +148,3 @@ pub fn mark_share_confirmed(
         .map_err(|e| format!("mark_share_confirmed failed: {e}"))?;
     Ok(())
 }
-

@@ -444,11 +444,11 @@ abstract interface class VotingRustApi {
   });
 
   Future<String> voteCommitmentWireJson({
-    required rust_voting.ApiSignedVoteCommitment commitment,
+    required rust_voting.ApiVoteCommitmentWire commitment,
   });
 
   Future<String> voteShareWireJson({
-    required rust_voting.ApiVoteSharePayload payload,
+    required rust_voting.ApiVoteShareWire share,
     BigInt? vcTreePosition,
     required BigInt submitAt,
   });
@@ -912,19 +912,19 @@ class FrbVotingRustApi implements VotingRustApi {
 
   @override
   Future<String> voteCommitmentWireJson({
-    required rust_voting.ApiSignedVoteCommitment commitment,
+    required rust_voting.ApiVoteCommitmentWire commitment,
   }) {
     return rust_voting.voteCommitmentWireJson(commitment: commitment);
   }
 
   @override
   Future<String> voteShareWireJson({
-    required rust_voting.ApiVoteSharePayload payload,
+    required rust_voting.ApiVoteShareWire share,
     BigInt? vcTreePosition,
     required BigInt submitAt,
   }) {
     return rust_voting.voteShareWireJson(
-      payload: payload,
+      share: share,
       vcTreePosition: vcTreePosition,
       submitAt: submitAt,
     );

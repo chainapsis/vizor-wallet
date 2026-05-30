@@ -925,8 +925,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           final recoveredShareIndexes = {
             for (final commitment in commitments.commitments)
               if (commitment.proposalId == key.proposalId)
-                for (final payload in commitment.sharePayloads)
-                  payload.encryptedShare.shareIndex,
+                for (final share in commitment.shares) share.shareIndex,
           };
           final missingRecoveredShares = shareIndexes
               .where(
@@ -1296,38 +1295,30 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
 
     for (final commitment in commitments.commitments) {
-      final sharePayloads = shareIndexFilter == null
-          ? commitment.sharePayloads
-          : commitment.sharePayloads
-                .where(
-                  (payload) => shareIndexFilter.contains(
-                    payload.encryptedShare.shareIndex,
-                  ),
-                )
+      final shares = shareIndexFilter == null
+          ? commitment.shares
+          : commitment.shares
+                .where((share) => shareIndexFilter.contains(share.shareIndex))
                 .toList(growable: false);
-      if (sharePayloads.isEmpty) continue;
+      if (shares.isEmpty) continue;
       final vcTreePosition = vcTreePositions[commitment.proposalId];
       final plans = await rust.planShareSubmissions(
-        shareCount: sharePayloads.length,
+        shareCount: shares.length,
         serverUrls: serverUrls,
         nowSeconds: BigInt.from(nowSeconds),
         voteEndTimeSeconds: BigInt.from(voteEndSeconds),
         lastMomentBufferSeconds: lastMomentBufferSeconds,
         singleShare: singleShare,
       );
-      if (plans.length != sharePayloads.length) {
+      if (plans.length != shares.length) {
         throw StateError(
           'Share submission policy returned ${plans.length} plan(s) for '
-          '${sharePayloads.length} payload(s).',
+          '${shares.length} payload(s).',
         );
       }
 
-      for (
-        var payloadIndex = 0;
-        payloadIndex < sharePayloads.length;
-        payloadIndex++
-      ) {
-        final payload = sharePayloads[payloadIndex];
+      for (var payloadIndex = 0; payloadIndex < shares.length; payloadIndex++) {
+        final share = shares[payloadIndex];
         final plan = plans[payloadIndex];
         final acceptedServers = <String>[];
         final targetCount = plan.targetCount
@@ -1339,7 +1330,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         final body = await _wireJsonMap(
           rust.voteShareWireJson(
-            payload: payload,
+            share: share,
             vcTreePosition: vcTreePosition,
             submitAt: plan.submitAt,
           ),
@@ -1347,7 +1338,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _setShareSubmissionProgress(
           context: context,
           bundleIndex: commitments.bundleIndex,
-          proposalId: payload.proposalId,
+          proposalId: share.proposalId,
           message: bundleProgressMessage,
           completedQuestions: completedQuestions,
           totalQuestions: totalQuestions,
@@ -1358,7 +1349,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           try {
             debugPrint(
               '[zcash] Voting: submitting share '
-              'proposal=${payload.proposalId} share=${payload.encryptedShare.shareIndex} '
+              'proposal=${share.proposalId} share=${share.shareIndex} '
               'server=$serverUrl treePosition=${body['tree_position']} '
               'submitAt=${plan.submitAt} target=$targetCount',
             );
@@ -1371,13 +1362,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             acceptedServers.add(serverUrl);
             debugPrint(
               '[zcash] Voting: share accepted '
-              'proposal=${payload.proposalId} share=${payload.encryptedShare.shareIndex} '
+              'proposal=${share.proposalId} share=${share.shareIndex} '
               'server=$serverUrl accepted=${acceptedServers.length}/$targetCount',
             );
           } catch (e) {
             debugPrint(
               '[zcash] Voting: share rejected '
-              'proposal=${payload.proposalId} share=${payload.encryptedShare.shareIndex} '
+              'proposal=${share.proposalId} share=${share.shareIndex} '
               'server=$serverUrl error=$e',
             );
             helperHealth.recordFailure(serverUrl);
@@ -1386,15 +1377,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         }
         if (acceptedServers.isEmpty) {
           throw StateError(
-            'No vote server accepted share ${payload.encryptedShare.shareIndex} '
-            'for proposal ${payload.proposalId}.',
+            'No vote server accepted share ${share.shareIndex} '
+            'for proposal ${share.proposalId}.',
           );
         }
         if (acceptedServers.length < targetCount) {
           debugPrint(
             '[zcash] Voting: share accepted by fewer helpers than planned '
-            'proposal=${payload.proposalId} '
-            'share=${payload.encryptedShare.shareIndex} '
+            'proposal=${share.proposalId} '
+            'share=${share.shareIndex} '
             'accepted=${acceptedServers.length}/$targetCount',
           );
         }
@@ -1404,8 +1395,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           walletId: context.accountUuid,
           roundId: context.round.roundId,
           bundleIndex: commitments.bundleIndex,
-          proposalId: payload.proposalId,
-          shareIndex: payload.encryptedShare.shareIndex,
+          proposalId: share.proposalId,
+          shareIndex: share.shareIndex,
           sentToUrls: acceptedServers,
           submitAt: plan.submitAt,
         );
@@ -1504,7 +1495,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       final result = await api.submitVoteCommitment(
         commitment: await _wireJsonMap(
-          rust.voteCommitmentWireJson(commitment: commitment),
+          rust.voteCommitmentWireJson(commitment: commitment.wire),
         ),
       );
       debugPrint(
@@ -2849,7 +2840,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   ) {
     return commitments.commitments.isNotEmpty &&
         commitments.commitments.every(
-          (commitment) => commitment.sharePayloads.length <= 1,
+          (commitment) => commitment.shares.length <= 1,
         );
   }
 
@@ -2899,11 +2890,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required rust_voting.ApiKeystoneSignatureRecord signature,
     required int bundleIndex,
   }) {
-    if (!_bytesEqual(submission.rk, signature.rk) ||
-        !_bytesEqual(submission.spendAuthSig, signature.sig) ||
-        !_bytesEqual(submission.sighash, signature.sighash)) {
+    final wire = submission.submission;
+    if (!_bytesEqual(_decodeBase64(wire.rk), signature.rk) ||
+        !_bytesEqual(_decodeBase64(wire.spendAuthSig), signature.sig) ||
+        !_bytesEqual(_decodeBase64(wire.sighash), signature.sighash)) {
       throw StateError(
         'Keystone signature did not match delegation bundle $bundleIndex.',
+      );
+    }
+  }
+
+  static List<int> _decodeBase64(String value) {
+    try {
+      return base64.decode(value);
+    } on FormatException catch (error) {
+      throw StateError(
+        'Invalid base64 payload from Rust delegation wire: $error',
       );
     }
   }

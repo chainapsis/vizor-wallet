@@ -197,9 +197,9 @@ mod tests {
             witness.position,
             witness.anchor_height
         )
-            .unwrap_err()
-            .to_string()
-            .contains("24 siblings"));
+        .unwrap_err()
+        .to_string()
+        .contains("24 siblings"));
 
         witness.auth_path = vec![vec![7; 31]; zcash_voting::vote::VAN_AUTH_PATH_LEN];
         assert!(zcash_voting::vote::VanWitness::from_wire(
@@ -207,9 +207,9 @@ mod tests {
             witness.position,
             witness.anchor_height
         )
-            .unwrap_err()
-            .to_string()
-            .contains("32 bytes"));
+        .unwrap_err()
+        .to_string()
+        .contains("32 bytes"));
     }
 
     #[test]

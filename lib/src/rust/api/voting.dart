@@ -6,8 +6,8 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `b64_hex`, `b64`, `bundle_policy`, `catch`, `delegation_submission_wire_json_inner`, `json_safe_u64`, `recovered_vote_share_wire_json_inner`, `require_len`, `selection_result`, `share_tracking_record`, `vote_commitment_wire_json_inner`, `vote_share_wire_json_inner`, `wire_share_json`, `workflow_phase_for_delegation`, `workflow_phase_for_share`, `workflow_phase_for_vote`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `bundle_policy`, `catch`, `require_len`, `selection_result`, `share_tracking_record`, `workflow_phase_for_delegation`, `workflow_phase_for_share`, `workflow_phase_for_vote`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`, `try_from`, `try_from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -21,21 +21,18 @@ Future<String> delegationSubmissionWireJson({
 
 /// Returns the vote-chain cast-vote submission body as validated wire JSON.
 Future<String> voteCommitmentWireJson({
-  required ApiSignedVoteCommitment commitment,
+  required ApiVoteCommitmentWire commitment,
 }) => RustLib.instance.api.crateApiVotingVoteCommitmentWireJson(
   commitment: commitment,
 );
 
 /// Returns the helper-server encrypted-share submission body as wire JSON.
-///
-/// `vc_tree_position` overrides the draft payload tree position after the
-/// vote-chain cast-vote transaction confirms.
 Future<String> voteShareWireJson({
-  required ApiVoteSharePayload payload,
+  required ApiVoteShareWire share,
   BigInt? vcTreePosition,
   required BigInt submitAt,
 }) => RustLib.instance.api.crateApiVotingVoteShareWireJson(
-  payload: payload,
+  share: share,
   vcTreePosition: vcTreePosition,
   submitAt: submitAt,
 );
@@ -904,6 +901,58 @@ class ApiDelegationRecovery {
           vanLeafPosition == other.vanLeafPosition;
 }
 
+/// FRB-local mirror of `zcash_voting::wire::DelegationSubmissionWire`.
+class ApiDelegationSubmissionWire {
+  final String rk;
+  final String spendAuthSig;
+  final String sighash;
+  final String nfSigned;
+  final String cmxNew;
+  final String govComm;
+  final List<String> govNullifiers;
+  final String proof;
+  final String voteRoundId;
+
+  const ApiDelegationSubmissionWire({
+    required this.rk,
+    required this.spendAuthSig,
+    required this.sighash,
+    required this.nfSigned,
+    required this.cmxNew,
+    required this.govComm,
+    required this.govNullifiers,
+    required this.proof,
+    required this.voteRoundId,
+  });
+
+  @override
+  int get hashCode =>
+      rk.hashCode ^
+      spendAuthSig.hashCode ^
+      sighash.hashCode ^
+      nfSigned.hashCode ^
+      cmxNew.hashCode ^
+      govComm.hashCode ^
+      govNullifiers.hashCode ^
+      proof.hashCode ^
+      voteRoundId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDelegationSubmissionWire &&
+          runtimeType == other.runtimeType &&
+          rk == other.rk &&
+          spendAuthSig == other.spendAuthSig &&
+          sighash == other.sighash &&
+          nfSigned == other.nfSigned &&
+          cmxNew == other.cmxNew &&
+          govComm == other.govComm &&
+          govNullifiers == other.govNullifiers &&
+          proof == other.proof &&
+          voteRoundId == other.voteRoundId;
+}
+
 /// One requested vote for a proposal in a bundle.
 ///
 /// `choice` is zero-indexed and must be less than `num_options`. `single_share`
@@ -1278,15 +1327,7 @@ class ApiSignedDelegationPayload {
   final Uint8List pcztBytes;
   final String status;
   final String? message;
-  final Uint8List proof;
-  final Uint8List rk;
-  final Uint8List spendAuthSig;
-  final Uint8List sighash;
-  final Uint8List nfSigned;
-  final Uint8List cmxNew;
-  final Uint8List govComm;
-  final List<Uint8List> govNullifiers;
-  final String voteRoundId;
+  final ApiDelegationSubmissionWire submission;
   final BigInt eligibleWeightZatoshi;
   final BigInt delegatedWeightZatoshi;
   final int bundleCount;
@@ -1296,15 +1337,7 @@ class ApiSignedDelegationPayload {
     required this.pcztBytes,
     required this.status,
     this.message,
-    required this.proof,
-    required this.rk,
-    required this.spendAuthSig,
-    required this.sighash,
-    required this.nfSigned,
-    required this.cmxNew,
-    required this.govComm,
-    required this.govNullifiers,
-    required this.voteRoundId,
+    required this.submission,
     required this.eligibleWeightZatoshi,
     required this.delegatedWeightZatoshi,
     required this.bundleCount,
@@ -1316,15 +1349,7 @@ class ApiSignedDelegationPayload {
       pcztBytes.hashCode ^
       status.hashCode ^
       message.hashCode ^
-      proof.hashCode ^
-      rk.hashCode ^
-      spendAuthSig.hashCode ^
-      sighash.hashCode ^
-      nfSigned.hashCode ^
-      cmxNew.hashCode ^
-      govComm.hashCode ^
-      govNullifiers.hashCode ^
-      voteRoundId.hashCode ^
+      submission.hashCode ^
       eligibleWeightZatoshi.hashCode ^
       delegatedWeightZatoshi.hashCode ^
       bundleCount.hashCode ^
@@ -1338,15 +1363,7 @@ class ApiSignedDelegationPayload {
           pcztBytes == other.pcztBytes &&
           status == other.status &&
           message == other.message &&
-          proof == other.proof &&
-          rk == other.rk &&
-          spendAuthSig == other.spendAuthSig &&
-          sighash == other.sighash &&
-          nfSigned == other.nfSigned &&
-          cmxNew == other.cmxNew &&
-          govComm == other.govComm &&
-          govNullifiers == other.govNullifiers &&
-          voteRoundId == other.voteRoundId &&
+          submission == other.submission &&
           eligibleWeightZatoshi == other.eligibleWeightZatoshi &&
           delegatedWeightZatoshi == other.delegatedWeightZatoshi &&
           bundleCount == other.bundleCount &&
@@ -1356,56 +1373,17 @@ class ApiSignedDelegationPayload {
 /// Signed ZKP2 vote commitment and wire-safe share data for one proposal.
 class ApiSignedVoteCommitment {
   final int proposalId;
-  final int choice;
-  final String voteRoundId;
-  final Uint8List vanNullifier;
-  final Uint8List voteAuthorityNoteNew;
-  final Uint8List voteCommitment;
-  final Uint8List proof;
-  final List<ApiWireEncryptedShare> encryptedShares;
-  final List<ApiVoteSharePayload> sharePayloads;
-  final int anchorHeight;
-  final Uint8List sharesHash;
-  final List<Uint8List> shareComms;
-  final Uint8List rVpkBytes;
-  final Uint8List voteAuthSig;
-  final String commitmentBundleJson;
+  final ApiVoteCommitmentWire wire;
+  final List<ApiVoteShareWire> shares;
 
   const ApiSignedVoteCommitment({
     required this.proposalId,
-    required this.choice,
-    required this.voteRoundId,
-    required this.vanNullifier,
-    required this.voteAuthorityNoteNew,
-    required this.voteCommitment,
-    required this.proof,
-    required this.encryptedShares,
-    required this.sharePayloads,
-    required this.anchorHeight,
-    required this.sharesHash,
-    required this.shareComms,
-    required this.rVpkBytes,
-    required this.voteAuthSig,
-    required this.commitmentBundleJson,
+    required this.wire,
+    required this.shares,
   });
 
   @override
-  int get hashCode =>
-      proposalId.hashCode ^
-      choice.hashCode ^
-      voteRoundId.hashCode ^
-      vanNullifier.hashCode ^
-      voteAuthorityNoteNew.hashCode ^
-      voteCommitment.hashCode ^
-      proof.hashCode ^
-      encryptedShares.hashCode ^
-      sharePayloads.hashCode ^
-      anchorHeight.hashCode ^
-      sharesHash.hashCode ^
-      shareComms.hashCode ^
-      rVpkBytes.hashCode ^
-      voteAuthSig.hashCode ^
-      commitmentBundleJson.hashCode;
+  int get hashCode => proposalId.hashCode ^ wire.hashCode ^ shares.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1413,20 +1391,8 @@ class ApiSignedVoteCommitment {
       other is ApiSignedVoteCommitment &&
           runtimeType == other.runtimeType &&
           proposalId == other.proposalId &&
-          choice == other.choice &&
-          voteRoundId == other.voteRoundId &&
-          vanNullifier == other.vanNullifier &&
-          voteAuthorityNoteNew == other.voteAuthorityNoteNew &&
-          voteCommitment == other.voteCommitment &&
-          proof == other.proof &&
-          encryptedShares == other.encryptedShares &&
-          sharePayloads == other.sharePayloads &&
-          anchorHeight == other.anchorHeight &&
-          sharesHash == other.sharesHash &&
-          shareComms == other.shareComms &&
-          rVpkBytes == other.rVpkBytes &&
-          voteAuthSig == other.voteAuthSig &&
-          commitmentBundleJson == other.commitmentBundleJson;
+          wire == other.wire &&
+          shares == other.shares;
 }
 
 /// Set of signed vote commitments produced for one bundle index.
@@ -1521,6 +1487,58 @@ class ApiVoteCommitEvent {
           commitments == other.commitments;
 }
 
+/// FRB-local mirror of `zcash_voting::wire::VoteCommitmentWire`.
+class ApiVoteCommitmentWire {
+  final String vanNullifier;
+  final String voteAuthorityNoteNew;
+  final String voteCommitment;
+  final int proposalId;
+  final String proof;
+  final String voteRoundId;
+  final int anchorHeight;
+  final String rVpk;
+  final String voteAuthSig;
+
+  const ApiVoteCommitmentWire({
+    required this.vanNullifier,
+    required this.voteAuthorityNoteNew,
+    required this.voteCommitment,
+    required this.proposalId,
+    required this.proof,
+    required this.voteRoundId,
+    required this.anchorHeight,
+    required this.rVpk,
+    required this.voteAuthSig,
+  });
+
+  @override
+  int get hashCode =>
+      vanNullifier.hashCode ^
+      voteAuthorityNoteNew.hashCode ^
+      voteCommitment.hashCode ^
+      proposalId.hashCode ^
+      proof.hashCode ^
+      voteRoundId.hashCode ^
+      anchorHeight.hashCode ^
+      rVpk.hashCode ^
+      voteAuthSig.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVoteCommitmentWire &&
+          runtimeType == other.runtimeType &&
+          vanNullifier == other.vanNullifier &&
+          voteAuthorityNoteNew == other.voteAuthorityNoteNew &&
+          voteCommitment == other.voteCommitment &&
+          proposalId == other.proposalId &&
+          proof == other.proof &&
+          voteRoundId == other.voteRoundId &&
+          anchorHeight == other.anchorHeight &&
+          rVpk == other.rVpk &&
+          voteAuthSig == other.voteAuthSig;
+}
+
 /// Stored vote row keyed by `(round_id, wallet_id, bundle_index, proposal_id)`.
 class ApiVoteRecord {
   final int proposalId;
@@ -1591,84 +1609,30 @@ class ApiVoteRecovery {
           hasCommitmentBundle == other.hasCommitmentBundle;
 }
 
-// Compatibility shims for older test fixtures while migration completes.
-class ApiDelegationWorkflowRecovery {
-  final int bundleIndex;
-  final String phase;
-  final String? txHash;
-  final int? vanLeafPosition;
-
-  const ApiDelegationWorkflowRecovery({
-    required this.bundleIndex,
-    required this.phase,
-    this.txHash,
-    this.vanLeafPosition,
-  });
-}
-
-class ApiDelegationTxRecovery {
-  final int bundleIndex;
-  final String txHash;
-
-  const ApiDelegationTxRecovery({
-    required this.bundleIndex,
-    required this.txHash,
-  });
-}
-
-class ApiVoteWorkflowRecovery {
-  final int bundleIndex;
-  final int proposalId;
-  final String phase;
-  final String? txHash;
-  final BigInt? vcTreePosition;
-  final bool hasCommitmentBundle;
-
-  const ApiVoteWorkflowRecovery({
-    required this.bundleIndex,
-    required this.proposalId,
-    required this.phase,
-    this.txHash,
-    this.vcTreePosition,
-    required this.hasCommitmentBundle,
-  });
-}
-
-class ApiVoteTxRecovery {
-  final int bundleIndex;
-  final int proposalId;
-  final String txHash;
-
-  const ApiVoteTxRecovery({
-    required this.bundleIndex,
-    required this.proposalId,
-    required this.txHash,
-  });
-}
-
-/// Helper-server payload for one encrypted vote share.
-///
-/// Contains only public inputs and the selected public encrypted share. The
-/// `primary_blind` is included for share tracking/nullifier recovery.
-class ApiVoteSharePayload {
-  final Uint8List sharesHash;
+/// FRB-local mirror of `zcash_voting::wire::VoteShareWire`.
+class ApiVoteShareWire {
+  final String sharesHash;
   final int proposalId;
   final int voteDecision;
-  final ApiWireEncryptedShare encryptedShare;
-  final BigInt treePosition;
-  final List<ApiWireEncryptedShare> allEncryptedShares;
-  final List<Uint8List> shareComms;
-  final Uint8List primaryBlind;
+  final ApiWireEncryptedShareJson encryptedShare;
+  final int shareIndex;
+  final BigInt vcTreePosition;
+  final List<ApiWireEncryptedShareJson> allEncryptedShares;
+  final List<String> shareComms;
+  final String primaryBlind;
+  final BigInt submitAt;
 
-  const ApiVoteSharePayload({
+  const ApiVoteShareWire({
     required this.sharesHash,
     required this.proposalId,
     required this.voteDecision,
     required this.encryptedShare,
-    required this.treePosition,
+    required this.shareIndex,
+    required this.vcTreePosition,
     required this.allEncryptedShares,
     required this.shareComms,
     required this.primaryBlind,
+    required this.submitAt,
   });
 
   @override
@@ -1677,24 +1641,28 @@ class ApiVoteSharePayload {
       proposalId.hashCode ^
       voteDecision.hashCode ^
       encryptedShare.hashCode ^
-      treePosition.hashCode ^
+      shareIndex.hashCode ^
+      vcTreePosition.hashCode ^
       allEncryptedShares.hashCode ^
       shareComms.hashCode ^
-      primaryBlind.hashCode;
+      primaryBlind.hashCode ^
+      submitAt.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is ApiVoteSharePayload &&
+      other is ApiVoteShareWire &&
           runtimeType == other.runtimeType &&
           sharesHash == other.sharesHash &&
           proposalId == other.proposalId &&
           voteDecision == other.voteDecision &&
           encryptedShare == other.encryptedShare &&
-          treePosition == other.treePosition &&
+          shareIndex == other.shareIndex &&
+          vcTreePosition == other.vcTreePosition &&
           allEncryptedShares == other.allEncryptedShares &&
           shareComms == other.shareComms &&
-          primaryBlind == other.primaryBlind;
+          primaryBlind == other.primaryBlind &&
+          submitAt == other.submitAt;
 }
 
 /// Summary of bundle setup keyed by `(round_id, wallet_id)`.
@@ -1842,30 +1810,27 @@ class ApiVotingRoundParams {
           nullifierImtRoot == other.nullifierImtRoot;
 }
 
-/// Public encrypted share fields safe to pass through Dart/REST.
-///
-/// Plaintext values and encryption randomness intentionally never cross this API.
-class ApiWireEncryptedShare {
-  final Uint8List ciphertext1;
-  final Uint8List ciphertext2;
+/// FRB-local mirror of `zcash_voting::wire::WireEncryptedShareJson`.
+class ApiWireEncryptedShareJson {
+  final String c1;
+  final String c2;
   final int shareIndex;
 
-  const ApiWireEncryptedShare({
-    required this.ciphertext1,
-    required this.ciphertext2,
+  const ApiWireEncryptedShareJson({
+    required this.c1,
+    required this.c2,
     required this.shareIndex,
   });
 
   @override
-  int get hashCode =>
-      ciphertext1.hashCode ^ ciphertext2.hashCode ^ shareIndex.hashCode;
+  int get hashCode => c1.hashCode ^ c2.hashCode ^ shareIndex.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is ApiWireEncryptedShare &&
+      other is ApiWireEncryptedShareJson &&
           runtimeType == other.runtimeType &&
-          ciphertext1 == other.ciphertext1 &&
-          ciphertext2 == other.ciphertext2 &&
+          c1 == other.c1 &&
+          c2 == other.c2 &&
           shareIndex == other.shareIndex;
 }
