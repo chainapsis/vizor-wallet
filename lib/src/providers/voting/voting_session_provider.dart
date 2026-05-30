@@ -1421,7 +1421,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final rust = ref.read(votingRustApiProvider);
     final completedBundleIndexes = <int>{};
     final submittedDelegationsByBundle = {
-      for (final record in plan.recoveryState.delegationWorkflows)
+      for (final record in plan.recoveryState.delegation)
         if (record.phase == VotingWorkflowPhase.submittedDelegation &&
             record.txHash != null)
           record.bundleIndex: record.txHash!,
@@ -2433,50 +2433,40 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     VotingResumePlan plan,
     rust_voting.ApiRoundPlan? roundPlan,
   ) {
-    if (roundPlan != null) {
-      final work = <_RecoveredVoteWork>[];
-      for (final step in roundPlan.nextSteps) {
-        final key = VotingVoteKey(
-          bundleIndex: step.bundleIndex,
-          proposalId: step.proposalId,
-        );
-        if (step.kind == 'submit_vote') {
-          work.add(
-            _RecoveredVoteWork(
-              kind: _RecoveredVoteWorkKind.submitVote,
-              key: key,
-            ),
-          );
-        } else if (step.kind == 'submit_shares') {
-          final existingIndex = work.indexWhere(
-            (item) =>
-                item.kind == _RecoveredVoteWorkKind.submitShares &&
-                item.key == key,
-          );
-          if (existingIndex >= 0) {
-            work[existingIndex].shareIndexes!.add(step.shareIndex);
-          } else {
-            work.add(
-              _RecoveredVoteWork(
-                kind: _RecoveredVoteWorkKind.submitShares,
-                key: key,
-                shareIndexes: {step.shareIndex},
-              ),
-            );
-          }
-        }
-      }
-      return work;
-    }
-    return plan.pendingVoteSubmissionKeys
-        .where((key) => plan.commitmentBundleFor(key) != null)
-        .map(
-          (key) => _RecoveredVoteWork(
+    if (roundPlan == null) return const [];
+    final work = <_RecoveredVoteWork>[];
+    for (final step in roundPlan.nextSteps) {
+      final key = VotingVoteKey(
+        bundleIndex: step.bundleIndex,
+        proposalId: step.proposalId,
+      );
+      if (step.kind == 'submit_vote') {
+        work.add(
+          _RecoveredVoteWork(
             kind: _RecoveredVoteWorkKind.submitVote,
             key: key,
           ),
-        )
-        .toList(growable: false);
+        );
+      } else if (step.kind == 'submit_shares') {
+        final existingIndex = work.indexWhere(
+          (item) =>
+              item.kind == _RecoveredVoteWorkKind.submitShares &&
+              item.key == key,
+        );
+        if (existingIndex >= 0) {
+          work[existingIndex].shareIndexes!.add(step.shareIndex);
+        } else {
+          work.add(
+            _RecoveredVoteWork(
+              kind: _RecoveredVoteWorkKind.submitShares,
+              key: key,
+              shareIndexes: {step.shareIndex},
+            ),
+          );
+        }
+      }
+    }
+    return work;
   }
 
   static bool _commitmentsUseSingleShare(
@@ -2546,10 +2536,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   static bool _hasHotkeyBoundRecoveryState(VotingResumePlan plan) {
     final delegationWorkflowRequiresHotkey = plan
         .recoveryState
-        .delegationWorkflows
+        .delegation
         .any((record) => record.phase != VotingWorkflowPhase.prepared);
     return delegationWorkflowRequiresHotkey ||
-        plan.recoveryState.delegationTxHashes.isNotEmpty ||
         plan.votesByKey.isNotEmpty ||
         plan.votePhasesByKey.isNotEmpty ||
         plan.voteTxHashesByKey.isNotEmpty ||

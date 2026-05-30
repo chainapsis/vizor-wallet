@@ -5,9 +5,9 @@ does not add parallel workflow tables. Instead, recovery phases are derived from
 the existing `bundles`, `votes`, and `share_delegations` rows.
 
 The state machine is artifact-scoped. Delegation bundles, vote commitments, and
-helper-server share delegations each move through their own lifecycle. The shared
-phase names are exposed through Rust recovery APIs as strings for Dart resume
-logic.
+helper-server share delegations each move through their own lifecycle. The
+wallet-facing phase strings are defined by
+`zcash_voting::phases::WorkflowPhase::as_str` and exposed through recovery APIs.
 
 ## Account Invariants
 
@@ -278,8 +278,8 @@ is not.
 
 ## Resume Rules
 
-Dart recovery code consumes the derived phase strings via `VotingWorkflowPhase`
-constants.
+Dart recovery code consumes `zcash_voting::phases::WorkflowPhase` string values
+via `VotingWorkflowPhase` constants.
 
 - `submitted_delegation` resumes by polling the delegation transaction and
   storing `van_leaf_position`.

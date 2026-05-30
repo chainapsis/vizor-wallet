@@ -74,11 +74,11 @@ class VotingRecoveryService {
   /// one proposal can have independent state for each note bundle.
   VotingResumePlan buildResumePlan(rust_voting.ApiRoundRecoveryState state) {
     final delegationPhasesByIndex = <int, String>{
-      for (final record in state.delegationWorkflows)
+      for (final record in state.delegation)
         record.bundleIndex: record.phase,
     };
     final submittedDelegationBundleIndexes =
-        state.delegationWorkflows
+        state.delegation
             .where(
               (record) =>
                   record.phase == VotingWorkflowPhase.submittedDelegation,
@@ -86,12 +86,11 @@ class VotingRecoveryService {
             .map((record) => record.bundleIndex)
             .toList()
           ..sort();
-    final delegatedBundleIndexes = state.delegationWorkflows.isNotEmpty
-        ? state.delegationWorkflows
-              .where((record) => record.phase == VotingWorkflowPhase.confirmed)
-              .map((record) => record.bundleIndex)
-              .toSet()
-        : state.delegationTxHashes.map((record) => record.bundleIndex).toSet();
+    final delegatedBundleIndexes =
+        state.delegation
+            .where((record) => record.phase == VotingWorkflowPhase.confirmed)
+            .map((record) => record.bundleIndex)
+            .toSet();
     final pendingDelegationBundleIndexes = [
       for (var index = 0; index < state.bundleCount; index++)
         if (!delegatedBundleIndexes.contains(index) &&
@@ -99,7 +98,7 @@ class VotingRecoveryService {
           index,
     ];
 
-    final votesByKey = <VotingVoteKey, rust_voting.ApiVoteRecord>{
+    final votesByKey = <VotingVoteKey, rust_voting.ApiVoteRecovery>{
       for (final vote in state.votes)
         VotingVoteKey(
           bundleIndex: vote.bundleIndex,
@@ -107,14 +106,15 @@ class VotingRecoveryService {
         ): vote,
     };
     final voteTxHashesByKey = <VotingVoteKey, String>{
-      for (final record in state.voteTxHashes)
+      for (final record in state.votes)
+        if (record.txHash != null)
         VotingVoteKey(
           bundleIndex: record.bundleIndex,
           proposalId: record.proposalId,
-        ): record.txHash,
+        ): record.txHash!,
     };
     final votePhasesByKey = <VotingVoteKey, String>{
-      for (final record in state.voteWorkflows)
+      for (final record in state.votes)
         VotingVoteKey(
           bundleIndex: record.bundleIndex,
           proposalId: record.proposalId,

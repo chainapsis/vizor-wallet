@@ -3858,7 +3858,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree"
 version = "0.3.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=2a4514bcf20702f53c00fddba43f884af2b0dedd#2a4514bcf20702f53c00fddba43f884af2b0dedd"
+source = "git+https://github.com/valargroup/zcash_voting?rev=f5f4c538c6f4dfbbf1fb5475d5ad4b3c13e8cef9#f5f4c538c6f4dfbbf1fb5475d5ad4b3c13e8cef9"
 dependencies = [
  "anyhow",
  "ff",
@@ -3874,7 +3874,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.5.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=2a4514bcf20702f53c00fddba43f884af2b0dedd#2a4514bcf20702f53c00fddba43f884af2b0dedd"
+source = "git+https://github.com/valargroup/zcash_voting?rev=f5f4c538c6f4dfbbf1fb5475d5ad4b3c13e8cef9#f5f4c538c6f4dfbbf1fb5475d5ad4b3c13e8cef9"
 dependencies = [
  "base64",
  "ff",
@@ -3883,7 +3883,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=2a4514bcf20702f53c00fddba43f884af2b0dedd)",
+ "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=f5f4c538c6f4dfbbf1fb5475d5ad4b3c13e8cef9)",
 ]
 
 [[package]]
@@ -4595,7 +4595,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "0.10.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=2a4514bcf20702f53c00fddba43f884af2b0dedd#2a4514bcf20702f53c00fddba43f884af2b0dedd"
+source = "git+https://github.com/valargroup/zcash_voting?rev=f5f4c538c6f4dfbbf1fb5475d5ad4b3c13e8cef9#f5f4c538c6f4dfbbf1fb5475d5ad4b3c13e8cef9"
 dependencies = [
  "anyhow",
  "blake2b_simd",
@@ -4632,7 +4632,7 @@ dependencies = [
  "uuid",
  "valar-spiral-rs",
  "valar-ypir",
- "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=2a4514bcf20702f53c00fddba43f884af2b0dedd)",
+ "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=f5f4c538c6f4dfbbf1fb5475d5ad4b3c13e8cef9)",
  "vote-commitment-tree-client",
  "voting-circuits",
  "zcash_client_backend",

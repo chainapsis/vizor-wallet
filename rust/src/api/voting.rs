@@ -232,6 +232,27 @@ pub struct ApiVoteRecord {
     pub choice: u32,
 }
 
+/// Recovery state for one delegation bundle.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiDelegationRecovery {
+    pub bundle_index: u32,
+    pub phase: String,
+    pub tx_hash: Option<String>,
+    pub van_leaf_position: Option<u32>,
+}
+
+/// Recovery state for one vote key.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiVoteRecovery {
+    pub bundle_index: u32,
+    pub proposal_id: u32,
+    pub choice: u32,
+    pub phase: String,
+    pub tx_hash: Option<String>,
+    pub vc_tree_position: Option<u64>,
+    pub has_commitment_bundle: bool,
+}
+
 /// Stored commitment bundle recovery data for one `(bundle_index, proposal_id)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiCommitmentBundleRecovery {
@@ -239,21 +260,6 @@ pub struct ApiCommitmentBundleRecovery {
     pub proposal_id: u32,
     pub commitment_bundle_json: String,
     pub vc_tree_position: u64,
-}
-
-/// Stored delegation transaction hash for one bundle.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiDelegationTxRecovery {
-    pub bundle_index: u32,
-    pub tx_hash: String,
-}
-
-/// Stored vote transaction hash for one `(bundle_index, proposal_id)`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiVoteTxRecovery {
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub tx_hash: String,
 }
 
 /// Helper-server share delegation state used for retry/resume.
@@ -272,24 +278,6 @@ pub struct ApiShareDelegationRecord {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiDelegationWorkflowRecovery {
-    pub bundle_index: u32,
-    pub phase: String,
-    pub tx_hash: Option<String>,
-    pub van_leaf_position: Option<u32>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiVoteWorkflowRecovery {
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub phase: String,
-    pub tx_hash: Option<String>,
-    pub vc_tree_position: Option<u64>,
-    pub has_commitment_bundle: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiShareWorkflowRecovery {
     pub bundle_index: u32,
     pub proposal_id: u32,
@@ -302,13 +290,10 @@ pub struct ApiShareWorkflowRecovery {
 pub struct ApiRoundRecoveryState {
     pub round_id: String,
     pub bundle_count: u32,
-    pub delegation_workflows: Vec<ApiDelegationWorkflowRecovery>,
-    pub delegation_tx_hashes: Vec<ApiDelegationTxRecovery>,
-    pub votes: Vec<ApiVoteRecord>,
-    pub vote_workflows: Vec<ApiVoteWorkflowRecovery>,
-    pub vote_tx_hashes: Vec<ApiVoteTxRecovery>,
+    pub delegation: Vec<ApiDelegationRecovery>,
+    pub votes: Vec<ApiVoteRecovery>,
     pub commitment_bundles: Vec<ApiCommitmentBundleRecovery>,
-    pub share_workflows: Vec<ApiShareWorkflowRecovery>,
+    pub shares: Vec<ApiShareWorkflowRecovery>,
     pub share_delegations: Vec<ApiShareDelegationRecord>,
     pub unconfirmed_share_delegations: Vec<ApiShareDelegationRecord>,
 }
@@ -436,18 +421,33 @@ impl From<zcash_voting::storage::VoteRecord> for ApiVoteRecord {
     }
 }
 
-impl From<recovery::VoteRecord> for ApiVoteRecord {
-    fn from(record: recovery::VoteRecord) -> Self {
+impl From<zcash_voting::recovery::DelegationRecovery> for ApiDelegationRecovery {
+    fn from(record: zcash_voting::recovery::DelegationRecovery) -> Self {
         Self {
-            proposal_id: record.proposal_id,
             bundle_index: record.bundle_index,
-            choice: record.choice,
+            phase: workflow_phase_for_delegation(record.phase).to_string(),
+            tx_hash: record.tx_hash,
+            van_leaf_position: record.van_leaf_position,
         }
     }
 }
 
-impl From<recovery::CommitmentBundleRecovery> for ApiCommitmentBundleRecovery {
-    fn from(record: recovery::CommitmentBundleRecovery) -> Self {
+impl From<zcash_voting::recovery::VoteRecovery> for ApiVoteRecovery {
+    fn from(record: zcash_voting::recovery::VoteRecovery) -> Self {
+        Self {
+            bundle_index: record.bundle_index,
+            proposal_id: record.proposal_id,
+            choice: record.choice,
+            phase: workflow_phase_for_vote(record.phase).to_string(),
+            tx_hash: record.tx_hash,
+            vc_tree_position: record.vc_tree_position,
+            has_commitment_bundle: record.has_commitment_bundle,
+        }
+    }
+}
+
+impl From<zcash_voting::recovery::RecoverableCommitmentBundle> for ApiCommitmentBundleRecovery {
+    fn from(record: zcash_voting::recovery::RecoverableCommitmentBundle) -> Self {
         Self {
             bundle_index: record.bundle_index,
             proposal_id: record.proposal_id,
@@ -457,27 +457,8 @@ impl From<recovery::CommitmentBundleRecovery> for ApiCommitmentBundleRecovery {
     }
 }
 
-impl From<recovery::DelegationTxRecovery> for ApiDelegationTxRecovery {
-    fn from(record: recovery::DelegationTxRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            tx_hash: record.tx_hash,
-        }
-    }
-}
-
-impl From<recovery::VoteTxRecovery> for ApiVoteTxRecovery {
-    fn from(record: recovery::VoteTxRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            tx_hash: record.tx_hash,
-        }
-    }
-}
-
-impl From<recovery::ShareDelegationRecord> for ApiShareDelegationRecord {
-    fn from(record: recovery::ShareDelegationRecord) -> Self {
+impl From<zcash_voting::ShareDelegationRecord> for ApiShareDelegationRecord {
+    fn from(record: zcash_voting::ShareDelegationRecord) -> Self {
         Self {
             round_id: record.round_id,
             bundle_index: record.bundle_index,
@@ -485,7 +466,11 @@ impl From<recovery::ShareDelegationRecord> for ApiShareDelegationRecord {
             share_index: record.share_index,
             sent_to_urls: record.sent_to_urls,
             nullifier: record.nullifier,
-            phase: record.phase,
+            phase: if record.confirmed {
+                "confirmed".to_string()
+            } else {
+                "submitted_share".to_string()
+            },
             confirmed: record.confirmed,
             submit_at: record.submit_at,
             created_at: record.created_at,
@@ -493,65 +478,30 @@ impl From<recovery::ShareDelegationRecord> for ApiShareDelegationRecord {
     }
 }
 
-impl From<recovery::DelegationWorkflowRecovery> for ApiDelegationWorkflowRecovery {
-    fn from(record: recovery::DelegationWorkflowRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            phase: record.phase,
-            tx_hash: record.tx_hash,
-            van_leaf_position: record.van_leaf_position,
-        }
-    }
-}
-
-impl From<recovery::VoteWorkflowRecovery> for ApiVoteWorkflowRecovery {
-    fn from(record: recovery::VoteWorkflowRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            phase: record.phase,
-            tx_hash: record.tx_hash,
-            vc_tree_position: record.vc_tree_position,
-            has_commitment_bundle: record.has_commitment_bundle,
-        }
-    }
-}
-
-impl From<recovery::ShareWorkflowRecovery> for ApiShareWorkflowRecovery {
-    fn from(record: recovery::ShareWorkflowRecovery) -> Self {
+impl From<zcash_voting::recovery::ShareWorkflow> for ApiShareWorkflowRecovery {
+    fn from(record: zcash_voting::recovery::ShareWorkflow) -> Self {
         Self {
             bundle_index: record.bundle_index,
             proposal_id: record.proposal_id,
             share_index: record.share_index,
-            phase: record.phase,
+            phase: workflow_phase_for_share(record.phase).to_string(),
         }
     }
 }
 
-impl From<recovery::RoundRecoveryState> for ApiRoundRecoveryState {
-    fn from(state: recovery::RoundRecoveryState) -> Self {
+impl From<zcash_voting::recovery::RoundRecoverySnapshot> for ApiRoundRecoveryState {
+    fn from(state: zcash_voting::recovery::RoundRecoverySnapshot) -> Self {
         Self {
             round_id: state.round_id,
             bundle_count: state.bundle_count,
-            delegation_workflows: state
-                .delegation_workflows
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            delegation_tx_hashes: state
-                .delegation_tx_hashes
-                .into_iter()
-                .map(Into::into)
-                .collect(),
+            delegation: state.delegation.into_iter().map(Into::into).collect(),
             votes: state.votes.into_iter().map(Into::into).collect(),
-            vote_workflows: state.vote_workflows.into_iter().map(Into::into).collect(),
-            vote_tx_hashes: state.vote_tx_hashes.into_iter().map(Into::into).collect(),
             commitment_bundles: state
                 .commitment_bundles
                 .into_iter()
                 .map(Into::into)
                 .collect(),
-            share_workflows: state.share_workflows.into_iter().map(Into::into).collect(),
+            shares: state.shares.into_iter().map(Into::into).collect(),
             share_delegations: state
                 .share_delegations
                 .into_iter()
@@ -563,6 +513,35 @@ impl From<recovery::RoundRecoveryState> for ApiRoundRecoveryState {
                 .map(Into::into)
                 .collect(),
         }
+    }
+}
+
+fn workflow_phase_for_delegation(phase: zcash_voting::phases::DelegationPhase) -> &'static str {
+    match phase {
+        zcash_voting::phases::DelegationPhase::Prepared => "prepared",
+        zcash_voting::phases::DelegationPhase::PcztBuilt
+        | zcash_voting::phases::DelegationPhase::Proved => "signed",
+        zcash_voting::phases::DelegationPhase::Submitted => "submitted_delegation",
+        zcash_voting::phases::DelegationPhase::Confirmed => "confirmed",
+        _ => "prepared",
+    }
+}
+
+fn workflow_phase_for_vote(phase: zcash_voting::phases::VotePhase) -> &'static str {
+    match phase {
+        zcash_voting::phases::VotePhase::Prepared => "prepared",
+        zcash_voting::phases::VotePhase::Committed => "signed",
+        zcash_voting::phases::VotePhase::Submitted => "submitted_vote",
+        zcash_voting::phases::VotePhase::Confirmed => "confirmed",
+        _ => "prepared",
+    }
+}
+
+fn workflow_phase_for_share(phase: zcash_voting::phases::SharePhase) -> &'static str {
+    match phase {
+        zcash_voting::phases::SharePhase::Submitted => "submitted_share",
+        zcash_voting::phases::SharePhase::Confirmed => "confirmed",
+        _ => "submitted_share",
     }
 }
 
@@ -1949,31 +1928,6 @@ pub fn mark_vote_confirmed(
     })
 }
 
-/// Load the broadcast transaction hash for one vote, if present.
-pub fn get_vote_tx_hash(
-    db_path: String,
-    wallet_id: String,
-    round_id: String,
-    bundle_index: u32,
-    proposal_id: u32,
-) -> Result<Option<String>, String> {
-    catch(|| recovery::get_vote_tx_hash(&db_path, &wallet_id, &round_id, bundle_index, proposal_id))
-}
-
-/// Load commitment bundle recovery JSON and vote-tree position for one vote.
-pub fn get_commitment_bundle(
-    db_path: String,
-    wallet_id: String,
-    round_id: String,
-    bundle_index: u32,
-    proposal_id: u32,
-) -> Result<Option<ApiCommitmentBundleRecovery>, String> {
-    catch(|| {
-        recovery::get_commitment_bundle(&db_path, &wallet_id, &round_id, bundle_index, proposal_id)
-            .map(|record| record.map(ApiCommitmentBundleRecovery::from))
-    })
-}
-
 #[allow(clippy::too_many_arguments)]
 /// Record helper-server submission state for one encrypted vote share.
 pub fn record_share_delegation(
@@ -1997,30 +1951,6 @@ pub fn record_share_delegation(
             &sent_to_urls,
             submit_at,
         )
-    })
-}
-
-/// Load all helper-server share delegation records for a round.
-pub fn get_share_delegations(
-    db_path: String,
-    wallet_id: String,
-    round_id: String,
-) -> Result<Vec<ApiShareDelegationRecord>, String> {
-    catch(|| {
-        recovery::get_share_delegations(&db_path, &wallet_id, &round_id)
-            .map(|records| records.into_iter().map(Into::into).collect())
-    })
-}
-
-/// Load only unconfirmed helper-server share delegation records for retry.
-pub fn get_unconfirmed_share_delegations(
-    db_path: String,
-    wallet_id: String,
-    round_id: String,
-) -> Result<Vec<ApiShareDelegationRecord>, String> {
-    catch(|| {
-        recovery::get_unconfirmed_share_delegations(&db_path, &wallet_id, &round_id)
-            .map(|records| records.into_iter().map(Into::into).collect())
     })
 }
 
@@ -3127,9 +3057,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(state.bundle_count, 2);
-        assert_eq!(state.delegation_tx_hashes[0].tx_hash, "delegation-tx-0");
+        assert_eq!(state.delegation[0].tx_hash.as_deref(), Some("delegation-tx-0"));
         assert_eq!(state.votes[0].proposal_id, 2);
-        assert_eq!(state.vote_tx_hashes[0].tx_hash, "vote-tx-1-2");
+        assert_eq!(state.votes[0].tx_hash.as_deref(), Some("vote-tx-1-2"));
         assert_eq!(state.commitment_bundles[0].vc_tree_position, 99);
         assert_eq!(state.share_delegations[0].sent_to_urls.len(), 1);
         assert_eq!(state.unconfirmed_share_delegations.len(), 1);
@@ -3143,13 +3073,13 @@ mod tests {
             0,
         )
         .unwrap();
-        assert!(get_unconfirmed_share_delegations(
+        let confirmed_state = get_round_recovery_state(
             db_path.to_str().unwrap().to_string(),
             wallet_id.to_string(),
             ROUND_ID.to_string(),
         )
-        .unwrap()
-        .is_empty());
+        .unwrap();
+        assert!(confirmed_state.unconfirmed_share_delegations.is_empty());
 
         clear_recovery_state(
             db_path.to_str().unwrap().to_string(),
@@ -3157,13 +3087,13 @@ mod tests {
             ROUND_ID.to_string(),
         )
         .unwrap();
-        assert!(get_share_delegations(
+        let cleared_state = get_round_recovery_state(
             db_path.to_str().unwrap().to_string(),
             wallet_id.to_string(),
             ROUND_ID.to_string(),
         )
-        .unwrap()
-        .is_empty());
+        .unwrap();
+        assert!(cleared_state.share_delegations.is_empty());
     }
 
     #[test]

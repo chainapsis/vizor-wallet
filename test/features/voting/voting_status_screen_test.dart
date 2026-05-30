@@ -1647,7 +1647,7 @@ rust_voting.ApiRoundRecoveryState _recoveryState({
   List<rust_voting.ApiDelegationWorkflowRecovery> delegationWorkflows =
       const [],
   List<rust_voting.ApiDelegationTxRecovery> delegationTxHashes = const [],
-  List<rust_voting.ApiVoteRecord> votes = const [],
+  List<rust_voting.ApiVoteRecovery> votes = const [],
   List<rust_voting.ApiVoteWorkflowRecovery> voteWorkflows = const [],
   List<rust_voting.ApiVoteTxRecovery> voteTxHashes = const [],
   List<rust_voting.ApiCommitmentBundleRecovery> commitmentBundles = const [],
@@ -1656,16 +1656,60 @@ rust_voting.ApiRoundRecoveryState _recoveryState({
   List<rust_voting.ApiShareDelegationRecord> unconfirmedShareDelegations =
       const [],
 }) {
+  final delegationByBundle = <int, rust_voting.ApiDelegationRecovery>{
+    for (final record in delegationWorkflows)
+      record.bundleIndex: rust_voting.ApiDelegationRecovery(
+        bundleIndex: record.bundleIndex,
+        phase: record.phase,
+        txHash: record.txHash,
+        vanLeafPosition: record.vanLeafPosition,
+      ),
+  };
+  for (final record in delegationTxHashes) {
+    delegationByBundle[record.bundleIndex] = rust_voting.ApiDelegationRecovery(
+      bundleIndex: record.bundleIndex,
+      phase: VotingWorkflowPhase.submittedDelegation,
+      txHash: record.txHash,
+      vanLeafPosition: null,
+    );
+  }
+
+  final votesByKey = <String, rust_voting.ApiVoteRecovery>{
+    for (final record in votes)
+      '${record.bundleIndex}:${record.proposalId}': record,
+    for (final record in voteWorkflows)
+      '${record.bundleIndex}:${record.proposalId}': rust_voting.ApiVoteRecovery(
+        bundleIndex: record.bundleIndex,
+        proposalId: record.proposalId,
+        choice: 0,
+        phase: record.phase,
+        txHash: record.txHash,
+        vcTreePosition: record.vcTreePosition,
+        hasCommitmentBundle: record.hasCommitmentBundle,
+      ),
+  };
+  for (final record in voteTxHashes) {
+    final key = '${record.bundleIndex}:${record.proposalId}';
+    final current = votesByKey[key];
+    votesByKey[key] = rust_voting.ApiVoteRecovery(
+      bundleIndex: record.bundleIndex,
+      proposalId: record.proposalId,
+      choice: current?.choice ?? 0,
+      phase: current?.phase ?? VotingWorkflowPhase.submittedVote,
+      txHash: record.txHash,
+      vcTreePosition: current?.vcTreePosition,
+      hasCommitmentBundle:
+          current?.hasCommitmentBundle ?? false,
+    );
+  }
+
   return rust_voting.ApiRoundRecoveryState(
     roundId: _roundId,
     bundleCount: bundleCount,
-    delegationWorkflows: delegationWorkflows,
-    delegationTxHashes: delegationTxHashes,
-    votes: votes,
-    voteWorkflows: voteWorkflows,
-    voteTxHashes: voteTxHashes,
+    delegation: delegationByBundle.values.toList(),
+    votes: votesByKey.values.toList(),
     commitmentBundles: commitmentBundles,
-    shareWorkflows: shareWorkflows,
+    shares: shareWorkflows,
     shareDelegations: shareDelegations,
     unconfirmedShareDelegations: unconfirmedShareDelegations,
   );
@@ -2474,12 +2518,12 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     ];
     recoveryApi.state = _recoveryState(
       bundleCount: current.bundleCount,
-      delegationTxHashes: current.delegationTxHashes,
+      delegationTxHashes: current.delegation,
       votes: current.votes,
-      voteWorkflows: current.voteWorkflows,
-      voteTxHashes: current.voteTxHashes,
+      voteWorkflows: current.votes,
+      voteTxHashes: current.votes,
       commitmentBundles: current.commitmentBundles,
-      shareWorkflows: current.shareWorkflows,
+      shareWorkflows: current.shares,
       shareDelegations: [
         for (final share in current.shareDelegations)
           if (matches(share)) confirmed(share) else share,

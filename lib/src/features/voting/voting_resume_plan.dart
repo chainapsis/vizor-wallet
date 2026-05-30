@@ -5,7 +5,7 @@ import '../../rust/api/voting.dart' as rust_voting;
 /// Phase strings emitted by Rust voting recovery.
 ///
 /// Keep these in sync with `WorkflowPhase::as_str` in
-/// `rust/src/wallet/voting/workflow.rs`.
+/// `zcash_voting::phases::WorkflowPhase`.
 abstract final class VotingWorkflowPhase {
   static const prepared = 'prepared';
   static const signed = 'signed';
@@ -86,7 +86,7 @@ class VotingResumePlan {
   final UnmodifiableListView<int> pendingDelegationBundleIndexes;
   final UnmodifiableMapView<int, String> delegationPhasesByIndex;
   final UnmodifiableListView<int> submittedDelegationBundleIndexes;
-  final UnmodifiableMapView<VotingVoteKey, rust_voting.ApiVoteRecord>
+  final UnmodifiableMapView<VotingVoteKey, rust_voting.ApiVoteRecovery>
   votesByKey;
   final UnmodifiableMapView<VotingVoteKey, String> votePhasesByKey;
   final UnmodifiableMapView<VotingVoteKey, String> voteTxHashesByKey;
@@ -108,7 +108,7 @@ class VotingResumePlan {
     required List<int> pendingDelegationBundleIndexes,
     required Map<int, String> delegationPhasesByIndex,
     required List<int> submittedDelegationBundleIndexes,
-    required Map<VotingVoteKey, rust_voting.ApiVoteRecord> votesByKey,
+    required Map<VotingVoteKey, rust_voting.ApiVoteRecovery> votesByKey,
     required Map<VotingVoteKey, String> votePhasesByKey,
     required Map<VotingVoteKey, String> voteTxHashesByKey,
     required Map<VotingVoteKey, rust_voting.ApiCommitmentBundleRecovery>
