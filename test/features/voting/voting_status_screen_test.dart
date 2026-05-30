@@ -13,6 +13,7 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_
 import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
+import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
@@ -127,6 +128,73 @@ void main() {
 
     expect(find.text('Choose at least one vote before submitting.'), findsOne);
     expect(find.text('Retry'), findsOne);
+  });
+
+  testWidgets('submitted route does not confirm incomplete current account', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _submissionHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text('Submission Not Complete'));
+
+    expect(find.text('Submission Confirmed!'), findsNothing);
+    expect(
+      find.text('This account has not completed submission for this poll.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('status screen does not complete all-decided empty account', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..state = _recoveryState(bundleCount: 0)
+      ..roundPlan = rust_voting.ApiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List(0),
+        allDecided: true,
+      );
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _statusHarness()),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.text('Choose at least one vote before submitting.'),
+    );
+
+    expect(find.text('submission confirmed route'), findsNothing);
+    expect(find.byIcon(Icons.check_circle), findsNothing);
+    expect(find.text('Choose at least one vote before submitting.'), findsOne);
   });
 
   testWidgets(
@@ -1484,6 +1552,37 @@ Widget _proposalHarness() {
         builder: (_, state) =>
             VotingReviewScreen(roundId: state.pathParameters['roundId']!),
       ),
+      GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
+      GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
+      GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
+      GoRoute(
+        path: '/activity',
+        builder: (_, _) => const Text('activity route'),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (_, _) => const Text('settings route'),
+      ),
+    ],
+  );
+
+  return MaterialApp.router(
+    routerConfig: router,
+    builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
+  );
+}
+
+Widget _submissionHarness() {
+  final router = GoRouter(
+    initialLocation: '/voting/poll/$_roundId/submitted',
+    routes: [
+      GoRoute(
+        path: '/voting/poll/:roundId/submitted',
+        builder: (_, state) => VotingSubmissionConfirmationScreen(
+          roundId: state.pathParameters['roundId']!,
+        ),
+      ),
+      GoRoute(path: '/voting', builder: (_, _) => const Text('voting route')),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),

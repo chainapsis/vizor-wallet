@@ -118,6 +118,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
     if (_sessionAccountUuid == accountUuid) return;
 
+    final hadSessionAccount = _sessionAccountUuid != null;
     final previousContext = _currentContext;
     if (previousContext != null) {
       unawaited(
@@ -128,13 +129,46 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
     }
-    if (_sessionAccountUuid != null) {
+    if (hadSessionAccount) {
       _sessionGeneration++;
     }
     _sessionAccountUuid = accountUuid;
     _sessionIsHardwareAccount = null;
+    _currentContext = null;
     _delegationPirPrecomputes.clear();
     _shareTrackingTimer?.cancel();
+    if (!hadSessionAccount || _isDisposed) return;
+
+    final generation = _sessionGeneration;
+    state = const AsyncLoading();
+    try {
+      final context = await _loadContext(_roundId, checkStaleAction: false);
+      if (!_isCurrentGeneration(generation) ||
+          _sessionAccountUuid != accountUuid) {
+        _logStaleSessionUpdate('account-reload', generation, context);
+        return;
+      }
+      _currentContext = context;
+      state = AsyncData(
+        VotingSessionState(
+          roundId: _roundId,
+          accountUuid: context.accountUuid,
+          isHardwareAccount: context.isHardwareAccount,
+          config: context.config,
+          round: context.round,
+          resumePlan: context.resumePlan,
+          roundPlan: context.roundPlan,
+          phase: _phaseForPlans(context.resumePlan, context.roundPlan),
+        ),
+      );
+      unawaited(_scheduleShareTracking(context, context.resumePlan));
+    } catch (error, stackTrace) {
+      if (!_isCurrentGeneration(generation) ||
+          _sessionAccountUuid != accountUuid) {
+        return;
+      }
+      state = AsyncError(error, stackTrace);
+    }
   }
 
   Future<void> prepareDelegation() {
@@ -1794,9 +1828,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
-          phase: hasBlockingWork
-              ? _phaseForPlans(refreshedPlan, refreshedRoundPlan)
-              : VotingSessionPhase.done,
+          phase: _phaseForPlans(refreshedPlan, refreshedRoundPlan),
           resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
         ),
@@ -2663,8 +2695,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         roundPlan: roundPlan,
         resumePlan: plan,
       );
-      if (!hasBlockingWork &&
-          (roundPlan.allDecided || plan.hasCompletedVoteArtifact)) {
+      if (!hasBlockingWork && plan.hasCompletedVoteArtifact) {
         return VotingSessionPhase.done;
       }
       if (hasBlockingWork) {
@@ -2703,7 +2734,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (plan.hasBlockingShareWork) {
       return VotingSessionPhase.submittingShares;
     }
-    return VotingSessionPhase.done;
+    if (plan.hasCompletedVoteArtifact) {
+      return VotingSessionPhase.done;
+    }
+    return VotingSessionPhase.idle;
   }
 
   Future<void> _clearPersistedDraftChoices(

@@ -79,7 +79,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       final sessionProvider = votingSessionProvider(roundId);
       final sessionNotifier = ref.read(sessionProvider.notifier);
       final loadedSession =
-          ref.read(sessionProvider).value ??
+          _sessionForRunAccount(accountUuid: null) ??
           await ref.read(sessionProvider.future);
       if (!_isCurrentRun(runGeneration)) return;
       if (loadedSession == null) {
@@ -125,7 +125,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       final proposalIds = proposals.map((proposal) => proposal.id).toList();
       await sessionNotifier.ensureWalletReadyForVoting();
       if (!_isCurrentRunForAccount(runGeneration, accountUuid)) return;
-      final afterWalletSync = ref.read(votingSessionProvider(roundId)).value;
+      final afterWalletSync = _sessionForRunAccount(accountUuid: accountUuid);
       if (afterWalletSync?.phase == VotingSessionPhase.error ||
           afterWalletSync?.phase == VotingSessionPhase.waitingForWalletSync) {
         if (afterWalletSync?.phase == VotingSessionPhase.error) {
@@ -216,13 +216,13 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
           seedBytes.fillRange(0, seedBytes.length, 0);
         }
         if (!_isCurrentRunForAccount(runGeneration, accountUuid)) return;
-        final afterDelegation = ref.read(votingSessionProvider(roundId)).value;
+        final afterDelegation = _sessionForRunAccount(accountUuid: accountUuid);
         if (afterDelegation?.phase == VotingSessionPhase.error) {
           _releaseSubmissionGuard();
           return;
         }
       }
-      final afterDelegation = ref.read(votingSessionProvider(roundId)).value;
+      final afterDelegation = _sessionForRunAccount(accountUuid: accountUuid);
       await _submitVotesAndShares(
         sessionNotifier,
         runGeneration: runGeneration,
@@ -245,7 +245,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   }) async {
     await sessionNotifier.prepareKeystoneSigning();
     if (!_isCurrentRunForAccount(runGeneration, accountUuid)) return;
-    final state = ref.read(votingSessionProvider(widget.roundId)).value;
+    final state = _sessionForRunAccount(accountUuid: accountUuid);
     if (state == null) return;
     if (state.phase == VotingSessionPhase.error) {
       _releaseSubmissionGuard();
@@ -309,7 +309,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       );
       await sessionNotifier.handleKeystoneSignedPczt(signedPczt);
       if (!_isCurrentRunForAccount(runGeneration, accountUuid)) return;
-      final state = ref.read(votingSessionProvider(widget.roundId)).value;
+      final state = _sessionForRunAccount(accountUuid: accountUuid);
       if (state == null) return;
       if (state.phase == VotingSessionPhase.error) {
         _releaseSubmissionGuard();
@@ -375,7 +375,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       );
       await sessionNotifier.skipRemainingKeystoneBundles();
       if (!_isCurrentRunForAccount(runGeneration, accountUuid)) return;
-      final afterSkip = ref.read(votingSessionProvider(widget.roundId)).value;
+      final afterSkip = _sessionForRunAccount(accountUuid: accountUuid);
       if (afterSkip?.phase == VotingSessionPhase.error) {
         _releaseSubmissionGuard();
         return;
@@ -407,15 +407,11 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       _keystoneUrParts = const [];
       _keystoneQrError = null;
     });
-    final beforeDelegation = ref
-        .read(votingSessionProvider(widget.roundId))
-        .value;
+    final beforeDelegation = _sessionForRunAccount(accountUuid: accountUuid);
     if (_sessionNeedsDelegationSubmission(beforeDelegation)) {
       await sessionNotifier.delegatePendingBundlesWithKeystoneSignatures();
       if (!_isCurrentRunForAccount(runGeneration, accountUuid)) return;
-      final afterDelegation = ref
-          .read(votingSessionProvider(widget.roundId))
-          .value;
+      final afterDelegation = _sessionForRunAccount(accountUuid: accountUuid);
       if (afterDelegation?.phase == VotingSessionPhase.error) {
         _releaseSubmissionGuard();
         return;
@@ -453,7 +449,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   }) async {
     if (!_isCurrentRunForAccount(runGeneration, accountUuid)) return;
     final votePollingSession =
-        ref.read(votingSessionProvider(widget.roundId)).value ?? initialSession;
+        _sessionForRunAccount(accountUuid: accountUuid) ?? initialSession;
     if (draftVotes.isEmpty &&
         (votePollingSession == null ||
             !_canRecoverWithoutDraft(votePollingSession))) {
@@ -468,19 +464,19 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       );
     }
     if (!_isCurrentRunForAccount(runGeneration, accountUuid)) return;
-    final afterVotes = ref.read(votingSessionProvider(widget.roundId)).value;
+    final afterVotes = _sessionForRunAccount(accountUuid: accountUuid);
     if (afterVotes?.phase == VotingSessionPhase.error) {
       _releaseSubmissionGuard();
       return;
     }
     await sessionNotifier.submitPendingShares();
     if (!_isCurrentRunForAccount(runGeneration, accountUuid)) return;
-    final done = ref.read(votingSessionProvider(widget.roundId)).value;
+    final done = _sessionForRunAccount(accountUuid: accountUuid);
     if (done?.phase == VotingSessionPhase.error) {
       _releaseSubmissionGuard();
       return;
     }
-    if (done?.phase != VotingSessionPhase.done) return;
+    if (!_hasCompletedSubmission(done)) return;
     _navigateToConfirmation(
       runGeneration: runGeneration,
       accountUuid: accountUuid,
@@ -523,7 +519,23 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
         .read(accountProvider)
         .value
         ?.activeAccountUuid;
-    return activeAccountUuid == null || activeAccountUuid == accountUuid;
+    return activeAccountUuid == accountUuid;
+  }
+
+  VotingSessionState? _sessionForRunAccount({required String? accountUuid}) {
+    final session = ref.read(votingSessionProvider(widget.roundId)).value;
+    if (accountUuid != null && session?.accountUuid != accountUuid) {
+      return null;
+    }
+    return session;
+  }
+
+  bool _hasCompletedSubmission(VotingSessionState? session) {
+    if (session == null) return false;
+    return hasCompletedVoteForDisplay(
+      roundPlan: session.roundPlan,
+      resumePlan: session.resumePlan,
+    );
   }
 
   String _messageFromError(Object error) {
@@ -697,14 +709,22 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
                 }
                 _scheduleRunIfIdle();
                 final localError = _runErrorMessage;
+                final completedSubmission = _hasCompletedSubmission(state);
                 final phase = localError == null
-                    ? _displayPhase(state.phase)
+                    ? _displayPhase(
+                        state.phase,
+                        completedSubmission: completedSubmission,
+                      )
                     : VotingSessionPhase.error;
                 return _StatusContent(
                   phase: phase,
                   voteSubmissionDetail: _voteSubmissionDetail(state),
-                  voteSubmissionProgress: _voteSubmissionProgress(state),
+                  voteSubmissionProgress: _voteSubmissionProgress(
+                    state,
+                    completedSubmission: completedSubmission,
+                  ),
                   delegationProgress: _delegationProgress(state),
+                  completedSubmission: completedSubmission,
                   softwareAccountRequired: _softwareAccountRequired,
                   isHardwareAccount: state.isHardwareAccount,
                   keystoneSigningRequest: state.keystoneSigningRequest,
@@ -729,7 +749,13 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     );
   }
 
-  VotingSessionPhase _displayPhase(VotingSessionPhase phase) {
+  VotingSessionPhase _displayPhase(
+    VotingSessionPhase phase, {
+    required bool completedSubmission,
+  }) {
+    if (phase == VotingSessionPhase.done && !completedSubmission) {
+      return VotingSessionPhase.idle;
+    }
     return phase;
   }
 
@@ -808,8 +834,11 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     return _shareSubmissionDetail(state);
   }
 
-  double? _voteSubmissionProgress(VotingSessionState state) {
-    if (state.phase == VotingSessionPhase.done) return 1;
+  double? _voteSubmissionProgress(
+    VotingSessionState state, {
+    required bool completedSubmission,
+  }) {
+    if (completedSubmission) return 1;
     final progress = state.voteSubmissionProgress;
     if (progress == null) return null;
     return progress.clamp(0.0, 1.0).toDouble();
@@ -910,6 +939,7 @@ class _StatusContent extends StatelessWidget {
     this.voteSubmissionDetail,
     this.voteSubmissionProgress,
     this.delegationProgress,
+    this.completedSubmission = false,
     this.softwareAccountRequired = false,
     this.isHardwareAccount = false,
     this.keystoneSigningRequest,
@@ -930,6 +960,7 @@ class _StatusContent extends StatelessWidget {
   final String? voteSubmissionDetail;
   final double? voteSubmissionProgress;
   final double? delegationProgress;
+  final bool completedSubmission;
   final bool softwareAccountRequired;
   final bool isHardwareAccount;
   final rust_voting.ApiKeystoneDelegationRequest? keystoneSigningRequest;
@@ -951,7 +982,7 @@ class _StatusContent extends StatelessWidget {
       return const _SoftwareAccountRequiredContent();
     }
     final voteStepComplete =
-        phase == VotingSessionPhase.done || (voteSubmissionProgress ?? 0) >= 1;
+        completedSubmission || (voteSubmissionProgress ?? 0) >= 1;
 
     return LayoutBuilder(
       builder: (context, constraints) {

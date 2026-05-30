@@ -392,6 +392,26 @@ void main() {
     );
   });
 
+  test('empty all-decided plan is not a completed submission', () async {
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(bundleCount: 0),
+      roundPlan: rust_voting.ApiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List(0),
+        allDecided: true,
+      ),
+    );
+    final container = _sessionContainer(recoveryApi: recoveryApi);
+    addTearDown(container.dispose);
+
+    final state = await container.read(votingSessionProvider(kRoundId).future);
+
+    expect(state.phase, VotingSessionPhase.idle);
+    expect(state.resumePlan?.hasCompletedVoteArtifact, isFalse);
+  });
+
   test('PIR mismatch fails before Rust delegation work is called', () async {
     final rust = FakeVotingRustApi();
     final pir = FakePirResolver(
@@ -1061,6 +1081,10 @@ void main() {
 
     container.read(activeAccountProvider.notifier).set('account-2');
     await Future<void>.delayed(Duration.zero);
+    expect(
+      container.read(votingSessionProvider(kRoundId)).value?.accountUuid,
+      isNot('account-1'),
+    );
     final second = await container.read(votingSessionProvider(kRoundId).future);
 
     expect(second.accountUuid, 'account-2');

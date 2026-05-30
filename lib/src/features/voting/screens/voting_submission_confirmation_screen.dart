@@ -10,6 +10,7 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../voting_formatters.dart';
+import '../voting_resume_plan.dart';
 
 class VotingSubmissionConfirmationScreen extends ConsumerWidget {
   const VotingSubmissionConfirmationScreen({super.key, required this.roundId});
@@ -31,20 +32,40 @@ class VotingSubmissionConfirmationScreen extends ConsumerWidget {
               skipLoadingOnRefresh: false,
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (error, _) => _ConfirmationScaffold(
+                confirmed: false,
+                title: 'Submission Not Complete',
                 pollTitle: 'Coinholder Poll',
                 message: "Couldn't load submission details: $error",
                 votingPower: 'Not available',
               ),
-              data: (state) => _ConfirmationScaffold(
-                pollTitle: state.round?.title.isNotEmpty == true
+              data: (state) {
+                final pollTitle = state.round?.title.isNotEmpty == true
                     ? state.round!.title
-                    : 'Coinholder Poll',
-                message:
-                    'Your vote was successfully published and cannot be changed.',
-                votingPower: state.eligibleWeightZatoshi == null
-                    ? 'Not available'
-                    : formatVotingPower(state.eligibleWeightZatoshi!),
-              ),
+                    : 'Coinholder Poll';
+                if (!hasCompletedVoteForDisplay(
+                  roundPlan: state.roundPlan,
+                  resumePlan: state.resumePlan,
+                )) {
+                  return _ConfirmationScaffold(
+                    confirmed: false,
+                    title: 'Submission Not Complete',
+                    pollTitle: pollTitle,
+                    message:
+                        'This account has not completed submission for this poll.',
+                    votingPower: 'Not available',
+                  );
+                }
+                return _ConfirmationScaffold(
+                  confirmed: true,
+                  title: 'Submission Confirmed!',
+                  pollTitle: pollTitle,
+                  message:
+                      'Your vote was successfully published and cannot be changed.',
+                  votingPower: state.eligibleWeightZatoshi == null
+                      ? 'Not available'
+                      : formatVotingPower(state.eligibleWeightZatoshi!),
+                );
+              },
             ),
           ),
         ),
@@ -55,11 +76,15 @@ class VotingSubmissionConfirmationScreen extends ConsumerWidget {
 
 class _ConfirmationScaffold extends StatelessWidget {
   const _ConfirmationScaffold({
+    required this.confirmed,
+    required this.title,
     required this.pollTitle,
     required this.message,
     required this.votingPower,
   });
 
+  final bool confirmed;
+  final String title;
   final String pollTitle;
   final String message;
   final String votingPower;
@@ -115,8 +140,10 @@ class _ConfirmationScaffold extends StatelessWidget {
                             borderRadius: BorderRadius.circular(AppRadii.full),
                           ),
                           child: Icon(
-                            Icons.verified,
-                            color: colors.text.success,
+                            confirmed ? Icons.verified : Icons.error_outline,
+                            color: confirmed
+                                ? colors.text.success
+                                : colors.text.warning,
                             size: 24,
                           ),
                         ),
@@ -125,7 +152,7 @@ class _ConfirmationScaffold extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Text(
-                    'Submission Confirmed!',
+                    title,
                     style: AppTypography.headlineMedium.copyWith(
                       color: colors.text.accent,
                     ),
