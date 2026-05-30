@@ -2391,7 +2391,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         phase: VotingSessionPhase.readyToDelegate,
         resumePlan: refreshedPlan,
         roundPlan: refreshedRoundPlan,
-        eligibleWeightZatoshi: bundleSetup.eligibleWeightZatoshi,
+        eligibleWeightZatoshi: bundleSetup.eligibleWeight,
         isHardwareAccount: context.isHardwareAccount,
       ),
     );

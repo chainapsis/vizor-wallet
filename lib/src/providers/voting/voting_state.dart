@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import '../../core/formatting/date_format.dart';
 import '../../core/formatting/hex_codec.dart';
 import '../../features/voting/voting_resume_plan.dart';
+import '../../rust/third_party/zcash_voting/delegate.dart' as rust_wire;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/voting_models.dart';
@@ -247,7 +248,7 @@ class VotingSessionState {
   final UnmodifiableMapView<VotingVoteKey, VotingSessionProgress> voteProgress;
   final UnmodifiableMapView<int, rust_wire.KeystoneSignatureRecord>
   keystoneSignatures;
-  final rust_wire.KeystoneDelegationRequestView? keystoneSigningRequest;
+  final rust_wire.KeystoneSigningRequest? keystoneSigningRequest;
   final String? keystoneScanError;
   final int? currentBundleIndex;
   final VotingVoteKey? currentVoteKey;
@@ -326,7 +327,7 @@ class VotingSessionState {
     Map<int, VotingSessionProgress>? delegationProgress,
     Map<VotingVoteKey, VotingSessionProgress>? voteProgress,
     Map<int, rust_wire.KeystoneSignatureRecord>? keystoneSignatures,
-    rust_wire.KeystoneDelegationRequestView? keystoneSigningRequest,
+    rust_wire.KeystoneSigningRequest? keystoneSigningRequest,
     bool clearKeystoneSigningRequest = false,
     String? keystoneScanError,
     bool clearKeystoneScanError = false,

@@ -8,6 +8,7 @@ import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/api/keystone.dart' as rust_keystone;
 import '../../rust/api/wallet.dart' as rust_wallet;
+import '../../rust/third_party/zcash_voting/delegate.dart' as rust_wire;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../account_provider.dart';
 import 'voting_session_provider.dart';
@@ -561,7 +562,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   Future<void> _updateKeystoneQr({
     required VotingSessionKey key,
     required int generation,
-    required rust_wire.KeystoneDelegationRequestView request,
+    required rust_wire.KeystoneSigningRequest request,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     state = state.copyWith(

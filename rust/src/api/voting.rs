@@ -153,7 +153,7 @@ pub fn plan_share_submissions(
     vote_end_time_seconds: u64,
     last_moment_buffer_seconds: Option<u64>,
     single_share: bool,
-) -> Result<Vec<zcash_voting::wire::ShareSubmissionPlanView>, String> {
+) -> Result<Vec<zcash_voting::wire::ShareSubmissionPlan>, String> {
     catch(|| {
         let share_count = usize::try_from(share_count)
             .map_err(|_| "share_count does not fit in usize".to_string())?;
@@ -186,13 +186,7 @@ pub fn plan_share_submissions(
         )
         .map_err(|e| e.to_string())?;
 
-        plans
-            .into_iter()
-            .map(|plan| {
-                zcash_voting::wire::ShareSubmissionPlanView::try_from(plan)
-                    .map_err(|e| e.to_string())
-            })
-            .collect()
+        Ok(plans)
     })
 }
 
@@ -525,7 +519,7 @@ pub async fn setup_delegation_bundles(
     session_json: Option<String>,
     account_uuid: String,
     max_real_notes_per_bundle: Option<u32>,
-) -> Result<zcash_voting::wire::BundleSetupResultView, String> {
+) -> Result<zcash_voting::wire::BundleLayout, String> {
     let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
     let voting_db = state::open_voting_db(&db_path, &account_uuid)?;
     delegation::setup_delegation_bundles(
@@ -539,7 +533,6 @@ pub async fn setup_delegation_bundles(
         bundle_policy,
     )
     .await
-    .map(zcash_voting::wire::BundleSetupResultView::from)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -715,7 +708,7 @@ pub async fn build_keystone_delegation_request(
     hotkey_seed: Vec<u8>,
     bundle_index: u32,
     max_real_notes_per_bundle: Option<u32>,
-) -> Result<zcash_voting::wire::KeystoneDelegationRequestView, String> {
+) -> Result<zcash_voting::wire::KeystoneSigningRequest, String> {
     let network = keys::parse_network(&network)?;
     let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
     let round_id = round_params.vote_round_id.clone();
@@ -735,7 +728,6 @@ pub async fn build_keystone_delegation_request(
         cancellation,
     )
     .await
-    .map(zcash_voting::wire::KeystoneDelegationRequestView::from)
 }
 
 /// Extract the ZIP-244 sighash from PCZT bytes.
@@ -1011,7 +1003,7 @@ pub fn generate_van_witness(
     round_id: String,
     bundle_index: u32,
     anchor_height: u32,
-) -> Result<zcash_voting::wire::VanWitnessView, String> {
+) -> Result<zcash_voting::wire::VanWitness, String> {
     catch(|| {
         tree_sync::generate_van_witness(
             &db_path,
@@ -1020,7 +1012,7 @@ pub fn generate_van_witness(
             bundle_index,
             anchor_height,
         )
-        .map(zcash_voting::wire::VanWitnessView::from)
+        .map_err(|e| e.to_string())
     })
 }
 
@@ -1078,7 +1070,7 @@ pub fn build_vote_commitments(
     round_id: String,
     bundle_index: u32,
     hotkey_seed: Vec<u8>,
-    van_witness: zcash_voting::wire::VanWitnessView,
+    van_witness: zcash_voting::wire::VanWitness,
     draft_votes: Vec<zcash_voting::wire::DraftVote>,
 ) -> Result<zcash_voting::wire::SignedVoteCommitmentsView, String> {
     let network = keys::parse_network(&network)?;
@@ -1137,7 +1129,7 @@ pub async fn build_vote_commitments_with_progress(
     round_id: String,
     bundle_index: u32,
     hotkey_seed: Vec<u8>,
-    van_witness: zcash_voting::wire::VanWitnessView,
+    van_witness: zcash_voting::wire::VanWitness,
     draft_votes: Vec<zcash_voting::wire::DraftVote>,
     sink: StreamSink<ApiVoteCommitEvent>,
 ) -> Result<(), String> {
@@ -1231,9 +1223,7 @@ pub fn get_votes(
     wallet_id: String,
     round_id: String,
 ) -> Result<Vec<zcash_voting::wire::VoteRecord>, String> {
-    catch(|| {
-        vote::get_votes(&db_path, &wallet_id, &round_id)
-    })
+    catch(|| vote::get_votes(&db_path, &wallet_id, &round_id))
 }
 
 /// Load the full recovery/share-tracking summary for one voting round.
@@ -1471,15 +1461,14 @@ mod tests {
 
     #[test]
     fn api_bundle_setup_result_preserves_core_fields() {
-        let api =
-            zcash_voting::wire::BundleSetupResultView::from(zcash_voting::round::BundleLayout {
-                bundle_count: 2,
-                eligible_weight: 50,
-                dropped_count: 0,
-            });
+        let api = zcash_voting::wire::BundleLayout {
+            bundle_count: 2,
+            eligible_weight: 50,
+            dropped_count: 0,
+        };
 
         assert_eq!(api.bundle_count, 2);
-        assert_eq!(api.eligible_weight_zatoshi, 50);
+        assert_eq!(api.eligible_weight, 50);
     }
 
     #[test]
@@ -1526,23 +1515,18 @@ mod tests {
 
     #[test]
     fn api_keystone_delegation_request_preserves_display_memo() {
-        let api = zcash_voting::wire::KeystoneDelegationRequestView::from(
-            zcash_voting::delegate::KeystoneSigningRequest {
-                setup: zcash_voting::delegate::DelegationSetup {
-                    pczt_bytes: vec![1],
-                    pczt_sighash: [3; 32],
-                    rk: [4; 32],
-                    action_index: 5,
-                    action_bytes: vec![],
-                },
-                redacted_pczt_bytes: vec![2],
-                display_memo: "I am authorizing this hotkey.".to_string(),
-                eligible_weight_zatoshi: 20,
-                delegated_weight_zatoshi: 10,
-                bundle_count: 2,
-                bundle_index: 1,
-            },
-        );
+        let api = zcash_voting::wire::KeystoneSigningRequest {
+            pczt_bytes: vec![1],
+            redacted_pczt_bytes: vec![2],
+            pczt_sighash: vec![3; 32],
+            rk: vec![4; 32],
+            action_index: 5,
+            display_memo: "I am authorizing this hotkey.".to_string(),
+            eligible_weight_zatoshi: 20,
+            delegated_weight_zatoshi: 10,
+            bundle_count: 2,
+            bundle_index: 1,
+        };
 
         assert_eq!(api.display_memo, "I am authorizing this hotkey.");
         assert_eq!(api.bundle_count, 2);
@@ -1626,22 +1610,22 @@ mod tests {
                 shares_hash: "AQ==".to_string(),
                 proposal_id: 7,
                 vote_decision: 2,
-                encrypted_share: zcash_voting::wire::WireEncryptedShareJson {
-                    c1: "Aw==".to_string(),
-                    c2: "BA==".to_string(),
+                encrypted_share: zcash_voting::wire::WireEncryptedShare {
+                    c1: vec![3],
+                    c2: vec![4],
                     share_index: 1,
                 },
                 share_index: 1,
                 vc_tree_position: 55,
                 all_encrypted_shares: vec![
-                    zcash_voting::wire::WireEncryptedShareJson {
-                        c1: "Aw==".to_string(),
-                        c2: "BA==".to_string(),
+                    zcash_voting::wire::WireEncryptedShare {
+                        c1: vec![3],
+                        c2: vec![4],
                         share_index: 1,
                     },
-                    zcash_voting::wire::WireEncryptedShareJson {
-                        c1: "BQ==".to_string(),
-                        c2: "Bg==".to_string(),
+                    zcash_voting::wire::WireEncryptedShare {
+                        c1: vec![5],
+                        c2: vec![6],
                         share_index: 2,
                     },
                 ],
@@ -1745,9 +1729,9 @@ mod tests {
                 shares_hash: "AQ==".to_string(),
                 proposal_id: 7,
                 vote_decision: 2,
-                encrypted_share: zcash_voting::wire::WireEncryptedShareJson {
-                    c1: "Aw==".to_string(),
-                    c2: "BA==".to_string(),
+                encrypted_share: zcash_voting::wire::WireEncryptedShare {
+                    c1: vec![3],
+                    c2: vec![4],
                     share_index: 1,
                 },
                 share_index: 1,
@@ -1821,14 +1805,14 @@ mod tests {
 
     #[test]
     fn api_van_witness_preserves_core_fields() {
-        let mut witness = [[0u8; 32]; zcash_voting::vote::VAN_AUTH_PATH_LEN];
-        witness[0] = [1; 32];
-        witness[1] = [2; 32];
-        let api = zcash_voting::wire::VanWitnessView::from(zcash_voting::vote::VanWitness {
+        let mut witness = vec![vec![0u8; 32]; zcash_voting::vote::VAN_AUTH_PATH_LEN];
+        witness[0] = vec![1; 32];
+        witness[1] = vec![2; 32];
+        let api = zcash_voting::wire::VanWitness {
             auth_path: witness,
             position: 7,
             anchor_height: 123,
-        });
+        };
 
         assert_eq!(api.auth_path[0], vec![1; 32]);
         assert_eq!(api.auth_path[1], vec![2; 32]);
@@ -1964,10 +1948,7 @@ mod tests {
         assert_eq!(api.bundle_index, 1);
         assert_eq!(api.commitments[0].proposal_id, 2);
         assert_eq!(api.commitments[0].wire.proposal_id, 2);
-        assert_eq!(
-            api.commitments[0].shares[0].encrypted_share.c1,
-            base64::engine::general_purpose::STANDARD.encode(vec![5; 32])
-        );
+        assert_eq!(api.commitments[0].shares[0].encrypted_share.c1, vec![5; 32]);
         assert_eq!(
             api.commitments[0].shares[0].primary_blind,
             base64::engine::general_purpose::STANDARD.encode(vec![9; 32])
@@ -2259,7 +2240,7 @@ mod tests {
             ROUND_ID.to_string(),
             0,
             vec![7; 32],
-            zcash_voting::wire::VanWitnessView {
+            zcash_voting::wire::VanWitness {
                 auth_path: vec![vec![1; 32]; 24],
                 position: 0,
                 anchor_height: 1,
@@ -2293,7 +2274,7 @@ mod tests {
             ROUND_ID.to_string(),
             0,
             vec![7; 32],
-            zcash_voting::wire::VanWitnessView {
+            zcash_voting::wire::VanWitness {
                 auth_path: vec![vec![1; 32]; 23],
                 position: 0,
                 anchor_height: 1,

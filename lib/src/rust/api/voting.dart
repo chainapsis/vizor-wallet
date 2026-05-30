@@ -4,6 +4,11 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import '../third_party/zcash_voting/delegate.dart';
+import '../third_party/zcash_voting/round.dart';
+import '../third_party/zcash_voting/share_policy.dart';
+import '../third_party/zcash_voting/types.dart';
+import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
@@ -43,7 +48,7 @@ Future<String> voteShareWireJson({
 /// This mirrors the zcash-swift-wallet-sdk wrapper around
 /// `zcash_voting::share_policy::plan_share_submissions`, with Rust drawing the
 /// policy-sized entropy from the OS CSPRNG before returning FRB-safe plans.
-Future<List<ShareSubmissionPlanView>> planShareSubmissions({
+Future<List<ShareSubmissionPlan>> planShareSubmissions({
   required int shareCount,
   required List<String> serverUrls,
   required BigInt nowSeconds,
@@ -178,7 +183,7 @@ Future<VotingNoteSelectionResultView> selectVotingNotes({
 ///
 /// Reuses existing bundle rows for the same round/wallet, so callers can safely
 /// retry setup before proving a specific bundle.
-Future<BundleSetupResultView> setupDelegationBundles({
+Future<BundleLayout> setupDelegationBundles({
   required String dbPath,
   required String lightwalletdUrl,
   required String network,
@@ -291,7 +296,7 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
     );
 
 /// Build and redact a voting PCZT that Keystone must sign for one bundle.
-Future<KeystoneDelegationRequestView> buildKeystoneDelegationRequest({
+Future<KeystoneSigningRequest> buildKeystoneDelegationRequest({
   required String dbPath,
   required String lightwalletdUrl,
   required String network,
@@ -521,7 +526,7 @@ Future<int> syncVoteTree({
 ///
 /// `anchor_height` is the vote-tree height where the witness should be anchored;
 /// callers must sync the same round before requesting the witness.
-Future<VanWitnessView> generateVanWitness({
+Future<VanWitness> generateVanWitness({
   required String dbPath,
   required String walletId,
   required String roundId,
@@ -576,7 +581,7 @@ Future<SignedVoteCommitmentsView> buildVoteCommitments({
   required String roundId,
   required int bundleIndex,
   required List<int> hotkeySeed,
-  required VanWitnessView vanWitness,
+  required VanWitness vanWitness,
   required List<DraftVote> draftVotes,
 }) => RustLib.instance.api.crateApiVotingBuildVoteCommitments(
   dbPath: dbPath,
@@ -615,7 +620,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   required String roundId,
   required int bundleIndex,
   required List<int> hotkeySeed,
-  required VanWitnessView vanWitness,
+  required VanWitness vanWitness,
   required List<DraftVote> draftVotes,
 }) => RustLib.instance.api.crateApiVotingBuildVoteCommitmentsWithProgress(
   dbPath: dbPath,

@@ -33,6 +33,16 @@ import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_voting;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
+    as rust_wire;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/round.dart'
+    as rust_wire;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
+    as rust_frb_types;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/types.dart'
+    as rust_wire;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/vote.dart'
+    as rust_wire;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_frb_types;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
@@ -2398,7 +2408,7 @@ class _NoopVotingRustApi implements VotingRustApi {
 
 class _FailingVotingPowerRustApi extends _NoopVotingRustApi {
   @override
-  Future<rust_wire.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_wire.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2414,7 +2424,7 @@ class _FailingVotingPowerRustApi extends _NoopVotingRustApi {
 
 class _IneligibleVotingRustApi extends _NoopVotingRustApi {
   @override
-  Future<rust_wire.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_wire.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2551,7 +2561,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   int keystoneDelegationRequestCalls = 0;
 
   @override
-  Future<rust_wire.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_wire.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2562,9 +2572,10 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     int? maxRealNotesPerBundle,
   }) async {
     setupDelegationBundleCalls++;
-    return rust_wire.BundleSetupResultView(
+    return rust_wire.BundleLayout(
       bundleCount: bundleCount,
-      eligibleWeightZatoshi: BigInt.from(100),
+      eligibleWeight: BigInt.from(100),
+      droppedCount: 0,
     );
   }
 
@@ -2667,8 +2678,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<rust_wire.KeystoneDelegationRequestView>
-  buildKeystoneDelegationRequest({
+  Future<rust_wire.KeystoneSigningRequest> buildKeystoneDelegationRequest({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2681,7 +2691,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     int? maxRealNotesPerBundle,
   }) async {
     keystoneDelegationRequestCalls++;
-    return rust_wire.KeystoneDelegationRequestView(
+    return rust_wire.KeystoneSigningRequest(
       pcztBytes: Uint8List.fromList(const [1]),
       redactedPcztBytes: Uint8List.fromList(const [2]),
       pcztSighash: Uint8List.fromList(const [3]),
@@ -2862,14 +2872,14 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<rust_wire.VanWitnessView> generateVanWitness({
+  Future<rust_wire.VanWitness> generateVanWitness({
     required String dbPath,
     required String walletId,
     required String roundId,
     required int bundleIndex,
     required int anchorHeight,
   }) async {
-    return rust_wire.VanWitnessView(
+    return rust_wire.VanWitness(
       authPath: const [],
       position: bundleIndex,
       anchorHeight: anchorHeight,
@@ -2884,7 +2894,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String roundId,
     required int bundleIndex,
     required List<int> hotkeySeed,
-    required rust_wire.VanWitnessView vanWitness,
+    required rust_wire.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
   }) async* {
     for (final draft in draftVotes) {
@@ -2953,7 +2963,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<List<rust_frb_types.ShareSubmissionPlanView>> planShareSubmissions({
+  Future<List<rust_frb_types.ShareSubmissionPlan>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
     required BigInt nowSeconds,
@@ -2964,7 +2974,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     final targetCount = serverUrls.isEmpty ? 0 : (serverUrls.length / 2).ceil();
     return [
       for (var i = 0; i < shareCount; i++)
-        rust_frb_types.ShareSubmissionPlanView(
+        rust_frb_types.ShareSubmissionPlan(
           submitAt: BigInt.zero,
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),
@@ -3268,9 +3278,9 @@ rust_wire.SignedVoteCommitmentsView _commitments({
   required int proposalId,
   required int choice,
 }) {
-  final wireShare = rust_wire.WireEncryptedShareJson(
-    c1: base64Encode(Uint8List.fromList(const [8])),
-    c2: base64Encode(Uint8List.fromList(const [9])),
+  final wireShare = rust_wire.WireEncryptedShare(
+    c1: Uint8List.fromList(const [8]),
+    c2: Uint8List.fromList(const [9]),
     shareIndex: 0,
   );
   return rust_wire.SignedVoteCommitmentsView(

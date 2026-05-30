@@ -20,6 +20,16 @@ import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_tree_sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_voting;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
+    as rust_wire;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/round.dart'
+    as rust_wire;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
+    as rust_frb_types;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/types.dart'
+    as rust_wire;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/vote.dart'
+    as rust_wire;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_frb_types;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
@@ -3918,7 +3928,7 @@ class FakeVotingRustApi implements VotingRustApi {
   int extractSpendAuthSignatureCalls = 0;
 
   @override
-  Future<rust_wire.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_wire.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -3942,9 +3952,10 @@ class FakeVotingRustApi implements VotingRustApi {
     }
     setupCalls++;
     _activeSetups--;
-    return rust_wire.BundleSetupResultView(
+    return rust_wire.BundleLayout(
       bundleCount: bundleCount,
-      eligibleWeightZatoshi: BigInt.from(100),
+      eligibleWeight: BigInt.from(100),
+      droppedCount: 0,
     );
   }
 
@@ -4002,8 +4013,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_wire.KeystoneDelegationRequestView>
-  buildKeystoneDelegationRequest({
+  Future<rust_wire.KeystoneSigningRequest> buildKeystoneDelegationRequest({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -4017,7 +4027,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }) async {
     accountUuids.add(accountUuid);
     keystoneDelegationRequestCalls.add(bundleIndex);
-    return rust_wire.KeystoneDelegationRequestView(
+    return rust_wire.KeystoneSigningRequest(
       pcztBytes: Uint8List.fromList([20, bundleIndex]),
       redactedPcztBytes: Uint8List.fromList([21, bundleIndex]),
       pcztSighash: Uint8List.fromList([10, bundleIndex]),
@@ -4287,14 +4297,14 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_wire.VanWitnessView> generateVanWitness({
+  Future<rust_wire.VanWitness> generateVanWitness({
     required String dbPath,
     required String walletId,
     required String roundId,
     required int bundleIndex,
     required int anchorHeight,
   }) async {
-    return rust_wire.VanWitnessView(
+    return rust_wire.VanWitness(
       authPath: const [],
       position: bundleIndex,
       anchorHeight: anchorHeight,
@@ -4318,7 +4328,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required String roundId,
     required int bundleIndex,
     required List<int> hotkeySeed,
-    required rust_wire.VanWitnessView vanWitness,
+    required rust_wire.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
   }) async* {
     voteCommitBundleCalls.add(bundleIndex);
@@ -4391,8 +4401,8 @@ class FakeVotingRustApi implements VotingRustApi {
       'proposal_id': share.proposalId,
       'vote_decision': share.voteDecision,
       'enc_share': {
-        'c1': share.encryptedShare.c1,
-        'c2': share.encryptedShare.c2,
+        'c1': base64Encode(share.encryptedShare.c1),
+        'c2': base64Encode(share.encryptedShare.c2),
         'share_index': share.encryptedShare.shareIndex,
       },
       'share_index': share.shareIndex,
@@ -4400,8 +4410,8 @@ class FakeVotingRustApi implements VotingRustApi {
       'all_enc_shares': share.allEncryptedShares
           .map(
             (share) => {
-              'c1': share.c1,
-              'c2': share.c2,
+              'c1': base64Encode(share.c1),
+              'c2': base64Encode(share.c2),
               'share_index': share.shareIndex,
             },
           )
@@ -4413,7 +4423,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<List<rust_frb_types.ShareSubmissionPlanView>> planShareSubmissions({
+  Future<List<rust_frb_types.ShareSubmissionPlan>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
     required BigInt nowSeconds,
@@ -4431,7 +4441,7 @@ class FakeVotingRustApi implements VotingRustApi {
         : BigInt.from(now + 1);
     return [
       for (var i = 0; i < shareCount; i++)
-        rust_frb_types.ShareSubmissionPlanView(
+        rust_frb_types.ShareSubmissionPlan(
           submitAt: submitAt,
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),
@@ -4741,13 +4751,9 @@ rust_wire.SignedVoteCommitmentsView _commitments({
 }) {
   final wireShares = [
     for (var shareIndex = 0; shareIndex < shareCount; shareIndex++)
-      rust_wire.WireEncryptedShareJson(
-        c1: base64Encode(
-          Uint8List.fromList(shareCount == 1 ? [8] : [8, shareIndex]),
-        ),
-        c2: base64Encode(
-          Uint8List.fromList(shareCount == 1 ? [9] : [9, shareIndex]),
-        ),
+      rust_wire.WireEncryptedShare(
+        c1: Uint8List.fromList(shareCount == 1 ? [8] : [8, shareIndex]),
+        c2: Uint8List.fromList(shareCount == 1 ? [9] : [9, shareIndex]),
         shareIndex: shareIndex,
       ),
   ];

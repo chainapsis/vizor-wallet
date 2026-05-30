@@ -14,6 +14,11 @@ import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
+import 'third_party/zcash_voting/delegate.dart';
+import 'third_party/zcash_voting/round.dart';
+import 'third_party/zcash_voting/share_policy.dart';
+import 'third_party/zcash_voting/types.dart';
+import 'third_party/zcash_voting/vote.dart';
 import 'third_party/zcash_voting/wire.dart';
 import 'wallet/keystone.dart';
 
@@ -115,7 +120,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
-  VanWitnessView dco_decode_box_autoadd_van_witness_view(dynamic raw);
+  VanWitness dco_decode_box_autoadd_van_witness(dynamic raw);
 
   @protected
   VoteCommitmentWire dco_decode_box_autoadd_vote_commitment_wire(dynamic raw);
@@ -127,7 +132,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   VotingRoundParams dco_decode_box_autoadd_voting_round_params(dynamic raw);
 
   @protected
-  BundleSetupResultView dco_decode_bundle_setup_result_view(dynamic raw);
+  BundleLayout dco_decode_bundle_layout(dynamic raw);
 
   @protected
   CompletedVoteChoiceView dco_decode_completed_vote_choice_view(dynamic raw);
@@ -174,12 +179,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   KeystoneAccountInfo dco_decode_keystone_account_info(dynamic raw);
 
   @protected
-  KeystoneDelegationRequestView dco_decode_keystone_delegation_request_view(
-    dynamic raw,
-  );
+  KeystoneSignatureRecord dco_decode_keystone_signature_record(dynamic raw);
 
   @protected
-  KeystoneSignatureRecord dco_decode_keystone_signature_record(dynamic raw);
+  KeystoneSigningRequest dco_decode_keystone_signing_request(dynamic raw);
 
   @protected
   List<String> dco_decode_list_String(dynamic raw);
@@ -257,9 +260,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  List<ShareSubmissionPlanView> dco_decode_list_share_submission_plan_view(
-    dynamic raw,
-  );
+  List<ShareSubmissionPlan> dco_decode_list_share_submission_plan(dynamic raw);
 
   @protected
   List<ShareWorkflowRecoveryView> dco_decode_list_share_workflow_recovery_view(
@@ -303,9 +304,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<VotingNoteRefView> dco_decode_list_voting_note_ref_view(dynamic raw);
 
   @protected
-  List<WireEncryptedShareJson> dco_decode_list_wire_encrypted_share_json(
-    dynamic raw,
-  );
+  List<WireEncryptedShare> dco_decode_list_wire_encrypted_share(dynamic raw);
 
   @protected
   NextStepView dco_decode_next_step_view(dynamic raw);
@@ -366,7 +365,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ShareSubmissionPlanView dco_decode_share_submission_plan_view(dynamic raw);
+  ShareSubmissionPlan dco_decode_share_submission_plan(dynamic raw);
 
   @protected
   ShareWorkflowRecoveryView dco_decode_share_workflow_recovery_view(
@@ -437,7 +436,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_usize(dynamic raw);
 
   @protected
-  VanWitnessView dco_decode_van_witness_view(dynamic raw);
+  VanWitness dco_decode_van_witness(dynamic raw);
 
   @protected
   VoteCommitmentWire dco_decode_vote_commitment_wire(dynamic raw);
@@ -475,7 +474,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   WalletImportResult dco_decode_wallet_import_result(dynamic raw);
 
   @protected
-  WireEncryptedShareJson dco_decode_wire_encrypted_share_json(dynamic raw);
+  WireEncryptedShare dco_decode_wire_encrypted_share(dynamic raw);
 
   @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
@@ -591,9 +590,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
-  VanWitnessView sse_decode_box_autoadd_van_witness_view(
-    SseDeserializer deserializer,
-  );
+  VanWitness sse_decode_box_autoadd_van_witness(SseDeserializer deserializer);
 
   @protected
   VoteCommitmentWire sse_decode_box_autoadd_vote_commitment_wire(
@@ -611,9 +608,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  BundleSetupResultView sse_decode_bundle_setup_result_view(
-    SseDeserializer deserializer,
-  );
+  BundleLayout sse_decode_bundle_layout(SseDeserializer deserializer);
 
   @protected
   CompletedVoteChoiceView sse_decode_completed_vote_choice_view(
@@ -676,12 +671,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  KeystoneDelegationRequestView sse_decode_keystone_delegation_request_view(
+  KeystoneSignatureRecord sse_decode_keystone_signature_record(
     SseDeserializer deserializer,
   );
 
   @protected
-  KeystoneSignatureRecord sse_decode_keystone_signature_record(
+  KeystoneSigningRequest sse_decode_keystone_signing_request(
     SseDeserializer deserializer,
   );
 
@@ -773,7 +768,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  List<ShareSubmissionPlanView> sse_decode_list_share_submission_plan_view(
+  List<ShareSubmissionPlan> sse_decode_list_share_submission_plan(
     SseDeserializer deserializer,
   );
 
@@ -829,7 +824,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  List<WireEncryptedShareJson> sse_decode_list_wire_encrypted_share_json(
+  List<WireEncryptedShare> sse_decode_list_wire_encrypted_share(
     SseDeserializer deserializer,
   );
 
@@ -902,7 +897,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ShareSubmissionPlanView sse_decode_share_submission_plan_view(
+  ShareSubmissionPlan sse_decode_share_submission_plan(
     SseDeserializer deserializer,
   );
 
@@ -983,7 +978,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt sse_decode_usize(SseDeserializer deserializer);
 
   @protected
-  VanWitnessView sse_decode_van_witness_view(SseDeserializer deserializer);
+  VanWitness sse_decode_van_witness(SseDeserializer deserializer);
 
   @protected
   VoteCommitmentWire sse_decode_vote_commitment_wire(
@@ -1033,7 +1028,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  WireEncryptedShareJson sse_decode_wire_encrypted_share_json(
+  WireEncryptedShare sse_decode_wire_encrypted_share(
     SseDeserializer deserializer,
   );
 
@@ -1173,8 +1168,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
 
   @protected
-  void sse_encode_box_autoadd_van_witness_view(
-    VanWitnessView self,
+  void sse_encode_box_autoadd_van_witness(
+    VanWitness self,
     SseSerializer serializer,
   );
 
@@ -1197,10 +1192,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_bundle_setup_result_view(
-    BundleSetupResultView self,
-    SseSerializer serializer,
-  );
+  void sse_encode_bundle_layout(BundleLayout self, SseSerializer serializer);
 
   @protected
   void sse_encode_completed_vote_choice_view(
@@ -1272,14 +1264,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_keystone_delegation_request_view(
-    KeystoneDelegationRequestView self,
+  void sse_encode_keystone_signature_record(
+    KeystoneSignatureRecord self,
     SseSerializer serializer,
   );
 
   @protected
-  void sse_encode_keystone_signature_record(
-    KeystoneSignatureRecord self,
+  void sse_encode_keystone_signing_request(
+    KeystoneSigningRequest self,
     SseSerializer serializer,
   );
 
@@ -1404,8 +1396,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_share_submission_plan_view(
-    List<ShareSubmissionPlanView> self,
+  void sse_encode_list_share_submission_plan(
+    List<ShareSubmissionPlan> self,
     SseSerializer serializer,
   );
 
@@ -1476,8 +1468,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_wire_encrypted_share_json(
-    List<WireEncryptedShareJson> self,
+  void sse_encode_list_wire_encrypted_share(
+    List<WireEncryptedShare> self,
     SseSerializer serializer,
   );
 
@@ -1560,8 +1552,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_share_submission_plan_view(
-    ShareSubmissionPlanView self,
+  void sse_encode_share_submission_plan(
+    ShareSubmissionPlan self,
     SseSerializer serializer,
   );
 
@@ -1662,10 +1654,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_usize(BigInt self, SseSerializer serializer);
 
   @protected
-  void sse_encode_van_witness_view(
-    VanWitnessView self,
-    SseSerializer serializer,
-  );
+  void sse_encode_van_witness(VanWitness self, SseSerializer serializer);
 
   @protected
   void sse_encode_vote_commitment_wire(
@@ -1725,8 +1714,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_wire_encrypted_share_json(
-    WireEncryptedShareJson self,
+  void sse_encode_wire_encrypted_share(
+    WireEncryptedShare self,
     SseSerializer serializer,
   );
 

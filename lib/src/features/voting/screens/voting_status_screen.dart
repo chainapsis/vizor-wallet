@@ -11,7 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../../../providers/voting/voting_state.dart';
-import '../../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
+import '../../../rust/third_party/zcash_voting/delegate.dart' as rust_wire;
 import '../../../services/voting/pir_snapshot_resolver.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../voting_error_messages.dart';
@@ -460,7 +460,7 @@ class _StatusContent extends StatelessWidget {
   final bool completedSubmission;
   final bool softwareAccountRequired;
   final bool isHardwareAccount;
-  final rust_wire.KeystoneDelegationRequestView? keystoneSigningRequest;
+  final rust_wire.KeystoneSigningRequest? keystoneSigningRequest;
   final bool canSkipRemainingKeystoneBundles;
   final List<String> keystoneUrParts;
   final String? keystoneQrError;
@@ -712,7 +712,7 @@ class _KeystoneSigningPanel extends StatelessWidget {
     this.onSkipRemainingBundles,
   });
 
-  final rust_wire.KeystoneDelegationRequestView request;
+  final rust_wire.KeystoneSigningRequest request;
   final List<String> urParts;
   final String? qrError;
   final String? scanError;

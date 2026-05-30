@@ -11,6 +11,10 @@ import '../../providers/rpc_endpoint_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../../rust/api/voting.dart' as rust_voting;
+import '../../rust/third_party/zcash_voting/delegate.dart' as rust_voting;
+import '../../rust/third_party/zcash_voting/round.dart' as rust_voting;
+import '../../rust/third_party/zcash_voting/share_policy.dart' as rust_voting;
+import '../../rust/third_party/zcash_voting/vote.dart' as rust_voting;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/voting_api_client.dart';
@@ -259,7 +263,7 @@ class AppSecureStoreVotingHotkeyStore implements VotingHotkeyStore {
 /// Keeping this boundary explicit lets tests verify sequencing, recovery skips,
 /// and progress forwarding without invoking FRB or cryptographic proof work.
 abstract interface class VotingRustApi {
-  Future<rust_voting.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_voting.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -302,8 +306,7 @@ abstract interface class VotingRustApi {
 
   Future<List<int>> generateVotingHotkey({required String network});
 
-  Future<rust_voting.KeystoneDelegationRequestView>
-  buildKeystoneDelegationRequest({
+  Future<rust_voting.KeystoneSigningRequest> buildKeystoneDelegationRequest({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -416,7 +419,7 @@ abstract interface class VotingRustApi {
     required String nodeUrl,
   });
 
-  Future<rust_voting.VanWitnessView> generateVanWitness({
+  Future<rust_voting.VanWitness> generateVanWitness({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -442,7 +445,7 @@ abstract interface class VotingRustApi {
     required String roundId,
     required int bundleIndex,
     required List<int> hotkeySeed,
-    required rust_voting.VanWitnessView vanWitness,
+    required rust_voting.VanWitness vanWitness,
     required List<rust_voting.DraftVote> draftVotes,
   });
 
@@ -464,7 +467,7 @@ abstract interface class VotingRustApi {
     required BigInt submitAt,
   });
 
-  Future<List<rust_voting.ShareSubmissionPlanView>> planShareSubmissions({
+  Future<List<rust_voting.ShareSubmissionPlan>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
     required BigInt nowSeconds,
@@ -555,7 +558,7 @@ class FrbVotingRustApi implements VotingRustApi {
   const FrbVotingRustApi();
 
   @override
-  Future<rust_voting.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_voting.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -643,8 +646,7 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_voting.KeystoneDelegationRequestView>
-  buildKeystoneDelegationRequest({
+  Future<rust_voting.KeystoneSigningRequest> buildKeystoneDelegationRequest({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -882,7 +884,7 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_voting.VanWitnessView> generateVanWitness({
+  Future<rust_voting.VanWitness> generateVanWitness({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -919,7 +921,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String roundId,
     required int bundleIndex,
     required List<int> hotkeySeed,
-    required rust_voting.VanWitnessView vanWitness,
+    required rust_voting.VanWitness vanWitness,
     required List<rust_voting.DraftVote> draftVotes,
   }) {
     return rust_voting.buildVoteCommitmentsWithProgress(
@@ -972,7 +974,7 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<List<rust_voting.ShareSubmissionPlanView>> planShareSubmissions({
+  Future<List<rust_voting.ShareSubmissionPlan>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
     required BigInt nowSeconds,
