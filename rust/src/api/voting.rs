@@ -39,9 +39,75 @@ pub struct ApiVoteCommitEvent {
     pub commitments: Option<zcash_voting::wire::SignedVoteCommitmentsView>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// One vote-chain event attribute from a confirmed transaction.
+pub struct ApiTxEventAttribute {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// One vote-chain event from a confirmed transaction.
+pub struct ApiTxEvent {
+    pub event_type: String,
+    pub attributes: Vec<ApiTxEventAttribute>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Parsed delegation confirmation data recorded by zcash_voting.
+pub struct ApiDelegationConfirmation {
+    pub tx_hash: String,
+    pub van_leaf_position: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Parsed cast-vote confirmation data recorded by zcash_voting.
+pub struct ApiVoteConfirmation {
+    pub tx_hash: String,
+    pub van_position: u32,
+    pub vc_tree_position: u64,
+}
+
 fn bundle_policy(max_real_notes_per_bundle: Option<u32>) -> Result<BundlePolicy, String> {
     BundlePolicy::from_optional_max_real_notes_per_bundle(max_real_notes_per_bundle)
         .map_err(|e| e.to_string())
+}
+
+impl From<ApiTxEventAttribute> for zcash_voting::confirmation::TxEventAttribute {
+    fn from(attribute: ApiTxEventAttribute) -> Self {
+        Self {
+            key: attribute.key,
+            value: attribute.value,
+        }
+    }
+}
+
+impl From<ApiTxEvent> for zcash_voting::confirmation::TxEvent {
+    fn from(event: ApiTxEvent) -> Self {
+        Self {
+            event_type: event.event_type,
+            attributes: event.attributes.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<zcash_voting::confirmation::DelegationConfirmation> for ApiDelegationConfirmation {
+    fn from(confirmation: zcash_voting::confirmation::DelegationConfirmation) -> Self {
+        Self {
+            tx_hash: confirmation.tx_hash,
+            van_leaf_position: confirmation.van_leaf_position,
+        }
+    }
+}
+
+impl From<zcash_voting::confirmation::VoteConfirmation> for ApiVoteConfirmation {
+    fn from(confirmation: zcash_voting::confirmation::VoteConfirmation) -> Self {
+        Self {
+            tx_hash: confirmation.tx_hash,
+            van_position: confirmation.van_leaf_position,
+            vc_tree_position: confirmation.vc_tree_position,
+        }
+    }
 }
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
@@ -51,18 +117,14 @@ fn bundle_policy(max_real_notes_per_bundle: Option<u32>) -> Result<BundlePolicy,
 pub fn delegation_submission_wire_json(
     submission: zcash_voting::wire::SignedDelegationPayloadView,
 ) -> Result<String, String> {
-    catch(|| {
-        submission.submission.to_json().map_err(|e| e.to_string())
-    })
+    catch(|| submission.submission.to_json().map_err(|e| e.to_string()))
 }
 
 /// Returns the vote-chain cast-vote submission body as validated wire JSON.
 pub fn vote_commitment_wire_json(
     commitment: zcash_voting::wire::VoteCommitmentWire,
 ) -> Result<String, String> {
-    catch(|| {
-        commitment.to_json().map_err(|e| e.to_string())
-    })
+    catch(|| commitment.to_json().map_err(|e| e.to_string()))
 }
 
 /// Returns the helper-server encrypted-share submission body as wire JSON.
@@ -857,6 +919,30 @@ pub fn mark_delegation_confirmed(
     })
 }
 
+/// Parse tx events and record a confirmed delegation submission.
+pub fn confirm_delegation_submission(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    bundle_index: u32,
+    tx_hash: String,
+    events: Vec<ApiTxEvent>,
+) -> Result<ApiDelegationConfirmation, String> {
+    catch(|| {
+        let events: Vec<zcash_voting::confirmation::TxEvent> =
+            events.into_iter().map(Into::into).collect();
+        workflow::confirm_delegation_submission(
+            &db_path,
+            &wallet_id,
+            &round_id,
+            bundle_index,
+            &tx_hash,
+            &events,
+        )
+        .map(Into::into)
+    })
+}
+
 /// Store the vote-authority-note leaf position emitted by the delegation TX.
 pub fn store_van_position(
     db_path: String,
@@ -1024,7 +1110,8 @@ pub fn build_vote_commitments(
         cancellation,
     )
     .and_then(|commitments| {
-        zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments).map_err(|e| e.to_string())
+        zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
+            .map_err(|e| e.to_string())
     })
 }
 
@@ -1097,17 +1184,19 @@ pub async fn build_vote_commitments_with_progress(
     .map_err(|e| format!("vote commitment task failed: {e}"))
     .and_then(|result| result);
     let commitments = match commitment_result {
-        Ok(commitments) => match zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
-            .map_err(|e| e.to_string())
-        {
-            Ok(commitments) => commitments,
-            Err(error) => {
-                if sink.add_error(error.clone()).is_err() {
-                    log::warn!("voting vote: StreamSink closed before error delivery");
+        Ok(commitments) => {
+            match zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
+                .map_err(|e| e.to_string())
+            {
+                Ok(commitments) => commitments,
+                Err(error) => {
+                    if sink.add_error(error.clone()).is_err() {
+                        log::warn!("voting vote: StreamSink closed before error delivery");
+                    }
+                    return Ok(());
                 }
-                return Ok(());
             }
-        },
+        }
         Err(error) => {
             if sink.add_error(error.clone()).is_err() {
                 log::warn!("voting vote: StreamSink closed before error delivery");
@@ -1151,13 +1240,12 @@ pub fn get_votes(
     round_id: String,
 ) -> Result<Vec<zcash_voting::wire::VoteRecordView>, String> {
     catch(|| {
-        vote::get_votes(&db_path, &wallet_id, &round_id)
-            .map(|records| {
-                records
-                    .into_iter()
-                    .map(zcash_voting::wire::VoteRecordView::from)
-                    .collect()
-            })
+        vote::get_votes(&db_path, &wallet_id, &round_id).map(|records| {
+            records
+                .into_iter()
+                .map(zcash_voting::wire::VoteRecordView::from)
+                .collect()
+        })
     })
 }
 
@@ -1214,6 +1302,32 @@ pub fn mark_vote_confirmed(
             van_position,
             vc_tree_position,
         )
+    })
+}
+
+/// Parse tx events and record a confirmed vote submission.
+pub fn confirm_vote_submission(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+    bundle_index: u32,
+    proposal_id: u32,
+    tx_hash: String,
+    events: Vec<ApiTxEvent>,
+) -> Result<ApiVoteConfirmation, String> {
+    catch(|| {
+        let events: Vec<zcash_voting::confirmation::TxEvent> =
+            events.into_iter().map(Into::into).collect();
+        workflow::confirm_vote_submission(
+            &db_path,
+            &wallet_id,
+            &round_id,
+            bundle_index,
+            proposal_id,
+            &tx_hash,
+            &events,
+        )
+        .map(Into::into)
     })
 }
 
@@ -1370,11 +1484,12 @@ mod tests {
 
     #[test]
     fn api_bundle_setup_result_preserves_core_fields() {
-        let api = zcash_voting::wire::BundleSetupResultView::from(zcash_voting::round::BundleLayout {
-            bundle_count: 2,
-            eligible_weight: 50,
-            dropped_count: 0,
-        });
+        let api =
+            zcash_voting::wire::BundleSetupResultView::from(zcash_voting::round::BundleLayout {
+                bundle_count: 2,
+                eligible_weight: 50,
+                dropped_count: 0,
+            });
 
         assert_eq!(api.bundle_count, 2);
         assert_eq!(api.eligible_weight_zatoshi, 50);
@@ -1382,9 +1497,8 @@ mod tests {
 
     #[test]
     fn api_signed_delegation_payload_preserves_core_fields() {
-        let api =
-            zcash_voting::wire::SignedDelegationPayloadView::try_from(
-                zcash_voting::delegate::SignedDelegationBundle {
+        let api = zcash_voting::wire::SignedDelegationPayloadView::try_from(
+            zcash_voting::delegate::SignedDelegationBundle {
                 submission: zcash_voting::delegate::DelegationSubmission {
                     proof: vec![4],
                     rk: [5; 32],
@@ -1402,8 +1516,9 @@ mod tests {
                 delegated_weight_zatoshi: 10,
                 bundle_count: 2,
                 bundle_index: 1,
-            })
-            .unwrap();
+            },
+        )
+        .unwrap();
 
         assert_eq!(api.pczt_bytes, vec![1, 2, 3]);
         assert_eq!(api.status, "ready_for_submission");
@@ -1424,9 +1539,8 @@ mod tests {
 
     #[test]
     fn api_keystone_delegation_request_preserves_display_memo() {
-        let api =
-            zcash_voting::wire::KeystoneDelegationRequestView::from(
-                zcash_voting::delegate::KeystoneSigningRequest {
+        let api = zcash_voting::wire::KeystoneDelegationRequestView::from(
+            zcash_voting::delegate::KeystoneSigningRequest {
                 setup: zcash_voting::delegate::DelegationSetup {
                     pczt_bytes: vec![1],
                     pczt_sighash: [3; 32],
@@ -1440,7 +1554,8 @@ mod tests {
                 delegated_weight_zatoshi: 10,
                 bundle_count: 2,
                 bundle_index: 1,
-            });
+            },
+        );
 
         assert_eq!(api.display_memo, "I am authorizing this hotkey.");
         assert_eq!(api.bundle_count, 2);
@@ -1449,30 +1564,32 @@ mod tests {
 
     #[test]
     fn delegation_wire_json_matches_vote_chain_shape() {
-        let wire = delegation_submission_wire_json(zcash_voting::wire::SignedDelegationPayloadView {
-            pczt_bytes: vec![],
-            status: "ready".to_string(),
-            message: None,
-            submission: zcash_voting::wire::DelegationSubmissionWire {
-                proof: base64::engine::general_purpose::STANDARD.encode(vec![8; 96]),
-                rk: base64::engine::general_purpose::STANDARD.encode(vec![1; 32]),
-                spend_auth_sig: base64::engine::general_purpose::STANDARD.encode(vec![2; 64]),
-                sighash: base64::engine::general_purpose::STANDARD.encode(vec![3; 32]),
-                nf_signed: base64::engine::general_purpose::STANDARD.encode(vec![4; 32]),
-                cmx_new: base64::engine::general_purpose::STANDARD.encode(vec![5; 32]),
-                gov_comm: base64::engine::general_purpose::STANDARD.encode(vec![6; 32]),
-                gov_nullifiers: vec![
-                    base64::engine::general_purpose::STANDARD.encode(vec![7; 32]);
-                    zcash_voting::BUNDLE_NOTE_SLOTS
-                ],
-                vote_round_id: base64::engine::general_purpose::STANDARD.encode([0, 1, 2, 3]),
-            },
-            eligible_weight_zatoshi: 0,
-            delegated_weight_zatoshi: 0,
-            bundle_count: 1,
-            bundle_index: 0,
-        })
-        .unwrap();
+        let wire =
+            delegation_submission_wire_json(zcash_voting::wire::SignedDelegationPayloadView {
+                pczt_bytes: vec![],
+                status: "ready".to_string(),
+                message: None,
+                submission: zcash_voting::wire::DelegationSubmissionWire {
+                    proof: base64::engine::general_purpose::STANDARD.encode(vec![8; 96]),
+                    rk: base64::engine::general_purpose::STANDARD.encode(vec![1; 32]),
+                    spend_auth_sig: base64::engine::general_purpose::STANDARD.encode(vec![2; 64]),
+                    sighash: base64::engine::general_purpose::STANDARD.encode(vec![3; 32]),
+                    nf_signed: base64::engine::general_purpose::STANDARD.encode(vec![4; 32]),
+                    cmx_new: base64::engine::general_purpose::STANDARD.encode(vec![5; 32]),
+                    gov_comm: base64::engine::general_purpose::STANDARD.encode(vec![6; 32]),
+                    gov_nullifiers: vec![
+                        base64::engine::general_purpose::STANDARD
+                            .encode(vec![7; 32]);
+                        zcash_voting::BUNDLE_NOTE_SLOTS
+                    ],
+                    vote_round_id: base64::engine::general_purpose::STANDARD.encode([0, 1, 2, 3]),
+                },
+                eligible_weight_zatoshi: 0,
+                delegated_weight_zatoshi: 0,
+                bundle_count: 1,
+                bundle_index: 0,
+            })
+            .unwrap();
 
         let wire: serde_json::Value = serde_json::from_str(&wire).unwrap();
         assert!(wire.get("signed_note_nullifier").is_some());
@@ -1817,44 +1934,45 @@ mod tests {
 
     #[test]
     fn api_signed_vote_commitments_preserve_public_wire_fields() {
-        let api = zcash_voting::wire::SignedVoteCommitmentsView::try_from(vote::SignedVoteCommitments {
-            bundle_index: 1,
-            commitments: vec![zcash_voting::vote::SignedVoteCommitment {
-                proposal_id: 2,
-                choice: 1,
-                vote_round_id: ROUND_ID.to_string(),
-                van_nullifier: [1; 32],
-                vote_authority_note_new: [2; 32],
-                vote_commitment: [3; 32],
-                proof: vec![4; 10],
-                encrypted_shares: vec![zcash_voting::WireEncryptedShare {
-                    c1: vec![5; 32],
-                    c2: vec![6; 32],
-                    share_index: 0,
-                }],
-                share_payloads: vec![zcash_voting::SharePayload {
-                    shares_hash: vec![7; 32],
+        let api =
+            zcash_voting::wire::SignedVoteCommitmentsView::try_from(vote::SignedVoteCommitments {
+                bundle_index: 1,
+                commitments: vec![zcash_voting::vote::SignedVoteCommitment {
                     proposal_id: 2,
-                    vote_decision: 1,
-                    enc_share: zcash_voting::WireEncryptedShare {
+                    choice: 1,
+                    vote_round_id: ROUND_ID.to_string(),
+                    van_nullifier: [1; 32],
+                    vote_authority_note_new: [2; 32],
+                    vote_commitment: [3; 32],
+                    proof: vec![4; 10],
+                    encrypted_shares: vec![zcash_voting::WireEncryptedShare {
                         c1: vec![5; 32],
                         c2: vec![6; 32],
                         share_index: 0,
-                    },
-                    tree_position: 9,
-                    all_enc_shares: vec![],
-                    share_comms: vec![vec![8; 32]],
-                    primary_blind: vec![9; 32],
+                    }],
+                    share_payloads: vec![zcash_voting::SharePayload {
+                        shares_hash: vec![7; 32],
+                        proposal_id: 2,
+                        vote_decision: 1,
+                        enc_share: zcash_voting::WireEncryptedShare {
+                            c1: vec![5; 32],
+                            c2: vec![6; 32],
+                            share_index: 0,
+                        },
+                        tree_position: 9,
+                        all_enc_shares: vec![],
+                        share_comms: vec![vec![8; 32]],
+                        primary_blind: vec![9; 32],
+                    }],
+                    anchor_height: 100,
+                    shares_hash: [7; 32],
+                    share_comms: vec![[8; 32]],
+                    r_vpk: [10; 32],
+                    vote_auth_sig: [9; 64],
+                    commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
                 }],
-                anchor_height: 100,
-                shares_hash: [7; 32],
-                share_comms: vec![[8; 32]],
-                r_vpk: [10; 32],
-                vote_auth_sig: [9; 64],
-                commitment_bundle_json: "{\"proposal_id\":2}".to_string(),
-            }],
-        })
-        .unwrap();
+            })
+            .unwrap();
 
         assert_eq!(api.bundle_index, 1);
         assert_eq!(api.commitments[0].proposal_id, 2);
@@ -1885,9 +2003,11 @@ mod tests {
             anchor_tree_state: test_tree_state(100),
         };
 
-        let api =
-            zcash_voting::wire::VotingNoteSelectionResultView::from_selected(selected, BundlePolicy::default())
-                .unwrap();
+        let api = zcash_voting::wire::VotingNoteSelectionResultView::from_selected(
+            selected,
+            BundlePolicy::default(),
+        )
+        .unwrap();
 
         assert_eq!(api.note_count, 2);
         assert_eq!(api.eligible_weight_zatoshi, divisor);
@@ -1940,7 +2060,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-api-bundles").unwrap();
-        db.init_round(&test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None)
+            .unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
 
@@ -2017,7 +2138,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-api-witness").unwrap();
-        db.init_round(&test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
@@ -2069,7 +2191,8 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let wallet_id = "wallet-api-round-reset";
         let db = state::open_voting_db(db_path.to_str().unwrap(), wallet_id).unwrap();
-        db.init_round(&test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
@@ -2106,7 +2229,8 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let wallet_id = "wallet-api-account-reset";
         let db = state::open_voting_db(db_path.to_str().unwrap(), wallet_id).unwrap();
-        db.init_round(&test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
@@ -2171,7 +2295,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
-        db.init_round(&test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None)
+            .unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
         let err = build_vote_commitments(
@@ -2204,7 +2329,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-api-votes").unwrap();
-        db.init_round(&test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None)
+            .unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
         let conn = db.conn();
@@ -2252,7 +2378,8 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let wallet_id = "wallet-api-recovery";
         let db = state::open_voting_db(db_path.to_str().unwrap(), wallet_id).unwrap();
-        db.init_round(&test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None)
+            .unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
         db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx-0")

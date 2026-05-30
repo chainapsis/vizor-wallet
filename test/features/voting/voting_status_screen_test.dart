@@ -166,6 +166,39 @@ void main() {
     expect(find.text('Retry'), findsOneWidget);
   });
 
+  testWidgets('status screen retry keeps setup errors specific', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      rust: _IneligibleVotingRustApi(),
+    );
+    addTearDown(container.dispose);
+    container.read(votingDraftProvider(_draftKey).notifier).setChoice(1, 0);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _statusHarness()),
+    );
+    await tester.pumpAndSettle();
+
+    const message =
+        'This account is not eligible for this poll. It had no eligible '
+        'shielded funds at snapshot block 3,359,740. Switch to an eligible '
+        'account to vote.';
+    await _pumpUntilFound(tester, find.text(message));
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text(message));
+
+    expect(find.text(message), findsOneWidget);
+    expect(find.textContaining('Voting could not continue'), findsNothing);
+  });
+
   testWidgets('submitted route does not confirm incomplete current account', (
     tester,
   ) async {
@@ -252,6 +285,7 @@ void main() {
                 'type': 'delegate_vote',
                 'attributes': [
                   {'key': 'leaf_index', 'value': '0'},
+                  {'key': 'vote_round_id', 'value': _roundId},
                 ],
               },
             ],
@@ -341,6 +375,7 @@ void main() {
               'type': 'delegate_vote',
               'attributes': [
                 {'key': 'leaf_index', 'value': '0'},
+                {'key': 'vote_round_id', 'value': _roundId},
               ],
             },
           ],
@@ -652,6 +687,7 @@ void main() {
                 'type': 'cast_vote',
                 'attributes': [
                   {'key': 'leaf_index', 'value': '1,2'},
+                  {'key': 'vote_round_id', 'value': _roundId},
                 ],
               },
             ],
@@ -1080,6 +1116,7 @@ void main() {
                 'type': 'delegate_vote',
                 'attributes': [
                   {'key': 'leaf_index', 'value': '0'},
+                  {'key': 'vote_round_id', 'value': _roundId},
                 ],
               },
             ],
@@ -1098,6 +1135,7 @@ void main() {
                 'type': 'cast_vote',
                 'attributes': [
                   {'key': 'leaf_index', 'value': '1,2'},
+                  {'key': 'vote_round_id', 'value': _roundId},
                 ],
               },
             ],
@@ -1170,6 +1208,7 @@ void main() {
                 'type': 'delegate_vote',
                 'attributes': [
                   {'key': 'leaf_index', 'value': '0'},
+                  {'key': 'vote_round_id', 'value': _roundId},
                 ],
               },
             ],
@@ -1188,6 +1227,7 @@ void main() {
                 'type': 'cast_vote',
                 'attributes': [
                   {'key': 'leaf_index', 'value': '1,2'},
+                  {'key': 'vote_round_id', 'value': _roundId},
                 ],
               },
             ],
@@ -1292,6 +1332,7 @@ void main() {
                 'type': 'delegate_vote',
                 'attributes': [
                   {'key': 'leaf_index', 'value': '0'},
+                  {'key': 'vote_round_id', 'value': _roundId},
                 ],
               },
             ],
@@ -1310,6 +1351,7 @@ void main() {
                 'type': 'cast_vote',
                 'attributes': [
                   {'key': 'leaf_index', 'value': '1,2'},
+                  {'key': 'vote_round_id', 'value': _roundId},
                 ],
               },
             ],
@@ -1796,7 +1838,8 @@ rust_frb_types.RoundRecoveryStateView _recoveryState({
   List<rust_frb_types.VoteRecoveryView> votes = const [],
   List<rust_frb_types.VoteRecoveryView> voteWorkflows = const [],
   List<rust_frb_types.VoteRecoveryView> voteTxHashes = const [],
-  List<rust_frb_types.CommitmentBundleRecoveryView> commitmentBundles = const [],
+  List<rust_frb_types.CommitmentBundleRecoveryView> commitmentBundles =
+      const [],
   List<rust_frb_types.ShareWorkflowRecoveryView> shareWorkflows = const [],
   List<rust_frb_types.ShareDelegationRecordView> shareDelegations = const [],
   List<rust_frb_types.ShareDelegationRecordView> unconfirmedShareDelegations =
@@ -1812,27 +1855,29 @@ rust_frb_types.RoundRecoveryStateView _recoveryState({
       ),
   };
   for (final record in delegationTxHashes) {
-    delegationByBundle[record.bundleIndex] = rust_frb_types.DelegationRecoveryView(
-      bundleIndex: record.bundleIndex,
-      phase: VotingWorkflowPhase.submittedDelegation,
-      txHash: record.txHash,
-      vanLeafPosition: null,
-    );
+    delegationByBundle[record.bundleIndex] =
+        rust_frb_types.DelegationRecoveryView(
+          bundleIndex: record.bundleIndex,
+          phase: VotingWorkflowPhase.submittedDelegation,
+          txHash: record.txHash,
+          vanLeafPosition: null,
+        );
   }
 
   final votesByKey = <String, rust_frb_types.VoteRecoveryView>{
     for (final record in votes)
       '${record.bundleIndex}:${record.proposalId}': record,
     for (final record in voteWorkflows)
-      '${record.bundleIndex}:${record.proposalId}': rust_frb_types.VoteRecoveryView(
-        bundleIndex: record.bundleIndex,
-        proposalId: record.proposalId,
-        choice: 0,
-        phase: record.phase,
-        txHash: record.txHash,
-        vcTreePosition: record.vcTreePosition,
-        hasCommitmentBundle: record.hasCommitmentBundle,
-      ),
+      '${record.bundleIndex}:${record.proposalId}':
+          rust_frb_types.VoteRecoveryView(
+            bundleIndex: record.bundleIndex,
+            proposalId: record.proposalId,
+            choice: 0,
+            phase: record.phase,
+            txHash: record.txHash,
+            vcTreePosition: record.vcTreePosition,
+            hasCommitmentBundle: record.hasCommitmentBundle,
+          ),
   };
   for (final record in voteTxHashes) {
     final key = '${record.bundleIndex}:${record.proposalId}';
@@ -2440,6 +2485,35 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
+  Future<rust_voting.ApiDelegationConfirmation> confirmDelegationSubmission({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required String txHash,
+    required List<rust_voting.ApiTxEvent> events,
+  }) async {
+    final vanLeafPosition = _eventInt(
+      events,
+      'delegate_vote',
+      roundId,
+      'leaf_index',
+    );
+    await markDelegationConfirmed(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      txHash: txHash,
+      vanLeafPosition: vanLeafPosition,
+    );
+    return rust_voting.ApiDelegationConfirmation(
+      txHash: txHash,
+      vanLeafPosition: vanLeafPosition,
+    );
+  }
+
+  @override
   Future<int> syncVoteTree({
     required String dbPath,
     required String walletId,
@@ -2666,6 +2740,34 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
+  Future<rust_voting.ApiVoteConfirmation> confirmVoteSubmission({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required String txHash,
+    required List<rust_voting.ApiTxEvent> events,
+  }) async {
+    final leafPositions = _castVoteLeafPositions(events, roundId);
+    await markVoteConfirmed(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      txHash: txHash,
+      vanPosition: leafPositions.vanPosition,
+      vcTreePosition: leafPositions.vcTreePosition,
+    );
+    return rust_voting.ApiVoteConfirmation(
+      txHash: txHash,
+      vanPosition: leafPositions.vanPosition,
+      vcTreePosition: leafPositions.vcTreePosition,
+    );
+  }
+
+  @override
   Future<void> recordShareDelegation({
     required String dbPath,
     required String walletId,
@@ -2726,14 +2828,13 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       for (final share in current.unconfirmedShareDelegations)
         if (!matches(share)) share,
     ];
-    recoveryApi.state = _recoveryState(
+    recoveryApi.state = rust_frb_types.RoundRecoveryStateView(
+      roundId: current.roundId,
       bundleCount: current.bundleCount,
-      delegationTxHashes: current.delegation,
+      delegation: current.delegation,
       votes: current.votes,
-      voteWorkflows: current.votes,
-      voteTxHashes: current.votes,
       commitmentBundles: current.commitmentBundles,
-      shareWorkflows: current.shares,
+      shares: current.shares,
       shareDelegations: [
         for (final share in current.shareDelegations)
           if (matches(share)) confirmed(share) else share,
@@ -2753,6 +2854,66 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       );
     }
   }
+}
+
+int _eventInt(
+  List<rust_voting.ApiTxEvent> events,
+  String eventType,
+  String roundId,
+  String key,
+) {
+  final value = _eventAttribute(events, eventType, roundId, key);
+  final parsed = int.tryParse(value ?? '');
+  if (parsed == null) {
+    throw StateError('Missing $eventType $key.');
+  }
+  return parsed;
+}
+
+({int vanPosition, BigInt vcTreePosition}) _castVoteLeafPositions(
+  List<rust_voting.ApiTxEvent> events,
+  String roundId,
+) {
+  final raw = _eventAttribute(events, 'cast_vote', roundId, 'leaf_index');
+  if (raw == null) {
+    throw StateError('Missing cast_vote leaf_index.');
+  }
+  final parts = raw.split(',');
+  if (parts.length != 2) {
+    throw StateError('Malformed cast_vote leaf_index: $raw');
+  }
+  final vanPosition = int.tryParse(parts[0].trim());
+  final vcTreePosition = BigInt.tryParse(parts[1].trim());
+  if (vanPosition == null || vcTreePosition == null) {
+    throw StateError('Malformed cast_vote leaf_index: $raw');
+  }
+  return (vanPosition: vanPosition, vcTreePosition: vcTreePosition);
+}
+
+String? _eventAttribute(
+  List<rust_voting.ApiTxEvent> events,
+  String eventType,
+  String roundId,
+  String key,
+) {
+  for (final event in events) {
+    if (event.eventType != eventType) continue;
+    final eventRoundId = _eventRoundId(event);
+    if (eventRoundId != roundId) continue;
+    for (final attribute in event.attributes) {
+      if (attribute.key == key) return attribute.value;
+    }
+  }
+  return null;
+}
+
+String? _eventRoundId(rust_voting.ApiTxEvent event) {
+  for (final attribute in event.attributes) {
+    if (attribute.key == 'vote_round_id' || attribute.key == 'round_id') {
+      return attribute.value;
+    }
+  }
+  return null;
 }
 
 List<int> _bytesFromHex(String hex) {

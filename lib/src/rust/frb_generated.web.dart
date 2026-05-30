@@ -59,6 +59,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AddressValidationResult dco_decode_address_validation_result(dynamic raw);
 
   @protected
+  ApiDelegationConfirmation dco_decode_api_delegation_confirmation(dynamic raw);
+
+  @protected
   ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw);
 
   @protected
@@ -68,7 +71,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiSyncProgressEvent dco_decode_api_sync_progress_event(dynamic raw);
 
   @protected
+  ApiTxEvent dco_decode_api_tx_event(dynamic raw);
+
+  @protected
+  ApiTxEventAttribute dco_decode_api_tx_event_attribute(dynamic raw);
+
+  @protected
   ApiVoteCommitEvent dco_decode_api_vote_commit_event(dynamic raw);
+
+  @protected
+  ApiVoteConfirmation dco_decode_api_vote_confirmation(dynamic raw);
 
   @protected
   BlockMetaInfo dco_decode_block_meta_info(dynamic raw);
@@ -164,6 +176,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> dco_decode_list_account_info(dynamic raw);
+
+  @protected
+  List<ApiTxEvent> dco_decode_list_api_tx_event(dynamic raw);
+
+  @protected
+  List<ApiTxEventAttribute> dco_decode_list_api_tx_event_attribute(dynamic raw);
 
   @protected
   List<BlockMetaInfo> dco_decode_list_block_meta_info(dynamic raw);
@@ -457,6 +475,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiDelegationConfirmation sse_decode_api_delegation_confirmation(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiDelegationProofEvent sse_decode_api_delegation_proof_event(
     SseDeserializer deserializer,
   );
@@ -472,7 +495,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ApiTxEvent sse_decode_api_tx_event(SseDeserializer deserializer);
+
+  @protected
+  ApiTxEventAttribute sse_decode_api_tx_event_attribute(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ApiVoteCommitEvent sse_decode_api_vote_commit_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ApiVoteConfirmation sse_decode_api_vote_confirmation(
     SseDeserializer deserializer,
   );
 
@@ -592,6 +628,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
+
+  @protected
+  List<ApiTxEvent> sse_decode_list_api_tx_event(SseDeserializer deserializer);
+
+  @protected
+  List<ApiTxEventAttribute> sse_decode_list_api_tx_event_attribute(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<BlockMetaInfo> sse_decode_list_block_meta_info(
@@ -951,6 +995,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_delegation_confirmation(
+    ApiDelegationConfirmation self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_delegation_proof_event(
     ApiDelegationProofEvent self,
     SseSerializer serializer,
@@ -969,8 +1019,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_api_tx_event(ApiTxEvent self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_api_tx_event_attribute(
+    ApiTxEventAttribute self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_api_vote_commit_event(
     ApiVoteCommitEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_api_vote_confirmation(
+    ApiVoteConfirmation self,
     SseSerializer serializer,
   );
 
@@ -1106,6 +1171,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_account_info(
     List<AccountInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_tx_event(
+    List<ApiTxEvent> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_api_tx_event_attribute(
+    List<ApiTxEventAttribute> self,
     SseSerializer serializer,
   );
 

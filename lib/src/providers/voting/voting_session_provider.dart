@@ -12,6 +12,7 @@ import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../features/voting/voting_share_timing.dart';
+import '../../rust/api/voting.dart' as rust_voting;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/voting_api_client.dart';
@@ -242,7 +243,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> delegatePendingBundles({required List<int> seedBytes}) {
     return _enqueue(() async {
       var current = await future;
-      if (current.pirEndpoint == null) {
+      if (_needsDelegationPreparation(current)) {
         await _prepareDelegationUnlocked();
         current = await future;
         if (current.phase == VotingSessionPhase.error ||
@@ -548,7 +549,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> delegatePendingBundlesWithKeystoneSignatures() {
     return _enqueue(() async {
       var current = await future;
-      if (current.pirEndpoint == null) {
+      if (_needsDelegationPreparation(current)) {
         await _prepareDelegationUnlocked();
         current = await future;
         if (current.phase == VotingSessionPhase.error ||
@@ -802,16 +803,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 : confirmation.log,
           );
         }
-        final leafPositions = _castVoteLeafPositions(confirmation);
-        await rust.markVoteConfirmed(
+        await rust.confirmVoteSubmission(
           dbPath: context.dbPath,
           walletId: context.accountUuid,
           roundId: context.round.roundId,
           bundleIndex: key.bundleIndex,
           proposalId: key.proposalId,
           txHash: txHash,
-          vanPosition: leafPositions.vanPosition,
-          vcTreePosition: leafPositions.vcTreePosition,
+          events: _txEvents(confirmation),
         );
         progress[key] = VotingSessionProgress(
           phase: 'confirmed',
@@ -1536,23 +1535,21 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
 
-      final leafPositions = _castVoteLeafPositions(confirmation);
-      debugPrint(
-        '[zcash] Voting: cast-vote confirmed '
-        'proposal=${commitment.proposalId} vanPosition=${leafPositions.vanPosition} '
-        'vcTreePosition=${leafPositions.vcTreePosition}',
-      );
-      await rust.markVoteConfirmed(
+      final voteConfirmation = await rust.confirmVoteSubmission(
         dbPath: context.dbPath,
         walletId: context.accountUuid,
         roundId: context.round.roundId,
         bundleIndex: commitments.bundleIndex,
         proposalId: commitment.proposalId,
         txHash: result.txHash,
-        vanPosition: leafPositions.vanPosition,
-        vcTreePosition: leafPositions.vcTreePosition,
+        events: _txEvents(confirmation),
       );
-      vcTreePositions[commitment.proposalId] = leafPositions.vcTreePosition;
+      debugPrint(
+        '[zcash] Voting: cast-vote confirmed '
+        'proposal=${commitment.proposalId} vanPosition=${voteConfirmation.vanPosition} '
+        'vcTreePosition=${voteConfirmation.vcTreePosition}',
+      );
+      vcTreePositions[commitment.proposalId] = voteConfirmation.vcTreePosition;
     }
     return vcTreePositions;
   }
@@ -1603,14 +1600,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               : confirmation.log,
         );
       }
-      final leafIndex = _delegationLeafIndex(confirmation, bundleIndex);
-      await rust.markDelegationConfirmed(
+      await rust.confirmDelegationSubmission(
         dbPath: context.dbPath,
         walletId: context.accountUuid,
         roundId: context.round.roundId,
         bundleIndex: bundleIndex,
         txHash: txHash,
-        vanLeafPosition: leafIndex,
+        events: _txEvents(confirmation),
       );
       completedBundleIndexes.add(bundleIndex);
       progress[bundleIndex] = VotingSessionProgress(
@@ -1678,31 +1674,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             : confirmation.log,
       );
     }
-    final leafIndex = _delegationLeafIndex(confirmation, bundleIndex);
-    await rust.markDelegationConfirmed(
+    final delegationConfirmation = await rust.confirmDelegationSubmission(
       dbPath: context.dbPath,
       walletId: context.accountUuid,
       roundId: context.round.roundId,
       bundleIndex: bundleIndex,
       txHash: result.txHash,
-      vanLeafPosition: leafIndex,
+      events: _txEvents(confirmation),
     );
-    return (txHash: result.txHash, leafIndex: leafIndex);
-  }
-
-  static int _delegationLeafIndex(
-    VotingTxConfirmation confirmation,
-    int bundleIndex,
-  ) {
-    final leafIndex = int.tryParse(
-      confirmation.event('delegate_vote')?.attribute('leaf_index') ?? '',
+    return (
+      txHash: result.txHash,
+      leafIndex: delegationConfirmation.vanLeafPosition,
     );
-    if (leafIndex == null) {
-      throw StateError(
-        'Missing delegate_vote leaf_index for bundle $bundleIndex.',
-      );
-    }
-    return leafIndex;
   }
 
   Future<VotingTxConfirmation?> _awaitTxConfirmation(
@@ -2199,6 +2182,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return friendlyVotingErrorMessage(error);
   }
 
+  static bool _needsDelegationPreparation(VotingSessionState state) {
+    return state.pirEndpoint == null || state.eligibleWeightZatoshi == null;
+  }
+
   Future<void> _prepareKeystoneSigningUnlocked() async {
     var current = await future;
     var context = await _loadContext(_roundId);
@@ -2211,7 +2198,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
     await _waitUntilWalletReadyForVoting(context);
 
-    if (current.pirEndpoint == null) {
+    if (_needsDelegationPreparation(current)) {
       await _prepareDelegationUnlocked();
       current = await future;
       if (current.phase == VotingSessionPhase.error) return;
@@ -2539,7 +2526,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final current = state.value ?? VotingSessionState(roundId: _roundId);
     final phase = waiting
         ? VotingSessionPhase.waitingForWalletSync
-        : current.phase == VotingSessionPhase.waitingForWalletSync
+        : current.phase == VotingSessionPhase.waitingForWalletSync ||
+              current.phase == VotingSessionPhase.error
         ? VotingSessionPhase.idle
         : current.phase;
     _setStateForContext(
@@ -2864,25 +2852,22 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     throw const FormatException('Rust voting wire JSON is not an object.');
   }
 
-  static ({int vanPosition, BigInt vcTreePosition}) _castVoteLeafPositions(
+  static List<rust_voting.ApiTxEvent> _txEvents(
     VotingTxConfirmation confirmation,
   ) {
-    final rawLeafIndex = confirmation
-        .event('cast_vote')
-        ?.attribute('leaf_index');
-    if (rawLeafIndex == null) {
-      throw StateError('Missing cast_vote leaf_index.');
-    }
-    final parts = rawLeafIndex.split(',');
-    if (parts.length != 2) {
-      throw StateError('Malformed cast_vote leaf_index: $rawLeafIndex');
-    }
-    final vanPosition = int.tryParse(parts[0].trim());
-    final vcTreePosition = BigInt.tryParse(parts[1].trim());
-    if (vanPosition == null || vcTreePosition == null) {
-      throw StateError('Malformed cast_vote leaf_index: $rawLeafIndex');
-    }
-    return (vanPosition: vanPosition, vcTreePosition: vcTreePosition);
+    return [
+      for (final event in confirmation.events)
+        rust_voting.ApiTxEvent(
+          eventType: event.type,
+          attributes: [
+            for (final attribute in event.attributes)
+              rust_voting.ApiTxEventAttribute(
+                key: attribute.key,
+                value: attribute.value,
+              ),
+          ],
+        ),
+    ];
   }
 
   static void _verifyKeystoneDelegationSignature({

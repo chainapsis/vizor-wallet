@@ -8,7 +8,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `bundle_policy`, `catch`, `require_len`, `share_tracking_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -440,6 +440,23 @@ Future<void> markDelegationConfirmed({
   vanLeafPosition: vanLeafPosition,
 );
 
+/// Parse tx events and record a confirmed delegation submission.
+Future<ApiDelegationConfirmation> confirmDelegationSubmission({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required String txHash,
+  required List<ApiTxEvent> events,
+}) => RustLib.instance.api.crateApiVotingConfirmDelegationSubmission(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  txHash: txHash,
+  events: events,
+);
+
 /// Store the vote-authority-note leaf position emitted by the delegation TX.
 Future<void> storeVanPosition({
   required String dbPath,
@@ -669,6 +686,25 @@ Future<void> markVoteConfirmed({
   vcTreePosition: vcTreePosition,
 );
 
+/// Parse tx events and record a confirmed vote submission.
+Future<ApiVoteConfirmation> confirmVoteSubmission({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+  required String txHash,
+  required List<ApiTxEvent> events,
+}) => RustLib.instance.api.crateApiVotingConfirmVoteSubmission(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  txHash: txHash,
+  events: events,
+);
+
 /// Record helper-server submission state for one encrypted vote share.
 Future<void> recordShareDelegation({
   required String dbPath,
@@ -775,6 +811,28 @@ Future<void> setBallotIntent({
   choice: choice,
 );
 
+/// Parsed delegation confirmation data recorded by zcash_voting.
+class ApiDelegationConfirmation {
+  final String txHash;
+  final int vanLeafPosition;
+
+  const ApiDelegationConfirmation({
+    required this.txHash,
+    required this.vanLeafPosition,
+  });
+
+  @override
+  int get hashCode => txHash.hashCode ^ vanLeafPosition.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDelegationConfirmation &&
+          runtimeType == other.runtimeType &&
+          txHash == other.txHash &&
+          vanLeafPosition == other.vanLeafPosition;
+}
+
 /// Progress event emitted while building, proving, and signing a delegation payload.
 ///
 /// A terminal `"result"` event carries `signed_delegation_payload`; earlier
@@ -804,6 +862,44 @@ class ApiDelegationProofEvent {
           phase == other.phase &&
           proofProgress == other.proofProgress &&
           signedDelegationPayload == other.signedDelegationPayload;
+}
+
+/// One vote-chain event from a confirmed transaction.
+class ApiTxEvent {
+  final String eventType;
+  final List<ApiTxEventAttribute> attributes;
+
+  const ApiTxEvent({required this.eventType, required this.attributes});
+
+  @override
+  int get hashCode => eventType.hashCode ^ attributes.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiTxEvent &&
+          runtimeType == other.runtimeType &&
+          eventType == other.eventType &&
+          attributes == other.attributes;
+}
+
+/// One vote-chain event attribute from a confirmed transaction.
+class ApiTxEventAttribute {
+  final String key;
+  final String value;
+
+  const ApiTxEventAttribute({required this.key, required this.value});
+
+  @override
+  int get hashCode => key.hashCode ^ value.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiTxEventAttribute &&
+          runtimeType == other.runtimeType &&
+          key == other.key &&
+          value == other.value;
 }
 
 /// Progress event emitted while building ZKP2 vote commitments.
@@ -843,4 +939,30 @@ class ApiVoteCommitEvent {
           bundleIndex == other.bundleIndex &&
           proofProgress == other.proofProgress &&
           commitments == other.commitments;
+}
+
+/// Parsed cast-vote confirmation data recorded by zcash_voting.
+class ApiVoteConfirmation {
+  final String txHash;
+  final int vanPosition;
+  final BigInt vcTreePosition;
+
+  const ApiVoteConfirmation({
+    required this.txHash,
+    required this.vanPosition,
+    required this.vcTreePosition,
+  });
+
+  @override
+  int get hashCode =>
+      txHash.hashCode ^ vanPosition.hashCode ^ vcTreePosition.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVoteConfirmation &&
+          runtimeType == other.runtimeType &&
+          txHash == other.txHash &&
+          vanPosition == other.vanPosition &&
+          vcTreePosition == other.vcTreePosition;
 }
