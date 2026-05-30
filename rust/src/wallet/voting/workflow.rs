@@ -41,6 +41,29 @@ pub fn mark_delegation_confirmed(
         .map_err(|e| e.to_string())
 }
 
+/// Parses and records a confirmed delegation transaction using zcash_voting.
+///
+/// Vizor still owns chain polling/transport, but the crate owns the event
+/// parsing and atomic state transition once a confirmed tx is available.
+pub fn confirm_delegation_submission(
+    db_path: &str,
+    wallet_id: &str,
+    round_id: &str,
+    bundle_index: u32,
+    tx_hash: &str,
+    events: &[zcash_voting::confirmation::TxEvent],
+) -> Result<zcash_voting::confirmation::DelegationConfirmation, String> {
+    let db = super::state::open_voting_db(db_path, wallet_id)?;
+    zcash_voting::confirmation::confirm_delegation_submission(
+        &db,
+        round_id,
+        bundle_index,
+        tx_hash,
+        events,
+    )
+    .map_err(|e| e.to_string())
+}
+
 /// Marks a vote as submitted by storing its tx hash.
 ///
 /// The write is atomic and idempotent for the same `tx_hash`. A different
@@ -92,6 +115,31 @@ pub fn mark_vote_confirmed(
         tx_hash,
         van_position,
         vc_tree_position,
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Parses and records a confirmed cast-vote transaction using zcash_voting.
+///
+/// This keeps vote-chain event details and the VAN/VC position update rules in
+/// the shared crate instead of duplicating them in Dart.
+pub fn confirm_vote_submission(
+    db_path: &str,
+    wallet_id: &str,
+    round_id: &str,
+    bundle_index: u32,
+    proposal_id: u32,
+    tx_hash: &str,
+    events: &[zcash_voting::confirmation::TxEvent],
+) -> Result<zcash_voting::confirmation::VoteConfirmation, String> {
+    let db = super::state::open_voting_db(db_path, wallet_id)?;
+    zcash_voting::confirmation::confirm_vote_submission(
+        &db,
+        round_id,
+        bundle_index,
+        proposal_id,
+        tx_hash,
+        events,
     )
     .map_err(|e| e.to_string())
 }

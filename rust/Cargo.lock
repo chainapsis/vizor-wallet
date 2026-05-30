@@ -2025,6 +2025,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
 
 [[package]]
+name = "multimap"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
+
+[[package]]
 name = "no_std_io2"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2547,7 +2553,7 @@ dependencies = [
  "itertools 0.10.5",
  "lazy_static",
  "log",
- "multimap",
+ "multimap 0.8.3",
  "petgraph 0.6.5",
  "prettyplease 0.1.25",
  "prost 0.11.9",
@@ -2567,7 +2573,7 @@ dependencies = [
  "heck 0.5.0",
  "itertools 0.14.0",
  "log",
- "multimap",
+ "multimap 0.10.1",
  "petgraph 0.8.3",
  "prettyplease 0.2.37",
  "prost 0.14.3",
@@ -3852,7 +3858,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree"
 version = "0.3.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=1e7feb200afa8ccb00bc6f6b80b981b58519dbb7#1e7feb200afa8ccb00bc6f6b80b981b58519dbb7"
+source = "git+https://github.com/valargroup/zcash_voting?rev=cbdbb95242a7af187d1aa7b81d4068e5e3c1b8f5#cbdbb95242a7af187d1aa7b81d4068e5e3c1b8f5"
 dependencies = [
  "anyhow",
  "ff",
@@ -3868,7 +3874,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.5.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=1e7feb200afa8ccb00bc6f6b80b981b58519dbb7#1e7feb200afa8ccb00bc6f6b80b981b58519dbb7"
+source = "git+https://github.com/valargroup/zcash_voting?rev=cbdbb95242a7af187d1aa7b81d4068e5e3c1b8f5#cbdbb95242a7af187d1aa7b81d4068e5e3c1b8f5"
 dependencies = [
  "base64",
  "ff",
@@ -3877,7 +3883,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=1e7feb200afa8ccb00bc6f6b80b981b58519dbb7)",
+ "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=cbdbb95242a7af187d1aa7b81d4068e5e3c1b8f5)",
 ]
 
 [[package]]
@@ -4589,7 +4595,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "0.10.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=1e7feb200afa8ccb00bc6f6b80b981b58519dbb7#1e7feb200afa8ccb00bc6f6b80b981b58519dbb7"
+source = "git+https://github.com/valargroup/zcash_voting?rev=cbdbb95242a7af187d1aa7b81d4068e5e3c1b8f5#cbdbb95242a7af187d1aa7b81d4068e5e3c1b8f5"
 dependencies = [
  "anyhow",
  "base64",
@@ -4627,7 +4633,7 @@ dependencies = [
  "uuid",
  "valar-spiral-rs",
  "valar-ypir",
- "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=1e7feb200afa8ccb00bc6f6b80b981b58519dbb7)",
+ "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=cbdbb95242a7af187d1aa7b81d4068e5e3c1b8f5)",
  "vote-commitment-tree-client",
  "voting-circuits",
  "zcash_client_backend",

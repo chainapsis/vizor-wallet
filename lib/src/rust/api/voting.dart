@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `bundle_policy`, `catch`, `require_len`, `selection_result`, `share_tracking_record`, `workflow_phase_for_delegation`, `workflow_phase_for_share`, `workflow_phase_for_vote`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`, `try_from`, `try_from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `from`, `try_from`, `try_from`, `try_from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -439,6 +439,23 @@ Future<void> markDelegationConfirmed({
   vanLeafPosition: vanLeafPosition,
 );
 
+/// Parse tx events and record a confirmed delegation submission.
+Future<ApiDelegationConfirmation> confirmDelegationSubmission({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required String txHash,
+  required List<ApiTxEvent> events,
+}) => RustLib.instance.api.crateApiVotingConfirmDelegationSubmission(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  txHash: txHash,
+  events: events,
+);
+
 /// Store the vote-authority-note leaf position emitted by the delegation TX.
 Future<void> storeVanPosition({
   required String dbPath,
@@ -668,6 +685,25 @@ Future<void> markVoteConfirmed({
   vcTreePosition: vcTreePosition,
 );
 
+/// Parse tx events and record a confirmed vote submission.
+Future<ApiVoteConfirmation> confirmVoteSubmission({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+  required int bundleIndex,
+  required int proposalId,
+  required String txHash,
+  required List<ApiTxEvent> events,
+}) => RustLib.instance.api.crateApiVotingConfirmVoteSubmission(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
+  bundleIndex: bundleIndex,
+  proposalId: proposalId,
+  txHash: txHash,
+  events: events,
+);
+
 /// Record helper-server submission state for one encrypted vote share.
 Future<void> recordShareDelegation({
   required String dbPath,
@@ -804,6 +840,28 @@ class ApiCommitmentBundleRecovery {
           proposalId == other.proposalId &&
           commitmentBundleJson == other.commitmentBundleJson &&
           vcTreePosition == other.vcTreePosition;
+}
+
+/// Parsed delegation confirmation data recorded by zcash_voting.
+class ApiDelegationConfirmation {
+  final String txHash;
+  final int vanLeafPosition;
+
+  const ApiDelegationConfirmation({
+    required this.txHash,
+    required this.vanLeafPosition,
+  });
+
+  @override
+  int get hashCode => txHash.hashCode ^ vanLeafPosition.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiDelegationConfirmation &&
+          runtimeType == other.runtimeType &&
+          txHash == other.txHash &&
+          vanLeafPosition == other.vanLeafPosition;
 }
 
 /// Summary of delegation PIR proof precomputation for one bundle.
@@ -1417,6 +1475,44 @@ class ApiSignedVoteCommitments {
           commitments == other.commitments;
 }
 
+/// One vote-chain event from a confirmed transaction.
+class ApiTxEvent {
+  final String eventType;
+  final List<ApiTxEventAttribute> attributes;
+
+  const ApiTxEvent({required this.eventType, required this.attributes});
+
+  @override
+  int get hashCode => eventType.hashCode ^ attributes.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiTxEvent &&
+          runtimeType == other.runtimeType &&
+          eventType == other.eventType &&
+          attributes == other.attributes;
+}
+
+/// One vote-chain event attribute from a confirmed transaction.
+class ApiTxEventAttribute {
+  final String key;
+  final String value;
+
+  const ApiTxEventAttribute({required this.key, required this.value});
+
+  @override
+  int get hashCode => key.hashCode ^ value.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiTxEventAttribute &&
+          runtimeType == other.runtimeType &&
+          key == other.key &&
+          value == other.value;
+}
+
 /// FRB-friendly Vote Authority Note Merkle witness.
 class ApiVanWitness {
   /// 24 sibling hashes from the VAN leaf to the vote-tree root.
@@ -1537,6 +1633,32 @@ class ApiVoteCommitmentWire {
           anchorHeight == other.anchorHeight &&
           rVpk == other.rVpk &&
           voteAuthSig == other.voteAuthSig;
+}
+
+/// Parsed cast-vote confirmation data recorded by zcash_voting.
+class ApiVoteConfirmation {
+  final String txHash;
+  final int vanPosition;
+  final BigInt vcTreePosition;
+
+  const ApiVoteConfirmation({
+    required this.txHash,
+    required this.vanPosition,
+    required this.vcTreePosition,
+  });
+
+  @override
+  int get hashCode =>
+      txHash.hashCode ^ vanPosition.hashCode ^ vcTreePosition.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ApiVoteConfirmation &&
+          runtimeType == other.runtimeType &&
+          txHash == other.txHash &&
+          vanPosition == other.vanPosition &&
+          vcTreePosition == other.vcTreePosition;
 }
 
 /// Stored vote row keyed by `(round_id, wallet_id, bundle_index, proposal_id)`.

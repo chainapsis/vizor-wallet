@@ -390,6 +390,15 @@ abstract interface class VotingRustApi {
     required int vanLeafPosition,
   });
 
+  Future<rust_voting.ApiDelegationConfirmation> confirmDelegationSubmission({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required String txHash,
+    required List<rust_voting.ApiTxEvent> events,
+  });
+
   Future<void> storeVanPosition({
     required String dbPath,
     required String walletId,
@@ -499,6 +508,16 @@ abstract interface class VotingRustApi {
     required String txHash,
     required int vanPosition,
     required BigInt vcTreePosition,
+  });
+
+  Future<rust_voting.ApiVoteConfirmation> confirmVoteSubmission({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required String txHash,
+    required List<rust_voting.ApiTxEvent> events,
   });
 
   Future<void> recordShareDelegation({
@@ -809,6 +828,25 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
+  Future<rust_voting.ApiDelegationConfirmation> confirmDelegationSubmission({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required String txHash,
+    required List<rust_voting.ApiTxEvent> events,
+  }) {
+    return rust_voting.confirmDelegationSubmission(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      txHash: txHash,
+      events: events,
+    );
+  }
+
+  @override
   Future<void> storeVanPosition({
     required String dbPath,
     required String walletId,
@@ -1029,6 +1067,27 @@ class FrbVotingRustApi implements VotingRustApi {
       txHash: txHash,
       vanPosition: vanPosition,
       vcTreePosition: vcTreePosition,
+    );
+  }
+
+  @override
+  Future<rust_voting.ApiVoteConfirmation> confirmVoteSubmission({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required int bundleIndex,
+    required int proposalId,
+    required String txHash,
+    required List<rust_voting.ApiTxEvent> events,
+  }) {
+    return rust_voting.confirmVoteSubmission(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      txHash: txHash,
+      events: events,
     );
   }
 
