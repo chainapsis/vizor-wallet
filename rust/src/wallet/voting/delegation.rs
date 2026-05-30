@@ -463,8 +463,12 @@ pub async fn build_keystone_delegation_request(
     );
 
     Ok(zcash_voting::delegate::KeystoneSigningRequest {
-        setup: delegation_setup,
+        pczt_bytes: delegation_setup.pczt_bytes,
         redacted_pczt_bytes,
+        pczt_sighash: delegation_setup.pczt_sighash.to_vec(),
+        rk: delegation_setup.rk.to_vec(),
+        action_index: u32::try_from(delegation_setup.action_index)
+            .map_err(|_| "action_index does not fit u32".to_string())?,
         display_memo,
         eligible_weight_zatoshi: context
             .bundle_setup

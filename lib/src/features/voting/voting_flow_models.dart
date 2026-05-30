@@ -69,14 +69,14 @@ class VotingDraftState {
     return VotingDraftState(choices: nextChoices);
   }
 
-  List<rust_voting.DraftVoteView> toDraftVotes(
+  List<rust_voting.DraftVote> toDraftVotes(
     List<VotingProposalView> proposals, {
     bool singleShare = false,
   }) {
     return [
       for (final proposal in proposals)
         if (choices[proposal.id] != null)
-          rust_voting.DraftVoteView(
+          rust_voting.DraftVote(
             proposalId: proposal.id,
             choice: choices[proposal.id]!,
             numOptions: proposal.options.length,
