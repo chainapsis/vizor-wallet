@@ -20,6 +20,7 @@ import '../../../services/voting/pir_snapshot_resolver.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../voting_flow_models.dart';
 import '../voting_error_messages.dart';
+import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 
@@ -790,7 +791,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     required int expectedSnapshotHeight,
     required List<PirSnapshotEndpointDiagnostic> diagnostics,
   }) {
-    final expected = _formatBlockHeight(expectedSnapshotHeight);
+    final expected = formatBlockHeight(expectedSnapshotHeight);
     final reportedHeights = diagnostics
         .map((diagnostic) => diagnostic.reportedHeight)
         .nonNulls
@@ -799,7 +800,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
           (diagnostic) => diagnostic.status == PirSnapshotEndpointStatus.behind,
         ) &&
         reportedHeights.isNotEmpty) {
-      final highest = _formatBlockHeight(
+      final highest = formatBlockHeight(
         reportedHeights.reduce((left, right) => left > right ? left : right),
       );
       return 'Voting PIR data is not ready for this poll yet. Expected '
@@ -807,18 +808,6 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     }
     return 'No PIR endpoint matched this poll snapshot. Expected snapshot '
         'block $expected.';
-  }
-
-  String _formatBlockHeight(int height) {
-    final text = height.toString();
-    final buffer = StringBuffer();
-    for (var i = 0; i < text.length; i++) {
-      if (i > 0 && (text.length - i) % 3 == 0) {
-        buffer.write(',');
-      }
-      buffer.write(text[i]);
-    }
-    return buffer.toString();
   }
 
   String? _shareSubmissionDetail(VotingSessionState state) {

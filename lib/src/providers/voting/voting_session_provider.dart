@@ -9,6 +9,7 @@ import '../../core/formatting/duration_format.dart';
 import '../../core/formatting/hex_codec.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
+import '../../features/voting/voting_formatters.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../features/voting/voting_share_timing.dart';
 import '../../rust/api/voting.dart' as rust_voting;
@@ -2099,7 +2100,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     PirSnapshotNoMatchingEndpoint error,
   ) {
     final diagnostics = error.diagnostics;
-    final expected = _formatBlockHeight(error.expectedSnapshotHeight);
+    final expected = formatBlockHeight(error.expectedSnapshotHeight);
     final reportedHeights = diagnostics
         .map((diagnostic) => diagnostic.reportedHeight)
         .nonNulls
@@ -2110,7 +2111,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           (diagnostic) => diagnostic.status == PirSnapshotEndpointStatus.behind,
         ) &&
         reportedHeights.isNotEmpty) {
-      final highest = _formatBlockHeight(
+      final highest = formatBlockHeight(
         reportedHeights.reduce((left, right) => left > right ? left : right),
       );
       return 'Voting PIR data is not ready for this poll yet. Expected '
@@ -2123,7 +2124,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           (diagnostic) => diagnostic.status == PirSnapshotEndpointStatus.ahead,
         ) &&
         reportedHeights.isNotEmpty) {
-      final lowest = _formatBlockHeight(
+      final lowest = formatBlockHeight(
         reportedHeights.reduce((left, right) => left < right ? left : right),
       );
       return 'Configured PIR endpoints are ahead of this poll snapshot. '
@@ -2163,18 +2164,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         : ' message=${diagnostic.message}';
     return '${diagnostic.endpoint} status=${diagnostic.status.name}'
         '$height$statusCode$message';
-  }
-
-  static String _formatBlockHeight(int height) {
-    final text = height.toString();
-    final buffer = StringBuffer();
-    for (var i = 0; i < text.length; i++) {
-      if (i > 0 && (text.length - i) % 3 == 0) {
-        buffer.write(',');
-      }
-      buffer.write(text[i]);
-    }
-    return buffer.toString();
   }
 
   Future<void> _enqueue(Future<void> Function() action) {
