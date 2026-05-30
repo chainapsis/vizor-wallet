@@ -10,15 +10,8 @@ use super::{
 
 const VAN_AUTH_PATH_LEN: usize = 24;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// One proposal choice to turn into a signed vote commitment.
-pub struct DraftVote {
-    pub proposal_id: u32,
-    pub choice: u32,
-    pub num_options: u32,
-    pub vc_tree_position: u64,
-    pub single_share: bool,
-}
+pub use zcash_voting::vote::DraftVote;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Wire-safe encrypted share with no plaintext or randomness fields.
@@ -97,7 +90,7 @@ pub fn build_vote_commitments<F>(
 where
     F: Fn(zcash_voting::vote::VoteCommitStage) + Send + Sync + 'static,
 {
-    validate_draft_votes(&draft_votes)?;
+    zcash_voting::vote::validate_draft_votes(&draft_votes).map_err(|e| e.to_string())?;
     let on_progress = std::sync::Arc::new(on_progress);
     let voting_db = open_voting_db(db_path, wallet_id)?;
     let bundle_count = voting_db
@@ -123,12 +116,11 @@ where
             "voting vote: starting proof generation (bundle_index={bundle_index}, proposal_id={})",
             draft.proposal_id
         );
-        let upstream_draft = upstream_draft_vote(&draft);
         let commit = zcash_voting::vote::commit(
             &voting_db,
             round_id,
             bundle_index,
-            &upstream_draft,
+            &draft,
             &zcash_voting::vote::VanWitness {
                 auth_path: van_auth_path,
                 position: van_witness.position,
@@ -294,24 +286,6 @@ pub fn get_votes(
         .map_err(|e| format!("get_votes failed: {e}"))
 }
 
-fn validate_draft_votes(draft_votes: &[DraftVote]) -> Result<(), String> {
-    let upstream = draft_votes
-        .iter()
-        .map(upstream_draft_vote)
-        .collect::<Vec<_>>();
-    zcash_voting::vote::validate_draft_votes(&upstream).map_err(|e| e.to_string())
-}
-
-fn upstream_draft_vote(draft: &DraftVote) -> zcash_voting::vote::DraftVote {
-    zcash_voting::vote::DraftVote {
-        proposal_id: draft.proposal_id,
-        choice: draft.choice,
-        num_options: draft.num_options,
-        vc_tree_position: draft.vc_tree_position,
-        single_share: draft.single_share,
-    }
-}
-
 fn van_auth_path_array(witness: &VanWitness) -> Result<[[u8; 32]; VAN_AUTH_PATH_LEN], String> {
     if witness.auth_path.len() != VAN_AUTH_PATH_LEN {
         return Err(format!(
@@ -409,10 +383,11 @@ mod tests {
 
     #[test]
     fn validate_draft_votes_rejects_invalid_inputs_before_db_work() {
-        assert!(validate_draft_votes(&[])
+        assert!(zcash_voting::vote::validate_draft_votes(&[])
             .unwrap_err()
+            .to_string()
             .contains("must not be empty"));
-        assert!(validate_draft_votes(&[DraftVote {
+        assert!(zcash_voting::vote::validate_draft_votes(&[DraftVote {
             proposal_id: 0,
             choice: 0,
             num_options: 2,
@@ -420,8 +395,19 @@ mod tests {
             single_share: false,
         }])
         .unwrap_err()
+        .to_string()
         .contains("proposal_id"));
-        assert!(validate_draft_votes(&[DraftVote {
+        assert!(zcash_voting::vote::validate_draft_votes(&[DraftVote {
+            proposal_id: 1,
+            choice: 0,
+            num_options: 1,
+            vc_tree_position: 0,
+            single_share: false,
+        }])
+        .unwrap_err()
+        .to_string()
+        .contains("num_options"));
+        assert!(zcash_voting::vote::validate_draft_votes(&[DraftVote {
             proposal_id: 1,
             choice: 2,
             num_options: 2,
@@ -429,6 +415,7 @@ mod tests {
             single_share: false,
         }])
         .unwrap_err()
+        .to_string()
         .contains("vote_decision"));
     }
 
