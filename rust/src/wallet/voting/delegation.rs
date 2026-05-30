@@ -22,6 +22,7 @@ use zcash_voting::delegate::{
     GatherDelegationWalletParams, ResolveDelegationLwdParams,
 };
 use zcash_voting::precompute::PrecomputeDelegationInputs;
+use zcash_voting::selection::select_notes_with_lwd;
 use zcash_voting::storage::VotingDb;
 use zcash_voting::{voting_power_with_policy, BundlePolicy};
 
@@ -91,7 +92,7 @@ async fn prepare_delegation_bundle_context(
         ensure_round_initialized(&voting_db, &round_params, round_name, session_json)?;
     let round_id = round_params.vote_round_id;
 
-    let selected = zcash_voting::select_notes_with_lwd(
+    let selected = select_notes_with_lwd(
         &voting_db,
         db_path,
         lightwalletd_url,
@@ -257,7 +258,7 @@ pub async fn setup_delegation_bundles(
     let network = keys::parse_network(network)?;
     let round_context =
         ensure_round_initialized(voting_db, &round_params, round_name, session_json)?;
-    let selected = zcash_voting::select_notes_with_lwd(
+    let selected = select_notes_with_lwd(
         voting_db,
         db_path,
         lightwalletd_url,
@@ -276,17 +277,17 @@ pub async fn setup_delegation_bundles(
         .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))
 }
 
-/// Warms PIR and governance-PCZT state for a single delegation bundle.
+/// Warms PIR state for a single delegation bundle.
 ///
 /// Validates the PIR endpoint against the round snapshot, persists witnesses,
-/// caches a branch-specific governance PCZT, and precomputes delegation PIR
-/// rows for `bundle_index`.
+/// initializes padded-note secrets, and precomputes delegation PIR rows for
+/// `bundle_index`.
 ///
 /// # Errors
 ///
 /// Returns an error if the round, endpoint, note selection, bundle index,
-/// witness generation, account data, consensus branch, PCZT build, or PIR
-/// precompute step fails.
+/// witness generation, padded-secret initialization, or PIR precompute step
+/// fails.
 #[allow(clippy::too_many_arguments)]
 pub async fn precompute_delegation_pir(
     db_path: &str,
@@ -326,8 +327,7 @@ pub async fn precompute_delegation_pir(
         round_params,
         anchor_tree_state_bytes,
         round_note_infos,
-        branch_id_provider,
-        delegation_keys,
+        ..
     } = gathered;
 
     tokio::task::spawn_blocking(move || {
@@ -339,15 +339,13 @@ pub async fn precompute_delegation_pir(
             Arc::new(zcash_voting::HyperTransport::new()),
         )
         .map_err(|e| format!("connect to PIR server failed: {e}"))?;
-        let noop_stages = zcash_voting::NoopProgressReporter;
         let precompute_inputs = PrecomputeDelegationInputs {
             round_params: &round_params,
             session_json: session_json.as_deref(),
             bundle_index,
             round_note_infos: &round_note_infos,
             anchor_tree_state_bytes: &anchor_tree_state_bytes,
-            keys: &delegation_keys,
-            branch_id_provider: &branch_id_provider,
+            network: voting_network(network),
             cancellation: &cancellation,
         };
         zcash_voting::precompute::precompute_delegation_with_policy(
@@ -355,7 +353,6 @@ pub async fn precompute_delegation_pir(
             &wallet_db,
             precompute_inputs,
             &pir_client,
-            &noop_stages,
             bundle_policy,
         )
         .map_err(|e| e.to_string())
@@ -417,32 +414,20 @@ where
     .await?;
 
     let delegation_keys = delegation_keys_for_context(&context)?;
-    let prepared_governance_pczt = zcash_voting::delegate::take_prepared_setup(
+    let pczt_progress = on_progress.clone();
+    let setup_stages = zcash_voting::DelegationProgressBridge::new(move |progress| {
+        pczt_progress(progress);
+    });
+    let delegation_setup = zcash_voting::delegate::setup(
         &context.voting_db,
         &round_id,
         bundle_index,
-        &delegation_keys,
         &context.bundle_note_infos,
+        &delegation_keys,
+        &context.branch_id_provider,
+        &setup_stages,
     )
-    .map_err(|e| format!("take_prepared_setup failed: {e}"))?;
-    let delegation_setup = if let Some(setup) = prepared_governance_pczt {
-        setup
-    } else {
-        let pczt_progress = on_progress.clone();
-        let setup_stages = zcash_voting::DelegationProgressBridge::new(move |progress| {
-            pczt_progress(progress);
-        });
-        zcash_voting::delegate::setup(
-            &context.voting_db,
-            &round_id,
-            bundle_index,
-            &context.bundle_note_infos,
-            &delegation_keys,
-            &context.branch_id_provider,
-            &setup_stages,
-        )
-        .map_err(|e| format!("delegate::setup failed: {e}"))?
-    };
+    .map_err(|e| format!("delegate::setup failed: {e}"))?;
 
     prove_delegation_for_context(
         db_path,
@@ -656,174 +641,6 @@ mod tests {
 
     const ACCOUNT_UUID: &str = "550e8400-e29b-41d4-a716-446655440000";
     const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
-
-    fn temp_voting_db(account_uuid: &str) -> (tempfile::TempDir, VotingDb) {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("zcash_wallet.db");
-        let db = open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap();
-        (temp_dir, db)
-    }
-
-    #[test]
-    fn prepared_delegation_pczt_cache_is_consume_on_entry() {
-        let (_temp_dir, db) = temp_voting_db("550e8400-e29b-41d4-a716-446655440101");
-        zcash_voting::delegate::clear_prepared_setups(&db, None).unwrap();
-        let keys = test_delegation_keys("Demo Round");
-        let notes = vec![test_note_info(42)];
-        let epoch = zcash_voting::delegate::prepared_epoch(&db).unwrap();
-
-        assert!(zcash_voting::delegate::cache_prepared_setup(
-            &db,
-            ROUND_ID,
-            0,
-            &keys,
-            &notes,
-            epoch,
-            test_governance_pczt()
-        )
-        .unwrap());
-        assert!(
-            zcash_voting::delegate::take_prepared_setup(&db, ROUND_ID, 0, &keys, &notes)
-                .unwrap()
-                .is_some()
-        );
-        assert!(
-            zcash_voting::delegate::take_prepared_setup(&db, ROUND_ID, 0, &keys, &notes)
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn prepared_delegation_pczt_cache_key_binds_full_pczt_inputs() {
-        let (_temp_dir, db) = temp_voting_db("550e8400-e29b-41d4-a716-446655440102");
-        zcash_voting::delegate::clear_prepared_setups(&db, None).unwrap();
-        let keys = test_delegation_keys("Demo Round");
-        let notes = vec![test_note_info(42)];
-        let epoch = zcash_voting::delegate::prepared_epoch(&db).unwrap();
-        zcash_voting::delegate::cache_prepared_setup(
-            &db,
-            ROUND_ID,
-            0,
-            &keys,
-            &notes,
-            epoch,
-            test_governance_pczt(),
-        )
-        .unwrap();
-
-        let different_round_name = test_delegation_keys("Different Round");
-        assert!(zcash_voting::delegate::take_prepared_setup(
-            &db,
-            ROUND_ID,
-            0,
-            &different_round_name,
-            &notes
-        )
-        .unwrap()
-        .is_none());
-
-        let mut different_bundle_note = notes.clone();
-        different_bundle_note[0].nullifier[0] ^= 0x01;
-        assert!(zcash_voting::delegate::take_prepared_setup(
-            &db,
-            ROUND_ID,
-            0,
-            &keys,
-            &different_bundle_note
-        )
-        .unwrap()
-        .is_none());
-
-        let different_account = test_delegation_keys_with_fingerprint("Demo Round", [0xA5; 32]);
-        assert!(zcash_voting::delegate::take_prepared_setup(
-            &db,
-            ROUND_ID,
-            0,
-            &different_account,
-            &notes
-        )
-        .unwrap()
-        .is_none());
-        assert!(
-            zcash_voting::delegate::take_prepared_setup(&db, ROUND_ID, 0, &keys, &notes)
-                .unwrap()
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn prepared_delegation_pczt_reset_blocks_late_precompute_insert() {
-        let (_temp_dir, db) = temp_voting_db("550e8400-e29b-41d4-a716-446655440103");
-        zcash_voting::delegate::clear_prepared_setups(&db, None).unwrap();
-        let keys = test_delegation_keys("Demo Round");
-        let notes = vec![test_note_info(42)];
-        let stale_epoch = zcash_voting::delegate::prepared_epoch(&db).unwrap();
-
-        zcash_voting::delegate::clear_prepared_setups(&db, None).unwrap();
-
-        assert!(!zcash_voting::delegate::cache_prepared_setup(
-            &db,
-            ROUND_ID,
-            0,
-            &keys,
-            &notes,
-            stale_epoch,
-            test_governance_pczt()
-        )
-        .unwrap());
-        assert!(
-            zcash_voting::delegate::take_prepared_setup(&db, ROUND_ID, 0, &keys, &notes)
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn clear_prepared_setups_can_target_round() {
-        let (_temp_dir, db) = temp_voting_db("550e8400-e29b-41d4-a716-446655440104");
-        zcash_voting::delegate::clear_prepared_setups(&db, None).unwrap();
-        let keys = test_delegation_keys("Demo Round");
-        let notes = vec![test_note_info(42)];
-        let second_round = "0000000000000000000000000000000000000000000000000000000000000002";
-        let epoch = zcash_voting::delegate::prepared_epoch(&db).unwrap();
-        zcash_voting::delegate::cache_prepared_setup(
-            &db,
-            ROUND_ID,
-            0,
-            &keys,
-            &notes,
-            epoch,
-            test_governance_pczt(),
-        )
-        .unwrap();
-        zcash_voting::delegate::cache_prepared_setup(
-            &db,
-            second_round,
-            0,
-            &keys,
-            &notes,
-            epoch,
-            test_governance_pczt(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            zcash_voting::delegate::clear_prepared_setups(&db, Some(ROUND_ID)).unwrap(),
-            1
-        );
-
-        assert!(
-            zcash_voting::delegate::take_prepared_setup(&db, ROUND_ID, 0, &keys, &notes)
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            zcash_voting::delegate::take_prepared_setup(&db, second_round, 0, &keys, &notes)
-                .unwrap()
-                .is_some()
-        );
-    }
 
     #[test]
     fn build_prove_and_sign_delegation_payload_rejects_invalid_round_params_before_progress() {
@@ -1115,37 +932,6 @@ mod tests {
                 .unwrap(),
             0x4DEC_4DF0
         );
-    }
-
-    fn test_delegation_keys(round_name: &str) -> zcash_voting::delegate::DelegationKeys {
-        test_delegation_keys_with_fingerprint(round_name, [9; 32])
-    }
-
-    fn test_delegation_keys_with_fingerprint(
-        round_name: &str,
-        seed_fingerprint: [u8; 32],
-    ) -> zcash_voting::delegate::DelegationKeys {
-        let hotkey =
-            zcash_voting::hotkey::voting_hotkey_from_seed(&[7; 64], zcash_voting::Network::Regtest)
-                .unwrap();
-        zcash_voting::delegate::DelegationKeys::with_voting_hotkey(
-            vec![8; 96],
-            &hotkey,
-            seed_fingerprint,
-            0,
-            round_name.to_string(),
-        )
-        .unwrap()
-    }
-
-    fn test_governance_pczt() -> zcash_voting::delegate::DelegationSetup {
-        zcash_voting::delegate::DelegationSetup {
-            pczt_bytes: vec![1, 2, 3],
-            pczt_sighash: [0; 32],
-            rk: [0; 32],
-            action_bytes: vec![0; 32],
-            action_index: 0,
-        }
     }
 
     fn test_round_params() -> zcash_voting::VotingRoundParams {
