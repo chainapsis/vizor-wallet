@@ -74,8 +74,7 @@ class VotingRecoveryService {
   /// one proposal can have independent state for each note bundle.
   VotingResumePlan buildResumePlan(rust_voting.RoundRecoveryStateView state) {
     final delegationPhasesByIndex = <int, String>{
-      for (final record in state.delegation)
-        record.bundleIndex: record.phase,
+      for (final record in state.delegation) record.bundleIndex: record.phase,
     };
     final submittedDelegationBundleIndexes =
         state.delegation
@@ -86,11 +85,10 @@ class VotingRecoveryService {
             .map((record) => record.bundleIndex)
             .toList()
           ..sort();
-    final delegatedBundleIndexes =
-        state.delegation
-            .where((record) => record.phase == VotingWorkflowPhase.confirmed)
-            .map((record) => record.bundleIndex)
-            .toSet();
+    final delegatedBundleIndexes = state.delegation
+        .where((record) => record.phase == VotingWorkflowPhase.confirmed)
+        .map((record) => record.bundleIndex)
+        .toSet();
     final pendingDelegationBundleIndexes = [
       for (var index = 0; index < state.bundleCount; index++)
         if (!delegatedBundleIndexes.contains(index) &&
@@ -108,10 +106,10 @@ class VotingRecoveryService {
     final voteTxHashesByKey = <VotingVoteKey, String>{
       for (final record in state.votes)
         if (record.txHash != null)
-        VotingVoteKey(
-          bundleIndex: record.bundleIndex,
-          proposalId: record.proposalId,
-        ): record.txHash!,
+          VotingVoteKey(
+            bundleIndex: record.bundleIndex,
+            proposalId: record.proposalId,
+          ): record.txHash!,
     };
     final votePhasesByKey = <VotingVoteKey, String>{
       for (final record in state.votes)
@@ -121,7 +119,7 @@ class VotingRecoveryService {
         ): record.phase,
     };
     final commitmentBundlesByKey =
-        <VotingVoteKey, rust_voting.CommitmentBundleRecoveryView>{
+        <VotingVoteKey, rust_voting.RecoverableCommitmentBundle>{
           for (final record in state.commitmentBundles)
             VotingVoteKey(
               bundleIndex: record.bundleIndex,

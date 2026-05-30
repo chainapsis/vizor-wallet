@@ -245,7 +245,7 @@ class VotingSessionState {
   final UnmodifiableListView<PirSnapshotEndpointDiagnostic> pirDiagnostics;
   final UnmodifiableMapView<int, VotingSessionProgress> delegationProgress;
   final UnmodifiableMapView<VotingVoteKey, VotingSessionProgress> voteProgress;
-  final UnmodifiableMapView<int, rust_wire.KeystoneSignatureRecordView>
+  final UnmodifiableMapView<int, rust_wire.KeystoneSignatureRecord>
   keystoneSignatures;
   final rust_wire.KeystoneDelegationRequestView? keystoneSigningRequest;
   final String? keystoneScanError;
@@ -273,8 +273,7 @@ class VotingSessionState {
     List<PirSnapshotEndpointDiagnostic> pirDiagnostics = const [],
     Map<int, VotingSessionProgress> delegationProgress = const {},
     Map<VotingVoteKey, VotingSessionProgress> voteProgress = const {},
-    Map<int, rust_wire.KeystoneSignatureRecordView> keystoneSignatures =
-        const {},
+    Map<int, rust_wire.KeystoneSignatureRecord> keystoneSignatures = const {},
     this.keystoneSigningRequest,
     this.keystoneScanError,
     this.currentBundleIndex,
@@ -326,7 +325,7 @@ class VotingSessionState {
     List<PirSnapshotEndpointDiagnostic>? pirDiagnostics,
     Map<int, VotingSessionProgress>? delegationProgress,
     Map<VotingVoteKey, VotingSessionProgress>? voteProgress,
-    Map<int, rust_wire.KeystoneSignatureRecordView>? keystoneSignatures,
+    Map<int, rust_wire.KeystoneSignatureRecord>? keystoneSignatures,
     rust_wire.KeystoneDelegationRequestView? keystoneSigningRequest,
     bool clearKeystoneSigningRequest = false,
     String? keystoneScanError,
@@ -395,7 +394,7 @@ class VotingSessionState {
 
 int resolvedKeystoneBundlePrefixCount({
   required VotingResumePlan? plan,
-  required Map<int, rust_wire.KeystoneSignatureRecordView> signatures,
+  required Map<int, rust_wire.KeystoneSignatureRecord> signatures,
 }) {
   final bundleCount = plan?.bundleCount ?? 0;
   if (bundleCount <= 0) return 0;

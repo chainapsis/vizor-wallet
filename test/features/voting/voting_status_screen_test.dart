@@ -2158,8 +2158,7 @@ rust_frb_types.RoundRecoveryStateView _recoveryState({
   List<rust_frb_types.VoteRecoveryView> votes = const [],
   List<rust_frb_types.VoteRecoveryView> voteWorkflows = const [],
   List<rust_frb_types.VoteRecoveryView> voteTxHashes = const [],
-  List<rust_frb_types.CommitmentBundleRecoveryView> commitmentBundles =
-      const [],
+  List<rust_frb_types.RecoverableCommitmentBundle> commitmentBundles = const [],
   List<rust_frb_types.ShareWorkflowRecoveryView> shareWorkflows = const [],
   List<rust_frb_types.ShareDelegationRecordView> shareDelegations = const [],
   List<rust_frb_types.ShareDelegationRecordView> unconfirmedShareDelegations =
@@ -2547,8 +2546,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
 
   final _MutableVotingRecoveryApi recoveryApi;
   final int bundleCount;
-  final storedKeystoneSignatures =
-      <int, rust_wire.KeystoneSignatureRecordView>{};
+  final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int setupDelegationBundleCalls = 0;
   int keystoneDelegationRequestCalls = 0;
 
@@ -2641,7 +2639,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<List<rust_wire.KeystoneSignatureRecordView>> getKeystoneSignatures({
+  Future<List<rust_wire.KeystoneSignatureRecord>> getKeystoneSignatures({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -2721,13 +2719,12 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required List<int> sighash,
     required List<int> rk,
   }) async {
-    storedKeystoneSignatures[bundleIndex] =
-        rust_wire.KeystoneSignatureRecordView(
-          bundleIndex: bundleIndex,
-          sig: Uint8List.fromList(sig),
-          sighash: Uint8List.fromList(sighash),
-          rk: Uint8List.fromList(rk),
-        );
+    storedKeystoneSignatures[bundleIndex] = rust_wire.KeystoneSignatureRecord(
+      bundleIndex: bundleIndex,
+      sig: Uint8List.fromList(sig),
+      sighash: Uint8List.fromList(sighash),
+      rk: Uint8List.fromList(rk),
+    );
   }
 
   @override
@@ -2888,7 +2885,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int bundleIndex,
     required List<int> hotkeySeed,
     required rust_wire.VanWitnessView vanWitness,
-    required List<rust_wire.DraftVoteView> draftVotes,
+    required List<rust_wire.DraftVote> draftVotes,
   }) async* {
     for (final draft in draftVotes) {
       yield rust_voting.ApiVoteCommitEvent(
