@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/app_toast.dart';
+import '../../features/voting/widgets/voting_submission_progress_banner.dart';
 
 class AppDesktopShell extends StatelessWidget {
   const AppDesktopShell({
@@ -29,7 +30,15 @@ class AppDesktopShell extends StatelessWidget {
             children: [
               SizedBox(width: sidebarWidth, child: sidebar),
               const SizedBox(width: AppSpacing.xs),
-              Expanded(child: pane),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const VotingSubmissionProgressBanner(),
+                    Expanded(child: pane),
+                  ],
+                ),
+              ),
             ],
           ),
         ),

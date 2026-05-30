@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +15,8 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.da
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
+import 'package:zcash_wallet/src/features/voting/widgets/voting_quit_guard_host.dart';
+import 'package:zcash_wallet/src/features/voting/widgets/voting_submission_progress_banner.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
@@ -23,6 +26,8 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_voting;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -789,6 +794,98 @@ void main() {
     expect(find.text('Retry'), findsOne);
   });
 
+  testWidgets('global progress banner appears during background submission', (
+    tester,
+  ) async {
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(_MnemonicAccountNotifier.new),
+          votingSubmissionJobProvider.overrideWith(
+            () => _StaticVotingSubmissionJobNotifier(
+              const VotingSubmissionJobState(
+                key: key,
+                status: VotingSubmissionJobStatus.running,
+                generation: 1,
+              ),
+            ),
+          ),
+          votingSubmissionJobSessionProvider.overrideWithValue(
+            AsyncValue.data(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: 'account-1',
+                phase: VotingSessionPhase.submittingShares,
+                voteSubmissionCompletedCount: 1,
+                voteSubmissionTotalCount: 2,
+                voteSubmissionProgress: 0.5,
+              ),
+            ),
+          ),
+        ],
+        child: AppTheme(
+          data: AppThemeData.light,
+          child: const Directionality(
+            textDirection: TextDirection.ltr,
+            child: VotingSubmissionProgressBanner(),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Vote submission in progress'), findsOneWidget);
+    expect(find.textContaining('Submitting shares'), findsOneWidget);
+    expect(find.textContaining('Account 1'), findsOneWidget);
+    expect(find.text('View'), findsOneWidget);
+  });
+
+  testWidgets('quit guard confirms while submission is active', (tester) async {
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          votingSubmissionJobProvider.overrideWith(
+            () => _StaticVotingSubmissionJobNotifier(
+              const VotingSubmissionJobState(
+                key: key,
+                status: VotingSubmissionJobStatus.running,
+                generation: 1,
+              ),
+            ),
+          ),
+        ],
+        child: AppTheme(
+          data: AppThemeData.light,
+          child: const MaterialApp(
+            home: VotingQuitGuardHost(child: SizedBox.shrink()),
+          ),
+        ),
+      ),
+    );
+
+    final keepOpen = _requestVotingQuitConfirmation();
+    await tester.pumpAndSettle();
+    expect(find.text('Vote submission in progress'), findsOneWidget);
+    expect(
+      find.text(
+        'Your vote is still being submitted. Quitting now may interrupt the process.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Keep app open'), findsOneWidget);
+    expect(find.text('Quit anyway'), findsOneWidget);
+    await tester.tap(find.text('Keep app open'));
+    await tester.pumpAndSettle();
+    expect(await keepOpen, isFalse);
+
+    final quitAnyway = _requestVotingQuitConfirmation();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Quit anyway'));
+    await tester.pumpAndSettle();
+    expect(await quitAnyway, isTrue);
+  });
+
   testWidgets('proposal detail hides View more when description fits', (
     tester,
   ) async {
@@ -944,7 +1041,7 @@ void main() {
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
-            phase: VotingWorkflowPhase.prepared,
+            phase: VotingWorkflowPhase.submittedVote,
             hasCommitmentBundle: false,
           ),
         ],
@@ -1404,7 +1501,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Use signed bundles only?'), findsOneWidget);
 
-    await tester.tap(find.text('Use Signed Bundles'));
+    await tester.tap(find.text('Use signed bundles'));
     await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
     expect(find.text('submission confirmed route'), findsOneWidget);
@@ -1517,6 +1614,18 @@ Future<void> _pumpUntilFound(
     await tester.pump(const Duration(milliseconds: 100));
     if (finder.evaluate().isNotEmpty) return;
   }
+}
+
+Future<bool> _requestVotingQuitConfirmation() async {
+  const codec = StandardMethodCodec();
+  final response = Completer<ByteData?>();
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .handlePlatformMessage(
+        kVotingQuitGuardChannelName,
+        codec.encodeMethodCall(const MethodCall(kVotingQuitGuardConfirmMethod)),
+        response.complete,
+      );
+  return codec.decodeEnvelope((await response.future)!) as bool;
 }
 
 ProviderContainer _statusContainer({
@@ -1943,6 +2052,15 @@ class _HardwareAccountNotifier extends AccountNotifier {
     activeAccountUuid: 'hardware-1',
     activeAddress: 'u1hardwarevotingaddress',
   );
+}
+
+class _StaticVotingSubmissionJobNotifier extends VotingSubmissionJobNotifier {
+  _StaticVotingSubmissionJobNotifier(this._initial);
+
+  final VotingSubmissionJobState _initial;
+
+  @override
+  VotingSubmissionJobState build() => _initial;
 }
 
 class _FakeVotingRecoveryApi implements VotingRecoveryApi {
