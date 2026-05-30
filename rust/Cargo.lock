@@ -3852,7 +3852,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree"
 version = "0.3.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=4b1ef2caae1a8ec6a2c8c6f1dad1005da73c782c#4b1ef2caae1a8ec6a2c8c6f1dad1005da73c782c"
+source = "git+https://github.com/valargroup/zcash_voting?rev=dcefb7c9c47c26a920246d9bf65d33dbbd2673b5#dcefb7c9c47c26a920246d9bf65d33dbbd2673b5"
 dependencies = [
  "anyhow",
  "ff",
@@ -3868,7 +3868,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.5.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=4b1ef2caae1a8ec6a2c8c6f1dad1005da73c782c#4b1ef2caae1a8ec6a2c8c6f1dad1005da73c782c"
+source = "git+https://github.com/valargroup/zcash_voting?rev=dcefb7c9c47c26a920246d9bf65d33dbbd2673b5#dcefb7c9c47c26a920246d9bf65d33dbbd2673b5"
 dependencies = [
  "base64",
  "ff",
@@ -3877,7 +3877,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=4b1ef2caae1a8ec6a2c8c6f1dad1005da73c782c)",
+ "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=dcefb7c9c47c26a920246d9bf65d33dbbd2673b5)",
 ]
 
 [[package]]
@@ -4589,7 +4589,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "0.10.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=4b1ef2caae1a8ec6a2c8c6f1dad1005da73c782c#4b1ef2caae1a8ec6a2c8c6f1dad1005da73c782c"
+source = "git+https://github.com/valargroup/zcash_voting?rev=dcefb7c9c47c26a920246d9bf65d33dbbd2673b5#dcefb7c9c47c26a920246d9bf65d33dbbd2673b5"
 dependencies = [
  "anyhow",
  "base64",
@@ -4627,7 +4627,7 @@ dependencies = [
  "uuid",
  "valar-spiral-rs",
  "valar-ypir",
- "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=4b1ef2caae1a8ec6a2c8c6f1dad1005da73c782c)",
+ "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=dcefb7c9c47c26a920246d9bf65d33dbbd2673b5)",
  "vote-commitment-tree-client",
  "voting-circuits",
  "zcash_client_backend",
