@@ -1,33 +1,6 @@
-use std::sync::OnceLock;
-
 use zcash_voting::{storage::VotingDb, validate_bundle_index};
 
 use super::state;
-
-/// FRB-friendly representation of a Vote Authority Note Merkle witness.
-///
-/// `zcash_voting::tree_sync::VanWitness` stores the authentication path as
-/// fixed-size arrays. This shape keeps the public Vizor wrapper on simple byte
-/// vectors that are easy to pass through the API layer.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VanWitness {
-    pub auth_path: Vec<Vec<u8>>,
-    pub position: u32,
-    pub anchor_height: u32,
-}
-
-static RUSTLS_PROVIDER: OnceLock<()> = OnceLock::new();
-
-/// Install the Rustls ring provider before constructing the tree HTTP transport.
-///
-/// Flutter calls `init_app()` during normal startup, but unit tests can touch the
-/// vote-tree wrapper directly. Installing defensively here keeps the wrapper
-/// usable in both paths.
-fn ensure_rustls_provider() {
-    RUSTLS_PROVIDER.get_or_init(|| {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-    });
-}
 
 /// Sync the vote commitment tree for `round_id` from a chain node URL.
 pub fn sync_commitment_tree(
@@ -36,22 +9,8 @@ pub fn sync_commitment_tree(
     round_id: &str,
     node_url: &str,
 ) -> Result<u32, String> {
-    let started = std::time::Instant::now();
-    log::info!(
-        "voting tree: sync start (round_id={}, wallet_id={})",
-        round_id,
-        wallet_id
-    );
     let db = state::open_voting_db(db_path, wallet_id)?;
-    let height = sync_commitment_tree_with_db(db_path, wallet_id, &db, round_id, node_url)?;
-    log::info!(
-        "voting tree: sync completed (round_id={}, wallet_id={}, height={}, elapsed={:.2}s)",
-        round_id,
-        wallet_id,
-        height,
-        started.elapsed().as_secs_f64()
-    );
-    Ok(height)
+    sync_commitment_tree_with_db(db_path, wallet_id, &db, round_id, node_url)
 }
 
 /// Sync the vote commitment tree using an already-open voting database.
@@ -66,7 +25,6 @@ pub fn sync_commitment_tree_with_db(
     round_id: &str,
     node_url: &str,
 ) -> Result<u32, String> {
-    ensure_rustls_provider();
     zcash_voting::precompute::sync_vote_tree(voting_db, round_id, node_url)
         .map_err(|e| format!("sync_vote_tree failed: {e}"))
 }
@@ -78,28 +36,9 @@ pub fn generate_van_witness(
     round_id: &str,
     bundle_index: u32,
     anchor_height: u32,
-) -> Result<VanWitness, String> {
-    let started = std::time::Instant::now();
-    log::info!(
-        "voting tree: VAN witness start \
-         (round_id={}, wallet_id={}, bundle_index={}, anchor_height={})",
-        round_id,
-        wallet_id,
-        bundle_index,
-        anchor_height
-    );
+) -> Result<zcash_voting::vote::VanWitness, String> {
     let db = state::open_voting_db(db_path, wallet_id)?;
-    let witness = generate_van_witness_with_db(&db, round_id, bundle_index, anchor_height)?;
-    log::info!(
-        "voting tree: VAN witness completed \
-         (round_id={}, wallet_id={}, bundle_index={}, position={}, elapsed={:.2}s)",
-        round_id,
-        wallet_id,
-        bundle_index,
-        witness.position,
-        started.elapsed().as_secs_f64()
-    );
-    Ok(witness)
+    generate_van_witness_with_db(&db, round_id, bundle_index, anchor_height)
 }
 
 /// Generate a VAN Merkle witness using an already-open voting database.
@@ -112,18 +51,12 @@ pub fn generate_van_witness_with_db(
     round_id: &str,
     bundle_index: u32,
     anchor_height: u32,
-) -> Result<VanWitness, String> {
-    ensure_rustls_provider();
+) -> Result<zcash_voting::vote::VanWitness, String> {
     let bundle_count = voting_db
         .get_bundle_count(round_id)
         .map_err(|e| format!("get_bundle_count failed: {e}"))?;
     validate_bundle_index(bundle_count, bundle_index, "voting").map_err(|e| e.to_string())?;
     zcash_voting::precompute::van_witness(voting_db, round_id, bundle_index, anchor_height)
-        .map(|witness| VanWitness {
-            auth_path: witness.auth_path.iter().map(|h| h.to_vec()).collect(),
-            position: witness.position,
-            anchor_height: witness.anchor_height,
-        })
         .map_err(|e| format!("generate_van_witness failed: {e}"))
 }
 
@@ -136,7 +69,6 @@ pub fn reset_tree_client(
     wallet_id: &str,
     round_id: Option<&str>,
 ) -> Result<(), String> {
-    ensure_rustls_provider();
     let round_id = round_id.unwrap_or("");
     let db = state::open_voting_db(db_path, wallet_id)?;
     zcash_voting::precompute::reset_vote_tree(&db, round_id)
@@ -149,7 +81,6 @@ pub fn reset_tree_client(
 /// account removal, or wallet reset. Round-scoped cleanup should keep this
 /// client because `VoteTreeSync` can serve multiple rounds for the same wallet.
 pub fn clear_tree_sync_session(db_path: &str, wallet_id: &str) -> Result<usize, String> {
-    ensure_rustls_provider();
     let db = state::open_voting_db(db_path, wallet_id)?;
     zcash_voting::precompute::reset_vote_tree(&db, "")
         .map_err(|e| format!("clear_tree_sync_session failed: {e}"))?;
@@ -199,7 +130,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-witness").unwrap();
-        state::init_voting_round(&db, &test_round_params(), None).unwrap();
+        db.init_round(&test_round_params(), None).unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![1], 2);
@@ -292,7 +223,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-out-of-range").unwrap();
-        state::init_voting_round(&db, &test_round_params(), None).unwrap();
+        db.init_round(&test_round_params(), None).unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
 
         let err = generate_van_witness(

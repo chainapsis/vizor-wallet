@@ -4,7 +4,6 @@ use secrecy::SecretVec;
 
 use super::{
     hotkey::voting_hotkey_from_secret, progress::VotingWorkCancellation, state::open_voting_db,
-    tree_sync::VanWitness,
 };
 
 /// One proposal choice to turn into a signed vote commitment.
@@ -25,7 +24,7 @@ pub fn build_vote_commitments<F>(
     round_id: &str,
     bundle_index: u32,
     hotkey_seed: &SecretVec<u8>,
-    van_witness: VanWitness,
+    van_witness: zcash_voting::vote::VanWitness,
     draft_votes: Vec<DraftVote>,
     on_progress: F,
     cancellation: VotingWorkCancellation,
@@ -35,12 +34,6 @@ where
 {
     let on_progress = std::sync::Arc::new(on_progress);
     let voting_db = open_voting_db(db_path, wallet_id)?;
-    let typed_van_witness = zcash_voting::vote::VanWitness::from_wire(
-        &van_witness.auth_path,
-        van_witness.position,
-        van_witness.anchor_height,
-    )
-    .map_err(|e| e.to_string())?;
     let voting_hotkey = voting_hotkey_from_secret(hotkey_seed, network)?;
     let progress_cancellation = cancellation.clone();
     let vote_stages = on_progress.clone();
@@ -55,7 +48,7 @@ where
         round_id,
         bundle_index,
         &draft_votes,
-        &typed_van_witness,
+        &van_witness,
         zcash_voting::vote::VoteSigner::hotkey(&voting_hotkey),
         &cancellation,
         &reporter,
@@ -147,11 +140,12 @@ mod tests {
             "round-1",
             1,
             &SecretVec::new(vec![7; 32]),
-            VanWitness {
-                auth_path: vec![vec![7; 32]; zcash_voting::vote::VAN_AUTH_PATH_LEN],
-                position: 0,
-                anchor_height: 1,
-            },
+            zcash_voting::vote::VanWitness::from_wire(
+                &vec![vec![7; 32]; zcash_voting::vote::VAN_AUTH_PATH_LEN],
+                0,
+                1,
+            )
+            .unwrap(),
             vec![DraftVote {
                 proposal_id: 1,
                 choice: 0,
@@ -175,41 +169,25 @@ mod tests {
 
     #[test]
     fn van_witness_from_wire_requires_24_32_byte_siblings() {
-        let mut witness = VanWitness {
-            auth_path: vec![vec![7; 32]; zcash_voting::vote::VAN_AUTH_PATH_LEN],
-            position: 0,
-            anchor_height: 1,
-        };
+        let mut auth_path = vec![vec![7; 32]; zcash_voting::vote::VAN_AUTH_PATH_LEN];
         assert_eq!(
-            zcash_voting::vote::VanWitness::from_wire(
-                &witness.auth_path,
-                witness.position,
-                witness.anchor_height
-            )
-            .unwrap()
-            .auth_path[0],
+            zcash_voting::vote::VanWitness::from_wire(&auth_path, 0, 1)
+                .unwrap()
+                .auth_path[0],
             [7; 32]
         );
 
-        witness.auth_path.pop();
-        assert!(zcash_voting::vote::VanWitness::from_wire(
-            &witness.auth_path,
-            witness.position,
-            witness.anchor_height
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("24 siblings"));
+        auth_path.pop();
+        assert!(zcash_voting::vote::VanWitness::from_wire(&auth_path, 0, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("24 siblings"));
 
-        witness.auth_path = vec![vec![7; 31]; zcash_voting::vote::VAN_AUTH_PATH_LEN];
-        assert!(zcash_voting::vote::VanWitness::from_wire(
-            &witness.auth_path,
-            witness.position,
-            witness.anchor_height
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("32 bytes"));
+        auth_path = vec![vec![7; 31]; zcash_voting::vote::VAN_AUTH_PATH_LEN];
+        assert!(zcash_voting::vote::VanWitness::from_wire(&auth_path, 0, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("32 bytes"));
     }
 
     #[test]

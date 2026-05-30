@@ -14,7 +14,7 @@ use crate::wallet::{
 use super::{
     hotkey::{derive_hotkey, voting_hotkey_from_secret},
     progress::VotingWorkCancellation,
-    state::{ensure_voting_round, open_voting_db},
+    state::open_voting_db,
     voting_network,
 };
 
@@ -25,12 +25,6 @@ use zcash_voting::delegate::{
 use zcash_voting::selection::select_notes_with_lwd;
 use zcash_voting::storage::VotingDb;
 use zcash_voting::BundlePolicy;
-
-#[derive(Clone, Debug)]
-struct RoundContext {
-    snapshot_height: u64,
-    round_name: String,
-}
 
 #[allow(clippy::too_many_arguments)]
 async fn prepare_delegation_bundle_context(
@@ -46,8 +40,13 @@ async fn prepare_delegation_bundle_context(
     bundle_policy: BundlePolicy,
 ) -> Result<DelegationBundleContext, String> {
     let voting_db = open_voting_db(db_path, account_uuid)?;
-    let round_context =
-        ensure_round_initialized(&voting_db, &round_params, round_name, session_json)?;
+    let round_context = zcash_voting::delegate::ensure_round_context(
+        &voting_db,
+        &round_params,
+        round_name,
+        session_json,
+    )
+    .map_err(|e| e.to_string())?;
 
     // 1. Resolve the round anchor and consensus branch id in one lightwalletd
     //    pass before any wallet-DB handle exists. This await happens before the
@@ -187,8 +186,13 @@ pub async fn setup_delegation_bundles(
     bundle_policy: BundlePolicy,
 ) -> Result<zcash_voting::round::BundleLayout, String> {
     let network = keys::parse_network(network)?;
-    let round_context =
-        ensure_round_initialized(voting_db, &round_params, round_name, session_json)?;
+    let round_context = zcash_voting::delegate::ensure_round_context(
+        voting_db,
+        &round_params,
+        round_name,
+        session_json,
+    )
+    .map_err(|e| e.to_string())?;
     let selected = select_notes_with_lwd(
         voting_db,
         db_path,
@@ -256,12 +260,13 @@ pub async fn precompute_delegation_pir(
     tokio::task::spawn_blocking(move || {
         cancellation.check()?;
         let voting_db = open_voting_db(&db_path, &account_uuid)?;
-        ensure_round_initialized(
+        zcash_voting::delegate::ensure_round_context(
             &voting_db,
             &lwd.round_params,
             &lwd.resolved_round_name,
             session_json.as_deref(),
-        )?;
+        )
+        .map_err(|e| e.to_string())?;
         let wallet_db = open_wallet_db_for_read(&db_path, network)?;
         let wallet_progress = get_sync_progress_from_db(&wallet_db)?;
         let pir_client = zcash_voting::PirClientBlocking::with_transport(
@@ -589,23 +594,6 @@ fn sign_delegation_request(
     Ok(((&sig).into(), request.sighash))
 }
 
-/// Ensures the round exists and resolves the display name used in PCZT metadata.
-///
-/// An empty `round_name` falls back to the round ID. Returns the persisted round
-/// snapshot height used for note selection.
-fn ensure_round_initialized(
-    voting_db: &zcash_voting::storage::VotingDb,
-    round_params: &zcash_voting::VotingRoundParams,
-    round_name: &str,
-    session_json: Option<&str>,
-) -> Result<RoundContext, String> {
-    let state = ensure_voting_round(voting_db, round_params, session_json)?;
-    Ok(RoundContext {
-        snapshot_height: state.snapshot_height,
-        round_name: zcash_voting::round::delegation_round_name(round_params, round_name),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -663,13 +651,18 @@ mod tests {
         let voting_db = open_voting_db(db_path.to_str().unwrap(), ACCOUNT_UUID).unwrap();
         let params = test_round_params();
 
-        let named = ensure_round_initialized(&voting_db, &params, "Demo Round", Some("{}"))
-            .expect("round initializes");
+        let named = zcash_voting::delegate::ensure_round_context(
+            &voting_db,
+            &params,
+            "Demo Round",
+            Some("{}"),
+        )
+        .expect("round initializes");
         assert_eq!(named.snapshot_height, params.snapshot_height);
         assert_eq!(named.round_name, "Demo Round");
 
-        let existing =
-            ensure_round_initialized(&voting_db, &params, "", None).expect("existing round loads");
+        let existing = zcash_voting::delegate::ensure_round_context(&voting_db, &params, "", None)
+            .expect("existing round loads");
         assert_eq!(existing.snapshot_height, params.snapshot_height);
         assert_eq!(existing.round_name, ROUND_ID);
         assert_eq!(voting_db.list_rounds().unwrap().len(), 1);
@@ -681,7 +674,7 @@ mod tests {
         let db_path = temp_dir.path().join("zcash_wallet.db");
         let voting_db = open_voting_db(db_path.to_str().unwrap(), ACCOUNT_UUID).unwrap();
         let params = test_round_params();
-        ensure_voting_round(&voting_db, &params, None).unwrap();
+        voting_db.ensure_round(&params, None).unwrap();
         let notes = vec![test_note_info(42)];
 
         let created = voting_db
@@ -709,7 +702,7 @@ mod tests {
         let db_path = temp_dir.path().join("zcash_wallet.db");
         let voting_db = open_voting_db(db_path.to_str().unwrap(), ACCOUNT_UUID).unwrap();
         let params = test_round_params();
-        ensure_voting_round(&voting_db, &params, None).unwrap();
+        voting_db.ensure_round(&params, None).unwrap();
 
         voting_db
             .ensure_bundles(ROUND_ID, &[test_note_info(42)])
@@ -740,7 +733,7 @@ mod tests {
         let db_path = temp_dir.path().join("zcash_wallet.db");
         let voting_db = open_voting_db(db_path.to_str().unwrap(), ACCOUNT_UUID).unwrap();
         let params = test_round_params();
-        ensure_voting_round(&voting_db, &params, None).unwrap();
+        voting_db.ensure_round(&params, None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
 
         let setup = voting_db
@@ -775,7 +768,7 @@ mod tests {
         let db_path = temp_dir.path().join("zcash_wallet.db");
         let voting_db = open_voting_db(db_path.to_str().unwrap(), ACCOUNT_UUID).unwrap();
         let params = test_round_params();
-        ensure_voting_round(&voting_db, &params, None).unwrap();
+        voting_db.ensure_round(&params, None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         voting_db
             .ensure_bundles_with_skipped_suffix(ROUND_ID, &notes)
@@ -838,7 +831,7 @@ mod tests {
         let wallet_db_path = temp_dir.path().join("wallet.sqlite");
         let voting_db = open_voting_db(wallet_db_path.to_str().unwrap(), ACCOUNT_UUID).unwrap();
         let params = test_round_params();
-        ensure_voting_round(&voting_db, &params, None).unwrap();
+        voting_db.ensure_round(&params, None).unwrap();
         voting_db
             .ensure_bundles(ROUND_ID, &[test_note_info(42)])
             .unwrap();

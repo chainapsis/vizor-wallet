@@ -307,20 +307,10 @@ fn bundle_policy(max_real_notes_per_bundle: Option<u32>) -> Result<BundlePolicy,
         .map_err(|e| e.to_string())
 }
 
-impl From<tree_sync::VanWitness> for ApiVanWitness {
-    fn from(witness: tree_sync::VanWitness) -> Self {
+impl From<zcash_voting::vote::VanWitness> for ApiVanWitness {
+    fn from(witness: zcash_voting::vote::VanWitness) -> Self {
         Self {
-            auth_path: witness.auth_path,
-            position: witness.position,
-            anchor_height: witness.anchor_height,
-        }
-    }
-}
-
-impl From<ApiVanWitness> for tree_sync::VanWitness {
-    fn from(witness: ApiVanWitness) -> Self {
-        Self {
-            auth_path: witness.auth_path,
+            auth_path: witness.auth_path.iter().map(|hash| hash.to_vec()).collect(),
             position: witness.position,
             anchor_height: witness.anchor_height,
         }
@@ -1082,7 +1072,10 @@ pub fn prepare_voting_round(
 ) -> Result<(), String> {
     catch(|| {
         let db = state::open_voting_db(&db_path, &wallet_id)?;
-        state::init_voting_round(&db, &round_params.into(), session_json.as_deref())
+        let round_params: zcash_voting::VotingRoundParams = round_params.into();
+        zcash_voting::validate_round_params(&round_params).map_err(|e| e.to_string())?;
+        db.init_round(&round_params, session_json.as_deref())
+            .map_err(|e| e.to_string())
     })
 }
 
@@ -1694,7 +1687,12 @@ pub fn build_vote_commitments(
     let network = keys::parse_network(&network)?;
     let hotkey_seed = secrecy::SecretVec::new(hotkey_seed);
     let cancellation = VotingWorkCancellation::start(&db_path, &wallet_id, Some(&round_id))?;
-    let van_witness = tree_sync::VanWitness::from(van_witness);
+    let van_witness = zcash_voting::vote::VanWitness::from_wire(
+        &van_witness.auth_path,
+        van_witness.position,
+        van_witness.anchor_height,
+    )
+    .map_err(|e| e.to_string())?;
     let draft_votes = draft_votes.into_iter().map(Into::into).collect();
     vote::build_vote_commitments(
         &db_path,
@@ -1747,7 +1745,12 @@ pub async fn build_vote_commitments_with_progress(
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
     let progress_cancellation = cancellation.clone();
-    let van_witness = tree_sync::VanWitness::from(van_witness);
+    let van_witness = zcash_voting::vote::VanWitness::from_wire(
+        &van_witness.auth_path,
+        van_witness.position,
+        van_witness.anchor_height,
+    )
+    .map_err(|e| e.to_string())?;
     let draft_votes = draft_votes.into_iter().map(Into::into).collect();
     let commitment_result = tokio::task::spawn_blocking(move || {
         vote::build_vote_commitments(
@@ -2482,13 +2485,17 @@ mod tests {
 
     #[test]
     fn api_van_witness_preserves_core_fields() {
-        let api = ApiVanWitness::from(tree_sync::VanWitness {
-            auth_path: vec![vec![1; 32], vec![2; 32]],
+        let mut witness = [[0u8; 32]; zcash_voting::vote::VAN_AUTH_PATH_LEN];
+        witness[0] = [1; 32];
+        witness[1] = [2; 32];
+        let api = ApiVanWitness::from(zcash_voting::vote::VanWitness {
+            auth_path: witness,
             position: 7,
             anchor_height: 123,
         });
 
-        assert_eq!(api.auth_path, vec![vec![1; 32], vec![2; 32]]);
+        assert_eq!(api.auth_path[0], vec![1; 32]);
+        assert_eq!(api.auth_path[1], vec![2; 32]);
         assert_eq!(api.position, 7);
         assert_eq!(api.anchor_height, 123);
     }
@@ -2691,7 +2698,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(err.contains("Invalid voting round params"));
+        assert!(err.contains("nc_root"));
     }
 
     #[test]
@@ -2699,7 +2706,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-api-bundles").unwrap();
-        state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
 
@@ -2776,7 +2783,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-api-witness").unwrap();
-        state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None).unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
@@ -2828,7 +2835,7 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let wallet_id = "wallet-api-round-reset";
         let db = state::open_voting_db(db_path.to_str().unwrap(), wallet_id).unwrap();
-        state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None).unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
@@ -2865,7 +2872,7 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let wallet_id = "wallet-api-account-reset";
         let db = state::open_voting_db(db_path.to_str().unwrap(), wallet_id).unwrap();
-        state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None).unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
@@ -2930,7 +2937,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
-        state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
         let err = build_vote_commitments(
@@ -2963,7 +2970,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = state::open_voting_db(db_path.to_str().unwrap(), "wallet-api-votes").unwrap();
-        state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
         let conn = db.conn();
@@ -3011,7 +3018,7 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let wallet_id = "wallet-api-recovery";
         let db = state::open_voting_db(db_path.to_str().unwrap(), wallet_id).unwrap();
-        state::init_voting_round(&db, &test_api_round_params().into(), None).unwrap();
+        db.init_round(&test_api_round_params().into(), None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
         db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx-0")

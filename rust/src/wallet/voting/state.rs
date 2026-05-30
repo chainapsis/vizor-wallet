@@ -1,15 +1,8 @@
-/// Returns the sidecar path used for `zcash_voting` state for a wallet DB path.
-///
-/// The voting database is intentionally separate from the wallet SQLite file so
-/// upstream voting migrations cannot affect the wallet DB `user_version`.
-fn voting_db_path_for_wallet_db(db_path: &str) -> String {
-    format!("{db_path}.voting")
-}
-
 /// Opens the voting sidecar database for a wallet and binds it to `wallet_id`.
 ///
 /// `db_path` is the main wallet database path; the voting DB is opened at the
-/// deterministic sidecar path returned by `voting_db_path_for_wallet_db`.
+/// deterministic sidecar path returned by
+/// [`zcash_voting::round::VotingDb::wallet_sidecar_path`].
 ///
 /// # Errors
 ///
@@ -19,55 +12,8 @@ pub fn open_voting_db(
     db_path: &str,
     wallet_id: &str,
 ) -> Result<zcash_voting::storage::VotingDb, String> {
-    let voting_db_path = voting_db_path_for_wallet_db(db_path);
-    let db = zcash_voting::storage::VotingDb::open(&voting_db_path)
-        .map_err(|e| format!("Error opening voting database: {e}"))?;
-    db.set_wallet_id(wallet_id);
-    Ok(db)
-}
-
-/// Validates and persists initial state for a voting round.
-///
-/// `session_json`, when present, is stored with the round as opaque upstream
-/// session metadata.
-///
-/// # Errors
-///
-/// Returns an error if the round parameters fail `zcash_voting` validation or
-/// the voting database rejects the round initialization.
-pub fn init_voting_round(
-    db: &zcash_voting::storage::VotingDb,
-    params: &zcash_voting::VotingRoundParams,
-    session_json: Option<&str>,
-) -> Result<(), String> {
-    zcash_voting::validate_round_params(params)
-        .map_err(|e| format!("Invalid voting round params: {e}"))?;
-    db.init_round(params, session_json)
-        .map_err(|e| format!("init_round failed: {e}"))
-}
-
-/// Loads a round state, initializing it first when the round is absent.
-///
-/// Existing round state is returned unchanged; missing state is created from
-/// `params` and `session_json` before being reloaded from storage.
-///
-/// # Errors
-///
-/// Returns an error if round initialization fails or if the round state cannot
-/// be read after initialization.
-pub fn ensure_voting_round(
-    db: &zcash_voting::storage::VotingDb,
-    params: &zcash_voting::VotingRoundParams,
-    session_json: Option<&str>,
-) -> Result<zcash_voting::storage::RoundState, String> {
-    match db.get_round_state(&params.vote_round_id) {
-        Ok(state) => Ok(state),
-        Err(_) => {
-            init_voting_round(db, params, session_json)?;
-            db.get_round_state(&params.vote_round_id)
-                .map_err(|e| format!("get_round_state failed after init_round: {e}"))
-        }
-    }
+    zcash_voting::storage::VotingDb::open_wallet_sidecar(std::path::Path::new(db_path), wallet_id)
+        .map_err(|e| format!("Error opening voting database: {e}"))
 }
 
 #[cfg(test)]
@@ -81,9 +27,7 @@ mod tests {
         let db = open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
 
         assert!(db.list_rounds().unwrap().is_empty());
-        assert!(
-            std::path::Path::new(&voting_db_path_for_wallet_db(db_path.to_str().unwrap())).exists()
-        );
+        assert!(zcash_voting::storage::VotingDb::wallet_sidecar_path(&db_path).exists());
     }
 
     #[test]
@@ -103,13 +47,15 @@ mod tests {
     }
 
     #[test]
-    fn ensure_voting_round_initializes_and_loads_round_state() {
+    fn ensure_round_initializes_and_loads_round_state() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("zcash_wallet.db");
         let db = open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
         let params = test_round_params();
 
-        let state = ensure_voting_round(&db, &params, Some(r#"{"round_name":"Demo"}"#)).unwrap();
+        db.ensure_round(&params, Some(r#"{"round_name":"Demo"}"#))
+            .unwrap();
+        let state = db.get_round_state(&params.vote_round_id).unwrap();
 
         assert_eq!(state.round_id, params.vote_round_id);
         assert_eq!(state.snapshot_height, params.snapshot_height);
@@ -117,16 +63,16 @@ mod tests {
     }
 
     #[test]
-    fn init_voting_round_rejects_invalid_round_params() {
+    fn validate_round_params_rejects_invalid_round_params() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("zcash_wallet.db");
         let db = open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
         let mut params = test_round_params();
         params.nc_root = vec![2; 31];
 
-        let err = init_voting_round(&db, &params, None).unwrap_err();
+        let err = zcash_voting::validate_round_params(&params).unwrap_err();
 
-        assert!(err.contains("Invalid voting round params"));
+        assert!(err.to_string().contains("nc_root"));
         assert!(db.list_rounds().unwrap().is_empty());
     }
 
@@ -136,7 +82,7 @@ mod tests {
         let db_path = temp_dir.path().join("zcash_wallet.db");
         let db = open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
         let params = test_round_params();
-        ensure_voting_round(&db, &params, None).unwrap();
+        db.ensure_round(&params, None).unwrap();
 
         db.clear_round(&params.vote_round_id).unwrap();
 
@@ -149,7 +95,7 @@ mod tests {
         let db_path = temp_dir.path().join("zcash_wallet.db");
         let db = open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
         let params = test_round_params();
-        ensure_voting_round(&db, &params, None).unwrap();
+        db.ensure_round(&params, None).unwrap();
         db.ensure_bundles(&params.vote_round_id, &[test_note_info(42)])
             .unwrap();
 
@@ -170,7 +116,7 @@ mod tests {
         let db_path = temp_dir.path().join("zcash_wallet.db");
         let db = open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
         let params = test_round_params();
-        ensure_voting_round(&db, &params, None).unwrap();
+        db.ensure_round(&params, None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(&params.vote_round_id, &notes).unwrap();
 
@@ -200,7 +146,7 @@ mod tests {
         let db_path = temp_dir.path().join("zcash_wallet.db");
         let db = open_voting_db(db_path.to_str().unwrap(), "wallet-1").unwrap();
         let params = test_round_params();
-        ensure_voting_round(&db, &params, None).unwrap();
+        db.ensure_round(&params, None).unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(&params.vote_round_id, &notes).unwrap();
 
