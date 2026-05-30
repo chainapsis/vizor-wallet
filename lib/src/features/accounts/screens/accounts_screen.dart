@@ -246,7 +246,6 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
         .value
         ?.activeAccountUuid;
     if (uuid == activeAccountUuid) return;
-    if (_blockIfVotingSubmissionInProgress()) return;
     final accountNotifier = ref.read(accountProvider.notifier);
     final syncNotifier = ref.read(syncProvider.notifier);
 
@@ -273,8 +272,9 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   }
 
   bool _blockIfVotingSubmissionInProgress() {
-    final guard = ref.read(votingSubmissionGuardProvider);
-    if (guard == null) return false;
+    final guards = ref.read(votingSubmissionGuardProvider);
+    if (guards.isEmpty) return false;
+    final guard = guards.first;
     showAppToast(context, guard.message);
     return true;
   }

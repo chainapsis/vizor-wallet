@@ -18,6 +18,48 @@ private func appTitle() -> String {
   Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Vizor"
 }
 
+final class VotingQuitGuardChannel {
+  private static var channel: FlutterMethodChannel?
+  private static var skipNextTerminationConfirmation = false
+
+  static func register(messenger: FlutterBinaryMessenger) {
+    channel = FlutterMethodChannel(
+      name: "com.zcash.wallet/voting_quit_guard",
+      binaryMessenger: messenger
+    )
+  }
+
+  static func requestQuitConfirmation(completion: @escaping (Bool) -> Void) {
+    guard let channel else {
+      completion(true)
+      return
+    }
+    DispatchQueue.main.async {
+      channel.invokeMethod("confirmQuitDuringVotingSubmission", arguments: nil) { result in
+        if let allowed = result as? Bool {
+          completion(allowed)
+        } else if result is FlutterError {
+          completion(false)
+        } else {
+          completion(true)
+        }
+      }
+    }
+  }
+
+  static func markNextTerminationConfirmed() {
+    skipNextTerminationConfirmation = true
+  }
+
+  static func consumeNextTerminationConfirmation() -> Bool {
+    if !skipNextTerminationConfirmation {
+      return false
+    }
+    skipNextTerminationConfirmation = false
+    return true
+  }
+}
+
 final class WindowAppearanceChannel {
   private static var shared: WindowAppearanceChannel?
 
@@ -475,6 +517,7 @@ class MainFlutterWindow: NSWindow {
 
   private var fullscreenTitleObservers: [NSObjectProtocol] = []
   private var fullscreenTitleTransitionGeneration = 0
+  private var closingAfterVotingConfirmation = false
 
   deinit {
     for observer in fullscreenTitleObservers {
@@ -504,12 +547,32 @@ class MainFlutterWindow: NSWindow {
       window: self,
       messenger: flutterViewController.engine.binaryMessenger
     )
+    VotingQuitGuardChannel.register(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
     CameraPermissionSettingsChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+  }
+
+  override func close() {
+    if closingAfterVotingConfirmation {
+      super.close()
+      return
+    }
+
+    VotingQuitGuardChannel.requestQuitConfirmation { [weak self] allowed in
+      guard let self, allowed else {
+        return
+      }
+      self.closingAfterVotingConfirmation = true
+      VotingQuitGuardChannel.markNextTerminationConfirmed()
+      self.close()
+      self.closingAfterVotingConfirmation = false
+    }
   }
 
   private func installFullscreenTitleObservers(for titleLabel: NSTextField) {

@@ -54,7 +54,7 @@ void main() {
   );
 
   test(
-    'account mutations are rejected while voting submission is guarded',
+    'destructive account mutations are rejected while voting submission is guarded',
     () async {
       final container = ProviderContainer(
         overrides: [
@@ -68,10 +68,6 @@ void main() {
           .read(votingSubmissionGuardProvider.notifier)
           .acquire(accountUuid: 'account-1', roundId: 'round-1');
 
-      await expectLater(
-        container.read(accountProvider.notifier).switchAccount('account-2'),
-        throwsA(isA<VotingSubmissionInProgressException>()),
-      );
       await expectLater(
         container.read(accountProvider.notifier).removeAccount('account-2'),
         throwsA(isA<VotingSubmissionInProgressException>()),
@@ -89,21 +85,22 @@ void main() {
     },
   );
 
-  test('voting submission guard does not replace active work', () {
+  test('voting submission guard tracks multiple active jobs', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
     final notifier = container.read(votingSubmissionGuardProvider.notifier);
-    final guard = notifier.acquire(
+    final first = notifier.acquire(
       accountUuid: 'account-1',
       roundId: 'round-1',
     );
-
-    expect(
-      () => notifier.acquire(accountUuid: 'account-2', roundId: 'round-2'),
-      throwsA(isA<VotingSubmissionInProgressException>()),
+    final second = notifier.acquire(
+      accountUuid: 'account-2',
+      roundId: 'round-2',
     );
-    expect(container.read(votingSubmissionGuardProvider), guard);
+
+    expect(container.read(votingSubmissionGuardProvider), [first, second]);
+    expect(notifier.guardForAccount('account-2'), same(second));
   });
 }
 

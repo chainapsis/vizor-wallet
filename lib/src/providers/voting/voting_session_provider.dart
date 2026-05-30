@@ -21,6 +21,7 @@ import '../../services/voting/voting_models.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
+import 'voting_submission_guard_provider.dart';
 
 /// Orchestrates one round's voting lifecycle for the UI.
 ///
@@ -40,6 +41,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   _VotingSessionContext? _currentContext;
   bool _disposeHandlerRegistered = false;
   bool _activeAccountListenerRegistered = false;
+  bool _submissionGuardListenerRegistered = false;
+  List<VotingSubmissionGuard> _activeSubmissionGuards = const [];
   int _sessionGeneration = 0;
   Completer<void> _sessionInvalidated = Completer<void>();
   int? _runningActionGeneration;
@@ -48,6 +51,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   @override
   Future<VotingSessionState> build() async {
     _reactivateForBuild();
+    _registerSubmissionGuardListener();
     _registerDisposeHandler();
     _registerActiveAccountListener();
     await _refreshSessionAccountFromActiveAccount();
@@ -82,6 +86,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     ref.onDispose(() {
       _disposeHandlerRegistered = false;
       _activeAccountListenerRegistered = false;
+      _submissionGuardListenerRegistered = false;
       // Provider disposal is round-scoped: clear abandoned prepared PCZTs but
       // keep account-wide vote-tree sync state reusable across rounds.
       final context = _currentContext;
@@ -90,6 +95,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _delegationPirPrecomputes.clear();
       _shareTrackingTimer?.cancel();
       if (context == null) return;
+      if (_activeSubmissionOwnsContext(context)) {
+        debugPrint(
+          '[zcash] Voting: process-local state reset skipped '
+          'round=${context.round.roundId} account=${context.accountUuid} '
+          'reason=provider-dispose activeSubmission=true',
+        );
+        return;
+      }
       unawaited(
         _resetVotingSessionState(
           rust: rust,
@@ -98,6 +111,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
     });
+  }
+
+  void _registerSubmissionGuardListener() {
+    if (_submissionGuardListenerRegistered) return;
+    _submissionGuardListenerRegistered = true;
+    ref.listen<List<VotingSubmissionGuard>>(votingSubmissionGuardProvider, (
+      _,
+      guards,
+    ) {
+      _activeSubmissionGuards = guards;
+    }, fireImmediately: true);
   }
 
   void _registerActiveAccountListener() {
@@ -135,13 +159,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final hadSessionAccount = _sessionAccountUuid != null;
     final previousContext = _currentContext;
     if (previousContext != null) {
-      unawaited(
-        _resetVotingSessionState(
-          rust: ref.read(votingRustApiProvider),
-          context: previousContext,
-          reason: 'active-account-switch',
-        ),
-      );
+      if (!_activeSubmissionOwnsContext(previousContext)) {
+        unawaited(
+          _resetVotingSessionState(
+            rust: ref.read(votingRustApiProvider),
+            context: previousContext,
+            reason: 'active-account-switch',
+          ),
+        );
+      }
     }
     if (hadSessionAccount) {
       _advanceSessionGeneration();
@@ -2617,6 +2643,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     return !_isDisposed && generation == _sessionGeneration;
   }
 
+  bool _activeSubmissionOwnsContext(_VotingSessionContext context) {
+    for (final guard in _activeSubmissionGuards) {
+      if (guard.accountUuid == context.accountUuid &&
+          guard.roundId == context.round.roundId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void _advanceSessionGeneration() {
     _sessionGeneration++;
     if (!_sessionInvalidated.isCompleted) {
@@ -2977,12 +3013,35 @@ class _StaleVotingSessionAction implements Exception {
   const _StaleVotingSessionAction();
 }
 
+class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
+  VotingSubmissionSessionNotifier(this._key) : super(_key.roundId);
+
+  final VotingSessionKey _key;
+
+  // This subclass must remain in this library because it overrides private
+  // hooks to pin background submissions to their original account.
+  @override
+  void _registerActiveAccountListener() {}
+
+  @override
+  Future<void> _refreshSessionAccountFromActiveAccount() async {
+    _sessionAccountUuid = _key.accountUuid;
+  }
+}
+
 final votingSessionProvider =
     AsyncNotifierProvider.family<
       VotingSessionNotifier,
       VotingSessionState,
       String
     >(VotingSessionNotifier.new);
+
+final votingSubmissionSessionProvider =
+    AsyncNotifierProvider.family<
+      VotingSubmissionSessionNotifier,
+      VotingSessionState,
+      VotingSessionKey
+    >(VotingSubmissionSessionNotifier.new);
 
 @visibleForTesting
 final votingTxConfirmationPollingProvider =

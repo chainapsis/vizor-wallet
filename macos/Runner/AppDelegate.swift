@@ -47,6 +47,16 @@ class AppDelegate: FlutterAppDelegate {
     return true
   }
 
+  override func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    if VotingQuitGuardChannel.consumeNextTerminationConfirmation() {
+      return .terminateNow
+    }
+    VotingQuitGuardChannel.requestQuitConfirmation { allowed in
+      sender.reply(toApplicationShouldTerminate: allowed)
+    }
+    return .terminateLater
+  }
+
   override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
     return true
   }

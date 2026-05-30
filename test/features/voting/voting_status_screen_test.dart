@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -14,15 +16,20 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.da
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
+import 'package:zcash_wallet/src/features/voting/widgets/voting_quit_guard_host.dart';
+import 'package:zcash_wallet/src/features/voting/widgets/voting_submission_progress_banner.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
+import 'package:zcash_wallet/src/features/voting/voting_routes.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_voting;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
@@ -133,6 +140,40 @@ void main() {
 
     expect(find.text('Choose at least one vote before submitting.'), findsOne);
     expect(find.text('Retry'), findsOne);
+  });
+
+  testWidgets('status screen clears failed submission progress', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _statusHarness()),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(
+      tester,
+      find.text('Choose at least one vote before submitting.'),
+    );
+
+    expect(find.text('Vote submission needs attention'), findsOneWidget);
+    expect(find.text('Clear'), findsWidgets);
+
+    await tester.tap(
+      find.byKey(const ValueKey('voting_status_clear_submission_error')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('voting route'), findsOneWidget);
+    expect(find.text('Vote submission needs attention'), findsNothing);
   });
 
   testWidgets('status screen explains ineligible account voting failure', (
@@ -789,6 +830,264 @@ void main() {
     expect(find.text('Retry'), findsOne);
   });
 
+  testWidgets(
+    'status screen opens already completed job on confirmation route',
+    (tester) async {
+      const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(
+            () => _StaticVotingSubmissionJobNotifier(
+              key,
+              const VotingSubmissionJobState(
+                key: key,
+                status: VotingSubmissionJobStatus.complete,
+                generation: 1,
+              ),
+            ),
+          ),
+          votingSubmissionJobSessionProvider(key).overrideWithValue(
+            AsyncValue.data(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: 'account-1',
+                phase: VotingSessionPhase.done,
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _statusHarness(
+            initialLocation: votingStatusRoute(
+              _roundId,
+              accountUuid: 'account-1',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('submission confirmed route'), findsOneWidget);
+    },
+  );
+
+  testWidgets('global progress banner appears during background submission', (
+    tester,
+  ) async {
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(_MnemonicAccountNotifier.new),
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(
+            () => _StaticVotingSubmissionJobNotifier(
+              key,
+              const VotingSubmissionJobState(
+                key: key,
+                status: VotingSubmissionJobStatus.running,
+                generation: 1,
+              ),
+            ),
+          ),
+          votingSubmissionJobSessionProvider(key).overrideWithValue(
+            AsyncValue.data(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: 'account-1',
+                phase: VotingSessionPhase.submittingShares,
+                voteSubmissionCompletedCount: 1,
+                voteSubmissionTotalCount: 2,
+                voteSubmissionProgress: 0.5,
+              ),
+            ),
+          ),
+        ],
+        child: AppTheme(
+          data: AppThemeData.light,
+          child: const Directionality(
+            textDirection: TextDirection.ltr,
+            child: VotingSubmissionProgressBanner(),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Vote submission in progress'), findsOneWidget);
+    expect(find.textContaining('Submitting shares'), findsOneWidget);
+    expect(find.textContaining('Account 1'), findsOneWidget);
+    expect(find.text('View'), findsOneWidget);
+  });
+
+  testWidgets('global progress banner dismisses completed submission', (
+    tester,
+  ) async {
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(_MnemonicAccountNotifier.new),
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(
+            () => _StaticVotingSubmissionJobNotifier(
+              key,
+              const VotingSubmissionJobState(
+                key: key,
+                status: VotingSubmissionJobStatus.complete,
+                generation: 1,
+              ),
+            ),
+          ),
+          votingSubmissionJobSessionProvider(key).overrideWithValue(
+            AsyncValue.data(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: 'account-1',
+                phase: VotingSessionPhase.done,
+              ),
+            ),
+          ),
+        ],
+        child: AppTheme(
+          data: AppThemeData.light,
+          child: const Directionality(
+            textDirection: TextDirection.ltr,
+            child: VotingSubmissionProgressBanner(),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Vote submission complete'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+    expect(find.text('View'), findsNothing);
+
+    await tester.tap(find.text('Done'));
+    await tester.pump();
+
+    expect(find.text('Vote submission complete'), findsNothing);
+    expect(find.text('Done'), findsNothing);
+  });
+
+  testWidgets('global progress banner clears failed submission', (
+    tester,
+  ) async {
+    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          accountProvider.overrideWith(_MnemonicAccountNotifier.new),
+          votingSubmissionJobsProvider.overrideWith(
+            () => _StaticVotingSubmissionJobsNotifier(
+              const VotingSubmissionJobsState(jobKeys: [key]),
+            ),
+          ),
+          votingSubmissionJobProvider(key).overrideWith(
+            () => _StaticVotingSubmissionJobNotifier(
+              key,
+              const VotingSubmissionJobState(
+                key: key,
+                status: VotingSubmissionJobStatus.error,
+                generation: 1,
+                errorMessage: 'Voting failed.',
+              ),
+            ),
+          ),
+          votingSubmissionJobSessionProvider(key).overrideWithValue(
+            AsyncValue.data(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: 'account-1',
+                phase: VotingSessionPhase.error,
+              ),
+            ),
+          ),
+        ],
+        child: AppTheme(
+          data: AppThemeData.light,
+          child: const Directionality(
+            textDirection: TextDirection.ltr,
+            child: VotingSubmissionProgressBanner(),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Vote submission needs attention'), findsOneWidget);
+    expect(find.text('Clear'), findsOneWidget);
+    expect(find.text('View'), findsOneWidget);
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
+          .value,
+      0,
+    );
+
+    await tester.tap(
+      find.byKey(ValueKey('voting_submission_banner_clear_$key')),
+    );
+    await tester.pump();
+
+    expect(find.text('Vote submission needs attention'), findsNothing);
+    expect(find.text('Clear'), findsNothing);
+  });
+
+  testWidgets('quit guard confirms while submission is active', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          votingSubmissionHasInFlightJobsProvider.overrideWithValue(true),
+        ],
+        child: AppTheme(
+          data: AppThemeData.light,
+          child: const MaterialApp(
+            home: VotingQuitGuardHost(child: SizedBox.shrink()),
+          ),
+        ),
+      ),
+    );
+
+    final keepOpen = _requestVotingQuitConfirmation();
+    await tester.pumpAndSettle();
+    expect(find.text('Vote submission in progress'), findsOneWidget);
+    expect(
+      find.text(
+        'Your vote is still being submitted. Quitting now may interrupt the process.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Keep app open'), findsOneWidget);
+    expect(find.text('Quit anyway'), findsOneWidget);
+    await tester.tap(find.text('Keep app open'));
+    await tester.pumpAndSettle();
+    expect(await keepOpen, isFalse);
+
+    final quitAnyway = _requestVotingQuitConfirmation();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Quit anyway'));
+    await tester.pumpAndSettle();
+    expect(await quitAnyway, isTrue);
+  });
+
   testWidgets('proposal detail hides View more when description fits', (
     tester,
   ) async {
@@ -944,7 +1243,7 @@ void main() {
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
-            phase: VotingWorkflowPhase.prepared,
+            phase: VotingWorkflowPhase.submittedVote,
             hasCommitmentBundle: false,
           ),
         ],
@@ -1404,7 +1703,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Use signed bundles only?'), findsOneWidget);
 
-    await tester.tap(find.text('Use Signed Bundles'));
+    await tester.tap(find.text('Use signed bundles'));
     await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
     expect(find.text('submission confirmed route'), findsOneWidget);
@@ -1519,6 +1818,18 @@ Future<void> _pumpUntilFound(
   }
 }
 
+Future<bool> _requestVotingQuitConfirmation() async {
+  const codec = StandardMethodCodec();
+  final response = Completer<ByteData?>();
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .handlePlatformMessage(
+        kVotingQuitGuardChannelName,
+        codec.encodeMethodCall(const MethodCall(kVotingQuitGuardConfirmMethod)),
+        response.complete,
+      );
+  return codec.decodeEnvelope((await response.future)!) as bool;
+}
+
 ProviderContainer _statusContainer({
   FakeVotingHttpClient? http,
   AccountNotifier Function()? accountOverride,
@@ -1528,6 +1839,7 @@ ProviderContainer _statusContainer({
   VotingRecoveryApi? recoveryApi,
   VotingRustApi? rust,
   VotingHotkeyStore? hotkeyStore,
+  List<Override> overrides = const [],
 }) {
   final effectiveHttp =
       http ?? FakeVotingHttpClient(responses: _votingHttpResponses());
@@ -1585,18 +1897,24 @@ ProviderContainer _statusContainer({
       votingTxConfirmationPollingProvider.overrideWithValue(
         const VotingTxConfirmationPolling(attempts: 1, delay: Duration.zero),
       ),
+      ...overrides,
     ],
   );
 }
 
-Widget _statusHarness({List<int>? keystoneScanResult}) {
+Widget _statusHarness({
+  List<int>? keystoneScanResult,
+  String? initialLocation,
+}) {
   final router = GoRouter(
-    initialLocation: '/voting/poll/$_roundId/status',
+    initialLocation: initialLocation ?? '/voting/poll/$_roundId/status',
     routes: [
       GoRoute(
         path: '/voting/poll/:roundId/status',
-        builder: (_, state) =>
-            VotingStatusScreen(roundId: state.pathParameters['roundId']!),
+        builder: (_, state) => VotingStatusScreen(
+          roundId: state.pathParameters['roundId']!,
+          accountUuid: state.uri.queryParameters['account'],
+        ),
       ),
       GoRoute(
         path: '/voting/poll/:roundId/submitted',
@@ -1607,6 +1925,7 @@ Widget _statusHarness({List<int>? keystoneScanResult}) {
         builder: (_, _) =>
             _ScanReturnScreen(result: keystoneScanResult ?? const [3]),
       ),
+      GoRoute(path: '/voting', builder: (_, _) => const Text('voting route')),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
@@ -1943,6 +2262,24 @@ class _HardwareAccountNotifier extends AccountNotifier {
     activeAccountUuid: 'hardware-1',
     activeAddress: 'u1hardwarevotingaddress',
   );
+}
+
+class _StaticVotingSubmissionJobNotifier extends VotingSubmissionJobNotifier {
+  _StaticVotingSubmissionJobNotifier(super.key, this._initial);
+
+  final VotingSubmissionJobState _initial;
+
+  @override
+  VotingSubmissionJobState build() => _initial;
+}
+
+class _StaticVotingSubmissionJobsNotifier extends VotingSubmissionJobsNotifier {
+  _StaticVotingSubmissionJobsNotifier(this._initial);
+
+  final VotingSubmissionJobsState _initial;
+
+  @override
+  VotingSubmissionJobsState build() => _initial;
 }
 
 class _FakeVotingRecoveryApi implements VotingRecoveryApi {
