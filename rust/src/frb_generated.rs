@@ -3951,6 +3951,7 @@ fn wire__crate__api__voting__set_ballot_intent_impl(
             let api_wallet_id = <String>::sse_decode(&mut deserializer);
             let api_round_id = <String>::sse_decode(&mut deserializer);
             let api_proposal_id = <u32>::sse_decode(&mut deserializer);
+            let api_num_options = <u32>::sse_decode(&mut deserializer);
             let api_skipped = <bool>::sse_decode(&mut deserializer);
             let api_choice = <Option<u32>>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -3961,6 +3962,7 @@ fn wire__crate__api__voting__set_ballot_intent_impl(
                         api_wallet_id,
                         api_round_id,
                         api_proposal_id,
+                        api_num_options,
                         api_skipped,
                         api_choice,
                     )?;

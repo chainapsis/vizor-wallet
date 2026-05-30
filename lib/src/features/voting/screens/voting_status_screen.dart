@@ -37,6 +37,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   String? _keystoneQrError;
   List<rust_voting.ApiDraftVote>? _pendingDraftVotes;
   List<int> _pendingProposalIds = const [];
+  Map<int, int> _pendingProposalOptionCounts = const {};
   bool _pendingRecoveryWithoutDraft = false;
 
   @override
@@ -81,6 +82,9 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
         return;
       }
       final proposals = proposalsFromRound(round);
+      final proposalOptionCounts = {
+        for (final proposal in proposals) proposal.id: proposal.options.length,
+      };
       final accountUuid = session.accountUuid;
       if (accountUuid == null) {
         _setRunError('No active account for voting session.');
@@ -130,6 +134,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
           _sessionNeedsKeystoneSigning(activeSession)) {
         _pendingDraftVotes = draftVotes;
         _pendingProposalIds = intentProposalIds;
+        _pendingProposalOptionCounts = proposalOptionCounts;
         _pendingRecoveryWithoutDraft =
             canRecoverWithoutDraft || canPollDelegationWithoutDraft;
         await _prepareKeystoneSigning(sessionNotifier);
@@ -141,6 +146,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
           if (needsDelegation) {
             _pendingDraftVotes = draftVotes;
             _pendingProposalIds = intentProposalIds;
+            _pendingProposalOptionCounts = proposalOptionCounts;
             _pendingRecoveryWithoutDraft =
                 canRecoverWithoutDraft || canPollDelegationWithoutDraft;
             await _submitAfterKeystoneSignatures(sessionNotifier);
@@ -149,6 +155,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
               sessionNotifier,
               draftVotes: draftVotes,
               intentProposalIds: intentProposalIds,
+              proposalOptionCounts: proposalOptionCounts,
               initialSession: activeSession,
             );
           }
@@ -180,6 +187,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
         sessionNotifier,
         draftVotes: draftVotes,
         intentProposalIds: intentProposalIds,
+        proposalOptionCounts: proposalOptionCounts,
         initialSession: afterDelegation ?? activeSession,
       );
     } catch (error) {
@@ -321,6 +329,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
         sessionNotifier,
         draftVotes: draftVotes,
         intentProposalIds: _pendingProposalIds,
+        proposalOptionCounts: _pendingProposalOptionCounts,
         initialSession: afterDelegation ?? beforeDelegation,
       );
       return;
@@ -329,6 +338,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       sessionNotifier,
       draftVotes: draftVotes,
       intentProposalIds: _pendingProposalIds,
+      proposalOptionCounts: _pendingProposalOptionCounts,
       initialSession: beforeDelegation,
     );
   }
@@ -337,6 +347,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     VotingSessionNotifier sessionNotifier, {
     required List<rust_voting.ApiDraftVote> draftVotes,
     required List<int> intentProposalIds,
+    required Map<int, int> proposalOptionCounts,
     VotingSessionState? initialSession,
   }) async {
     final votePollingSession =
@@ -351,6 +362,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       await sessionNotifier.castVotes(
         draftVotes: draftVotes,
         allProposalIds: intentProposalIds,
+        proposalOptionCounts: proposalOptionCounts,
       );
     }
     if (!mounted) return;
@@ -641,6 +653,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     _keystoneQrError = null;
     _pendingDraftVotes = null;
     _pendingProposalIds = const [];
+    _pendingProposalOptionCounts = const {};
     _pendingRecoveryWithoutDraft = false;
     unawaited(_run());
   }

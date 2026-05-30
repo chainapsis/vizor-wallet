@@ -1946,9 +1946,10 @@ void main() {
             ),
           ],
           allProposalIds: const [7, 8],
+          proposalOptionCounts: const {8: 4},
         );
 
-    expect(recoveryApi.ballotIntents, ['7:false:1', '8:true:null']);
+    expect(recoveryApi.ballotIntents, ['7:2:false:1', '8:4:true:null']);
     expect(rust.recordedShares, hasLength(1));
     expect(rust.recordedShares.single.bundleIndex, 0);
     expect(rust.recordedShares.single.proposalId, 7);
@@ -1989,6 +1990,7 @@ void main() {
             ),
           ],
           allProposalIds: const [7, 8],
+          proposalOptionCounts: const {8: 4},
         );
 
     final state = container.read(votingSessionProvider(kRoundId)).value!;
@@ -2998,6 +3000,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required String walletId,
     required String roundId,
     required int proposalId,
+    required int numOptions,
     required bool skipped,
     int? choice,
   }) async {
@@ -3005,7 +3008,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     if (error != null) {
       throw error;
     }
-    ballotIntents.add('$proposalId:$skipped:${choice ?? 'null'}');
+    ballotIntents.add('$proposalId:$numOptions:$skipped:${choice ?? 'null'}');
   }
 }
 

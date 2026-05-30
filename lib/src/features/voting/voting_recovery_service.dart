@@ -38,6 +38,7 @@ class VotingRecoveryService {
     required String walletId,
     required String roundId,
     required int proposalId,
+    required int numOptions,
     required bool skipped,
     int? choice,
   }) {
@@ -46,6 +47,7 @@ class VotingRecoveryService {
       walletId: walletId,
       roundId: roundId,
       proposalId: proposalId,
+      numOptions: numOptions,
       skipped: skipped,
       choice: choice,
     );
