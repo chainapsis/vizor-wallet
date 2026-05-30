@@ -15,16 +15,6 @@ use rand::{rngs::OsRng, RngCore};
 use secrecy::ExposeSecret;
 use zcash_voting::{voting_power_with_policy, BundlePolicy, NoteRef, SelectedNotes};
 
-/// FRB-safe voting round parameters loaded from the coordinator/session.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiVotingRoundParams {
-    pub vote_round_id: String,
-    pub snapshot_height: u64,
-    pub ea_pk: Vec<u8>,
-    pub nc_root: Vec<u8>,
-    pub nullifier_imt_root: Vec<u8>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// FRB-safe reference to one Orchard note selected at the snapshot height.
 pub struct ApiVotingNoteRef {
@@ -72,7 +62,7 @@ pub struct ApiSignedDelegationPayload {
     pub pczt_bytes: Vec<u8>,
     pub status: String,
     pub message: Option<String>,
-    pub submission: ApiDelegationSubmissionWire,
+    pub submission: zcash_voting::wire::DelegationSubmissionWire,
     pub eligible_weight_zatoshi: u64,
     pub delegated_weight_zatoshi: u64,
     pub bundle_count: u32,
@@ -155,8 +145,8 @@ pub struct ApiDraftVote {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiSignedVoteCommitment {
     pub proposal_id: u32,
-    pub wire: ApiVoteCommitmentWire,
-    pub shares: Vec<ApiVoteShareWire>,
+    pub wire: zcash_voting::wire::VoteCommitmentWire,
+    pub shares: Vec<zcash_voting::wire::VoteShareWire>,
 }
 
 /// Set of signed vote commitments produced for one bundle index.
@@ -166,140 +156,12 @@ pub struct ApiSignedVoteCommitments {
     pub commitments: Vec<ApiSignedVoteCommitment>,
 }
 
-/// FRB-local mirror of `zcash_voting::wire::WireEncryptedShareJson`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiWireEncryptedShareJson {
-    pub c1: String,
-    pub c2: String,
-    pub share_index: u32,
-}
-
-/// FRB-local mirror of `zcash_voting::wire::DelegationSubmissionWire`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiDelegationSubmissionWire {
-    pub rk: String,
-    pub spend_auth_sig: String,
-    pub sighash: String,
-    pub nf_signed: String,
-    pub cmx_new: String,
-    pub gov_comm: String,
-    pub gov_nullifiers: Vec<String>,
-    pub proof: String,
-    pub vote_round_id: String,
-}
-
-/// FRB-local mirror of `zcash_voting::wire::VoteCommitmentWire`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiVoteCommitmentWire {
-    pub van_nullifier: String,
-    pub vote_authority_note_new: String,
-    pub vote_commitment: String,
-    pub proposal_id: u32,
-    pub proof: String,
-    pub vote_round_id: String,
-    pub anchor_height: u32,
-    pub r_vpk: String,
-    pub vote_auth_sig: String,
-}
-
-/// FRB-local mirror of `zcash_voting::wire::VoteShareWire`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiVoteShareWire {
-    pub shares_hash: String,
-    pub proposal_id: u32,
-    pub vote_decision: u32,
-    pub encrypted_share: ApiWireEncryptedShareJson,
-    pub share_index: u32,
-    pub vc_tree_position: u64,
-    pub all_encrypted_shares: Vec<ApiWireEncryptedShareJson>,
-    pub share_comms: Vec<String>,
-    pub primary_blind: String,
-    pub submit_at: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-/// FRB-safe helper-share submission plan from `zcash_voting::share_policy`.
-pub struct ApiShareSubmissionPlan {
-    /// Unix seconds when helpers should submit this share, or 0 for immediate.
-    pub submit_at: u64,
-    /// Number of helpers this share should reach before local delivery succeeds.
-    pub target_count: u32,
-    /// Initial helper targets selected by the shared Rust policy.
-    pub target_servers: Vec<String>,
-}
-
 /// Stored vote row keyed by `(round_id, wallet_id, bundle_index, proposal_id)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiVoteRecord {
     pub proposal_id: u32,
     pub bundle_index: u32,
     pub choice: u32,
-}
-
-/// Recovery state for one delegation bundle.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiDelegationRecovery {
-    pub bundle_index: u32,
-    pub phase: String,
-    pub tx_hash: Option<String>,
-    pub van_leaf_position: Option<u32>,
-}
-
-/// Recovery state for one vote key.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiVoteRecovery {
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub choice: u32,
-    pub phase: String,
-    pub tx_hash: Option<String>,
-    pub vc_tree_position: Option<u64>,
-    pub has_commitment_bundle: bool,
-}
-
-/// Stored commitment bundle recovery data for one `(bundle_index, proposal_id)`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiCommitmentBundleRecovery {
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub commitment_bundle_json: String,
-    pub vc_tree_position: u64,
-}
-
-/// Helper-server share delegation state used for retry/resume.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiShareDelegationRecord {
-    pub round_id: String,
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub share_index: u32,
-    pub sent_to_urls: Vec<String>,
-    pub nullifier: Vec<u8>,
-    pub phase: String,
-    pub confirmed: bool,
-    pub submit_at: u64,
-    pub created_at: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiShareWorkflowRecovery {
-    pub bundle_index: u32,
-    pub proposal_id: u32,
-    pub share_index: u32,
-    pub phase: String,
-}
-
-/// Recovery summary for resuming one voting round after app restart.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiRoundRecoveryState {
-    pub round_id: String,
-    pub bundle_count: u32,
-    pub delegation: Vec<ApiDelegationRecovery>,
-    pub votes: Vec<ApiVoteRecovery>,
-    pub commitment_bundles: Vec<ApiCommitmentBundleRecovery>,
-    pub shares: Vec<ApiShareWorkflowRecovery>,
-    pub share_delegations: Vec<ApiShareDelegationRecord>,
-    pub unconfirmed_share_delegations: Vec<ApiShareDelegationRecord>,
 }
 
 fn bundle_policy(max_real_notes_per_bundle: Option<u32>) -> Result<BundlePolicy, String> {
@@ -334,14 +196,12 @@ impl TryFrom<zcash_voting::vote::SignedVoteCommitment> for ApiSignedVoteCommitme
 
     fn try_from(commitment: zcash_voting::vote::SignedVoteCommitment) -> Result<Self, Self::Error> {
         let wire = zcash_voting::wire::VoteCommitmentWire::try_from(&commitment)
-            .map(ApiVoteCommitmentWire::from)
             .map_err(|e| e.to_string())?;
         let shares = commitment
             .share_payloads
             .iter()
             .map(|payload| {
                 zcash_voting::wire::VoteShareWire::from_payload(payload, None, 0)
-                    .map(ApiVoteShareWire::from)
                     .map_err(|e| e.to_string())
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -370,132 +230,6 @@ impl TryFrom<zcash_voting::vote::SignedVoteCommitments> for ApiSignedVoteCommitm
     }
 }
 
-impl From<zcash_voting::wire::WireEncryptedShareJson> for ApiWireEncryptedShareJson {
-    fn from(value: zcash_voting::wire::WireEncryptedShareJson) -> Self {
-        Self {
-            c1: value.c1,
-            c2: value.c2,
-            share_index: value.share_index,
-        }
-    }
-}
-
-impl From<ApiWireEncryptedShareJson> for zcash_voting::wire::WireEncryptedShareJson {
-    fn from(value: ApiWireEncryptedShareJson) -> Self {
-        Self {
-            c1: value.c1,
-            c2: value.c2,
-            share_index: value.share_index,
-        }
-    }
-}
-
-impl From<zcash_voting::wire::DelegationSubmissionWire> for ApiDelegationSubmissionWire {
-    fn from(value: zcash_voting::wire::DelegationSubmissionWire) -> Self {
-        Self {
-            rk: value.rk,
-            spend_auth_sig: value.spend_auth_sig,
-            sighash: value.sighash,
-            nf_signed: value.nf_signed,
-            cmx_new: value.cmx_new,
-            gov_comm: value.gov_comm,
-            gov_nullifiers: value.gov_nullifiers,
-            proof: value.proof,
-            vote_round_id: value.vote_round_id,
-        }
-    }
-}
-
-impl From<ApiDelegationSubmissionWire> for zcash_voting::wire::DelegationSubmissionWire {
-    fn from(value: ApiDelegationSubmissionWire) -> Self {
-        Self {
-            rk: value.rk,
-            spend_auth_sig: value.spend_auth_sig,
-            sighash: value.sighash,
-            nf_signed: value.nf_signed,
-            cmx_new: value.cmx_new,
-            gov_comm: value.gov_comm,
-            gov_nullifiers: value.gov_nullifiers,
-            proof: value.proof,
-            vote_round_id: value.vote_round_id,
-        }
-    }
-}
-
-impl From<zcash_voting::wire::VoteCommitmentWire> for ApiVoteCommitmentWire {
-    fn from(value: zcash_voting::wire::VoteCommitmentWire) -> Self {
-        Self {
-            van_nullifier: value.van_nullifier,
-            vote_authority_note_new: value.vote_authority_note_new,
-            vote_commitment: value.vote_commitment,
-            proposal_id: value.proposal_id,
-            proof: value.proof,
-            vote_round_id: value.vote_round_id,
-            anchor_height: value.anchor_height,
-            r_vpk: value.r_vpk,
-            vote_auth_sig: value.vote_auth_sig,
-        }
-    }
-}
-
-impl From<ApiVoteCommitmentWire> for zcash_voting::wire::VoteCommitmentWire {
-    fn from(value: ApiVoteCommitmentWire) -> Self {
-        Self {
-            van_nullifier: value.van_nullifier,
-            vote_authority_note_new: value.vote_authority_note_new,
-            vote_commitment: value.vote_commitment,
-            proposal_id: value.proposal_id,
-            proof: value.proof,
-            vote_round_id: value.vote_round_id,
-            anchor_height: value.anchor_height,
-            r_vpk: value.r_vpk,
-            vote_auth_sig: value.vote_auth_sig,
-        }
-    }
-}
-
-impl From<zcash_voting::wire::VoteShareWire> for ApiVoteShareWire {
-    fn from(value: zcash_voting::wire::VoteShareWire) -> Self {
-        Self {
-            shares_hash: value.shares_hash,
-            proposal_id: value.proposal_id,
-            vote_decision: value.vote_decision,
-            encrypted_share: value.encrypted_share.into(),
-            share_index: value.share_index,
-            vc_tree_position: value.vc_tree_position,
-            all_encrypted_shares: value
-                .all_encrypted_shares
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            share_comms: value.share_comms,
-            primary_blind: value.primary_blind,
-            submit_at: value.submit_at,
-        }
-    }
-}
-
-impl From<ApiVoteShareWire> for zcash_voting::wire::VoteShareWire {
-    fn from(value: ApiVoteShareWire) -> Self {
-        Self {
-            shares_hash: value.shares_hash,
-            proposal_id: value.proposal_id,
-            vote_decision: value.vote_decision,
-            encrypted_share: value.encrypted_share.into(),
-            share_index: value.share_index,
-            vc_tree_position: value.vc_tree_position,
-            all_encrypted_shares: value
-                .all_encrypted_shares
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            share_comms: value.share_comms,
-            primary_blind: value.primary_blind,
-            submit_at: value.submit_at,
-        }
-    }
-}
-
 impl From<zcash_voting::storage::VoteRecord> for ApiVoteRecord {
     fn from(record: zcash_voting::storage::VoteRecord) -> Self {
         Self {
@@ -506,113 +240,6 @@ impl From<zcash_voting::storage::VoteRecord> for ApiVoteRecord {
     }
 }
 
-impl From<zcash_voting::recovery::DelegationRecovery> for ApiDelegationRecovery {
-    fn from(record: zcash_voting::recovery::DelegationRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            phase: workflow_phase_for_delegation(record.phase).to_string(),
-            tx_hash: record.tx_hash,
-            van_leaf_position: record.van_leaf_position,
-        }
-    }
-}
-
-impl From<zcash_voting::recovery::VoteRecovery> for ApiVoteRecovery {
-    fn from(record: zcash_voting::recovery::VoteRecovery) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            choice: record.choice,
-            phase: workflow_phase_for_vote(record.phase).to_string(),
-            tx_hash: record.tx_hash,
-            vc_tree_position: record.vc_tree_position,
-            has_commitment_bundle: record.has_commitment_bundle,
-        }
-    }
-}
-
-impl From<zcash_voting::recovery::RecoverableCommitmentBundle> for ApiCommitmentBundleRecovery {
-    fn from(record: zcash_voting::recovery::RecoverableCommitmentBundle) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            commitment_bundle_json: record.commitment_bundle_json,
-            vc_tree_position: record.vc_tree_position,
-        }
-    }
-}
-
-impl From<zcash_voting::ShareDelegationRecord> for ApiShareDelegationRecord {
-    fn from(record: zcash_voting::ShareDelegationRecord) -> Self {
-        Self {
-            round_id: record.round_id,
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            share_index: record.share_index,
-            sent_to_urls: record.sent_to_urls,
-            nullifier: record.nullifier,
-            phase: if record.confirmed {
-                "confirmed".to_string()
-            } else {
-                "submitted_share".to_string()
-            },
-            confirmed: record.confirmed,
-            submit_at: record.submit_at,
-            created_at: record.created_at,
-        }
-    }
-}
-
-impl From<zcash_voting::recovery::ShareWorkflow> for ApiShareWorkflowRecovery {
-    fn from(record: zcash_voting::recovery::ShareWorkflow) -> Self {
-        Self {
-            bundle_index: record.bundle_index,
-            proposal_id: record.proposal_id,
-            share_index: record.share_index,
-            phase: workflow_phase_for_share(record.phase).to_string(),
-        }
-    }
-}
-
-impl From<zcash_voting::recovery::RoundRecoverySnapshot> for ApiRoundRecoveryState {
-    fn from(state: zcash_voting::recovery::RoundRecoverySnapshot) -> Self {
-        Self {
-            round_id: state.round_id,
-            bundle_count: state.bundle_count,
-            delegation: state.delegation.into_iter().map(Into::into).collect(),
-            votes: state.votes.into_iter().map(Into::into).collect(),
-            commitment_bundles: state
-                .commitment_bundles
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            shares: state.shares.into_iter().map(Into::into).collect(),
-            share_delegations: state
-                .share_delegations
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            unconfirmed_share_delegations: state
-                .unconfirmed_share_delegations
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-        }
-    }
-}
-
-fn workflow_phase_for_delegation(phase: zcash_voting::phases::DelegationPhase) -> &'static str {
-    zcash_voting::phases::WorkflowPhase::for_delegation(phase).as_str()
-}
-
-fn workflow_phase_for_vote(phase: zcash_voting::phases::VotePhase) -> &'static str {
-    zcash_voting::phases::WorkflowPhase::for_vote(phase).as_str()
-}
-
-fn workflow_phase_for_share(phase: zcash_voting::phases::SharePhase) -> &'static str {
-    zcash_voting::phases::WorkflowPhase::for_share(phase).as_str()
-}
-
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
 /// Binary fields are base64-encoded here so Dart does not duplicate protocol
@@ -621,27 +248,26 @@ pub fn delegation_submission_wire_json(
     submission: ApiSignedDelegationPayload,
 ) -> Result<String, String> {
     catch(|| {
-        let wire: zcash_voting::wire::DelegationSubmissionWire = submission.submission.into();
-        wire.to_json().map_err(|e| e.to_string())
+        submission.submission.to_json().map_err(|e| e.to_string())
     })
 }
 
 /// Returns the vote-chain cast-vote submission body as validated wire JSON.
-pub fn vote_commitment_wire_json(commitment: ApiVoteCommitmentWire) -> Result<String, String> {
+pub fn vote_commitment_wire_json(
+    commitment: zcash_voting::wire::VoteCommitmentWire,
+) -> Result<String, String> {
     catch(|| {
-        let commitment: zcash_voting::wire::VoteCommitmentWire = commitment.into();
         commitment.to_json().map_err(|e| e.to_string())
     })
 }
 
 /// Returns the helper-server encrypted-share submission body as wire JSON.
 pub fn vote_share_wire_json(
-    share: ApiVoteShareWire,
+    share: zcash_voting::wire::VoteShareWire,
     vc_tree_position: Option<u64>,
     submit_at: u64,
 ) -> Result<String, String> {
     catch(|| {
-        let share: zcash_voting::wire::VoteShareWire = share.into();
         share
             .with_late_bound(vc_tree_position, submit_at)
             .and_then(|share| share.to_json())
@@ -661,7 +287,7 @@ pub fn plan_share_submissions(
     vote_end_time_seconds: u64,
     last_moment_buffer_seconds: Option<u64>,
     single_share: bool,
-) -> Result<Vec<ApiShareSubmissionPlan>, String> {
+) -> Result<Vec<zcash_voting::wire::ShareSubmissionPlanView>, String> {
     catch(|| {
         let share_count = usize::try_from(share_count)
             .map_err(|_| "share_count does not fit in usize".to_string())?;
@@ -697,12 +323,8 @@ pub fn plan_share_submissions(
         plans
             .into_iter()
             .map(|plan| {
-                Ok(ApiShareSubmissionPlan {
-                    submit_at: plan.submit_at,
-                    target_count: u32::try_from(plan.target_count)
-                        .map_err(|_| "share target_count does not fit in u32".to_string())?,
-                    target_servers: plan.target_servers,
-                })
+                zcash_voting::wire::ShareSubmissionPlanView::try_from(plan)
+                    .map_err(|e| e.to_string())
             })
             .collect()
     })
@@ -713,7 +335,7 @@ pub fn plan_share_submissions(
 /// Bit 0 means the share is ready for status polling. Bit 1 means it is overdue
 /// and should be retried against helpers that missed the initial submission.
 pub fn share_tracking_flags(
-    share: ApiShareDelegationRecord,
+    share: zcash_voting::wire::ShareDelegationRecordView,
     now_seconds: u64,
     vote_end_time_seconds: Option<u64>,
 ) -> Result<u32, String> {
@@ -744,7 +366,7 @@ pub fn share_tracking_flags(
 
 /// Return the next share-tracking delay in seconds using crate policy.
 pub fn next_share_tracking_delay_seconds(
-    shares: Vec<ApiShareDelegationRecord>,
+    shares: Vec<zcash_voting::wire::ShareDelegationRecordView>,
     now_seconds: u64,
 ) -> Result<Option<u64>, String> {
     catch(|| {
@@ -819,18 +441,6 @@ pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, String> {
     })
 }
 
-impl From<ApiVotingRoundParams> for zcash_voting::VotingRoundParams {
-    fn from(params: ApiVotingRoundParams) -> Self {
-        Self {
-            vote_round_id: params.vote_round_id,
-            snapshot_height: params.snapshot_height,
-            ea_pk: params.ea_pk,
-            nc_root: params.nc_root,
-            nullifier_imt_root: params.nullifier_imt_root,
-        }
-    }
-}
-
 impl From<NoteRef> for ApiVotingNoteRef {
     fn from(note: NoteRef) -> Self {
         Self {
@@ -872,8 +482,9 @@ impl TryFrom<zcash_voting::delegate::SignedDelegationBundle> for ApiSignedDelega
     fn try_from(
         result: zcash_voting::delegate::SignedDelegationBundle,
     ) -> Result<Self, Self::Error> {
-        let submission = zcash_voting::wire::DelegationSubmissionWire::try_from(&result.submission)
-            .map(ApiDelegationSubmissionWire::from)
+        let submission = zcash_voting::wire::DelegationSubmissionWire::try_from(
+            &result.submission,
+        )
             .map_err(|e| e.to_string())?;
         Ok(Self {
             pczt_bytes: result.pczt_bytes,
@@ -1019,7 +630,9 @@ impl From<zcash_voting::vote::VoteCommitStage> for ApiVoteCommitEvent {
     }
 }
 
-fn share_tracking_record(share: &ApiShareDelegationRecord) -> zcash_voting::ShareDelegationRecord {
+fn share_tracking_record(
+    share: &zcash_voting::wire::ShareDelegationRecordView,
+) -> zcash_voting::ShareDelegationRecord {
     zcash_voting::ShareDelegationRecord {
         round_id: share.round_id.clone(),
         bundle_index: share.bundle_index,
@@ -1067,12 +680,11 @@ fn require_len(bytes: &[u8], expected: usize, field: &str) -> Result<(), String>
 pub fn prepare_voting_round(
     db_path: String,
     wallet_id: String,
-    round_params: ApiVotingRoundParams,
+    round_params: zcash_voting::wire::VotingRoundParams,
     session_json: Option<String>,
 ) -> Result<(), String> {
     catch(|| {
         let db = state::open_voting_db(&db_path, &wallet_id)?;
-        let round_params: zcash_voting::VotingRoundParams = round_params.into();
         zcash_voting::validate_round_params(&round_params).map_err(|e| e.to_string())?;
         db.init_round(&round_params, session_json.as_deref())
             .map_err(|e| e.to_string())
@@ -1152,7 +764,7 @@ pub async fn setup_delegation_bundles(
     db_path: String,
     lightwalletd_url: String,
     network: String,
-    round_params: ApiVotingRoundParams,
+    round_params: zcash_voting::wire::VotingRoundParams,
     round_name: String,
     session_json: Option<String>,
     account_uuid: String,
@@ -1165,7 +777,7 @@ pub async fn setup_delegation_bundles(
         &db_path,
         &lightwalletd_url,
         &network,
-        round_params.into(),
+        round_params,
         &round_name,
         session_json.as_deref(),
         bundle_policy,
@@ -1184,7 +796,7 @@ pub async fn precompute_delegation_pir(
     lightwalletd_url: String,
     pir_server_url: String,
     network: String,
-    round_params: ApiVotingRoundParams,
+    round_params: zcash_voting::wire::VotingRoundParams,
     round_name: String,
     session_json: Option<String>,
     account_uuid: String,
@@ -1202,7 +814,7 @@ pub async fn precompute_delegation_pir(
         &lightwalletd_url,
         &pir_server_url,
         network,
-        round_params.into(),
+        round_params,
         &round_name,
         session_json.as_deref(),
         &account_uuid,
@@ -1225,7 +837,7 @@ pub async fn build_prove_and_sign_delegation_payload(
     lightwalletd_url: String,
     pir_server_url: String,
     network: String,
-    round_params: ApiVotingRoundParams,
+    round_params: zcash_voting::wire::VotingRoundParams,
     round_name: String,
     session_json: Option<String>,
     account_uuid: String,
@@ -1243,7 +855,7 @@ pub async fn build_prove_and_sign_delegation_payload(
         &lightwalletd_url,
         &pir_server_url,
         network,
-        round_params.into(),
+        round_params,
         &round_name,
         session_json.as_deref(),
         &account_uuid,
@@ -1268,7 +880,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     lightwalletd_url: String,
     pir_server_url: String,
     network: String,
-    round_params: ApiVotingRoundParams,
+    round_params: zcash_voting::wire::VotingRoundParams,
     round_name: String,
     session_json: Option<String>,
     account_uuid: String,
@@ -1290,7 +902,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         &lightwalletd_url,
         &pir_server_url,
         network,
-        round_params.into(),
+        round_params,
         &round_name,
         session_json.as_deref(),
         &account_uuid,
@@ -1336,7 +948,7 @@ pub async fn build_keystone_delegation_request(
     db_path: String,
     lightwalletd_url: String,
     network: String,
-    round_params: ApiVotingRoundParams,
+    round_params: zcash_voting::wire::VotingRoundParams,
     round_name: String,
     session_json: Option<String>,
     account_uuid: String,
@@ -1353,7 +965,7 @@ pub async fn build_keystone_delegation_request(
         &db_path,
         &lightwalletd_url,
         network,
-        round_params.into(),
+        round_params,
         &round_name,
         session_json.as_deref(),
         &account_uuid,
@@ -1428,7 +1040,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     lightwalletd_url: String,
     pir_server_url: String,
     network: String,
-    round_params: ApiVotingRoundParams,
+    round_params: zcash_voting::wire::VotingRoundParams,
     round_name: String,
     session_json: Option<String>,
     account_uuid: String,
@@ -1452,7 +1064,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
         &lightwalletd_url,
         &pir_server_url,
         network,
-        round_params.into(),
+        round_params,
         &round_name,
         session_json.as_deref(),
         &account_uuid,
@@ -1837,10 +1449,10 @@ pub fn get_round_recovery_state(
     db_path: String,
     wallet_id: String,
     round_id: String,
-) -> Result<ApiRoundRecoveryState, String> {
+) -> Result<zcash_voting::wire::RoundRecoveryStateView, String> {
     catch(|| {
         recovery::get_round_recovery_state(&db_path, &wallet_id, &round_id)
-            .map(ApiRoundRecoveryState::from)
+            .map(zcash_voting::wire::RoundRecoveryStateView::from)
     })
 }
 
@@ -2221,7 +1833,7 @@ mod tests {
             pczt_bytes: vec![],
             status: "ready".to_string(),
             message: None,
-            submission: ApiDelegationSubmissionWire {
+            submission: zcash_voting::wire::DelegationSubmissionWire {
                 proof: base64::engine::general_purpose::STANDARD.encode(vec![8; 96]),
                 rk: base64::engine::general_purpose::STANDARD.encode(vec![1; 32]),
                 spend_auth_sig: base64::engine::general_purpose::STANDARD.encode(vec![2; 64]),
@@ -2259,7 +1871,7 @@ mod tests {
 
     #[test]
     fn cast_vote_wire_json_matches_vote_chain_shape() {
-        let wire = vote_commitment_wire_json(ApiVoteCommitmentWire {
+        let wire = vote_commitment_wire_json(zcash_voting::wire::VoteCommitmentWire {
             van_nullifier: base64::engine::general_purpose::STANDARD.encode(vec![1; 32]),
             vote_authority_note_new: base64::engine::general_purpose::STANDARD.encode(vec![2; 32]),
             vote_commitment: base64::engine::general_purpose::STANDARD.encode(vec![3; 32]),
@@ -2286,11 +1898,11 @@ mod tests {
     #[test]
     fn share_wire_json_matches_helper_shape_for_live_and_recovery_payloads() {
         let live = vote_share_wire_json(
-            ApiVoteShareWire {
+            zcash_voting::wire::VoteShareWire {
                 shares_hash: "AQ==".to_string(),
                 proposal_id: 7,
                 vote_decision: 2,
-                encrypted_share: ApiWireEncryptedShareJson {
+                encrypted_share: zcash_voting::wire::WireEncryptedShareJson {
                     c1: "Aw==".to_string(),
                     c2: "BA==".to_string(),
                     share_index: 1,
@@ -2298,12 +1910,12 @@ mod tests {
                 share_index: 1,
                 vc_tree_position: 55,
                 all_encrypted_shares: vec![
-                    ApiWireEncryptedShareJson {
+                    zcash_voting::wire::WireEncryptedShareJson {
                         c1: "Aw==".to_string(),
                         c2: "BA==".to_string(),
                         share_index: 1,
                     },
-                    ApiWireEncryptedShareJson {
+                    zcash_voting::wire::WireEncryptedShareJson {
                         c1: "BQ==".to_string(),
                         c2: "Bg==".to_string(),
                         share_index: 2,
@@ -2405,11 +2017,11 @@ mod tests {
     #[test]
     fn share_wire_json_rejects_json_unsafe_integer_fields() {
         let err = vote_share_wire_json(
-            ApiVoteShareWire {
+            zcash_voting::wire::VoteShareWire {
                 shares_hash: "AQ==".to_string(),
                 proposal_id: 7,
                 vote_decision: 2,
-                encrypted_share: ApiWireEncryptedShareJson {
+                encrypted_share: zcash_voting::wire::WireEncryptedShareJson {
                     c1: "Aw==".to_string(),
                     c2: "BA==".to_string(),
                     share_index: 1,
@@ -2430,7 +2042,7 @@ mod tests {
 
     #[test]
     fn share_tracking_flags_use_crate_policy() {
-        let share = ApiShareDelegationRecord {
+        let share = zcash_voting::wire::ShareDelegationRecordView {
             round_id: ROUND_ID.to_string(),
             bundle_index: 0,
             proposal_id: 7,
@@ -2456,7 +2068,7 @@ mod tests {
 
     #[test]
     fn next_share_tracking_delay_uses_crate_ready_interval() {
-        let ready = ApiShareDelegationRecord {
+        let ready = zcash_voting::wire::ShareDelegationRecordView {
             round_id: ROUND_ID.to_string(),
             bundle_index: 0,
             proposal_id: 7,
@@ -2468,7 +2080,7 @@ mod tests {
             submit_at: 100,
             created_at: 50,
         };
-        let future = ApiShareDelegationRecord {
+        let future = zcash_voting::wire::ShareDelegationRecordView {
             submit_at: 140,
             ..ready.clone()
         };
@@ -2526,7 +2138,7 @@ mod tests {
                 pczt_bytes: vec![1],
                 status: "ready_for_submission".to_string(),
                 message: None,
-                submission: ApiDelegationSubmissionWire {
+                submission: zcash_voting::wire::DelegationSubmissionWire {
                     rk: "rk".to_string(),
                     spend_auth_sig: "sig".to_string(),
                     sighash: "sighash".to_string(),
@@ -3179,8 +2791,8 @@ mod tests {
         assert!(err.contains("Unknown network"));
     }
 
-    fn test_api_round_params() -> ApiVotingRoundParams {
-        ApiVotingRoundParams {
+    fn test_api_round_params() -> zcash_voting::wire::VotingRoundParams {
+        zcash_voting::wire::VotingRoundParams {
             vote_round_id: ROUND_ID.to_string(),
             snapshot_height: 100,
             ea_pk: vec![1; 32],

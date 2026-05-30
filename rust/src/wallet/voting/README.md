@@ -289,51 +289,32 @@ via `VotingWorkflowPhase` constants.
   `sent_to_urls`.
 - `confirmed` artifacts are omitted from pending work.
 
-## Wire Type Mirrors
+## Wire Types and FRB Scanning
 
-`zcash_voting::wire` is the canonical owner of protocol wire JSON: field names,
-`serde` renames, base64/hex shaping, and JSON-safe integer bounds. The canonical
-types are `DelegationSubmissionWire`, `VoteCommitmentWire`, `VoteShareWire`, and
-`WireEncryptedShareJson`. The intent was that every wallet could import and
-depend on these directly instead of redefining wire shapes.
+`zcash_voting::wire` remains the canonical owner of protocol wire JSON: field
+names, `serde` renames, base64/hex shaping, and JSON-safe integer bounds.
+Canonical wire structs now live directly in `zcash_voting::wire`:
+`DelegationSubmissionWire`, `VoteCommitmentWire`, `VoteShareWire`,
+`WireEncryptedShareJson`, and `VotingRoundParams`.
 
-The Vizor Flutter bridge cannot do that. `rust/src/api/voting.rs` instead
-defines FRB-local mirrors (`ApiDelegationSubmissionWire`, `ApiVoteCommitmentWire`,
-`ApiVoteShareWire`, `ApiWireEncryptedShareJson`) with field-for-field `From`
-conversions in both directions, plus thin API functions that translate, call the
-canonical serializer, and return the JSON string. The mirrors duplicate field
-layout, but the canonical encoding logic stays in `zcash_voting`.
+Vizor no longer keeps FRB-local `Api*Wire` mirrors in
+`rust/src/api/voting.rs`. Instead, FRB codegen scans the shared wire-type module
+directly via:
 
-### Why Mirrors Instead Of Importing The Canonical Types
+`flutter_rust_bridge.yaml`
 
-`flutter_rust_bridge` codegen only introspects the crate and files listed in its
-`rust_input` (Vizor's `rust/src`). It does not parse the `zcash_voting`
-dependency source, so it cannot see the canonical struct fields. With no field
-information, FRB treats an imported type as an opaque Rust object
-(`RustAutoOpaqueInner<DelegationSubmissionWire>`) instead of a by-value struct,
-and emits no Dart value class. FRB also cannot generate or be given the codec
-impls (`SseEncode` / `SseDecode`) for types defined in an external crate, and
-those traits cannot be implemented for foreign types from Vizor, so generated
-Rust fails to compile.
+`rust_input: crate::api,zcash_voting::wire`
 
-### Options Considered
+That scan emits Dart value classes under
+`lib/src/rust/third_party/zcash_voting/wire.dart`, and FRB generates the
+`SseEncode` / `SseDecode` glue in Vizor's generated bridge code. The
+`zcash_voting` crate itself stays framework-agnostic and does not depend on FRB.
 
-1. **Thin 1:1 mirrors and translation functions (chosen).** Keep the canonical
-   types and encoding in `zcash_voting`; mirror only the field layout in Vizor's
-   FRB input so codegen emits Dart value classes. Cost is duplicated field lists
-   that must be kept aligned with `zcash_voting::wire`.
-2. **Point codegen at the dependency.** Adding the `zcash_voting` wire
-   files/modules to `rust_input` makes FRB parse the canonical fields and emit
-   Dart value classes. This fixes visibility but still requires the canonical
-   wire types to implement FRB's `SseDecode`/`SseEncode`, coupling the shared
-   protocol crate to a single wallet's bridge framework. Rejected to keep
-   `zcash_voting` framework-agnostic.
-3. **Propagate raw JSON strings.** Skip typed wire structs across the bridge
-   entirely. Rejected because it gives up type safety on the Dart side.
-4. **Move codec support into `zcash_voting`.** Same coupling problem as option 2
-   at the crate level. Rejected for the same reason.
+### Why `wire_codec` Is A Separate Module
 
-The mirrors are duplicated by design. When `zcash_voting::wire` changes a field,
-rename, or type, the matching `Api*Wire` struct and its `From` conversions in
-`rust/src/api/voting.rs` must change with it; the conversions are the single
-checkpoint that keeps the mirror aligned with the canonical type.
+FRB third-party scanning still expects a struct-only module surface.
+Serialization helpers and conversions that pull richer crate internals
+(`VotingError`, payload transforms, etc.) now live in `zcash_voting::wire_codec`,
+while the DTO structs stay in `zcash_voting::wire` for scanning and strict
+consumption by Vizor. Call sites should import canonical structs from
+`zcash_voting::wire::*`.

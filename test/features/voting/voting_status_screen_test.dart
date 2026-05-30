@@ -26,6 +26,10 @@ import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart'
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_voting;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
+    as rust_frb_types;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
+    as rust_wire;
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
 
@@ -257,7 +261,7 @@ void main() {
         ..state = _recoveryState(
           bundleCount: 1,
           delegationWorkflows: const [
-            rust_voting.ApiDelegationRecovery(
+            rust_frb_types.DelegationRecoveryView(
               bundleIndex: 0,
               phase: 'submitted_delegation',
               txHash: 'delegation-tx',
@@ -346,7 +350,7 @@ void main() {
       ..state = _recoveryState(
         bundleCount: 2,
         delegationWorkflows: const [
-          rust_voting.ApiDelegationRecovery(
+          rust_frb_types.DelegationRecoveryView(
             bundleIndex: 0,
             phase: 'submitted_delegation',
             txHash: 'delegation-tx',
@@ -461,7 +465,7 @@ void main() {
 
     final shareNullifier = Uint8List.fromList(List.filled(32, 1));
     final shareId = List.filled(32, '01').join();
-    final share = rust_voting.ApiShareDelegationRecord(
+    final share = rust_frb_types.ShareDelegationRecordView(
       roundId: _roundId,
       bundleIndex: 0,
       proposalId: 1,
@@ -476,7 +480,7 @@ void main() {
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
         delegationTxHashes: [
-          rust_voting.ApiDelegationRecovery(
+          rust_frb_types.DelegationRecoveryView(
             bundleIndex: 0,
             phase: VotingWorkflowPhase.submittedDelegation,
             txHash: 'delegation-0',
@@ -538,7 +542,7 @@ void main() {
 
     final shareNullifier = Uint8List.fromList(List.filled(32, 1));
     final shareId = List.filled(32, '01').join();
-    final share = rust_voting.ApiShareDelegationRecord(
+    final share = rust_frb_types.ShareDelegationRecordView(
       roundId: _roundId,
       bundleIndex: 0,
       proposalId: 1,
@@ -553,7 +557,7 @@ void main() {
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
         delegationTxHashes: [
-          rust_voting.ApiDelegationRecovery(
+          rust_frb_types.DelegationRecoveryView(
             bundleIndex: 0,
             phase: VotingWorkflowPhase.submittedDelegation,
             txHash: 'delegation-0',
@@ -658,7 +662,7 @@ void main() {
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
         delegationTxHashes: [
-          rust_voting.ApiDelegationRecovery(
+          rust_frb_types.DelegationRecoveryView(
             bundleIndex: 0,
             phase: VotingWorkflowPhase.submittedDelegation,
             txHash: 'delegation-0',
@@ -900,7 +904,7 @@ void main() {
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
         votes: const [
-          rust_voting.ApiVoteRecovery(
+          rust_frb_types.VoteRecoveryView(
             bundleIndex: 0,
             proposalId: 1,
             choice: 0,
@@ -1785,22 +1789,22 @@ Map<String, dynamic> _roundStatusJson() => {
   ],
 };
 
-rust_voting.ApiRoundRecoveryState _recoveryState({
+rust_frb_types.RoundRecoveryStateView _recoveryState({
   int bundleCount = 1,
-  List<rust_voting.ApiDelegationRecovery> delegationWorkflows = const [],
-  List<rust_voting.ApiDelegationRecovery> delegationTxHashes = const [],
-  List<rust_voting.ApiVoteRecovery> votes = const [],
-  List<rust_voting.ApiVoteRecovery> voteWorkflows = const [],
-  List<rust_voting.ApiVoteRecovery> voteTxHashes = const [],
-  List<rust_voting.ApiCommitmentBundleRecovery> commitmentBundles = const [],
-  List<rust_voting.ApiShareWorkflowRecovery> shareWorkflows = const [],
-  List<rust_voting.ApiShareDelegationRecord> shareDelegations = const [],
-  List<rust_voting.ApiShareDelegationRecord> unconfirmedShareDelegations =
+  List<rust_frb_types.DelegationRecoveryView> delegationWorkflows = const [],
+  List<rust_frb_types.DelegationRecoveryView> delegationTxHashes = const [],
+  List<rust_frb_types.VoteRecoveryView> votes = const [],
+  List<rust_frb_types.VoteRecoveryView> voteWorkflows = const [],
+  List<rust_frb_types.VoteRecoveryView> voteTxHashes = const [],
+  List<rust_frb_types.CommitmentBundleRecoveryView> commitmentBundles = const [],
+  List<rust_frb_types.ShareWorkflowRecoveryView> shareWorkflows = const [],
+  List<rust_frb_types.ShareDelegationRecordView> shareDelegations = const [],
+  List<rust_frb_types.ShareDelegationRecordView> unconfirmedShareDelegations =
       const [],
 }) {
-  final delegationByBundle = <int, rust_voting.ApiDelegationRecovery>{
+  final delegationByBundle = <int, rust_frb_types.DelegationRecoveryView>{
     for (final record in delegationWorkflows)
-      record.bundleIndex: rust_voting.ApiDelegationRecovery(
+      record.bundleIndex: rust_frb_types.DelegationRecoveryView(
         bundleIndex: record.bundleIndex,
         phase: record.phase,
         txHash: record.txHash,
@@ -1808,7 +1812,7 @@ rust_voting.ApiRoundRecoveryState _recoveryState({
       ),
   };
   for (final record in delegationTxHashes) {
-    delegationByBundle[record.bundleIndex] = rust_voting.ApiDelegationRecovery(
+    delegationByBundle[record.bundleIndex] = rust_frb_types.DelegationRecoveryView(
       bundleIndex: record.bundleIndex,
       phase: VotingWorkflowPhase.submittedDelegation,
       txHash: record.txHash,
@@ -1816,11 +1820,11 @@ rust_voting.ApiRoundRecoveryState _recoveryState({
     );
   }
 
-  final votesByKey = <String, rust_voting.ApiVoteRecovery>{
+  final votesByKey = <String, rust_frb_types.VoteRecoveryView>{
     for (final record in votes)
       '${record.bundleIndex}:${record.proposalId}': record,
     for (final record in voteWorkflows)
-      '${record.bundleIndex}:${record.proposalId}': rust_voting.ApiVoteRecovery(
+      '${record.bundleIndex}:${record.proposalId}': rust_frb_types.VoteRecoveryView(
         bundleIndex: record.bundleIndex,
         proposalId: record.proposalId,
         choice: 0,
@@ -1833,7 +1837,7 @@ rust_voting.ApiRoundRecoveryState _recoveryState({
   for (final record in voteTxHashes) {
     final key = '${record.bundleIndex}:${record.proposalId}';
     final current = votesByKey[key];
-    votesByKey[key] = rust_voting.ApiVoteRecovery(
+    votesByKey[key] = rust_frb_types.VoteRecoveryView(
       bundleIndex: record.bundleIndex,
       proposalId: record.proposalId,
       choice: current?.choice ?? 0,
@@ -1844,7 +1848,7 @@ rust_voting.ApiRoundRecoveryState _recoveryState({
     );
   }
 
-  return rust_voting.ApiRoundRecoveryState(
+  return rust_frb_types.RoundRecoveryStateView(
     roundId: _roundId,
     bundleCount: bundleCount,
     delegation: delegationByBundle.values.toList(),
@@ -1916,7 +1920,7 @@ class _FakeVotingRecoveryApi implements VotingRecoveryApi {
   }) async {}
 
   @override
-  Future<rust_voting.ApiRoundRecoveryState> getRoundRecoveryState({
+  Future<rust_frb_types.RoundRecoveryStateView> getRoundRecoveryState({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -1953,12 +1957,12 @@ class _FakeVotingRecoveryApi implements VotingRecoveryApi {
 }
 
 class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
-  rust_voting.ApiRoundRecoveryState state = _recoveryState();
+  rust_frb_types.RoundRecoveryStateView state = _recoveryState();
   rust_voting.ApiRoundPlan? roundPlan;
   final ballotIntents = <String>[];
 
   @override
-  Future<rust_voting.ApiRoundRecoveryState> getRoundRecoveryState({
+  Future<rust_frb_types.RoundRecoveryStateView> getRoundRecoveryState({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -2014,7 +2018,7 @@ class _FailingVotingPowerRustApi extends _NoopVotingRustApi {
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -2030,7 +2034,7 @@ class _IneligibleVotingRustApi extends _NoopVotingRustApi {
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -2168,7 +2172,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -2187,7 +2191,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String lightwalletdUrl,
     required String pirServerUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -2210,7 +2214,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String lightwalletdUrl,
     required String pirServerUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -2225,7 +2229,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         pcztBytes: Uint8List.fromList(const []),
         status: 'ready_for_submission',
         message: null,
-        submission: rust_voting.ApiDelegationSubmissionWire(
+        submission: rust_wire.DelegationSubmissionWire(
           rk: base64Encode(const [2]),
           spendAuthSig: base64Encode(const [3]),
           sighash: base64Encode(const [4]),
@@ -2285,7 +2289,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -2348,7 +2352,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String lightwalletdUrl,
     required String pirServerUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -2366,7 +2370,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         pcztBytes: Uint8List.fromList(const []),
         status: 'ready_for_submission',
         message: null,
-        submission: rust_voting.ApiDelegationSubmissionWire(
+        submission: rust_wire.DelegationSubmissionWire(
           rk: base64Encode(signature?.rk ?? const [4]),
           spendAuthSig: base64Encode(keystoneSig),
           sighash: base64Encode(keystoneSighash),
@@ -2425,7 +2429,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }) async {
     recoveryApi.state = _recoveryState(
       delegationTxHashes: [
-        rust_voting.ApiDelegationRecovery(
+        rust_frb_types.DelegationRecoveryView(
           bundleIndex: bundleIndex,
           phase: VotingWorkflowPhase.submittedDelegation,
           txHash: txHash,
@@ -2489,7 +2493,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
 
   @override
   Future<String> voteCommitmentWireJson({
-    required rust_voting.ApiVoteCommitmentWire commitment,
+    required rust_wire.VoteCommitmentWire commitment,
   }) async {
     return jsonEncode({
       'van_nullifier': commitment.vanNullifier,
@@ -2506,7 +2510,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
 
   @override
   Future<String> voteShareWireJson({
-    required rust_voting.ApiVoteShareWire share,
+    required rust_wire.VoteShareWire share,
     BigInt? vcTreePosition,
     required BigInt submitAt,
   }) async {
@@ -2537,7 +2541,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<List<rust_voting.ApiShareSubmissionPlan>> planShareSubmissions({
+  Future<List<rust_frb_types.ShareSubmissionPlanView>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
     required BigInt nowSeconds,
@@ -2548,7 +2552,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     final targetCount = serverUrls.isEmpty ? 0 : (serverUrls.length / 2).ceil();
     return [
       for (var i = 0; i < shareCount; i++)
-        rust_voting.ApiShareSubmissionPlan(
+        rust_frb_types.ShareSubmissionPlanView(
           submitAt: BigInt.zero,
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),
@@ -2558,7 +2562,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
 
   @override
   Future<int> shareTrackingFlags({
-    required rust_voting.ApiShareDelegationRecord share,
+    required rust_frb_types.ShareDelegationRecordView share,
     required BigInt nowSeconds,
     BigInt? voteEndTimeSeconds,
   }) async {
@@ -2583,7 +2587,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
 
   @override
   Future<BigInt?> nextShareTrackingDelaySeconds({
-    required List<rust_voting.ApiShareDelegationRecord> shares,
+    required List<rust_frb_types.ShareDelegationRecordView> shares,
     required BigInt nowSeconds,
   }) async {
     final now = nowSeconds.toInt();
@@ -2640,7 +2644,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }) async {
     recoveryApi.state = _recoveryState(
       delegationTxHashes: [
-        rust_voting.ApiDelegationRecovery(
+        rust_frb_types.DelegationRecoveryView(
           bundleIndex: bundleIndex,
           phase: VotingWorkflowPhase.submittedDelegation,
           txHash: 'delegation-tx',
@@ -2648,7 +2652,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
         ),
       ],
       voteTxHashes: [
-        rust_voting.ApiVoteRecovery(
+        rust_frb_types.VoteRecoveryView(
           bundleIndex: bundleIndex,
           proposalId: proposalId,
           choice: 0,
@@ -2694,17 +2698,17 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int shareIndex,
   }) async {
     final current = recoveryApi.state;
-    bool matches(rust_voting.ApiShareDelegationRecord share) {
+    bool matches(rust_frb_types.ShareDelegationRecordView share) {
       return share.roundId == roundId &&
           share.bundleIndex == bundleIndex &&
           share.proposalId == proposalId &&
           share.shareIndex == shareIndex;
     }
 
-    rust_voting.ApiShareDelegationRecord confirmed(
-      rust_voting.ApiShareDelegationRecord share,
+    rust_frb_types.ShareDelegationRecordView confirmed(
+      rust_frb_types.ShareDelegationRecordView share,
     ) {
-      return rust_voting.ApiShareDelegationRecord(
+      return rust_frb_types.ShareDelegationRecordView(
         roundId: share.roundId,
         bundleIndex: share.bundleIndex,
         proposalId: share.proposalId,
@@ -2764,7 +2768,7 @@ rust_voting.ApiSignedVoteCommitments _commitments({
   required int proposalId,
   required int choice,
 }) {
-  final wireShare = rust_voting.ApiWireEncryptedShareJson(
+  final wireShare = rust_wire.WireEncryptedShareJson(
     c1: base64Encode(Uint8List.fromList(const [8])),
     c2: base64Encode(Uint8List.fromList(const [9])),
     shareIndex: 0,
@@ -2774,7 +2778,7 @@ rust_voting.ApiSignedVoteCommitments _commitments({
     commitments: [
       rust_voting.ApiSignedVoteCommitment(
         proposalId: proposalId,
-        wire: rust_voting.ApiVoteCommitmentWire(
+        wire: rust_wire.VoteCommitmentWire(
           vanNullifier: base64Encode(Uint8List.fromList(List.filled(32, 1))),
           voteAuthorityNoteNew: base64Encode(
             Uint8List.fromList(List.filled(32, 2)),
@@ -2788,7 +2792,7 @@ rust_voting.ApiSignedVoteCommitments _commitments({
           voteAuthSig: base64Encode(Uint8List.fromList(List.filled(64, 12))),
         ),
         shares: [
-          rust_voting.ApiVoteShareWire(
+          rust_wire.VoteShareWire(
             sharesHash: base64Encode(Uint8List.fromList(List.filled(32, 7))),
             proposalId: proposalId,
             voteDecision: choice,

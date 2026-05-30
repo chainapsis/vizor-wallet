@@ -11,6 +11,7 @@ import '../../providers/rpc_endpoint_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../../rust/api/voting.dart' as rust_voting;
+import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_config_loader.dart';
@@ -262,7 +263,7 @@ abstract interface class VotingRustApi {
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -274,7 +275,7 @@ abstract interface class VotingRustApi {
     required String lightwalletdUrl,
     required String pirServerUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -289,7 +290,7 @@ abstract interface class VotingRustApi {
     required String lightwalletdUrl,
     required String pirServerUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -305,7 +306,7 @@ abstract interface class VotingRustApi {
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -350,7 +351,7 @@ abstract interface class VotingRustApi {
     required String lightwalletdUrl,
     required String pirServerUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -444,16 +445,16 @@ abstract interface class VotingRustApi {
   });
 
   Future<String> voteCommitmentWireJson({
-    required rust_voting.ApiVoteCommitmentWire commitment,
+    required rust_wire.VoteCommitmentWire commitment,
   });
 
   Future<String> voteShareWireJson({
-    required rust_voting.ApiVoteShareWire share,
+    required rust_wire.VoteShareWire share,
     BigInt? vcTreePosition,
     required BigInt submitAt,
   });
 
-  Future<List<rust_voting.ApiShareSubmissionPlan>> planShareSubmissions({
+  Future<List<rust_wire.ShareSubmissionPlanView>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
     required BigInt nowSeconds,
@@ -463,13 +464,13 @@ abstract interface class VotingRustApi {
   });
 
   Future<int> shareTrackingFlags({
-    required rust_voting.ApiShareDelegationRecord share,
+    required rust_wire.ShareDelegationRecordView share,
     required BigInt nowSeconds,
     BigInt? voteEndTimeSeconds,
   });
 
   Future<BigInt?> nextShareTrackingDelaySeconds({
-    required List<rust_voting.ApiShareDelegationRecord> shares,
+    required List<rust_wire.ShareDelegationRecordView> shares,
     required BigInt nowSeconds,
   });
 
@@ -538,7 +539,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -562,7 +563,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String lightwalletdUrl,
     required String pirServerUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -592,7 +593,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String lightwalletdUrl,
     required String pirServerUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -626,7 +627,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -720,7 +721,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String lightwalletdUrl,
     required String pirServerUrl,
     required String network,
-    required rust_voting.ApiVotingRoundParams roundParams,
+    required rust_wire.VotingRoundParams roundParams,
     required String roundName,
     String? sessionJson,
     required String accountUuid,
@@ -912,14 +913,14 @@ class FrbVotingRustApi implements VotingRustApi {
 
   @override
   Future<String> voteCommitmentWireJson({
-    required rust_voting.ApiVoteCommitmentWire commitment,
+    required rust_wire.VoteCommitmentWire commitment,
   }) {
     return rust_voting.voteCommitmentWireJson(commitment: commitment);
   }
 
   @override
   Future<String> voteShareWireJson({
-    required rust_voting.ApiVoteShareWire share,
+    required rust_wire.VoteShareWire share,
     BigInt? vcTreePosition,
     required BigInt submitAt,
   }) {
@@ -931,7 +932,7 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<List<rust_voting.ApiShareSubmissionPlan>> planShareSubmissions({
+  Future<List<rust_wire.ShareSubmissionPlanView>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
     required BigInt nowSeconds,
@@ -951,7 +952,7 @@ class FrbVotingRustApi implements VotingRustApi {
 
   @override
   Future<int> shareTrackingFlags({
-    required rust_voting.ApiShareDelegationRecord share,
+    required rust_wire.ShareDelegationRecordView share,
     required BigInt nowSeconds,
     BigInt? voteEndTimeSeconds,
   }) {
@@ -964,7 +965,7 @@ class FrbVotingRustApi implements VotingRustApi {
 
   @override
   Future<BigInt?> nextShareTrackingDelaySeconds({
-    required List<rust_voting.ApiShareDelegationRecord> shares,
+    required List<rust_wire.ShareDelegationRecordView> shares,
     required BigInt nowSeconds,
   }) {
     return rust_voting.nextShareTrackingDelaySeconds(

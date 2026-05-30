@@ -13,6 +13,7 @@ import '../../features/voting/voting_formatters.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../features/voting/voting_share_timing.dart';
 import '../../rust/api/voting.dart' as rust_voting;
+import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_helper_health_tracker.dart';
@@ -1859,7 +1860,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required VotingApiClient api,
     required _VotingSessionContext context,
     required VotingResumePlan plan,
-    required rust_voting.ApiShareDelegationRecord share,
+    required rust_wire.ShareDelegationRecordView share,
     required List<String> serverUrls,
   }) async {
     final rust = ref.read(votingRustApiProvider);
@@ -1961,7 +1962,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<bool> _shareConfirmedByAnyHelper({
     required VotingApiClient api,
     required VotingHelperHealthTracker helperHealth,
-    required rust_voting.ApiShareDelegationRecord share,
+    required rust_wire.ShareDelegationRecordView share,
     required Iterable<String> serverUrls,
   }) async {
     final shareId = bytesToHex(share.nullifier);

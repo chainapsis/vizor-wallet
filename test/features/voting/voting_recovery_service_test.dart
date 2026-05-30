@@ -5,6 +5,8 @@ import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
 import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_voting;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
+    as rust_frb_types;
 
 void main() {
   test('empty round resumes delegation for every bundle', () async {
@@ -422,12 +424,12 @@ void main() {
 class FakeVotingRecoveryApi implements VotingRecoveryApi {
   FakeVotingRecoveryApi({required this.state});
 
-  rust_voting.ApiRoundRecoveryState state;
+  rust_frb_types.RoundRecoveryStateView state;
   final clearCalls = <String>[];
   final addSentServersCalls = <AddSentServersCall>[];
 
   @override
-  Future<rust_voting.ApiRoundRecoveryState> getRoundRecoveryState({
+  Future<rust_frb_types.RoundRecoveryStateView> getRoundRecoveryState({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -529,25 +531,25 @@ class AddSentServersCall {
           _listEquals(newUrls, other.newUrls);
 }
 
-rust_voting.ApiRoundRecoveryState recoveryState({
+rust_frb_types.RoundRecoveryStateView recoveryState({
   int bundleCount = 0,
-  List<rust_voting.ApiDelegationRecovery> delegationTxHashes = const [],
-  List<rust_voting.ApiDelegationRecovery> delegationWorkflows =
+  List<rust_frb_types.DelegationRecoveryView> delegationTxHashes = const [],
+  List<rust_frb_types.DelegationRecoveryView> delegationWorkflows =
       const [],
-  List<rust_voting.ApiVoteRecovery> votes = const [],
-  List<rust_voting.ApiVoteRecovery> voteWorkflows = const [],
-  List<rust_voting.ApiVoteRecovery> voteTxHashes = const [],
-  List<rust_voting.ApiCommitmentBundleRecovery> commitmentBundles = const [],
-  List<rust_voting.ApiShareWorkflowRecovery> shareWorkflows = const [],
-  List<rust_voting.ApiShareDelegationRecord> shareDelegations = const [],
-  List<rust_voting.ApiShareDelegationRecord> unconfirmedShareDelegations =
+  List<rust_frb_types.VoteRecoveryView> votes = const [],
+  List<rust_frb_types.VoteRecoveryView> voteWorkflows = const [],
+  List<rust_frb_types.VoteRecoveryView> voteTxHashes = const [],
+  List<rust_frb_types.CommitmentBundleRecoveryView> commitmentBundles = const [],
+  List<rust_frb_types.ShareWorkflowRecoveryView> shareWorkflows = const [],
+  List<rust_frb_types.ShareDelegationRecordView> shareDelegations = const [],
+  List<rust_frb_types.ShareDelegationRecordView> unconfirmedShareDelegations =
       const [],
 }) {
-  final delegationByBundle = <int, rust_voting.ApiDelegationRecovery>{
+  final delegationByBundle = <int, rust_frb_types.DelegationRecoveryView>{
     for (final record in delegationWorkflows) record.bundleIndex: record,
   };
   for (final record in delegationTxHashes) {
-    delegationByBundle[record.bundleIndex] = rust_voting.ApiDelegationRecovery(
+    delegationByBundle[record.bundleIndex] = rust_frb_types.DelegationRecoveryView(
       bundleIndex: record.bundleIndex,
       phase: record.phase,
       txHash: record.txHash,
@@ -555,7 +557,7 @@ rust_voting.ApiRoundRecoveryState recoveryState({
     );
   }
 
-  final votesByKey = <String, rust_voting.ApiVoteRecovery>{
+  final votesByKey = <String, rust_frb_types.VoteRecoveryView>{
     for (final record in votes)
       '${record.bundleIndex}:${record.proposalId}': record,
     for (final record in voteWorkflows)
@@ -564,7 +566,7 @@ rust_voting.ApiRoundRecoveryState recoveryState({
   for (final record in voteTxHashes) {
     final key = '${record.bundleIndex}:${record.proposalId}';
     final current = votesByKey[key];
-    votesByKey[key] = rust_voting.ApiVoteRecovery(
+    votesByKey[key] = rust_frb_types.VoteRecoveryView(
       bundleIndex: record.bundleIndex,
       proposalId: record.proposalId,
       choice: current?.choice ?? record.choice,
@@ -576,7 +578,7 @@ rust_voting.ApiRoundRecoveryState recoveryState({
     );
   }
 
-  return rust_voting.ApiRoundRecoveryState(
+  return rust_frb_types.RoundRecoveryStateView(
     roundId: 'round-1',
     bundleCount: bundleCount,
     delegation: delegationByBundle.values.toList(),
@@ -588,13 +590,13 @@ rust_voting.ApiRoundRecoveryState recoveryState({
   );
 }
 
-rust_voting.ApiDelegationRecovery delegationWorkflow({
+rust_frb_types.DelegationRecoveryView delegationWorkflow({
   required int bundleIndex,
   required String phase,
   String? txHash,
   int? vanLeafPosition,
 }) {
-  return rust_voting.ApiDelegationRecovery(
+  return rust_frb_types.DelegationRecoveryView(
     bundleIndex: bundleIndex,
     phase: phase,
     txHash: txHash,
@@ -602,11 +604,11 @@ rust_voting.ApiDelegationRecovery delegationWorkflow({
   );
 }
 
-rust_voting.ApiDelegationRecovery delegationTx({
+rust_frb_types.DelegationRecoveryView delegationTx({
   required int bundleIndex,
   String txHash = 'delegation-tx',
 }) {
-  return rust_voting.ApiDelegationRecovery(
+  return rust_frb_types.DelegationRecoveryView(
     bundleIndex: bundleIndex,
     phase: VotingWorkflowPhase.submittedDelegation,
     txHash: txHash,
@@ -614,12 +616,12 @@ rust_voting.ApiDelegationRecovery delegationTx({
   );
 }
 
-rust_voting.ApiVoteRecovery vote({
+rust_frb_types.VoteRecoveryView vote({
   required int bundleIndex,
   required int proposalId,
   int choice = 0,
 }) {
-  return rust_voting.ApiVoteRecovery(
+  return rust_frb_types.VoteRecoveryView(
     bundleIndex: bundleIndex,
     proposalId: proposalId,
     choice: choice,
@@ -628,12 +630,12 @@ rust_voting.ApiVoteRecovery vote({
   );
 }
 
-rust_voting.ApiVoteRecovery voteTx({
+rust_frb_types.VoteRecoveryView voteTx({
   required int bundleIndex,
   required int proposalId,
   String txHash = 'vote-tx',
 }) {
-  return rust_voting.ApiVoteRecovery(
+  return rust_frb_types.VoteRecoveryView(
     bundleIndex: bundleIndex,
     proposalId: proposalId,
     choice: 0,
@@ -643,7 +645,7 @@ rust_voting.ApiVoteRecovery voteTx({
   );
 }
 
-rust_voting.ApiVoteRecovery voteWorkflow({
+rust_frb_types.VoteRecoveryView voteWorkflow({
   required int bundleIndex,
   required int proposalId,
   required String phase,
@@ -651,7 +653,7 @@ rust_voting.ApiVoteRecovery voteWorkflow({
   int? vcTreePosition,
   bool hasCommitmentBundle = false,
 }) {
-  return rust_voting.ApiVoteRecovery(
+  return rust_frb_types.VoteRecoveryView(
     bundleIndex: bundleIndex,
     proposalId: proposalId,
     choice: 0,
@@ -662,13 +664,13 @@ rust_voting.ApiVoteRecovery voteWorkflow({
   );
 }
 
-rust_voting.ApiCommitmentBundleRecovery commitmentBundle({
+rust_frb_types.CommitmentBundleRecoveryView commitmentBundle({
   required int bundleIndex,
   required int proposalId,
   String commitmentBundleJson = '{}',
   int vcTreePosition = 0,
 }) {
-  return rust_voting.ApiCommitmentBundleRecovery(
+  return rust_frb_types.CommitmentBundleRecoveryView(
     bundleIndex: bundleIndex,
     proposalId: proposalId,
     commitmentBundleJson: commitmentBundleJson,
@@ -676,14 +678,14 @@ rust_voting.ApiCommitmentBundleRecovery commitmentBundle({
   );
 }
 
-rust_voting.ApiShareDelegationRecord share({
+rust_frb_types.ShareDelegationRecordView share({
   int bundleIndex = 0,
   int proposalId = 1,
   int shareIndex = 0,
   bool confirmed = false,
   List<String> sentToUrls = const ['https://helper-a.example'],
 }) {
-  return rust_voting.ApiShareDelegationRecord(
+  return rust_frb_types.ShareDelegationRecordView(
     roundId: 'round-1',
     bundleIndex: bundleIndex,
     proposalId: proposalId,
