@@ -1171,7 +1171,7 @@ pub async fn select_voting_notes(
     let network = keys::parse_network(&network)?;
     let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
     let voting_db = state::open_voting_db(&db_path, &account_uuid)?;
-    let selected = zcash_voting::select_notes_with_lwd(
+    let selected = zcash_voting::selection::select_notes_with_lwd(
         &voting_db,
         &db_path,
         &lightwalletd_url,
@@ -1706,10 +1706,9 @@ pub fn reset_tree_client(
 
 /// Clear process-local voting state for a wallet or round.
 ///
-/// Passing a non-empty round ID clears prepared delegation PCZTs only for that
-/// round. Passing `None` or an empty round ID performs account-wide cleanup:
-/// prepared PCZTs for the wallet are cleared and the cached vote-tree client is
-/// dropped.
+/// Passing a non-empty round ID cancels in-flight work for that round. Passing
+/// `None` or an empty round ID also drops the cached vote-tree client for the
+/// wallet.
 pub fn reset_voting_session_state(
     db_path: String,
     wallet_id: String,
@@ -1723,16 +1722,12 @@ pub fn reset_voting_session_state(
         } else {
             0
         };
-        let db = state::open_voting_db(&db_path, &wallet_id)?;
-        let pczt_count = zcash_voting::delegate::clear_prepared_setups(&db, round_id.as_deref())
-            .map_err(|e| format!("clear prepared delegation PCZTs failed: {e}"))?;
         log::info!(
             "voting: reset process-local session state \
-             (wallet_id={}, round_id={:?}, tree_entries={}, prepared_pczts={})",
+             (wallet_id={}, round_id={:?}, tree_entries={})",
             wallet_id,
             round_id,
-            tree_count,
-            pczt_count
+            tree_count
         );
         Ok(())
     })

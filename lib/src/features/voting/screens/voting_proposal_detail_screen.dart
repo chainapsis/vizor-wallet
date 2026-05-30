@@ -13,10 +13,12 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../providers/account_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../rust/api/voting.dart' as rust_voting;
+import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
@@ -37,6 +39,7 @@ class _VotingProposalDetailScreenState
     extends ConsumerState<VotingProposalDetailScreen> {
   bool _votingPowerPreparationStarted = false;
   bool _votingPowerPreparationInFlight = false;
+  bool _delegationPirPrecomputeStarted = false;
 
   @override
   void didUpdateWidget(covariant VotingProposalDetailScreen oldWidget) {
@@ -44,6 +47,7 @@ class _VotingProposalDetailScreenState
     if (oldWidget.roundId != widget.roundId) {
       _votingPowerPreparationStarted = false;
       _votingPowerPreparationInFlight = false;
+      _delegationPirPrecomputeStarted = false;
     }
   }
 
@@ -88,6 +92,7 @@ class _VotingProposalDetailScreenState
                   )
                 : null;
             _maybePrepareVotingPower(state);
+            _maybePrecomputeDelegationPir(state);
             // Foreground recovery takes precedence over the read-only voted view.
             // Accepted helper shares may still be tracked after submission, but
             // that background work should not keep this screen resumable.
@@ -193,6 +198,49 @@ class _VotingProposalDetailScreenState
             }),
       );
     });
+  }
+
+  // Warm the delegation PIR / padded-note secrets as soon as the round page
+  // opens, rather than waiting for the review screen. The warm-up is decoupled
+  // from PCZT construction, so it only needs the round notes and a software
+  // seed; hardware accounts (no local mnemonic) are skipped.
+  void _maybePrecomputeDelegationPir(VotingSessionState state) {
+    if (_delegationPirPrecomputeStarted ||
+        state.isHardwareAccount ||
+        state.accountUuid == null ||
+        !_shouldPrepareVotingPower(state)) {
+      return;
+    }
+
+    _delegationPirPrecomputeStarted = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_startDelegationPirPrecompute());
+    });
+  }
+
+  Future<void> _startDelegationPirPrecompute() async {
+    final accountUuid = ref
+        .read(votingSessionProvider(widget.roundId))
+        .value
+        ?.accountUuid;
+    if (accountUuid == null) return;
+    try {
+      final mnemonic = await ref
+          .read(accountProvider.notifier)
+          .getMnemonicForAccount(accountUuid);
+      if (mnemonic == null || mnemonic.isEmpty) return;
+      final seedBytes = await rust_wallet.deriveSeed(mnemonic: mnemonic);
+      try {
+        await ref
+            .read(votingSessionProvider(widget.roundId).notifier)
+            .precomputeDelegationPir(seedBytes: seedBytes);
+      } finally {
+        seedBytes.fillRange(0, seedBytes.length, 0);
+      }
+    } catch (e) {
+      debugPrint('[zcash] Voting: delegation PIR precompute skipped: $e');
+    }
   }
 }
 
