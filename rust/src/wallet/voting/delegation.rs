@@ -6,8 +6,8 @@ use zcash_keys::keys::UnifiedSpendingKey;
 use zeroize::Zeroizing;
 use zip32::{fingerprint::SeedFingerprint, AccountId};
 
-use crate::wallet::voting::network::{voting_network, wallet_network};
-use crate::wallet::{keys, sync::open_wallet_db_for_read};
+use crate::wallet::sync::open_wallet_db_for_read;
+use crate::wallet::voting::network::wallet_network;
 
 use super::db::open_voting_db;
 
@@ -74,18 +74,19 @@ where
 ///
 /// Returns an error if round initialization, lightwalletd note selection, or
 /// bundle setup/validation fails.
-#[allow(clippy::too_many_arguments)]
 pub async fn setup_delegation_bundles(
     voting_db: &VotingDb,
     db_path: &str,
-    lightwalletd_url: &str,
-    network: &str,
-    round_params: zcash_voting::VotingRoundParams,
-    round_name: &str,
+    lwd_params: zcash_voting::delegate::ResolveDelegationLwdParams<'_>,
     session_json: Option<&str>,
     bundle_policy: BundlePolicy,
 ) -> Result<zcash_voting::round::BundleLayout, String> {
-    let network = keys::parse_network(network)?;
+    let zcash_voting::delegate::ResolveDelegationLwdParams {
+        lightwalletd_url,
+        network,
+        round_params,
+        round_name,
+    } = lwd_params;
     let round_context = zcash_voting::delegate::ensure_round_context(
         voting_db,
         &round_params,
@@ -97,7 +98,7 @@ pub async fn setup_delegation_bundles(
         voting_db,
         db_path,
         lightwalletd_url,
-        voting_network(network),
+        network,
         round_context.snapshot_height,
     )
     .await

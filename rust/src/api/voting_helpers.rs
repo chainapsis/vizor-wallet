@@ -3,6 +3,7 @@ use zeroize::Zeroizing;
 
 use crate::wallet::{keys, network::WalletNetwork, voting::network::voting_network};
 
+/// Convert API bundle-size input into a validated voting bundle policy.
 pub(super) fn bundle_policy(
     max_real_notes_per_bundle: Option<u32>,
 ) -> Result<zcash_voting::BundlePolicy, String> {
@@ -10,6 +11,7 @@ pub(super) fn bundle_policy(
         .map_err(|e| e.to_string())
 }
 
+/// Derive a wallet seed from a BIP-39 mnemonic while zeroizing mnemonic bytes.
 pub(super) fn seed_from_mnemonic(mnemonic: String) -> Result<SecretVec<u8>, String> {
     let mnemonic = Zeroizing::new(mnemonic.into_bytes());
     keys::mnemonic_bytes_to_seed(mnemonic.as_slice())

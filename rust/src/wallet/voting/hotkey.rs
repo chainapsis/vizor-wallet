@@ -5,9 +5,14 @@ use zeroize::Zeroizing;
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::voting::network::voting_network;
 
+/// Domain-separation prefix for wallet-scoped hotkey seed derivation.
 const HOTKEY_CONTEXT_PREFIX: &[u8] = b"ZcashVotingHotkeyV1";
+/// Blake2b personalization string for deterministic hotkey seed hashing.
 const HOTKEY_SEED_PERSONALIZATION: &[u8] = b"ZcashVotingHotKy";
+/// Output length (bytes) of derived hotkey seed material.
 const HOTKEY_SEED_LEN: usize = 64;
+/// Minimum wallet seed bytes accepted by ZIP-32 spending-key derivation.
+const HOTKEY_MIN_WALLET_SEED_LEN: usize = 32;
 
 /// Derives opaque voting hotkey bytes for a wallet account in a voting round.
 ///
@@ -72,9 +77,10 @@ fn derive_contextual_hotkey_seed(
     account_uuid: &str,
     network: WalletNetwork,
 ) -> Result<SecretVec<u8>, String> {
-    if seed.len() < 32 {
+    if seed.len() < HOTKEY_MIN_WALLET_SEED_LEN {
         return Err(format!(
-            "wallet seed must be at least 32 bytes, got {}",
+            "wallet seed must be at least {} bytes, got {}",
+            HOTKEY_MIN_WALLET_SEED_LEN,
             seed.len()
         ));
     }
