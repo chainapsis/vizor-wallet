@@ -58,43 +58,83 @@ class VotingRecoveryService {
     required String dbPath,
     required String walletId,
     required String roundId,
+    rust_voting.RoundPlanView? roundPlan,
+    rust_voting.DelegationBundlePlanView? delegationPlan,
   }) async {
     final state = await _api.getRoundRecoveryState(
       dbPath: dbPath,
       walletId: walletId,
       roundId: roundId,
     );
+    final resolvedDelegationPlan =
+        delegationPlan ??
+        await _loadDelegationPlanIfInitialized(
+          dbPath: dbPath,
+          walletId: walletId,
+          roundId: roundId,
+          state: state,
+          roundPlan: roundPlan,
+        );
 
-    return buildResumePlan(state);
+    return buildResumePlan(
+      state,
+      roundPlan: roundPlan,
+      delegationPlan: resolvedDelegationPlan,
+    );
+  }
+
+  Future<rust_voting.DelegationBundlePlanView?>
+  _loadDelegationPlanIfInitialized({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+    required rust_voting.RoundRecoveryStateView state,
+    rust_voting.RoundPlanView? roundPlan,
+  }) {
+    if (!_shouldLoadDelegationPlan(state, roundPlan)) {
+      return Future.value();
+    }
+    return _api.getDelegationBundlePlan(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
+    );
+  }
+
+  bool _shouldLoadDelegationPlan(
+    rust_voting.RoundRecoveryStateView state,
+    rust_voting.RoundPlanView? roundPlan,
+  ) {
+    if (roundPlanNeedsDraftSetup(roundPlan) && state.bundleCount == 0) {
+      return false;
+    }
+    return state.bundleCount > 0 ||
+        state.delegation.isNotEmpty ||
+        state.votes.isNotEmpty ||
+        state.commitmentBundles.isNotEmpty ||
+        state.shares.isNotEmpty ||
+        state.shareDelegations.isNotEmpty ||
+        state.unconfirmedShareDelegations.isNotEmpty;
   }
 
   /// Builds a deterministic view of incomplete delegation, vote, and share work.
   ///
   /// Bundle/proposal pairs are keyed together because voting is bundle-indexed:
   /// one proposal can have independent state for each note bundle.
-  VotingResumePlan buildResumePlan(rust_voting.RoundRecoveryStateView state) {
+  VotingResumePlan buildResumePlan(
+    rust_voting.RoundRecoveryStateView state, {
+    rust_voting.RoundPlanView? roundPlan,
+    rust_voting.DelegationBundlePlanView? delegationPlan,
+  }) {
     final delegationPhasesByIndex = <int, String>{
       for (final record in state.delegation) record.bundleIndex: record.phase,
     };
-    final submittedDelegationBundleIndexes =
-        state.delegation
-            .where(
-              (record) =>
-                  record.phase == VotingWorkflowPhase.submittedDelegation,
-            )
-            .map((record) => record.bundleIndex)
-            .toList()
-          ..sort();
-    final delegatedBundleIndexes = state.delegation
-        .where((record) => record.phase == VotingWorkflowPhase.confirmed)
-        .map((record) => record.bundleIndex)
-        .toSet();
-    final pendingDelegationBundleIndexes = [
-      for (var index = 0; index < state.bundleCount; index++)
-        if (!delegatedBundleIndexes.contains(index) &&
-            !submittedDelegationBundleIndexes.contains(index))
-          index,
-    ];
+    final submittedDelegationBundleIndexes = _submittedDelegationBundleIndexes(
+      delegationPlan,
+    )..sort();
+    final pendingDelegationBundleIndexes = _pendingDelegationBundleIndexes(
+      delegationPlan,
+    )..sort();
 
     final votesByKey = <VotingVoteKey, rust_voting.VoteRecoveryView>{
       for (final vote in state.votes)
@@ -127,28 +167,14 @@ class VotingRecoveryService {
             ): record,
         };
 
-    final voteKeys = votesByKey.keys.toList()..sort(_compareVoteKeys);
-    final submittedVoteConfirmationKeys =
-        votePhasesByKey.entries
-            .where((entry) => entry.value == VotingWorkflowPhase.submittedVote)
-            .map((entry) => entry.key)
-            .toList()
-          ..sort(_compareVoteKeys);
-    final pendingVoteSubmissionKeys = voteKeys
-        .where(
-          (key) =>
-              !voteTxHashesByKey.containsKey(key) &&
-              votePhasesByKey[key] != VotingWorkflowPhase.submittedVote &&
-              votePhasesByKey[key] != VotingWorkflowPhase.confirmed,
-        )
-        .toList();
-    final incompleteVoteRecoveryKeys = voteKeys
-        .where(
-          (key) =>
-              !voteTxHashesByKey.containsKey(key) ||
-              !commitmentBundlesByKey.containsKey(key),
-        )
-        .toList();
+    final submittedVoteConfirmationKeys = _voteKeysForSteps(roundPlan, {
+      'poll_vote',
+    })..sort(_compareVoteKeys);
+    final pendingVoteSubmissionKeys = _voteKeysForSteps(roundPlan, {
+      'cast_vote',
+      'submit_vote',
+    })..sort(_compareVoteKeys);
+    final incompleteVoteRecoveryKeys = <VotingVoteKey>[];
 
     final shareDelegations = state.shareDelegations.toList()
       ..sort(_compareShareDelegations);
@@ -173,6 +199,41 @@ class VotingRecoveryService {
       shareDelegations: shareDelegations,
       unconfirmedShareDelegations: unconfirmedShareDelegations,
     );
+  }
+
+  List<int> _pendingDelegationBundleIndexes(
+    rust_voting.DelegationBundlePlanView? delegationPlan,
+  ) {
+    if (delegationPlan != null) {
+      return delegationPlan.pendingBundleIndexes.toList();
+    }
+
+    return <int>[];
+  }
+
+  List<int> _submittedDelegationBundleIndexes(
+    rust_voting.DelegationBundlePlanView? delegationPlan,
+  ) {
+    if (delegationPlan != null) {
+      return delegationPlan.submittedBundleIndexes.toList();
+    }
+
+    return <int>[];
+  }
+
+  List<VotingVoteKey> _voteKeysForSteps(
+    rust_voting.RoundPlanView? roundPlan,
+    Set<String> stepKinds,
+  ) {
+    if (roundPlan == null) return <VotingVoteKey>[];
+    return [
+      for (final step in roundPlan.nextSteps)
+        if (stepKinds.contains(step.kind))
+          VotingVoteKey(
+            bundleIndex: step.bundleIndex,
+            proposalId: step.proposalId,
+          ),
+    ];
   }
 
   /// Records additional helper servers that accepted an already-created share.

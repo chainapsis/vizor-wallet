@@ -15,6 +15,26 @@ import 'voting_service_providers.dart';
 import 'voting_state.dart';
 import 'voting_submission_guard_provider.dart';
 
+@visibleForTesting
+bool votingSessionNeedsDelegationForSubmission(VotingSessionState? session) {
+  if (session == null) return false;
+  final roundPlan = session.roundPlan;
+  if (_roundPlanNeedsDelegation(roundPlan)) return true;
+  if (roundPlan == null || !roundPlanNeedsDraftSetup(roundPlan)) {
+    return false;
+  }
+  final plan = session.resumePlan;
+  return (plan?.pendingDelegationBundleIndexes.isNotEmpty ?? false) ||
+      (plan?.submittedDelegationBundleIndexes.isNotEmpty ?? false);
+}
+
+bool _roundPlanNeedsDelegation(rust_wire.RoundPlanView? roundPlan) {
+  return roundPlan?.nextSteps.any(
+        (step) => step.kind == 'delegate' || step.kind == 'poll_delegation',
+      ) ??
+      false;
+}
+
 enum VotingSubmissionJobStatus {
   idle,
   running,
@@ -414,7 +434,15 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       final canPollDelegationWithoutDraft = _canPollDelegationWithoutDraft(
         activeSession,
       );
-      final needsDelegation = _sessionNeedsDelegation(activeSession);
+      final needsDraftSetupForNewVotes =
+          draftVotes.isNotEmpty &&
+          roundPlanNeedsDraftSetup(activeSession.roundPlan);
+      final needsDelegation =
+          _sessionNeedsDelegation(activeSession) || needsDraftSetupForNewVotes;
+      final needsFreshDelegation =
+          _sessionNeedsFreshDelegation(activeSession) ||
+          needsDraftSetupForNewVotes;
+      var draftIntentsRecordedBeforeDelegation = false;
       if (draftVotes.isEmpty &&
           !canRecoverWithoutDraft &&
           !canPollDelegationWithoutDraft) {
@@ -445,52 +473,73 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
 
-      if (draftVotes.isNotEmpty || needsDelegation) {
+      if (needsDelegation) {
         if (activeSession.isHardwareAccount) {
-          if (needsDelegation) {
-            _storePendingKeystoneState(
-              key: key,
-              generation: generation,
-              draftVotes: draftVotes,
-              intentProposalIds: intentProposalIds,
-              proposalOptionCounts: proposalOptionCounts,
-              pendingRecoveryWithoutDraft:
-                  canRecoverWithoutDraft || canPollDelegationWithoutDraft,
-            );
-            await _submitAfterKeystoneSignatures(
-              sessionNotifier,
-              key: key,
-              generation: generation,
-            );
-          } else {
-            await _submitVotesAndShares(
-              sessionNotifier,
-              key: key,
-              generation: generation,
-              draftVotes: draftVotes,
-              intentProposalIds: intentProposalIds,
-              proposalOptionCounts: proposalOptionCounts,
-              initialSession: activeSession,
-            );
-          }
-          return;
-        }
-        final mnemonic = await ref
-            .read(accountProvider.notifier)
-            .getMnemonicForAccount(key.accountUuid);
-        if (!_isCurrentJob(key: key, generation: generation)) return;
-        if (mnemonic == null || mnemonic.isEmpty) {
-          _failJob(
+          _storePendingKeystoneState(
             key: key,
             generation: generation,
-            message:
-                'Coinholder voting requires a software account. Switch to a software account to vote in this round.',
-            softwareAccountRequired: true,
+            draftVotes: draftVotes,
+            intentProposalIds: intentProposalIds,
+            proposalOptionCounts: proposalOptionCounts,
+            pendingRecoveryWithoutDraft:
+                canRecoverWithoutDraft || canPollDelegationWithoutDraft,
+          );
+          await _submitAfterKeystoneSignatures(
+            sessionNotifier,
+            key: key,
+            generation: generation,
           );
           return;
         }
-        if (!_isCurrentJob(key: key, generation: generation)) return;
-        await sessionNotifier.delegatePendingBundles(mnemonic: mnemonic);
+        if (needsFreshDelegation) {
+          final mnemonic = await ref
+              .read(accountProvider.notifier)
+              .getMnemonicForAccount(key.accountUuid);
+          if (!_isCurrentJob(key: key, generation: generation)) return;
+          if (mnemonic == null || mnemonic.isEmpty) {
+            _failJob(
+              key: key,
+              generation: generation,
+              message:
+                  'Coinholder voting requires a software account. Switch to a software account to vote in this round.',
+              softwareAccountRequired: true,
+            );
+            return;
+          }
+          if (!_isCurrentJob(key: key, generation: generation)) return;
+          if (needsDraftSetupForNewVotes) {
+            await sessionNotifier.prepareDelegation();
+            if (!_isCurrentJob(key: key, generation: generation)) return;
+            final afterSetup = _sessionForJob(key);
+            if (afterSetup?.phase == VotingSessionPhase.error) {
+              _failFromSession(
+                key: key,
+                generation: generation,
+                session: afterSetup!,
+              );
+              return;
+            }
+            await sessionNotifier.recordDraftVoteIntents(
+              draftVotes: draftVotes,
+              allProposalIds: intentProposalIds,
+              proposalOptionCounts: proposalOptionCounts,
+            );
+            if (!_isCurrentJob(key: key, generation: generation)) return;
+            final afterIntent = _sessionForJob(key);
+            if (afterIntent?.phase == VotingSessionPhase.error) {
+              _failFromSession(
+                key: key,
+                generation: generation,
+                session: afterIntent!,
+              );
+              return;
+            }
+            draftIntentsRecordedBeforeDelegation = true;
+          }
+          await sessionNotifier.delegatePendingBundles(mnemonic: mnemonic);
+        } else {
+          await sessionNotifier.delegatePendingBundles(mnemonic: '');
+        }
         if (!_isCurrentJob(key: key, generation: generation)) return;
         final afterDelegation = _sessionForJob(key);
         if (afterDelegation?.phase == VotingSessionPhase.error) {
@@ -511,6 +560,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         intentProposalIds: intentProposalIds,
         proposalOptionCounts: proposalOptionCounts,
         initialSession: afterDelegation ?? activeSession,
+        draftIntentsAlreadyRecorded: draftIntentsRecordedBeforeDelegation,
       );
     } catch (error) {
       if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -644,6 +694,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required List<int> intentProposalIds,
     required Map<int, int> proposalOptionCounts,
     VotingSessionState? initialSession,
+    bool draftIntentsAlreadyRecorded = false,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     final votePollingSession = _sessionForJob(key) ?? initialSession;
@@ -662,6 +713,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         draftVotes: draftVotes,
         allProposalIds: intentProposalIds,
         proposalOptionCounts: proposalOptionCounts,
+        recordBallotIntent: !draftIntentsAlreadyRecorded,
       );
     }
     if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -838,10 +890,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _hasCompletedSubmission(VotingSessionState? session) {
     if (session == null) return false;
-    return hasCompletedVoteForDisplay(
-      roundPlan: session.roundPlan,
-      resumePlan: session.resumePlan,
-    );
+    return hasCompletedVoteForDisplay(roundPlan: session.roundPlan);
   }
 
   String _messageFromError(Object error) => friendlyVotingErrorMessage(error);
@@ -859,15 +908,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _canRecoverWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      return _roundPlanHasNoOpenProposals(session) &&
-          roundPlan.nextSteps.any(_stepCanRecoverWithoutDraft);
-    }
-    final resumePlan = session.resumePlan;
-    return resumePlan != null &&
-        (resumePlan.pendingVoteSubmissionKeys.isNotEmpty ||
-            resumePlan.submittedVoteConfirmationKeys.isNotEmpty ||
-            resumePlan.unconfirmedShareDelegations.isNotEmpty);
+    return roundPlan != null &&
+        _roundPlanHasNoOpenProposals(session) &&
+        roundPlan.nextSteps.any(_stepCanRecoverWithoutDraft);
   }
 
   bool _roundPlanHasNoOpenProposals(VotingSessionState session) {
@@ -877,18 +920,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _canPollDelegationWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      var hasSubmittedDelegation = false;
-      for (final step in roundPlan.nextSteps) {
-        if (step.kind == 'delegate') return false;
-        if (step.kind == 'poll_delegation') hasSubmittedDelegation = true;
-      }
-      return hasSubmittedDelegation;
+    if (roundPlan == null) return false;
+    var hasSubmittedDelegation = false;
+    for (final step in roundPlan.nextSteps) {
+      if (step.kind == 'delegate') return false;
+      if (step.kind == 'poll_delegation') hasSubmittedDelegation = true;
     }
-    final resumePlan = session.resumePlan;
-    return resumePlan != null &&
-        resumePlan.submittedDelegationBundleIndexes.isNotEmpty &&
-        resumePlan.pendingDelegationBundleIndexes.isEmpty;
+    return hasSubmittedDelegation;
   }
 
   bool _stepCanRecoverWithoutDraft(rust_wire.NextStepView step) {
@@ -899,13 +937,19 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 
   bool _sessionNeedsDelegation(VotingSessionState? session) {
+    return votingSessionNeedsDelegationForSubmission(session);
+  }
+
+  bool _sessionNeedsFreshDelegation(VotingSessionState? session) {
     if (session == null) return false;
     final roundPlan = session.roundPlan;
-    if (_planNeedsDelegation(roundPlan)) return true;
-    if (roundPlan != null && !roundPlanNeedsDraftSetup(roundPlan)) {
+    if (roundPlan?.nextSteps.any((step) => step.kind == 'delegate') ?? false) {
+      return true;
+    }
+    if (roundPlan == null || !roundPlanNeedsDraftSetup(roundPlan)) {
       return false;
     }
-    return session.resumePlan?.submittedDelegationBundleIndexes.isNotEmpty ??
+    return session.resumePlan?.pendingDelegationBundleIndexes.isNotEmpty ??
         false;
   }
 
@@ -913,7 +957,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (session == null) return false;
     final roundPlan = session.roundPlan;
     if (_planNeedsDelegation(roundPlan)) return true;
-    if (roundPlan != null && !roundPlanNeedsDraftSetup(roundPlan)) {
+    if (roundPlan == null || !roundPlanNeedsDraftSetup(roundPlan)) {
       return false;
     }
     final plan = session.resumePlan;
@@ -923,27 +967,18 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _sessionNeedsKeystoneSigning(VotingSessionState session) {
     final roundPlan = session.roundPlan;
-    if (roundPlan != null) {
-      return roundPlan.nextSteps.any((step) => step.kind == 'delegate') ||
-          roundPlanNeedsDraftSetup(roundPlan);
-    }
-    return session.resumePlan?.pendingDelegationBundleIndexes.isNotEmpty ??
-        false;
+    if (roundPlan == null) return false;
+    return roundPlan.nextSteps.any((step) => step.kind == 'delegate') ||
+        roundPlanNeedsDraftSetup(roundPlan);
   }
 
   bool _sessionNeedsVotePolling(VotingSessionState? session) {
     if (session == null) return false;
-    if (_planNeedsVotePolling(session.roundPlan)) return true;
-    if (session.roundPlan != null) return false;
-    return session.resumePlan?.submittedVoteConfirmationKeys.isNotEmpty ??
-        false;
+    return _planNeedsVotePolling(session.roundPlan);
   }
 
   bool _planNeedsDelegation(rust_wire.RoundPlanView? roundPlan) {
-    return roundPlan?.nextSteps.any(
-          (step) => step.kind == 'delegate' || step.kind == 'poll_delegation',
-        ) ??
-        false;
+    return _roundPlanNeedsDelegation(roundPlan);
   }
 
   bool _planNeedsVotePolling(rust_wire.RoundPlanView? roundPlan) {

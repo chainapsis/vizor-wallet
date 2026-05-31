@@ -66,6 +66,41 @@ rust_wire.RoundPlanView apiRoundPlan({
   );
 }
 
+rust_wire.DelegationBundlePlanView delegationBundlePlan({
+  required int bundleCount,
+  List<int> pendingBundleIndexes = const [],
+  List<int> submittedBundleIndexes = const [],
+}) {
+  return rust_wire.DelegationBundlePlanView(
+    bundleCount: bundleCount,
+    pendingBundleIndexes: Uint32List.fromList(pendingBundleIndexes),
+    submittedBundleIndexes: Uint32List.fromList(submittedBundleIndexes),
+  );
+}
+
+rust_wire.DelegationBundlePlanView delegationBundlePlanFromRecoveryState(
+  rust_wire.RoundRecoveryStateView state,
+) {
+  final submittedDelegationBundleIndexes = state.delegation
+      .where((record) => record.phase == 'submitted_delegation')
+      .map((record) => record.bundleIndex)
+      .toSet();
+  final delegatedBundleIndexes = state.delegation
+      .where((record) => record.phase == 'confirmed')
+      .map((record) => record.bundleIndex)
+      .toSet();
+  return delegationBundlePlan(
+    bundleCount: state.bundleCount,
+    pendingBundleIndexes: [
+      for (var index = 0; index < state.bundleCount; index++)
+        if (!delegatedBundleIndexes.contains(index) &&
+            !submittedDelegationBundleIndexes.contains(index))
+          index,
+    ],
+    submittedBundleIndexes: submittedDelegationBundleIndexes.toList(),
+  );
+}
+
 rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
   required rust_wire.RoundRecoveryStateView state,
   required String roundId,
@@ -78,38 +113,72 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
       state.votes.isNotEmpty ||
       state.commitmentBundles.isNotEmpty ||
       state.shareDelegations.isNotEmpty;
+  final delegationByBundle = {
+    for (final delegation in state.delegation)
+      delegation.bundleIndex: delegation,
+  };
+  final plannedDelegationBundles = <int>{};
 
-  if (!completedVoteArtifact) {
-    final delegationByBundle = {
-      for (final record in state.delegation) record.bundleIndex: record,
-    };
-    for (var bundleIndex = 0; bundleIndex < state.bundleCount; bundleIndex++) {
-      final delegation = delegationByBundle[bundleIndex];
-      if (delegation != null && delegation.phase == 'submitted_delegation') {
-        nextSteps.add(
-          rust_wire.NextStepView(
-            kind: 'poll_delegation',
-            bundleIndex: bundleIndex,
-            proposalId: 0,
-            choice: 0,
-            shareIndex: 0,
-          ),
-        );
-        recoveredDelegationWork.add(
-          rust_wire.DelegationRecoveryWorkView(
-            kind: 'poll_delegation',
-            bundleIndex: bundleIndex,
-            phase: delegation.phase,
-            txHash: delegation.txHash,
-          ),
-        );
-      }
+  void addDelegationPrerequisite(int bundleIndex) {
+    final delegation = delegationByBundle[bundleIndex];
+    if (delegation?.phase == 'confirmed' ||
+        delegation?.phase == 'submitted_delegation' ||
+        !plannedDelegationBundles.add(bundleIndex)) {
+      return;
     }
+    nextSteps.add(
+      rust_wire.NextStepView(
+        kind: 'delegate',
+        bundleIndex: bundleIndex,
+        proposalId: 0,
+        choice: 0,
+        shareIndex: 0,
+      ),
+    );
+    recoveredDelegationWork.add(
+      rust_wire.DelegationRecoveryWorkView(
+        kind: 'delegate',
+        bundleIndex: bundleIndex,
+        phase: delegation?.phase ?? 'prepared',
+      ),
+    );
+  }
+
+  for (final delegation in state.delegation) {
+    if (delegation.phase != 'submitted_delegation') continue;
+    nextSteps.add(
+      rust_wire.NextStepView(
+        kind: 'poll_delegation',
+        bundleIndex: delegation.bundleIndex,
+        proposalId: 0,
+        choice: 0,
+        shareIndex: 0,
+      ),
+    );
+    recoveredDelegationWork.add(
+      rust_wire.DelegationRecoveryWorkView(
+        kind: 'poll_delegation',
+        bundleIndex: delegation.bundleIndex,
+        phase: delegation.phase,
+        txHash: delegation.txHash,
+      ),
+    );
   }
 
   for (final vote in state.votes) {
     final txHash = vote.txHash;
-    if (vote.phase == 'signed') {
+    if (vote.phase == 'prepared') {
+      addDelegationPrerequisite(vote.bundleIndex);
+      nextSteps.add(
+        rust_wire.NextStepView(
+          kind: 'cast_vote',
+          bundleIndex: vote.bundleIndex,
+          proposalId: vote.proposalId,
+          choice: vote.choice,
+          shareIndex: 0,
+        ),
+      );
+    } else if (vote.phase == 'signed') {
       nextSteps.add(
         rust_wire.NextStepView(
           kind: 'submit_vote',
@@ -212,7 +281,7 @@ rust_wire.RoundPlanView apiRoundPlanFromRecoveryState({
     blockingRecovery: blockingRecovery,
     blockingShareWork: blockingShareWork,
     hotkeyBound:
-        recoveredDelegationWork.any((work) => work.phase != 'prepared') ||
+        state.delegation.any((record) => record.phase != 'prepared') ||
         completedVoteArtifact,
     completedVoteArtifact: completedVoteArtifact,
     completedForDisplay: completedForDisplay,

@@ -22,8 +22,55 @@ void main() {
 
     expect(plan.pendingDelegationBundleIndexes, [0, 1, 2]);
     expect(plan.pendingVoteSubmissionKeys, isEmpty);
-    expect(plan.hasPendingWork, isTrue);
     expect(api.clearCalls, isEmpty);
+  });
+
+  test(
+    'fresh uninitialized round skips delegation bundle plan lookup',
+    () async {
+      final api = FakeVotingRecoveryApi(
+        state: recoveryState(),
+        failDelegationPlanLookup: true,
+      );
+      final service = VotingRecoveryService(api: api);
+
+      final plan = await service.loadResumePlan(
+        dbPath: 'wallet.db',
+        walletId: 'wallet-1',
+        roundId: 'round-1',
+        roundPlan: apiRoundPlan(
+          roundId: 'round-1',
+          pendingRecovery: false,
+          nextSteps: const [],
+          openProposals: Uint32List.fromList([7]),
+          allDecided: false,
+        ),
+      );
+
+      expect(plan.pendingDelegationBundleIndexes, isEmpty);
+      expect(api.delegationPlanLookups, 0);
+    },
+  );
+
+  test('delegation bundle plan controls delegation bundle lists', () async {
+    final api = FakeVotingRecoveryApi(
+      state: recoveryState(bundleCount: 3),
+      delegationPlan: delegationBundlePlan(
+        bundleCount: 3,
+        pendingBundleIndexes: [1],
+        submittedBundleIndexes: [2],
+      ),
+    );
+    final service = VotingRecoveryService(api: api);
+
+    final plan = await service.loadResumePlan(
+      dbPath: 'wallet.db',
+      walletId: 'wallet-1',
+      roundId: 'round-1',
+    );
+
+    expect(plan.pendingDelegationBundleIndexes, [1]);
+    expect(plan.submittedDelegationBundleIndexes, [2]);
   });
 
   test('mixed delegation hashes only resume missing bundle indexes', () async {
@@ -78,38 +125,57 @@ void main() {
 
       expect(plan.pendingDelegationBundleIndexes, [2]);
       expect(plan.submittedDelegationBundleIndexes, [1]);
-      expect(plan.hasPendingWork, isTrue);
     },
   );
 
   test(
     'vote records and tx hashes are matched by bundle and proposal',
     () async {
+      final state = recoveryState(
+        votes: [
+          vote(bundleIndex: 0, proposalId: 1),
+          vote(bundleIndex: 1, proposalId: 1),
+          vote(bundleIndex: 1, proposalId: 2),
+        ],
+        voteTxHashes: [voteTx(bundleIndex: 1, proposalId: 1, txHash: 'tx-1-1')],
+      );
       final service = VotingRecoveryService(
-        api: FakeVotingRecoveryApi(
-          state: recoveryState(
-            votes: [
-              vote(bundleIndex: 0, proposalId: 1),
-              vote(bundleIndex: 1, proposalId: 1),
-              vote(bundleIndex: 1, proposalId: 2),
-            ],
-            voteTxHashes: [
-              voteTx(bundleIndex: 1, proposalId: 1, txHash: 'tx-1-1'),
-            ],
-          ),
-        ),
+        api: FakeVotingRecoveryApi(state: state),
       );
 
       final plan = await service.loadResumePlan(
         dbPath: 'wallet.db',
         walletId: 'wallet-1',
         roundId: 'round-1',
+        roundPlan: apiRoundPlan(
+          roundId: 'round-1',
+          pendingRecovery: true,
+          nextSteps: const [
+            rust_frb_types.NextStepView(
+              kind: 'cast_vote',
+              bundleIndex: 0,
+              proposalId: 1,
+              choice: 0,
+              shareIndex: 0,
+            ),
+            rust_frb_types.NextStepView(
+              kind: 'cast_vote',
+              bundleIndex: 1,
+              proposalId: 2,
+              choice: 0,
+              shareIndex: 0,
+            ),
+          ],
+          openProposals: Uint32List(0),
+          allDecided: true,
+        ),
       );
 
       expect(
-        plan.voteTxHashesByKey[
-          const VotingVoteKey(bundleIndex: 1, proposalId: 1)
-        ],
+        plan.voteTxHashesByKey[const VotingVoteKey(
+          bundleIndex: 1,
+          proposalId: 1,
+        )],
         'tx-1-1',
       );
       expect(plan.pendingVoteSubmissionKeys, [
@@ -120,30 +186,34 @@ void main() {
   );
 
   test('commitment bundle recovery is surfaced for exact vote keys', () async {
-    final service = VotingRecoveryService(
-      api: FakeVotingRecoveryApi(
-        state: recoveryState(
-          votes: [
-            vote(bundleIndex: 0, proposalId: 1),
-            vote(bundleIndex: 1, proposalId: 1),
-          ],
-          voteTxHashes: [voteTx(bundleIndex: 1, proposalId: 1)],
-          commitmentBundles: [
-            commitmentBundle(
-              bundleIndex: 1,
-              proposalId: 1,
-              commitmentBundleJson: '{"bundle":"one"}',
-              vcTreePosition: 42,
-            ),
-          ],
+    final state = recoveryState(
+      votes: [
+        vote(bundleIndex: 0, proposalId: 1),
+        vote(bundleIndex: 1, proposalId: 1),
+      ],
+      voteTxHashes: [voteTx(bundleIndex: 1, proposalId: 1)],
+      commitmentBundles: [
+        commitmentBundle(
+          bundleIndex: 1,
+          proposalId: 1,
+          commitmentBundleJson: '{"bundle":"one"}',
+          vcTreePosition: 42,
         ),
-      ),
+      ],
+    );
+    final service = VotingRecoveryService(
+      api: FakeVotingRecoveryApi(state: state),
     );
 
     final plan = await service.loadResumePlan(
       dbPath: 'wallet.db',
       walletId: 'wallet-1',
       roundId: 'round-1',
+      roundPlan: apiRoundPlanFromRecoveryState(
+        state: state,
+        roundId: 'round-1',
+        proposalIds: [1],
+      ),
     );
 
     final missingKey = const VotingVoteKey(bundleIndex: 0, proposalId: 1);
@@ -158,7 +228,7 @@ void main() {
       plan.commitmentBundleFor(recoveredKey)?.vcTreePosition,
       BigInt.from(42),
     );
-    expect(plan.incompleteVoteRecoveryKeys, [missingKey]);
+    expect(plan.incompleteVoteRecoveryKeys, isEmpty);
   });
 
   test(
@@ -166,67 +236,71 @@ void main() {
     () async {
       final submittedKey = const VotingVoteKey(bundleIndex: 0, proposalId: 1);
       final confirmedKey = const VotingVoteKey(bundleIndex: 1, proposalId: 1);
-      final service = VotingRecoveryService(
-        api: FakeVotingRecoveryApi(
-          state: recoveryState(
-            votes: [
-              vote(
-                bundleIndex: submittedKey.bundleIndex,
-                proposalId: submittedKey.proposalId,
-              ),
-              vote(
-                bundleIndex: confirmedKey.bundleIndex,
-                proposalId: confirmedKey.proposalId,
-              ),
-            ],
-            voteWorkflows: [
-              voteWorkflow(
-                bundleIndex: submittedKey.bundleIndex,
-                proposalId: submittedKey.proposalId,
-                phase: VotingWorkflowPhase.submittedVote,
-                txHash: 'vote-tx-submitted',
-                hasCommitmentBundle: true,
-              ),
-              voteWorkflow(
-                bundleIndex: confirmedKey.bundleIndex,
-                proposalId: confirmedKey.proposalId,
-                phase: VotingWorkflowPhase.confirmed,
-                txHash: 'vote-tx-confirmed',
-                vcTreePosition: 42,
-                hasCommitmentBundle: true,
-              ),
-            ],
-            voteTxHashes: [
-              voteTx(
-                bundleIndex: submittedKey.bundleIndex,
-                proposalId: submittedKey.proposalId,
-                txHash: 'vote-tx-submitted',
-              ),
-              voteTx(
-                bundleIndex: confirmedKey.bundleIndex,
-                proposalId: confirmedKey.proposalId,
-                txHash: 'vote-tx-confirmed',
-              ),
-            ],
-            commitmentBundles: [
-              commitmentBundle(
-                bundleIndex: submittedKey.bundleIndex,
-                proposalId: submittedKey.proposalId,
-              ),
-              commitmentBundle(
-                bundleIndex: confirmedKey.bundleIndex,
-                proposalId: confirmedKey.proposalId,
-                vcTreePosition: 42,
-              ),
-            ],
+      final state = recoveryState(
+        votes: [
+          vote(
+            bundleIndex: submittedKey.bundleIndex,
+            proposalId: submittedKey.proposalId,
           ),
-        ),
+          vote(
+            bundleIndex: confirmedKey.bundleIndex,
+            proposalId: confirmedKey.proposalId,
+          ),
+        ],
+        voteWorkflows: [
+          voteWorkflow(
+            bundleIndex: submittedKey.bundleIndex,
+            proposalId: submittedKey.proposalId,
+            phase: VotingWorkflowPhase.submittedVote,
+            txHash: 'vote-tx-submitted',
+            hasCommitmentBundle: true,
+          ),
+          voteWorkflow(
+            bundleIndex: confirmedKey.bundleIndex,
+            proposalId: confirmedKey.proposalId,
+            phase: VotingWorkflowPhase.confirmed,
+            txHash: 'vote-tx-confirmed',
+            vcTreePosition: 42,
+            hasCommitmentBundle: true,
+          ),
+        ],
+        voteTxHashes: [
+          voteTx(
+            bundleIndex: submittedKey.bundleIndex,
+            proposalId: submittedKey.proposalId,
+            txHash: 'vote-tx-submitted',
+          ),
+          voteTx(
+            bundleIndex: confirmedKey.bundleIndex,
+            proposalId: confirmedKey.proposalId,
+            txHash: 'vote-tx-confirmed',
+          ),
+        ],
+        commitmentBundles: [
+          commitmentBundle(
+            bundleIndex: submittedKey.bundleIndex,
+            proposalId: submittedKey.proposalId,
+          ),
+          commitmentBundle(
+            bundleIndex: confirmedKey.bundleIndex,
+            proposalId: confirmedKey.proposalId,
+            vcTreePosition: 42,
+          ),
+        ],
+      );
+      final service = VotingRecoveryService(
+        api: FakeVotingRecoveryApi(state: state),
       );
 
       final plan = await service.loadResumePlan(
         dbPath: 'wallet.db',
         walletId: 'wallet-1',
         roundId: 'round-1',
+        roundPlan: apiRoundPlanFromRecoveryState(
+          state: state,
+          roundId: 'round-1',
+          proposalIds: [1],
+        ),
       );
 
       expect(plan.pendingVoteSubmissionKeys, isEmpty);
@@ -263,13 +337,12 @@ void main() {
     'accepted unconfirmed shares do not block foreground completion',
     () async {
       final accepted = share(shareIndex: 0, confirmed: false);
+      final state = recoveryState(
+        shareDelegations: [accepted],
+        unconfirmedShareDelegations: [accepted],
+      );
       final service = VotingRecoveryService(
-        api: FakeVotingRecoveryApi(
-          state: recoveryState(
-            shareDelegations: [accepted],
-            unconfirmedShareDelegations: [accepted],
-          ),
-        ),
+        api: FakeVotingRecoveryApi(state: state),
       );
 
       final plan = await service.loadResumePlan(
@@ -279,21 +352,22 @@ void main() {
       );
 
       expect(plan.unconfirmedShareDelegations, [accepted]);
-      expect(plan.hasBlockingShareWork, isFalse);
-      expect(plan.hasPendingWork, isFalse);
+      expect(
+        hasBlockingRoundRecoveryWork(
+          roundPlan: apiRoundPlanFromRecoveryState(
+            state: state,
+            roundId: 'round-1',
+            proposalIds: [1],
+          ),
+        ),
+        isFalse,
+      );
     },
   );
 
   test(
     'share-only round planner work does not block accepted share completion',
-    () async {
-      final accepted = share(shareIndex: 0, confirmed: false);
-      final plan = VotingRecoveryService().buildResumePlan(
-        recoveryState(
-          shareDelegations: [accepted],
-          unconfirmedShareDelegations: [accepted],
-        ),
-      );
+    () {
       final roundPlan = apiRoundPlan(
         roundId: 'round-1',
         pendingRecovery: true,
@@ -310,10 +384,7 @@ void main() {
         allDecided: true,
       );
 
-      expect(
-        hasBlockingRoundRecoveryWork(roundPlan: roundPlan, resumePlan: plan),
-        isFalse,
-      );
+      expect(hasBlockingRoundRecoveryWork(roundPlan: roundPlan), isFalse);
     },
   );
 
@@ -334,10 +405,7 @@ void main() {
       allDecided: false,
     );
 
-    expect(
-      hasBlockingRoundRecoveryWork(roundPlan: roundPlan, resumePlan: null),
-      isTrue,
-    );
+    expect(hasBlockingRoundRecoveryWork(roundPlan: roundPlan), isTrue);
   });
 
   test(
@@ -348,13 +416,12 @@ void main() {
         confirmed: false,
         sentToUrls: const [],
       );
+      final state = recoveryState(
+        shareDelegations: [unaccepted],
+        unconfirmedShareDelegations: [unaccepted],
+      );
       final service = VotingRecoveryService(
-        api: FakeVotingRecoveryApi(
-          state: recoveryState(
-            shareDelegations: [unaccepted],
-            unconfirmedShareDelegations: [unaccepted],
-          ),
-        ),
+        api: FakeVotingRecoveryApi(state: state),
       );
 
       final plan = await service.loadResumePlan(
@@ -364,8 +431,16 @@ void main() {
       );
 
       expect(plan.unconfirmedShareDelegations, [unaccepted]);
-      expect(plan.hasBlockingShareWork, isTrue);
-      expect(plan.hasPendingWork, isTrue);
+      expect(
+        hasBlockingRoundRecoveryWork(
+          roundPlan: apiRoundPlanFromRecoveryState(
+            state: state,
+            roundId: 'round-1',
+            proposalIds: [1],
+          ),
+        ),
+        isTrue,
+      );
     },
   );
 
@@ -397,9 +472,17 @@ void main() {
 }
 
 class FakeVotingRecoveryApi implements VotingRecoveryApi {
-  FakeVotingRecoveryApi({required this.state});
+  FakeVotingRecoveryApi({
+    required this.state,
+    rust_frb_types.DelegationBundlePlanView? delegationPlan,
+    this.failDelegationPlanLookup = false,
+  }) : delegationPlan =
+           delegationPlan ?? delegationBundlePlanFromRecoveryState(state);
 
   rust_frb_types.RoundRecoveryStateView state;
+  rust_frb_types.DelegationBundlePlanView delegationPlan;
+  final bool failDelegationPlanLookup;
+  int delegationPlanLookups = 0;
   final clearCalls = <String>[];
   final addSentServersCalls = <AddSentServersCall>[];
 
@@ -447,6 +530,19 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
       openProposals: Uint32List(0),
       allDecided: false,
     );
+  }
+
+  @override
+  Future<rust_frb_types.DelegationBundlePlanView> getDelegationBundlePlan({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+  }) async {
+    delegationPlanLookups++;
+    if (failDelegationPlanLookup) {
+      throw StateError('round $roundId is not initialized');
+    }
+    return delegationPlan;
   }
 
   @override

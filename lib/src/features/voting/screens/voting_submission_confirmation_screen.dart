@@ -54,10 +54,7 @@ class VotingSubmissionConfirmationScreen extends ConsumerWidget {
                 final pollTitle = state.round?.title.isNotEmpty == true
                     ? state.round!.title
                     : 'Coinholder Poll';
-                if (!hasCompletedVoteForDisplay(
-                  roundPlan: state.roundPlan,
-                  resumePlan: state.resumePlan,
-                )) {
+                if (!hasCompletedVoteForDisplay(roundPlan: state.roundPlan)) {
                   return _ConfirmationScaffold(
                     confirmed: false,
                     title: 'Submission Not Complete',

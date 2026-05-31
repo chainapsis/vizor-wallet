@@ -569,12 +569,12 @@ void main() {
     );
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
-        delegationTxHashes: [
+        delegationWorkflows: [
           rust_frb_types.DelegationRecoveryView(
             bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
+            phase: VotingWorkflowPhase.confirmed,
             txHash: 'delegation-0',
-            vanLeafPosition: null,
+            vanLeafPosition: 0,
           ),
         ],
         shareDelegations: [share],
@@ -646,12 +646,12 @@ void main() {
     );
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
-        delegationTxHashes: [
+        delegationWorkflows: [
           rust_frb_types.DelegationRecoveryView(
             bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
+            phase: VotingWorkflowPhase.confirmed,
             txHash: 'delegation-0',
-            vanLeafPosition: null,
+            vanLeafPosition: 0,
           ),
         ],
         shareDelegations: [share],
@@ -752,12 +752,12 @@ void main() {
     );
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
-        delegationTxHashes: [
+        delegationWorkflows: [
           rust_frb_types.DelegationRecoveryView(
             bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
+            phase: VotingWorkflowPhase.confirmed,
             txHash: 'delegation-0',
-            vanLeafPosition: null,
+            vanLeafPosition: 0,
           ),
         ],
       )
@@ -2000,10 +2000,11 @@ rust_frb_types.RoundRecoveryStateView _recoveryState({
       bundleIndex: record.bundleIndex,
       proposalId: record.proposalId,
       choice: current?.choice ?? 0,
-      phase: current?.phase ?? VotingWorkflowPhase.submittedVote,
+      phase: record.phase,
       txHash: record.txHash,
-      vcTreePosition: current?.vcTreePosition,
-      hasCommitmentBundle: current?.hasCommitmentBundle ?? false,
+      vcTreePosition: record.vcTreePosition ?? current?.vcTreePosition,
+      hasCommitmentBundle:
+          record.hasCommitmentBundle || (current?.hasCommitmentBundle ?? false),
     );
   }
 
@@ -2124,6 +2125,21 @@ class _FakeVotingRecoveryApi implements VotingRecoveryApi {
   }
 
   @override
+  Future<rust_wire.DelegationBundlePlanView> getDelegationBundlePlan({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+  }) async {
+    return delegationBundlePlanFromRecoveryState(
+      await getRoundRecoveryState(
+        dbPath: dbPath,
+        walletId: walletId,
+        roundId: roundId,
+      ),
+    );
+  }
+
+  @override
   Future<void> setBallotIntent({
     required String dbPath,
     required String walletId,
@@ -2176,6 +2192,71 @@ class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
     int? choice,
   }) async {
     ballotIntents.add('$proposalId:$numOptions:$skipped:${choice ?? 'null'}');
+    if (roundPlan == null) {
+      _recordBallotIntentInState(
+        proposalId: proposalId,
+        skipped: skipped,
+        choice: choice,
+      );
+    }
+  }
+
+  void _recordBallotIntentInState({
+    required int proposalId,
+    required bool skipped,
+    required int? choice,
+  }) {
+    if (skipped || choice == null) return;
+
+    final eligibleBundleIndexes = state.delegation
+        .map((record) => record.bundleIndex)
+        .toSet();
+    if (eligibleBundleIndexes.isEmpty) {
+      eligibleBundleIndexes.addAll([
+        for (var index = 0; index < state.bundleCount; index++) index,
+      ]);
+    }
+    if (eligibleBundleIndexes.isEmpty) return;
+
+    final votesByKey = {
+      for (final record in state.votes)
+        '${record.bundleIndex}:${record.proposalId}': record,
+    };
+    for (final bundleIndex in eligibleBundleIndexes) {
+      final key = '$bundleIndex:$proposalId';
+      final current = votesByKey[key];
+      if (current?.choice == choice) continue;
+      if (current?.phase == VotingWorkflowPhase.submittedVote ||
+          current?.phase == VotingWorkflowPhase.confirmed) {
+        continue;
+      }
+      votesByKey[key] = rust_frb_types.VoteRecoveryView(
+        bundleIndex: bundleIndex,
+        proposalId: proposalId,
+        choice: choice,
+        phase: VotingWorkflowPhase.prepared,
+        txHash: current?.txHash,
+        vcTreePosition: current?.vcTreePosition,
+        hasCommitmentBundle: current?.hasCommitmentBundle ?? false,
+      );
+    }
+
+    final votes = votesByKey.values.toList()
+      ..sort((left, right) {
+        final byProposal = left.proposalId.compareTo(right.proposalId);
+        if (byProposal != 0) return byProposal;
+        return left.bundleIndex.compareTo(right.bundleIndex);
+      });
+    state = rust_frb_types.RoundRecoveryStateView(
+      roundId: state.roundId,
+      bundleCount: state.bundleCount,
+      delegation: state.delegation,
+      votes: votes,
+      commitmentBundles: state.commitmentBundles,
+      shares: state.shares,
+      shareDelegations: state.shareDelegations,
+      unconfirmedShareDelegations: state.unconfirmedShareDelegations,
+    );
   }
 }
 
@@ -2492,34 +2573,38 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<List<int>> extractPcztSighash({required List<int> pcztBytes}) async {
-    return List<int>.from(pcztBytes);
-  }
-
-  @override
-  Future<List<int>> extractSpendAuthSignatureFromSignedPczt({
-    required List<int> signedPcztBytes,
-    required int actionIndex,
-  }) async {
-    return [5, actionIndex];
-  }
-
-  @override
-  Future<void> storeKeystoneSignature({
+  Future<rust_wire.KeystoneSignatureRecord> acceptKeystoneSignature({
     required String dbPath,
     required String walletId,
     required String roundId,
-    required int bundleIndex,
-    required List<int> sig,
-    required List<int> sighash,
-    required List<int> rk,
+    required rust_delegate.KeystoneSigningRequest request,
+    required List<int> signedPcztBytes,
   }) async {
-    storedKeystoneSignatures[bundleIndex] = rust_wire.KeystoneSignatureRecord(
-      bundleIndex: bundleIndex,
-      sig: Uint8List.fromList(sig),
-      sighash: Uint8List.fromList(sighash),
-      rk: Uint8List.fromList(rk),
+    if (storedKeystoneSignatures.values.any(
+      (record) => _bytesEqual(record.sighash, signedPcztBytes),
+    )) {
+      throw StateError('keystone signature was already accepted');
+    }
+    if (!_bytesEqual(request.pcztSighash, signedPcztBytes)) {
+      throw StateError('signed PCZT sighash does not match delegation request');
+    }
+
+    final record = rust_wire.KeystoneSignatureRecord(
+      bundleIndex: request.bundleIndex,
+      sig: Uint8List.fromList([5, request.actionIndex]),
+      sighash: Uint8List.fromList(signedPcztBytes),
+      rk: Uint8List.fromList(request.rk),
     );
+    storedKeystoneSignatures[request.bundleIndex] = record;
+    return record;
+  }
+
+  bool _bytesEqual(List<int> left, List<int> right) {
+    if (left.length != right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      if (left[i] != right[i]) return false;
+    }
+    return true;
   }
 
   @override
@@ -2600,8 +2685,12 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String txHash,
     required int vanLeafPosition,
   }) {
+    final current = recoveryApi.state;
     recoveryApi.state = _recoveryState(
+      bundleCount: current.bundleCount,
       delegationWorkflows: [
+        for (final record in current.delegation)
+          if (record.bundleIndex != bundleIndex) record,
         rust_frb_types.DelegationRecoveryView(
           bundleIndex: bundleIndex,
           phase: VotingWorkflowPhase.confirmed,
@@ -2609,6 +2698,11 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
           vanLeafPosition: vanLeafPosition,
         ),
       ],
+      votes: current.votes,
+      commitmentBundles: current.commitmentBundles,
+      shareWorkflows: current.shares,
+      shareDelegations: current.shareDelegations,
+      unconfirmedShareDelegations: current.unconfirmedShareDelegations,
     );
     recoveryApi.roundPlan = null;
   }
@@ -2786,6 +2880,20 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
+  Future<List<String>> shareResubmissionServerOrder({
+    required List<String> configuredServerUrls,
+    required List<String> sentToUrls,
+  }) async {
+    final sent = sentToUrls.toSet();
+    return [
+      for (final serverUrl in configuredServerUrls)
+        if (!sent.contains(serverUrl)) serverUrl,
+      for (final serverUrl in configuredServerUrls)
+        if (sent.contains(serverUrl)) serverUrl,
+    ];
+  }
+
+  @override
   Future<BigInt?> nextShareTrackingDelaySeconds({
     required List<rust_frb_types.ShareDelegationRecordView> shares,
     required BigInt nowSeconds,
@@ -2819,26 +2927,47 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int vanPosition,
     required BigInt vcTreePosition,
   }) {
+    final current = recoveryApi.state;
+    final votesByKey = {
+      for (final record in current.votes)
+        '${record.bundleIndex}:${record.proposalId}': record,
+    };
+    final key = '$bundleIndex:$proposalId';
+    final currentVote = votesByKey[key];
+    votesByKey[key] = rust_frb_types.VoteRecoveryView(
+      bundleIndex: bundleIndex,
+      proposalId: proposalId,
+      choice: currentVote?.choice ?? 0,
+      phase: VotingWorkflowPhase.confirmed,
+      txHash: txHash,
+      vcTreePosition: vcTreePosition,
+      hasCommitmentBundle: true,
+    );
+    final votes = votesByKey.values.toList()
+      ..sort((left, right) {
+        final byProposal = left.proposalId.compareTo(right.proposalId);
+        if (byProposal != 0) return byProposal;
+        return left.bundleIndex.compareTo(right.bundleIndex);
+      });
     recoveryApi.state = _recoveryState(
+      bundleCount: current.bundleCount,
       delegationWorkflows: [
-        rust_frb_types.DelegationRecoveryView(
-          bundleIndex: bundleIndex,
-          phase: VotingWorkflowPhase.confirmed,
-          txHash: 'delegation-tx',
-          vanLeafPosition: vanPosition,
-        ),
+        ...current.delegation,
+        if (!current.delegation.any(
+          (record) => record.bundleIndex == bundleIndex,
+        ))
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: bundleIndex,
+            phase: VotingWorkflowPhase.confirmed,
+            txHash: 'delegation-tx',
+            vanLeafPosition: vanPosition,
+          ),
       ],
-      votes: [
-        rust_frb_types.VoteRecoveryView(
-          bundleIndex: bundleIndex,
-          proposalId: proposalId,
-          choice: 0,
-          phase: VotingWorkflowPhase.confirmed,
-          txHash: txHash,
-          vcTreePosition: vcTreePosition,
-          hasCommitmentBundle: true,
-        ),
-      ],
+      votes: votes,
+      commitmentBundles: current.commitmentBundles,
+      shareWorkflows: current.shares,
+      shareDelegations: current.shareDelegations,
+      unconfirmedShareDelegations: current.unconfirmedShareDelegations,
     );
     recoveryApi.roundPlan = null;
   }
