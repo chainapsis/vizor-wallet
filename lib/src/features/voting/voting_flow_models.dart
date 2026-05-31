@@ -92,12 +92,13 @@ class VotingDraftNotifier extends Notifier<VotingDraftState> {
   /// Round/account owner for this in-memory draft.
   final VotingSessionKey key;
   Future<VotingDraftState>? _loadFuture;
+  Future<void> _saveChain = Future.value();
   bool _loaded = false;
   final Map<int, int?> _pendingBeforeLoad = {};
 
   @override
   VotingDraftState build() {
-    unawaited(ensureLoaded());
+    unawaited(ensureLoaded().catchError((Object _, StackTrace _) => state));
     return const VotingDraftState();
   }
 
@@ -126,6 +127,20 @@ class VotingDraftNotifier extends Notifier<VotingDraftState> {
     }
   }
 
+  Future<void> clearAll() async {
+    if (!_loaded) {
+      try {
+        await ensureLoaded();
+      } catch (_) {
+        // If persisted draft loading failed, still best-effort delete below.
+      }
+    }
+    _pendingBeforeLoad.clear();
+    const next = VotingDraftState();
+    state = next;
+    await _persist(next);
+  }
+
   Future<VotingDraftState> _loadPersisted() async {
     final persisted = await ref.read(votingDraftPersistenceProvider).load(key);
     _loaded = true;
@@ -144,7 +159,11 @@ class VotingDraftNotifier extends Notifier<VotingDraftState> {
   }
 
   Future<void> _persist(VotingDraftState draft) {
-    return ref.read(votingDraftPersistenceProvider).save(key, draft);
+    final save = _saveChain.then(
+      (_) => ref.read(votingDraftPersistenceProvider).save(key, draft),
+    );
+    _saveChain = save.catchError((_) {});
+    return save;
   }
 
   VotingDraftState _applyPendingBeforeLoad(VotingDraftState base) {

@@ -161,6 +161,14 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     return hasCompletedVoteForDisplay(session.roundPlan);
   }
 
+  bool _hasCompletedCurrentSubmissionProgress(VotingSessionState session) {
+    final total = session.voteSubmissionTotalCount;
+    if (total > 0 && session.voteSubmissionCompletedCount >= total) {
+      return true;
+    }
+    return (session.voteSubmissionProgress ?? 0) >= 1;
+  }
+
   String _messageFromError(Object error) {
     return friendlyVotingErrorMessage(error);
   }
@@ -233,9 +241,16 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
             ),
             data: (state) {
               final localError = job?.errorMessage;
+              final submissionJobComplete =
+                  job?.status == VotingSubmissionJobStatus.complete;
+              final submissionJobInFlight = job?.isInFlight ?? false;
+              final sessionCompleted = _hasCompletedSubmission(state);
               final completedSubmission =
-                  job?.status == VotingSubmissionJobStatus.complete ||
-                  _hasCompletedSubmission(state);
+                  submissionJobComplete ||
+                  (!submissionJobInFlight && sessionCompleted) ||
+                  (submissionJobInFlight &&
+                      sessionCompleted &&
+                      _hasCompletedCurrentSubmissionProgress(state));
               final phase = job?.status != VotingSubmissionJobStatus.error
                   ? _displayPhase(
                       state.phase,
@@ -251,6 +266,8 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
                 ),
                 delegationProgress: _delegationProgress(state),
                 completedSubmission: completedSubmission,
+                submissionJobComplete: submissionJobComplete,
+                submissionJobInFlight: submissionJobInFlight,
                 softwareAccountRequired: job?.softwareAccountRequired ?? false,
                 isHardwareAccount: state.isHardwareAccount,
                 keystoneSigningRequest: state.keystoneSigningRequest,
@@ -453,6 +470,8 @@ class _StatusContent extends StatelessWidget {
     this.voteSubmissionProgress,
     this.delegationProgress,
     this.completedSubmission = false,
+    this.submissionJobComplete = false,
+    this.submissionJobInFlight = false,
     this.softwareAccountRequired = false,
     this.isHardwareAccount = false,
     this.keystoneSigningRequest,
@@ -475,6 +494,8 @@ class _StatusContent extends StatelessWidget {
   final double? voteSubmissionProgress;
   final double? delegationProgress;
   final bool completedSubmission;
+  final bool submissionJobComplete;
+  final bool submissionJobInFlight;
   final bool softwareAccountRequired;
   final bool isHardwareAccount;
   final rust_delegate.KeystoneSigningRequest? keystoneSigningRequest;
@@ -498,6 +519,11 @@ class _StatusContent extends StatelessWidget {
     }
     final voteStepComplete =
         completedSubmission || (voteSubmissionProgress ?? 0) >= 1;
+    final finalizingSubmission =
+        submissionJobInFlight &&
+        voteStepComplete &&
+        !submissionJobComplete &&
+        phase != VotingSessionPhase.error;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -571,6 +597,11 @@ class _StatusContent extends StatelessWidget {
                 complete: voteStepComplete,
                 detail: voteStepComplete ? null : voteSubmissionDetail,
                 progressValue: voteStepComplete ? null : voteSubmissionProgress,
+              ),
+              _StepRow(
+                label: 'Finalizing submission',
+                active: finalizingSubmission,
+                complete: submissionJobComplete,
               ),
               if (phase == VotingSessionPhase.error) ...[
                 const SizedBox(height: AppSpacing.sm),

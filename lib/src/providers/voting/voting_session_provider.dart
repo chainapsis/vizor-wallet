@@ -242,6 +242,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
+  void clearVoteSubmissionProgressForJobStart() {
+    final current = state.value;
+    if (current == null) return;
+    state = AsyncData(
+      current.copyWith(
+        clearVoteSubmissionProgress: true,
+        clearCurrentVoteKey: true,
+        clearError: true,
+      ),
+    );
+  }
+
   Future<void> precomputeDelegationPir({required String accountUuid}) async {
     final context = await _loadContext(_roundId);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
@@ -1246,6 +1258,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
+      final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
+      if (!hasBlockingWork) {
+        await _clearPersistedDraftChoices(context);
+      }
       debugPrint(
         '[zcash] Voting: resume plan after vote flow loaded '
         'round=${context.round.roundId} '
@@ -1257,7 +1273,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
-          phase: VotingSessionPhase.submittingShares,
+          phase: _phaseForPlans(refreshedRoundPlan),
           resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
           voteProgress: progress,
@@ -2831,9 +2847,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       accountUuid: context.accountUuid,
     );
     final notifier = ref.read(votingDraftProvider(draftKey).notifier);
-    final draft = await notifier.ensureLoaded();
-    for (final proposalId in draft.choices.keys.toList(growable: false)) {
-      notifier.clearChoice(proposalId);
+    try {
+      final draft = await notifier.ensureLoaded();
+      if (draft.isEmpty) return;
+      await notifier.clearAll();
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: draft cleanup skipped '
+        'round=${context.round.roundId} account=${context.accountUuid} '
+        'error=$error',
+      );
     }
   }
 
@@ -3035,8 +3058,8 @@ final votingSessionProvider =
       String
     >(VotingSessionNotifier.new);
 
-final votingSubmissionSessionProvider =
-    AsyncNotifierProvider.autoDispose.family<
+final votingSubmissionSessionProvider = AsyncNotifierProvider.autoDispose
+    .family<
       VotingSubmissionSessionNotifier,
       VotingSessionState,
       VotingSessionKey
