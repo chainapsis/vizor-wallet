@@ -114,7 +114,7 @@ existing bundle rows --note mismatch--> error
 
 ### Delegation Submission
 
-`workflow::mark_delegation_submitted` is the only transition for recording a
+`VotingDb::mark_delegation_submitted` is the only transition for recording a
 delegation transaction hash. It starts a SQLite transaction, checks any existing
 hash for same-data idempotency, stores `bundles.delegation_tx_hash`, and commits.
 
@@ -128,7 +128,7 @@ submitted_delegation --different tx_hash--> error
 
 ### Delegation Confirmation
 
-`workflow::mark_delegation_confirmed` atomically stores both
+`VotingDb::mark_delegation_confirmed` atomically stores both
 `bundles.delegation_tx_hash` and `bundles.van_leaf_position`. It accepts repeated
 calls with the same tx hash and VAN position, but rejects conflicting data.
 
@@ -159,7 +159,7 @@ sign_cast_vote error --> prepared
 
 ### Vote Submission
 
-`workflow::mark_vote_submitted` is the only transition for recording cast-vote
+`VotingDb::mark_vote_submitted` is the only transition for recording cast-vote
 submission. It stores `votes.tx_hash` in one SQLite transaction.
 
 Transition:
@@ -172,7 +172,7 @@ submitted_vote --different tx_hash--> error
 
 ### Vote Confirmation
 
-`workflow::mark_vote_confirmed` stores:
+`VotingDb::mark_vote_confirmed` stores:
 
 - `votes.tx_hash`
 - `bundles.van_leaf_position`
@@ -190,7 +190,7 @@ confirmed --conflicting tx_hash, position, or commitment JSON--> error
 
 ### Share Submission
 
-`workflow::record_share_delegation` records helper-server share submission in
+`zcash_voting::vote::CommittedVote::record_share` records helper-server share submission in
 `share_delegations`. It delegates share payload recovery and nullifier derivation
 to `zcash_voting::share::record`, so the app only supplies helper delivery
 state. The `submit_at` value stored with the row is the Unix-second reveal time
@@ -231,7 +231,7 @@ submitted_share --different nullifier--> error
 
 ### Share Confirmation
 
-`workflow::mark_share_confirmed` wraps the helper confirmation update in a SQLite
+`zcash_voting::vote::CommittedVote::confirm_share` wraps the helper confirmation update in a SQLite
 transaction and marks `share_delegations.confirmed = true`.
 
 Transition:

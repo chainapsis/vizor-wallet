@@ -1,10 +1,7 @@
 pub mod delegation;
 pub mod hotkey;
-pub mod recovery;
 pub mod state;
-pub mod tree_sync;
 pub mod vote;
-pub mod workflow;
 
 use super::network::WalletNetwork;
 

@@ -4,8 +4,7 @@ use crate::frb_generated::StreamSink;
 use crate::wallet::{
     keys,
     voting::{
-        delegation, delegation::DelegationProgress, hotkey, recovery, state, tree_sync, vote,
-        workflow,
+        delegation, delegation::DelegationProgress, hotkey, state, vote,
     },
 };
 use rand::{rngs::OsRng, RngCore};
@@ -746,7 +745,9 @@ pub fn mark_delegation_submitted(
     tx_hash: String,
 ) -> Result<(), String> {
     catch(|| {
-        workflow::mark_delegation_submitted(&db_path, &wallet_id, &round_id, bundle_index, &tx_hash)
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        db.mark_delegation_submitted(&round_id, bundle_index, &tx_hash)
+            .map_err(|e| e.to_string())
     })
 }
 
@@ -762,15 +763,16 @@ pub fn confirm_delegation_submission(
     catch(|| {
         let events: Vec<zcash_voting::confirmation::TxEvent> =
             events.into_iter().map(Into::into).collect();
-        workflow::confirm_delegation_submission(
-            &db_path,
-            &wallet_id,
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        zcash_voting::confirmation::confirm_delegation_submission(
+            &db,
             &round_id,
             bundle_index,
             &tx_hash,
             &events,
         )
         .map(Into::into)
+        .map_err(|e| e.to_string())
     })
 }
 
@@ -806,7 +808,11 @@ pub fn sync_vote_tree(
     round_id: String,
     node_url: String,
 ) -> Result<u32, String> {
-    catch(|| tree_sync::sync_commitment_tree(&db_path, &wallet_id, &round_id, &node_url))
+    catch(|| {
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        zcash_voting::precompute::sync_vote_tree(&db, &round_id, &node_url)
+            .map_err(|e| format!("sync_vote_tree failed: {e}"))
+    })
 }
 
 /// Generate a Vote Authority Note Merkle witness for a delegation bundle.
@@ -821,14 +827,15 @@ pub fn generate_van_witness(
     anchor_height: u32,
 ) -> Result<zcash_voting::wire::VanWitness, String> {
     catch(|| {
-        tree_sync::generate_van_witness(
-            &db_path,
-            &wallet_id,
-            &round_id,
-            bundle_index,
-            anchor_height,
-        )
-        .map(zcash_voting::wire::VanWitness::from)
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        let bundle_count = db
+            .get_bundle_count(&round_id)
+            .map_err(|e| format!("get_bundle_count failed: {e}"))?;
+        zcash_voting::validate_bundle_index(bundle_count, bundle_index, "voting")
+            .map_err(|e| e.to_string())?;
+        zcash_voting::precompute::van_witness(&db, &round_id, bundle_index, anchor_height)
+            .map(zcash_voting::wire::VanWitness::from)
+            .map_err(|e| format!("generate_van_witness failed: {e}"))
     })
 }
 
@@ -846,7 +853,10 @@ pub fn reset_voting_session_state(
     catch(|| {
         let account_wide = round_id.as_deref().map(str::is_empty).unwrap_or(true);
         let tree_count = if account_wide {
-            tree_sync::clear_tree_sync_session(&db_path, &wallet_id)?
+            let db = state::open_voting_db(&db_path, &wallet_id)?;
+            zcash_voting::precompute::reset_vote_tree(&db, "")
+                .map_err(|e| format!("clear_tree_sync_session failed: {e}"))?;
+            1
         } else {
             0
         };
@@ -975,8 +985,10 @@ pub fn get_round_recovery_state(
     round_id: String,
 ) -> Result<zcash_voting::wire::RoundRecoveryStateView, String> {
     catch(|| {
-        recovery::get_round_recovery_state(&db_path, &wallet_id, &round_id)
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        zcash_voting::recovery::round_snapshot(&db, &round_id)
             .map(zcash_voting::wire::RoundRecoveryStateView::from)
+            .map_err(|e| format!("round_snapshot failed: {e}"))
     })
 }
 
@@ -989,14 +1001,9 @@ pub fn mark_vote_submitted(
     tx_hash: String,
 ) -> Result<(), String> {
     catch(|| {
-        workflow::mark_vote_submitted(
-            &db_path,
-            &wallet_id,
-            &round_id,
-            bundle_index,
-            proposal_id,
-            &tx_hash,
-        )
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        db.mark_vote_submitted(&round_id, bundle_index, proposal_id, &tx_hash)
+            .map_err(|e| e.to_string())
     })
 }
 
@@ -1013,9 +1020,9 @@ pub fn confirm_vote_submission(
     catch(|| {
         let events: Vec<zcash_voting::confirmation::TxEvent> =
             events.into_iter().map(Into::into).collect();
-        workflow::confirm_vote_submission(
-            &db_path,
-            &wallet_id,
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        zcash_voting::confirmation::confirm_vote_submission(
+            &db,
             &round_id,
             bundle_index,
             proposal_id,
@@ -1023,6 +1030,7 @@ pub fn confirm_vote_submission(
             &events,
         )
         .map(Into::into)
+        .map_err(|e| e.to_string())
     })
 }
 
@@ -1039,16 +1047,12 @@ pub fn record_share_delegation(
     submit_at: u64,
 ) -> Result<(), String> {
     catch(|| {
-        workflow::record_share_delegation(
-            &db_path,
-            &wallet_id,
-            &round_id,
-            bundle_index,
-            proposal_id,
-            share_index,
-            &sent_to_urls,
-            submit_at,
-        )
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
+            .map_err(|e| format!("recover committed vote failed: {e}"))?
+            .record_share(&db, share_index, &sent_to_urls, submit_at)
+            .map_err(|e| format!("record_share_delegation failed: {e}"))?;
+        Ok(())
     })
 }
 
@@ -1062,14 +1066,12 @@ pub fn mark_share_confirmed(
     share_index: u32,
 ) -> Result<(), String> {
     catch(|| {
-        workflow::mark_share_confirmed(
-            &db_path,
-            &wallet_id,
-            &round_id,
-            bundle_index,
-            proposal_id,
-            share_index,
-        )
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
+            .map_err(|e| format!("recover committed vote failed: {e}"))?
+            .confirm_share(&db, share_index)
+            .map_err(|e| format!("mark_share_confirmed failed: {e}"))?;
+        Ok(())
     })
 }
 
@@ -1084,15 +1086,16 @@ pub fn add_sent_servers(
     new_urls: Vec<String>,
 ) -> Result<(), String> {
     catch(|| {
-        recovery::add_sent_servers(
-            &db_path,
-            &wallet_id,
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        zcash_voting::share::add_sent_servers(
+            &db,
             &round_id,
             bundle_index,
             proposal_id,
             share_index,
             &new_urls,
         )
+        .map_err(|e| format!("add_sent_servers failed: {e}"))
     })
 }
 
@@ -1105,7 +1108,11 @@ pub fn clear_recovery_state(
     wallet_id: String,
     round_id: String,
 ) -> Result<(), String> {
-    catch(|| recovery::clear_recovery_state(&db_path, &wallet_id, &round_id))
+    catch(|| {
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        zcash_voting::recovery::clear(&db, &round_id)
+            .map_err(|e| format!("clear_recovery_state failed: {e}"))
+    })
 }
 
 /// Compute the resumable voting-session plan for a round. The plan reports the
