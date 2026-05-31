@@ -85,7 +85,6 @@ class _KeystoneVotingScanScreenState
     final colors = context.colors;
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
-      showVotingSubmissionProgress: false,
       pane: AppDesktopPane(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(

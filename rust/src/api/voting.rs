@@ -769,26 +769,6 @@ pub fn mark_delegation_submitted(
     })
 }
 
-pub fn mark_delegation_confirmed(
-    db_path: String,
-    wallet_id: String,
-    round_id: String,
-    bundle_index: u32,
-    tx_hash: String,
-    van_leaf_position: u32,
-) -> Result<(), String> {
-    catch(|| {
-        workflow::mark_delegation_confirmed(
-            &db_path,
-            &wallet_id,
-            &round_id,
-            bundle_index,
-            &tx_hash,
-            van_leaf_position,
-        )
-    })
-}
-
 /// Parse tx events and record a confirmed delegation submission.
 pub fn confirm_delegation_submission(
     db_path: String,
@@ -810,21 +790,6 @@ pub fn confirm_delegation_submission(
             &events,
         )
         .map(Into::into)
-    })
-}
-
-/// Store the vote-authority-note leaf position emitted by the delegation TX.
-pub fn store_van_position(
-    db_path: String,
-    wallet_id: String,
-    round_id: String,
-    bundle_index: u32,
-    position: u32,
-) -> Result<(), String> {
-    catch(|| {
-        let db = state::open_voting_db(&db_path, &wallet_id)?;
-        db.store_van_position(&round_id, bundle_index, position)
-            .map_err(|e| format!("store_van_position failed: {e}"))
     })
 }
 
@@ -1054,30 +1019,6 @@ pub fn mark_vote_submitted(
             bundle_index,
             proposal_id,
             &tx_hash,
-        )
-    })
-}
-
-pub fn mark_vote_confirmed(
-    db_path: String,
-    wallet_id: String,
-    round_id: String,
-    bundle_index: u32,
-    proposal_id: u32,
-    tx_hash: String,
-    van_position: u32,
-    vc_tree_position: u64,
-) -> Result<(), String> {
-    catch(|| {
-        workflow::mark_vote_confirmed(
-            &db_path,
-            &wallet_id,
-            &round_id,
-            bundle_index,
-            proposal_id,
-            &tx_hash,
-            van_position,
-            vc_tree_position,
         )
     })
 }
@@ -1808,10 +1749,7 @@ mod tests {
             .unwrap(),
             1
         );
-        assert_eq!(
-            db.get_bundle_count(ROUND_ID).unwrap(),
-            1
-        );
+        assert_eq!(db.get_bundle_count(ROUND_ID).unwrap(), 1);
     }
 
     #[test]

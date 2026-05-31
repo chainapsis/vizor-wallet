@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -16,8 +15,6 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.da
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
-import 'package:zcash_wallet/src/features/voting/widgets/voting_quit_guard_host.dart';
-import 'package:zcash_wallet/src/features/voting/widgets/voting_submission_progress_banner.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
@@ -33,6 +30,16 @@ import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_voting;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
+    as rust_delegate;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/round.dart'
+    as rust_round;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/share_policy.dart'
+    as rust_share_policy;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/types.dart'
+    as rust_types;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/vote.dart'
+    as rust_vote;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_frb_types;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
@@ -165,8 +172,11 @@ void main() {
       find.text('Choose at least one vote before submitting.'),
     );
 
-    expect(find.text('Vote submission needs attention'), findsOneWidget);
-    expect(find.text('Clear'), findsWidgets);
+    expect(find.text('Choose at least one vote before submitting.'), findsOne);
+    expect(
+      find.byKey(const ValueKey('voting_status_clear_submission_error')),
+      findsOneWidget,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey('voting_status_clear_submission_error')),
@@ -174,7 +184,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('voting route'), findsOneWidget);
-    expect(find.text('Vote submission needs attention'), findsNothing);
+    expect(
+      find.text('Choose at least one vote before submitting.'),
+      findsNothing,
+    );
   });
 
   testWidgets('status screen explains ineligible account voting failure', (
@@ -882,212 +895,6 @@ void main() {
       expect(find.text('submission confirmed route'), findsOneWidget);
     },
   );
-
-  testWidgets('global progress banner appears during background submission', (
-    tester,
-  ) async {
-    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          accountProvider.overrideWith(_MnemonicAccountNotifier.new),
-          votingSubmissionJobsProvider.overrideWith(
-            () => _StaticVotingSubmissionJobsNotifier(
-              const VotingSubmissionJobsState(jobKeys: [key]),
-            ),
-          ),
-          votingSubmissionJobProvider(key).overrideWith(
-            () => _StaticVotingSubmissionJobNotifier(
-              key,
-              const VotingSubmissionJobState(
-                key: key,
-                status: VotingSubmissionJobStatus.running,
-                generation: 1,
-              ),
-            ),
-          ),
-          votingSubmissionJobSessionProvider(key).overrideWithValue(
-            AsyncValue.data(
-              VotingSessionState(
-                roundId: _roundId,
-                accountUuid: 'account-1',
-                phase: VotingSessionPhase.submittingShares,
-                voteSubmissionCompletedCount: 1,
-                voteSubmissionTotalCount: 2,
-                voteSubmissionProgress: 0.5,
-              ),
-            ),
-          ),
-        ],
-        child: AppTheme(
-          data: AppThemeData.light,
-          child: const Directionality(
-            textDirection: TextDirection.ltr,
-            child: VotingSubmissionProgressBanner(),
-          ),
-        ),
-      ),
-    );
-
-    expect(find.text('Vote submission in progress'), findsOneWidget);
-    expect(find.textContaining('Submitting shares'), findsOneWidget);
-    expect(find.textContaining('Account 1'), findsOneWidget);
-    expect(find.text('View'), findsOneWidget);
-  });
-
-  testWidgets('global progress banner dismisses completed submission', (
-    tester,
-  ) async {
-    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          accountProvider.overrideWith(_MnemonicAccountNotifier.new),
-          votingSubmissionJobsProvider.overrideWith(
-            () => _StaticVotingSubmissionJobsNotifier(
-              const VotingSubmissionJobsState(jobKeys: [key]),
-            ),
-          ),
-          votingSubmissionJobProvider(key).overrideWith(
-            () => _StaticVotingSubmissionJobNotifier(
-              key,
-              const VotingSubmissionJobState(
-                key: key,
-                status: VotingSubmissionJobStatus.complete,
-                generation: 1,
-              ),
-            ),
-          ),
-          votingSubmissionJobSessionProvider(key).overrideWithValue(
-            AsyncValue.data(
-              VotingSessionState(
-                roundId: _roundId,
-                accountUuid: 'account-1',
-                phase: VotingSessionPhase.done,
-              ),
-            ),
-          ),
-        ],
-        child: AppTheme(
-          data: AppThemeData.light,
-          child: const Directionality(
-            textDirection: TextDirection.ltr,
-            child: VotingSubmissionProgressBanner(),
-          ),
-        ),
-      ),
-    );
-
-    expect(find.text('Vote submission complete'), findsOneWidget);
-    expect(find.text('Done'), findsOneWidget);
-    expect(find.text('View'), findsNothing);
-
-    await tester.tap(find.text('Done'));
-    await tester.pump();
-
-    expect(find.text('Vote submission complete'), findsNothing);
-    expect(find.text('Done'), findsNothing);
-  });
-
-  testWidgets('global progress banner clears failed submission', (
-    tester,
-  ) async {
-    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          accountProvider.overrideWith(_MnemonicAccountNotifier.new),
-          votingSubmissionJobsProvider.overrideWith(
-            () => _StaticVotingSubmissionJobsNotifier(
-              const VotingSubmissionJobsState(jobKeys: [key]),
-            ),
-          ),
-          votingSubmissionJobProvider(key).overrideWith(
-            () => _StaticVotingSubmissionJobNotifier(
-              key,
-              const VotingSubmissionJobState(
-                key: key,
-                status: VotingSubmissionJobStatus.error,
-                generation: 1,
-                errorMessage: 'Voting failed.',
-              ),
-            ),
-          ),
-          votingSubmissionJobSessionProvider(key).overrideWithValue(
-            AsyncValue.data(
-              VotingSessionState(
-                roundId: _roundId,
-                accountUuid: 'account-1',
-                phase: VotingSessionPhase.error,
-              ),
-            ),
-          ),
-        ],
-        child: AppTheme(
-          data: AppThemeData.light,
-          child: const Directionality(
-            textDirection: TextDirection.ltr,
-            child: VotingSubmissionProgressBanner(),
-          ),
-        ),
-      ),
-    );
-
-    expect(find.text('Vote submission needs attention'), findsOneWidget);
-    expect(find.text('Clear'), findsOneWidget);
-    expect(find.text('View'), findsOneWidget);
-    expect(
-      tester
-          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
-          .value,
-      0,
-    );
-
-    await tester.tap(
-      find.byKey(ValueKey('voting_submission_banner_clear_$key')),
-    );
-    await tester.pump();
-
-    expect(find.text('Vote submission needs attention'), findsNothing);
-    expect(find.text('Clear'), findsNothing);
-  });
-
-  testWidgets('quit guard confirms while submission is active', (tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          votingSubmissionHasInFlightJobsProvider.overrideWithValue(true),
-        ],
-        child: AppTheme(
-          data: AppThemeData.light,
-          child: const MaterialApp(
-            home: VotingQuitGuardHost(child: SizedBox.shrink()),
-          ),
-        ),
-      ),
-    );
-
-    final keepOpen = _requestVotingQuitConfirmation();
-    await tester.pumpAndSettle();
-    expect(find.text('Vote submission in progress'), findsOneWidget);
-    expect(
-      find.text(
-        'Your vote is still being submitted. Quitting now may interrupt the process.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Keep app open'), findsOneWidget);
-    expect(find.text('Quit anyway'), findsOneWidget);
-    await tester.tap(find.text('Keep app open'));
-    await tester.pumpAndSettle();
-    expect(await keepOpen, isFalse);
-
-    final quitAnyway = _requestVotingQuitConfirmation();
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Quit anyway'));
-    await tester.pumpAndSettle();
-    expect(await quitAnyway, isTrue);
-  });
 
   testWidgets('proposal detail hides View more when description fits', (
     tester,
@@ -1819,18 +1626,6 @@ Future<void> _pumpUntilFound(
   }
 }
 
-Future<bool> _requestVotingQuitConfirmation() async {
-  const codec = StandardMethodCodec();
-  final response = Completer<ByteData?>();
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .handlePlatformMessage(
-        kVotingQuitGuardChannelName,
-        codec.encodeMethodCall(const MethodCall(kVotingQuitGuardConfirmMethod)),
-        response.complete,
-      );
-  return codec.decodeEnvelope((await response.future)!) as bool;
-}
-
 ProviderContainer _statusContainer({
   FakeVotingHttpClient? http,
   AccountNotifier Function()? accountOverride,
@@ -2158,8 +1953,7 @@ rust_frb_types.RoundRecoveryStateView _recoveryState({
   List<rust_frb_types.VoteRecoveryView> votes = const [],
   List<rust_frb_types.VoteRecoveryView> voteWorkflows = const [],
   List<rust_frb_types.VoteRecoveryView> voteTxHashes = const [],
-  List<rust_frb_types.CommitmentBundleRecoveryView> commitmentBundles =
-      const [],
+  List<rust_frb_types.RecoverableCommitmentBundle> commitmentBundles = const [],
   List<rust_frb_types.ShareWorkflowRecoveryView> shareWorkflows = const [],
   List<rust_frb_types.ShareDelegationRecordView> shareDelegations = const [],
   List<rust_frb_types.ShareDelegationRecordView> unconfirmedShareDelegations =
@@ -2399,7 +2193,7 @@ class _NoopVotingRustApi implements VotingRustApi {
 
 class _FailingVotingPowerRustApi extends _NoopVotingRustApi {
   @override
-  Future<rust_wire.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_round.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2415,7 +2209,7 @@ class _FailingVotingPowerRustApi extends _NoopVotingRustApi {
 
 class _IneligibleVotingRustApi extends _NoopVotingRustApi {
   @override
-  Future<rust_wire.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_round.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2547,13 +2341,12 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
 
   final _MutableVotingRecoveryApi recoveryApi;
   final int bundleCount;
-  final storedKeystoneSignatures =
-      <int, rust_wire.KeystoneSignatureRecordView>{};
+  final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int setupDelegationBundleCalls = 0;
   int keystoneDelegationRequestCalls = 0;
 
   @override
-  Future<rust_wire.BundleSetupResultView> setupDelegationBundles({
+  Future<rust_round.BundleLayout> setupDelegationBundles({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2564,9 +2357,10 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     int? maxRealNotesPerBundle,
   }) async {
     setupDelegationBundleCalls++;
-    return rust_wire.BundleSetupResultView(
+    return rust_round.BundleLayout(
       bundleCount: bundleCount,
-      eligibleWeightZatoshi: BigInt.from(100),
+      eligibleWeight: BigInt.from(100),
+      droppedCount: 0,
     );
   }
 
@@ -2641,7 +2435,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<List<rust_wire.KeystoneSignatureRecordView>> getKeystoneSignatures({
+  Future<List<rust_wire.KeystoneSignatureRecord>> getKeystoneSignatures({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -2669,8 +2463,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<rust_wire.KeystoneDelegationRequestView>
-  buildKeystoneDelegationRequest({
+  Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
     required String dbPath,
     required String lightwalletdUrl,
     required String network,
@@ -2683,7 +2476,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     int? maxRealNotesPerBundle,
   }) async {
     keystoneDelegationRequestCalls++;
-    return rust_wire.KeystoneDelegationRequestView(
+    return rust_delegate.KeystoneSigningRequest(
       pcztBytes: Uint8List.fromList(const [1]),
       redactedPcztBytes: Uint8List.fromList(const [2]),
       pcztSighash: Uint8List.fromList(const [3]),
@@ -2721,13 +2514,12 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required List<int> sighash,
     required List<int> rk,
   }) async {
-    storedKeystoneSignatures[bundleIndex] =
-        rust_wire.KeystoneSignatureRecordView(
-          bundleIndex: bundleIndex,
-          sig: Uint8List.fromList(sig),
-          sighash: Uint8List.fromList(sighash),
-          rk: Uint8List.fromList(rk),
-        );
+    storedKeystoneSignatures[bundleIndex] = rust_wire.KeystoneSignatureRecord(
+      bundleIndex: bundleIndex,
+      sig: Uint8List.fromList(sig),
+      sighash: Uint8List.fromList(sighash),
+      rk: Uint8List.fromList(rk),
+    );
   }
 
   @override
@@ -2803,15 +2595,11 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String txHash,
   }) async {}
 
-  @override
-  Future<void> markDelegationConfirmed({
-    required String dbPath,
-    required String walletId,
-    required String roundId,
+  void _recordDelegationConfirmed({
     required int bundleIndex,
     required String txHash,
     required int vanLeafPosition,
-  }) async {
+  }) {
     recoveryApi.state = _recoveryState(
       delegationWorkflows: [
         rust_frb_types.DelegationRecoveryView(
@@ -2840,10 +2628,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       roundId,
       'leaf_index',
     );
-    await markDelegationConfirmed(
-      dbPath: dbPath,
-      walletId: walletId,
-      roundId: roundId,
+    _recordDelegationConfirmed(
       bundleIndex: bundleIndex,
       txHash: txHash,
       vanLeafPosition: vanLeafPosition,
@@ -2865,14 +2650,14 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<rust_wire.VanWitnessView> generateVanWitness({
+  Future<rust_vote.VanWitness> generateVanWitness({
     required String dbPath,
     required String walletId,
     required String roundId,
     required int bundleIndex,
     required int anchorHeight,
   }) async {
-    return rust_wire.VanWitnessView(
+    return rust_vote.VanWitness(
       authPath: const [],
       position: bundleIndex,
       anchorHeight: anchorHeight,
@@ -2887,8 +2672,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String roundId,
     required int bundleIndex,
     required List<int> hotkeySeed,
-    required rust_wire.VanWitnessView vanWitness,
-    required List<rust_wire.DraftVoteView> draftVotes,
+    required rust_vote.VanWitness vanWitness,
+    required List<rust_wire.DraftVote> draftVotes,
   }) async* {
     for (final draft in draftVotes) {
       yield rust_voting.ApiVoteCommitEvent(
@@ -2934,8 +2719,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       'proposal_id': share.proposalId,
       'vote_decision': share.voteDecision,
       'enc_share': {
-        'c1': share.encryptedShare.c1,
-        'c2': share.encryptedShare.c2,
+        'c1': base64Encode(share.encryptedShare.c1),
+        'c2': base64Encode(share.encryptedShare.c2),
         'share_index': share.encryptedShare.shareIndex,
       },
       'share_index': share.shareIndex,
@@ -2943,8 +2728,8 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
       'all_enc_shares': share.allEncryptedShares
           .map(
             (share) => {
-              'c1': share.c1,
-              'c2': share.c2,
+              'c1': base64Encode(share.c1),
+              'c2': base64Encode(share.c2),
               'share_index': share.shareIndex,
             },
           )
@@ -2956,7 +2741,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<List<rust_frb_types.ShareSubmissionPlanView>> planShareSubmissions({
+  Future<List<rust_share_policy.ShareSubmissionPlan>> planShareSubmissions({
     required int shareCount,
     required List<String> serverUrls,
     required BigInt nowSeconds,
@@ -2967,7 +2752,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     final targetCount = serverUrls.isEmpty ? 0 : (serverUrls.length / 2).ceil();
     return [
       for (var i = 0; i < shareCount; i++)
-        rust_frb_types.ShareSubmissionPlanView(
+        rust_share_policy.ShareSubmissionPlan(
           submitAt: BigInt.zero,
           targetCount: targetCount,
           targetServers: serverUrls.take(targetCount).toList(growable: false),
@@ -3027,17 +2812,13 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String txHash,
   }) async {}
 
-  @override
-  Future<void> markVoteConfirmed({
-    required String dbPath,
-    required String walletId,
-    required String roundId,
+  void _recordVoteConfirmed({
     required int bundleIndex,
     required int proposalId,
     required String txHash,
     required int vanPosition,
     required BigInt vcTreePosition,
-  }) async {
+  }) {
     recoveryApi.state = _recoveryState(
       delegationWorkflows: [
         rust_frb_types.DelegationRecoveryView(
@@ -3073,10 +2854,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required List<rust_voting.ApiTxEvent> events,
   }) async {
     final leafPositions = _castVoteLeafPositions(events, roundId);
-    await markVoteConfirmed(
-      dbPath: dbPath,
-      walletId: walletId,
-      roundId: roundId,
+    _recordVoteConfirmed(
       bundleIndex: bundleIndex,
       proposalId: proposalId,
       txHash: txHash,
@@ -3271,9 +3049,9 @@ rust_wire.SignedVoteCommitmentsView _commitments({
   required int proposalId,
   required int choice,
 }) {
-  final wireShare = rust_wire.WireEncryptedShareJson(
-    c1: base64Encode(Uint8List.fromList(const [8])),
-    c2: base64Encode(Uint8List.fromList(const [9])),
+  final wireShare = rust_types.WireEncryptedShare(
+    c1: Uint8List.fromList(const [8]),
+    c2: Uint8List.fromList(const [9]),
     shareIndex: 0,
   );
   return rust_wire.SignedVoteCommitmentsView(

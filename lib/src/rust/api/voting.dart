@@ -13,7 +13,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `bundle_policy`, `catch`, `require_len`, `share_tracking_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -333,22 +333,6 @@ Future<void> markDelegationSubmitted({
   txHash: txHash,
 );
 
-Future<void> markDelegationConfirmed({
-  required String dbPath,
-  required String walletId,
-  required String roundId,
-  required int bundleIndex,
-  required String txHash,
-  required int vanLeafPosition,
-}) => RustLib.instance.api.crateApiVotingMarkDelegationConfirmed(
-  dbPath: dbPath,
-  walletId: walletId,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  txHash: txHash,
-  vanLeafPosition: vanLeafPosition,
-);
-
 /// Parse tx events and record a confirmed delegation submission.
 Future<ApiDelegationConfirmation> confirmDelegationSubmission({
   required String dbPath,
@@ -364,21 +348,6 @@ Future<ApiDelegationConfirmation> confirmDelegationSubmission({
   bundleIndex: bundleIndex,
   txHash: txHash,
   events: events,
-);
-
-/// Store the vote-authority-note leaf position emitted by the delegation TX.
-Future<void> storeVanPosition({
-  required String dbPath,
-  required String walletId,
-  required String roundId,
-  required int bundleIndex,
-  required int position,
-}) => RustLib.instance.api.crateApiVotingStoreVanPosition(
-  dbPath: dbPath,
-  walletId: walletId,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  position: position,
 );
 
 /// Delete bundle rows at or above `keep_count` for partial-bundle recovery.
@@ -510,26 +479,6 @@ Future<void> markVoteSubmitted({
   bundleIndex: bundleIndex,
   proposalId: proposalId,
   txHash: txHash,
-);
-
-Future<void> markVoteConfirmed({
-  required String dbPath,
-  required String walletId,
-  required String roundId,
-  required int bundleIndex,
-  required int proposalId,
-  required String txHash,
-  required int vanPosition,
-  required BigInt vcTreePosition,
-}) => RustLib.instance.api.crateApiVotingMarkVoteConfirmed(
-  dbPath: dbPath,
-  walletId: walletId,
-  roundId: roundId,
-  bundleIndex: bundleIndex,
-  proposalId: proposalId,
-  txHash: txHash,
-  vanPosition: vanPosition,
-  vcTreePosition: vcTreePosition,
 );
 
 /// Parse tx events and record a confirmed vote submission.
