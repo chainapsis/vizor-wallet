@@ -274,6 +274,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   /// Switch active account.
+  ///
+  /// Leaving an account also clears voting session state held in this process.
+  /// Cleanup is skipped while that account has an active voting submission so a
+  /// submit flow cannot lose the Rust state it still needs.
   Future<void> switchAccount(String uuid) async {
     final previousActiveUuid = state.value?.activeAccountUuid;
     if (previousActiveUuid != null && previousActiveUuid != uuid) {
@@ -347,6 +351,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   /// Remove an account from the wallet.
+  ///
+  /// Destructive account changes are blocked while any vote submission is in
+  /// progress. Once removal is allowed, voting state and hotkeys for that
+  /// account are cleared with the wallet account data.
   Future<void> removeAccount(String uuid) async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
     final prev = state.value ?? const AccountState();
@@ -432,6 +440,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   /// Delete all wallet data (DB + keychain). Caller must stop sync first.
+  ///
+  /// This also clears voting state held in this process for every account
+  /// before the wallet DB and voting sidecar DB are deleted.
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
     final dbPath = await _getDbPath();
@@ -673,6 +684,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   }
 
   Future<void> _deleteExistingDb(String dbPath) async {
+    // The voting DB is a sidecar derived from the wallet DB path, so wallet
+    // reset/delete must remove both sqlite databases and their sidecar files.
     for (final path in [dbPath, votingDbPathForWalletDbPath(dbPath)]) {
       final file = File(path);
       if (file.existsSync()) file.deleteSync();

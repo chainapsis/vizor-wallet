@@ -226,6 +226,11 @@ class AppSecureStore {
     });
   }
 
+  /// Reads the voting hotkey for an account and round.
+  ///
+  /// Hotkeys are session secrets, so callers must have an unlocked wallet
+  /// session. A locked session returns `null` instead of prompting the platform
+  /// secure storage layer.
   Future<List<int>?> readVotingHotkey({
     required String accountUuid,
     required String roundId,
@@ -238,6 +243,7 @@ class AppSecureStore {
     return base64Decode(encoded);
   }
 
+  /// Stores a voting hotkey as an encrypted secret for an account and round.
   Future<void> writeVotingHotkey({
     required String accountUuid,
     required String roundId,
@@ -249,6 +255,7 @@ class AppSecureStore {
     );
   }
 
+  /// Removes one voting hotkey for an account and round.
   Future<void> deleteVotingHotkey({
     required String accountUuid,
     required String roundId,
@@ -258,6 +265,10 @@ class AppSecureStore {
     );
   }
 
+  /// Removes every voting hotkey for an account.
+  ///
+  /// Account deletion uses this to clear round-scoped hotkeys that would be
+  /// orphaned once the account UUID leaves the wallet account list.
   Future<void> deleteVotingHotkeysForAccount(String accountUuid) {
     return _secretMutationLock.run(() async {
       final prefix = _votingHotkeyAccountPrefix(accountUuid);
@@ -359,8 +370,12 @@ class AppSecureStore {
     setSessionPassword(password);
   }
 
-  /// Rotates the wallet password and re-encrypts every app-managed encrypted
-  /// secure-storage payload so mnemonic entries remain readable afterwards.
+  /// Rotates the wallet password and re-encrypts every app-managed secret.
+  ///
+  /// Account mnemonics and voting hotkeys are both encrypted with the wallet
+  /// password, but they may live in different secure storage backends. Rotation
+  /// snapshots both classes of keys and later writes each one back to its
+  /// owning backend.
   Future<bool> changePassword({
     required String currentPassword,
     required String newPassword,
@@ -439,6 +454,8 @@ class AppSecureStore {
           ),
         );
       }
+      // Voting hotkeys are encrypted with the wallet password like mnemonics,
+      // but they live in the regular app storage backend.
       final votingHotkeyValues = await _runStorageOperation(
         'read all voting hotkeys',
         _storage.readAll,
@@ -507,6 +524,7 @@ class AppSecureStore {
     });
   }
 
+  /// Stable secure-storage key for one account's hotkey in one voting round.
   static String votingHotkeyStorageKey({
     required String accountUuid,
     required String roundId,
@@ -855,6 +873,11 @@ class AppSecureStore {
     }
   }
 
+  /// Applies the forward password-rotation journal.
+  ///
+  /// Journal entries can point at either mnemonic storage or regular storage,
+  /// so writes must be dispatched by key prefix instead of always using the
+  /// mnemonic backend.
   Future<void> _writeRotatedPasswordState(
     _PasswordRotationRecord rotation,
   ) async {
@@ -870,6 +893,10 @@ class AppSecureStore {
     await writePlain(_passwordVerifierKey, rotation.newVerifier);
   }
 
+  /// Restores pre-rotation secret payloads if a password change fails midway.
+  ///
+  /// Rollback mirrors `_writeRotatedPasswordState`: each secret must return to
+  /// the same secure storage backend it came from.
   Future<void> _rollbackPasswordRotation(
     _PasswordRotationRollbackSnapshot rollback,
     String currentPassword,
@@ -928,6 +955,7 @@ class AppSecureStore {
     }
   }
 
+  /// Selects the secure storage backend that owns an app-managed secret key.
   FlutterSecureStorage _encryptedSecretStorageForKey(String key) {
     return key.startsWith(_accountMnemonicKeyPrefix)
         ? _mnemonicStorage
