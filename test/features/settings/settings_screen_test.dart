@@ -48,9 +48,37 @@ void main() {
 
     expect(_hasFocusRing(tester), isTrue);
   });
+
+  testWidgets('settings opens voting for software accounts', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_settingsHarness());
+    await tester.tap(find.text('Coinholder Polling'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('voting route'), findsOneWidget);
+  });
+
+  testWidgets('settings opens voting for hardware accounts', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_settingsHarness(isHardware: true));
+    await tester.pump();
+
+    expect(find.text('Hardware accounts coming soon'), findsNothing);
+    await tester.tap(find.text('Coinholder Polling'));
+    await tester.pumpAndSettle();
+    expect(find.text('voting route'), findsOneWidget);
+  });
 }
 
-Widget _settingsHarness() {
+Widget _settingsHarness({bool isHardware = false}) {
   final router = GoRouter(
     initialLocation: '/settings',
     routes: [
@@ -58,6 +86,7 @@ Widget _settingsHarness() {
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
+      GoRoute(path: '/voting', builder: (_, _) => const Text('voting route')),
       GoRoute(
         path: '/activity',
         builder: (_, _) => const Text('activity route'),
@@ -67,7 +96,9 @@ Widget _settingsHarness() {
 
   return ProviderScope(
     overrides: [
-      appBootstrapProvider.overrideWithValue(_bootstrap),
+      appBootstrapProvider.overrideWithValue(
+        _bootstrap(isHardware: isHardware),
+      ),
       syncProvider.overrideWith(FakeSyncNotifier.new),
     ],
     child: MaterialApp.router(
@@ -77,10 +108,17 @@ Widget _settingsHarness() {
   );
 }
 
-final _bootstrap = AppBootstrapState(
+AppBootstrapState _bootstrap({bool isHardware = false}) => AppBootstrapState(
   initialLocation: '/settings',
-  initialAccountState: const AccountState(
-    accounts: [AccountInfo(uuid: 'account-1', name: 'Account 1', order: 0)],
+  initialAccountState: AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'account-1',
+        name: 'Account 1',
+        order: 0,
+        isHardware: isHardware,
+      ),
+    ],
     activeAccountUuid: 'account-1',
     activeAddress: 'u1settingsscreenaddress',
   ),

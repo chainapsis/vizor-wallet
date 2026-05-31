@@ -115,6 +115,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onChangePassword: () =>
                     context.push('/settings/change-password'),
                 onEndpoint: () => context.push('/settings/endpoint'),
+                onVoting: () => context.push('/voting'),
                 onAccountName: hasActiveAccount
                     ? () => _showModal(_SettingsModalType.accountName)
                     : null,
@@ -197,6 +198,7 @@ class _SettingsPane extends StatelessWidget {
     required this.onSeedPhrase,
     required this.onChangePassword,
     required this.onEndpoint,
+    required this.onVoting,
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onTheme,
@@ -212,6 +214,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
   final VoidCallback onEndpoint;
+  final VoidCallback? onVoting;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
@@ -230,40 +233,53 @@ class _SettingsPane extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.s),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 752),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Settings',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.displaySmall.copyWith(
-                          color: colors.text.accent,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 752),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Settings',
+                                textAlign: TextAlign.center,
+                                style: AppTypography.displaySmall.copyWith(
+                                  color: colors.text.accent,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              const AppDecorativeDivider(width: 256),
+                              const SizedBox(height: AppSpacing.sm),
+                              _SettingsList(
+                                accountName: accountName,
+                                profilePictureLabel: profilePictureLabel,
+                                activeAccountIsHardware:
+                                    activeAccountIsHardware,
+                                endpointLabel: endpointLabel,
+                                themeLabel: themeLabel,
+                                updateLabel: updateLabel,
+                                onSeedPhrase: onSeedPhrase,
+                                onChangePassword: onChangePassword,
+                                onEndpoint: onEndpoint,
+                                onVoting: onVoting,
+                                onAccountName: onAccountName,
+                                onProfilePicture: onProfilePicture,
+                                onTheme: onTheme,
+                                onUpdates: onUpdates,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      const AppDecorativeDivider(width: 256),
-                      const SizedBox(height: AppSpacing.sm),
-                      _SettingsList(
-                        accountName: accountName,
-                        profilePictureLabel: profilePictureLabel,
-                        activeAccountIsHardware: activeAccountIsHardware,
-                        endpointLabel: endpointLabel,
-                        themeLabel: themeLabel,
-                        updateLabel: updateLabel,
-                        onSeedPhrase: onSeedPhrase,
-                        onChangePassword: onChangePassword,
-                        onEndpoint: onEndpoint,
-                        onAccountName: onAccountName,
-                        onProfilePicture: onProfilePicture,
-                        onTheme: onTheme,
-                        onUpdates: onUpdates,
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -284,6 +300,7 @@ class _SettingsList extends StatelessWidget {
     required this.onSeedPhrase,
     required this.onChangePassword,
     required this.onEndpoint,
+    required this.onVoting,
     required this.onAccountName,
     required this.onProfilePicture,
     required this.onTheme,
@@ -299,6 +316,7 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
   final VoidCallback onEndpoint;
+  final VoidCallback? onVoting;
   final VoidCallback? onAccountName;
   final VoidCallback? onProfilePicture;
   final VoidCallback onTheme;
@@ -338,6 +356,18 @@ class _SettingsList extends StatelessWidget {
               label: 'Account Name',
               value: accountName,
               onTap: onAccountName,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.s),
+        _SettingsBlock(
+          title: 'Extras',
+          rows: [
+            _SettingsRow(
+              iconName: AppIcons.scroll,
+              label: 'Coinholder Polling',
+              value: 'Open',
+              onTap: onVoting,
             ),
           ],
         ),

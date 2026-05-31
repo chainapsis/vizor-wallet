@@ -693,7 +693,7 @@ class _AppTextFieldState extends State<AppTextField> {
                   Expanded(
                     child: Text(
                       widget.messageText!,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style:
                           widget.messageStyle ??

@@ -6,10 +6,12 @@ import '../../providers/account_provider.dart';
 import '../../providers/app_security_provider.dart';
 import '../../providers/sync_failure.dart';
 import '../../providers/sync_provider.dart';
+import '../../providers/voting/voting_submission_guard_provider.dart';
 import '../config/swap_feature_config.dart';
 import '../profile_pictures.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
+import '../widgets/app_toast.dart';
 import '../widgets/app_profile_picture.dart';
 import 'app_desktop_shell.dart';
 
@@ -29,14 +31,26 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
       _matchedLocation == routePath ||
       _matchedLocation.startsWith('$routePath/');
 
+  bool _blockIfVotingSubmissionInProgress() {
+    final guards = ref.read(votingSubmissionGuardProvider);
+    if (guards.isEmpty) return false;
+    final guard = guards.first;
+    showAppToast(context, guard.message);
+    return true;
+  }
+
+  void _navigateTo(String routePath) {
+    if (_matches(routePath)) return;
+    context.go(routePath);
+  }
+
   void _openAccounts() {
-    if (!_matches('/accounts')) {
-      context.go('/accounts');
-    }
+    _navigateTo('/accounts');
   }
 
   Future<void> _handleSignOut() async {
     if (_isSigningOut) return;
+    if (_blockIfVotingSubmissionInProgress()) return;
     final syncNotifier = ref.read(syncProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
     final securityNotifier = ref.read(appSecurityProvider.notifier);
@@ -115,7 +129,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     label: 'Home',
                     iconName: AppIcons.home,
                     active: _matches('/home'),
-                    onTap: _matches('/home') ? null : () => context.go('/home'),
+                    onTap: _matches('/home')
+                        ? null
+                        : () => _navigateTo('/home'),
                   ),
                   if (swapFeatureEnabled) ...[
                     const SizedBox(height: AppSpacing.xs),
@@ -126,7 +142,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       active: _matches('/swap'),
                       onTap: _matches('/swap')
                           ? null
-                          : () => context.go('/swap'),
+                          : () => _navigateTo('/swap'),
                     ),
                   ],
                   const SizedBox(height: AppSpacing.xs),
@@ -137,7 +153,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     active: _matches('/address-book'),
                     onTap: _matches('/address-book')
                         ? null
-                        : () => context.go('/address-book'),
+                        : () => _navigateTo('/address-book'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
@@ -147,7 +163,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     active: _matches('/activity'),
                     onTap: _matches('/activity')
                         ? null
-                        : () => context.go('/activity'),
+                        : () => _navigateTo('/activity'),
                   ),
                 ],
               ),
@@ -164,7 +180,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     active: _matches('/settings'),
                     onTap: _matches('/settings')
                         ? null
-                        : () => context.go('/settings'),
+                        : () => _navigateTo('/settings'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
@@ -173,7 +189,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     active: _matches('/about'),
                     onTap: _matches('/about')
                         ? null
-                        : () => context.go('/about'),
+                        : () => _navigateTo('/about'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
