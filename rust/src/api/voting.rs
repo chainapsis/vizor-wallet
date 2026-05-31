@@ -3,6 +3,7 @@ use std::{panic, sync::Arc};
 use crate::frb_generated::StreamSink;
 use crate::wallet::{
     keys,
+    network::WalletNetwork,
     voting::{delegation, delegation::DelegationProgress, hotkey, state, vote},
 };
 use rand::{rngs::OsRng, RngCore};
@@ -48,20 +49,6 @@ pub struct ApiTxEvent {
     pub attributes: Vec<ApiTxEventAttribute>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-/// Parsed delegation confirmation data recorded by zcash_voting.
-pub struct ApiDelegationConfirmation {
-    pub tx_hash: String,
-    pub van_leaf_position: u32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-/// Parsed cast-vote confirmation data recorded by zcash_voting.
-pub struct ApiVoteConfirmation {
-    pub tx_hash: String,
-    pub van_position: u32,
-    pub vc_tree_position: u64,
-}
 
 fn bundle_policy(max_real_notes_per_bundle: Option<u32>) -> Result<BundlePolicy, String> {
     BundlePolicy::from_optional_max_real_notes_per_bundle(max_real_notes_per_bundle)
@@ -87,25 +74,6 @@ impl From<ApiTxEvent> for zcash_voting::confirmation::TxEvent {
         Self {
             event_type: event.event_type,
             attributes: event.attributes.into_iter().map(Into::into).collect(),
-        }
-    }
-}
-
-impl From<zcash_voting::confirmation::DelegationConfirmation> for ApiDelegationConfirmation {
-    fn from(confirmation: zcash_voting::confirmation::DelegationConfirmation) -> Self {
-        Self {
-            tx_hash: confirmation.tx_hash,
-            van_leaf_position: confirmation.van_leaf_position,
-        }
-    }
-}
-
-impl From<zcash_voting::confirmation::VoteConfirmation> for ApiVoteConfirmation {
-    fn from(confirmation: zcash_voting::confirmation::VoteConfirmation) -> Self {
-        Self {
-            tx_hash: confirmation.tx_hash,
-            van_position: confirmation.van_leaf_position,
-            vc_tree_position: confirmation.vc_tree_position,
         }
     }
 }
@@ -763,7 +731,7 @@ pub fn confirm_delegation_submission(
     bundle_index: u32,
     tx_hash: String,
     events: Vec<ApiTxEvent>,
-) -> Result<ApiDelegationConfirmation, String> {
+) -> Result<zcash_voting::wire::DelegationConfirmation, String> {
     catch(|| {
         let events: Vec<zcash_voting::confirmation::TxEvent> =
             events.into_iter().map(Into::into).collect();
@@ -775,7 +743,6 @@ pub fn confirm_delegation_submission(
             &tx_hash,
             &events,
         )
-        .map(Into::into)
         .map_err(|e| e.to_string())
     })
 }
@@ -1020,7 +987,7 @@ pub fn confirm_vote_submission(
     proposal_id: u32,
     tx_hash: String,
     events: Vec<ApiTxEvent>,
-) -> Result<ApiVoteConfirmation, String> {
+) -> Result<zcash_voting::wire::VoteConfirmation, String> {
     catch(|| {
         let events: Vec<zcash_voting::confirmation::TxEvent> =
             events.into_iter().map(Into::into).collect();
@@ -1033,7 +1000,6 @@ pub fn confirm_vote_submission(
             &tx_hash,
             &events,
         )
-        .map(Into::into)
         .map_err(|e| e.to_string())
     })
 }
@@ -1162,6 +1128,23 @@ pub fn set_ballot_intent(
     })
 }
 
+pub(crate) fn voting_network(network: WalletNetwork) -> zcash_voting::Network {
+    match network {
+        WalletNetwork::Main => zcash_voting::Network::Mainnet,
+        WalletNetwork::Test => zcash_voting::Network::Testnet,
+        WalletNetwork::Regtest => zcash_voting::Network::Regtest,
+    }
+}
+
+#[cfg(test)]
+fn wallet_network(network: zcash_voting::Network) -> WalletNetwork {
+    match network {
+        zcash_voting::Network::Mainnet => WalletNetwork::Main,
+        zcash_voting::Network::Testnet => WalletNetwork::Test,
+        zcash_voting::Network::Regtest => WalletNetwork::Regtest,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1174,6 +1157,38 @@ mod tests {
     use zcash_client_backend::proto::service::TreeState;
 
     const ROUND_ID: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+
+    #[test]
+    fn converts_wallet_network_to_voting_network() {
+        assert_eq!(
+            voting_network(WalletNetwork::Main),
+            zcash_voting::Network::Mainnet
+        );
+        assert_eq!(
+            voting_network(WalletNetwork::Test),
+            zcash_voting::Network::Testnet
+        );
+        assert_eq!(
+            voting_network(WalletNetwork::Regtest),
+            zcash_voting::Network::Regtest
+        );
+    }
+
+    #[test]
+    fn converts_voting_network_to_wallet_network() {
+        assert_eq!(
+            wallet_network(zcash_voting::Network::Mainnet),
+            WalletNetwork::Main
+        );
+        assert_eq!(
+            wallet_network(zcash_voting::Network::Testnet),
+            WalletNetwork::Test
+        );
+        assert_eq!(
+            wallet_network(zcash_voting::Network::Regtest),
+            WalletNetwork::Regtest
+        );
+    }
 
     #[test]
     fn api_round_params_convert_to_core_round_params() {

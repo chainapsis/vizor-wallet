@@ -64,9 +64,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AddressValidationResult dco_decode_address_validation_result(dynamic raw);
 
   @protected
-  ApiDelegationConfirmation dco_decode_api_delegation_confirmation(dynamic raw);
-
-  @protected
   ApiDelegationProofEvent dco_decode_api_delegation_proof_event(dynamic raw);
 
   @protected
@@ -83,9 +80,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiVoteCommitEvent dco_decode_api_vote_commit_event(dynamic raw);
-
-  @protected
-  ApiVoteConfirmation dco_decode_api_vote_confirmation(dynamic raw);
 
   @protected
   BlockMetaInfo dco_decode_block_meta_info(dynamic raw);
@@ -141,6 +135,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CompletedVoteDisplayView dco_decode_completed_vote_display_view(dynamic raw);
+
+  @protected
+  DelegationConfirmation dco_decode_delegation_confirmation(dynamic raw);
 
   @protected
   DelegationPirPrecomputeResultView
@@ -438,6 +435,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   VoteCommitmentWire dco_decode_vote_commitment_wire(dynamic raw);
 
   @protected
+  VoteConfirmation dco_decode_vote_confirmation(dynamic raw);
+
+  @protected
   VoteRecoveryView dco_decode_vote_recovery_view(dynamic raw);
 
   @protected
@@ -501,11 +501,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  ApiDelegationConfirmation sse_decode_api_delegation_confirmation(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   ApiDelegationProofEvent sse_decode_api_delegation_proof_event(
     SseDeserializer deserializer,
   );
@@ -530,11 +525,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ApiVoteCommitEvent sse_decode_api_vote_commit_event(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ApiVoteConfirmation sse_decode_api_vote_confirmation(
     SseDeserializer deserializer,
   );
 
@@ -602,6 +592,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CompletedVoteDisplayView sse_decode_completed_vote_display_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationConfirmation sse_decode_delegation_confirmation(
     SseDeserializer deserializer,
   );
 
@@ -963,6 +958,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  VoteConfirmation sse_decode_vote_confirmation(SseDeserializer deserializer);
+
+  @protected
   VoteRecoveryView sse_decode_vote_recovery_view(SseDeserializer deserializer);
 
   @protected
@@ -1048,12 +1046,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_api_delegation_confirmation(
-    ApiDelegationConfirmation self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_api_delegation_proof_event(
     ApiDelegationProofEvent self,
     SseSerializer serializer,
@@ -1083,12 +1075,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_api_vote_commit_event(
     ApiVoteCommitEvent self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_api_vote_confirmation(
-    ApiVoteConfirmation self,
     SseSerializer serializer,
   );
 
@@ -1167,6 +1153,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_completed_vote_display_view(
     CompletedVoteDisplayView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegation_confirmation(
+    DelegationConfirmation self,
     SseSerializer serializer,
   );
 
@@ -1611,6 +1603,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_vote_commitment_wire(
     VoteCommitmentWire self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_vote_confirmation(
+    VoteConfirmation self,
     SseSerializer serializer,
   );
 

@@ -2,9 +2,8 @@ use blake2b_simd::Params;
 use secrecy::{ExposeSecret, SecretVec};
 use zeroize::Zeroizing;
 
+use crate::api::voting::voting_network;
 use crate::wallet::network::WalletNetwork;
-
-use super::voting_network;
 
 const HOTKEY_CONTEXT_PREFIX: &[u8] = b"ZcashVotingHotkeyV1";
 const HOTKEY_SEED_PERSONALIZATION: &[u8] = b"ZcashVotingHotKy";

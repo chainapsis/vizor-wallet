@@ -4217,7 +4217,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_voting.ApiDelegationConfirmation> confirmDelegationSubmission({
+  Future<rust_wire.DelegationConfirmation> confirmDelegationSubmission({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -4236,7 +4236,7 @@ class FakeVotingRustApi implements VotingRustApi {
       txHash: txHash,
       vanLeafPosition: vanLeafPosition,
     );
-    return rust_voting.ApiDelegationConfirmation(
+    return rust_wire.DelegationConfirmation(
       txHash: txHash,
       vanLeafPosition: vanLeafPosition,
     );
@@ -4535,7 +4535,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_voting.ApiVoteConfirmation> confirmVoteSubmission({
+  Future<rust_wire.VoteConfirmation> confirmVoteSubmission({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -4552,9 +4552,9 @@ class FakeVotingRustApi implements VotingRustApi {
       vanPosition: leafPositions.vanPosition,
       vcTreePosition: leafPositions.vcTreePosition,
     );
-    return rust_voting.ApiVoteConfirmation(
+    return rust_wire.VoteConfirmation(
       txHash: txHash,
-      vanPosition: leafPositions.vanPosition,
+      vanLeafPosition: leafPositions.vanPosition,
       vcTreePosition: leafPositions.vcTreePosition,
     );
   }

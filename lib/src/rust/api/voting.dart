@@ -12,8 +12,8 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `bundle_policy`, `catch`, `require_len`, `seed_from_mnemonic`, `share_tracking_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `bundle_policy`, `catch`, `require_len`, `seed_from_mnemonic`, `share_tracking_record`, `voting_network`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -334,7 +334,7 @@ Future<void> markDelegationSubmitted({
 );
 
 /// Parse tx events and record a confirmed delegation submission.
-Future<ApiDelegationConfirmation> confirmDelegationSubmission({
+Future<DelegationConfirmation> confirmDelegationSubmission({
   required String dbPath,
   required String walletId,
   required String roundId,
@@ -483,7 +483,7 @@ Future<void> markVoteSubmitted({
 );
 
 /// Parse tx events and record a confirmed vote submission.
-Future<ApiVoteConfirmation> confirmVoteSubmission({
+Future<VoteConfirmation> confirmVoteSubmission({
   required String dbPath,
   required String walletId,
   required String roundId,
@@ -607,28 +607,6 @@ Future<void> setBallotIntent({
   choice: choice,
 );
 
-/// Parsed delegation confirmation data recorded by zcash_voting.
-class ApiDelegationConfirmation {
-  final String txHash;
-  final int vanLeafPosition;
-
-  const ApiDelegationConfirmation({
-    required this.txHash,
-    required this.vanLeafPosition,
-  });
-
-  @override
-  int get hashCode => txHash.hashCode ^ vanLeafPosition.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiDelegationConfirmation &&
-          runtimeType == other.runtimeType &&
-          txHash == other.txHash &&
-          vanLeafPosition == other.vanLeafPosition;
-}
-
 /// Progress event emitted while building, proving, and signing a delegation payload.
 ///
 /// A terminal `"result"` event carries `signed_delegation_payload`; earlier
@@ -735,30 +713,4 @@ class ApiVoteCommitEvent {
           bundleIndex == other.bundleIndex &&
           proofProgress == other.proofProgress &&
           commitments == other.commitments;
-}
-
-/// Parsed cast-vote confirmation data recorded by zcash_voting.
-class ApiVoteConfirmation {
-  final String txHash;
-  final int vanPosition;
-  final BigInt vcTreePosition;
-
-  const ApiVoteConfirmation({
-    required this.txHash,
-    required this.vanPosition,
-    required this.vcTreePosition,
-  });
-
-  @override
-  int get hashCode =>
-      txHash.hashCode ^ vanPosition.hashCode ^ vcTreePosition.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ApiVoteConfirmation &&
-          runtimeType == other.runtimeType &&
-          txHash == other.txHash &&
-          vanPosition == other.vanPosition &&
-          vcTreePosition == other.vcTreePosition;
 }

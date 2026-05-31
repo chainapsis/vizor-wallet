@@ -5,6 +5,7 @@ use secrecy::{ExposeSecret, SecretVec};
 use zcash_keys::keys::UnifiedSpendingKey;
 use zip32::{fingerprint::SeedFingerprint, AccountId};
 
+use crate::api::voting::voting_network;
 use crate::wallet::{
     keys,
     network::WalletNetwork,
@@ -14,7 +15,6 @@ use crate::wallet::{
 use super::{
     hotkey::{derive_hotkey, voting_hotkey_from_secret},
     state::open_voting_db,
-    voting_network,
 };
 
 pub use zcash_voting::delegate::DelegationProgress;

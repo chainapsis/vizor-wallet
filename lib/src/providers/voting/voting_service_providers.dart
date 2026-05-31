@@ -379,7 +379,7 @@ abstract interface class VotingRustApi {
     required String txHash,
   });
 
-  Future<rust_api.ApiDelegationConfirmation> confirmDelegationSubmission({
+  Future<rust_voting.DelegationConfirmation> confirmDelegationSubmission({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -480,7 +480,7 @@ abstract interface class VotingRustApi {
     required String txHash,
   });
 
-  Future<rust_api.ApiVoteConfirmation> confirmVoteSubmission({
+  Future<rust_voting.VoteConfirmation> confirmVoteSubmission({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -762,7 +762,7 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_api.ApiDelegationConfirmation> confirmDelegationSubmission({
+  Future<rust_voting.DelegationConfirmation> confirmDelegationSubmission({
     required String dbPath,
     required String walletId,
     required String roundId,
@@ -965,7 +965,7 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<rust_api.ApiVoteConfirmation> confirmVoteSubmission({
+  Future<rust_voting.VoteConfirmation> confirmVoteSubmission({
     required String dbPath,
     required String walletId,
     required String roundId,

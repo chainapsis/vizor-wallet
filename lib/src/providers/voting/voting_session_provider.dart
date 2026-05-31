@@ -1577,7 +1577,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       debugPrint(
         '[zcash] Voting: cast-vote confirmed '
-        'proposal=${commitment.proposalId} vanPosition=${voteConfirmation.vanPosition} '
+        'proposal=${commitment.proposalId} vanPosition=${voteConfirmation.vanLeafPosition} '
         'vcTreePosition=${voteConfirmation.vcTreePosition}',
       );
       vcTreePositions[commitment.proposalId] = voteConfirmation.vcTreePosition;
