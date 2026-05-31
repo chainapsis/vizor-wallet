@@ -719,10 +719,7 @@ void main() {
     store.clearSessionPassword();
     mnemonicStorage.failNextWriteFor(_mnemonicKey);
 
-    await expectLater(
-      () => store.verifyPassword(_oldPassword),
-      throwsA(isA<SecretStorageUnlockFailedException>()),
-    );
+    expect(await store.verifyPassword(_oldPassword), isFalse);
     expect(store.hasSessionPassword, isFalse);
     expect(regularStorage.valueFor(_mnemonicKey), isNotNull);
     expect(mnemonicStorage.valueFor(_mnemonicKey), isNull);

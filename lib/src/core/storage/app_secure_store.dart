@@ -56,15 +56,6 @@ class SecureStorageUnavailableException implements Exception {
   String toString() => 'Secure storage unavailable during $operation: $cause';
 }
 
-class SecretStorageUnlockFailedException implements Exception {
-  const SecretStorageUnlockFailedException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
 class AppSecureStore {
   AppSecureStore._({
     FlutterSecureStorage? storage,
@@ -94,7 +85,7 @@ class AppSecureStore {
       mOptions: MacOsOptions(
         accountName: service,
         accessibility: KeychainAccessibility.first_unlock,
-        usesDataProtectionKeychain: false,
+        usesDataProtectionKeychain: true,
       ),
     );
   }
@@ -115,7 +106,7 @@ class AppSecureStore {
       mOptions: MacOsOptions(
         accountName: macOsService,
         accessibility: KeychainAccessibility.unlocked,
-        usesDataProtectionKeychain: false,
+        usesDataProtectionKeychain: true,
       ),
     );
   }
@@ -586,30 +577,24 @@ class AppSecureStore {
 
   Future<bool> verifyPassword(String password) async {
     final isMatch = await verifyPasswordOnly(password);
-    if (!isMatch) return false;
-
-    setSessionPassword(password);
-    try {
-      final migratedForRead = await migrateAccountMnemonicsAfterUnlock();
-      if (!migratedForRead) {
+    if (isMatch) {
+      setSessionPassword(password);
+      try {
+        final migratedForRead = await migrateAccountMnemonicsAfterUnlock();
+        if (!migratedForRead) {
+          clearSessionPassword();
+          return false;
+        }
+      } catch (error, stackTrace) {
         clearSessionPassword();
-        throw const SecretStorageUnlockFailedException(
-          'Password matched, but secure wallet data could not be opened.',
+        debugPrint(
+          'AppSecureStore: failed to migrate account mnemonics after unlock: '
+          '$error\n$stackTrace',
         );
+        return false;
       }
-    } catch (error, stackTrace) {
-      clearSessionPassword();
-      if (error is SecretStorageUnlockFailedException) {
-        Error.throwWithStackTrace(error, stackTrace);
-      }
-      Error.throwWithStackTrace(
-        const SecretStorageUnlockFailedException(
-          'Password matched, but secure wallet data could not be opened.',
-        ),
-        stackTrace,
-      );
     }
-    return true;
+    return isMatch;
   }
 
   Future<bool> migrateAccountMnemonicsAfterUnlock() {
