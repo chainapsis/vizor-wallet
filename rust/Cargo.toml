@@ -2,6 +2,7 @@
 name = "rust_lib_zcash_wallet"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85.1"
 
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
@@ -25,11 +26,15 @@ zcash_client_backend = { version = "0.22", features = [
     "pczt",
 ] }
 zcash_client_sqlite = { version = "0.20", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
+# Voting clients need PIR lookup support and vote-commitment-tree sync.
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "8e9b69ff8639632932eb8a11420b17603589162e", package = "zcash_voting" }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
-orchard = "0.13"
+orchard = { version = "=0.13.1", features = ["unstable-voting-circuits"] }
 sapling-crypto = { version = "0.7", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
+pasta_curves = "0.5"
+ff = "0.13"
 # Required by no-op Sapling prover trait impls
 jubjub = "0.10"
 bls12_381 = "0.8"
@@ -55,6 +60,7 @@ base64 = "0.22"
 pbkdf2 = "0.12"
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
+blake2b_simd = "1"
 
 # Random number generation
 rand = "0.8"
@@ -90,6 +96,7 @@ security-framework = { version = "3.7", features = ["OSX_10_15"] }
 [dev-dependencies]
 tempfile = "3"
 hex = "0.4"
+vote-commitment-tree = "0.3"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

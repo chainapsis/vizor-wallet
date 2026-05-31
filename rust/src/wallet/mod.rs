@@ -6,3 +6,4 @@ pub mod secret_payload;
 pub mod secret_store;
 pub mod sync;
 pub mod sync_engine;
+pub mod voting;

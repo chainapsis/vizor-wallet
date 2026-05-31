@@ -309,8 +309,7 @@ pub(crate) struct SyncProgress {
     pub is_syncing: bool,
 }
 
-pub fn get_sync_progress(db_path: &str, network: WalletNetwork) -> Result<SyncProgress, String> {
-    let db = open_wallet_db_for_read(db_path, network)?;
+pub(crate) fn get_sync_progress_from_db(db: &WalletDatabase) -> Result<SyncProgress, String> {
     match db
         .get_wallet_summary(ConfirmationsPolicy::default())
         .map_err(|e| format!("{e}"))?
@@ -326,6 +325,11 @@ pub fn get_sync_progress(db_path: &str, network: WalletNetwork) -> Result<SyncPr
             is_syncing: false,
         }),
     }
+}
+
+pub fn get_sync_progress(db_path: &str, network: WalletNetwork) -> Result<SyncProgress, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    get_sync_progress_from_db(&db)
 }
 
 // ======================== Rewind ========================
