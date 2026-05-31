@@ -1205,11 +1205,6 @@ void main() {
       walletSyncReadinessChecker: readiness,
       walletSyncPollInterval: const Duration(milliseconds: 1),
     );
-    final subscription = container.listen(
-      votingSubmissionVisibleJobsProvider,
-      (_, _) {},
-    );
-    addTearDown(subscription.close);
     addTearDown(container.dispose);
 
     final key = await container
@@ -1275,11 +1270,6 @@ void main() {
       walletSyncReadinessChecker: readiness,
       walletSyncPollInterval: const Duration(milliseconds: 1),
     );
-    final subscription = container.listen(
-      votingSubmissionVisibleJobsProvider,
-      (_, _) {},
-    );
-    addTearDown(subscription.close);
     addTearDown(container.dispose);
 
     final manager = container.read(votingSubmissionJobsProvider.notifier);

@@ -59,8 +59,6 @@ class VotingSubmissionJobState {
       status == VotingSubmissionJobStatus.running ||
       status == VotingSubmissionJobStatus.waitingForKeystone;
 
-  bool get shouldWarnBeforeQuit => isInFlight;
-
   VotingSubmissionJobState copyWith({
     VotingSessionKey? key,
     VotingSubmissionJobStatus? status,
@@ -1000,22 +998,6 @@ final votingSubmissionJobProvider =
       VotingSubmissionJobState,
       VotingSessionKey
     >(VotingSubmissionJobNotifier.new);
-
-final votingSubmissionVisibleJobsProvider =
-    Provider<List<VotingSubmissionJobState>>((ref) {
-      final jobsState = ref.watch(votingSubmissionJobsProvider);
-      final jobs = <VotingSubmissionJobState>[];
-      for (final key in jobsState.jobKeys) {
-        final job = ref.watch(votingSubmissionJobProvider(key));
-        if (job.hasVisibleJob) jobs.add(job);
-      }
-      return jobs;
-    });
-
-final votingSubmissionHasInFlightJobsProvider = Provider<bool>((ref) {
-  final jobs = ref.watch(votingSubmissionVisibleJobsProvider);
-  return jobs.any((job) => job.isInFlight);
-});
 
 final votingSubmissionJobSessionProvider =
     Provider.family<AsyncValue<VotingSessionState>, VotingSessionKey>((

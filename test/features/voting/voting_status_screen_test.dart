@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -16,8 +15,6 @@ import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.da
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_submission_confirmation_screen.dart';
-import 'package:zcash_wallet/src/features/voting/widgets/voting_quit_guard_host.dart';
-import 'package:zcash_wallet/src/features/voting/widgets/voting_submission_progress_banner.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_api.dart';
 import 'package:zcash_wallet/src/features/voting/voting_recovery_service.dart';
@@ -175,8 +172,11 @@ void main() {
       find.text('Choose at least one vote before submitting.'),
     );
 
-    expect(find.text('Vote submission needs attention'), findsOneWidget);
-    expect(find.text('Clear'), findsWidgets);
+    expect(find.text('Choose at least one vote before submitting.'), findsOne);
+    expect(
+      find.byKey(const ValueKey('voting_status_clear_submission_error')),
+      findsOneWidget,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey('voting_status_clear_submission_error')),
@@ -184,7 +184,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('voting route'), findsOneWidget);
-    expect(find.text('Vote submission needs attention'), findsNothing);
+    expect(
+      find.text('Choose at least one vote before submitting.'),
+      findsNothing,
+    );
   });
 
   testWidgets('status screen explains ineligible account voting failure', (
@@ -892,212 +895,6 @@ void main() {
       expect(find.text('submission confirmed route'), findsOneWidget);
     },
   );
-
-  testWidgets('global progress banner appears during background submission', (
-    tester,
-  ) async {
-    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          accountProvider.overrideWith(_MnemonicAccountNotifier.new),
-          votingSubmissionJobsProvider.overrideWith(
-            () => _StaticVotingSubmissionJobsNotifier(
-              const VotingSubmissionJobsState(jobKeys: [key]),
-            ),
-          ),
-          votingSubmissionJobProvider(key).overrideWith(
-            () => _StaticVotingSubmissionJobNotifier(
-              key,
-              const VotingSubmissionJobState(
-                key: key,
-                status: VotingSubmissionJobStatus.running,
-                generation: 1,
-              ),
-            ),
-          ),
-          votingSubmissionJobSessionProvider(key).overrideWithValue(
-            AsyncValue.data(
-              VotingSessionState(
-                roundId: _roundId,
-                accountUuid: 'account-1',
-                phase: VotingSessionPhase.submittingShares,
-                voteSubmissionCompletedCount: 1,
-                voteSubmissionTotalCount: 2,
-                voteSubmissionProgress: 0.5,
-              ),
-            ),
-          ),
-        ],
-        child: AppTheme(
-          data: AppThemeData.light,
-          child: const Directionality(
-            textDirection: TextDirection.ltr,
-            child: VotingSubmissionProgressBanner(),
-          ),
-        ),
-      ),
-    );
-
-    expect(find.text('Vote submission in progress'), findsOneWidget);
-    expect(find.textContaining('Submitting shares'), findsOneWidget);
-    expect(find.textContaining('Account 1'), findsOneWidget);
-    expect(find.text('View'), findsOneWidget);
-  });
-
-  testWidgets('global progress banner dismisses completed submission', (
-    tester,
-  ) async {
-    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          accountProvider.overrideWith(_MnemonicAccountNotifier.new),
-          votingSubmissionJobsProvider.overrideWith(
-            () => _StaticVotingSubmissionJobsNotifier(
-              const VotingSubmissionJobsState(jobKeys: [key]),
-            ),
-          ),
-          votingSubmissionJobProvider(key).overrideWith(
-            () => _StaticVotingSubmissionJobNotifier(
-              key,
-              const VotingSubmissionJobState(
-                key: key,
-                status: VotingSubmissionJobStatus.complete,
-                generation: 1,
-              ),
-            ),
-          ),
-          votingSubmissionJobSessionProvider(key).overrideWithValue(
-            AsyncValue.data(
-              VotingSessionState(
-                roundId: _roundId,
-                accountUuid: 'account-1',
-                phase: VotingSessionPhase.done,
-              ),
-            ),
-          ),
-        ],
-        child: AppTheme(
-          data: AppThemeData.light,
-          child: const Directionality(
-            textDirection: TextDirection.ltr,
-            child: VotingSubmissionProgressBanner(),
-          ),
-        ),
-      ),
-    );
-
-    expect(find.text('Vote submission complete'), findsOneWidget);
-    expect(find.text('Done'), findsOneWidget);
-    expect(find.text('View'), findsNothing);
-
-    await tester.tap(find.text('Done'));
-    await tester.pump();
-
-    expect(find.text('Vote submission complete'), findsNothing);
-    expect(find.text('Done'), findsNothing);
-  });
-
-  testWidgets('global progress banner clears failed submission', (
-    tester,
-  ) async {
-    const key = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          accountProvider.overrideWith(_MnemonicAccountNotifier.new),
-          votingSubmissionJobsProvider.overrideWith(
-            () => _StaticVotingSubmissionJobsNotifier(
-              const VotingSubmissionJobsState(jobKeys: [key]),
-            ),
-          ),
-          votingSubmissionJobProvider(key).overrideWith(
-            () => _StaticVotingSubmissionJobNotifier(
-              key,
-              const VotingSubmissionJobState(
-                key: key,
-                status: VotingSubmissionJobStatus.error,
-                generation: 1,
-                errorMessage: 'Voting failed.',
-              ),
-            ),
-          ),
-          votingSubmissionJobSessionProvider(key).overrideWithValue(
-            AsyncValue.data(
-              VotingSessionState(
-                roundId: _roundId,
-                accountUuid: 'account-1',
-                phase: VotingSessionPhase.error,
-              ),
-            ),
-          ),
-        ],
-        child: AppTheme(
-          data: AppThemeData.light,
-          child: const Directionality(
-            textDirection: TextDirection.ltr,
-            child: VotingSubmissionProgressBanner(),
-          ),
-        ),
-      ),
-    );
-
-    expect(find.text('Vote submission needs attention'), findsOneWidget);
-    expect(find.text('Clear'), findsOneWidget);
-    expect(find.text('View'), findsOneWidget);
-    expect(
-      tester
-          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
-          .value,
-      0,
-    );
-
-    await tester.tap(
-      find.byKey(ValueKey('voting_submission_banner_clear_$key')),
-    );
-    await tester.pump();
-
-    expect(find.text('Vote submission needs attention'), findsNothing);
-    expect(find.text('Clear'), findsNothing);
-  });
-
-  testWidgets('quit guard confirms while submission is active', (tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          votingSubmissionHasInFlightJobsProvider.overrideWithValue(true),
-        ],
-        child: AppTheme(
-          data: AppThemeData.light,
-          child: const MaterialApp(
-            home: VotingQuitGuardHost(child: SizedBox.shrink()),
-          ),
-        ),
-      ),
-    );
-
-    final keepOpen = _requestVotingQuitConfirmation();
-    await tester.pumpAndSettle();
-    expect(find.text('Vote submission in progress'), findsOneWidget);
-    expect(
-      find.text(
-        'Your vote is still being submitted. Quitting now may interrupt the process.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Keep app open'), findsOneWidget);
-    expect(find.text('Quit anyway'), findsOneWidget);
-    await tester.tap(find.text('Keep app open'));
-    await tester.pumpAndSettle();
-    expect(await keepOpen, isFalse);
-
-    final quitAnyway = _requestVotingQuitConfirmation();
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Quit anyway'));
-    await tester.pumpAndSettle();
-    expect(await quitAnyway, isTrue);
-  });
 
   testWidgets('proposal detail hides View more when description fits', (
     tester,
@@ -1827,18 +1624,6 @@ Future<void> _pumpUntilFound(
     await tester.pump(const Duration(milliseconds: 100));
     if (finder.evaluate().isNotEmpty) return;
   }
-}
-
-Future<bool> _requestVotingQuitConfirmation() async {
-  const codec = StandardMethodCodec();
-  final response = Completer<ByteData?>();
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .handlePlatformMessage(
-        kVotingQuitGuardChannelName,
-        codec.encodeMethodCall(const MethodCall(kVotingQuitGuardConfirmMethod)),
-        response.complete,
-      );
-  return codec.decodeEnvelope((await response.future)!) as bool;
 }
 
 ProviderContainer _statusContainer({
