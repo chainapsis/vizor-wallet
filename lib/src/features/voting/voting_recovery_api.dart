@@ -20,6 +20,12 @@ abstract interface class VotingRecoveryApi {
     required List<int> proposalIds,
   });
 
+  Future<rust_voting.DelegationBundlePlanView> getDelegationBundlePlan({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+  });
+
   Future<void> setBallotIntent({
     required String dbPath,
     required String walletId,
@@ -76,6 +82,19 @@ class RustVotingRecoveryApi implements VotingRecoveryApi {
       walletId: walletId,
       roundId: roundId,
       proposalIds: proposalIds,
+    );
+  }
+
+  @override
+  Future<rust_voting.DelegationBundlePlanView> getDelegationBundlePlan({
+    required String dbPath,
+    required String walletId,
+    required String roundId,
+  }) {
+    return rust_voting.getDelegationBundlePlan(
+      dbPath: dbPath,
+      walletId: walletId,
+      roundId: roundId,
     );
   }
 

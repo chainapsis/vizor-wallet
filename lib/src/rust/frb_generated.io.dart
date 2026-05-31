@@ -94,6 +94,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
+  KeystoneSigningRequest dco_decode_box_autoadd_keystone_signing_request(
+    dynamic raw,
+  );
+
+  @protected
   ShareDelegationRecordView dco_decode_box_autoadd_share_delegation_record_view(
     dynamic raw,
   );
@@ -133,6 +138,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CompletedVoteDisplayView dco_decode_completed_vote_display_view(dynamic raw);
+
+  @protected
+  DelegationBundlePlanView dco_decode_delegation_bundle_plan_view(dynamic raw);
 
   @protected
   DelegationConfirmation dco_decode_delegation_confirmation(dynamic raw);
@@ -541,6 +549,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
+  KeystoneSigningRequest sse_decode_box_autoadd_keystone_signing_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ShareDelegationRecordView sse_decode_box_autoadd_share_delegation_record_view(
     SseDeserializer deserializer,
   );
@@ -590,6 +603,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   CompletedVoteDisplayView sse_decode_completed_vote_display_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DelegationBundlePlanView sse_decode_delegation_bundle_plan_view(
     SseDeserializer deserializer,
   );
 
@@ -1092,6 +1110,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_keystone_signing_request(
+    KeystoneSigningRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_share_delegation_record_view(
     ShareDelegationRecordView self,
     SseSerializer serializer,
@@ -1151,6 +1175,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_completed_vote_display_view(
     CompletedVoteDisplayView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_delegation_bundle_plan_view(
+    DelegationBundlePlanView self,
     SseSerializer serializer,
   );
 

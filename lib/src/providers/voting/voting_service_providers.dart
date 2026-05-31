@@ -320,21 +320,12 @@ abstract interface class VotingRustApi {
     int? maxRealNotesPerBundle,
   });
 
-  Future<List<int>> extractPcztSighash({required List<int> pcztBytes});
-
-  Future<List<int>> extractSpendAuthSignatureFromSignedPczt({
-    required List<int> signedPcztBytes,
-    required int actionIndex,
-  });
-
-  Future<void> storeKeystoneSignature({
+  Future<rust_voting.KeystoneSignatureRecord> acceptKeystoneSignature({
     required String dbPath,
     required String walletId,
     required String roundId,
-    required int bundleIndex,
-    required List<int> sig,
-    required List<int> sighash,
-    required List<int> rk,
+    required rust_delegate.KeystoneSigningRequest request,
+    required List<int> signedPcztBytes,
   });
 
   Future<List<rust_voting.KeystoneSignatureRecord>> getKeystoneSignatures({
@@ -456,6 +447,11 @@ abstract interface class VotingRustApi {
     required rust_voting.ShareDelegationRecordView share,
     required BigInt nowSeconds,
     BigInt? voteEndTimeSeconds,
+  });
+
+  Future<List<String>> shareResubmissionServerOrder({
+    required List<String> configuredServerUrls,
+    required List<String> sentToUrls,
   });
 
   Future<BigInt?> nextShareTrackingDelaySeconds({
@@ -638,39 +634,19 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<List<int>> extractPcztSighash({required List<int> pcztBytes}) {
-    return rust_api.extractPcztSighash(pcztBytes: pcztBytes);
-  }
-
-  @override
-  Future<List<int>> extractSpendAuthSignatureFromSignedPczt({
-    required List<int> signedPcztBytes,
-    required int actionIndex,
-  }) {
-    return rust_api.extractSpendAuthSignatureFromSignedPczt(
-      signedPcztBytes: signedPcztBytes,
-      actionIndex: actionIndex,
-    );
-  }
-
-  @override
-  Future<void> storeKeystoneSignature({
+  Future<rust_voting.KeystoneSignatureRecord> acceptKeystoneSignature({
     required String dbPath,
     required String walletId,
     required String roundId,
-    required int bundleIndex,
-    required List<int> sig,
-    required List<int> sighash,
-    required List<int> rk,
+    required rust_delegate.KeystoneSigningRequest request,
+    required List<int> signedPcztBytes,
   }) {
-    return rust_api.storeKeystoneSignature(
+    return rust_api.acceptKeystoneSignature(
       dbPath: dbPath,
       walletId: walletId,
       roundId: roundId,
-      bundleIndex: bundleIndex,
-      sig: sig,
-      sighash: sighash,
-      rk: rk,
+      request: request,
+      signedPcztBytes: signedPcztBytes,
     );
   }
 
@@ -914,6 +890,17 @@ class FrbVotingRustApi implements VotingRustApi {
       share: share,
       nowSeconds: nowSeconds,
       voteEndTimeSeconds: voteEndTimeSeconds,
+    );
+  }
+
+  @override
+  Future<List<String>> shareResubmissionServerOrder({
+    required List<String> configuredServerUrls,
+    required List<String> sentToUrls,
+  }) {
+    return rust_api.shareResubmissionServerOrder(
+      configuredServerUrls: configuredServerUrls,
+      sentToUrls: sentToUrls,
     );
   }
 

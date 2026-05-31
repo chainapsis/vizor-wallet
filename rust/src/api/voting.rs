@@ -159,10 +159,35 @@ pub fn plan_share_submissions(
     })
 }
 
+/// Return helper-share resubmission order using `zcash_voting` policy.
+///
+/// The crate keeps untried helpers ahead of helpers that already accepted the
+/// share, while randomizing each group with OS entropy.
+pub fn share_resubmission_server_order(
+    configured_server_urls: Vec<String>,
+    sent_to_urls: Vec<String>,
+) -> Result<Vec<String>, String> {
+    catch(|| {
+        let random_bytes_required =
+            zcash_voting::share::policy::resubmission_server_order_random_bytes_required(
+                &configured_server_urls,
+                &sent_to_urls,
+            );
+        let mut random_bytes = vec![0u8; random_bytes_required];
+        OsRng.fill_bytes(&mut random_bytes);
+        zcash_voting::share::policy::resubmission_server_order(
+            &configured_server_urls,
+            &sent_to_urls,
+            &random_bytes,
+        )
+        .map_err(|e| e.to_string())
+    })
+}
+
 /// Return share-tracking action flags using `zcash_voting::share_policy`.
 ///
 /// Bit 0 means the share is ready for status polling. Bit 1 means it is overdue
-/// and should be retried against helpers that missed the initial submission.
+/// and should be retried using the crate resubmission order.
 pub fn share_tracking_flags(
     share: zcash_voting::wire::ShareDelegationRecordView,
     now_seconds: u64,
@@ -404,17 +429,6 @@ fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result
     }
 }
 
-fn require_len(bytes: &[u8], expected: usize, field: &str) -> Result<(), String> {
-    if bytes.len() == expected {
-        Ok(())
-    } else {
-        Err(format!(
-            "{field} must be exactly {expected} bytes, got {}",
-            bytes.len()
-        ))
-    }
-}
-
 /// Select notes and persist bundle rows for the delegation pipeline.
 ///
 /// Reuses existing bundle rows for the same round/wallet, so callers can safely
@@ -586,44 +600,23 @@ pub async fn build_keystone_delegation_request(
     .map(zcash_voting::wire::KeystoneSigningRequest::from)
 }
 
-/// Extract the ZIP-244 sighash from PCZT bytes.
-pub fn extract_pczt_sighash(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
-    catch(|| {
-        zcash_voting::delegate::pczt_sighash(&pczt_bytes)
-            .map(|sighash| sighash.to_vec())
-            .map_err(|e| format!("extract_pczt_sighash failed: {e}"))
-    })
-}
-
-/// Extract a Keystone SpendAuth signature from signed PCZT bytes.
-pub fn extract_spend_auth_signature_from_signed_pczt(
-    signed_pczt_bytes: Vec<u8>,
-    action_index: u32,
-) -> Result<Vec<u8>, String> {
-    catch(|| {
-        zcash_voting::delegate::spend_auth_signature(&signed_pczt_bytes, action_index as usize)
-            .map(|sig| sig.to_vec())
-            .map_err(|e| format!("extract_spend_auth_sig failed: {e}"))
-    })
-}
-
-/// Persist a Keystone signature for one delegation bundle.
-pub fn store_keystone_signature(
+/// Validate and persist a Keystone signed-PCZT response for one delegation bundle.
+pub fn accept_keystone_signature(
     db_path: String,
     wallet_id: String,
     round_id: String,
-    bundle_index: u32,
-    sig: Vec<u8>,
-    sighash: Vec<u8>,
-    rk: Vec<u8>,
-) -> Result<(), String> {
+    request: zcash_voting::wire::KeystoneSigningRequest,
+    signed_pczt_bytes: Vec<u8>,
+) -> Result<zcash_voting::wire::KeystoneSignatureRecord, String> {
     catch(|| {
-        require_len(&sig, 64, "sig")?;
-        require_len(&sighash, 32, "sighash")?;
-        require_len(&rk, 32, "rk")?;
         let db = state::open_voting_db(&db_path, &wallet_id)?;
-        db.store_keystone_signature(&round_id, bundle_index, &sig, &sighash, &rk)
-            .map_err(|e| format!("store_keystone_signature failed: {e}"))
+        zcash_voting::delegate::accept_keystone_signature(
+            &db,
+            &round_id,
+            &request,
+            &signed_pczt_bytes,
+        )
+        .map_err(|e| format!("accept_keystone_signature failed: {e}"))
     })
 }
 
@@ -1104,6 +1097,20 @@ pub fn get_round_plan(
         let plan = zcash_voting::session::resume_plan(&db, &round_id, &proposal_ids)
             .map_err(|e| format!("resume_plan failed: {e}"))?;
         zcash_voting::wire::RoundPlanView::try_from(plan).map_err(|e| e.to_string())
+    })
+}
+
+/// Compute delegation submission work for every eligible bundle in the round.
+pub fn get_delegation_bundle_plan(
+    db_path: String,
+    wallet_id: String,
+    round_id: String,
+) -> Result<zcash_voting::wire::DelegationBundlePlanView, String> {
+    catch(|| {
+        let db = state::open_voting_db(&db_path, &wallet_id)?;
+        zcash_voting::session::delegation_bundle_plan(&db, &round_id)
+            .map(zcash_voting::wire::DelegationBundlePlanView::from)
+            .map_err(|e| format!("delegation_bundle_plan failed: {e}"))
     })
 }
 
@@ -1990,6 +1997,34 @@ mod tests {
         )
         .unwrap();
         assert!(cleared_state.share_delegations.is_empty());
+    }
+
+    #[test]
+    fn delegation_bundle_plan_reports_pending_and_submitted_bundles() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let wallet_id = "wallet-api-delegation-plan";
+        let db = state::open_voting_db(db_path.to_str().unwrap(), wallet_id).unwrap();
+        db.init_round(&test_api_round_params().into(), None)
+            .unwrap();
+        let notes: Vec<_> = (0..11).map(test_note_info).collect();
+        db.ensure_bundles(ROUND_ID, &notes).unwrap();
+        db.store_delegation_tx_hash(ROUND_ID, 1, "submitted-tx")
+            .unwrap();
+        db.store_delegation_tx_hash(ROUND_ID, 2, "confirmed-tx")
+            .unwrap();
+        db.store_van_position(ROUND_ID, 2, 9).unwrap();
+
+        let plan = get_delegation_bundle_plan(
+            db_path.to_str().unwrap().to_string(),
+            wallet_id.to_string(),
+            ROUND_ID.to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(plan.bundle_count, 3);
+        assert_eq!(plan.pending_bundle_indexes, vec![0]);
+        assert_eq!(plan.submitted_bundle_indexes, vec![1]);
     }
 
     #[test]

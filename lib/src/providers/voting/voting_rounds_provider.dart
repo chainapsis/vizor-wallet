@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
-import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_models.dart';
 import 'voting_config_provider.dart';
@@ -129,51 +128,29 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     required String accountUuid,
   }) async {
     final recovery = ref.read(votingRecoveryServiceProvider);
-    final resumePlan = await recovery.loadResumePlan(
+    final proposalIds = await _proposalIdsForRound(api, round);
+    if (proposalIds.isEmpty) {
+      return const _RoundListRecoveryState(voted: false, inProgress: false);
+    }
+    final roundPlan = await recovery.loadRoundPlan(
       dbPath: dbPath,
       walletId: accountUuid,
       roundId: round.roundId,
+      proposalIds: proposalIds,
     );
-    final proposalIds = await _proposalIdsForRound(api, round);
-    var hasBlockingRecovery = false;
-    rust_voting.RoundPlanView? roundPlan;
-    if (proposalIds.isNotEmpty) {
-      try {
-        roundPlan = await recovery.loadRoundPlan(
-          dbPath: dbPath,
-          walletId: accountUuid,
-          roundId: round.roundId,
-          proposalIds: proposalIds,
-        );
-        hasBlockingRecovery = hasBlockingRoundRecoveryWork(
-          roundPlan: roundPlan,
-          resumePlan: resumePlan,
-        );
-      } catch (error) {
-        debugPrint(
-          '[zcash] Voting: skipped in-progress lookup for round '
-          '${round.roundId}: $error',
-        );
-      }
-    }
+    final hasBlockingRecovery = hasBlockingRoundRecoveryWork(
+      roundPlan: roundPlan,
+    );
     if (hasBlockingRecovery) {
       return const _RoundListRecoveryState(voted: false, inProgress: true);
     }
-    if (hasCompletedVoteForDisplay(
-      roundPlan: roundPlan,
-      resumePlan: resumePlan,
-    )) {
+    if (hasCompletedVoteForDisplay(roundPlan: roundPlan)) {
       return const _RoundListRecoveryState(voted: true, inProgress: false);
     }
 
     return _RoundListRecoveryState(
       voted: false,
-      inProgress: roundPlan != null
-          ? roundPlan.blockingRecovery ||
-                (roundPlanNeedsDraftSetup(roundPlan) &&
-                    resumePlan.hasPendingWork)
-          : resumePlan.hasPendingWork ||
-                resumePlan.hasBlockingCompletedVoteDisplay,
+      inProgress: roundPlan.blockingRecovery,
     );
   }
 

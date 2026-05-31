@@ -12,8 +12,8 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `bundle_policy`, `catch`, `require_len`, `seed_from_mnemonic`, `share_tracking_record`, `voting_network`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `bundle_policy`, `catch`, `seed_from_mnemonic`, `share_tracking_record`, `voting_network`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -64,10 +64,22 @@ Future<List<ShareSubmissionPlan>> planShareSubmissions({
   singleShare: singleShare,
 );
 
+/// Return helper-share resubmission order using `zcash_voting` policy.
+///
+/// The crate keeps untried helpers ahead of helpers that already accepted the
+/// share, while randomizing each group with OS entropy.
+Future<List<String>> shareResubmissionServerOrder({
+  required List<String> configuredServerUrls,
+  required List<String> sentToUrls,
+}) => RustLib.instance.api.crateApiVotingShareResubmissionServerOrder(
+  configuredServerUrls: configuredServerUrls,
+  sentToUrls: sentToUrls,
+);
+
 /// Return share-tracking action flags using `zcash_voting::share_policy`.
 ///
 /// Bit 0 means the share is ready for status polling. Bit 1 means it is overdue
-/// and should be retried against helpers that missed the initial submission.
+/// and should be retried using the crate resubmission order.
 Future<int> shareTrackingFlags({
   required ShareDelegationRecordView share,
   required BigInt nowSeconds,
@@ -242,37 +254,19 @@ Future<KeystoneSigningRequest> buildKeystoneDelegationRequest({
   maxRealNotesPerBundle: maxRealNotesPerBundle,
 );
 
-/// Extract the ZIP-244 sighash from PCZT bytes.
-Future<Uint8List> extractPcztSighash({required List<int> pcztBytes}) =>
-    RustLib.instance.api.crateApiVotingExtractPcztSighash(pcztBytes: pcztBytes);
-
-/// Extract a Keystone SpendAuth signature from signed PCZT bytes.
-Future<Uint8List> extractSpendAuthSignatureFromSignedPczt({
-  required List<int> signedPcztBytes,
-  required int actionIndex,
-}) =>
-    RustLib.instance.api.crateApiVotingExtractSpendAuthSignatureFromSignedPczt(
-      signedPcztBytes: signedPcztBytes,
-      actionIndex: actionIndex,
-    );
-
-/// Persist a Keystone signature for one delegation bundle.
-Future<void> storeKeystoneSignature({
+/// Validate and persist a Keystone signed-PCZT response for one delegation bundle.
+Future<KeystoneSignatureRecord> acceptKeystoneSignature({
   required String dbPath,
   required String walletId,
   required String roundId,
-  required int bundleIndex,
-  required List<int> sig,
-  required List<int> sighash,
-  required List<int> rk,
-}) => RustLib.instance.api.crateApiVotingStoreKeystoneSignature(
+  required KeystoneSigningRequest request,
+  required List<int> signedPcztBytes,
+}) => RustLib.instance.api.crateApiVotingAcceptKeystoneSignature(
   dbPath: dbPath,
   walletId: walletId,
   roundId: roundId,
-  bundleIndex: bundleIndex,
-  sig: sig,
-  sighash: sighash,
-  rk: rk,
+  request: request,
+  signedPcztBytes: signedPcztBytes,
 );
 
 /// Load persisted Keystone signatures for one voting round.
@@ -584,6 +578,17 @@ Future<RoundPlanView> getRoundPlan({
   walletId: walletId,
   roundId: roundId,
   proposalIds: proposalIds,
+);
+
+/// Compute delegation submission work for every eligible bundle in the round.
+Future<DelegationBundlePlanView> getDelegationBundlePlan({
+  required String dbPath,
+  required String walletId,
+  required String roundId,
+}) => RustLib.instance.api.crateApiVotingGetDelegationBundlePlan(
+  dbPath: dbPath,
+  walletId: walletId,
+  roundId: roundId,
 );
 
 /// Persist (insert or replace) the voter's ballot intent for one proposal.

@@ -17,18 +17,12 @@ abstract final class VotingWorkflowPhase {
 
 bool hasBlockingRoundRecoveryWork({
   required rust_wire.RoundPlanView? roundPlan,
-  required VotingResumePlan? resumePlan,
 }) {
-  return roundPlan?.blockingRecovery ??
-      (resumePlan?.hasBlockingCompletedVoteDisplay ?? false);
+  return roundPlan?.blockingRecovery ?? false;
 }
 
-bool hasCompletedVoteForDisplay({
-  required rust_wire.RoundPlanView? roundPlan,
-  required VotingResumePlan? resumePlan,
-}) {
-  return roundPlan?.completedForDisplay ??
-      (resumePlan?.hasCompletedVoteForDisplay ?? false);
+bool hasCompletedVoteForDisplay({required rust_wire.RoundPlanView? roundPlan}) {
+  return roundPlan?.completedForDisplay ?? false;
 }
 
 bool roundPlanNeedsDraftSetup(rust_wire.RoundPlanView? roundPlan) {
@@ -132,38 +126,6 @@ class VotingResumePlan {
   String get roundId => recoveryState.roundId;
 
   int get bundleCount => recoveryState.bundleCount;
-
-  /// Shares already accepted by at least one helper are tracked for later
-  /// confirmation, but they should not keep the foreground submission screen
-  /// blocked.
-  bool get hasBlockingShareWork =>
-      unconfirmedShareDelegations.any((record) => record.sentToUrls.isEmpty);
-
-  /// True once the local DB contains any artifact from a completed vote path.
-  bool get hasCompletedVoteArtifact =>
-      votesByKey.isNotEmpty ||
-      voteTxHashesByKey.isNotEmpty ||
-      commitmentBundlesByKey.isNotEmpty ||
-      shareDelegations.isNotEmpty;
-
-  /// Blocking work that should suppress the read-only "voted" view.
-  bool get hasBlockingCompletedVoteDisplay =>
-      pendingDelegationBundleIndexes.isNotEmpty ||
-      pendingVoteSubmissionKeys.isNotEmpty ||
-      incompleteVoteRecoveryKeys.isNotEmpty ||
-      hasBlockingShareWork;
-
-  /// Mirrors the proposal-detail screen's completed-vote predicate.
-  bool get hasCompletedVoteForDisplay =>
-      hasCompletedVoteArtifact && !hasBlockingCompletedVoteDisplay;
-
-  /// True when there is still user-visible network or confirmation work.
-  bool get hasPendingWork =>
-      pendingDelegationBundleIndexes.isNotEmpty ||
-      pendingVoteSubmissionKeys.isNotEmpty ||
-      submittedDelegationBundleIndexes.isNotEmpty ||
-      submittedVoteConfirmationKeys.isNotEmpty ||
-      hasBlockingShareWork;
 
   rust_wire.RecoverableCommitmentBundle? commitmentBundleFor(
     VotingVoteKey key,
