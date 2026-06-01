@@ -34,8 +34,7 @@ pub fn derive_hotkey(
     round_id: &str,
     network: WalletNetwork,
 ) -> Result<SecretVec<u8>, String> {
-    let hotkey_secret =
-        derive_contextual_hotkey_seed(seed.expose_secret(), round_id, network)?;
+    let hotkey_secret = derive_contextual_hotkey_seed(seed.expose_secret(), round_id, network)?;
     zcash_voting::hotkey::voting_hotkey_from_seed(
         hotkey_secret.expose_secret(),
         voting_network(network),

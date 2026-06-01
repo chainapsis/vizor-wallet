@@ -12,6 +12,7 @@ import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../../../services/voting/resolved_voting_config_extensions.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import '../widgets/voting_pane_scroll_area.dart';

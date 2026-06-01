@@ -37,7 +37,7 @@ final votingConfigLoaderProvider = Provider<VotingConfigLoader>((ref) {
   final source = ref.watch(votingConfigSourceProvider).value;
   return VotingConfigLoader(
     httpClient: ref.watch(votingHttpClientProvider),
-    staticConfigSource: source?.staticConfigSource,
+    sourceUrl: source?.sourceUrl,
   );
 });
 

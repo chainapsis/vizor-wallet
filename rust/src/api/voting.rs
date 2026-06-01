@@ -1212,8 +1212,8 @@ pub fn confirm_vote_submission(
     })
 }
 
-fn parse_tx_events_json(events_json: &str) -> Result<Vec<zcash_voting::wire::TxEvent>, String> {
-    let events: Vec<zcash_voting::wire::TxEvent> =
+fn parse_tx_events_json(events_json: &str) -> Result<Vec<zcash_voting::prelude::TxEvent>, String> {
+    let events: Vec<zcash_voting::prelude::TxEvent> =
         serde_json::from_str(events_json).map_err(|e| format!("invalid tx events JSON: {e}"))?;
     Ok(events)
 }
@@ -1406,7 +1406,11 @@ mod tests {
         }
     }
 
-    fn cast_vote_event(round_id: &str, van_position: u32, vc_tree_position: u64) -> zcash_voting::wire::TxEvent {
+    fn cast_vote_event(
+        round_id: &str,
+        van_position: u32,
+        vc_tree_position: u64,
+    ) -> zcash_voting::wire::TxEvent {
         zcash_voting::wire::TxEvent {
             event_type: "cast_vote".to_string(),
             attributes: vec![
