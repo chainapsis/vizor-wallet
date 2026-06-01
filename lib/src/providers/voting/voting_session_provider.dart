@@ -320,6 +320,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final rust = ref.read(votingRustApiProvider);
       final completedBundleIndexes = await _confirmSubmittedDelegations(
         context: context,
+        plan: plan,
         roundPlan: roundPlan,
         progress: progress,
       );
@@ -610,6 +611,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       final completedBundleIndexes = await _confirmSubmittedDelegations(
         context: context,
+        plan: plan,
         roundPlan: roundPlan,
         progress: progress,
       );
@@ -1597,19 +1599,30 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<Set<int>?> _confirmSubmittedDelegations({
     required _VotingSessionContext context,
+    required VotingResumePlan plan,
     required rust_wire.RoundPlanView? roundPlan,
     required Map<int, VotingSessionProgress> progress,
   }) async {
     final api = ref.read(votingApiClientProvider(context.config.apiBaseUrl));
     final rust = ref.read(votingRustApiProvider);
     final completedBundleIndexes = <int>{};
-    final submittedDelegationsByBundle = {
-      for (final work
-          in roundPlan?.recoveredDelegationWork ??
-              const <rust_wire.DelegationRecoveryWorkView>[])
-        if (work.kind == 'poll_delegation' && work.txHash != null)
-          work.bundleIndex: work.txHash!,
-    };
+    final submittedDelegationsByBundle = <int, String>{};
+    for (final work
+        in roundPlan?.recoveredDelegationWork ??
+            const <rust_wire.DelegationRecoveryWorkView>[]) {
+      if (work.kind == 'poll_delegation' && work.txHash != null) {
+        submittedDelegationsByBundle[work.bundleIndex] = work.txHash!;
+      }
+    }
+    for (final record in plan.recoveryState.delegation) {
+      if (record.phase == VotingWorkflowPhase.submittedDelegation &&
+          record.txHash != null) {
+        submittedDelegationsByBundle.putIfAbsent(
+          record.bundleIndex,
+          () => record.txHash!,
+        );
+      }
+    }
     for (final entry in submittedDelegationsByBundle.entries) {
       final bundleIndex = entry.key;
       final txHash = entry.value;

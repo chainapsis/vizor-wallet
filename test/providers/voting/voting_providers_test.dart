@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -1469,6 +1470,56 @@ void main() {
     expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
     expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 1);
   });
+
+  test(
+    'software submission resumes submitted delegation without draft',
+    () async {
+      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(responses: votingHttpResponses());
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(
+          bundleCount: 1,
+          delegationWorkflows: [
+            rust_frb_types.DelegationRecoveryView(
+              bundleIndex: 0,
+              phase: VotingWorkflowPhase.submittedDelegation,
+              txHash: 'delegation-tx',
+              vanLeafPosition: null,
+            ),
+          ],
+        ),
+        roundPlan: apiRoundPlan(
+          roundId: kRoundId,
+          pendingRecovery: false,
+          nextSteps: const [],
+          openProposals: Uint32List(0),
+          allDecided: false,
+          recoveredDelegationWork: const [],
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+        txConfirmationPolling: _fastTxConfirmationPolling,
+      );
+      addTearDown(container.dispose);
+
+      final startedKey = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(
+        startedKey,
+        const VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1'),
+      );
+      await _waitForStoredVanPosition(rust, '0:0');
+
+      expect(rust.delegationBundleCalls, isEmpty);
+      expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
+      expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
+      expect(rust.storedVanPositions, ['0:0']);
+    },
+  );
 
   test('Keystone signing starts after active account reload', () async {
     final rust = FakeVotingRustApi();
@@ -3456,6 +3507,9 @@ ProviderContainer _sessionContainer({
           api: recoveryApi ?? FakeVotingRecoveryApi(state: recoveryState()),
         ),
       ),
+      accountProvider.overrideWith(
+        () => _FakeVotingAccountNotifier(mnemonic: kTestMnemonic),
+      ),
       votingDraftPersistenceProvider.overrideWithValue(
         draftPersistence ?? FakeVotingDraftPersistence(),
       ),
@@ -3539,6 +3593,20 @@ Future<void> _waitForVoteCommitmentKey(
   fail(
     'Timed out waiting for vote commitment $expectedKey. '
     'Saw ${rust.voteCommitmentKeys}.',
+  );
+}
+
+Future<void> _waitForStoredVanPosition(
+  FakeVotingRustApi rust,
+  String expectedPosition,
+) async {
+  for (var i = 0; i < 100; i++) {
+    if (rust.storedVanPositions.contains(expectedPosition)) return;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  fail(
+    'Timed out waiting for stored VAN position $expectedPosition. '
+    'Saw ${rust.storedVanPositions}.',
   );
 }
 
@@ -4040,6 +4108,32 @@ class _ActiveVotingAccountNotifier extends Notifier<String?> {
 
   void set(String? accountUuid) {
     state = accountUuid;
+  }
+}
+
+class _FakeVotingAccountNotifier extends AccountNotifier {
+  _FakeVotingAccountNotifier({required this.mnemonic});
+
+  final String? mnemonic;
+
+  @override
+  FutureOr<AccountState> build() {
+    return const AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Account 1',
+          order: 0,
+          isSeedAnchor: true,
+        ),
+      ],
+      activeAccountUuid: 'account-1',
+    );
+  }
+
+  @override
+  Future<String?> getMnemonicForAccount(String uuid) async {
+    return mnemonic;
   }
 }
 

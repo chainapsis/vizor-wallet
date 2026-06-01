@@ -881,7 +881,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         if (step.kind == 'delegate') return false;
         if (step.kind == 'poll_delegation') hasSubmittedDelegation = true;
       }
-      return hasSubmittedDelegation;
+      if (hasSubmittedDelegation) return true;
     }
     final resumePlan = session.resumePlan;
     return resumePlan != null &&
@@ -899,8 +899,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   bool _sessionNeedsDelegation(VotingSessionState? session) {
     if (session == null) return false;
     if (_planNeedsDelegation(session.roundPlan)) return true;
-    return session.resumePlan?.pendingDelegationBundleIndexes.isNotEmpty ??
-        false;
+    final plan = session.resumePlan;
+    return (plan?.pendingDelegationBundleIndexes.isNotEmpty ?? false) ||
+        (plan?.submittedDelegationBundleIndexes.isNotEmpty ?? false);
   }
 
   bool _sessionNeedsDelegationSubmission(VotingSessionState? session) {
