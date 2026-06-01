@@ -24,11 +24,19 @@ class VotingConfigNotifier extends AsyncNotifier<VotingConfig> {
       _loadGeneration++;
       _lifecycleListener?.dispose();
     });
-    final config = await _load();
-    if (!_isCurrentLoad(generation)) {
-      return state.value ?? config;
+    try {
+      final config = await _load();
+      if (!_isCurrentLoad(generation)) {
+        return state.value ?? config;
+      }
+      return config;
+    } catch (_) {
+      if (!_isCurrentLoad(generation)) {
+        final previous = state.value;
+        if (previous != null) return previous;
+      }
+      rethrow;
     }
-    return config;
   }
 
   Future<void> refresh() async {
