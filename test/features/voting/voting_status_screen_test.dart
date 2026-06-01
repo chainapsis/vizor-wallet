@@ -749,7 +749,7 @@ void main() {
               },
             ],
           },
-          '/shielded-vote/v1/shares': {'share_id': '0102'},
+          '/shielded-vote/v1/shares': {'status': 'queued'},
         }),
     );
     final recoveryApi = _MutableVotingRecoveryApi()
@@ -1249,7 +1249,7 @@ void main() {
               },
             ],
           },
-          '/shielded-vote/v1/shares': {'share_id': '0102'},
+          '/shielded-vote/v1/shares': {'status': 'queued'},
         }),
     );
     final recoveryApi = _MutableVotingRecoveryApi();
@@ -1341,7 +1341,7 @@ void main() {
               },
             ],
           },
-          '/shielded-vote/v1/shares': {'share_id': '0102'},
+          '/shielded-vote/v1/shares': {'status': 'queued'},
         }),
     );
     final recoveryApi = _MutableVotingRecoveryApi();
@@ -1465,7 +1465,7 @@ void main() {
               },
             ],
           },
-          '/shielded-vote/v1/shares': {'share_id': '0102'},
+          '/shielded-vote/v1/shares': {'status': 'queued'},
         }),
     );
     final recoveryApi = _MutableVotingRecoveryApi()
@@ -1894,14 +1894,17 @@ Map<String, Object> _votingHttpResponses() => {
 const _roundId =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _draftKey = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
-const _hex32 =
-    '0101010101010101010101010101010101010101010101010101010101010101';
+const _bytes1x32Base64 = 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=';
+const _bytes2x32Base64 = 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=';
+const _bytes3x32Base64 = 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=';
+const _bytes12x64Base64 =
+    'DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA==';
 
 Map<String, dynamic> _staticConfigJson() => {
   'static_config_version': 1,
   'dynamic_config_url': 'https://voting.example/dynamic-voting-config.json',
   'trusted_keys': [
-    {'key_id': 'demo', 'alg': 'ed25519', 'pubkey': _hex32},
+    {'key_id': 'demo', 'alg': 'ed25519', 'pubkey': _bytes1x32Base64},
   ],
 };
 
@@ -1922,9 +1925,9 @@ Map<String, dynamic> _dynamicConfigJson() => {
   'rounds': {
     _roundId: {
       'auth_version': 1,
-      'ea_pk': _hex32,
+      'ea_pk': _bytes1x32Base64,
       'signatures': [
-        {'key_id': 'demo', 'alg': 'ed25519', 'sig': _hex32},
+        {'key_id': 'demo', 'alg': 'ed25519', 'sig': _bytes12x64Base64},
       ],
     },
   },
@@ -1936,9 +1939,9 @@ Map<String, dynamic> _roundStatusJson() => {
   'title': 'Poll',
   'status': 'active',
   'snapshot_height': 123,
-  'ea_pk': _hex32,
-  'nc_root': _hex32,
-  'nullifier_imt_root': _hex32,
+  'ea_pk': _bytes1x32Base64,
+  'nc_root': _bytes2x32Base64,
+  'nullifier_imt_root': _bytes3x32Base64,
   'proposals': [
     {
       'proposal_id': 1,
