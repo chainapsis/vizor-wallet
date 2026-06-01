@@ -15,13 +15,13 @@ void main() {
       httpClient: FakeVotingHttpClient(
         responses: {
           uri.toString(): {
-            'vote_round_ids': ['round-1', encodedRoundId],
+            'vote_round_ids': [hexRoundId.toUpperCase(), encodedRoundId],
           },
         },
       ),
     );
 
-    expect(await client.getEndorsedSet(), {'round-1', hexRoundId});
+    expect(await client.getEndorsedSet(), {hexRoundId});
   });
 
   test('HTTP 500 timeout and malformed JSON soft-fail to empty set', () async {
@@ -36,5 +36,11 @@ void main() {
     expect(await load(textResponse('bad', statusCode: 500)), isEmpty);
     expect(await load(timeoutResponse()), isEmpty);
     expect(await load('{'), isEmpty);
+    expect(
+      await load({
+        'vote_round_ids': ['round-1'],
+      }),
+      isEmpty,
+    );
   });
 }

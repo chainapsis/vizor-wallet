@@ -206,9 +206,14 @@ class VotingTxResult {
   });
 
   factory VotingTxResult.fromJson(Map<String, dynamic> json) {
+    final code = _intFromJson(json, const ['code']);
+    final txHash = _optionalStringFromJson(json, const ['tx_hash']) ?? '';
+    if (code == 0 && txHash.trim().isEmpty) {
+      throw const FormatException('Missing required string: tx_hash');
+    }
     return VotingTxResult(
-      txHash: _optionalStringFromJson(json, const ['tx_hash']) ?? '',
-      code: _optionalIntFromJson(json, const ['code']) ?? 0,
+      txHash: txHash,
+      code: code,
       log: _optionalStringFromJson(json, const ['log']) ?? '',
     );
   }
@@ -378,7 +383,10 @@ class VotingSupportedVersions {
   }
 }
 
-/// Authenticated metadata for one round in the dynamic config registry.
+/// Signed metadata for one round in the dynamic config registry.
+///
+/// This model preserves the signed fields. The config resolution layer is
+/// responsible for verifying the signatures before higher layers trust them.
 class VotingRoundEntry {
   final int authVersion;
   final List<int> eaPk;
@@ -503,9 +511,12 @@ class VotingRoundTally {
 
   const VotingRoundTally({required this.roundId, required this.rawJson});
 
-  factory VotingRoundTally.fromJson(Map<String, dynamic> json) {
+  factory VotingRoundTally.fromJson(
+    Map<String, dynamic> json, {
+    String? fallbackRoundId,
+  }) {
     return VotingRoundTally(
-      roundId: _optionalRoundIdFromJson(json) ?? '',
+      roundId: _optionalRoundIdFromJson(json) ?? fallbackRoundId ?? '',
       rawJson: Map.unmodifiable(json),
     );
   }
@@ -735,9 +746,11 @@ String _normalizeRoundId(String value) {
     final bytes = base64Decode(trimmed);
     if (bytes.length == 32) return bytesToHex(bytes);
   } on FormatException {
-    // Early fixtures used human-readable ids; keep those readable in tests.
+    // Fall through to a field-specific error below.
   }
-  return trimmed;
+  throw const FormatException(
+    'Invalid vote_round_id: expected 64 hex chars or 32-byte base64',
+  );
 }
 
 int _intFromJson(Map<String, dynamic> json, List<String> keys) {
@@ -753,7 +766,12 @@ int? _optionalIntFromJson(Map<String, dynamic> json, List<String> keys) {
     final value = json[key];
     if (value == null) continue;
     if (value is int) return value;
-    if (value is num) return value.toInt();
+    if (value is num) {
+      if (value.isFinite && value == value.truncateToDouble()) {
+        return value.toInt();
+      }
+      throw FormatException('$key must be an integer');
+    }
     return int.parse(value.toString());
   }
   return null;

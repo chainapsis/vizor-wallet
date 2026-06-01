@@ -50,7 +50,7 @@ class VotingApiClient {
     if (values == null) {
       // vote-sdk proto3 JSON omits empty repeated fields, so a chain with no
       // stored rounds returns `{}` rather than `{"rounds":[]}`.
-      if (decoded is Map) return const [];
+      if (decoded is Map && decoded.isEmpty) return const [];
       throw const FormatException(
         'listRounds expected a JSON list or rounds field',
       );
@@ -87,19 +87,27 @@ class VotingApiClient {
   }
 
   Future<VotingRoundTally> getRoundTally(String roundId) async {
+    final normalizedRoundId = normalizeVotingRoundId(roundId);
     final decoded = await _getJson(
-      _endpoint(['tally-results', normalizeVotingRoundId(roundId)]),
+      _endpoint(['tally-results', normalizedRoundId]),
     );
-    return VotingRoundTally.fromJson(_objectFromValue(decoded));
+    return VotingRoundTally.fromJson(
+      _objectFromValue(decoded),
+      fallbackRoundId: normalizedRoundId,
+    );
   }
 
   Future<VotingRoundTally> getProposalTally(
     String roundId,
     int proposalId,
   ) async {
-    final tally = await getRoundTally(roundId);
+    final normalizedRoundId = normalizeVotingRoundId(roundId);
+    final decoded = await _getJson(
+      _endpoint(['tally', normalizedRoundId, proposalId.toString()]),
+    );
     return VotingRoundTally.fromJson(
-      _filterProposalTally(tally.rawJson, proposalId),
+      _objectFromValue(decoded),
+      fallbackRoundId: normalizedRoundId,
     );
   }
 
@@ -149,7 +157,7 @@ class VotingApiClient {
     required Uri serverUrl,
     required Map<String, dynamic> share,
   }) async {
-    final body = {'vote_round_id': roundId, ...share};
+    final body = {...share, 'vote_round_id': normalizeVotingRoundId(roundId)};
     final decoded = await _postJson(
       _endpoint(['shares'], baseUrl: serverUrl),
       body,
@@ -186,7 +194,7 @@ class VotingApiClient {
     required String shareId,
     required Map<String, dynamic> share,
   }) async {
-    final body = {'vote_round_id': roundId, ...share};
+    final body = {...share, 'vote_round_id': normalizeVotingRoundId(roundId)};
     final decoded = await _postJson(
       _endpoint(['shares'], baseUrl: serverUrl),
       body,
@@ -288,31 +296,4 @@ Map<String, dynamic> _unwrapNestedObject(Object? value, String key) {
   final object = _objectFromValue(value);
   final nested = object[key];
   return nested == null ? object : _objectFromValue(nested);
-}
-
-Map<String, dynamic> _filterProposalTally(
-  Map<String, dynamic> json,
-  int proposalId,
-) {
-  for (final key in const ['results', 'tallies', 'proposals']) {
-    final value = json[key];
-    if (value is! List) continue;
-    return {
-      ...json,
-      key: [
-        for (final entry in value)
-          if (_proposalIdFromTallyEntry(entry) == proposalId) entry,
-      ],
-    };
-  }
-  return json;
-}
-
-int? _proposalIdFromTallyEntry(Object? value) {
-  if (value is! Map) return null;
-  final raw = value['proposal_id'] ?? value['proposalId'] ?? value['id'];
-  if (raw is int) return raw;
-  if (raw is num) return raw.toInt();
-  if (raw is String) return int.tryParse(raw);
-  return null;
 }

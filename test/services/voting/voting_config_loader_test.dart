@@ -43,6 +43,8 @@ void main() {
         '0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a';
     for (final source in [
       'http://example.com/static.json?checksum=sha256:$validHex',
+      'https://user@example.com/static.json?checksum=sha256:$validHex',
+      'https://example.com/static.json?checksum=sha256:$validHex#fragment',
       'https://example.com/static.json?checksum=sha512:$validHex',
       'https://example.com/static.json?checksum=sha256:${validHex.toUpperCase()}',
       'https://example.com/static.json?checksum=sha256:0a',
@@ -281,6 +283,34 @@ void main() {
     );
 
     expect(loader.load(), throwsA(isA<VotingConfigDecodeException>()));
+  });
+
+  test('config parsing rejects fractional integer fields', () {
+    final staticJson = Map<String, dynamic>.of(staticConfigJson())
+      ..['static_config_version'] = 1.9;
+    expect(
+      () => StaticVotingConfig.fromJson(staticJson),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          'static_config_version must be an integer',
+        ),
+      ),
+    );
+
+    final dynamicJson = Map<String, dynamic>.of(dynamicConfigJson())
+      ..['config_version'] = 1.9;
+    expect(
+      () => VotingConfig.fromJson(dynamicJson),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          'config_version must be an integer',
+        ),
+      ),
+    );
   });
 }
 

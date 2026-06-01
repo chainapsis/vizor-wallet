@@ -53,6 +53,16 @@ class StaticVotingConfigSource {
     if (parsed == null || parsed.scheme != 'https' || parsed.host.isEmpty) {
       throw StaticVotingConfigSourceMalformed('not an HTTPS URL: $raw');
     }
+    if (parsed.userInfo.isNotEmpty) {
+      throw const StaticVotingConfigSourceMalformed(
+        'URL must not include user info',
+      );
+    }
+    if (parsed.hasFragment) {
+      throw const StaticVotingConfigSourceMalformed(
+        'URL must not include a fragment',
+      );
+    }
 
     final checksum = parsed.queryParameters['checksum'];
     String? sha256Hex;
@@ -94,7 +104,7 @@ class StaticVotingConfigSource {
 /// The static config is the trust anchor: it may be hash-pinned by the source
 /// URL and contains the dynamic config URL plus trusted signing keys. The
 /// dynamic config then supplies service endpoints, supported protocol versions,
-/// and the authenticated round registry used by higher layers.
+/// and signed round metadata for later config resolution to verify.
 class VotingConfigLoader {
   VotingConfigLoader({
     required VotingHttpClient httpClient,
