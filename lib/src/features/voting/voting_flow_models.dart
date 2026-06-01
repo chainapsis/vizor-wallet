@@ -75,7 +75,7 @@ class VotingDraftNotifier extends Notifier<VotingDraftState> {
   final VotingSessionKey key;
   Future<VotingDraftState>? _loadFuture;
   bool _loaded = false;
-  bool _mutatedBeforeLoad = false;
+  final Map<int, int?> _pendingBeforeLoad = {};
 
   @override
   VotingDraftState build() {
@@ -89,31 +89,55 @@ class VotingDraftNotifier extends Notifier<VotingDraftState> {
   }
 
   void setChoice(int proposalId, int choice) {
-    _mutatedBeforeLoad = !_loaded;
     final next = state.setChoice(proposalId, choice);
     state = next;
-    unawaited(_persist(next));
+    if (_loaded) {
+      unawaited(_persist(next));
+    } else {
+      _pendingBeforeLoad[proposalId] = choice;
+    }
   }
 
   void clearChoice(int proposalId) {
-    _mutatedBeforeLoad = !_loaded;
     final next = state.clearChoice(proposalId);
     state = next;
-    unawaited(_persist(next));
+    if (_loaded) {
+      unawaited(_persist(next));
+    } else {
+      _pendingBeforeLoad[proposalId] = null;
+    }
   }
 
   Future<VotingDraftState> _loadPersisted() async {
     final persisted = await ref.read(votingDraftPersistenceProvider).load(key);
     _loaded = true;
-    if (!_mutatedBeforeLoad && ref.mounted) {
-      state = persisted;
-      return persisted;
+    final hadPendingBeforeLoad = _pendingBeforeLoad.isNotEmpty;
+    final next = hadPendingBeforeLoad
+        ? _applyPendingBeforeLoad(persisted)
+        : persisted;
+    _pendingBeforeLoad.clear();
+    if (ref.mounted) {
+      state = next;
+      if (hadPendingBeforeLoad) {
+        unawaited(_persist(next));
+      }
     }
-    return state;
+    return next;
   }
 
   Future<void> _persist(VotingDraftState draft) {
     return ref.read(votingDraftPersistenceProvider).save(key, draft);
+  }
+
+  VotingDraftState _applyPendingBeforeLoad(VotingDraftState base) {
+    var next = base;
+    for (final entry in _pendingBeforeLoad.entries) {
+      final choice = entry.value;
+      next = choice == null
+          ? next.clearChoice(entry.key)
+          : next.setChoice(entry.key, choice);
+    }
+    return next;
   }
 }
 
