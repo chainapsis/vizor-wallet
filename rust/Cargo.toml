@@ -98,5 +98,16 @@ tempfile = "3"
 hex = "0.4"
 vote-commitment-tree = "0.3"
 
+# Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
+# without `--release`). Rust crypto and voting flows are slow under the default
+# debug opt-level=0, so keep debug assertions and symbols while making local
+# Flutter/debug voting builds usable. Release builds are unaffected by this
+# profile.
+[profile.dev]
+opt-level = 3
+
+[profile.dev.package."*"]
+opt-level = 3
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
