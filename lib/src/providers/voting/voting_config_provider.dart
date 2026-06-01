@@ -14,19 +14,50 @@ import 'voting_service_providers.dart';
 /// must fail closed when service discovery is unavailable or malformed.
 class VotingConfigNotifier extends AsyncNotifier<VotingConfig> {
   AppLifecycleListener? _lifecycleListener;
+  int _loadGeneration = 0;
 
   @override
   Future<VotingConfig> build() async {
+    final generation = ++_loadGeneration;
     _lifecycleListener = AppLifecycleListener(onResume: refresh);
     ref.onDispose(() {
+      _loadGeneration++;
       _lifecycleListener?.dispose();
     });
-    return _load();
+    try {
+      final config = await _load();
+      if (!_isCurrentLoad(generation)) {
+        return _staleLoadResult();
+      }
+      return config;
+    } catch (_) {
+      if (!_isCurrentLoad(generation)) {
+        return _staleLoadResult();
+      }
+      rethrow;
+    }
   }
 
   Future<void> refresh() async {
+    final generation = ++_loadGeneration;
     state = const AsyncLoading<VotingConfig>();
-    state = await AsyncValue.guard(_load);
+    final config = await AsyncValue.guard(_load);
+    if (!_isCurrentLoad(generation)) return;
+    state = config;
+  }
+
+  bool _isCurrentLoad(int generation) {
+    return ref.mounted && generation == _loadGeneration;
+  }
+
+  VotingConfig _staleLoadResult() {
+    final previous = state.value;
+    if (previous != null) return previous;
+    final error = state.error;
+    if (error != null) {
+      Error.throwWithStackTrace(error, state.stackTrace ?? StackTrace.current);
+    }
+    throw StateError('Ignored stale voting config load.');
   }
 
   Future<VotingConfig> _load() async {

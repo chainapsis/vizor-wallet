@@ -320,6 +320,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final rust = ref.read(votingRustApiProvider);
       final completedBundleIndexes = await _confirmSubmittedDelegations(
         context: context,
+        plan: plan,
         roundPlan: roundPlan,
         progress: progress,
       );
@@ -374,6 +375,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             'Delegation proof completed without submission payload.',
           );
         }
+        _throwIfContextStale(context, 'delegation-submit');
         final result = await _submitAndConfirmDelegation(
           context: context,
           bundleIndex: bundleIndex,
@@ -609,6 +611,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       final completedBundleIndexes = await _confirmSubmittedDelegations(
         context: context,
+        plan: plan,
         roundPlan: roundPlan,
         progress: progress,
       );
@@ -685,6 +688,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           signature: signature,
           bundleIndex: bundleIndex,
         );
+        _throwIfContextStale(context, 'keystone-delegation-submit');
         final result = await _submitAndConfirmDelegation(
           context: context,
           bundleIndex: bundleIndex,
@@ -735,17 +739,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required List<rust_wire.DraftVote> draftVotes,
     List<int>? allProposalIds,
     Map<int, int>? proposalOptionCounts,
+    String? mnemonic,
   }) {
     return _enqueue(() async {
       final current = await future;
       final context = await _loadContext(_roundId);
       await _waitUntilWalletReadyForVoting(context);
-      final hotkeySeed = await ref
-          .read(votingHotkeyStoreProvider)
-          .readHotkey(
-            accountUuid: context.accountUuid,
-            roundId: context.round.roundId,
-          );
+      final hotkeySeed = await _hotkeyForVoteCasting(
+        context,
+        mnemonic: mnemonic,
+      );
       if (hotkeySeed == null) {
         _setError(
           'Voting hotkey is missing. Delegate this round before casting votes.',
@@ -1139,6 +1142,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             }
             final commitments = event.commitments;
             if (commitments != null) {
+              _throwIfContextStale(context, 'vote-commitment-submit');
               final vcTreePositions = await _submitVoteCommitments(
                 context,
                 commitments,
@@ -1238,6 +1242,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       await _scheduleShareTracking(context, refreshedPlan);
     });
+  }
+
+  Future<List<int>?> _hotkeyForVoteCasting(
+    _VotingSessionContext context, {
+    String? mnemonic,
+  }) async {
+    final existing = await _readStoredHotkey(context);
+    if (existing != null) return existing;
+    if (context.isHardwareAccount || mnemonic == null || mnemonic.isEmpty) {
+      return null;
+    }
+    return _ensureHotkey(context, mnemonic: mnemonic);
   }
 
   Future<List<int>> _ensureHotkey(
@@ -1594,19 +1610,30 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<Set<int>?> _confirmSubmittedDelegations({
     required _VotingSessionContext context,
+    required VotingResumePlan plan,
     required rust_wire.RoundPlanView? roundPlan,
     required Map<int, VotingSessionProgress> progress,
   }) async {
     final api = ref.read(votingApiClientProvider(context.config.apiBaseUrl));
     final rust = ref.read(votingRustApiProvider);
     final completedBundleIndexes = <int>{};
-    final submittedDelegationsByBundle = {
-      for (final work
-          in roundPlan?.recoveredDelegationWork ??
-              const <rust_wire.DelegationRecoveryWorkView>[])
-        if (work.kind == 'poll_delegation' && work.txHash != null)
-          work.bundleIndex: work.txHash!,
-    };
+    final submittedDelegationsByBundle = <int, String>{};
+    for (final work
+        in roundPlan?.recoveredDelegationWork ??
+            const <rust_wire.DelegationRecoveryWorkView>[]) {
+      if (work.kind == 'poll_delegation' && work.txHash != null) {
+        submittedDelegationsByBundle[work.bundleIndex] = work.txHash!;
+      }
+    }
+    for (final record in plan.recoveryState.delegation) {
+      if (record.phase == VotingWorkflowPhase.submittedDelegation &&
+          record.txHash != null) {
+        submittedDelegationsByBundle.putIfAbsent(
+          record.bundleIndex,
+          () => record.txHash!,
+        );
+      }
+    }
     for (final entry in submittedDelegationsByBundle.entries) {
       final bundleIndex = entry.key;
       final txHash = entry.value;

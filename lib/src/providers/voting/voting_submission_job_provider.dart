@@ -445,41 +445,44 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
 
-      if (draftVotes.isNotEmpty || needsDelegation) {
-        if (activeSession.isHardwareAccount) {
-          if (needsDelegation) {
-            _storePendingKeystoneState(
-              key: key,
-              generation: generation,
-              draftVotes: draftVotes,
-              intentProposalIds: intentProposalIds,
-              proposalOptionCounts: proposalOptionCounts,
-              pendingRecoveryWithoutDraft:
-                  canRecoverWithoutDraft || canPollDelegationWithoutDraft,
-            );
-            await _submitAfterKeystoneSignatures(
-              sessionNotifier,
-              key: key,
-              generation: generation,
-            );
-          } else {
-            await _submitVotesAndShares(
-              sessionNotifier,
-              key: key,
-              generation: generation,
-              draftVotes: draftVotes,
-              intentProposalIds: intentProposalIds,
-              proposalOptionCounts: proposalOptionCounts,
-              initialSession: activeSession,
-            );
-          }
-          return;
+      if (activeSession.isHardwareAccount &&
+          (draftVotes.isNotEmpty || needsDelegation)) {
+        if (needsDelegation) {
+          _storePendingKeystoneState(
+            key: key,
+            generation: generation,
+            draftVotes: draftVotes,
+            intentProposalIds: intentProposalIds,
+            proposalOptionCounts: proposalOptionCounts,
+            pendingRecoveryWithoutDraft:
+                canRecoverWithoutDraft || canPollDelegationWithoutDraft,
+          );
+          await _submitAfterKeystoneSignatures(
+            sessionNotifier,
+            key: key,
+            generation: generation,
+          );
+        } else {
+          await _submitVotesAndShares(
+            sessionNotifier,
+            key: key,
+            generation: generation,
+            draftVotes: draftVotes,
+            intentProposalIds: intentProposalIds,
+            proposalOptionCounts: proposalOptionCounts,
+            initialSession: activeSession,
+          );
         }
-        final mnemonic = await ref
+        return;
+      }
+      String? softwareMnemonic;
+      if (!activeSession.isHardwareAccount &&
+          (draftVotes.isNotEmpty || needsDelegation)) {
+        softwareMnemonic = await ref
             .read(accountProvider.notifier)
             .getMnemonicForAccount(key.accountUuid);
         if (!_isCurrentJob(key: key, generation: generation)) return;
-        if (mnemonic == null || mnemonic.isEmpty) {
+        if (softwareMnemonic == null || softwareMnemonic.isEmpty) {
           _failJob(
             key: key,
             generation: generation,
@@ -489,8 +492,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           );
           return;
         }
+      }
+      if (needsDelegation) {
         if (!_isCurrentJob(key: key, generation: generation)) return;
-        await sessionNotifier.delegatePendingBundles(mnemonic: mnemonic);
+        await sessionNotifier.delegatePendingBundles(
+          mnemonic: softwareMnemonic!,
+        );
         if (!_isCurrentJob(key: key, generation: generation)) return;
         final afterDelegation = _sessionForJob(key);
         if (afterDelegation?.phase == VotingSessionPhase.error) {
@@ -499,6 +506,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
             generation: generation,
             session: afterDelegation!,
           );
+          return;
+        }
+        if (_completeJobIfSubmissionDone(
+          key: key,
+          generation: generation,
+          session: afterDelegation,
+          requireNoUnconfirmedShares: true,
+        )) {
           return;
         }
       }
@@ -511,6 +526,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         intentProposalIds: intentProposalIds,
         proposalOptionCounts: proposalOptionCounts,
         initialSession: afterDelegation ?? activeSession,
+        mnemonic: softwareMnemonic,
       );
     } catch (error) {
       if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -614,6 +630,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         );
         return;
       }
+      if (_completeJobIfSubmissionDone(
+        key: key,
+        generation: generation,
+        session: afterDelegation,
+        requireNoUnconfirmedShares: true,
+      )) {
+        return;
+      }
       await _submitVotesAndShares(
         sessionNotifier,
         key: key,
@@ -644,6 +668,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required List<int> intentProposalIds,
     required Map<int, int> proposalOptionCounts,
     VotingSessionState? initialSession,
+    String? mnemonic,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     final votePollingSession = _sessionForJob(key) ?? initialSession;
@@ -662,6 +687,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         draftVotes: draftVotes,
         allProposalIds: intentProposalIds,
         proposalOptionCounts: proposalOptionCounts,
+        mnemonic: mnemonic,
       );
     }
     if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -677,7 +703,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       _failFromSession(key: key, generation: generation, session: done!);
       return;
     }
-    if (!_hasCompletedSubmission(done)) {
+    if (!_canCompleteSubmission(done)) {
       _scheduleCompletionPoll(key: key, generation: generation);
       return;
     }
@@ -825,7 +851,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         _failFromSession(key: key, generation: generation, session: session!);
         return;
       }
-      if (_hasCompletedSubmission(session)) {
+      if (_canCompleteSubmission(session)) {
         _completeJob(key: key, generation: generation);
       }
     });
@@ -836,9 +862,26 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _completionPollTimer = null;
   }
 
-  bool _hasCompletedSubmission(VotingSessionState? session) {
+  bool _canCompleteSubmission(VotingSessionState? session) {
     if (session == null) return false;
-    return hasCompletedVoteForDisplay(session.roundPlan);
+    return hasCompletedVoteForDisplay(session.roundPlan) &&
+        !_hasRemainingVoteOrShareWork(session);
+  }
+
+  bool _completeJobIfSubmissionDone({
+    required VotingSessionKey key,
+    required int generation,
+    required VotingSessionState? session,
+    bool requireNoUnconfirmedShares = false,
+  }) {
+    if (requireNoUnconfirmedShares &&
+        (session?.resumePlan?.unconfirmedShareDelegations.isNotEmpty ??
+            false)) {
+      return false;
+    }
+    if (!_canCompleteSubmission(session)) return false;
+    _completeJob(key: key, generation: generation);
+    return true;
   }
 
   String _messageFromError(Object error) => friendlyVotingErrorMessage(error);
@@ -872,6 +915,24 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     return roundPlan != null && roundPlan.openProposals.isEmpty;
   }
 
+  bool _hasRemainingVoteOrShareWork(VotingSessionState session) {
+    final roundPlan = session.roundPlan;
+    if (roundPlan != null) {
+      for (final step in roundPlan.nextSteps) {
+        if (step.kind == 'confirm_share') {
+          if (session.resumePlan?.hasBlockingShareWork ?? true) return true;
+          continue;
+        }
+        if (_stepCanRecoverWithoutDraft(step)) return true;
+      }
+    }
+    final resumePlan = session.resumePlan;
+    return resumePlan != null &&
+        (resumePlan.pendingVoteSubmissionKeys.isNotEmpty ||
+            resumePlan.submittedVoteConfirmationKeys.isNotEmpty ||
+            resumePlan.hasBlockingShareWork);
+  }
+
   bool _canPollDelegationWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;
     if (roundPlan != null) {
@@ -880,7 +941,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         if (step.kind == 'delegate') return false;
         if (step.kind == 'poll_delegation') hasSubmittedDelegation = true;
       }
-      return hasSubmittedDelegation;
+      if (hasSubmittedDelegation) return true;
     }
     final resumePlan = session.resumePlan;
     return resumePlan != null &&
@@ -897,10 +958,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _sessionNeedsDelegation(VotingSessionState? session) {
     if (session == null) return false;
-    final roundPlan = session.roundPlan;
-    if (_planNeedsDelegation(roundPlan)) return true;
-    if (roundPlan != null && !roundPlanNeedsDraftSetup(roundPlan)) {
-      return false;
+    if (_planNeedsDelegation(session.roundPlan)) return true;
+    if (session.roundPlan != null) {
+      return _canPollDelegationWithoutDraft(session);
     }
     return session.resumePlan?.submittedDelegationBundleIndexes.isNotEmpty ??
         false;
@@ -910,12 +970,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (session == null) return false;
     final roundPlan = session.roundPlan;
     if (_planNeedsDelegation(roundPlan)) return true;
-    if (roundPlan != null && !roundPlanNeedsDraftSetup(roundPlan)) {
-      return false;
-    }
-    final plan = session.resumePlan;
-    return (plan?.pendingDelegationBundleIndexes.isNotEmpty ?? false) ||
-        (plan?.submittedDelegationBundleIndexes.isNotEmpty ?? false);
+    if (_canPollDelegationWithoutDraft(session)) return true;
+    return roundPlan != null && roundPlanNeedsDraftSetup(roundPlan);
   }
 
   bool _sessionNeedsKeystoneSigning(VotingSessionState session) {
