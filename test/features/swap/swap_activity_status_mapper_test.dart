@@ -99,27 +99,25 @@ void main() {
     final recipient = _detailRow(presentation.details, 'USDC recipient');
     expect(recipient.value, contains('0x'));
     expect(recipient.copyText, recipientAddress);
-    expect(_detailRowAfter(presentation.details, 'USDC recipient'), (
-      label: '',
-      value: 'Treasury',
-      copyable: false,
-    ));
+    expect(recipient.addressBookLabel, 'Treasury');
+    expect(recipient.addressNetwork, AddressBookNetwork.ethereum);
 
     final refund = _detailRow(presentation.details, 'ZEC refund address');
     expect(refund.value, contains('u1'));
     expect(refund.copyText, 'u1refund-address');
-    expect(_detailRowAfter(presentation.details, 'ZEC refund address'), (
-      label: '',
-      value: 'Refund safe',
-      copyable: false,
-    ));
+    expect(refund.addressBookLabel, 'Refund safe');
+    expect(refund.addressNetwork, AddressBookNetwork.zcash);
 
     final deposit = _detailRow(presentation.details, 'Deposit ZEC to');
     expect(deposit.value, contains('t1'));
     expect(deposit.copyText, 't1deposit-address');
+    expect(deposit.addressBookLabel, isNull);
+
+    // The nickname is folded into the address row, not emitted as a separate
+    // empty-label row.
     expect(
-      _detailRowAfter(presentation.details, 'Deposit ZEC to').label,
-      isNot(''),
+      presentation.details.where((row) => row.label.isEmpty),
+      isEmpty,
     );
   });
 
@@ -146,11 +144,8 @@ void main() {
     final recipient = _detailRow(presentation.details, 'USDC recipient');
     expect(recipient.value, contains('0x'));
     expect(recipient.copyText, recipientAddress);
-    expect(_detailRowAfter(presentation.details, 'USDC recipient'), (
-      label: '',
-      value: 'Treasury',
-      copyable: false,
-    ));
+    expect(recipient.addressBookLabel, 'Treasury');
+    expect(recipient.addressNetwork, AddressBookNetwork.ethereum);
     expect(
       _detailValue(presentation.details, 'ZEC deposit to'),
       contains('t1'),
@@ -556,15 +551,6 @@ SwapStatusDetailRowData _detailRow(
   String label,
 ) {
   return rows.singleWhere((row) => row.label == label);
-}
-
-({String label, String value, bool copyable}) _detailRowAfter(
-  List<SwapStatusDetailRowData> rows,
-  String label,
-) {
-  final index = rows.indexWhere((row) => row.label == label);
-  final row = rows[index + 1];
-  return (label: row.label, value: row.value, copyable: row.copyable);
 }
 
 AddressBookContact _contact({

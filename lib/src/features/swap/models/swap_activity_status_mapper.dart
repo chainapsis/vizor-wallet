@@ -231,7 +231,9 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         : const <SwapStatusDetailRowData>[];
     return [
       _accountDetailRow(accountDetail),
-      if (terminalRecipientRows.length > 1) ...terminalRecipientRows,
+      if (terminalRecipientRows.isNotEmpty &&
+          terminalRecipientRows.first.addressBookLabel != null)
+        ...terminalRecipientRows,
       if (failed && refundAddress != null && refundAddress.isNotEmpty)
         ..._addressDetailRows(
           label: '$sourceSymbol refunded to',
@@ -455,15 +457,28 @@ List<SwapStatusDetailRowData> _addressDetailRows({
     asset: asset,
     address: address,
   );
+  final addressNetwork = addressBookLabel == null || asset == null
+      ? null
+      : AddressBookNetwork.tryFromChainTicker(asset.chainTicker);
+  // Matched rows share the address line with the network chip, so use a tighter
+  // compaction (keeps the 0x prefix and the last 5 chars, no spaced ellipsis).
+  final value = addressBookLabel == null
+      ? compactSwapAddress(address)
+      : compactSwapAddress(
+          address,
+          prefixLength: 7,
+          suffixLength: 5,
+          separator: '…',
+        );
   return [
     SwapStatusDetailRowData(
       label: label,
-      value: compactSwapAddress(address),
+      value: value,
       copyable: true,
       copyText: address,
+      addressBookLabel: addressBookLabel,
+      addressNetwork: addressNetwork,
     ),
-    if (addressBookLabel != null)
-      SwapStatusDetailRowData(label: '', value: addressBookLabel),
   ];
 }
 

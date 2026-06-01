@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/address_book/widgets/address_book_network_icon.dart';
 import 'package:zcash_wallet/src/features/swap/integrations/near_intents/near_intents_one_click_swap_adapter.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_navigation.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
@@ -1076,8 +1077,9 @@ void main() {
               label: 'USDC recipient',
               value: '0x123kjhc ... 4x98g20',
               copyable: true,
+              addressBookLabel: 'Treasury',
+              addressNetwork: AddressBookNetwork.ethereum,
             ),
-            SwapStatusDetailRowData(label: '', value: 'Treasury'),
             SwapStatusDetailRowData(
               label: 'Swap fee',
               value: 'Included in shown rate',
@@ -1091,6 +1093,8 @@ void main() {
     expect(find.text('USDC recipient'), findsOneWidget);
     expect(find.text('Treasury'), findsOneWidget);
     expect(find.text('0x123kjhc ... 4x98g20'), findsOneWidget);
+    // The matched-contact cell renders the network chip beside the address.
+    expect(find.byType(AddressBookNetworkIcon), findsOneWidget);
   });
 
   testWidgets(

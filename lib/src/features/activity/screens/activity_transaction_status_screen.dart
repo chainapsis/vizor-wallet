@@ -14,12 +14,16 @@ import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
+import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_book_label_lookup.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../../send/widgets/transaction_receipt_view.dart';
 
 class ActivityTransactionStatusArgs {
@@ -371,6 +375,73 @@ class _ActivityTransactionStatusScreenState
     );
   }
 
+  /// Sent "To" block: a matched address-book contact shows its nickname +
+  /// crimson saved mark above the (truncated) address; copy sits at the end of
+  /// the address line and always copies the full address.
+  TransactionReceiptBlockData _recipientBlock(
+    BuildContext context, {
+    required String address,
+    String? addressBookLabel,
+  }) {
+    final colors = context.colors;
+    final trimmedAddress = address.trim();
+    final nickname = addressBookLabel?.trim();
+    final hasNickname = nickname != null && nickname.isNotEmpty;
+    return TransactionReceiptBlockData(
+      title: 'To',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasNickname) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppIcon(
+                  AppIcons.user,
+                  size: 14,
+                  color: colors.icon.brandCrimson,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                Flexible(
+                  child: Text(
+                    nickname,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodyMediumStrong.copyWith(
+                      color: colors.text.accent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xxs),
+          ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Show the full address (wrapping across lines) rather than an
+              // aggressive prefix/suffix truncation.
+              Expanded(
+                child: Text(
+                  trimmedAddress,
+                  style: AppTypography.codeSmall.copyWith(
+                    color: colors.text.muted,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              _InlineCopyButton(
+                onTap: () =>
+                    unawaited(_copyText(trimmedAddress, 'Address copied')),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   bool _shouldHighlightAddressEdges(String address) {
     return address.startsWith('u1') || address.startsWith('zs');
   }
@@ -379,6 +450,7 @@ class _ActivityTransactionStatusScreenState
     BuildContext context,
     rust_sync.TransactionInfo? tx,
     rust_sync.TransactionDetail? detail,
+    List<AddressBookContact> addressBookContacts,
   ) {
     final primaryAddress = detail?.primaryAddress?.trim();
     final useFailedReceiptLayout = tx?.expiredUnmined == true;
@@ -386,12 +458,14 @@ class _ActivityTransactionStatusScreenState
     if (tx?.txKind == 'sent' &&
         primaryAddress != null &&
         primaryAddress.isNotEmpty) {
-      return _addressBlock(
+      return _recipientBlock(
         context,
-        title: 'To',
         address: primaryAddress,
-        useFailedReceiptLayout: useFailedReceiptLayout,
-        compactAddress: compactAddress,
+        addressBookLabel: addressBookLabelFor(
+          contacts: addressBookContacts,
+          network: AddressBookNetwork.zcash,
+          address: primaryAddress,
+        ),
       );
     }
     if ((tx?.txKind == 'received' || tx?.txKind == 'receiving') &&
@@ -446,6 +520,8 @@ class _ActivityTransactionStatusScreenState
 
     final tx = _transaction;
     final detail = _matchingDetailFor(tx);
+    final addressBookContacts =
+        ref.watch(addressBookProvider).value?.contacts ?? const [];
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final useFailedReceiptLayout = tx?.expiredUnmined == true;
     final error = useFailedReceiptLayout
@@ -491,7 +567,12 @@ class _ActivityTransactionStatusScreenState
                               tx,
                               privacyModeEnabled: privacyModeEnabled,
                             ),
-                            primaryBlock: _primaryBlockFor(context, tx, detail),
+                            primaryBlock: _primaryBlockFor(
+                              context,
+                              tx,
+                              detail,
+                              addressBookContacts,
+                            ),
                             extraBlocks: _extraBlocksFor(detail),
                             dateText: _dateText(tx),
                             feeText: _feeText(
@@ -512,6 +593,29 @@ class _ActivityTransactionStatusScreenState
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Icon-only copy affordance placed at the end of the recipient address line.
+class _InlineCopyButton extends StatelessWidget {
+  const _InlineCopyButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AppIcon(
+          AppIcons.copy,
+          size: 16,
+          color: context.colors.icon.muted,
         ),
       ),
     );
