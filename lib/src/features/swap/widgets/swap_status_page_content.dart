@@ -235,14 +235,20 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
                       onChanged: widget.onTabChanged,
                     ),
                     const SizedBox(height: AppSpacing.md),
-                    tabContent,
+                    if (widget.activeTab == SwapStatusTab.details)
+                      Flexible(fit: FlexFit.loose, child: tabContent)
+                    else
+                      tabContent,
                   ] else
-                    _SwapFinalDetails(rows: widget.details),
+                    Flexible(
+                      fit: FlexFit.loose,
+                      child: _SwapFinalDetails(rows: widget.details),
+                    ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.xs),
           Align(
             alignment: Alignment.center,
             child: _NearIntentsLink(onPressed: widget.onOpenExplorer),
@@ -979,6 +985,7 @@ class _SwapTransactionDetailsState extends State<_SwapTransactionDetails> {
         ? const <SwapStatusDetailRowData>[]
         : widget.rows.skip(anchorIndex + 1).toList();
     final content = Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: widget.expanded
           ? [
@@ -1017,9 +1024,12 @@ class _SwapTransactionDetailsState extends State<_SwapTransactionDetails> {
     );
 
     if (!widget.expanded) {
-      return KeyedSubtree(
-        key: const ValueKey('swap_transaction_details_collapsed'),
-        child: content,
+      return _StatusDetailsScrollView(
+        key: const ValueKey('swap_transaction_details_collapsed_scroll_view'),
+        child: KeyedSubtree(
+          key: const ValueKey('swap_transaction_details_collapsed'),
+          child: content,
+        ),
       );
     }
 
@@ -1084,17 +1094,32 @@ class _SwapFinalDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      key: const ValueKey('swap_final_details'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var index = 0; index < rows.length; index++) ...[
-          _InsetDetailRow(row: rows[index]),
-          if (_finalDetailSectionGapAfter(rows, index))
-            const SizedBox(height: AppSpacing.sm),
+    return _StatusDetailsScrollView(
+      key: const ValueKey('swap_final_details_scroll_view'),
+      child: Column(
+        key: const ValueKey('swap_final_details'),
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var index = 0; index < rows.length; index++) ...[
+            _InsetDetailRow(row: rows[index]),
+            if (_finalDetailSectionGapAfter(rows, index))
+              const SizedBox(height: AppSpacing.sm),
+          ],
         ],
-      ],
+      ),
     );
+  }
+}
+
+class _StatusDetailsScrollView extends StatelessWidget {
+  const _StatusDetailsScrollView({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(primary: false, child: child);
   }
 }
 

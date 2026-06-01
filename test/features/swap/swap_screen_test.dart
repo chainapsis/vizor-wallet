@@ -1198,6 +1198,61 @@ void main() {
     expect(find.byType(AddressBookNetworkIcon), findsOneWidget);
   });
 
+  testWidgets('status details absorb saved address row overflow', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _themeHarness(
+        _statusTestPage(
+          activeTab: SwapStatusTab.details,
+          details: const [
+            SwapStatusDetailRowData(label: 'Account', value: 'John'),
+            SwapStatusDetailRowData(
+              label: 'USDC recipient',
+              value: '0x1234567…89abc',
+              copyable: true,
+              addressBookLabel: 'eth account',
+              addressNetwork: AddressBookNetwork.ethereum,
+            ),
+            SwapStatusDetailRowData(
+              label: 'Deposit ZEC to',
+              value: 't1V4tMBk8 ... hunXYpe',
+            ),
+            SwapStatusDetailRowData(
+              label: 'Swap fee',
+              value: 'Included in shown rate',
+              help: true,
+            ),
+            SwapStatusDetailRowData(
+              label: 'Slippage tolerance',
+              value: '0.01 USDC (1.0%)',
+            ),
+            SwapStatusDetailRowData(
+              label: 'Guaranteed minimum',
+              value: '52.00 USDC',
+              help: true,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byKey(const ValueKey('swap_transaction_details_collapsed')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('swap_transaction_details_collapsed_scroll_view'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('eth account'), findsOneWidget);
+    expect(find.text('More details'), findsOneWidget);
+  });
+
   testWidgets(
     'status details expanded use case starts inside the scroll range',
     (tester) async {
