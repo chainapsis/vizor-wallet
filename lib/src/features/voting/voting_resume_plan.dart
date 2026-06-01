@@ -15,20 +15,12 @@ abstract final class VotingWorkflowPhase {
   static const confirmed = 'confirmed';
 }
 
-bool hasBlockingRoundRecoveryWork({
-  required rust_wire.RoundPlanView? roundPlan,
-  required VotingResumePlan? resumePlan,
-}) {
-  return roundPlan?.blockingRecovery ??
-      (resumePlan?.hasBlockingCompletedVoteDisplay ?? false);
+bool hasBlockingRoundRecoveryWork(rust_wire.RoundPlanView? roundPlan) {
+  return roundPlan?.blockingRecovery ?? false;
 }
 
-bool hasCompletedVoteForDisplay({
-  required rust_wire.RoundPlanView? roundPlan,
-  required VotingResumePlan? resumePlan,
-}) {
-  return roundPlan?.completedForDisplay ??
-      (resumePlan?.hasCompletedVoteForDisplay ?? false);
+bool hasCompletedVoteForDisplay(rust_wire.RoundPlanView? roundPlan) {
+  return roundPlan?.completedForDisplay ?? false;
 }
 
 bool roundPlanNeedsDraftSetup(rust_wire.RoundPlanView? roundPlan) {
@@ -61,11 +53,11 @@ class VotingVoteKey {
       'VotingVoteKey(bundleIndex: $bundleIndex, proposalId: $proposalId)';
 }
 
-/// Immutable summary of what the app should resume for a voting round.
+/// Immutable keyed view of persisted recovery records for a voting round.
 ///
-/// The plan preserves the raw recovery state for details, but exposes sorted
-/// indexes and maps for the UI/state machine so resume work happens in a stable
-/// order after app restarts.
+/// The crate `RoundPlanView` decides high-level recovery and display state. This
+/// object preserves raw records in stable order so Dart can retry the exact
+/// bundle/proposal/share work selected by that plan.
 class VotingResumePlan {
   final rust_wire.RoundRecoveryStateView recoveryState;
   final UnmodifiableListView<int> pendingDelegationBundleIndexes;
@@ -133,37 +125,12 @@ class VotingResumePlan {
 
   int get bundleCount => recoveryState.bundleCount;
 
-  /// Shares already accepted by at least one helper are tracked for later
-  /// confirmation, but they should not keep the foreground submission screen
-  /// blocked.
+  /// Shares with no accepted helper server still need foreground retry work.
+  ///
+  /// High-level recovery and completed-vote display decisions come from
+  /// [rust_wire.RoundPlanView]. This value is only the local share retry shape.
   bool get hasBlockingShareWork =>
       unconfirmedShareDelegations.any((record) => record.sentToUrls.isEmpty);
-
-  /// True once the local DB contains any artifact from a completed vote path.
-  bool get hasCompletedVoteArtifact =>
-      votesByKey.isNotEmpty ||
-      voteTxHashesByKey.isNotEmpty ||
-      commitmentBundlesByKey.isNotEmpty ||
-      shareDelegations.isNotEmpty;
-
-  /// Blocking work that should suppress the read-only "voted" view.
-  bool get hasBlockingCompletedVoteDisplay =>
-      pendingDelegationBundleIndexes.isNotEmpty ||
-      pendingVoteSubmissionKeys.isNotEmpty ||
-      incompleteVoteRecoveryKeys.isNotEmpty ||
-      hasBlockingShareWork;
-
-  /// Mirrors the proposal-detail screen's completed-vote predicate.
-  bool get hasCompletedVoteForDisplay =>
-      hasCompletedVoteArtifact && !hasBlockingCompletedVoteDisplay;
-
-  /// True when there is still user-visible network or confirmation work.
-  bool get hasPendingWork =>
-      pendingDelegationBundleIndexes.isNotEmpty ||
-      pendingVoteSubmissionKeys.isNotEmpty ||
-      submittedDelegationBundleIndexes.isNotEmpty ||
-      submittedVoteConfirmationKeys.isNotEmpty ||
-      hasBlockingShareWork;
 
   rust_wire.RecoverableCommitmentBundle? commitmentBundleFor(
     VotingVoteKey key,

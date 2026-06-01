@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../../core/formatting/date_format.dart';
-import '../../core/formatting/hex_codec.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
@@ -159,16 +158,14 @@ class VotingRoundDetails {
     final json = status.rawJson;
     return VotingRoundDetails(
       roundId: status.roundId,
-      title: _optionalStringFromJson(json, const ['title', 'name']) ?? '',
+      title: _optionalStringFromJson(json, const ['title']) ?? '',
       status: status.status,
       snapshotHeight: _intFromJson(json, const ['snapshot_height']),
-      eaPk: _bytesFromJson(json, const ['ea_pk', 'eaPk']),
-      ncRoot: _bytesFromJson(json, const ['nc_root', 'ncRoot']),
-      nullifierImtRoot: _bytesFromJson(json, const [
+      eaPk: _fixedBytesFromJson(json, const ['ea_pk'], 32),
+      ncRoot: _fixedBytesFromJson(json, const ['nc_root'], 32),
+      nullifierImtRoot: _fixedBytesFromJson(json, const [
         'nullifier_imt_root',
-        'nullifierIMTRoot',
-        'nullifierImtRoot',
-      ]),
+      ], 32),
       rawJson: json,
     );
   }
@@ -449,7 +446,12 @@ int _intFromJson(Map<String, dynamic> json, List<String> keys) {
     final value = json[key];
     if (value == null) continue;
     if (value is int) return value;
-    if (value is num) return value.toInt();
+    if (value is num) {
+      if (value.isFinite && value == value.truncateToDouble()) {
+        return value.toInt();
+      }
+      throw FormatException('$key must be an integer');
+    }
     return int.parse(value.toString());
   }
   throw FormatException('Missing required int: ${keys.first}');
@@ -457,11 +459,23 @@ int _intFromJson(Map<String, dynamic> json, List<String> keys) {
 
 Uint8List _bytesFromJson(Map<String, dynamic> json, List<String> keys) {
   final value = _stringFromJson(json, keys);
-  final hex = value.startsWith('0x') ? value.substring(2) : value;
-  if (hex.length.isEven && RegExp(r'^[0-9a-fA-F]+$').hasMatch(hex)) {
-    return hexToBytes(hex);
+  try {
+    return Uint8List.fromList(base64Decode(value));
+  } on FormatException catch (error) {
+    throw FormatException('${keys.first} must be base64: ${error.message}');
   }
-  return Uint8List.fromList(base64Decode(value));
+}
+
+Uint8List _fixedBytesFromJson(
+  Map<String, dynamic> json,
+  List<String> keys,
+  int expectedLength,
+) {
+  final bytes = _bytesFromJson(json, keys);
+  if (bytes.length != expectedLength) {
+    throw FormatException('${keys.first} must decode to $expectedLength bytes');
+  }
+  return bytes;
 }
 
 DateTime? _dateFromJson(Map<String, dynamic> json, String key) {

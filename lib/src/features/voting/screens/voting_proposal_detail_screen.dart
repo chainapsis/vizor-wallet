@@ -85,16 +85,13 @@ class _VotingProposalDetailScreenState
                 : ref.watch(votingDraftProvider(draftKey));
             final proposals = proposalsFromRound(round);
             final completedVote = draft.isEmpty
-                ? _CompletedVote.fromPlan(state.resumePlan, state.roundPlan)
+                ? _CompletedVote.fromPlan(state.roundPlan)
                 : null;
             _maybePrepareVotingPower(state);
             // Foreground recovery takes precedence over the read-only voted view.
             // Accepted helper shares may still be tracked after submission, but
             // that background work should not keep this screen resumable.
-            if (hasBlockingRoundRecoveryWork(
-              roundPlan: state.roundPlan,
-              resumePlan: state.resumePlan,
-            )) {
+            if (hasBlockingRoundRecoveryWork(state.roundPlan)) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _PendingVoteContent(
@@ -1185,13 +1182,9 @@ class _CompletedVote {
   final Map<int, int?> choicesByProposalId;
   final DateTime? votedAt;
 
-  static _CompletedVote? fromPlan(
-    VotingResumePlan? plan,
-    rust_wire.RoundPlanView? roundPlan,
-  ) {
+  static _CompletedVote? fromPlan(rust_wire.RoundPlanView? roundPlan) {
     final display = roundPlan?.completedVoteDisplay;
-    if (display == null ||
-        !hasCompletedVoteForDisplay(roundPlan: roundPlan, resumePlan: plan)) {
+    if (display == null || !hasCompletedVoteForDisplay(roundPlan)) {
       return null;
     }
     final choices = {

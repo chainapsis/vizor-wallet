@@ -22,7 +22,6 @@ void main() {
 
     expect(plan.pendingDelegationBundleIndexes, [0, 1, 2]);
     expect(plan.pendingVoteSubmissionKeys, isEmpty);
-    expect(plan.hasPendingWork, isTrue);
     expect(api.clearCalls, isEmpty);
   });
 
@@ -78,7 +77,6 @@ void main() {
 
       expect(plan.pendingDelegationBundleIndexes, [2]);
       expect(plan.submittedDelegationBundleIndexes, [1]);
-      expect(plan.hasPendingWork, isTrue);
     },
   );
 
@@ -281,20 +279,12 @@ void main() {
 
       expect(plan.unconfirmedShareDelegations, [accepted]);
       expect(plan.hasBlockingShareWork, isFalse);
-      expect(plan.hasPendingWork, isFalse);
     },
   );
 
   test(
     'share-only round planner work does not block accepted share completion',
     () async {
-      final accepted = share(shareIndex: 0, confirmed: false);
-      final plan = VotingRecoveryService().buildResumePlan(
-        recoveryState(
-          shareDelegations: [accepted],
-          unconfirmedShareDelegations: [accepted],
-        ),
-      );
       final roundPlan = apiRoundPlan(
         roundId: 'round-1',
         pendingRecovery: true,
@@ -311,10 +301,7 @@ void main() {
         allDecided: true,
       );
 
-      expect(
-        hasBlockingRoundRecoveryWork(roundPlan: roundPlan, resumePlan: plan),
-        isFalse,
-      );
+      expect(hasBlockingRoundRecoveryWork(roundPlan), isFalse);
     },
   );
 
@@ -335,10 +322,7 @@ void main() {
       allDecided: false,
     );
 
-    expect(
-      hasBlockingRoundRecoveryWork(roundPlan: roundPlan, resumePlan: null),
-      isTrue,
-    );
+    expect(hasBlockingRoundRecoveryWork(roundPlan), isTrue);
   });
 
   test(
@@ -366,7 +350,6 @@ void main() {
 
       expect(plan.unconfirmedShareDelegations, [unaccepted]);
       expect(plan.hasBlockingShareWork, isTrue);
-      expect(plan.hasPendingWork, isTrue);
     },
   );
 

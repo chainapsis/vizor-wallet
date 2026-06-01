@@ -715,16 +715,8 @@ void main() {
 
     final round = _roundStatusJson()
       ..['proposals'] = [
-        {
-          'proposal_id': 1,
-          'title': 'First proposal',
-          'options': ['Yes', 'No'],
-        },
-        {
-          'proposal_id': 2,
-          'title': 'Second proposal',
-          'options': ['Aye', 'Nay', 'Abstain'],
-        },
+        _proposalJson(1, 'First proposal', ['Yes', 'No']),
+        _proposalJson(2, 'Second proposal', ['Aye', 'Nay', 'Abstain']),
       ];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
@@ -1023,16 +1015,8 @@ void main() {
       ..['status'] = 'closed'
       ..['summary'] = 'Completed poll'
       ..['proposals'] = [
-        {
-          'proposal_id': 1,
-          'title': 'First proposal',
-          'options': ['Yes', 'No'],
-        },
-        {
-          'proposal_id': 2,
-          'title': 'Second proposal',
-          'options': ['Mint', 'Burn'],
-        },
+        _proposalJson(1, 'First proposal', ['Yes', 'No']),
+        _proposalJson(2, 'Second proposal', ['Mint', 'Burn']),
       ];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
@@ -1133,16 +1117,8 @@ void main() {
 
     final round = _roundStatusJson()
       ..['proposals'] = [
-        {
-          'proposal_id': 1,
-          'title': 'First proposal',
-          'options': ['Yes', 'No'],
-        },
-        {
-          'proposal_id': 2,
-          'title': 'Second proposal',
-          'options': ['Aye', 'Nay'],
-        },
+        _proposalJson(1, 'First proposal', ['Yes', 'No']),
+        _proposalJson(2, 'Second proposal', ['Aye', 'Nay']),
       ];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
@@ -1196,16 +1172,8 @@ void main() {
 
     final round = _roundStatusJson()
       ..['proposals'] = [
-        {
-          'proposal_id': 1,
-          'title': 'First proposal',
-          'options': ['Yes', 'No'],
-        },
-        {
-          'proposal_id': 2,
-          'title': 'Second proposal',
-          'options': ['Aye', 'Nay', 'Abstain'],
-        },
+        _proposalJson(1, 'First proposal', ['Yes', 'No']),
+        _proposalJson(2, 'Second proposal', ['Aye', 'Nay', 'Abstain']),
       ];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
@@ -1288,16 +1256,8 @@ void main() {
 
     final round = _roundStatusJson()
       ..['proposals'] = [
-        {
-          'proposal_id': 1,
-          'title': 'First proposal',
-          'options': ['Yes', 'No'],
-        },
-        {
-          'proposal_id': 2,
-          'title': 'Second proposal',
-          'options': ['Aye', 'Nay', 'Abstain'],
-        },
+        _proposalJson(1, 'First proposal', ['Yes', 'No']),
+        _proposalJson(2, 'Second proposal', ['Aye', 'Nay', 'Abstain']),
       ];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
@@ -1412,16 +1372,8 @@ void main() {
 
     final round = _roundStatusJson()
       ..['proposals'] = [
-        {
-          'proposal_id': 1,
-          'title': 'First proposal',
-          'options': ['Yes', 'No'],
-        },
-        {
-          'proposal_id': 2,
-          'title': 'Second proposal',
-          'options': ['Aye', 'Nay', 'Abstain'],
-        },
+        _proposalJson(1, 'First proposal', ['Yes', 'No']),
+        _proposalJson(2, 'Second proposal', ['Aye', 'Nay', 'Abstain']),
       ];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
@@ -1943,11 +1895,20 @@ Map<String, dynamic> _roundStatusJson() => {
   'nc_root': _bytes2x32Base64,
   'nullifier_imt_root': _bytes3x32Base64,
   'proposals': [
-    {
-      'proposal_id': 1,
-      'title': 'First proposal',
-      'options': ['Yes', 'No'],
-    },
+    _proposalJson(1, 'First proposal', ['Yes', 'No']),
+  ],
+};
+
+Map<String, dynamic> _proposalJson(
+  int id,
+  String title,
+  List<String> options,
+) => {
+  'id': id,
+  'title': title,
+  'options': [
+    for (var index = 0; index < options.length; index++)
+      {'index': index, 'label': options[index]},
   ],
 };
 

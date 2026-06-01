@@ -838,10 +838,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _hasCompletedSubmission(VotingSessionState? session) {
     if (session == null) return false;
-    return hasCompletedVoteForDisplay(
-      roundPlan: session.roundPlan,
-      resumePlan: session.resumePlan,
-    );
+    return hasCompletedVoteForDisplay(session.roundPlan);
   }
 
   String _messageFromError(Object error) => friendlyVotingErrorMessage(error);

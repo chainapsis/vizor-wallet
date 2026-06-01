@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/storage/app_secure_store.dart';
-import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../providers/voting/voting_state.dart';
+import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 
 const int _minProposalId = 1;
 const int _maxProposalId = 15;
@@ -93,7 +93,7 @@ class VotingDraftNotifier extends Notifier<VotingDraftState> {
   final VotingSessionKey key;
   Future<VotingDraftState>? _loadFuture;
   bool _loaded = false;
-  bool _mutatedBeforeLoad = false;
+  final Map<int, int?> _pendingBeforeLoad = {};
 
   @override
   VotingDraftState build() {
@@ -107,31 +107,55 @@ class VotingDraftNotifier extends Notifier<VotingDraftState> {
   }
 
   void setChoice(int proposalId, int choice) {
-    _mutatedBeforeLoad = !_loaded;
     final next = state.setChoice(proposalId, choice);
     state = next;
-    unawaited(_persist(next));
+    if (_loaded) {
+      unawaited(_persist(next));
+    } else {
+      _pendingBeforeLoad[proposalId] = choice;
+    }
   }
 
   void clearChoice(int proposalId) {
-    _mutatedBeforeLoad = !_loaded;
     final next = state.clearChoice(proposalId);
     state = next;
-    unawaited(_persist(next));
+    if (_loaded) {
+      unawaited(_persist(next));
+    } else {
+      _pendingBeforeLoad[proposalId] = null;
+    }
   }
 
   Future<VotingDraftState> _loadPersisted() async {
     final persisted = await ref.read(votingDraftPersistenceProvider).load(key);
     _loaded = true;
-    if (!_mutatedBeforeLoad && ref.mounted) {
-      state = persisted;
-      return persisted;
+    final hadPendingBeforeLoad = _pendingBeforeLoad.isNotEmpty;
+    final next = hadPendingBeforeLoad
+        ? _applyPendingBeforeLoad(persisted)
+        : persisted;
+    _pendingBeforeLoad.clear();
+    if (ref.mounted) {
+      state = next;
+      if (hadPendingBeforeLoad) {
+        unawaited(_persist(next));
+      }
     }
-    return state;
+    return next;
   }
 
   Future<void> _persist(VotingDraftState draft) {
     return ref.read(votingDraftPersistenceProvider).save(key, draft);
+  }
+
+  VotingDraftState _applyPendingBeforeLoad(VotingDraftState base) {
+    var next = base;
+    for (final entry in _pendingBeforeLoad.entries) {
+      final choice = entry.value;
+      next = choice == null
+          ? next.clearChoice(entry.key)
+          : next.setChoice(entry.key, choice);
+    }
+    return next;
   }
 }
 
@@ -196,8 +220,7 @@ List<VotingProposalView> proposalsFromRound(VotingRoundDetails round) {
 }
 
 List<VotingProposalView> proposalsFromJson(Map<String, dynamic> json) {
-  final value =
-      json['proposals'] ?? json['questions'] ?? json['ballot'] ?? const [];
+  final value = json['proposals'];
   final values = value is List ? value : const [];
   return [
     for (var i = 0; i < values.length; i++)
@@ -210,7 +233,7 @@ VotingProposalView _proposalFromJson(
   required int fallbackId,
 }) {
   final id = _proposalIdFromJson(json);
-  final optionsJson = json['options'] ?? json['choices'] ?? const [];
+  final optionsJson = json['options'] ?? const [];
   final options = optionsJson is List
       ? [
           for (var i = 0; i < optionsJson.length; i++)
@@ -220,10 +243,8 @@ VotingProposalView _proposalFromJson(
   return VotingProposalView(
     id: id,
     title:
-        _stringFromJson(json, const ['title', 'name', 'question']) ??
-        'Proposal ${fallbackId + 1}',
-    description:
-        _stringFromJson(json, const ['description', 'body', 'summary']) ?? '',
+        _stringFromJson(json, const ['title']) ?? 'Proposal ${fallbackId + 1}',
+    description: _stringFromJson(json, const ['description']) ?? '',
     options: options.isEmpty
         ? const [
             VotingOptionView(index: 0, label: 'Yes'),
@@ -234,28 +255,24 @@ VotingProposalView _proposalFromJson(
 }
 
 int _proposalIdFromJson(Map<String, dynamic> json) {
-  final id = _intFromJson(json, const ['proposal_id', 'proposalId', 'id']);
+  final id = _intFromJson(json, const ['id']);
   if (id == null) {
-    throw const FormatException('Missing required int: proposal_id');
+    throw const FormatException('Missing required int: id');
   }
   if (id < _minProposalId || id > _maxProposalId) {
     throw FormatException(
-      'proposal_id must be $_minProposalId..$_maxProposalId, got $id',
+      'id must be $_minProposalId..$_maxProposalId, got $id',
     );
   }
   return id;
 }
 
 VotingOptionView _optionFromJson(Object? value, {required int fallbackIndex}) {
-  if (value is String) {
-    return VotingOptionView(index: fallbackIndex, label: value);
-  }
   final json = _objectFromValue(value);
   return VotingOptionView(
-    index: _intFromJson(json, const ['index', 'choice', 'id']) ?? fallbackIndex,
+    index: _intFromJson(json, const ['index']) ?? fallbackIndex,
     label:
-        _stringFromJson(json, const ['label', 'title', 'name']) ??
-        'Option ${fallbackIndex + 1}',
+        _stringFromJson(json, const ['label']) ?? 'Option ${fallbackIndex + 1}',
   );
 }
 
@@ -281,8 +298,13 @@ int? _intFromJson(Map<String, dynamic> json, List<String> keys) {
     final value = json[key];
     if (value == null) continue;
     if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value.toString());
+    if (value is num) {
+      if (value.isFinite && value == value.truncateToDouble()) {
+        return value.toInt();
+      }
+      throw FormatException('$key must be an integer');
+    }
+    return int.parse(value.toString());
   }
   return null;
 }
