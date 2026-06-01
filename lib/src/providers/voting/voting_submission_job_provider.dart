@@ -502,6 +502,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           );
           return;
         }
+        if (_completeJobIfSubmissionDone(
+          key: key,
+          generation: generation,
+          session: afterDelegation,
+        )) {
+          return;
+        }
       }
       final afterDelegation = _sessionForJob(key);
       await _submitVotesAndShares(
@@ -613,6 +620,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           generation: generation,
           session: afterDelegation!,
         );
+        return;
+      }
+      if (_completeJobIfSubmissionDone(
+        key: key,
+        generation: generation,
+        session: afterDelegation,
+      )) {
         return;
       }
       await _submitVotesAndShares(
@@ -842,6 +856,16 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     return hasCompletedVoteForDisplay(session.roundPlan);
   }
 
+  bool _completeJobIfSubmissionDone({
+    required VotingSessionKey key,
+    required int generation,
+    required VotingSessionState? session,
+  }) {
+    if (!_hasCompletedSubmission(session)) return false;
+    _completeJob(key: key, generation: generation);
+    return true;
+  }
+
   String _messageFromError(Object error) => friendlyVotingErrorMessage(error);
 
   String? _statusErrorMessage(VotingSessionState state) {
@@ -908,12 +932,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     if (session == null) return false;
     final roundPlan = session.roundPlan;
     if (_planNeedsDelegation(roundPlan)) return true;
-    if (roundPlan != null && !roundPlanNeedsDraftSetup(roundPlan)) {
-      return false;
-    }
-    final plan = session.resumePlan;
-    return (plan?.pendingDelegationBundleIndexes.isNotEmpty ?? false) ||
-        (plan?.submittedDelegationBundleIndexes.isNotEmpty ?? false);
+    if (_canPollDelegationWithoutDraft(session)) return true;
+    return roundPlan != null && roundPlanNeedsDraftSetup(roundPlan);
   }
 
   bool _sessionNeedsKeystoneSigning(VotingSessionState session) {

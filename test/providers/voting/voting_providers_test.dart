@@ -1476,31 +1476,10 @@ void main() {
     () async {
       final rust = FakeVotingRustApi();
       final http = FakeVotingHttpClient(responses: votingHttpResponses());
-      final recoveryApi = FakeVotingRecoveryApi(
-        state: recoveryState(
-          bundleCount: 1,
-          delegationWorkflows: [
-            rust_frb_types.DelegationRecoveryView(
-              bundleIndex: 0,
-              phase: VotingWorkflowPhase.submittedDelegation,
-              txHash: 'delegation-tx',
-              vanLeafPosition: null,
-            ),
-          ],
-        ),
-        roundPlan: apiRoundPlan(
-          roundId: kRoundId,
-          pendingRecovery: false,
-          nextSteps: const [],
-          openProposals: Uint32List(0),
-          allDecided: false,
-          recoveredDelegationWork: const [],
-        ),
-      );
       final container = _sessionContainer(
         http: http,
         rust: rust,
-        recoveryApi: recoveryApi,
+        recoveryApi: _submittedDelegationOnlyRecoveryApi(),
         txConfirmationPolling: _fastTxConfirmationPolling,
       );
       addTearDown(container.dispose);
@@ -1513,11 +1492,62 @@ void main() {
         const VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1'),
       );
       await _waitForStoredVanPosition(rust, '0:0');
+      final completed = await _waitForJobStatus(
+        container,
+        startedKey!,
+        VotingSubmissionJobStatus.complete,
+      );
 
+      expect(completed.errorMessage, isNull);
       expect(rust.delegationBundleCalls, isEmpty);
       expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
+      expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 0);
+      expect(_postRequestCount(http, '/shielded-vote/v1/shares'), 0);
       expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
       expect(rust.storedVanPositions, ['0:0']);
+      expect(rust.voteCommitmentKeys, isEmpty);
+      expect(rust.recordedShares, isEmpty);
+    },
+  );
+
+  test(
+    'hardware submission resumes submitted delegation without draft',
+    () async {
+      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(responses: votingHttpResponses());
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: _submittedDelegationOnlyRecoveryApi(),
+        accountIsHardware: true,
+        txConfirmationPolling: _fastTxConfirmationPolling,
+      );
+      addTearDown(container.dispose);
+
+      final startedKey = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(
+        startedKey,
+        const VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1'),
+      );
+      await _waitForStoredVanPosition(rust, '0:0');
+      final completed = await _waitForJobStatus(
+        container,
+        startedKey!,
+        VotingSubmissionJobStatus.complete,
+      );
+
+      expect(completed.errorMessage, isNull);
+      expect(rust.keystoneDelegationRequestCalls, isEmpty);
+      expect(rust.keystoneProofBundleCalls, isEmpty);
+      expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
+      expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 0);
+      expect(_postRequestCount(http, '/shielded-vote/v1/shares'), 0);
+      expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
+      expect(rust.storedVanPositions, ['0:0']);
+      expect(rust.voteCommitmentKeys, isEmpty);
+      expect(rust.recordedShares, isEmpty);
     },
   );
 
@@ -3545,6 +3575,45 @@ ProviderContainer _sessionContainer({
         votingTxConfirmationPollingProvider.overrideWithValue(
           txConfirmationPolling,
         ),
+    ],
+  );
+}
+
+FakeVotingRecoveryApi _submittedDelegationOnlyRecoveryApi() {
+  final beforeConfirmation = apiRoundPlan(
+    roundId: kRoundId,
+    pendingRecovery: false,
+    nextSteps: const [],
+    openProposals: Uint32List(0),
+    allDecided: false,
+    recoveredDelegationWork: const [],
+  );
+  final afterConfirmation = apiRoundPlan(
+    roundId: kRoundId,
+    pendingRecovery: false,
+    nextSteps: const [],
+    openProposals: Uint32List(0),
+    allDecided: true,
+    completedVoteArtifact: true,
+    completedForDisplay: true,
+    recoveredDelegationWork: const [],
+  );
+  return FakeVotingRecoveryApi(
+    state: recoveryState(
+      bundleCount: 1,
+      delegationWorkflows: [
+        rust_frb_types.DelegationRecoveryView(
+          bundleIndex: 0,
+          phase: VotingWorkflowPhase.submittedDelegation,
+          txHash: 'delegation-tx',
+          vanLeafPosition: null,
+        ),
+      ],
+    ),
+    roundPlanSequence: [
+      beforeConfirmation,
+      beforeConfirmation,
+      afterConfirmation,
     ],
   );
 }
