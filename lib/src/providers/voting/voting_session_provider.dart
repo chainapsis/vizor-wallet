@@ -836,7 +836,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           bundleIndex: key.bundleIndex,
           proposalId: key.proposalId,
           txHash: txHash,
-          events: _txEvents(confirmation),
+          eventsJson: confirmation.eventsJson,
         );
         progress[key] = VotingSessionProgress(
           phase: 'confirmed',
@@ -1567,7 +1567,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         bundleIndex: commitments.bundleIndex,
         proposalId: commitment.proposalId,
         txHash: result.txHash,
-        events: _txEvents(confirmation),
+        eventsJson: confirmation.eventsJson,
       );
       debugPrint(
         '[zcash] Voting: cast-vote confirmed '
@@ -1633,7 +1633,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         roundId: context.round.roundId,
         bundleIndex: bundleIndex,
         txHash: txHash,
-        events: _txEvents(confirmation),
+        eventsJson: confirmation.eventsJson,
       );
       completedBundleIndexes.add(bundleIndex);
       progress[bundleIndex] = VotingSessionProgress(
@@ -1707,7 +1707,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       roundId: context.round.roundId,
       bundleIndex: bundleIndex,
       txHash: result.txHash,
-      events: _txEvents(confirmation),
+      eventsJson: confirmation.eventsJson,
     );
     return (
       txHash: result.txHash,
@@ -2820,22 +2820,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final decoded = jsonDecode(await wireJson);
     if (decoded is Map<String, dynamic>) return decoded;
     throw const FormatException('Rust voting wire JSON is not an object.');
-  }
-
-  static List<rust_wire.TxEvent> _txEvents(VotingTxConfirmation confirmation) {
-    return [
-      for (final event in confirmation.events)
-        rust_wire.TxEvent(
-          eventType: event.type,
-          attributes: [
-            for (final attribute in event.attributes)
-              rust_wire.TxEventAttribute(
-                key: attribute.key,
-                value: attribute.value,
-              ),
-          ],
-        ),
-    ];
   }
 
   static void _verifyKeystoneDelegationSignature({

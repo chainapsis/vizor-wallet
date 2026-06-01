@@ -222,7 +222,7 @@ class VotingTxConfirmation {
   final int height;
   final int code;
   final String log;
-  final List<VotingTxEvent> events;
+  final List<Map<String, dynamic>> events;
 
   const VotingTxConfirmation({
     required this.height,
@@ -238,57 +238,32 @@ class VotingTxConfirmation {
       log: _optionalStringFromJson(json, const ['log']) ?? '',
       events: _optionalListFromJson(json, const ['events'])
           .map(_objectFromValue)
-          .map(VotingTxEvent.fromJson)
+          .map(_txEventJsonFromApi)
           .toList(growable: false),
     );
   }
 
-  VotingTxEvent? event(String type) {
-    for (final event in events) {
-      if (event.type == type) return event;
-    }
-    return null;
-  }
+  String get eventsJson => jsonEncode(events);
 }
 
-/// Event emitted by the vote chain for a confirmed voting transaction.
-class VotingTxEvent {
-  final String type;
-  final List<VotingTxEventAttribute> attributes;
-
-  const VotingTxEvent({required this.type, required this.attributes});
-
-  factory VotingTxEvent.fromJson(Map<String, dynamic> json) {
-    return VotingTxEvent(
-      type: _stringFromJson(json, const ['type']),
-      attributes: _optionalListFromJson(json, const ['attributes'])
-          .map(_objectFromValue)
-          .map(VotingTxEventAttribute.fromJson)
-          .toList(growable: false),
-    );
-  }
-
-  String? attribute(String key) {
-    for (final attribute in attributes) {
-      if (attribute.key == key) return attribute.value;
-    }
-    return null;
-  }
+// Validate tx-event fields once and keep only the wire keys Rust consumes.
+Map<String, dynamic> _txEventJsonFromApi(Map<String, dynamic> event) {
+  return <String, dynamic>{
+    'type': _stringFromJson(event, const ['type']),
+    'attributes': _optionalListFromJson(event, const ['attributes'])
+        .map(_objectFromValue)
+        .map(_txEventAttributeJsonFromApi)
+        .toList(growable: false),
+  };
 }
 
-/// Key/value attribute attached to a voting transaction event.
-class VotingTxEventAttribute {
-  final String key;
-  final String value;
-
-  const VotingTxEventAttribute({required this.key, required this.value});
-
-  factory VotingTxEventAttribute.fromJson(Map<String, dynamic> json) {
-    return VotingTxEventAttribute(
-      key: _stringFromJson(json, const ['key']),
-      value: _stringFromJson(json, const ['value']),
-    );
-  }
+Map<String, dynamic> _txEventAttributeJsonFromApi(
+  Map<String, dynamic> attribute,
+) {
+  return <String, dynamic>{
+    'key': _stringFromJson(attribute, const ['key']),
+    'value': _stringFromJson(attribute, const ['value']),
+  };
 }
 
 /// Base URL plus optional label for a vote server or PIR endpoint.

@@ -43,13 +43,12 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/vote.dart'
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_frb_types;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
-    as rust_voting;
-import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
 
 import 'round_plan_test_utils.dart';
+import 'tx_event_json_test_utils.dart';
 import '../../services/voting/fake_voting_http.dart';
 
 void main() {
@@ -2535,10 +2534,10 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String roundId,
     required int bundleIndex,
     required String txHash,
-    required List<rust_voting.TxEvent> events,
+    required String eventsJson,
   }) async {
-    final vanLeafPosition = _eventInt(
-      events,
+    final vanLeafPosition = eventIntFromTxEventsJson(
+      eventsJson,
       'delegate_vote',
       roundId,
       'leaf_index',
@@ -2766,9 +2765,12 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required int bundleIndex,
     required int proposalId,
     required String txHash,
-    required List<rust_voting.TxEvent> events,
+    required String eventsJson,
   }) async {
-    final leafPositions = _castVoteLeafPositions(events, roundId);
+    final leafPositions = castVoteLeafPositionsFromTxEventsJson(
+      eventsJson,
+      roundId,
+    );
     _recordVoteConfirmed(
       bundleIndex: bundleIndex,
       proposalId: proposalId,
@@ -2889,66 +2891,6 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     );
     recoveryApi.roundPlan = null;
   }
-}
-
-int _eventInt(
-  List<rust_voting.TxEvent> events,
-  String eventType,
-  String roundId,
-  String key,
-) {
-  final value = _eventAttribute(events, eventType, roundId, key);
-  final parsed = int.tryParse(value ?? '');
-  if (parsed == null) {
-    throw StateError('Missing $eventType $key.');
-  }
-  return parsed;
-}
-
-({int vanPosition, BigInt vcTreePosition}) _castVoteLeafPositions(
-  List<rust_voting.TxEvent> events,
-  String roundId,
-) {
-  final raw = _eventAttribute(events, 'cast_vote', roundId, 'leaf_index');
-  if (raw == null) {
-    throw StateError('Missing cast_vote leaf_index.');
-  }
-  final parts = raw.split(',');
-  if (parts.length != 2) {
-    throw StateError('Malformed cast_vote leaf_index: $raw');
-  }
-  final vanPosition = int.tryParse(parts[0].trim());
-  final vcTreePosition = BigInt.tryParse(parts[1].trim());
-  if (vanPosition == null || vcTreePosition == null) {
-    throw StateError('Malformed cast_vote leaf_index: $raw');
-  }
-  return (vanPosition: vanPosition, vcTreePosition: vcTreePosition);
-}
-
-String? _eventAttribute(
-  List<rust_voting.TxEvent> events,
-  String eventType,
-  String roundId,
-  String key,
-) {
-  for (final event in events) {
-    if (event.eventType != eventType) continue;
-    final eventRoundId = _eventRoundId(event);
-    if (eventRoundId != roundId) continue;
-    for (final attribute in event.attributes) {
-      if (attribute.key == key) return attribute.value;
-    }
-  }
-  return null;
-}
-
-String? _eventRoundId(rust_voting.TxEvent event) {
-  for (final attribute in event.attributes) {
-    if (attribute.key == 'vote_round_id' || attribute.key == 'round_id') {
-      return attribute.value;
-    }
-  }
-  return null;
 }
 
 List<int> _bytesFromHex(String hex) {

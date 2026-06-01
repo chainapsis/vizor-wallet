@@ -903,9 +903,10 @@ pub fn confirm_delegation_submission(
     round_id: String,
     bundle_index: u32,
     tx_hash: String,
-    events: Vec<zcash_voting::wire::TxEvent>,
+    events_json: String,
 ) -> Result<zcash_voting::wire::DelegationConfirmation, String> {
     catch(|| {
+        let events = parse_tx_events_json(&events_json)?;
         // Parse tx events and persist confirmation details for this bundle.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::confirmation::confirm_delegation_submission(
@@ -1193,9 +1194,10 @@ pub fn confirm_vote_submission(
     bundle_index: u32,
     proposal_id: u32,
     tx_hash: String,
-    events: Vec<zcash_voting::wire::TxEvent>,
+    events_json: String,
 ) -> Result<zcash_voting::wire::VoteConfirmation, String> {
     catch(|| {
+        let events = parse_tx_events_json(&events_json)?;
         // Parse tx events and persist vote confirmation fields.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::confirmation::confirm_vote_submission(
@@ -1208,6 +1210,12 @@ pub fn confirm_vote_submission(
         )
         .map_err(|e| e.to_string())
     })
+}
+
+fn parse_tx_events_json(events_json: &str) -> Result<Vec<zcash_voting::wire::TxEvent>, String> {
+    let events: Vec<zcash_voting::wire::TxEvent> =
+        serde_json::from_str(events_json).map_err(|e| format!("invalid tx events JSON: {e}"))?;
+    Ok(events)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1378,16 +1386,39 @@ mod tests {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
 
-    fn tx_event(event_type: &str, attributes: &[(&str, &str)]) -> zcash_voting::wire::TxEvent {
+    fn tx_events_json(events: Vec<zcash_voting::wire::TxEvent>) -> String {
+        serde_json::to_string(&events).unwrap()
+    }
+
+    fn delegate_event(round_id: &str, leaf_index: u32) -> zcash_voting::wire::TxEvent {
         zcash_voting::wire::TxEvent {
-            event_type: event_type.to_string(),
-            attributes: attributes
-                .iter()
-                .map(|(key, value)| zcash_voting::wire::TxEventAttribute {
-                    key: (*key).to_string(),
-                    value: (*value).to_string(),
-                })
-                .collect(),
+            event_type: "delegate_vote".to_string(),
+            attributes: vec![
+                zcash_voting::wire::TxEventAttribute {
+                    key: "vote_round_id".to_string(),
+                    value: round_id.to_string(),
+                },
+                zcash_voting::wire::TxEventAttribute {
+                    key: "leaf_index".to_string(),
+                    value: leaf_index.to_string(),
+                },
+            ],
+        }
+    }
+
+    fn cast_vote_event(round_id: &str, van_position: u32, vc_tree_position: u64) -> zcash_voting::wire::TxEvent {
+        zcash_voting::wire::TxEvent {
+            event_type: "cast_vote".to_string(),
+            attributes: vec![
+                zcash_voting::wire::TxEventAttribute {
+                    key: "vote_round_id".to_string(),
+                    value: round_id.to_string(),
+                },
+                zcash_voting::wire::TxEventAttribute {
+                    key: "leaf_index".to_string(),
+                    value: format!("{van_position},{vc_tree_position}"),
+                },
+            ],
         }
     }
 
@@ -2428,10 +2459,7 @@ mod tests {
             ROUND_ID.to_string(),
             0,
             "delegate-confirmed-tx".to_string(),
-            vec![tx_event(
-                "delegate_vote",
-                &[("vote_round_id", ROUND_ID), ("leaf_index", "42")],
-            )],
+            tx_events_json(vec![delegate_event(ROUND_ID, 42)]),
         )
         .unwrap();
         assert_eq!(delegation.tx_hash, "delegate-confirmed-tx");
@@ -2444,10 +2472,7 @@ mod tests {
             0,
             7,
             "vote-confirmed-tx".to_string(),
-            vec![tx_event(
-                "cast_vote",
-                &[("vote_round_id", ROUND_ID), ("leaf_index", "42,88")],
-            )],
+            tx_events_json(vec![cast_vote_event(ROUND_ID, 42, 88)]),
         )
         .unwrap();
         assert_eq!(vote.tx_hash, "vote-confirmed-tx");

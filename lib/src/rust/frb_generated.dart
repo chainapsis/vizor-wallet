@@ -162,7 +162,7 @@ abstract class RustLibApi extends BaseApi {
     required String roundId,
     required int bundleIndex,
     required String txHash,
-    required List<TxEvent> events,
+    required String eventsJson,
   });
 
   Future<VoteConfirmation> crateApiVotingConfirmVoteSubmission({
@@ -172,7 +172,7 @@ abstract class RustLibApi extends BaseApi {
     required int bundleIndex,
     required int proposalId,
     required String txHash,
-    required List<TxEvent> events,
+    required String eventsJson,
   });
 
   Future<Uint8List> crateApiSyncCreatePcztFromProposal({
@@ -1171,7 +1171,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String roundId,
     required int bundleIndex,
     required String txHash,
-    required List<TxEvent> events,
+    required String eventsJson,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1182,7 +1182,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(roundId, serializer);
           sse_encode_u_32(bundleIndex, serializer);
           sse_encode_String(txHash, serializer);
-          sse_encode_list_tx_event(events, serializer);
+          sse_encode_String(eventsJson, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1195,7 +1195,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVotingConfirmDelegationSubmissionConstMeta,
-        argValues: [dbPath, accountUuid, roundId, bundleIndex, txHash, events],
+        argValues: [
+          dbPath,
+          accountUuid,
+          roundId,
+          bundleIndex,
+          txHash,
+          eventsJson,
+        ],
         apiImpl: this,
       ),
     );
@@ -1210,7 +1217,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "roundId",
           "bundleIndex",
           "txHash",
-          "events",
+          "eventsJson",
         ],
       );
 
@@ -1222,7 +1229,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required int bundleIndex,
     required int proposalId,
     required String txHash,
-    required List<TxEvent> events,
+    required String eventsJson,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1234,7 +1241,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_32(bundleIndex, serializer);
           sse_encode_u_32(proposalId, serializer);
           sse_encode_String(txHash, serializer);
-          sse_encode_list_tx_event(events, serializer);
+          sse_encode_String(eventsJson, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1254,7 +1261,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           bundleIndex,
           proposalId,
           txHash,
-          events,
+          eventsJson,
         ],
         apiImpl: this,
       ),
@@ -1271,7 +1278,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "bundleIndex",
           "proposalId",
           "txHash",
-          "events",
+          "eventsJson",
         ],
       );
 
@@ -5614,18 +5621,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<TxEvent> dco_decode_list_tx_event(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>).map(dco_decode_tx_event).toList();
-  }
-
-  @protected
-  List<TxEventAttribute> dco_decode_list_tx_event_attribute(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>).map(dco_decode_tx_event_attribute).toList();
-  }
-
-  @protected
   List<VoteRecoveryView> dco_decode_list_vote_recovery_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_vote_recovery_view).toList();
@@ -6093,30 +6088,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       address: dco_decode_opt_String(arr[2]),
       blockRangeStart: dco_decode_opt_box_autoadd_u_64(arr[3]),
       blockRangeEnd: dco_decode_opt_box_autoadd_u_64(arr[4]),
-    );
-  }
-
-  @protected
-  TxEvent dco_decode_tx_event(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return TxEvent(
-      eventType: dco_decode_String(arr[0]),
-      attributes: dco_decode_list_tx_event_attribute(arr[1]),
-    );
-  }
-
-  @protected
-  TxEventAttribute dco_decode_tx_event_attribute(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return TxEventAttribute(
-      key: dco_decode_String(arr[0]),
-      value: dco_decode_String(arr[1]),
     );
   }
 
@@ -7227,32 +7198,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<TxEvent> sse_decode_list_tx_event(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <TxEvent>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_tx_event(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
-  List<TxEventAttribute> sse_decode_list_tx_event_attribute(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <TxEventAttribute>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_tx_event_attribute(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
   List<VoteRecoveryView> sse_decode_list_vote_recovery_view(
     SseDeserializer deserializer,
   ) {
@@ -7865,22 +7810,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       blockRangeStart: var_blockRangeStart,
       blockRangeEnd: var_blockRangeEnd,
     );
-  }
-
-  @protected
-  TxEvent sse_decode_tx_event(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_eventType = sse_decode_String(deserializer);
-    var var_attributes = sse_decode_list_tx_event_attribute(deserializer);
-    return TxEvent(eventType: var_eventType, attributes: var_attributes);
-  }
-
-  @protected
-  TxEventAttribute sse_decode_tx_event_attribute(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_key = sse_decode_String(deserializer);
-    var var_value = sse_decode_String(deserializer);
-    return TxEventAttribute(key: var_key, value: var_value);
   }
 
   @protected
@@ -8933,27 +8862,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_list_tx_event(List<TxEvent> self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_tx_event(item, serializer);
-    }
-  }
-
-  @protected
-  void sse_encode_list_tx_event_attribute(
-    List<TxEventAttribute> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_tx_event_attribute(item, serializer);
-    }
-  }
-
-  @protected
   void sse_encode_list_vote_recovery_view(
     List<VoteRecoveryView> self,
     SseSerializer serializer,
@@ -9415,23 +9323,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.address, serializer);
     sse_encode_opt_box_autoadd_u_64(self.blockRangeStart, serializer);
     sse_encode_opt_box_autoadd_u_64(self.blockRangeEnd, serializer);
-  }
-
-  @protected
-  void sse_encode_tx_event(TxEvent self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.eventType, serializer);
-    sse_encode_list_tx_event_attribute(self.attributes, serializer);
-  }
-
-  @protected
-  void sse_encode_tx_event_attribute(
-    TxEventAttribute self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.key, serializer);
-    sse_encode_String(self.value, serializer);
   }
 
   @protected

@@ -12,7 +12,7 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `require_len`, `share_record`
+// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
@@ -331,14 +331,14 @@ Future<DelegationConfirmation> confirmDelegationSubmission({
   required String roundId,
   required int bundleIndex,
   required String txHash,
-  required List<TxEvent> events,
+  required String eventsJson,
 }) => RustLib.instance.api.crateApiVotingConfirmDelegationSubmission(
   dbPath: dbPath,
   accountUuid: accountUuid,
   roundId: roundId,
   bundleIndex: bundleIndex,
   txHash: txHash,
-  events: events,
+  eventsJson: eventsJson,
 );
 
 /// Delete bundle rows at or above `keep_count` for partial-bundle recovery.
@@ -509,7 +509,7 @@ Future<VoteConfirmation> confirmVoteSubmission({
   required int bundleIndex,
   required int proposalId,
   required String txHash,
-  required List<TxEvent> events,
+  required String eventsJson,
 }) => RustLib.instance.api.crateApiVotingConfirmVoteSubmission(
   dbPath: dbPath,
   accountUuid: accountUuid,
@@ -517,7 +517,7 @@ Future<VoteConfirmation> confirmVoteSubmission({
   bundleIndex: bundleIndex,
   proposalId: proposalId,
   txHash: txHash,
-  events: events,
+  eventsJson: eventsJson,
 );
 
 /// Record helper-server submission state for one encrypted vote share.

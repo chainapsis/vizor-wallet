@@ -497,7 +497,10 @@ void main() {
     final confirmation = await client.getTxConfirmation('delegation-tx');
 
     expect(confirmation?.height, 12);
-    expect(confirmation?.event('delegate_vote')?.attribute('leaf_index'), '3');
+    expect(
+      confirmation?.events.single['attributes'].single['value'],
+      '3',
+    );
   });
 
   test('rejects malformed transaction confirmation bodies', () async {

@@ -414,7 +414,7 @@ fn wire__crate__api__voting__confirm_delegation_submission_impl(
             let api_round_id = <String>::sse_decode(&mut deserializer);
             let api_bundle_index = <u32>::sse_decode(&mut deserializer);
             let api_tx_hash = <String>::sse_decode(&mut deserializer);
-            let api_events = <Vec<zcash_voting::wire::TxEvent>>::sse_decode(&mut deserializer);
+            let api_events_json = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -424,7 +424,7 @@ fn wire__crate__api__voting__confirm_delegation_submission_impl(
                         api_round_id,
                         api_bundle_index,
                         api_tx_hash,
-                        api_events,
+                        api_events_json,
                     )?;
                     Ok(output_ok)
                 })())
@@ -460,7 +460,7 @@ fn wire__crate__api__voting__confirm_vote_submission_impl(
             let api_bundle_index = <u32>::sse_decode(&mut deserializer);
             let api_proposal_id = <u32>::sse_decode(&mut deserializer);
             let api_tx_hash = <String>::sse_decode(&mut deserializer);
-            let api_events = <Vec<zcash_voting::wire::TxEvent>>::sse_decode(&mut deserializer);
+            let api_events_json = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -471,7 +471,7 @@ fn wire__crate__api__voting__confirm_vote_submission_impl(
                         api_bundle_index,
                         api_proposal_id,
                         api_tx_hash,
-                        api_events,
+                        api_events_json,
                     )?;
                     Ok(output_ok)
                 })())
@@ -4297,16 +4297,6 @@ const _: fn() = || {
             SignedVoteCommitmentsView.commitments;
     }
     {
-        let TxEvent = None::<zcash_voting::wire::TxEvent>.unwrap();
-        let _: String = TxEvent.event_type;
-        let _: Vec<zcash_voting::wire::TxEventAttribute> = TxEvent.attributes;
-    }
-    {
-        let TxEventAttribute = None::<zcash_voting::wire::TxEventAttribute>.unwrap();
-        let _: String = TxEventAttribute.key;
-        let _: String = TxEventAttribute.value;
-    }
-    {
         let VanWitness = None::<zcash_voting::vote::VanWitness>.unwrap();
         let _: Vec<Vec<u8>> = VanWitness.auth_path;
         let _: u32 = VanWitness.position;
@@ -5182,32 +5172,6 @@ impl SseDecode for Vec<crate::api::sync::TxDataRequest> {
     }
 }
 
-impl SseDecode for Vec<zcash_voting::wire::TxEvent> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = vec![];
-        for idx_ in 0..len_ {
-            ans_.push(<zcash_voting::wire::TxEvent>::sse_decode(deserializer));
-        }
-        return ans_;
-    }
-}
-
-impl SseDecode for Vec<zcash_voting::wire::TxEventAttribute> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut len_ = <i32>::sse_decode(deserializer);
-        let mut ans_ = vec![];
-        for idx_ in 0..len_ {
-            ans_.push(<zcash_voting::wire::TxEventAttribute>::sse_decode(
-                deserializer,
-            ));
-        }
-        return ans_;
-    }
-}
-
 impl SseDecode for Vec<zcash_voting::wire::VoteRecoveryView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5808,31 +5772,6 @@ impl SseDecode for crate::api::sync::TxDataRequest {
             address: var_address,
             block_range_start: var_blockRangeStart,
             block_range_end: var_blockRangeEnd,
-        };
-    }
-}
-
-impl SseDecode for zcash_voting::wire::TxEvent {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_eventType = <String>::sse_decode(deserializer);
-        let mut var_attributes =
-            <Vec<zcash_voting::wire::TxEventAttribute>>::sse_decode(deserializer);
-        return zcash_voting::wire::TxEvent {
-            event_type: var_eventType,
-            attributes: var_attributes,
-        };
-    }
-}
-
-impl SseDecode for zcash_voting::wire::TxEventAttribute {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_key = <String>::sse_decode(deserializer);
-        let mut var_value = <String>::sse_decode(deserializer);
-        return zcash_voting::wire::TxEventAttribute {
-            key: var_key,
-            value: var_value,
         };
     }
 }
@@ -7392,48 +7331,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::TxDataRequest>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::TxEvent> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.0.event_type.into_into_dart().into_dart(),
-            self.0.attributes.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for FrbWrapper<zcash_voting::wire::TxEvent>
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::TxEvent>>
-    for zcash_voting::wire::TxEvent
-{
-    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::TxEvent> {
-        self.into()
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for FrbWrapper<zcash_voting::wire::TxEventAttribute> {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.0.key.into_into_dart().into_dart(),
-            self.0.value.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for FrbWrapper<zcash_voting::wire::TxEventAttribute>
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<zcash_voting::wire::TxEventAttribute>>
-    for zcash_voting::wire::TxEventAttribute
-{
-    fn into_into_dart(self) -> FrbWrapper<zcash_voting::wire::TxEventAttribute> {
-        self.into()
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::wallet::keystone::UrDecodeResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -8303,26 +8200,6 @@ impl SseEncode for Vec<crate::api::sync::TxDataRequest> {
     }
 }
 
-impl SseEncode for Vec<zcash_voting::wire::TxEvent> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <zcash_voting::wire::TxEvent>::sse_encode(item, serializer);
-        }
-    }
-}
-
-impl SseEncode for Vec<zcash_voting::wire::TxEventAttribute> {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(self.len() as _, serializer);
-        for item in self {
-            <zcash_voting::wire::TxEventAttribute>::sse_encode(item, serializer);
-        }
-    }
-}
-
 impl SseEncode for Vec<zcash_voting::wire::VoteRecoveryView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8735,22 +8612,6 @@ impl SseEncode for crate::api::sync::TxDataRequest {
         <Option<String>>::sse_encode(self.address, serializer);
         <Option<u64>>::sse_encode(self.block_range_start, serializer);
         <Option<u64>>::sse_encode(self.block_range_end, serializer);
-    }
-}
-
-impl SseEncode for zcash_voting::wire::TxEvent {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.event_type, serializer);
-        <Vec<zcash_voting::wire::TxEventAttribute>>::sse_encode(self.attributes, serializer);
-    }
-}
-
-impl SseEncode for zcash_voting::wire::TxEventAttribute {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <String>::sse_encode(self.key, serializer);
-        <String>::sse_encode(self.value, serializer);
     }
 }
 

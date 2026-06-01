@@ -348,7 +348,7 @@ abstract interface class VotingRustApi {
     required String roundId,
     required int bundleIndex,
     required String txHash,
-    required List<rust_voting.TxEvent> events,
+    required String eventsJson,
   });
 
   Future<int> syncVoteTree({
@@ -450,7 +450,7 @@ abstract interface class VotingRustApi {
     required int bundleIndex,
     required int proposalId,
     required String txHash,
-    required List<rust_voting.TxEvent> events,
+    required String eventsJson,
   });
 
   Future<void> recordShareDelegation({
@@ -653,7 +653,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String roundId,
     required int bundleIndex,
     required String txHash,
-    required List<rust_voting.TxEvent> events,
+    required String eventsJson,
   }) {
     return rust_api.confirmDelegationSubmission(
       dbPath: dbPath,
@@ -661,7 +661,7 @@ class FrbVotingRustApi implements VotingRustApi {
       roundId: roundId,
       bundleIndex: bundleIndex,
       txHash: txHash,
-      events: events,
+      eventsJson: eventsJson,
     );
   }
 
@@ -857,7 +857,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required int bundleIndex,
     required int proposalId,
     required String txHash,
-    required List<rust_voting.TxEvent> events,
+    required String eventsJson,
   }) {
     return rust_api.confirmVoteSubmission(
       dbPath: dbPath,
@@ -866,7 +866,7 @@ class FrbVotingRustApi implements VotingRustApi {
       bundleIndex: bundleIndex,
       proposalId: proposalId,
       txHash: txHash,
-      events: events,
+      eventsJson: eventsJson,
     );
   }
 
