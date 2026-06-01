@@ -1689,6 +1689,65 @@ void main() {
     },
   );
 
+  test(
+    'accepted share tracking does not keep submission job running',
+    () async {
+      final shareNullifier = Uint8List.fromList(List.filled(32, 1));
+      final acceptedShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const ['https://helper-a.example'],
+        nullifier: shareNullifier,
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.zero,
+        createdAt: BigInt.one,
+      );
+      final rust = FakeVotingRustApi();
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(
+          dynamicConfig: dynamicConfigJson(
+            voteServers: const [
+              {'url': 'https://helper-a.example', 'label': 'helper-a'},
+            ],
+          ),
+        ),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: _submittedDelegationWithShareRecoveryApi(acceptedShare),
+        txConfirmationPolling: _fastTxConfirmationPolling,
+      );
+      addTearDown(container.dispose);
+
+      final startedKey = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(
+        startedKey,
+        const VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1'),
+      );
+      await _waitForStoredVanPosition(rust, '0:0');
+      final completed = await _waitForJobStatus(
+        container,
+        startedKey!,
+        VotingSubmissionJobStatus.complete,
+      );
+
+      expect(completed.errorMessage, isNull);
+      expect(
+        container
+            .read(votingSubmissionGuardProvider.notifier)
+            .guardForAccount('account-1'),
+        isNull,
+      );
+      expect(rust.confirmedShares, isEmpty);
+    },
+  );
+
   test('Keystone signing starts after active account reload', () async {
     final rust = FakeVotingRustApi();
     final activeAccountProvider =

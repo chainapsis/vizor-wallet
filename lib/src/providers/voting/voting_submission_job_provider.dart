@@ -506,6 +506,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           key: key,
           generation: generation,
           session: afterDelegation,
+          requireNoUnconfirmedShares: true,
         )) {
           return;
         }
@@ -626,6 +627,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         key: key,
         generation: generation,
         session: afterDelegation,
+        requireNoUnconfirmedShares: true,
       )) {
         return;
       }
@@ -861,7 +863,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required VotingSessionKey key,
     required int generation,
     required VotingSessionState? session,
+    bool requireNoUnconfirmedShares = false,
   }) {
+    if (requireNoUnconfirmedShares &&
+        (session?.resumePlan?.unconfirmedShareDelegations.isNotEmpty ??
+            false)) {
+      return false;
+    }
     if (!_canCompleteSubmission(session)) return false;
     _completeJob(key: key, generation: generation);
     return true;
@@ -902,6 +910,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     final roundPlan = session.roundPlan;
     if (roundPlan != null) {
       for (final step in roundPlan.nextSteps) {
+        if (step.kind == 'confirm_share') {
+          if (session.resumePlan?.hasBlockingShareWork ?? true) return true;
+          continue;
+        }
         if (_stepCanRecoverWithoutDraft(step)) return true;
       }
     }
@@ -909,7 +921,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     return resumePlan != null &&
         (resumePlan.pendingVoteSubmissionKeys.isNotEmpty ||
             resumePlan.submittedVoteConfirmationKeys.isNotEmpty ||
-            resumePlan.unconfirmedShareDelegations.isNotEmpty);
+            resumePlan.hasBlockingShareWork);
   }
 
   bool _canPollDelegationWithoutDraft(VotingSessionState session) {
