@@ -1226,97 +1226,102 @@ class _DetailRow extends StatelessWidget {
     );
   }
 
-  /// Renders an address row that matches a saved address-book contact:
-  /// the nickname + crimson saved mark on top, and the network chip +
-  /// truncated address + copy icon (copy last) below.
+  /// Renders an address row that matches a saved address-book contact. The
+  /// first line keeps the regular two-column detail-row geometry; the metadata
+  /// line below is right-aligned across the full row so the network and compact
+  /// address are not squeezed into the value column.
   Widget _matchedAddressCell(BuildContext context) {
     final colors = context.colors;
     final network = row.addressNetwork;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Intrinsic-width label so the identity column below can use the
-          // rest of the panel (more than half) without truncating.
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              row.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: colors.text.secondary,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.s),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
+          SizedBox(
+            height: 32,
+            child: Row(
               children: [
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          row.addressBookLabel!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.end,
-                          style: AppTypography.bodyMediumStrong.copyWith(
-                            color: colors.text.accent,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.xxs),
-                      AppIcon(
-                        AppIcons.user,
-                        size: 14,
-                        color: colors.icon.brandCrimson,
-                      ),
-                    ],
+                Expanded(
+                  child: Text(
+                    row.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.xxs),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (network != null) ...[
-                        AddressBookNetworkIcon(network: network, size: 14),
-                        const SizedBox(width: AppSpacing.xxs),
-                        Text(
-                          network.label,
-                          maxLines: 1,
-                          style: AppTypography.labelSmall.copyWith(
-                            color: colors.text.secondary,
+                const SizedBox(width: AppSpacing.s),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            row.addressBookLabel!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: AppTypography.bodyMediumStrong.copyWith(
+                              color: colors.text.accent,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: AppSpacing.xs),
-                      ],
-                      Text(
-                        row.value,
-                        maxLines: 1,
-                        style: AppTypography.codeSmall.copyWith(
-                          color: colors.text.muted,
-                        ),
-                      ),
-                      if (row.copyable) ...[
                         const SizedBox(width: AppSpacing.xxs),
-                        const _StatusDetailActionIcon(
-                          icon: AppIcons.copy,
-                          tooltipMessage: null,
+                        AppIcon(
+                          AppIcons.user,
+                          size: 14,
+                          color: colors.icon.brandCrimson,
                         ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ],
+            ),
+          ),
+          SizedBox(
+            height: 18,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (network != null) ...[
+                      AddressBookNetworkIcon(network: network, size: 14),
+                      const SizedBox(width: AppSpacing.xxs),
+                      Text(
+                        network.label,
+                        maxLines: 1,
+                        style: AppTypography.labelSmall.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                    ],
+                    Text(
+                      row.value,
+                      maxLines: 1,
+                      style: AppTypography.codeSmall.copyWith(
+                        color: colors.text.muted,
+                      ),
+                    ),
+                    if (row.copyable) ...[
+                      const SizedBox(width: AppSpacing.xxs),
+                      const _StatusDetailActionIcon(
+                        icon: AppIcons.copy,
+                        tooltipMessage: null,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         ],

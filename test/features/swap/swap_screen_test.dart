@@ -262,6 +262,15 @@ void main() {
       find.descendant(of: details, matching: find.text('0x52908…69ee7')),
       findsOneWidget,
     );
+    final addressText = find.descendant(
+      of: details,
+      matching: find.text('0x52908…69ee7'),
+    );
+    expect(tester.widget<Text>(addressText).overflow, isNull);
+    expect(
+      find.ancestor(of: addressText, matching: find.byType(FittedBox)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('review details show saved refund identity', (tester) async {
@@ -296,6 +305,15 @@ void main() {
     );
     expect(
       find.descendant(of: details, matching: find.text('0x52908…69ee7')),
+      findsOneWidget,
+    );
+    final addressText = find.descendant(
+      of: details,
+      matching: find.text('0x52908…69ee7'),
+    );
+    expect(tester.widget<Text>(addressText).overflow, isNull);
+    expect(
+      find.ancestor(of: addressText, matching: find.byType(FittedBox)),
       findsOneWidget,
     );
   });
@@ -1165,6 +1183,17 @@ void main() {
     expect(find.text('USDC recipient'), findsOneWidget);
     expect(find.text('Treasury'), findsOneWidget);
     expect(find.text('0x123kjhc ... 4x98g20'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.text('0x123kjhc ... 4x98g20')).overflow,
+      isNull,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('0x123kjhc ... 4x98g20'),
+        matching: find.byType(FittedBox),
+      ),
+      findsOneWidget,
+    );
     // The matched-contact cell renders the network chip beside the address.
     expect(find.byType(AddressBookNetworkIcon), findsOneWidget);
   });

@@ -556,81 +556,84 @@ class _ReviewMatchedAddressRow extends StatelessWidget {
     final colors = context.colors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.secondary,
+          SizedBox(
+            height: 32,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: AppSpacing.s),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            addressBookLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: AppTypography.bodyMediumStrong.copyWith(
+                              color: colors.text.accent,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.xxs),
+                        AppIcon(
+                          AppIcons.user,
+                          size: 14,
+                          color: colors.icon.brandCrimson,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: AppSpacing.s),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        addressBookLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.end,
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                    AppIcon(
-                      AppIcons.user,
-                      size: 14,
-                      color: colors.icon.brandCrimson,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xxs),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+          SizedBox(
+            height: 18,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     AddressBookNetworkIcon(network: network, size: 14),
                     const SizedBox(width: AppSpacing.xxs),
-                    Flexible(
-                      child: Text(
-                        network.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelSmall.copyWith(
-                          color: colors.text.secondary,
-                        ),
+                    Text(
+                      network.label,
+                      maxLines: 1,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.text.secondary,
                       ),
                     ),
                     const SizedBox(width: AppSpacing.xs),
-                    Flexible(
-                      child: Text(
-                        value,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.end,
-                        style: AppTypography.codeSmall.copyWith(
-                          color: colors.text.muted,
-                        ),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      style: AppTypography.codeSmall.copyWith(
+                        color: colors.text.muted,
                       ),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
         ],
