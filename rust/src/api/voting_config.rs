@@ -1,6 +1,7 @@
 use std::panic::UnwindSafe;
 
 use flutter_rust_bridge::DartFnFuture;
+use futures::FutureExt;
 use zcash_voting::config::{self, ResolveConfigError};
 use zcash_voting::wire::{
     ConfigSwitchKind, ResolveVotingConfigOptions, ResolvedVotingConfig, ResolvedVotingConfigSummary,
@@ -23,7 +24,12 @@ pub async fn resolve_voting_config(
 ) -> Result<VotingConfigResolution, String> {
     let next = config::resolve_config(&source, ResolveVotingConfigOptions::default(), |url| {
         let response = fetch_bytes(url.clone());
-        async move { Ok::<_, String>(response.await) }
+        async move {
+            match std::panic::AssertUnwindSafe(response).catch_unwind().await {
+                Ok(bytes) => Ok::<_, String>(bytes),
+                Err(_) => Err("voting config transport callback panicked".to_string()),
+            }
+        }
     })
     .await
     .map_err(|error| match error {
