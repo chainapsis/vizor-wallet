@@ -1487,6 +1487,49 @@ void main() {
     },
   );
 
+  test(
+    'delegation does not submit after active account changes during proof',
+    () async {
+      final proofGate = Completer<void>();
+      final rust = FakeVotingRustApi(delegationProofGate: proofGate);
+      final http = FakeVotingHttpClient(responses: votingHttpResponses());
+      final activeAccountProvider =
+          NotifierProvider<_ActiveVotingAccountNotifier, String?>(
+            _ActiveVotingAccountNotifier.new,
+          );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        activeAccountUuidListenable: activeAccountProvider,
+      );
+      final subscription = container.listen(
+        votingSessionProvider(kRoundId),
+        (_, _) {},
+      );
+      addTearDown(subscription.close);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final delegation = container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .delegatePendingBundles(mnemonic: kTestMnemonic);
+      await rust.delegationProofStarted.future;
+
+      container.read(activeAccountProvider.notifier).set('account-2');
+      final switched = await container.read(
+        votingSessionProvider(kRoundId).future,
+      );
+      expect(switched.accountUuid, 'account-2');
+
+      proofGate.complete();
+      await delegation;
+
+      expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
+      expect(rust.storedDelegationTxHashes, isEmpty);
+      expect(container.read(votingSessionProvider(kRoundId)).hasError, isFalse);
+    },
+  );
+
   test('draft choices are isolated by pinned voting account', () async {
     final activeAccount = _MutableActiveAccount('account-1');
     final container = _sessionContainer(activeAccountUuid: activeAccount.call);
@@ -3320,6 +3363,12 @@ Map<String, dynamic> _postBody(FakeVotingHttpClient http, String path) {
   return request.body!;
 }
 
+int _postRequestCount(FakeVotingHttpClient http, String path) {
+  return http.requests
+      .where((request) => request.method == 'POST' && request.uri.path == path)
+      .length;
+}
+
 String _postBodyJson(FakeVotingHttpClient http, String path) =>
     jsonEncode(_postBody(http, path));
 
@@ -3907,6 +3956,8 @@ class FakeVotingRustApi implements VotingRustApi {
     this.commitmentShareCount = 1,
     this.mismatchKeystoneSubmission = false,
     this.delegationStreamError,
+    this.delegationProofGate,
+    this.keystoneDelegationProofGate,
     this.onDeleteSkippedBundles,
   });
 
@@ -3919,6 +3970,8 @@ class FakeVotingRustApi implements VotingRustApi {
   final int commitmentShareCount;
   final bool mismatchKeystoneSubmission;
   final Object? delegationStreamError;
+  final Completer<void>? delegationProofGate;
+  final Completer<void>? keystoneDelegationProofGate;
   final void Function(int keepCount)? onDeleteSkippedBundles;
   int setupCalls = 0;
   int _activeSetups = 0;
@@ -3937,6 +3990,8 @@ class FakeVotingRustApi implements VotingRustApi {
   final precomputedDelegationPir = <int>[];
   final precomputeMnemonics = <String>[];
   final setupStarted = Completer<void>();
+  final delegationProofStarted = Completer<void>();
+  final keystoneDelegationProofStarted = Completer<void>();
   final precomputeStarted = Completer<void>();
   final precomputeFinished = Completer<void>();
   final resetVotingSessionStateCalls = <String>[];
@@ -3987,6 +4042,10 @@ class FakeVotingRustApi implements VotingRustApi {
     delegationBundleCalls.add(bundleIndex);
     final error = delegationStreamError;
     if (error != null) throw error;
+    if (!delegationProofStarted.isCompleted) {
+      delegationProofStarted.complete();
+    }
+    await delegationProofGate?.future;
     yield rust_api.ApiDelegationProofEvent(
       phase: 'result',
       proofProgress: null,
@@ -4115,6 +4174,10 @@ class FakeVotingRustApi implements VotingRustApi {
   }) async* {
     accountUuids.add(ctx.accountUuid);
     keystoneProofBundleCalls.add(bundleIndex);
+    if (!keystoneDelegationProofStarted.isCompleted) {
+      keystoneDelegationProofStarted.complete();
+    }
+    await keystoneDelegationProofGate?.future;
     final signature = storedKeystoneSignatures[bundleIndex];
     final rk = mismatchKeystoneSubmission
         ? const [99]

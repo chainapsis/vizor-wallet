@@ -374,6 +374,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             'Delegation proof completed without submission payload.',
           );
         }
+        _throwIfContextStale(context, 'delegation-submit');
         final result = await _submitAndConfirmDelegation(
           context: context,
           bundleIndex: bundleIndex,
@@ -685,6 +686,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           signature: signature,
           bundleIndex: bundleIndex,
         );
+        _throwIfContextStale(context, 'keystone-delegation-submit');
         final result = await _submitAndConfirmDelegation(
           context: context,
           bundleIndex: bundleIndex,
