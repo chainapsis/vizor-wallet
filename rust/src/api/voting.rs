@@ -472,8 +472,9 @@ fn require_len(bytes: &[u8], expected: usize, field: &str) -> Result<(), String>
     }
 }
 
+// Helper function to log when a sink is closed.
+// Log sink closure is non-fatal. Log so dropped listeners are visible in debug.
 fn log_sink_closed(context: &str, detail: &str) {
-    // Sink closure is non-fatal. Log so dropped listeners are visible in debug.
     log::warn!("{context}: {detail}");
 }
 
