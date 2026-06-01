@@ -154,16 +154,18 @@ void main() {
         'https://voting.example/static-voting-config.json': staticConfigJson(),
         'https://voting.example/dynamic-voting-config.json':
             dynamicConfigJson(),
-        '/shielded-vote/v1/rounds': [
-          {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
-          {
-            'vote_round_id': kOtherRoundId,
-            'title': 'Other',
-            'status': 'active',
-          },
-        ],
+        '/shielded-vote/v1/rounds': {
+          'rounds': [
+            {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+            {
+              'vote_round_id': kOtherRoundId,
+              'title': 'Other',
+              'status': 'active',
+            },
+          ],
+        },
         '/shielded-vote/v1/endorsed-rounds/zodl': {
-          'endorsed_round_ids': [kRoundId],
+          'vote_round_ids': [kRoundId],
         },
       },
     );
@@ -190,11 +192,13 @@ void main() {
               staticConfigJson(),
           'https://voting.example/dynamic-voting-config.json':
               dynamicConfigJson(),
-          '/shielded-vote/v1/rounds': [
-            {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
-          ],
+          '/shielded-vote/v1/rounds': {
+            'rounds': [
+              {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+            ],
+          },
           '/shielded-vote/v1/endorsed-rounds/zodl': {
-            'endorsed_round_ids': [kRoundId],
+            'vote_round_ids': [kRoundId],
           },
         },
       );
@@ -284,11 +288,13 @@ void main() {
       final http = FakeVotingHttpClient(
         responses: {
           ...votingHttpResponses(roundStatus: roundStatusWithProposals),
-          '/shielded-vote/v1/rounds': [
-            {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
-          ],
+          '/shielded-vote/v1/rounds': {
+            'rounds': [
+              {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+            ],
+          },
           '/shielded-vote/v1/endorsed-rounds/zodl': {
-            'endorsed_round_ids': [kRoundId],
+            'vote_round_ids': [kRoundId],
           },
         },
       );
@@ -331,14 +337,16 @@ void main() {
   );
 
   test('rounds refresh keeps previous data when polling fails', () async {
-    final responses = {
+    final responses = <String, Object>{
       'https://voting.example/static-voting-config.json': staticConfigJson(),
       'https://voting.example/dynamic-voting-config.json': dynamicConfigJson(),
-      '/shielded-vote/v1/rounds': [
-        {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
-      ],
+      '/shielded-vote/v1/rounds': {
+        'rounds': [
+          {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+        ],
+      },
       '/shielded-vote/v1/endorsed-rounds/zodl': {
-        'endorsed_round_ids': [kRoundId],
+        'vote_round_ids': [kRoundId],
       },
     };
     final http = FakeVotingHttpClient(responses: responses);
@@ -3317,6 +3325,7 @@ Map<String, Object> votingHttpResponses({
     ],
   },
   '/shielded-vote/v1/cast-vote': {'tx_hash': 'vote-tx', 'code': 0, 'log': ''},
+  '/shielded-vote/v1/shares': {'status': 'queued'},
   '/shielded-vote/v1/tx/vote-tx': {
     'height': 11,
     'code': 0,
@@ -3342,8 +3351,6 @@ const kTestMnemonic = 'abandon abandon abandon';
 const kEncodedRoundId = 'El5UdfZTsHTV9MNnMIUmlfNWQWwrbDBCUWqRLlv/3RE=';
 const kEncodedRoundIdHex =
     '125e5475f653b074d5f4c36730852695f356416c2b6c3042516a912e5bffdd11';
-const _hex32 =
-    '0101010101010101010101010101010101010101010101010101010101010101';
 const _roundIdBase64 = 'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo=';
 const _bytes1x32Base64 = 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=';
 const _bytes2x32Base64 = 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=';
@@ -3359,7 +3366,7 @@ const _delegationSubmissionWireGolden =
 const _voteCommitmentWireGolden =
     '{"van_nullifier":"$_bytes1x32Base64","vote_authority_note_new":"$_bytes2x32Base64","vote_commitment":"$_bytes3x32Base64","proposal_id":7,"proof":"BA==","vote_round_id":"$_roundIdBase64","vote_comm_tree_anchor_height":10,"r_vpk":"$_bytes13x32Base64","vote_auth_sig":"$_bytes12x64Base64"}';
 const _voteShareWireGolden =
-    '{"vote_round_id":"$kRoundId","shares_hash":"$_bytes7x32Base64","proposal_id":7,"vote_decision":1,"enc_share":{"c1":"CA==","c2":"CQ==","share_index":0},"share_index":0,"tree_position":2,"all_enc_shares":[{"c1":"CA==","c2":"CQ==","share_index":0}],"share_comms":["$_bytes10x32Base64"],"primary_blind":"$_bytes11x32Base64","submit_at":0}';
+    '{"shares_hash":"$_bytes7x32Base64","proposal_id":7,"vote_decision":1,"enc_share":{"c1":"CA==","c2":"CQ==","share_index":0},"share_index":0,"tree_position":2,"all_enc_shares":[{"c1":"CA==","c2":"CQ==","share_index":0}],"share_comms":["$_bytes10x32Base64"],"primary_blind":"$_bytes11x32Base64","submit_at":0,"vote_round_id":"$kRoundId"}';
 const _fastTxConfirmationPolling = VotingTxConfirmationPolling(
   attempts: 1,
   delay: Duration.zero,
@@ -3369,7 +3376,7 @@ Map<String, dynamic> staticConfigJson() => {
   'static_config_version': 1,
   'dynamic_config_url': 'https://voting.example/dynamic-voting-config.json',
   'trusted_keys': [
-    {'key_id': 'demo', 'alg': 'ed25519', 'pubkey': _hex32},
+    {'key_id': 'demo', 'alg': 'ed25519', 'pubkey': _bytes1x32Base64},
   ],
 };
 
@@ -3392,9 +3399,9 @@ Map<String, dynamic> dynamicConfigJson({
   'rounds': {
     kRoundId: {
       'auth_version': 1,
-      'ea_pk': _hex32,
+      'ea_pk': _bytes1x32Base64,
       'signatures': [
-        {'key_id': 'demo', 'alg': 'ed25519', 'sig': _hex32},
+        {'key_id': 'demo', 'alg': 'ed25519', 'sig': _bytes12x64Base64},
       ],
     },
   },
@@ -3411,9 +3418,9 @@ Map<String, dynamic> roundStatusJson({
     'title': 'Poll',
     'status': 'active',
     'snapshot_height': 123,
-    'ea_pk': _hex32,
-    'nc_root': _hex32,
-    'nullifier_imt_root': _hex32,
+    'ea_pk': _bytes1x32Base64,
+    'nc_root': _bytes2x32Base64,
+    'nullifier_imt_root': _bytes3x32Base64,
   };
   if (ceremonyStart != null) {
     json['ceremony_phase_start'] = ceremonyStart;
