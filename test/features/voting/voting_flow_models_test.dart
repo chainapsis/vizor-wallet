@@ -9,16 +9,19 @@ void main() {
     final proposals = proposalsFromJson({
       'proposals': [
         {
-          'proposal_id': 1,
+          'id': 1,
           'title': 'First',
-          'options': ['Yes', 'No'],
+          'options': [
+            {'index': 0, 'label': 'Yes'},
+            {'index': 1, 'label': 'No'},
+          ],
         },
         {
-          'proposalId': 2,
+          'id': 2,
           'title': 'Second',
-          'choices': [
-            {'id': 0, 'label': 'Abstain'},
-            {'id': 1, 'label': 'Support'},
+          'options': [
+            {'index': 0, 'label': 'Abstain'},
+            {'index': 1, 'label': 'Support'},
           ],
         },
       ],
@@ -43,7 +46,7 @@ void main() {
         isA<FormatException>().having(
           (error) => error.message,
           'message',
-          'Missing required int: proposal_id',
+          'Missing required int: id',
         ),
       ),
     );
@@ -53,14 +56,14 @@ void main() {
     expect(
       () => proposalsFromJson({
         'proposals': [
-          {'proposal_id': 0, 'title': 'Zero'},
+          {'id': 0, 'title': 'Zero'},
         ],
       }),
       throwsA(
         isA<FormatException>().having(
           (error) => error.message,
           'message',
-          'proposal_id must be 1..15, got 0',
+          'id must be 1..15, got 0',
         ),
       ),
     );
@@ -70,14 +73,14 @@ void main() {
     expect(
       () => proposalsFromJson({
         'proposals': [
-          {'proposal_id': 1.9, 'title': 'Fractional'},
+          {'id': 1.9, 'title': 'Fractional'},
         ],
       }),
       throwsA(
         isA<FormatException>().having(
           (error) => error.message,
           'message',
-          'proposal_id must be an integer',
+          'id must be an integer',
         ),
       ),
     );

@@ -202,8 +202,7 @@ List<VotingProposalView> proposalsFromRound(VotingRoundDetails round) {
 }
 
 List<VotingProposalView> proposalsFromJson(Map<String, dynamic> json) {
-  final value =
-      json['proposals'] ?? json['questions'] ?? json['ballot'] ?? const [];
+  final value = json['proposals'];
   final values = value is List ? value : const [];
   return [
     for (var i = 0; i < values.length; i++)
@@ -216,7 +215,7 @@ VotingProposalView _proposalFromJson(
   required int fallbackId,
 }) {
   final id = _proposalIdFromJson(json);
-  final optionsJson = json['options'] ?? json['choices'] ?? const [];
+  final optionsJson = json['options'] ?? const [];
   final options = optionsJson is List
       ? [
           for (var i = 0; i < optionsJson.length; i++)
@@ -226,10 +225,8 @@ VotingProposalView _proposalFromJson(
   return VotingProposalView(
     id: id,
     title:
-        _stringFromJson(json, const ['title', 'name', 'question']) ??
-        'Proposal ${fallbackId + 1}',
-    description:
-        _stringFromJson(json, const ['description', 'body', 'summary']) ?? '',
+        _stringFromJson(json, const ['title']) ?? 'Proposal ${fallbackId + 1}',
+    description: _stringFromJson(json, const ['description']) ?? '',
     options: options.isEmpty
         ? const [
             VotingOptionView(index: 0, label: 'Yes'),
@@ -240,28 +237,24 @@ VotingProposalView _proposalFromJson(
 }
 
 int _proposalIdFromJson(Map<String, dynamic> json) {
-  final id = _intFromJson(json, const ['proposal_id', 'proposalId', 'id']);
+  final id = _intFromJson(json, const ['id']);
   if (id == null) {
-    throw const FormatException('Missing required int: proposal_id');
+    throw const FormatException('Missing required int: id');
   }
   if (id < _minProposalId || id > _maxProposalId) {
     throw FormatException(
-      'proposal_id must be $_minProposalId..$_maxProposalId, got $id',
+      'id must be $_minProposalId..$_maxProposalId, got $id',
     );
   }
   return id;
 }
 
 VotingOptionView _optionFromJson(Object? value, {required int fallbackIndex}) {
-  if (value is String) {
-    return VotingOptionView(index: fallbackIndex, label: value);
-  }
   final json = _objectFromValue(value);
   return VotingOptionView(
-    index: _intFromJson(json, const ['index', 'choice', 'id']) ?? fallbackIndex,
+    index: _intFromJson(json, const ['index']) ?? fallbackIndex,
     label:
-        _stringFromJson(json, const ['label', 'title', 'name']) ??
-        'Option ${fallbackIndex + 1}',
+        _stringFromJson(json, const ['label']) ?? 'Option ${fallbackIndex + 1}',
   );
 }
 

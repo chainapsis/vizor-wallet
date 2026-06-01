@@ -504,8 +504,8 @@ class VotingRoundSummary {
   factory VotingRoundSummary.fromJson(Map<String, dynamic> json) {
     return VotingRoundSummary(
       roundId: _roundIdFromJson(json),
-      title: _optionalStringFromJson(json, const ['title', 'name']) ?? '',
-      status: _optionalStringFromJson(json, const ['status', 'phase']) ?? '',
+      title: _optionalStringFromJson(json, const ['title']) ?? '',
+      status: _optionalStringFromJson(json, const ['status']) ?? '',
       rawJson: Map.unmodifiable(json),
     );
   }
@@ -526,7 +526,7 @@ class VotingRoundStatus {
   factory VotingRoundStatus.fromJson(Map<String, dynamic> json) {
     return VotingRoundStatus(
       roundId: _roundIdFromJson(json),
-      status: _stringFromJson(json, const ['status', 'phase']),
+      status: _stringFromJson(json, const ['status']),
       rawJson: Map.unmodifiable(json),
     );
   }
