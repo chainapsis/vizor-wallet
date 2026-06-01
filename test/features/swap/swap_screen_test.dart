@@ -228,6 +228,78 @@ void main() {
     );
   });
 
+  testWidgets('review details show saved recipient identity', (tester) async {
+    await tester.pumpWidget(
+      _themeHarness(
+        _reviewTestPage(
+          direction: SwapDirection.zecToExternal,
+          sellAsset: SwapAsset.zec,
+          receiveAsset: SwapAsset.usdc,
+          sellAmountText: '0.251 ZEC',
+          receiveAmountText: '999.99 USDC',
+          addressBookContacts: [
+            _addressBookContact(
+              id: 'treasury',
+              label: 'Treasury',
+              network: AddressBookNetwork.ethereum,
+              address: '0x52908400098527886E0F7030069857D2E4169EE7',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final details = find.byKey(const ValueKey('swap_review_details'));
+    expect(
+      find.descendant(of: details, matching: find.text('Treasury')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: details, matching: find.text('Ethereum')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: details, matching: find.text('0x52908…69ee7')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('review details show saved refund identity', (tester) async {
+    await tester.pumpWidget(
+      _themeHarness(
+        _reviewTestPage(
+          direction: SwapDirection.externalToZec,
+          sellAsset: SwapAsset.usdc,
+          receiveAsset: SwapAsset.zec,
+          sellAmountText: '999.99 USDC',
+          receiveAmountText: '0.251 ZEC',
+          addressBookContacts: [
+            _addressBookContact(
+              id: 'refund',
+              label: 'Refund wallet',
+              network: AddressBookNetwork.ethereum,
+              address: '0x52908400098527886e0f7030069857d2e4169ee7',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final details = find.byKey(const ValueKey('swap_review_details'));
+    expect(
+      find.descendant(of: details, matching: find.text('Refund wallet')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: details, matching: find.text('Ethereum')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: details, matching: find.text('0x52908…69ee7')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('deposit tokens countdown starts in the final fifteen minutes', (
     tester,
   ) async {
@@ -7016,8 +7088,9 @@ Widget _routerHarness(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
-      if (addressBookRepository != null)
-        addressBookRepositoryProvider.overrideWithValue(addressBookRepository),
+      addressBookRepositoryProvider.overrideWithValue(
+        addressBookRepository ?? _FakeAddressBookRepository(),
+      ),
       if (accountNotifier != null)
         accountProvider.overrideWith(accountNotifier),
       syncProvider.overrideWith(
@@ -7200,6 +7273,7 @@ Widget _reviewTestPage({
   required SwapAsset receiveAsset,
   required String sellAmountText,
   required String receiveAmountText,
+  Iterable<AddressBookContact> addressBookContacts = const [],
 }) {
   final externalAsset = direction.sendsZec ? receiveAsset : sellAsset;
   return SwapReviewPageContent(
@@ -7230,6 +7304,7 @@ Widget _reviewTestPage({
       userExternalAddress: '0x52908400098527886e0f7030069857d2e4169ee7',
       walletZecAddress: 'u1wallet',
     ),
+    addressBookContacts: addressBookContacts,
     accountLabel: 'John',
     expired: false,
     amountWarning: null,
