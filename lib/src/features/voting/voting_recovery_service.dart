@@ -5,8 +5,9 @@ import 'voting_resume_plan.dart';
 /// Converts persisted Rust recovery records into Dart actions for resuming UI.
 ///
 /// Rust owns the durable voting database. This service keeps the Dart side
-/// focused on orchestration: deciding which bundle/proposal/share steps still
-/// need network work and clearing recovery records only at explicit boundaries.
+/// focused on orchestration: loading the crate planner, keying raw recovery
+/// records by bundle/proposal/share, and clearing recovery records only at
+/// explicit boundaries.
 class VotingRecoveryService {
   final VotingRecoveryApi _api;
 
@@ -53,7 +54,7 @@ class VotingRecoveryService {
     );
   }
 
-  /// Loads the raw round recovery state and derives the next resume actions.
+  /// Loads the raw round recovery state and indexes records for exact retries.
   Future<VotingResumePlan> loadResumePlan({
     required String dbPath,
     required String accountUuid,
@@ -68,7 +69,7 @@ class VotingRecoveryService {
     return buildResumePlan(state);
   }
 
-  /// Builds a deterministic view of incomplete delegation, vote, and share work.
+  /// Builds a deterministic keyed view of delegation, vote, and share records.
   ///
   /// Bundle/proposal pairs are keyed together because voting is bundle-indexed:
   /// one proposal can have independent state for each note bundle.
