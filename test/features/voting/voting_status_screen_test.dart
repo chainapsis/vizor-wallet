@@ -79,9 +79,7 @@ void main() {
         votingConfigLoaderProvider.overrideWithValue(
           VotingConfigLoader(
             httpClient: http,
-            staticConfigSource: StaticVotingConfigSource.parse(
-              'https://voting.example/static-voting-config.json',
-            ),
+            sourceUrl: 'https://voting.example/static-voting-config.json',
           ),
         ),
         votingWalletDbPathProvider.overrideWithValue(() async => 'wallet.db'),
@@ -1932,9 +1930,7 @@ ProviderContainer _statusContainer({
       votingConfigLoaderProvider.overrideWithValue(
         VotingConfigLoader(
           httpClient: effectiveHttp,
-          staticConfigSource: StaticVotingConfigSource.parse(
-            'https://voting.example/static-voting-config.json',
-          ),
+          sourceUrl: 'https://voting.example/static-voting-config.json',
         ),
       ),
       votingWalletDbPathProvider.overrideWithValue(() async => 'wallet.db'),

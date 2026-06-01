@@ -111,7 +111,7 @@ class _VotingConfigSettingsPanelState
     final trimmed = _urlController.text.trim();
     if (trimmed.isEmpty) return null;
     try {
-      StaticVotingConfigSource.parse(trimmed);
+      parseStaticVotingConfigSource(trimmed);
     } on StaticVotingConfigSourceMalformed catch (error) {
       return error.message;
     }
@@ -125,7 +125,7 @@ class _VotingConfigSettingsPanelState
     final url = _urlController.text.trim();
     if (name.length > _maxSourceNameLength || url.isEmpty) return false;
     try {
-      StaticVotingConfigSource.parse(url);
+      parseStaticVotingConfigSource(url);
     } on StaticVotingConfigSourceMalformed {
       return false;
     }
@@ -264,10 +264,10 @@ class _VotingConfigSettingsPanelState
   }
 
   Future<VotingConfig> _validateSource(String input) async {
-    final parsed = StaticVotingConfigSource.parse(input);
+    final parsed = parseStaticVotingConfigSource(input);
     return VotingConfigLoader(
       httpClient: ref.read(votingHttpClientProvider),
-      staticConfigSource: parsed,
+      sourceUrl: parsed.raw,
     ).load();
   }
 
@@ -304,9 +304,6 @@ class _VotingConfigSettingsPanelState
 
   String _messageFromError(Object error) {
     if (error is StaticVotingConfigSourceMalformed) return error.message;
-    if (error is VotingConfigChecksumMismatch) {
-      return 'Static config checksum did not match.';
-    }
     if (error is VotingHttpException) {
       return "Couldn't load voting config from that source.";
     }
@@ -870,7 +867,7 @@ class _SmallIconButtonState extends State<_SmallIconButton> {
 String _compactSourceUrl(String raw) {
   final trimmed = raw.trim();
   try {
-    final source = StaticVotingConfigSource.parse(trimmed);
+    final source = parseStaticVotingConfigSource(trimmed);
     final path = source.uri.path.replaceFirst(RegExp(r'^/'), '');
     return path.isEmpty ? source.uri.host : '${source.uri.host}/$path';
   } on StaticVotingConfigSourceMalformed {
@@ -880,8 +877,8 @@ String _compactSourceUrl(String raw) {
 
 bool _sameSourceUrl(String lhs, String rhs) {
   try {
-    final left = StaticVotingConfigSource.parse(lhs.trim());
-    final right = StaticVotingConfigSource.parse(rhs.trim());
+    final left = parseStaticVotingConfigSource(lhs.trim());
+    final right = parseStaticVotingConfigSource(rhs.trim());
     return left.uri == right.uri && left.sha256Hex == right.sha256Hex;
   } on StaticVotingConfigSourceMalformed {
     return lhs.trim() == rhs.trim();

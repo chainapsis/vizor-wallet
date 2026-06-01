@@ -7,6 +7,7 @@ import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../services/voting/voting_api_client.dart';
+import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_models.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
@@ -69,10 +70,20 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     final endorser = ref.read(votingEndorserClientProvider(config.apiBaseUrl));
 
     final rounds = await api.listRounds();
+    final authenticatedRoundIds = config.authenticatedRoundIds.toSet();
+    final filteredRounds = rounds
+        .where((round) => authenticatedRoundIds.contains(round.roundId))
+        .toList(growable: false);
+    if (filteredRounds.length != rounds.length) {
+      debugPrint(
+        '[zcash] Voting: filtered unauthenticated rounds '
+        'shown=${filteredRounds.length} total=${rounds.length}',
+      );
+    }
     final endorsedIds = await endorser.getEndorsedSet();
-    final recoveryStates = await _roundListRecoveryStates(rounds, api: api);
+    final recoveryStates = await _roundListRecoveryStates(filteredRounds, api: api);
     return [
-      for (final round in rounds)
+      for (final round in filteredRounds)
         VotingRoundView.fromSummary(
           round,
           endorsed: endorsedIds.contains(round.roundId),

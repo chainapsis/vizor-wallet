@@ -21,6 +21,9 @@ import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_tree_sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
+import 'package:zcash_wallet/src/rust/api/voting_config.dart' as rust_config_api;
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
+    as rust_config;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
     as rust_delegate;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/round.dart'
@@ -36,6 +39,7 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/wire.dart'
     as rust_wire;
 import 'package:zcash_wallet/src/services/voting/pir_snapshot_resolver.dart';
+import 'package:zcash_wallet/src/services/voting/resolved_voting_config_extensions.dart';
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
 import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 import 'package:zcash_wallet/src/services/voting/voting_models.dart';
@@ -102,9 +106,7 @@ void main() {
     expect(first.apiBaseUrl, Uri.parse('https://voting-a.example'));
 
     final staleGate = loads.gateNext(firstSource);
-    final staleRefresh = container
-        .read(votingConfigProvider.notifier)
-        .refresh();
+    final staleRefresh = container.read(votingConfigProvider.notifier).refresh();
     await loads.waitForLoadCount(firstSource, 2);
 
     await container
@@ -214,6 +216,125 @@ void main() {
     },
   );
 
+  test('config switch newChainOrRound invalidates rounds provider', () async {
+    var refreshCount = 0;
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://voting.example/static-voting-config.json': staticConfigJson(),
+        'https://voting.example/dynamic-voting-config.json': dynamicConfigJson(),
+        '/shielded-vote/v1/rounds': {
+          'rounds': [
+            {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+          ],
+        },
+        '/shielded-vote/v1/endorsed-rounds/zodl': {
+          'vote_round_ids': [kRoundId],
+        },
+      },
+    );
+    final container = ProviderContainer(
+      overrides: [
+        votingConfigSourceStoreProvider.overrideWithValue(
+          FakeVotingConfigSourceStore(),
+        ),
+        votingHttpClientProvider.overrideWithValue(http),
+        votingConfigLoaderProvider.overrideWithValue(
+          VotingConfigLoader(
+            httpClient: http,
+            sourceUrl: 'https://voting.example/static-voting-config.json',
+            resolveVotingConfig: ({
+              required source,
+              previous,
+              required fetchBytes,
+            }) => fakeResolveVotingConfig(
+              source: source,
+              previous: previous,
+              fetchBytes: fetchBytes,
+              switchKind: refreshCount++ == 0
+                  ? rust_config.ConfigSwitchKind.initialLoad
+                  : rust_config.ConfigSwitchKind.newChainOrRound,
+              authenticatedRoundIds: const [kRoundId],
+            ),
+          ),
+        ),
+        votingActiveAccountUuidProvider.overrideWithValue(() async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingRoundsProvider.future);
+    final roundsCallsBefore = http.requests
+        .where((request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'))
+        .length;
+
+    await container.read(votingConfigProvider.notifier).refresh();
+    await container.read(votingRoundsProvider.future);
+    final roundsCallsAfter = http.requests
+        .where((request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'))
+        .length;
+
+    expect(roundsCallsAfter, greaterThan(roundsCallsBefore));
+  });
+
+  test('config switch unchanged keeps rounds provider cache', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://voting.example/static-voting-config.json': staticConfigJson(),
+        'https://voting.example/dynamic-voting-config.json': dynamicConfigJson(),
+        '/shielded-vote/v1/rounds': {
+          'rounds': [
+            {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+          ],
+        },
+        '/shielded-vote/v1/endorsed-rounds/zodl': {
+          'vote_round_ids': [kRoundId],
+        },
+      },
+    );
+    final container = ProviderContainer(
+      overrides: [
+        votingConfigSourceStoreProvider.overrideWithValue(
+          FakeVotingConfigSourceStore(),
+        ),
+        votingHttpClientProvider.overrideWithValue(http),
+        votingConfigLoaderProvider.overrideWithValue(
+          VotingConfigLoader(
+            httpClient: http,
+            sourceUrl: 'https://voting.example/static-voting-config.json',
+            resolveVotingConfig: ({
+              required source,
+              previous,
+              required fetchBytes,
+            }) => fakeResolveVotingConfig(
+              source: source,
+              previous: previous,
+              fetchBytes: fetchBytes,
+              switchKind: previous == null
+                  ? rust_config.ConfigSwitchKind.initialLoad
+                  : rust_config.ConfigSwitchKind.unchanged,
+              authenticatedRoundIds: const [kRoundId],
+            ),
+          ),
+        ),
+        votingActiveAccountUuidProvider.overrideWithValue(() async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingRoundsProvider.future);
+    final roundsCallsBefore = http.requests
+        .where((request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'))
+        .length;
+
+    await container.read(votingConfigProvider.notifier).refresh();
+    await container.read(votingRoundsProvider.future);
+    final roundsCallsAfter = http.requests
+        .where((request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'))
+        .length;
+
+    expect(roundsCallsAfter, roundsCallsBefore);
+  });
+
   test('config source provider persists named saved sources', () async {
     final store = FakeVotingConfigSourceStore();
     final container = _container(
@@ -319,6 +440,57 @@ void main() {
     expect(rounds.last.endorsed, isFalse);
     expect(rounds.last.unverified, isTrue);
     expect(rounds.last.roundId, kOtherRoundId);
+  });
+
+  test('rounds provider filters to authenticated round IDs', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://voting.example/static-voting-config.json': staticConfigJson(),
+        'https://voting.example/dynamic-voting-config.json': dynamicConfigJson(),
+        '/shielded-vote/v1/rounds': {
+          'rounds': [
+            {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+            {
+              'vote_round_id': kOtherRoundId,
+              'title': 'Other',
+              'status': 'active',
+            },
+          ],
+        },
+        '/shielded-vote/v1/endorsed-rounds/zodl': {
+          'vote_round_ids': [kRoundId],
+        },
+      },
+    );
+    final container = ProviderContainer(
+      overrides: [
+        votingConfigSourceStoreProvider.overrideWithValue(
+          FakeVotingConfigSourceStore(),
+        ),
+        votingHttpClientProvider.overrideWithValue(http),
+        votingConfigLoaderProvider.overrideWithValue(
+          VotingConfigLoader(
+            httpClient: http,
+            sourceUrl: 'https://voting.example/static-voting-config.json',
+            resolveVotingConfig: ({
+              required source,
+              previous,
+              required fetchBytes,
+            }) => fakeResolveVotingConfig(
+              source: source,
+              previous: previous,
+              fetchBytes: fetchBytes,
+              authenticatedRoundIds: const [kRoundId],
+            ),
+          ),
+        ),
+        votingActiveAccountUuidProvider.overrideWithValue(() async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final rounds = await container.read(votingRoundsProvider.future);
+    expect(rounds.map((round) => round.roundId), [kRoundId]);
   });
 
   test(
@@ -3672,8 +3844,16 @@ ProviderContainer _container({
       votingConfigLoaderProvider.overrideWithValue(
         VotingConfigLoader(
           httpClient: http,
-          staticConfigSource: StaticVotingConfigSource.parse(
-            'https://voting.example/static-voting-config.json',
+          sourceUrl: 'https://voting.example/static-voting-config.json',
+          resolveVotingConfig: ({
+            required source,
+            previous,
+            required fetchBytes,
+          }) => fakeResolveVotingConfig(
+            source: source,
+            previous: previous,
+            fetchBytes: fetchBytes,
+            authenticatedRoundIds: const [kRoundId, kOtherRoundId],
           ),
         ),
       ),
@@ -3711,8 +3891,16 @@ ProviderContainer _sessionContainer({
       votingConfigLoaderProvider.overrideWithValue(
         VotingConfigLoader(
           httpClient: effectiveHttp,
-          staticConfigSource: StaticVotingConfigSource.parse(
-            'https://voting.example/static-voting-config.json',
+          sourceUrl: 'https://voting.example/static-voting-config.json',
+          resolveVotingConfig: ({
+            required source,
+            previous,
+            required fetchBytes,
+          }) => fakeResolveVotingConfig(
+            source: source,
+            previous: previous,
+            fetchBytes: fetchBytes,
+            authenticatedRoundIds: const [kRoundId, kOtherRoundId],
           ),
         ),
       ),
@@ -4115,6 +4303,74 @@ const _fastTxConfirmationPolling = VotingTxConfirmationPolling(
   attempts: 1,
   delay: Duration.zero,
 );
+
+Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
+  required String source,
+  rust_config.ResolvedVotingConfig? previous,
+  required FutureOr<Uint8List> Function(String) fetchBytes,
+  List<String>? authenticatedRoundIds,
+  List<String> skippedRoundIds = const [],
+  rust_config.ConfigSwitchKind? switchKind,
+}) async {
+  final staticJson = decodeVotingJsonObject(
+    utf8.decode(await fetchBytes(source)),
+  );
+  final dynamicConfigUrl = staticJson['dynamic_config_url']?.toString();
+  if (dynamicConfigUrl == null || dynamicConfigUrl.isEmpty) {
+    throw const FormatException('Missing required string: dynamic_config_url');
+  }
+  final dynamicJson = decodeVotingJsonObject(
+    utf8.decode(await fetchBytes(dynamicConfigUrl)),
+  );
+
+  final voteServers = (dynamicJson['vote_servers'] as List<dynamic>)
+      .cast<Map<String, dynamic>>()
+      .map(
+        (endpoint) => rust_config.ServiceEndpoint(
+          url: endpoint['url'].toString(),
+          label: endpoint['label']?.toString() ?? '',
+        ),
+      )
+      .toList(growable: false);
+  final pirEndpoints = (dynamicJson['pir_endpoints'] as List<dynamic>)
+      .cast<Map<String, dynamic>>()
+      .map(
+        (endpoint) => rust_config.ServiceEndpoint(
+          url: endpoint['url'].toString(),
+          label: endpoint['label']?.toString() ?? '',
+        ),
+      )
+      .toList(growable: false);
+  final versions = dynamicJson['supported_versions'] as Map<String, dynamic>;
+  final resolved = rust_config.ResolvedVotingConfig(
+    sourceFingerprint: 'test-source-fingerprint',
+    trustedKeyFingerprint: 'test-trusted-key-fingerprint',
+    dynamicConfigFingerprint: 'test-dynamic-config-fingerprint',
+    voteServers: voteServers,
+    pirEndpoints: pirEndpoints,
+    supportedVersions: rust_config.SupportedVersions(
+      pir: (versions['pir'] as List<dynamic>)
+          .map((value) => value.toString())
+          .toList(growable: false),
+      voteProtocol: versions['vote_protocol'].toString(),
+      tally: versions['tally'].toString(),
+      voteServer: versions['vote_server'].toString(),
+    ),
+    authenticatedRoundIds: authenticatedRoundIds ??
+        (dynamicJson['rounds'] as Map<String, dynamic>).keys.toList(growable: false),
+    skippedRoundIds: skippedRoundIds,
+    conditions: const [],
+  );
+
+  return rust_config_api.VotingConfigResolution(
+    config: resolved,
+    switchKind:
+        switchKind ??
+        (previous == null
+            ? rust_config.ConfigSwitchKind.initialLoad
+            : rust_config.ConfigSwitchKind.unchanged),
+  );
+}
 
 Map<String, dynamic> staticConfigJson() => {
   'static_config_version': 1,

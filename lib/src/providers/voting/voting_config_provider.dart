@@ -3,21 +3,25 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../services/voting/voting_models.dart';
+import '../../rust/third_party/zcash_voting/config.dart';
 import 'voting_config_source_provider.dart';
+import 'voting_rounds_provider.dart';
 import 'voting_service_providers.dart';
+import 'voting_session_provider.dart';
+import 'voting_tree_sync_provider.dart';
 
 /// Loads and caches the active dynamic voting configuration.
 ///
 /// The config is refreshed on app resume so endpoint/round changes are picked up
 /// without a restart, but errors remain explicit `AsyncError`s because voting
 /// must fail closed when service discovery is unavailable or malformed.
-class VotingConfigNotifier extends AsyncNotifier<VotingConfig> {
+class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
   AppLifecycleListener? _lifecycleListener;
   int _loadGeneration = 0;
+  ResolvedVotingConfig? _previousResolvedConfig;
 
   @override
-  Future<VotingConfig> build() async {
+  Future<ResolvedVotingConfig> build() async {
     final generation = ++_loadGeneration;
     _lifecycleListener = AppLifecycleListener(onResume: refresh);
     ref.onDispose(() {
@@ -40,7 +44,7 @@ class VotingConfigNotifier extends AsyncNotifier<VotingConfig> {
 
   Future<void> refresh() async {
     final generation = ++_loadGeneration;
-    state = const AsyncLoading<VotingConfig>();
+    state = const AsyncLoading<ResolvedVotingConfig>();
     final config = await AsyncValue.guard(_load);
     if (!_isCurrentLoad(generation)) return;
     state = config;
@@ -56,8 +60,8 @@ class VotingConfigNotifier extends AsyncNotifier<VotingConfig> {
     return ref.mounted && generation == _loadGeneration;
   }
 
-  VotingConfig _staleLoadResult() {
-    final previous = state.value;
+  ResolvedVotingConfig _staleLoadResult() {
+    final previous = state.value ?? _previousResolvedConfig;
     if (previous != null) return previous;
     final error = state.error;
     if (error != null) {
@@ -66,13 +70,47 @@ class VotingConfigNotifier extends AsyncNotifier<VotingConfig> {
     throw StateError('Ignored stale voting config load.');
   }
 
-  Future<VotingConfig> _load() async {
+  Future<ResolvedVotingConfig> _load() async {
     await ref.read(votingConfigSourceProvider.future);
-    return ref.read(votingConfigLoaderProvider).load();
+    final resolution = await ref
+        .read(votingConfigLoaderProvider)
+        .load(previous: _previousResolvedConfig);
+    _applySwitch(resolution.switchKind);
+    _previousResolvedConfig = resolution.config;
+    return resolution.config;
+  }
+
+  void _applySwitch(ConfigSwitchKind kind) {
+    switch (kind) {
+      case ConfigSwitchKind.unchanged:
+      case ConfigSwitchKind.initialLoad:
+        return;
+      case ConfigSwitchKind.sameChainServiceUpdate:
+        _invalidateEndpointState();
+        return;
+      case ConfigSwitchKind.newChainOrRound:
+        _invalidateEndpointState();
+        ref.invalidate(votingRoundsProvider);
+        ref.invalidate(votingSessionProvider);
+        return;
+      case ConfigSwitchKind.protocolChanged:
+        _invalidateEndpointState();
+        ref.invalidate(votingRoundsProvider);
+        ref.invalidate(votingSessionProvider);
+        return;
+    }
+  }
+
+  void _invalidateEndpointState() {
+    ref.invalidate(votingApiClientProvider);
+    ref.invalidate(votingEndorserClientProvider);
+    ref.invalidate(votingHelperHealthTrackerProvider);
+    ref.invalidate(votingPirResolverProvider);
+    ref.invalidate(votingTreePreSyncProvider);
   }
 }
 
 final votingConfigProvider =
-    AsyncNotifierProvider<VotingConfigNotifier, VotingConfig>(
+    AsyncNotifierProvider<VotingConfigNotifier, ResolvedVotingConfig>(
       VotingConfigNotifier.new,
     );

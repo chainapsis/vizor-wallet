@@ -70,9 +70,6 @@ class VotingConfigSourceState {
   final bool isDefault;
   final List<SavedVotingConfigSource> savedSources;
 
-  StaticVotingConfigSource get staticConfigSource =>
-      StaticVotingConfigSource.parse(sourceUrl);
-
   VotingConfigSourceState copyWith({
     String? sourceUrl,
     bool? isDefault,
@@ -149,7 +146,7 @@ class AppSecureStoreVotingConfigSourceStore implements VotingConfigSourceStore {
 ///
 /// Every public mutation validates the source URL before persisting it. The
 /// provider never fetches config itself. It only decides which
-/// [StaticVotingConfigSource] the loader should use.
+/// source URL the loader should use.
 class VotingConfigSourceNotifier
     extends AsyncNotifier<VotingConfigSourceState> {
   @override
@@ -166,7 +163,7 @@ class VotingConfigSourceNotifier
       );
     }
     try {
-      StaticVotingConfigSource.parse(trimmed);
+      parseStaticVotingConfigSource(trimmed);
     } on StaticVotingConfigSourceMalformed {
       await store.resetSourceUrl();
       return VotingConfigSourceState.defaultSource().copyWith(
@@ -182,11 +179,10 @@ class VotingConfigSourceNotifier
 
   /// Selects a custom source URL without adding it to saved sources.
   Future<void> setCustom(String sourceUrl) async {
-    final trimmed = sourceUrl.trim();
-    StaticVotingConfigSource.parse(trimmed);
-    await ref.read(votingConfigSourceStoreProvider).writeSourceUrl(trimmed);
+    final normalized = parseStaticVotingConfigSource(sourceUrl).raw;
+    await ref.read(votingConfigSourceStoreProvider).writeSourceUrl(normalized);
     final previous = state.value ?? VotingConfigSourceState.defaultSource();
-    state = AsyncData(previous.copyWith(sourceUrl: trimmed, isDefault: false));
+    state = AsyncData(previous.copyWith(sourceUrl: normalized, isDefault: false));
   }
 
   /// Uses the bundled default source while preserving saved custom sources.
@@ -206,8 +202,7 @@ class VotingConfigSourceNotifier
     required String name,
     required String sourceUrl,
   }) async {
-    final trimmedUrl = sourceUrl.trim();
-    StaticVotingConfigSource.parse(trimmedUrl);
+    final normalizedUrl = parseStaticVotingConfigSource(sourceUrl).raw;
     final trimmedName = _normalizeSavedSourceName(name);
     final previous = state.value ?? VotingConfigSourceState.defaultSource();
     final nextSaved = [...previous.savedSources];
@@ -217,24 +212,24 @@ class VotingConfigSourceNotifier
     if (existingIndex >= 0) {
       nextSaved[existingIndex] = nextSaved[existingIndex].copyWith(
         name: trimmedName,
-        sourceUrl: trimmedUrl,
+        sourceUrl: normalizedUrl,
       );
     } else {
       nextSaved.add(
         SavedVotingConfigSource(
           id: _newSavedSourceId(),
           name: trimmedName,
-          sourceUrl: trimmedUrl,
+          sourceUrl: normalizedUrl,
         ),
       );
     }
 
     final store = ref.read(votingConfigSourceStoreProvider);
     await store.writeSavedSourcesJson(_encodeSavedSources(nextSaved));
-    await store.writeSourceUrl(trimmedUrl);
+    await store.writeSourceUrl(normalizedUrl);
     state = AsyncData(
       VotingConfigSourceState(
-        sourceUrl: trimmedUrl,
+        sourceUrl: normalizedUrl,
         isDefault: false,
         savedSources: nextSaved,
       ),
@@ -300,7 +295,7 @@ List<SavedVotingConfigSource> _decodeSavedSources(String? raw) {
       continue;
     }
     try {
-      StaticVotingConfigSource.parse(source.sourceUrl.trim());
+      parseStaticVotingConfigSource(source.sourceUrl.trim());
     } on StaticVotingConfigSourceMalformed {
       continue;
     }
@@ -337,8 +332,8 @@ String _newSavedSourceId() {
 
 bool _sameSourceUrl(String lhs, String rhs) {
   try {
-    final left = StaticVotingConfigSource.parse(lhs.trim());
-    final right = StaticVotingConfigSource.parse(rhs.trim());
+    final left = parseStaticVotingConfigSource(lhs.trim());
+    final right = parseStaticVotingConfigSource(rhs.trim());
     return left.uri == right.uri && left.sha256Hex == right.sha256Hex;
   } on StaticVotingConfigSourceMalformed {
     return lhs.trim() == rhs.trim();
