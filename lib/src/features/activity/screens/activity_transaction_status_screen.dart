@@ -458,14 +458,24 @@ class _ActivityTransactionStatusScreenState
     if (tx?.txKind == 'sent' &&
         primaryAddress != null &&
         primaryAddress.isNotEmpty) {
-      return _recipientBlock(
-        context,
+      final addressBookLabel = addressBookLabelFor(
+        contacts: addressBookContacts,
+        network: AddressBookNetwork.zcash,
         address: primaryAddress,
-        addressBookLabel: addressBookLabelFor(
-          contacts: addressBookContacts,
-          network: AddressBookNetwork.zcash,
+      );
+      if (addressBookLabel != null && addressBookLabel.trim().isNotEmpty) {
+        return _recipientBlock(
+          context,
           address: primaryAddress,
-        ),
+          addressBookLabel: addressBookLabel,
+        );
+      }
+      return _addressBlock(
+        context,
+        title: 'To',
+        address: primaryAddress,
+        useFailedReceiptLayout: useFailedReceiptLayout,
+        compactAddress: compactAddress,
       );
     }
     if ((tx?.txKind == 'received' || tx?.txKind == 'receiving') &&
