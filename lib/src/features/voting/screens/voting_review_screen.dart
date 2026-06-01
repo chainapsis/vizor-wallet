@@ -128,7 +128,12 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                   child: AppButton(
                     onPressed: draft.isEmpty
                         ? null
-                        : () => context.go(votingStatusRoute(widget.roundId)),
+                        : () => context.go(
+                            votingStatusRoute(
+                              widget.roundId,
+                              accountUuid: accountUuid,
+                            ),
+                          ),
                     variant: AppButtonVariant.primary,
                     minWidth: 240,
                     child: const Text('Confirm and submit'),

@@ -202,6 +202,7 @@ void main() {
     final container = _statusContainer(
       accountOverride: _MnemonicAccountNotifier.new,
       rust: _IneligibleVotingRustApi(),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
     );
     addTearDown(container.dispose);
     container.read(votingDraftProvider(_draftKey).notifier).setChoice(1, 0);
@@ -233,6 +234,7 @@ void main() {
     final container = _statusContainer(
       accountOverride: _MnemonicAccountNotifier.new,
       rust: _IneligibleVotingRustApi(),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
     );
     addTearDown(container.dispose);
     container.read(votingDraftProvider(_draftKey).notifier).setChoice(1, 0);
@@ -570,12 +572,12 @@ void main() {
     );
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
-        delegationTxHashes: [
+        delegationWorkflows: const [
           rust_frb_types.DelegationRecoveryView(
             bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
+            phase: VotingWorkflowPhase.confirmed,
             txHash: 'delegation-0',
-            vanLeafPosition: null,
+            vanLeafPosition: 0,
           ),
         ],
         shareDelegations: [share],
@@ -647,12 +649,12 @@ void main() {
     );
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
-        delegationTxHashes: [
+        delegationWorkflows: const [
           rust_frb_types.DelegationRecoveryView(
             bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
+            phase: VotingWorkflowPhase.confirmed,
             txHash: 'delegation-0',
-            vanLeafPosition: null,
+            vanLeafPosition: 0,
           ),
         ],
         shareDelegations: [share],
@@ -745,12 +747,12 @@ void main() {
     );
     final recoveryApi = _MutableVotingRecoveryApi()
       ..state = _recoveryState(
-        delegationTxHashes: [
+        delegationWorkflows: const [
           rust_frb_types.DelegationRecoveryView(
             bundleIndex: 0,
-            phase: VotingWorkflowPhase.submittedDelegation,
+            phase: VotingWorkflowPhase.confirmed,
             txHash: 'delegation-0',
-            vanLeafPosition: null,
+            vanLeafPosition: 0,
           ),
         ],
       )
@@ -1159,6 +1161,56 @@ void main() {
     expect(find.text('Yes'), findsOneWidget);
     expect(find.text('Second proposal'), findsOneWidget);
     expect(find.text('Skipped'), findsOneWidget);
+
+    await tester.tap(find.text('Confirm & Submit'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('status account: account-1'), findsOneWidget);
+  });
+
+  testWidgets('pending vote continue keeps the session account', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..roundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: true,
+        nextSteps: const [
+          rust_wire.NextStepView(
+            kind: 'cast_vote',
+            bundleIndex: 0,
+            proposalId: 1,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        ],
+        openProposals: Uint32List(0),
+        allDecided: false,
+      );
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Continue voting'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('status account: account-1'), findsOneWidget);
   });
 
   testWidgets('status screen navigates after successful submission', (
@@ -1577,6 +1629,7 @@ Future<void> _pumpUntilFound(
     await tester.pump(const Duration(milliseconds: 100));
     if (finder.evaluate().isNotEmpty) return;
   }
+  expect(finder, findsWidgets, reason: 'Timed out waiting for $finder.');
 }
 
 ProviderContainer _statusContainer({
@@ -1709,6 +1762,12 @@ Widget _proposalHarness() {
         path: '/voting/poll/:roundId/review',
         builder: (_, state) =>
             VotingReviewScreen(roundId: state.pathParameters['roundId']!),
+      ),
+      GoRoute(
+        path: '/voting/poll/:roundId/status',
+        builder: (_, state) => Text(
+          'status account: ${state.uri.queryParameters['account'] ?? ''}',
+        ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
@@ -2153,6 +2212,16 @@ class _NoopVotingRustApi implements VotingRustApi {
   }) async {}
 
   @override
+  Future<List<int>> deriveHotkey({
+    required String mnemonic,
+    required String roundId,
+    required String accountUuid,
+    required String network,
+  }) async {
+    return [9, 9, 9];
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -2165,11 +2234,20 @@ class _FailingVotingPowerRustApi extends _NoopVotingRustApi {
   }
 }
 
-class _IneligibleVotingRustApi extends _NoopVotingRustApi {
+class _IneligibleVotingRustApi extends _VotingStatusRustApi {
+  _IneligibleVotingRustApi() : super(_MutableVotingRecoveryApi());
+
   @override
-  Future<rust_round.BundleLayout> setupDelegationBundles({
-    required rust_api.ApiVotingRoundContext ctx,
-  }) async {
+  Stream<rust_api.ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
+    required String dbPath,
+    required String accountUuid,
+    required String network,
+    required String roundId,
+    required int bundleIndex,
+    required List<int> hotkeySeed,
+    required rust_vote.VanWitness vanWitness,
+    required List<rust_wire.DraftVote> draftVotes,
+  }) async* {
     throw Exception(
       'Invalid input: no spendable voting notes at snapshot height 3359740',
     );

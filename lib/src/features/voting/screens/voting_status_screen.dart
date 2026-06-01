@@ -97,6 +97,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     final key = _selectedJobKey();
     if (key == null) return;
     final signedPczt = await context.push<List<int>>('/voting/keystone/scan');
+    if (!mounted) return;
     if (signedPczt == null || signedPczt.isEmpty) return;
     await ref
         .read(votingSubmissionJobsProvider.notifier)
@@ -127,6 +128,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
         );
       },
     );
+    if (!mounted) return;
     if (confirmed != true) return;
     await ref
         .read(votingSubmissionJobsProvider.notifier)

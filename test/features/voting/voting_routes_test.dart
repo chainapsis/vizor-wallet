@@ -20,8 +20,16 @@ void main() {
       '/voting/poll/El5UdfZTsHTV9MNnMIUmlfNWQWwrbDBCUWqRLlv%2F3RE%3D/status',
     );
     expect(
+      votingStatusRoute(roundId, accountUuid: 'account/1'),
+      '/voting/poll/El5UdfZTsHTV9MNnMIUmlfNWQWwrbDBCUWqRLlv%2F3RE%3D/status?account=account%2F1',
+    );
+    expect(
       votingSubmissionConfirmedRoute(roundId),
       '/voting/poll/El5UdfZTsHTV9MNnMIUmlfNWQWwrbDBCUWqRLlv%2F3RE%3D/submitted',
+    );
+    expect(
+      votingSubmissionConfirmedRoute(roundId, accountUuid: 'account/1'),
+      '/voting/poll/El5UdfZTsHTV9MNnMIUmlfNWQWwrbDBCUWqRLlv%2F3RE%3D/submitted?account=account%2F1',
     );
     expect(
       votingResultsRoute(roundId),
