@@ -7,8 +7,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/formatting/date_format.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
-import '../../../core/navigation/app_back_resolver.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
@@ -62,6 +62,7 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _VotingTopBar(onSettings: _openSettings),
+                const SizedBox(height: AppSpacing.s),
                 Expanded(
                   child: rounds.when(
                     skipLoadingOnRefresh: false,
@@ -183,31 +184,33 @@ class _VotingTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 64,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          const Positioned(left: AppSpacing.md, child: _VotingBackButton()),
-          Positioned(
-            right: AppSpacing.md,
-            child: _VotingTopBarIconButton(
-              icon: AppIcons.cog,
-              tooltip: 'Voting config',
-              semanticLabel: 'Voting config settings',
-              onTap: onSettings,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.md,
+        AppSpacing.md,
+        0,
+      ),
+      child: SizedBox(
+        height: AppBackLink.height,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: AppRouteBackLink(minWidth: 60),
             ),
-          ),
-          Text(
-            'Voting',
-            textAlign: TextAlign.center,
-            style: AppTypography.headlineSmall.copyWith(
-              color: context.colors.text.accent,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0,
+            Align(
+              alignment: Alignment.centerRight,
+              child: _VotingTopBarIconButton(
+                icon: AppIcons.cog,
+                tooltip: 'Voting config',
+                semanticLabel: 'Voting config settings',
+                onTap: onSettings,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -252,8 +255,8 @@ class _VotingTopBarIconButtonState extends State<_VotingTopBarIconButton> {
               onTap: widget.onTap,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 120),
-                width: 36,
-                height: 36,
+                width: AppBackLink.height,
+                height: AppBackLink.height,
                 decoration: BoxDecoration(
                   color: _hovered ? colors.state.hover : null,
                   borderRadius: BorderRadius.circular(AppRadii.xSmall),
@@ -265,59 +268,6 @@ class _VotingTopBarIconButtonState extends State<_VotingTopBarIconButton> {
                     color: colors.icon.accent,
                   ),
                 ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _setHovered(bool hovered) {
-    if (_hovered == hovered) return;
-    setState(() {
-      _hovered = hovered;
-    });
-  }
-}
-
-class _VotingBackButton extends StatefulWidget {
-  const _VotingBackButton();
-
-  @override
-  State<_VotingBackButton> createState() => _VotingBackButtonState();
-}
-
-class _VotingBackButtonState extends State<_VotingBackButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final target = AppBackResolver.resolve(context);
-    return Semantics(
-      button: true,
-      label: 'Back to ${target.label}',
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => _setHovered(true),
-        onExit: (_) => _setHovered(false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => target.navigate(context),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: _hovered ? colors.state.hover : null,
-              borderRadius: BorderRadius.circular(AppRadii.xSmall),
-            ),
-            child: Center(
-              child: AppIcon(
-                AppIcons.arrowBack,
-                size: 20,
-                color: colors.icon.accent,
               ),
             ),
           ),
