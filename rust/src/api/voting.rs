@@ -1,9 +1,11 @@
 use std::{panic, sync::Arc};
 
 use super::voting_helpers::{
-    bundle_policy, delegation_static_inputs, prepare_delegation_bundle_params,
-    resolve_delegation_lwd_inputs, seed_from_mnemonic,
+    delegation_static_inputs, prepare_delegation_bundle_params, resolve_delegation_lwd_inputs,
+    seed_from_mnemonic,
 };
+#[cfg(test)]
+use super::voting_helpers::bundle_policy;
 use crate::frb_generated::StreamSink;
 use crate::wallet::{
     keys,
@@ -14,6 +16,7 @@ use secrecy::ExposeSecret;
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
 
+// Shared phase labels emitted in streaming voting/delegation progress events.
 const PHASE_SELECTING_NOTES: &str = "selecting_notes";
 const PHASE_BUILDING_PCZT: &str = "building_pczt";
 const PHASE_BUILDING_PROOF: &str = "building_proof";
@@ -26,15 +29,18 @@ const PHASE_BUILDING_SHARE_PAYLOADS: &str = "building_share_payloads";
 const PHASE_SIGNING: &str = "signing";
 const PHASE_VOTE_COMMIT_STAGE: &str = "vote_commit_stage";
 
+// Fixed-width Keystone payload fields.
 const KEYSTONE_SIG_LEN: usize = 64;
 const KEYSTONE_SIGHASH_LEN: usize = 32;
 const KEYSTONE_RK_LEN: usize = 32;
 
+// Bit flags attached to share-tracking status records.
 const SHARE_TRACKING_FLAG_READY: u32 = 1;
 const SHARE_TRACKING_FLAG_OVERDUE: u32 = 1 << 1;
 #[cfg(test)]
 const MAX_SAFE_JSON_INTEGER: u64 = 0x1f_ffff_ffff_ffff;
 
+// Log-friendly stream labels and sink-drop diagnostics.
 const DELEGATION_STREAM_CONTEXT: &str = "voting delegation";
 const VOTE_STREAM_CONTEXT: &str = "voting vote";
 const SINK_PROGRESS_NOT_DELIVERED: &str = "StreamSink closed, progress not delivered";
@@ -88,14 +94,20 @@ pub struct ApiVotingRoundContext {
 pub fn delegation_submission_wire_json(
     submission: zcash_voting::wire::SignedDelegationPayloadView,
 ) -> Result<String, String> {
-    catch(|| submission.submission.to_json().map_err(|e| e.to_string()))
+    catch(|| {
+        // Serialize validated delegation payload into chain wire JSON.
+        submission.submission.to_json().map_err(|e| e.to_string())
+    })
 }
 
 /// Returns the vote-chain cast-vote submission body as validated wire JSON.
 pub fn vote_commitment_wire_json(
     commitment: zcash_voting::wire::VoteCommitmentWire,
 ) -> Result<String, String> {
-    catch(|| commitment.to_json().map_err(|e| e.to_string()))
+    catch(|| {
+        // Serialize validated cast-vote commitment into chain wire JSON.
+        commitment.to_json().map_err(|e| e.to_string())
+    })
 }
 
 /// Returns the helper-server encrypted-share submission body as wire JSON.
@@ -105,6 +117,7 @@ pub fn vote_share_wire_json(
     submit_at: u64,
 ) -> Result<String, String> {
     catch(|| {
+        // Bind late fields before emitting helper wire JSON.
         share
             .with_late_bound(vc_tree_position, submit_at)
             .and_then(|share| share.to_json())
@@ -131,8 +144,11 @@ pub fn plan_share_submissions(
     single_share: bool,
 ) -> Result<Vec<zcash_voting::wire::ShareSubmissionPlan>, String> {
     catch(|| {
+        // Convert to usize once for policy sizing and planner inputs.
         let share_count = usize::try_from(share_count)
             .map_err(|_| "share_count does not fit in usize".to_string())?;
+
+        // Ask crate policy how much CSPRNG entropy is required.
         let required = zcash_voting::share_policy::share_submission_random_bytes_required(
             share_count,
             server_urls.len(),
@@ -141,6 +157,8 @@ pub fn plan_share_submissions(
             last_moment_buffer_seconds,
             single_share,
         );
+
+        // Draw independent entropy streams for schedule and helper selection.
         let mut submit_at_random_bytes = vec![0u8; required.submit_at_random_bytes];
         let mut server_random_bytes = vec![0u8; required.server_random_bytes];
         OsRng
@@ -150,6 +168,7 @@ pub fn plan_share_submissions(
             .try_fill_bytes(&mut server_random_bytes)
             .map_err(|e| format!("failed to draw share-server entropy: {e}"))?;
 
+        // Build FRB-safe plans with fully materialized random inputs.
         let plans = zcash_voting::share_policy::plan_share_submissions(
             share_count,
             &server_urls,
@@ -169,6 +188,7 @@ pub fn plan_share_submissions(
 fn share_record(
     share: zcash_voting::wire::ShareDelegationRecordView,
 ) -> zcash_voting::ShareDelegationRecord {
+    // Convert API view type into core share-tracking record shape.
     zcash_voting::ShareDelegationRecord {
         round_id: share.round_id,
         bundle_index: share.bundle_index,
@@ -196,10 +216,14 @@ pub fn share_tracking_flags(
         let share = share_record(share);
         let policy = zcash_voting::share::ShareTimingPolicy::default();
         let mut flags = 0u32;
+
+        // Flag shares that are ready for helper status checks.
         if zcash_voting::share::policy::is_share_ready_for_status_check(&share, now_seconds, policy)
         {
             flags |= SHARE_TRACKING_FLAG_READY;
         }
+
+        // Flag shares that are overdue and should be retried.
         if vote_end_time_seconds
             .map(|vote_end_time_seconds| {
                 zcash_voting::share::policy::should_resubmit_share(
@@ -223,6 +247,7 @@ pub fn next_share_tracking_delay_seconds(
     now_seconds: u64,
 ) -> Result<Option<u64>, String> {
     catch(|| {
+        // Convert wire views into core records consumed by share policy.
         let shares = shares.into_iter().map(share_record).collect::<Vec<_>>();
         Ok(zcash_voting::share::policy::next_tracking_delay_seconds(
             &shares,
@@ -273,6 +298,7 @@ pub fn derive_voting_hotkey(
     network: String,
 ) -> Result<Vec<u8>, String> {
     catch(|| {
+        // Parse network and derive deterministic account/round-scoped hotkey.
         let network = keys::parse_network(&network)?;
         let seed = seed_from_mnemonic(mnemonic)?;
         hotkey::derive_hotkey(&seed, &round_id, &account_uuid, network).map(|hotkey| {
@@ -294,6 +320,7 @@ pub fn derive_voting_hotkey(
 /// Returns an error if network parsing fails or random hotkey generation fails.
 pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, String> {
     catch(|| {
+        // Hardware accounts use randomized per-round voting hotkeys.
         let network = keys::parse_network(&network)?;
         zcash_voting::hotkey::generate_random_voting_hotkey(voting_network(network))
             .map_err(|e| format!("Voting hotkey generation failed: {e}"))
@@ -307,6 +334,7 @@ pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, String> {
 
 impl From<DelegationProgress> for ApiDelegationProofEvent {
     fn from(progress: DelegationProgress) -> Self {
+        // Normalize crate-specific progress into stable FRB phase labels.
         match progress {
             DelegationProgress::SelectingNotes => Self {
                 phase: PHASE_SELECTING_NOTES.to_string(),
@@ -354,6 +382,7 @@ impl From<DelegationProgress> for ApiDelegationProofEvent {
 
 impl From<zcash_voting::vote::VoteCommitStage> for ApiVoteCommitEvent {
     fn from(event: zcash_voting::vote::VoteCommitStage) -> Self {
+        // Normalize vote commit stage details into API progress events.
         match event {
             zcash_voting::vote::VoteCommitStage::ProofStarting {
                 proposal_id,
@@ -412,6 +441,7 @@ impl From<zcash_voting::vote::VoteCommitStage> for ApiVoteCommitEvent {
 /// This preserves the existing `Result<T, String>` contract used by FRB entry
 /// points so callers receive a normal error instead of an unwind crossing FFI.
 fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
+    // Convert unwind payloads into stable string errors for FFI callers.
     match panic::catch_unwind(f) {
         Ok(result) => result,
         Err(e) => {
@@ -431,6 +461,7 @@ fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result
 ///
 /// Returns an error naming `field` when the provided length differs.
 fn require_len(bytes: &[u8], expected: usize, field: &str) -> Result<(), String> {
+    // Keep fixed-size cryptographic fields strict at API boundaries.
     if bytes.len() == expected {
         Ok(())
     } else {
@@ -442,6 +473,7 @@ fn require_len(bytes: &[u8], expected: usize, field: &str) -> Result<(), String>
 }
 
 fn log_sink_closed(context: &str, detail: &str) {
+    // Sink closure is non-fatal. Log so dropped listeners are visible in debug.
     log::warn!("{context}: {detail}");
 }
 
@@ -453,6 +485,7 @@ fn emit_signed_delegation_result(
     sink: &StreamSink<ApiDelegationProofEvent>,
     signed_result: Result<zcash_voting::wire::SignedDelegationPayloadView, String>,
 ) -> Result<(), String> {
+    // Surface computation/signing errors through stream errors.
     let signed = match signed_result {
         Ok(signed) => signed,
         Err(error) => {
@@ -463,6 +496,7 @@ fn emit_signed_delegation_result(
         }
     };
 
+    // Emit the terminal result event when a payload is available.
     if sink
         .add(ApiDelegationProofEvent {
             phase: PHASE_RESULT.to_string(),
@@ -480,6 +514,7 @@ fn emit_signed_vote_result(
     sink: &StreamSink<ApiVoteCommitEvent>,
     signed_result: Result<zcash_voting::wire::SignedVoteCommitmentsView, String>,
 ) -> Result<(), String> {
+    // Surface computation/signing errors through stream errors.
     let commitments = match signed_result {
         Ok(commitments) => commitments,
         Err(error) => {
@@ -490,6 +525,7 @@ fn emit_signed_vote_result(
         }
     };
 
+    // Emit the terminal result event when commitments are available.
     if sink
         .add(ApiVoteCommitEvent {
             phase: PHASE_RESULT.to_string(),
@@ -517,15 +553,21 @@ fn emit_signed_vote_result(
 pub async fn setup_delegation_bundles(
     ctx: ApiVotingRoundContext,
 ) -> Result<zcash_voting::wire::BundleLayout, String> {
-    let bundle_policy = bundle_policy(ctx.max_real_notes_per_bundle)?;
+    // Resolve static network + bundle policy inputs and open the sidecar DB.
+    let (_, voting_network, bundle_policy) =
+        delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_db = db::open_voting_db(&ctx.db_path, &ctx.account_uuid)?;
+
+    // Select and persist reusable delegation bundles for this round/account.
     delegation::setup_delegation_bundles(
         &voting_db,
         &ctx.db_path,
-        &ctx.lightwalletd_url,
-        &ctx.network,
-        ctx.round_params,
-        &ctx.round_name,
+        zcash_voting::delegate::ResolveDelegationLwdParams {
+            lightwalletd_url: &ctx.lightwalletd_url,
+            network: voting_network,
+            round_params: ctx.round_params,
+            round_name: &ctx.round_name,
+        },
         ctx.session_json.as_deref(),
         bundle_policy,
     )
@@ -547,11 +589,17 @@ pub async fn precompute_delegation_pir(
     mnemonic: String,
     bundle_index: u32,
 ) -> Result<zcash_voting::wire::DelegationPirPrecomputeResultView, String> {
+    // Resolve static network and bundling policy inputs from round context.
     let (wallet_network, voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
+
+    // Derive wallet seed and round-scoped delegation hotkey from the mnemonic.
     let seed = seed_from_mnemonic(mnemonic)?;
     let round_id = ctx.round_params.vote_round_id.clone();
-    let hotkey_secret = hotkey::derive_hotkey(&seed, &round_id, &ctx.account_uuid, wallet_network)?;
+    let hotkey_secret =
+        hotkey::derive_hotkey(&seed, &round_id, &ctx.account_uuid, wallet_network)?;
+
+    // Fetch lightwalletd-backed round inputs used for delegation bundle prep.
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -559,6 +607,8 @@ pub async fn precompute_delegation_pir(
         voting_network,
     )
     .await?;
+
+    // Assemble bundle preparation parameters for PIR precompute.
     let prepare_params = prepare_delegation_bundle_params(
         lwd,
         ctx.session_json.as_deref(),
@@ -568,6 +618,8 @@ pub async fn precompute_delegation_pir(
         bundle_index,
         bundle_policy,
     );
+
+    // Warm the PIR path by precomputing/caching delegation bundle artifacts.
     delegation::precompute_delegation_pir(&ctx.db_path, &pir_server_url, prepare_params)
         .await
         .map(zcash_voting::wire::DelegationPirPrecomputeResultView::from)
@@ -591,11 +643,15 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     bundle_index: u32,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
+    // Resolve static delegation inputs and derive the round-scoped hotkey.
     let (wallet_network, voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let seed = seed_from_mnemonic(mnemonic)?;
     let round_id = ctx.round_params.vote_round_id.clone();
-    let hotkey_secret = hotkey::derive_hotkey(&seed, &round_id, &ctx.account_uuid, wallet_network)?;
+    let hotkey_secret =
+        hotkey::derive_hotkey(&seed, &round_id, &ctx.account_uuid, wallet_network)?;
+
+    // Resolve lightwalletd inputs and assemble delegation prepare parameters.
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -612,6 +668,8 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         bundle_index,
         bundle_policy,
     );
+
+    // Stream local progress events and emit one final result/error event.
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
     let signed_result = delegation::build_prove_and_sign_delegation_payload(
@@ -627,7 +685,8 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     )
     .await
     .and_then(|bundle| {
-        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
+        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle)
+            .map_err(|e| e.to_string())
     });
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
@@ -643,9 +702,12 @@ pub async fn build_keystone_delegation_request(
     hotkey_seed: Vec<u8>,
     bundle_index: u32,
 ) -> Result<zcash_voting::wire::KeystoneSigningRequest, String> {
+    // Resolve static round inputs and validate Keystone-provided hotkey bytes.
     let (_, voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let hotkey_secret = hotkey::validated_hotkey_seed(hotkey_seed, voting_network)?;
+
+    // Resolve lightwalletd-backed round inputs and build request parameters.
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -662,6 +724,8 @@ pub async fn build_keystone_delegation_request(
         bundle_index,
         bundle_policy,
     );
+
+    // Build and redact the PCZT request that Keystone signs out of process.
     delegation::build_keystone_delegation_request(&ctx.db_path, &ctx.account_uuid, prepare_params)
         .await
 }
@@ -674,6 +738,7 @@ pub async fn build_keystone_delegation_request(
 /// spend authorization sighash.
 pub fn extract_pczt_sighash(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     catch(|| {
+        // Decode PCZT and expose its ZIP-244 spend authorization sighash bytes.
         zcash_voting::delegate::pczt_sighash(&pczt_bytes)
             .map(|sighash| sighash.to_vec())
             .map_err(|e| format!("extract_pczt_sighash failed: {e}"))
@@ -686,6 +751,7 @@ pub fn extract_spend_auth_signature_from_signed_pczt(
     action_index: u32,
 ) -> Result<Vec<u8>, String> {
     catch(|| {
+        // Convert FRB index to host index type for extraction helper.
         let action_index =
             usize::try_from(action_index).map_err(|_| "action_index does not fit in usize")?;
         zcash_voting::delegate::spend_auth_signature(&signed_pczt_bytes, action_index)
@@ -710,6 +776,7 @@ pub fn store_keystone_signature(
     rk: Vec<u8>,
 ) -> Result<(), String> {
     catch(|| {
+        // Validate fixed-size fields before persisting the signature tuple.
         require_len(&sig, KEYSTONE_SIG_LEN, "sig")?;
         require_len(&sighash, KEYSTONE_SIGHASH_LEN, "sighash")?;
         require_len(&rk, KEYSTONE_RK_LEN, "rk")?;
@@ -731,6 +798,7 @@ pub fn get_keystone_signatures(
     round_id: String,
 ) -> Result<Vec<zcash_voting::wire::KeystoneSignatureRecord>, String> {
     catch(|| {
+        // Load all persisted Keystone signatures for this round.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         db.get_keystone_signatures(&round_id)
             .map_err(|e| format!("get_keystone_signatures failed: {e}"))
@@ -752,9 +820,12 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     keystone_sighash: Vec<u8>,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
+    // Resolve static inputs and validate the persisted Keystone hotkey seed.
     let (_, voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let hotkey_secret = hotkey::validated_hotkey_seed(hotkey_seed, voting_network)?;
+
+    // Resolve round inputs and build delegation preparation parameters.
     let lwd = resolve_delegation_lwd_inputs(
         &ctx.lightwalletd_url,
         ctx.round_params,
@@ -771,6 +842,8 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
         bundle_index,
         bundle_policy,
     );
+
+    // Stream local progress and emit the terminal signed payload or error.
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
     let signed_result = delegation::build_prove_delegation_payload_with_keystone_signature(
@@ -788,7 +861,8 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     )
     .await
     .and_then(|bundle| {
-        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
+        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle)
+            .map_err(|e| e.to_string())
     });
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
@@ -809,6 +883,7 @@ pub fn mark_delegation_submitted(
     tx_hash: String,
 ) -> Result<(), String> {
     catch(|| {
+        // Persist submission hash for this round/bundle key.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         db.mark_delegation_submitted(&round_id, bundle_index, &tx_hash)
             .map_err(|e| e.to_string())
@@ -830,6 +905,7 @@ pub fn confirm_delegation_submission(
     events: Vec<zcash_voting::wire::TxEvent>,
 ) -> Result<zcash_voting::wire::DelegationConfirmation, String> {
     catch(|| {
+        // Parse tx events and persist confirmation details for this bundle.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::confirmation::confirm_delegation_submission(
             &db,
@@ -852,6 +928,7 @@ pub fn delete_skipped_bundles(
     keep_count: u32,
 ) -> Result<u32, String> {
     catch(|| {
+        // Delete skipped bundle rows and downcast deleted count for FRB.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         db.delete_skipped_bundles(&round_id, keep_count)
             .and_then(|deleted| {
@@ -880,6 +957,7 @@ pub fn sync_vote_tree(
     node_url: String,
 ) -> Result<u32, String> {
     catch(|| {
+        // Sync and cache vote tree state for this wallet/round.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::precompute::sync_vote_tree(&db, &round_id, &node_url)
             .map_err(|e| format!("sync_vote_tree failed: {e}"))
@@ -904,6 +982,8 @@ pub fn generate_van_witness(
 ) -> Result<zcash_voting::wire::VanWitness, String> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
+
+        // Validate bundle index against persisted bundle count first.
         let bundle_count = db
             .get_bundle_count(&round_id)
             .map_err(|e| format!("get_bundle_count failed: {e}"))?;
@@ -926,6 +1006,7 @@ pub fn reset_voting_session_state(
     round_id: Option<String>,
 ) -> Result<(), String> {
     catch(|| {
+        // Empty/None round_id means clear account-wide cached vote tree state.
         let account_wide = round_id.as_deref().map(str::is_empty).unwrap_or(true);
         let tree_count = if account_wide {
             let db = db::open_voting_db(&db_path, &account_uuid)?;
@@ -960,6 +1041,7 @@ pub fn recover_vote_commitment(
     proposal_id: u32,
 ) -> Result<zcash_voting::wire::SignedVoteCommitmentsView, String> {
     catch(|| {
+        // Recover persisted commitments and convert to public wire view.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::vote::recover_signed_commitments(&db, &round_id, bundle_index, proposal_id)
             .map_err(|e| format!("vote commitment recovery failed: {e}"))
@@ -985,8 +1067,11 @@ async fn build_vote_commitments_result<F>(
 where
     F: Fn(zcash_voting::vote::VoteCommitStage) + Send + Sync + 'static,
 {
+    // Parse network once and keep hotkey bytes in a secrecy wrapper.
     let network = keys::parse_network(&network)?;
     let hotkey_seed = secrecy::SecretVec::new(hotkey_seed);
+
+    // Commit/prove work is CPU-heavy; run it on a blocking worker thread.
     let commitment_result = tokio::task::spawn_blocking(move || {
         let reporter = zcash_voting::VoteCommitStageBridge::new(on_stage);
         let voting_db = db::open_voting_db(&db_path, &account_uuid)?;
@@ -1011,7 +1096,10 @@ where
     .map_err(|e| format!("vote commitment task failed: {e}"))
     .and_then(|result| result);
     let commitments = commitment_result?;
-    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments).map_err(|e| e.to_string())
+
+    // Convert internal commitment type into the FRB wire view.
+    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
+        .map_err(|e| e.to_string())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1030,6 +1118,7 @@ pub async fn build_vote_commitments_with_progress(
     draft_votes: Vec<zcash_voting::wire::DraftVote>,
     sink: StreamSink<ApiVoteCommitEvent>,
 ) -> Result<(), String> {
+    // Bridge stage callbacks into stream events for UI progress updates.
     let sink = Arc::new(sink);
     let progress_sink = sink.clone();
     let commitments = build_vote_commitments_result(
@@ -1059,6 +1148,7 @@ pub fn get_round_recovery_state(
     round_id: String,
 ) -> Result<zcash_voting::wire::RoundRecoveryStateView, String> {
     catch(|| {
+        // Load persisted round snapshot and expose wire-safe view fields.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::recovery::round_snapshot(&db, &round_id)
             .map(zcash_voting::wire::RoundRecoveryStateView::from)
@@ -1083,6 +1173,7 @@ pub fn mark_vote_submitted(
     tx_hash: String,
 ) -> Result<(), String> {
     catch(|| {
+        // Persist submission hash for this round/bundle/proposal key.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         db.mark_vote_submitted(&round_id, bundle_index, proposal_id, &tx_hash)
             .map_err(|e| e.to_string())
@@ -1105,6 +1196,7 @@ pub fn confirm_vote_submission(
     events: Vec<zcash_voting::wire::TxEvent>,
 ) -> Result<zcash_voting::wire::VoteConfirmation, String> {
     catch(|| {
+        // Parse tx events and persist vote confirmation fields.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::confirmation::confirm_vote_submission(
             &db,
@@ -1137,6 +1229,8 @@ pub fn record_share_delegation(
 ) -> Result<(), String> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
+
+        // Recover vote context first, then persist helper submission metadata.
         zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
             .map_err(|e| format!("recover committed vote failed: {e}"))?
             .record_share(&db, share_index, &sent_to_urls, submit_at)
@@ -1161,6 +1255,8 @@ pub fn mark_share_confirmed(
 ) -> Result<(), String> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
+
+        // Recover vote context first, then mark the specific share as confirmed.
         zcash_voting::vote::CommittedVote::recover(&db, &round_id, bundle_index, proposal_id)
             .map_err(|e| format!("recover committed vote failed: {e}"))?
             .confirm_share(&db, share_index)
@@ -1185,6 +1281,7 @@ pub fn add_sent_servers(
     new_urls: Vec<String>,
 ) -> Result<(), String> {
     catch(|| {
+        // Merge additional helper URLs into persisted share delivery state.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::share::add_sent_servers(
             &db,
@@ -1208,6 +1305,7 @@ pub fn clear_recovery_state(
     round_id: String,
 ) -> Result<(), String> {
     catch(|| {
+        // Clear persisted recovery/share-tracking state for this round.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::recovery::clear(&db, &round_id)
             .map_err(|e| format!("clear_recovery_state failed: {e}"))
@@ -1223,6 +1321,7 @@ pub fn get_round_plan(
     proposal_ids: Vec<u32>,
 ) -> Result<zcash_voting::wire::RoundPlanView, String> {
     catch(|| {
+        // Derive resumable next steps and convert to wire view.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         let plan = zcash_voting::session::resume_plan(&db, &round_id, &proposal_ids)
             .map_err(|e| format!("resume_plan failed: {e}"))?;
@@ -1244,6 +1343,8 @@ pub fn set_ballot_intent(
 ) -> Result<(), String> {
     catch(|| {
         let db = db::open_voting_db(&db_path, &account_uuid)?;
+
+        // `skipped` takes precedence; otherwise a concrete choice is required.
         let decision = if skipped {
             zcash_voting::session::Decision::Skipped
         } else {
