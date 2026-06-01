@@ -373,6 +373,18 @@ void main() {
     expect(details.toRoundParams().voteRoundId, kEncodedRoundIdHex);
   });
 
+  test('round details use the validated status round id', () {
+    final json = roundStatusJson(roundId: kEncodedRoundId)
+      ..['round_id'] = kOtherRoundId
+      ..['id'] = kOtherRoundId;
+
+    final details = VotingRoundDetails.fromStatus(
+      VotingRoundStatus.fromJson(json),
+    );
+
+    expect(details.roundId, kEncodedRoundIdHex);
+  });
+
   test('round details expose last-moment scheduling window', () {
     final details = VotingRoundDetails.fromStatus(
       VotingRoundStatus.fromJson(

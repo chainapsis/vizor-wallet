@@ -158,7 +158,7 @@ class VotingRoundDetails {
   factory VotingRoundDetails.fromStatus(VotingRoundStatus status) {
     final json = status.rawJson;
     return VotingRoundDetails(
-      roundId: _roundIdFromJson(json),
+      roundId: status.roundId,
       title: _optionalStringFromJson(json, const ['title', 'name']) ?? '',
       status: status.status,
       snapshotHeight: _intFromJson(json, const ['snapshot_height']),
@@ -444,26 +444,6 @@ String? _optionalStringFromJson(Map<String, dynamic> json, List<String> keys) {
   return null;
 }
 
-String _roundIdFromJson(Map<String, dynamic> json) {
-  final voteRoundId = _optionalStringFromJson(json, const ['vote_round_id']);
-  if (voteRoundId != null && voteRoundId.isNotEmpty) {
-    return _normalizeRoundId(voteRoundId);
-  }
-  return _stringFromJson(json, const ['round_id', 'id']);
-}
-
-String _normalizeRoundId(String value) {
-  final trimmed = value.trim();
-  if (_isHexRoundId(trimmed)) return trimmed.toLowerCase();
-  try {
-    final bytes = base64Decode(trimmed);
-    if (bytes.length == 32) return bytesToHex(bytes);
-  } on FormatException {
-    // Early fixtures used human-readable ids; keep those readable in tests.
-  }
-  return trimmed;
-}
-
 int _intFromJson(Map<String, dynamic> json, List<String> keys) {
   for (final key in keys) {
     final value = json[key];
@@ -502,9 +482,4 @@ Object? _valueFromJson(Object? value, String key) {
     }
   }
   return null;
-}
-
-bool _isHexRoundId(String value) {
-  if (value.length != 64) return false;
-  return RegExp(r'^[0-9a-fA-F]+$').hasMatch(value);
 }
