@@ -90,57 +90,74 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                       ),
                     ),
                   );
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: AppRouteBackLink(),
-                ),
-                const Spacer(),
-                Text(
-                  'Review your answers',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.displaySmall.copyWith(
-                    color: context.colors.text.accent,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 620),
-                  child: Column(
-                    children: [
-                      for (final proposal in proposals)
-                        _ReviewRow(
-                          title: proposal.title,
-                          value: _reviewValue(proposal, draft),
-                          skipped: draft.choices[proposal.id] == null,
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: AppRouteBackLink(),
                         ),
-                    ],
-                  ),
-                ),
-                if (draft.isEmpty)
-                  const _Message(
-                    'Choose at least one option before submitting.',
-                  ),
-                const SizedBox(height: AppSpacing.md),
-                Center(
-                  child: AppButton(
-                    onPressed: draft.isEmpty
-                        ? null
-                        : () => context.go(
-                            votingStatusRoute(
-                              widget.roundId,
-                              accountUuid: accountUuid,
+                        const SizedBox(height: AppSpacing.xl),
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 620),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Review your answers',
+                                  textAlign: TextAlign.center,
+                                  style: AppTypography.displaySmall.copyWith(
+                                    color: context.colors.text.accent,
+                                  ),
+                                ),
+                                const SizedBox(height: AppSpacing.md),
+                                for (final proposal in proposals)
+                                  _ReviewRow(
+                                    title: proposal.title,
+                                    value: _reviewValue(proposal, draft),
+                                    skipped: draft.choices[proposal.id] == null,
+                                  ),
+                                if (draft.isEmpty) ...[
+                                  const SizedBox(height: AppSpacing.xs),
+                                  const _Message(
+                                    'Choose at least one option before submitting.',
+                                  ),
+                                ],
+                                const SizedBox(height: AppSpacing.md),
+                                Center(
+                                  child: AppButton(
+                                    onPressed: draft.isEmpty
+                                        ? null
+                                        : () => context.go(
+                                            votingStatusRoute(
+                                              widget.roundId,
+                                              accountUuid: accountUuid,
+                                            ),
+                                          ),
+                                    variant: AppButtonVariant.primary,
+                                    minWidth: 240,
+                                    child: const Text('Confirm and submit'),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                    variant: AppButtonVariant.primary,
-                    minWidth: 240,
-                    child: const Text('Confirm and submit'),
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
+                      ],
+                    ),
                   ),
-                ),
-                const Spacer(),
-              ],
+                );
+              },
             );
           },
         ),
@@ -191,6 +208,7 @@ class _ReviewRow extends StatelessWidget {
         border: Border.all(color: colors.border.subtle),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Text(
@@ -198,9 +216,15 @@ class _ReviewRow extends StatelessWidget {
               style: AppTypography.bodyMedium.copyWith(color: titleColor),
             ),
           ),
-          Text(
-            value,
-            style: AppTypography.bodyMediumStrong.copyWith(color: valueColor),
+          const SizedBox(width: AppSpacing.sm),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: AppTypography.bodyMediumStrong.copyWith(color: valueColor),
+            ),
           ),
         ],
       ),

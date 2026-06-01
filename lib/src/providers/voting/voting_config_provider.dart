@@ -46,6 +46,12 @@ class VotingConfigNotifier extends AsyncNotifier<VotingConfig> {
     state = config;
   }
 
+  /// Replaces state with a config that was already loaded and validated.
+  void setLoadedConfig(VotingConfig config) {
+    _loadGeneration++;
+    state = AsyncData(config);
+  }
+
   bool _isCurrentLoad(int generation) {
     return ref.mounted && generation == _loadGeneration;
   }

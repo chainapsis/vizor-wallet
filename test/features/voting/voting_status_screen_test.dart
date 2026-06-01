@@ -1168,6 +1168,58 @@ void main() {
     expect(find.text('status account: account-1'), findsOneWidget);
   });
 
+  testWidgets('review screen scrolls long ballots without overflowing', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 520));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final round = _roundStatusJson()
+      ..['proposals'] = [
+        for (var i = 1; i <= 15; i++)
+          _proposalJson(i, 'Long proposal title number $i', [
+            'A very long answer label that must not overflow the review row $i',
+            'No',
+          ]),
+      ];
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _NoMnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+    );
+    addTearDown(container.dispose);
+    final draftNotifier = container.read(
+      votingDraftProvider(_draftKey).notifier,
+    );
+    for (var i = 1; i <= 15; i++) {
+      draftNotifier.setChoice(i, 0);
+    }
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(
+          initialLocation: '/voting/poll/$_roundId/review',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(SingleChildScrollView), findsWidgets);
+
+    await tester.scrollUntilVisible(find.text('Confirm & Submit'), 300);
+    expect(find.text('Confirm & Submit'), findsOneWidget);
+  });
+
   testWidgets('pending vote continue keeps the session account', (
     tester,
   ) async {
@@ -1211,6 +1263,113 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('status account: account-1'), findsOneWidget);
+  });
+
+  testWidgets('status screen ignores stale start results after route change', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const staleKey = VotingSessionKey(
+      roundId: 'round-a',
+      accountUuid: 'account-a',
+    );
+    const currentKey = VotingSessionKey(
+      roundId: 'round-b',
+      accountUuid: 'account-b',
+    );
+    final firstStart = Completer<VotingSessionKey?>();
+    final secondStart = Completer<VotingSessionKey?>();
+    final starts = <VotingSessionKey>[];
+    late final GoRouter router;
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      overrides: [
+        votingSubmissionJobsProvider.overrideWith(
+          () => _ControlledVotingSubmissionJobsNotifier(
+            starts: starts,
+            completions: [firstStart, secondStart],
+          ),
+        ),
+        votingSubmissionJobProvider(staleKey).overrideWith(
+          () => _StaticVotingSubmissionJobNotifier(
+            staleKey,
+            const VotingSubmissionJobState(
+              key: staleKey,
+              status: VotingSubmissionJobStatus.error,
+              generation: 1,
+              errorMessage: 'stale key selected',
+            ),
+          ),
+        ),
+        votingSubmissionJobProvider(currentKey).overrideWith(
+          () => _StaticVotingSubmissionJobNotifier(
+            currentKey,
+            const VotingSubmissionJobState(
+              key: currentKey,
+              status: VotingSubmissionJobStatus.running,
+              generation: 1,
+            ),
+          ),
+        ),
+        votingSubmissionJobSessionProvider(staleKey).overrideWithValue(
+          AsyncValue.data(
+            VotingSessionState(
+              roundId: 'round-a',
+              accountUuid: 'account-a',
+              phase: VotingSessionPhase.error,
+            ),
+          ),
+        ),
+        votingSubmissionJobSessionProvider(currentKey).overrideWithValue(
+          AsyncValue.data(
+            VotingSessionState(
+              roundId: 'round-b',
+              accountUuid: 'account-b',
+              phase: VotingSessionPhase.submittingShares,
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    router = GoRouter(
+      initialLocation: '/voting/poll/round-a/status?account=account-a',
+      routes: [
+        GoRoute(
+          path: '/voting/poll/:roundId/status',
+          builder: (_, state) => VotingStatusScreen(
+            roundId: state.pathParameters['roundId']!,
+            accountUuid: state.uri.queryParameters['account'],
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (_, child) =>
+              AppTheme(data: AppThemeData.light, child: child!),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    router.go('/voting/poll/round-b/status?account=account-b');
+    await tester.pump();
+    firstStart.complete(staleKey);
+    secondStart.complete(currentKey);
+    await tester.pump();
+
+    expect(starts, [staleKey, currentKey]);
+    expect(find.text('stale key selected'), findsNothing);
+    expect(find.text('Submitting Votes'), findsOneWidget);
   });
 
   testWidgets('status screen navigates after successful submission', (
@@ -1748,9 +1907,9 @@ Widget _statusHarness({
   );
 }
 
-Widget _proposalHarness() {
+Widget _proposalHarness({String? initialLocation}) {
   final router = GoRouter(
-    initialLocation: '/voting/poll/$_roundId',
+    initialLocation: initialLocation ?? '/voting/poll/$_roundId',
     routes: [
       GoRoute(
         path: '/voting/poll/:roundId',
@@ -2099,6 +2258,30 @@ class _StaticVotingSubmissionJobsNotifier extends VotingSubmissionJobsNotifier {
 
   @override
   VotingSubmissionJobsState build() => _initial;
+}
+
+class _ControlledVotingSubmissionJobsNotifier
+    extends VotingSubmissionJobsNotifier {
+  _ControlledVotingSubmissionJobsNotifier({
+    required this.starts,
+    required this.completions,
+  });
+
+  final List<VotingSessionKey> starts;
+  final List<Completer<VotingSessionKey?>> completions;
+
+  @override
+  VotingSubmissionJobsState build() => const VotingSubmissionJobsState();
+
+  @override
+  Future<VotingSessionKey?> start(String roundId, {String? accountUuid}) {
+    final key = VotingSessionKey(
+      roundId: roundId,
+      accountUuid: accountUuid ?? 'resolved-account',
+    );
+    starts.add(key);
+    return completions[starts.length - 1].future;
+  }
 }
 
 class _FakeVotingRecoveryApi implements VotingRecoveryApi {

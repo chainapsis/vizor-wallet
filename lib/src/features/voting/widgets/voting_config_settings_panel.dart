@@ -11,6 +11,7 @@ import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_config_source_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
+import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../services/voting/voting_config_loader.dart';
 import '../../../services/voting/voting_models.dart';
 
@@ -119,6 +120,7 @@ class _VotingConfigSettingsPanelState
 
   bool _canSaveEditor(VotingConfigSourceState source) {
     if (_isSubmitting || !_showEditor) return false;
+    if (ref.read(votingSubmissionGuardProvider).isNotEmpty) return false;
     final name = _nameController.text.trim();
     final url = _urlController.text.trim();
     if (name.length > _maxSourceNameLength || url.isEmpty) return false;
@@ -134,6 +136,7 @@ class _VotingConfigSettingsPanelState
   Future<void> _saveEditor() async {
     final source = ref.read(votingConfigSourceProvider).value;
     if (source == null || !_canSaveEditor(source)) return;
+    if (_blockIfVotingSubmissionInProgress()) return;
     final name = _nameController.text.trim();
     final url = _urlController.text.trim();
 
@@ -144,11 +147,11 @@ class _VotingConfigSettingsPanelState
     });
 
     try {
-      await _validateSource(url);
+      final config = await _validateSource(url);
       await ref
           .read(votingConfigSourceProvider.notifier)
           .saveSource(id: _editingSourceId, name: name, sourceUrl: url);
-      await _refreshAndClose();
+      await _refreshAndClose(config: config);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -161,6 +164,7 @@ class _VotingConfigSettingsPanelState
 
   Future<void> _useDefault(VotingConfigSourceState source) async {
     if (_isSubmitting || source.isDefault) return;
+    if (_blockIfVotingSubmissionInProgress()) return;
     setState(() {
       _isSubmitting = true;
       _submitError = null;
@@ -182,6 +186,7 @@ class _VotingConfigSettingsPanelState
 
   Future<void> _useSaved(SavedVotingConfigSource saved) async {
     if (_isSubmitting) return;
+    if (_blockIfVotingSubmissionInProgress()) return;
     setState(() {
       _isSubmitting = true;
       _submitError = null;
@@ -189,11 +194,11 @@ class _VotingConfigSettingsPanelState
     });
 
     try {
-      await _validateSource(saved.sourceUrl);
+      final config = await _validateSource(saved.sourceUrl);
       await ref
           .read(votingConfigSourceProvider.notifier)
           .setCustom(saved.sourceUrl);
-      await _refreshAndClose();
+      await _refreshAndClose(config: config);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -206,6 +211,7 @@ class _VotingConfigSettingsPanelState
 
   Future<void> _deleteSaved(SavedVotingConfigSource saved) async {
     if (_isSubmitting) return;
+    if (_blockIfVotingSubmissionInProgress()) return;
     setState(() {
       _isSubmitting = true;
       _submitError = null;
@@ -246,16 +252,31 @@ class _VotingConfigSettingsPanelState
     }
   }
 
-  Future<void> _validateSource(String input) async {
+  bool _blockIfVotingSubmissionInProgress() {
+    final guards = ref.read(votingSubmissionGuardProvider);
+    if (guards.isEmpty) return false;
+    setState(() {
+      _submitError = guards.first.message;
+      _validationField = null;
+      _isSubmitting = false;
+    });
+    return true;
+  }
+
+  Future<VotingConfig> _validateSource(String input) async {
     final parsed = StaticVotingConfigSource.parse(input);
-    await VotingConfigLoader(
+    return VotingConfigLoader(
       httpClient: ref.read(votingHttpClientProvider),
       staticConfigSource: parsed,
     ).load();
   }
 
-  Future<void> _refreshAndClose() async {
-    await ref.read(votingConfigProvider.notifier).refresh();
+  Future<void> _refreshAndClose({VotingConfig? config}) async {
+    if (config == null) {
+      await ref.read(votingConfigProvider.notifier).refresh();
+    } else {
+      ref.read(votingConfigProvider.notifier).setLoadedConfig(config);
+    }
     await ref.read(votingRoundsProvider.notifier).refresh();
     if (!mounted) return;
     setState(() {
@@ -297,6 +318,9 @@ class _VotingConfigSettingsPanelState
   Widget build(BuildContext context) {
     final colors = context.colors;
     final sourceState = ref.watch(votingConfigSourceProvider);
+    final submissionInProgress = ref
+        .watch(votingSubmissionGuardProvider)
+        .isNotEmpty;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -348,7 +372,7 @@ class _VotingConfigSettingsPanelState
                             sourceUrl: kDefaultStaticVotingConfigSource,
                             isDefault: true,
                             selected: source.isDefault,
-                            onUse: source.isDefault
+                            onUse: source.isDefault || submissionInProgress
                                 ? null
                                 : () => _useDefault(source),
                           ),
@@ -364,15 +388,20 @@ class _VotingConfigSettingsPanelState
                                     saved.sourceUrl,
                                   ),
                               onUse:
-                                  !source.isDefault &&
-                                      _sameSourceUrl(
-                                        source.sourceUrl,
-                                        saved.sourceUrl,
-                                      )
+                                  submissionInProgress ||
+                                      (!source.isDefault &&
+                                          _sameSourceUrl(
+                                            source.sourceUrl,
+                                            saved.sourceUrl,
+                                          ))
                                   ? null
                                   : () => _useSaved(saved),
-                              onEdit: () => _startEdit(saved),
-                              onDelete: () => _deleteSaved(saved),
+                              onEdit: submissionInProgress
+                                  ? null
+                                  : () => _startEdit(saved),
+                              onDelete: submissionInProgress
+                                  ? null
+                                  : () => _deleteSaved(saved),
                             ),
                           ],
                           const SizedBox(height: AppSpacing.sm),
@@ -394,7 +423,9 @@ class _VotingConfigSettingsPanelState
                             )
                           else
                             AppButton(
-                              onPressed: _isSubmitting ? null : _startAdd,
+                              onPressed: _isSubmitting || submissionInProgress
+                                  ? null
+                                  : _startAdd,
                               variant: AppButtonVariant.secondary,
                               minWidth: 220,
                               leading: const AppIcon(AppIcons.addNew),

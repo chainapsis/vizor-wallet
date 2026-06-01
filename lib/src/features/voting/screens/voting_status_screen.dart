@@ -37,6 +37,7 @@ class VotingStatusScreen extends ConsumerStatefulWidget {
 
 class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   bool _startScheduled = false;
+  int _startGeneration = 0;
   VotingSessionKey? _jobKey;
   VotingSessionKey? _confirmationNavigationScheduledFor;
 
@@ -67,20 +68,40 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
   void _scheduleStart() {
     if (_startScheduled) return;
     _startScheduled = true;
+    final generation = ++_startGeneration;
+    final roundId = widget.roundId;
+    final accountUuid = widget.accountUuid;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!_isCurrentStart(generation, roundId, accountUuid)) return;
       unawaited(
         ref
             .read(votingSubmissionJobsProvider.notifier)
-            .start(widget.roundId, accountUuid: widget.accountUuid)
+            .start(roundId, accountUuid: accountUuid)
             .then((key) {
-              if (!mounted || key == null) return;
+              if (!_isCurrentStart(generation, roundId, accountUuid) ||
+                  key == null ||
+                  !_isCurrentRouteKey(key)) {
+                return;
+              }
               setState(() {
                 _jobKey = key;
               });
             }),
       );
     });
+  }
+
+  bool _isCurrentStart(int generation, String roundId, String? accountUuid) {
+    return mounted &&
+        generation == _startGeneration &&
+        widget.roundId == roundId &&
+        widget.accountUuid == accountUuid;
+  }
+
+  bool _isCurrentRouteKey(VotingSessionKey key) {
+    if (!mounted || key.roundId != widget.roundId) return false;
+    final accountUuid = widget.accountUuid;
+    return accountUuid == null || key.accountUuid == accountUuid;
   }
 
   VotingSessionKey? _selectedJobKey() {
@@ -97,7 +118,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
     final key = _selectedJobKey();
     if (key == null) return;
     final signedPczt = await context.push<List<int>>('/voting/keystone/scan');
-    if (!mounted) return;
+    if (!mounted || _selectedJobKey() != key) return;
     if (signedPczt == null || signedPczt.isEmpty) return;
     await ref
         .read(votingSubmissionJobsProvider.notifier)
@@ -128,7 +149,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
         );
       },
     );
-    if (!mounted) return;
+    if (!mounted || _selectedJobKey() != key) return;
     if (confirmed != true) return;
     await ref
         .read(votingSubmissionJobsProvider.notifier)
@@ -417,7 +438,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
       }
       context.go(
         votingSubmissionConfirmedRoute(
-          widget.roundId,
+          key.roundId,
           accountUuid: key.accountUuid,
         ),
       );
