@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/storage/app_secure_store.dart';
-import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../providers/voting/voting_state.dart';
 
 const int _minProposalId = 1;
@@ -66,23 +65,6 @@ class VotingDraftState {
   VotingDraftState clearChoice(int proposalId) {
     final nextChoices = Map<int, int>.from(choices)..remove(proposalId);
     return VotingDraftState(choices: nextChoices);
-  }
-
-  List<rust_voting.DraftVote> toDraftVotes(
-    List<VotingProposalView> proposals, {
-    bool singleShare = false,
-  }) {
-    return [
-      for (final proposal in proposals)
-        if (choices[proposal.id] != null)
-          rust_voting.DraftVote(
-            proposalId: proposal.id,
-            choice: choices[proposal.id]!,
-            numOptions: proposal.options.length,
-            vcTreePosition: BigInt.zero,
-            singleShare: singleShare,
-          ),
-    ];
   }
 }
 
@@ -281,8 +263,13 @@ int? _intFromJson(Map<String, dynamic> json, List<String> keys) {
     final value = json[key];
     if (value == null) continue;
     if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value.toString());
+    if (value is num) {
+      if (value.isFinite && value == value.truncateToDouble()) {
+        return value.toInt();
+      }
+      throw FormatException('$key must be an integer');
+    }
+    return int.parse(value.toString());
   }
   return null;
 }

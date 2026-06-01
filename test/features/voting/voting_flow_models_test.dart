@@ -63,6 +63,23 @@ void main() {
     );
   });
 
+  test('proposal parser rejects fractional proposal ids', () {
+    expect(
+      () => proposalsFromJson({
+        'proposals': [
+          {'proposal_id': 1.9, 'title': 'Fractional'},
+        ],
+      }),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          'proposal_id must be an integer',
+        ),
+      ),
+    );
+  });
+
   test('draft choices can be cleared by proposal id', () {
     final draft = const VotingDraftState()
         .setChoice(1, 0)

@@ -449,7 +449,12 @@ int _intFromJson(Map<String, dynamic> json, List<String> keys) {
     final value = json[key];
     if (value == null) continue;
     if (value is int) return value;
-    if (value is num) return value.toInt();
+    if (value is num) {
+      if (value.isFinite && value == value.truncateToDouble()) {
+        return value.toInt();
+      }
+      throw FormatException('$key must be an integer');
+    }
     return int.parse(value.toString());
   }
   throw FormatException('Missing required int: ${keys.first}');
