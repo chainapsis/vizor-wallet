@@ -75,6 +75,54 @@ void main() {
     );
   });
 
+  test('config provider ignores stale refresh after source changes', () async {
+    const firstSource = 'https://voting-a.example/static-voting-config.json';
+    const secondSource = 'https://voting-b.example/static-voting-config.json';
+    final store = FakeVotingConfigSourceStore(sourceUrl: firstSource);
+    final loads = _GatedVotingConfigLoads({
+      firstSource: _configForVoteServer('https://voting-a.example'),
+      secondSource: _configForVoteServer('https://voting-b.example'),
+    });
+    final container = ProviderContainer(
+      overrides: [
+        votingConfigSourceStoreProvider.overrideWithValue(store),
+        votingConfigLoaderProvider.overrideWith((ref) {
+          final source =
+              ref.watch(votingConfigSourceProvider).value?.sourceUrl ??
+              kDefaultStaticVotingConfigSource;
+          return _GatedVotingConfigLoader(loads, source);
+        }),
+        votingActiveAccountUuidProvider.overrideWithValue(() async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final first = await container.read(votingConfigProvider.future);
+    expect(first.apiBaseUrl, Uri.parse('https://voting-a.example'));
+
+    final staleGate = loads.gateNext(firstSource);
+    final staleRefresh = container
+        .read(votingConfigProvider.notifier)
+        .refresh();
+    await loads.waitForLoadCount(firstSource, 2);
+
+    await container
+        .read(votingConfigSourceProvider.notifier)
+        .setCustom(secondSource);
+    await container.read(votingConfigProvider.notifier).refresh();
+    expect(
+      container.read(votingConfigProvider).value?.apiBaseUrl,
+      Uri.parse('https://voting-b.example'),
+    );
+
+    staleGate.complete();
+    await staleRefresh;
+    expect(
+      container.read(votingConfigProvider).value?.apiBaseUrl,
+      Uri.parse('https://voting-b.example'),
+    );
+  });
+
   test('config source provider persists named saved sources', () async {
     final store = FakeVotingConfigSourceStore();
     final container = _container(
