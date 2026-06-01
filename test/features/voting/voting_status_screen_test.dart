@@ -2455,16 +2455,14 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
-  Future<List<int>> extractPcztSighash({required List<int> pcztBytes}) async {
-    return List<int>.from(pcztBytes);
-  }
-
-  @override
-  Future<List<int>> extractSpendAuthSignatureFromSignedPczt({
+  Future<rust_api.ParsedSignedVotingPczt> parseSignedVotingPczt({
     required List<int> signedPcztBytes,
     required int actionIndex,
   }) async {
-    return [5, actionIndex];
+    return rust_api.ParsedSignedVotingPczt(
+      sighash: Uint8List.fromList(signedPcztBytes),
+      spendAuthSig: Uint8List.fromList([5, actionIndex]),
+    );
   }
 
   @override

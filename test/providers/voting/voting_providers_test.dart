@@ -841,12 +841,12 @@ void main() {
       expect(state.phase, VotingSessionPhase.keystoneSigning);
       expect(state.keystoneScanError, contains('different voting bundle'));
       expect(rust.storedKeystoneSignatures, isEmpty);
-      expect(rust.extractSpendAuthSignatureCalls, 0);
+      expect(rust.parseSignedVotingPcztCalls, 1);
     },
   );
 
   test(
-    'hardware voting rejects duplicate Keystone signature before extraction',
+    'hardware voting rejects duplicate Keystone signature without storing',
     () async {
       final rust = FakeVotingRustApi();
       rust.storedKeystoneSignatures[1] = rust_wire.KeystoneSignatureRecord(
@@ -869,7 +869,7 @@ void main() {
 
       expect(state.phase, VotingSessionPhase.keystoneSigning);
       expect(state.keystoneScanError, contains('already scanned'));
-      expect(rust.extractSpendAuthSignatureCalls, 0);
+      expect(rust.parseSignedVotingPcztCalls, 1);
     },
   );
 
@@ -3932,7 +3932,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final deleteSkippedBundleKeepCounts = <int>[];
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int generateVotingHotkeyCalls = 0;
-  int extractSpendAuthSignatureCalls = 0;
+  int parseSignedVotingPcztCalls = 0;
 
   @override
   Future<rust_round.BundleLayout> setupDelegationBundles({
@@ -4029,17 +4029,15 @@ class FakeVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<List<int>> extractPcztSighash({required List<int> pcztBytes}) async {
-    return List<int>.from(pcztBytes);
-  }
-
-  @override
-  Future<List<int>> extractSpendAuthSignatureFromSignedPczt({
+  Future<rust_api.ParsedSignedVotingPczt> parseSignedVotingPczt({
     required List<int> signedPcztBytes,
     required int actionIndex,
   }) async {
-    extractSpendAuthSignatureCalls++;
-    return [3, actionIndex];
+    parseSignedVotingPcztCalls++;
+    return rust_api.ParsedSignedVotingPczt(
+      sighash: Uint8List.fromList(signedPcztBytes),
+      spendAuthSig: Uint8List.fromList([3, actionIndex]),
+    );
   }
 
   @override

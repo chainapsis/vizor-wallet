@@ -327,6 +327,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  ParsedSignedVotingPczt dco_decode_parsed_signed_voting_pczt(dynamic raw);
+
+  @protected
   ProposalResult dco_decode_proposal_result(dynamic raw);
 
   @protected
@@ -835,6 +838,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  ParsedSignedVotingPczt sse_decode_parsed_signed_voting_pczt(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
@@ -1453,6 +1461,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_parsed_signed_voting_pczt(
+    ParsedSignedVotingPczt self,
     SseSerializer serializer,
   );
 

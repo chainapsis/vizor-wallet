@@ -292,9 +292,7 @@ abstract interface class VotingRustApi {
     required int bundleIndex,
   });
 
-  Future<List<int>> extractPcztSighash({required List<int> pcztBytes});
-
-  Future<List<int>> extractSpendAuthSignatureFromSignedPczt({
+  Future<rust_api.ParsedSignedVotingPczt> parseSignedVotingPczt({
     required List<int> signedPcztBytes,
     required int actionIndex,
   });
@@ -544,16 +542,11 @@ class FrbVotingRustApi implements VotingRustApi {
   }
 
   @override
-  Future<List<int>> extractPcztSighash({required List<int> pcztBytes}) {
-    return rust_api.extractPcztSighash(pcztBytes: pcztBytes);
-  }
-
-  @override
-  Future<List<int>> extractSpendAuthSignatureFromSignedPczt({
+  Future<rust_api.ParsedSignedVotingPczt> parseSignedVotingPczt({
     required List<int> signedPcztBytes,
     required int actionIndex,
   }) {
-    return rust_api.extractSpendAuthSignatureFromSignedPczt(
+    return rust_api.parseSignedVotingPczt(
       signedPcztBytes: signedPcztBytes,
       actionIndex: actionIndex,
     );

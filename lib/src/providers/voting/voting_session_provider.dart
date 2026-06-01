@@ -452,9 +452,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         signatures.addAll(await _loadKeystoneSignatures(context));
       }
 
-      final scannedSighash = await rust.extractPcztSighash(
-        pcztBytes: signedPcztBytes,
+      final parsedPczt = await rust.parseSignedVotingPczt(
+        signedPcztBytes: signedPcztBytes,
+        actionIndex: request.actionIndex,
       );
+      final scannedSighash = parsedPczt.sighash;
       final duplicate = signatures.values.any(
         (record) => _bytesEqual(record.sighash, scannedSighash),
       );
@@ -483,16 +485,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         return;
       }
 
-      final signature = await rust.extractSpendAuthSignatureFromSignedPczt(
-        signedPcztBytes: signedPcztBytes,
-        actionIndex: request.actionIndex,
-      );
       await rust.storeKeystoneSignature(
         dbPath: context.dbPath,
         accountUuid: context.accountUuid,
         roundId: context.round.roundId,
         bundleIndex: request.bundleIndex,
-        sig: signature,
+        sig: parsedPczt.spendAuthSig,
         sighash: scannedSighash,
         rk: request.rk,
       );

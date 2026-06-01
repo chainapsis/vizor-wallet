@@ -13,7 +13,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -218,24 +218,20 @@ Future<KeystoneSigningRequest> buildKeystoneDelegationRequest({
   bundleIndex: bundleIndex,
 );
 
-/// Extract the ZIP-244 sighash from PCZT bytes.
+/// Parse the fields Dart needs from a Keystone-signed voting PCZT.
 ///
 /// # Errors
 ///
-/// Returns an error if `pczt_bytes` cannot be decoded or does not contain a
-/// spend authorization sighash.
-Future<Uint8List> extractPcztSighash({required List<int> pcztBytes}) =>
-    RustLib.instance.api.crateApiVotingExtractPcztSighash(pcztBytes: pcztBytes);
-
-/// Extract a Keystone SpendAuth signature from signed PCZT bytes.
-Future<Uint8List> extractSpendAuthSignatureFromSignedPczt({
+/// Returns an error if the signed PCZT cannot be decoded, does not contain a
+/// spend authorization sighash, or does not contain a SpendAuth signature for
+/// the expected action.
+Future<ParsedSignedVotingPczt> parseSignedVotingPczt({
   required List<int> signedPcztBytes,
   required int actionIndex,
-}) =>
-    RustLib.instance.api.crateApiVotingExtractSpendAuthSignatureFromSignedPczt(
-      signedPcztBytes: signedPcztBytes,
-      actionIndex: actionIndex,
-    );
+}) => RustLib.instance.api.crateApiVotingParseSignedVotingPczt(
+  signedPcztBytes: signedPcztBytes,
+  actionIndex: actionIndex,
+);
 
 /// Persist a Keystone signature for one delegation bundle.
 ///
@@ -764,4 +760,29 @@ class ApiVotingRoundContext {
           sessionJson == other.sessionJson &&
           accountUuid == other.accountUuid &&
           maxRealNotesPerBundle == other.maxRealNotesPerBundle;
+}
+
+/// Parsed fields from a Keystone-signed voting PCZT.
+class ParsedSignedVotingPczt {
+  /// ZIP-244 sighash extracted from the signed PCZT.
+  final Uint8List sighash;
+
+  /// Orchard SpendAuth signature extracted from the signed PCZT.
+  final Uint8List spendAuthSig;
+
+  const ParsedSignedVotingPczt({
+    required this.sighash,
+    required this.spendAuthSig,
+  });
+
+  @override
+  int get hashCode => sighash.hashCode ^ spendAuthSig.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ParsedSignedVotingPczt &&
+          runtimeType == other.runtimeType &&
+          sighash == other.sighash &&
+          spendAuthSig == other.spendAuthSig;
 }

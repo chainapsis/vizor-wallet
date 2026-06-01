@@ -1,11 +1,11 @@
 use std::{panic, sync::Arc};
 
+#[cfg(test)]
+use super::voting_helpers::bundle_policy;
 use super::voting_helpers::{
     delegation_static_inputs, prepare_delegation_bundle_params, resolve_delegation_lwd_inputs,
     seed_from_mnemonic,
 };
-#[cfg(test)]
-use super::voting_helpers::bundle_policy;
 use crate::frb_generated::StreamSink;
 use crate::wallet::{
     keys,
@@ -85,6 +85,15 @@ pub struct ApiVotingRoundContext {
     pub session_json: Option<String>,
     pub account_uuid: String,
     pub max_real_notes_per_bundle: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Parsed fields from a Keystone-signed voting PCZT.
+pub struct ParsedSignedVotingPczt {
+    /// ZIP-244 sighash extracted from the signed PCZT.
+    pub sighash: Vec<u8>,
+    /// Orchard SpendAuth signature extracted from the signed PCZT.
+    pub spend_auth_sig: Vec<u8>,
 }
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
@@ -683,8 +692,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     )
     .await
     .and_then(|bundle| {
-        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle)
-            .map_err(|e| e.to_string())
+        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
     });
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
@@ -728,33 +736,29 @@ pub async fn build_keystone_delegation_request(
         .await
 }
 
-/// Extract the ZIP-244 sighash from PCZT bytes.
+/// Parse the fields Dart needs from a Keystone-signed voting PCZT.
 ///
 /// # Errors
 ///
-/// Returns an error if `pczt_bytes` cannot be decoded or does not contain a
-/// spend authorization sighash.
-pub fn extract_pczt_sighash(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
-    catch(|| {
-        // Decode PCZT and expose its ZIP-244 spend authorization sighash bytes.
-        zcash_voting::delegate::pczt_sighash(&pczt_bytes)
-            .map(|sighash| sighash.to_vec())
-            .map_err(|e| format!("extract_pczt_sighash failed: {e}"))
-    })
-}
-
-/// Extract a Keystone SpendAuth signature from signed PCZT bytes.
-pub fn extract_spend_auth_signature_from_signed_pczt(
+/// Returns an error if the signed PCZT cannot be decoded, does not contain a
+/// spend authorization sighash, or does not contain a SpendAuth signature for
+/// the expected action.
+pub fn parse_signed_voting_pczt(
     signed_pczt_bytes: Vec<u8>,
     action_index: u32,
-) -> Result<Vec<u8>, String> {
+) -> Result<ParsedSignedVotingPczt, String> {
     catch(|| {
-        // Convert FRB index to host index type for extraction helper.
         let action_index =
             usize::try_from(action_index).map_err(|_| "action_index does not fit in usize")?;
-        zcash_voting::delegate::spend_auth_signature(&signed_pczt_bytes, action_index)
-            .map(|sig| sig.to_vec())
-            .map_err(|e| format!("extract_spend_auth_sig failed: {e}"))
+        let sighash = zcash_voting::delegate::pczt_sighash(&signed_pczt_bytes)
+            .map_err(|e| format!("extract_pczt_sighash failed: {e}"))?;
+        let spend_auth_sig =
+            zcash_voting::delegate::spend_auth_signature(&signed_pczt_bytes, action_index)
+                .map_err(|e| format!("extract_spend_auth_sig failed: {e}"))?;
+        Ok(ParsedSignedVotingPczt {
+            sighash: sighash.to_vec(),
+            spend_auth_sig: spend_auth_sig.to_vec(),
+        })
     })
 }
 
@@ -859,8 +863,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     )
     .await
     .and_then(|bundle| {
-        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle)
-            .map_err(|e| e.to_string())
+        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
     });
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
@@ -1096,8 +1099,7 @@ where
     let commitments = commitment_result?;
 
     // Convert internal commitment type into the FRB wire view.
-    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
-        .map_err(|e| e.to_string())
+    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments).map_err(|e| e.to_string())
 }
 
 #[allow(clippy::too_many_arguments)]
