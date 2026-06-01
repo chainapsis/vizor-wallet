@@ -2,6 +2,38 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
+  test('wallet db cleanup paths include main db and voting sidecar files', () {
+    const dbPath = '/tmp/zcash_wallet.db';
+
+    final cleanupPaths = walletDbCleanupPaths(dbPath);
+
+    expect(cleanupPaths, [
+      '/tmp/zcash_wallet.db',
+      '/tmp/zcash_wallet.db-journal',
+      '/tmp/zcash_wallet.db-wal',
+      '/tmp/zcash_wallet.db-shm',
+      '/tmp/zcash_wallet.db.voting',
+      '/tmp/zcash_wallet.db.voting-journal',
+      '/tmp/zcash_wallet.db.voting-wal',
+      '/tmp/zcash_wallet.db.voting-shm',
+    ]);
+  });
+
+  test('wallet db cleanup paths are stable for empty db path', () {
+    final cleanupPaths = walletDbCleanupPaths('');
+
+    expect(cleanupPaths, [
+      '',
+      '-journal',
+      '-wal',
+      '-shm',
+      '.voting',
+      '.voting-journal',
+      '.voting-wal',
+      '.voting-shm',
+    ]);
+  });
+
   test(
     'next active account stays unchanged when removing a non-active account',
     () {
