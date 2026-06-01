@@ -192,6 +192,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
   Widget build(BuildContext context) {
     final notice = _noticeData();
     final rows = _activityRows(context);
+    final showEmptyActivity = !widget.isActivityLoading && rows.isEmpty;
 
     return AppPaneScrollableFill(
       child: Align(
@@ -219,11 +220,14 @@ class _HomePaneState extends ConsumerState<_HomePane> {
                     _HomeNoticeCard(data: notice),
                   ],
                   const SizedBox(height: _homeSectionGap),
-                  _HomeRecentActivityCard(
-                    rows: rows,
-                    isLoading: widget.isActivityLoading,
-                    onTitleTap: () => context.push('/activity'),
-                  ),
+                  if (showEmptyActivity)
+                    const Expanded(child: _HomeEmptyActivityState())
+                  else
+                    _HomeRecentActivityCard(
+                      rows: rows,
+                      isLoading: widget.isActivityLoading,
+                      onTitleTap: () => context.push('/activity'),
+                    ),
                 ],
               ),
             ),
@@ -483,10 +487,9 @@ class _HomeBalanceActions extends StatelessWidget {
         height: _HomeBalanceCard._actionButtonHeight,
         child: _HomeActionButton(
           onPressed: () => context.push('/receive'),
-          variant: AppButtonVariant.secondary,
-          focusRingColor: receiveFocusRingColor,
+          variant: AppButtonVariant.primary,
           iconName: AppIcons.arrowDownCircle,
-          label: 'Receive',
+          label: 'Receive your first ZEC',
         ),
       );
     }
@@ -819,6 +822,83 @@ class _HomeRecentActivityCard extends StatelessWidget {
               ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _HomeEmptyActivityState extends StatelessWidget {
+  const _HomeEmptyActivityState();
+
+  static const _textBlockWidth = 256.0;
+  static const _textBlockHeight = 137.0;
+  static const _bodyWidth = 188.0;
+  static const _illustrationFrameWidth = 230.0;
+  static const _illustrationFrameHeight = 155.0;
+  static const _illustrationWidth = 266.0;
+  static const _illustrationHeight = 207.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: _textBlockWidth,
+            height: _textBlockHeight,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'No activity, yet...',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                SizedBox(
+                  width: _bodyWidth,
+                  child: Text(
+                    'How about running your first ZEC tx?',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          SizedBox(
+            width: _illustrationFrameWidth,
+            height: _illustrationFrameHeight,
+            child: ClipRect(
+              child: OverflowBox(
+                minWidth: 0,
+                minHeight: 0,
+                maxWidth: _illustrationWidth,
+                maxHeight: _illustrationHeight,
+                alignment: Alignment.center,
+                child: Image.asset(
+                  isDark
+                      ? 'assets/illustrations/home_empty_activity_dark.png'
+                      : 'assets/illustrations/home_empty_activity_light.png',
+                  width: _illustrationWidth,
+                  height: _illustrationHeight,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
