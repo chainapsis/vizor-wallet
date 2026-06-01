@@ -1141,6 +1141,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             }
             final commitments = event.commitments;
             if (commitments != null) {
+              _throwIfContextStale(context, 'vote-commitment-submit');
               final vcTreePositions = await _submitVoteCommitments(
                 context,
                 commitments,
