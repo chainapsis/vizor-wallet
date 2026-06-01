@@ -171,6 +171,49 @@ void main() {
     },
   );
 
+  test(
+    'config provider keeps failed refresh over stale load success',
+    () async {
+      const firstSource = 'https://voting-a.example/static-voting-config.json';
+      const secondSource = 'https://voting-b.example/static-voting-config.json';
+      final store = FakeVotingConfigSourceStore(sourceUrl: firstSource);
+      final newerFailure = StateError('replacement source failed');
+      final loads = _GatedVotingConfigLoads({
+        firstSource: _configForVoteServer('https://voting-a.example'),
+      });
+      final container = ProviderContainer(
+        overrides: [
+          votingConfigSourceStoreProvider.overrideWithValue(store),
+          votingConfigLoaderProvider.overrideWith((ref) {
+            final source =
+                ref.watch(votingConfigSourceProvider).value?.sourceUrl ??
+                kDefaultStaticVotingConfigSource;
+            return _GatedVotingConfigLoader(loads, source);
+          }),
+          votingActiveAccountUuidProvider.overrideWithValue(() async => null),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final staleGate = loads.gateNext(firstSource);
+      final staleLoad = container.read(votingConfigProvider.future);
+      await loads.waitForLoadCount(firstSource, 1);
+
+      loads.failNext(secondSource, newerFailure);
+      await container
+          .read(votingConfigSourceProvider.notifier)
+          .setCustom(secondSource);
+      await container.read(votingConfigProvider.notifier).refresh();
+      expect(container.read(votingConfigProvider).hasError, isTrue);
+      expect(container.read(votingConfigProvider).error, newerFailure);
+
+      staleGate.complete();
+      await expectLater(staleLoad, throwsA(same(newerFailure)));
+      expect(container.read(votingConfigProvider).hasError, isTrue);
+      expect(container.read(votingConfigProvider).error, newerFailure);
+    },
+  );
+
   test('config source provider persists named saved sources', () async {
     final store = FakeVotingConfigSourceStore();
     final container = _container(

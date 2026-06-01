@@ -27,13 +27,12 @@ class VotingConfigNotifier extends AsyncNotifier<VotingConfig> {
     try {
       final config = await _load();
       if (!_isCurrentLoad(generation)) {
-        return state.value ?? config;
+        return _staleLoadResult();
       }
       return config;
     } catch (_) {
       if (!_isCurrentLoad(generation)) {
-        final previous = state.value;
-        if (previous != null) return previous;
+        return _staleLoadResult();
       }
       rethrow;
     }
@@ -49,6 +48,16 @@ class VotingConfigNotifier extends AsyncNotifier<VotingConfig> {
 
   bool _isCurrentLoad(int generation) {
     return ref.mounted && generation == _loadGeneration;
+  }
+
+  VotingConfig _staleLoadResult() {
+    final previous = state.value;
+    if (previous != null) return previous;
+    final error = state.error;
+    if (error != null) {
+      Error.throwWithStackTrace(error, state.stackTrace ?? StackTrace.current);
+    }
+    throw StateError('Ignored stale voting config load.');
   }
 
   Future<VotingConfig> _load() async {
