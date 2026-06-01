@@ -739,17 +739,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required List<rust_wire.DraftVote> draftVotes,
     List<int>? allProposalIds,
     Map<int, int>? proposalOptionCounts,
+    String? mnemonic,
   }) {
     return _enqueue(() async {
       final current = await future;
       final context = await _loadContext(_roundId);
       await _waitUntilWalletReadyForVoting(context);
-      final hotkeySeed = await ref
-          .read(votingHotkeyStoreProvider)
-          .readHotkey(
-            accountUuid: context.accountUuid,
-            roundId: context.round.roundId,
-          );
+      final hotkeySeed = await _hotkeyForVoteCasting(
+        context,
+        mnemonic: mnemonic,
+      );
       if (hotkeySeed == null) {
         _setError(
           'Voting hotkey is missing. Delegate this round before casting votes.',
@@ -1243,6 +1242,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       await _scheduleShareTracking(context, refreshedPlan);
     });
+  }
+
+  Future<List<int>?> _hotkeyForVoteCasting(
+    _VotingSessionContext context, {
+    String? mnemonic,
+  }) async {
+    final existing = await _readStoredHotkey(context);
+    if (existing != null) return existing;
+    if (context.isHardwareAccount || mnemonic == null || mnemonic.isEmpty) {
+      return null;
+    }
+    return _ensureHotkey(context, mnemonic: mnemonic);
   }
 
   Future<List<int>> _ensureHotkey(

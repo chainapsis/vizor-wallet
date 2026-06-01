@@ -475,12 +475,14 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         }
         return;
       }
-      if (needsDelegation) {
-        final mnemonic = await ref
+      String? softwareMnemonic;
+      if (!activeSession.isHardwareAccount &&
+          (draftVotes.isNotEmpty || needsDelegation)) {
+        softwareMnemonic = await ref
             .read(accountProvider.notifier)
             .getMnemonicForAccount(key.accountUuid);
         if (!_isCurrentJob(key: key, generation: generation)) return;
-        if (mnemonic == null || mnemonic.isEmpty) {
+        if (softwareMnemonic == null || softwareMnemonic.isEmpty) {
           _failJob(
             key: key,
             generation: generation,
@@ -490,8 +492,12 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
           );
           return;
         }
+      }
+      if (needsDelegation) {
         if (!_isCurrentJob(key: key, generation: generation)) return;
-        await sessionNotifier.delegatePendingBundles(mnemonic: mnemonic);
+        await sessionNotifier.delegatePendingBundles(
+          mnemonic: softwareMnemonic!,
+        );
         if (!_isCurrentJob(key: key, generation: generation)) return;
         final afterDelegation = _sessionForJob(key);
         if (afterDelegation?.phase == VotingSessionPhase.error) {
@@ -520,6 +526,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         intentProposalIds: intentProposalIds,
         proposalOptionCounts: proposalOptionCounts,
         initialSession: afterDelegation ?? activeSession,
+        mnemonic: softwareMnemonic,
       );
     } catch (error) {
       if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -661,6 +668,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required List<int> intentProposalIds,
     required Map<int, int> proposalOptionCounts,
     VotingSessionState? initialSession,
+    String? mnemonic,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     final votePollingSession = _sessionForJob(key) ?? initialSession;
@@ -679,6 +687,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         draftVotes: draftVotes,
         allProposalIds: intentProposalIds,
         proposalOptionCounts: proposalOptionCounts,
+        mnemonic: mnemonic,
       );
     }
     if (!_isCurrentJob(key: key, generation: generation)) return;

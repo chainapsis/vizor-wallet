@@ -1509,47 +1509,54 @@ void main() {
     );
   });
 
-  test('software vote-only submission skips delegation preparation', () async {
-    final rust = FakeVotingRustApi(emitCommitments: true);
-    final roundStatus = roundStatusJson(roundId: kRoundId)
-      ..['proposals'] = [
-        {
-          'id': 7,
-          'title': 'Question',
-          'options': [
-            {'index': 0, 'label': 'No'},
-            {'index': 1, 'label': 'Yes'},
-          ],
-        },
-      ];
-    final http = FakeVotingHttpClient(
-      responses: votingHttpResponses(roundStatus: roundStatus),
-    );
-    final draftPersistence = FakeVotingDraftPersistence();
-    const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
-    await draftPersistence.save(key, const VotingDraftState(choices: {7: 1}));
-    final recoveryApi = FakeVotingRecoveryApi(
-      state: recoveryState(bundleCount: 1),
-    );
-    final container = _sessionContainer(
-      http: http,
-      rust: rust,
-      recoveryApi: recoveryApi,
-      draftPersistence: draftPersistence,
-    );
-    addTearDown(container.dispose);
+  test(
+    'software vote-only submission seeds hotkey without delegation',
+    () async {
+      final rust = FakeVotingRustApi(emitCommitments: true);
+      final hotkeyStore = FakeVotingHotkeyStore(null);
+      final roundStatus = roundStatusJson(roundId: kRoundId)
+        ..['proposals'] = [
+          {
+            'id': 7,
+            'title': 'Question',
+            'options': [
+              {'index': 0, 'label': 'No'},
+              {'index': 1, 'label': 'Yes'},
+            ],
+          },
+        ];
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(roundStatus: roundStatus),
+      );
+      final draftPersistence = FakeVotingDraftPersistence();
+      const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
+      await draftPersistence.save(key, const VotingDraftState(choices: {7: 1}));
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(bundleCount: 1),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+        draftPersistence: draftPersistence,
+        hotkeyStore: hotkeyStore,
+      );
+      addTearDown(container.dispose);
 
-    final startedKey = await container
-        .read(votingSubmissionJobsProvider.notifier)
-        .start(kRoundId);
-    expect(startedKey, key);
-    await _waitForVoteCommitmentKey(rust, '0:7');
+      final startedKey = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, key);
+      await _waitForVoteCommitmentKey(rust, '0:7');
 
-    expect(rust.setupCalls, 0);
-    expect(rust.delegationBundleCalls, isEmpty);
-    expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
-    expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 1);
-  });
+      expect(rust.setupCalls, 0);
+      expect(rust.delegationBundleCalls, isEmpty);
+      expect(rust.deriveHotkeyCalls, 1);
+      expect(hotkeyStore.hotkey, isNotNull);
+      expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
+      expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 1);
+    },
+  );
 
   test(
     'software submission resumes submitted delegation without draft',
@@ -4693,6 +4700,8 @@ class FakeVotingRustApi implements VotingRustApi {
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int generateVotingHotkeyCalls = 0;
   int parseSignedVotingPcztCalls = 0;
+  int deriveHotkeyCalls = 0;
+  int extractSpendAuthSignatureCalls = 0;
 
   @override
   Future<rust_round.BundleLayout> setupDelegationBundles({
@@ -5359,6 +5368,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required String roundId,
     required String network,
   }) async {
+    deriveHotkeyCalls++;
     return [roundId.length, network.length, ...mnemonic.codeUnits.take(2)];
   }
 }
