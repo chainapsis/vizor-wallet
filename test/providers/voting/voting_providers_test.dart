@@ -194,7 +194,21 @@ void main() {
               dynamicConfigJson(),
           '/shielded-vote/v1/rounds': {
             'rounds': [
-              {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+              {
+                'vote_round_id': kRoundId,
+                'title': 'Poll',
+                'status': 'active',
+                'proposals': [
+                  {
+                    'id': 7,
+                    'title': 'Question',
+                    'options': [
+                      {'index': 0, 'label': 'Yes'},
+                      {'index': 1, 'label': 'No'},
+                    ],
+                  },
+                ],
+              },
             ],
           },
           '/shielded-vote/v1/endorsed-rounds/zodl': {
@@ -280,9 +294,12 @@ void main() {
       final roundStatusWithProposals = roundStatusJson(roundId: kRoundId)
         ..['proposals'] = [
           {
-            'proposal_id': 7,
+            'id': 7,
             'title': 'Question',
-            'options': ['Yes', 'No'],
+            'options': [
+              {'index': 0, 'label': 'Yes'},
+              {'index': 1, 'label': 'No'},
+            ],
           },
         ];
       final http = FakeVotingHttpClient(
@@ -458,7 +475,7 @@ void main() {
     final state = await container.read(votingSessionProvider(kRoundId).future);
 
     expect(state.phase, VotingSessionPhase.idle);
-    expect(state.resumePlan?.hasCompletedVoteArtifact, isFalse);
+    expect(state.roundPlan?.completedVoteArtifact, isFalse);
   });
 
   test('PIR mismatch fails before Rust delegation work is called', () async {

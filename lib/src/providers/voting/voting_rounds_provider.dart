@@ -129,13 +129,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     required String accountUuid,
   }) async {
     final recovery = ref.read(votingRecoveryServiceProvider);
-    final resumePlan = await recovery.loadResumePlan(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: round.roundId,
-    );
     final proposalIds = await _proposalIdsForRound(api, round);
-    var hasBlockingRecovery = false;
     rust_voting.RoundPlanView? roundPlan;
     if (proposalIds.isNotEmpty) {
       try {
@@ -145,10 +139,6 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
           roundId: round.roundId,
           proposalIds: proposalIds,
         );
-        hasBlockingRecovery = hasBlockingRoundRecoveryWork(
-          roundPlan: roundPlan,
-          resumePlan: resumePlan,
-        );
       } catch (error) {
         debugPrint(
           '[zcash] Voting: skipped in-progress lookup for round '
@@ -156,24 +146,16 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
         );
       }
     }
-    if (hasBlockingRecovery) {
+    if (hasBlockingRoundRecoveryWork(roundPlan)) {
       return const _RoundListRecoveryState(voted: false, inProgress: true);
     }
-    if (hasCompletedVoteForDisplay(
-      roundPlan: roundPlan,
-      resumePlan: resumePlan,
-    )) {
+    if (hasCompletedVoteForDisplay(roundPlan)) {
       return const _RoundListRecoveryState(voted: true, inProgress: false);
     }
 
     return _RoundListRecoveryState(
       voted: false,
-      inProgress: roundPlan != null
-          ? roundPlan.blockingRecovery ||
-                (roundPlanNeedsDraftSetup(roundPlan) &&
-                    resumePlan.hasPendingWork)
-          : resumePlan.hasPendingWork ||
-                resumePlan.hasBlockingCompletedVoteDisplay,
+      inProgress: roundPlan?.pendingRecovery ?? false,
     );
   }
 

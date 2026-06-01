@@ -135,10 +135,7 @@ class _VotingStatusScreenState extends ConsumerState<VotingStatusScreen> {
 
   bool _hasCompletedSubmission(VotingSessionState? session) {
     if (session == null) return false;
-    return hasCompletedVoteForDisplay(
-      roundPlan: session.roundPlan,
-      resumePlan: session.resumePlan,
-    );
+    return hasCompletedVoteForDisplay(session.roundPlan);
   }
 
   String _messageFromError(Object error) {

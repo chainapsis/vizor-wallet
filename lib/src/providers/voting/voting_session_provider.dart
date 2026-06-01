@@ -80,7 +80,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       round: context.round,
       resumePlan: context.resumePlan,
       roundPlan: context.roundPlan,
-      phase: _phaseForPlans(context.resumePlan, context.roundPlan),
+      phase: _phaseForPlans(context.roundPlan),
     );
     _shareTrackingTimer?.cancel();
     unawaited(_scheduleShareTracking(context, context.resumePlan));
@@ -213,7 +213,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           round: context.round,
           resumePlan: context.resumePlan,
           roundPlan: context.roundPlan,
-          phase: _phaseForPlans(context.resumePlan, context.roundPlan),
+          phase: _phaseForPlans(context.roundPlan),
         ),
       );
       unawaited(_scheduleShareTracking(context, context.resumePlan));
@@ -1844,17 +1844,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
       final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
-      final hasBlockingWork = hasBlockingRoundRecoveryWork(
-        roundPlan: refreshedRoundPlan,
-        resumePlan: refreshedPlan,
-      );
+      final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
       if (!hasBlockingWork) {
         await _clearPersistedDraftChoices(context);
       }
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
-          phase: _phaseForPlans(refreshedPlan, refreshedRoundPlan),
+          phase: _phaseForPlans(refreshedRoundPlan),
           resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
         ),
@@ -2720,40 +2717,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  static VotingSessionPhase _phaseForPlans(
-    VotingResumePlan plan,
-    rust_wire.RoundPlanView? roundPlan,
-  ) {
-    if (roundPlan != null) {
-      switch (roundPlan.primaryAction) {
-        case 'done':
-          return VotingSessionPhase.done;
-        case 'delegate':
-          return VotingSessionPhase.readyToDelegate;
-        case 'vote':
-          return VotingSessionPhase.readyToVote;
-        case 'submit_shares':
-          return VotingSessionPhase.submittingShares;
-      }
-    }
-    return _phaseForResumePlan(plan);
-  }
-
-  static VotingSessionPhase _phaseForResumePlan(VotingResumePlan plan) {
-    if (plan.pendingDelegationBundleIndexes.isNotEmpty ||
-        plan.submittedDelegationBundleIndexes.isNotEmpty) {
-      return VotingSessionPhase.readyToDelegate;
-    }
-    if (plan.pendingVoteSubmissionKeys.isNotEmpty ||
-        plan.submittedVoteConfirmationKeys.isNotEmpty ||
-        plan.incompleteVoteRecoveryKeys.isNotEmpty) {
-      return VotingSessionPhase.readyToVote;
-    }
-    if (plan.hasBlockingShareWork) {
-      return VotingSessionPhase.submittingShares;
-    }
-    if (plan.hasCompletedVoteArtifact) {
-      return VotingSessionPhase.done;
+  static VotingSessionPhase _phaseForPlans(rust_wire.RoundPlanView? roundPlan) {
+    switch (roundPlan?.primaryAction) {
+      case 'done':
+        return VotingSessionPhase.done;
+      case 'delegate':
+        return VotingSessionPhase.readyToDelegate;
+      case 'vote':
+        return VotingSessionPhase.readyToVote;
+      case 'submit_shares':
+        return VotingSessionPhase.submittingShares;
     }
     return VotingSessionPhase.idle;
   }
