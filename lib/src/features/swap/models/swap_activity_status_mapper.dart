@@ -231,9 +231,7 @@ List<SwapStatusDetailRowData> _swapActivityStatusDetails(
         : const <SwapStatusDetailRowData>[];
     return [
       _accountDetailRow(accountDetail),
-      if (terminalRecipientRows.isNotEmpty &&
-          terminalRecipientRows.first.addressBookLabel != null)
-        ...terminalRecipientRows,
+      if (terminalRecipientRows.isNotEmpty) ...terminalRecipientRows,
       if (failed && refundAddress != null && refundAddress.isNotEmpty)
         ..._addressDetailRows(
           label: '$sourceSymbol refunded to',

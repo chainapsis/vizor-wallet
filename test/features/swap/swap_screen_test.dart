@@ -4030,6 +4030,8 @@ void main() {
 
     expect(find.text('Swap completed'), findsOneWidget);
     expect(find.byKey(const ValueKey('swap_final_details')), findsOneWidget);
+    expect(find.text('USDC recipient'), findsOneWidget);
+    expect(find.text('0x5290840 ... 4169ee7'), findsOneWidget);
     expect(find.text('ZEC deposit to'), findsOneWidget);
     expect(find.text('Total fees'), findsOneWidget);
     expect(find.text('0.0000134 ZEC'), findsOneWidget);
