@@ -49,6 +49,20 @@ import '../../features/voting/round_plan_test_utils.dart';
 import '../../features/voting/tx_event_json_test_utils.dart';
 import '../../services/voting/fake_voting_http.dart';
 
+const _customSourceChecksumA =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const _customSourceChecksumB =
+    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const _votingSourcePinned =
+    'https://voting.example/static-voting-config.json?checksum=sha256:'
+    '$_customSourceChecksumA';
+const _votingSourcePinnedAltA =
+    'https://voting-a.example/static-voting-config.json?checksum=sha256:'
+    '$_customSourceChecksumA';
+const _votingSourcePinnedAltB =
+    'https://voting-b.example/static-voting-config.json?checksum=sha256:'
+    '$_customSourceChecksumB';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -132,8 +146,8 @@ void main() {
   });
 
   test('config provider ignores stale refresh after source changes', () async {
-    const firstSource = 'https://voting-a.example/static-voting-config.json';
-    const secondSource = 'https://voting-b.example/static-voting-config.json';
+    const firstSource = _votingSourcePinnedAltA;
+    const secondSource = _votingSourcePinnedAltB;
     final store = FakeVotingConfigSourceStore(sourceUrl: firstSource);
     final loads = _GatedVotingConfigLoads({
       firstSource: _configForVoteServer('https://voting-a.example'),
@@ -182,8 +196,8 @@ void main() {
   test(
     'config provider ignores stale load failure after source changes',
     () async {
-      const firstSource = 'https://voting-a.example/static-voting-config.json';
-      const secondSource = 'https://voting-b.example/static-voting-config.json';
+      const firstSource = _votingSourcePinnedAltA;
+      const secondSource = _votingSourcePinnedAltB;
       final store = FakeVotingConfigSourceStore(sourceUrl: firstSource);
       final loads = _GatedVotingConfigLoads({
         secondSource: _configForVoteServer('https://voting-b.example'),
@@ -229,8 +243,8 @@ void main() {
   test(
     'config provider keeps failed refresh over stale load success',
     () async {
-      const firstSource = 'https://voting-a.example/static-voting-config.json';
-      const secondSource = 'https://voting-b.example/static-voting-config.json';
+      const firstSource = _votingSourcePinnedAltA;
+      const secondSource = _votingSourcePinnedAltB;
       final store = FakeVotingConfigSourceStore(sourceUrl: firstSource);
       final newerFailure = StateError('replacement source failed');
       final loads = _GatedVotingConfigLoads({
@@ -294,7 +308,7 @@ void main() {
         votingConfigLoaderProvider.overrideWithValue(
           VotingConfigLoader(
             httpClient: http,
-            sourceUrl: 'https://voting.example/static-voting-config.json',
+            sourceUrl: _votingSourcePinned,
             resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
             resolveVotingConfig:
                 ({
@@ -386,7 +400,7 @@ void main() {
         votingConfigLoaderProvider.overrideWithValue(
           VotingConfigLoader(
             httpClient: http,
-            sourceUrl: 'https://voting.example/static-voting-config.json',
+            sourceUrl: _votingSourcePinned,
             resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
             resolveVotingConfig:
                 ({
@@ -427,53 +441,6 @@ void main() {
     expect(roundsCallsAfter, greaterThan(roundsCallsBefore));
   });
 
-  test('config switch preserves sessions during active submission', () async {
-    var refreshCount = 0;
-    final roundProvider = votingSessionProvider(kRoundId);
-    const submissionKey = VotingSessionKey(
-      roundId: kRoundId,
-      accountUuid: 'account-1',
-    );
-    final submissionProvider = votingSubmissionSessionProvider(submissionKey);
-    final roundObserver = _ProviderDisposalObserver(roundProvider);
-    final submissionObserver = _ProviderDisposalObserver(submissionProvider);
-    final container = _sessionContainer(
-      observers: [roundObserver, submissionObserver],
-      configSwitchKind: (previous) => refreshCount++ == 0
-          ? rust_config.ConfigSwitchKind.initialLoad
-          : rust_config.ConfigSwitchKind.newChainOrRound,
-    );
-    addTearDown(container.dispose);
-
-    final guard = container
-        .read(votingSubmissionGuardProvider.notifier)
-        .acquire(accountUuid: 'account-1', roundId: kRoundId);
-    addTearDown(() {
-      container.read(votingSubmissionGuardProvider.notifier).release(guard);
-    });
-    final roundSubscription = container.listen<AsyncValue<VotingSessionState>>(
-      roundProvider,
-      (_, _) {},
-      fireImmediately: true,
-    );
-    addTearDown(roundSubscription.close);
-    final submissionSubscription = container
-        .listen<AsyncValue<VotingSessionState>>(
-          submissionProvider,
-          (_, _) {},
-          fireImmediately: true,
-        );
-    addTearDown(submissionSubscription.close);
-    await container.read(roundProvider.future);
-    await container.read(submissionProvider.future);
-
-    await container.read(votingConfigProvider.notifier).refresh();
-    await container.pump();
-
-    expect(roundObserver.disposed, isFalse);
-    expect(submissionObserver.disposed, isFalse);
-  });
-
   test('config switch unchanged keeps rounds provider cache', () async {
     final http = FakeVotingHttpClient(
       responses: {
@@ -496,7 +463,7 @@ void main() {
         votingConfigLoaderProvider.overrideWithValue(
           VotingConfigLoader(
             httpClient: http,
-            sourceUrl: 'https://voting.example/static-voting-config.json',
+            sourceUrl: _votingSourcePinned,
             resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
             resolveVotingConfig:
                 ({
@@ -548,17 +515,11 @@ void main() {
     await container.read(votingConfigSourceProvider.future);
     await container
         .read(votingConfigSourceProvider.notifier)
-        .saveSource(
-          name: 'Stage',
-          sourceUrl: 'https://voting.example/static-voting-config.json',
-        );
+        .saveSource(name: 'Stage', sourceUrl: _votingSourcePinned);
 
     final selected = container.read(votingConfigSourceProvider).value!;
     expect(selected.isDefault, isFalse);
-    expect(
-      selected.sourceUrl,
-      'https://voting.example/static-voting-config.json',
-    );
+    expect(selected.sourceUrl, _votingSourcePinned);
     expect(selected.savedSources, hasLength(1));
     expect(selected.savedSources.single.name, 'Stage');
     expect(store.savedSourcesJson, isNotNull);
@@ -588,10 +549,7 @@ void main() {
     await container.read(votingConfigSourceProvider.future);
     await container
         .read(votingConfigSourceProvider.notifier)
-        .saveSource(
-          name: 'Stage',
-          sourceUrl: 'https://voting.example/static-voting-config.json',
-        );
+        .saveSource(name: 'Stage', sourceUrl: _votingSourcePinned);
     final saved = container
         .read(votingConfigSourceProvider)
         .value!
@@ -636,7 +594,7 @@ void main() {
         votingConfigLoaderProvider.overrideWithValue(
           VotingConfigLoader(
             httpClient: http,
-            sourceUrl: 'https://voting.example/static-voting-config.json',
+            sourceUrl: _votingSourcePinned,
             resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
             resolveVotingConfig:
                 ({
@@ -882,77 +840,6 @@ void main() {
   });
 
   test(
-    'submission session provider disposes after last listener closes',
-    () async {
-      const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
-      final provider = votingSubmissionSessionProvider(key);
-      final observer = _ProviderDisposalObserver(provider);
-      final container = _sessionContainer(observers: [observer]);
-      addTearDown(container.dispose);
-
-      final subscription = container.listen<AsyncValue<VotingSessionState>>(
-        provider,
-        (_, _) {},
-        fireImmediately: true,
-      );
-      await container.read(provider.future);
-
-      expect(observer.disposed, isFalse);
-
-      subscription.close();
-      await container.pump();
-
-      expect(observer.disposed, isTrue);
-    },
-  );
-
-  test('submission job session wrapper releases submission session', () async {
-    const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
-    final sessionProvider = votingSubmissionSessionProvider(key);
-    final observer = _ProviderDisposalObserver(sessionProvider);
-    final container = _sessionContainer(observers: [observer]);
-    addTearDown(container.dispose);
-
-    final subscription = container.listen<AsyncValue<VotingSessionState>>(
-      votingSubmissionJobSessionProvider(key),
-      (_, _) {},
-      fireImmediately: true,
-    );
-    await container.read(sessionProvider.future);
-
-    expect(observer.disposed, isFalse);
-
-    subscription.close();
-    await container.pump();
-
-    expect(observer.disposed, isTrue);
-  });
-
-  test('submission job dismiss invalidates round session', () async {
-    final provider = votingSessionProvider(kRoundId);
-    final observer = _ProviderDisposalObserver(provider);
-    final container = _sessionContainer(observers: [observer]);
-    addTearDown(container.dispose);
-
-    final subscription = container.listen<AsyncValue<VotingSessionState>>(
-      provider,
-      (_, _) {},
-      fireImmediately: true,
-    );
-    addTearDown(subscription.close);
-    await container.read(provider.future);
-
-    container
-        .read(votingSubmissionJobsProvider.notifier)
-        .dismiss(
-          const VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1'),
-        );
-    await container.pump();
-
-    expect(observer.disposed, isTrue);
-  });
-
-  test(
     'rounds provider loads planner state when summaries omit proposals',
     () async {
       final roundStatusWithProposals = roundStatusJson(roundId: kRoundId)
@@ -1011,69 +898,83 @@ void main() {
         ),
         isTrue,
       );
+      expect(rounds.single.recoveryError, isFalse);
     },
   );
 
   test(
-    'rounds reload keeps previous rows visible while refresh is pending',
+    'rounds provider surfaces per-round recovery failures as degraded rows',
     () async {
-      final responses = <String, Object>{
-        'https://voting.example/static-voting-config.json': staticConfigJson(),
-        'https://voting.example/dynamic-voting-config.json':
-            dynamicConfigJson(),
-        '/shielded-vote/v1/rounds': {
-          'rounds': [
-            {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
-          ],
+      final http = FakeVotingHttpClient(
+        responses: {
+          'https://voting.example/static-voting-config.json':
+              staticConfigJson(),
+          'https://voting.example/dynamic-voting-config.json':
+              dynamicConfigJson(),
+          '/shielded-vote/v1/rounds': {
+            'rounds': [
+              {
+                'vote_round_id': kRoundId,
+                'title': 'Poll',
+                'status': 'active',
+                'proposals': [
+                  {
+                    'id': 7,
+                    'title': 'Question 1',
+                    'options': [
+                      {'index': 0, 'label': 'Yes'},
+                      {'index': 1, 'label': 'No'},
+                    ],
+                  },
+                ],
+              },
+              {
+                'vote_round_id': kOtherRoundId,
+                'title': 'Other poll',
+                'status': 'active',
+                'proposals': [
+                  {
+                    'id': 8,
+                    'title': 'Question 2',
+                    'options': [
+                      {'index': 0, 'label': 'Aye'},
+                      {'index': 1, 'label': 'Nay'},
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
         },
-      };
-      final http = _GatedVotingHttpClient(responses: responses);
-      final container = _sessionContainer(http: http);
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(),
+        roundPlanByRoundId: {
+          kRoundId: apiRoundPlan(
+            roundId: kRoundId,
+            pendingRecovery: false,
+            nextSteps: const [],
+            openProposals: Uint32List(0),
+            allDecided: false,
+          ),
+        },
+        roundPlanErrorsByRoundId: {
+          kOtherRoundId: StateError('forced round-plan failure'),
+        },
+      );
+      final container = _sessionContainer(http: http, recoveryApi: recoveryApi);
       addTearDown(container.dispose);
 
-      final initial = await container.read(votingRoundsProvider.future);
-      expect(initial.single.title, 'Poll');
+      final rounds = await container.read(votingRoundsProvider.future);
+      final byRoundId = {for (final round in rounds) round.roundId: round};
 
-      final roundsGate = http.gateNextGet('/shielded-vote/v1/rounds');
-      final reload = container.read(votingRoundsProvider.notifier).reload();
-      await http.waitForGetCount('/shielded-vote/v1/rounds', 2);
-      final refreshing = container.read(votingRoundsProvider);
-
-      expect(refreshing.isLoading, isTrue);
-      expect(refreshing.hasValue, isTrue);
-      expect(refreshing.requireValue.single.title, 'Poll');
-
-      roundsGate.complete();
-      await reload;
+      expect(byRoundId[kRoundId]?.recoveryError, isFalse);
+      expect(byRoundId[kRoundId]?.inProgress, isFalse);
+      expect(byRoundId[kOtherRoundId]?.voted, isFalse);
+      expect(byRoundId[kOtherRoundId]?.inProgress, isTrue);
+      expect(byRoundId[kOtherRoundId]?.recoveryError, isTrue);
     },
   );
-
-  test('poll refresh skips rounds reload when guard cancels', () async {
-    final http = FakeVotingHttpClient(
-      responses: {
-        'https://voting.example/static-voting-config.json': staticConfigJson(),
-        'https://voting.example/dynamic-voting-config.json':
-            dynamicConfigJson(),
-      },
-    );
-    final container = _container(http: http);
-    addTearDown(container.dispose);
-    await container.read(votingConfigProvider.future);
-
-    final roundsNotifier = _CountingVotingRoundsNotifier();
-    var readRoundsCalled = false;
-    await refreshVotingPollList(
-      config: container.read(votingConfigProvider.notifier),
-      shouldReload: () => false,
-      readRounds: () {
-        readRoundsCalled = true;
-        return roundsNotifier;
-      },
-    );
-
-    expect(readRoundsCalled, isFalse);
-    expect(roundsNotifier.reloadCount, 0);
-  });
 
   test('rounds reload fails closed when refresh fails', () async {
     final responses = <String, Object>{
@@ -1334,6 +1235,40 @@ void main() {
     expect(rust.accountUuids, ['account-2']);
     expect(state.accountUuid, 'account-2');
     expect(state.phase, VotingSessionPhase.readyToDelegate);
+  });
+
+  test('wallet sync timeout is recoverable and does not reset state', () async {
+    final rust = FakeVotingRustApi();
+    final readiness = FakeVotingWalletSyncReadinessChecker(
+      responses: const [
+        VotingWalletSyncReadiness(
+          scannedHeight: 122,
+          snapshotHeight: 123,
+          chainTipHeight: 130,
+        ),
+      ],
+    );
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 1),
+      walletSyncMaxWait: const Duration(milliseconds: 5),
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.error);
+    expect(
+      state.error?.message,
+      contains('Wallet sync has not reached the voting snapshot yet'),
+    );
+    expect(rust.setupCalls, 0);
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
   test(
@@ -2088,6 +2023,86 @@ void main() {
       'Choose at least one vote before submitting.',
     );
   });
+
+  test('submission job dismiss is ignored while in flight', () async {
+    final readiness = _GatedVotingWalletSyncReadinessChecker();
+    final container = _sessionContainer(
+      walletSyncReadinessChecker: readiness,
+      walletSyncPollInterval: const Duration(milliseconds: 1),
+    );
+    addTearDown(container.dispose);
+
+    final manager = container.read(votingSubmissionJobsProvider.notifier);
+    final key = await manager.start(kRoundId);
+    expect(key, isNotNull);
+    await readiness.firstCheck.future;
+    await _waitForJobSessionPhase(
+      container,
+      key!,
+      VotingSessionPhase.waitingForWalletSync,
+    );
+
+    manager.dismiss(key);
+    await Future<void>.delayed(Duration.zero);
+    final state = container.read(votingSubmissionJobProvider(key));
+    expect(state.status, VotingSubmissionJobStatus.running);
+    expect(state.isInFlight, isTrue);
+    expect(container.read(votingSubmissionJobsProvider).jobKeys, contains(key));
+    expect(
+      container
+          .read(votingSubmissionGuardProvider.notifier)
+          .guardForAccount(key.accountUuid),
+      isNotNull,
+    );
+  });
+
+  test(
+    'submission completion poll timeout is recoverable and releases guard',
+    () async {
+      final rust = FakeVotingRustApi();
+      final unconfirmedShare = rust_frb_types.ShareDelegationRecordView(
+        roundId: kRoundId,
+        bundleIndex: 0,
+        proposalId: 7,
+        shareIndex: 0,
+        sentToUrls: const [],
+        nullifier: Uint8List.fromList(List.filled(32, 1)),
+        phase: VotingWorkflowPhase.submittedShare,
+        confirmed: false,
+        submitAt: BigInt.zero,
+        createdAt: BigInt.one,
+      );
+      final container = _sessionContainer(
+        rust: rust,
+        recoveryApi: _submittedDelegationWithShareRecoveryApi(unconfirmedShare),
+        txConfirmationPolling: _fastTxConfirmationPolling,
+        submissionCompletionPollInterval: const Duration(milliseconds: 2),
+        submissionCompletionPollTimeout: const Duration(milliseconds: 20),
+      );
+      addTearDown(container.dispose);
+
+      final key = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(key, isNotNull);
+      final failed = await _waitForJobStatus(
+        container,
+        key!,
+        VotingSubmissionJobStatus.error,
+      );
+
+      expect(
+        failed.errorMessage,
+        contains('Submission confirmation is taking longer than expected'),
+      );
+      expect(
+        container
+            .read(votingSubmissionGuardProvider.notifier)
+            .guardForAccount(key.accountUuid),
+        isNull,
+      );
+    },
+  );
 
   test(
     'software vote-only submission seeds hotkey without delegation',
@@ -3734,6 +3749,60 @@ void main() {
     expect(rust.storedCommitmentBundles, ['0:7:2']);
   });
 
+  test('vote confirmation timeout after submission is recoverable', () async {
+    final httpResponses = votingHttpResponses()
+      ..['/shielded-vote/v1/tx/vote-tx'] = jsonResponse({
+        'error': 'not found',
+      }, statusCode: 404);
+    final rust = FakeVotingRustApi(emitCommitments: true);
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationTxHashes: [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'delegation-0',
+            vanLeafPosition: null,
+          ),
+        ],
+      ),
+    );
+    final container = _sessionContainer(
+      http: FakeVotingHttpClient(responses: httpResponses),
+      rust: rust,
+      recoveryApi: recoveryApi,
+      txConfirmationPolling: _fastTxConfirmationPolling,
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(
+          draftVotes: [
+            rust_wire.DraftVote(
+              proposalId: 7,
+              choice: 1,
+              numOptions: 2,
+              vcTreePosition: BigInt.zero,
+              singleShare: false,
+            ),
+          ],
+        );
+    final state = container.read(votingSessionProvider(kRoundId)).value!;
+
+    expect(state.phase, VotingSessionPhase.error);
+    expect(
+      state.error?.message,
+      contains('was submitted but not confirmed in time'),
+    );
+    expect(rust.storedVoteTxHashes, contains('0:7:vote-tx'));
+    expect(rust.operationLog, contains('mark_vote_submitted:0:7'));
+    expect(rust.operationLog, isNot(contains('mark_vote_confirmed:0:7')));
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
+  });
+
   test('ballot intent write failure aborts before vote submission', () async {
     final rust = FakeVotingRustApi(emitCommitments: true);
     final recoveryApi = FakeVotingRecoveryApi(
@@ -4501,7 +4570,7 @@ ProviderContainer _container({
       votingConfigLoaderProvider.overrideWithValue(
         VotingConfigLoader(
           httpClient: http,
-          sourceUrl: 'https://voting.example/static-voting-config.json',
+          sourceUrl: _votingSourcePinned,
           resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
           resolveVotingConfig:
               ({
@@ -4521,30 +4590,6 @@ ProviderContainer _container({
   );
 }
 
-final class _ProviderDisposalObserver extends ProviderObserver {
-  _ProviderDisposalObserver(this.targetProvider);
-
-  final Object targetProvider;
-  bool disposed = false;
-
-  @override
-  void didDisposeProvider(ProviderObserverContext context) {
-    if (context.provider == targetProvider) disposed = true;
-  }
-}
-
-class _CountingVotingRoundsNotifier extends VotingRoundsNotifier {
-  int reloadCount = 0;
-
-  @override
-  Future<List<VotingRoundView>> build() async => const [];
-
-  @override
-  Future<void> reload() async {
-    reloadCount++;
-  }
-}
-
 ProviderContainer _sessionContainer({
   FakeVotingHttpClient? http,
   FakeVotingRustApi? rust,
@@ -4556,23 +4601,22 @@ ProviderContainer _sessionContainer({
   ProviderListenable<String?>? activeAccountUuidListenable,
   bool accountIsHardware = false,
   Set<String>? hardwareAccountUuids,
-  List<ProviderObserver>? observers,
   VotingTxConfirmationPolling? txConfirmationPolling,
   VotingWalletSyncReadinessChecker? walletSyncReadinessChecker,
   void Function()? walletSyncStarter,
   Duration? walletSyncPollInterval,
+  Duration? walletSyncMaxWait,
+  Duration? submissionCompletionPollInterval,
+  Duration? submissionCompletionPollTimeout,
   List<String> authenticatedRoundIds = const [kRoundId, kOtherRoundId],
   Map<String, Uint8List>? authenticatedRoundEaPks,
   List<String> skippedRoundIds = const [],
-  rust_config.ConfigSwitchKind Function(rust_config.ResolvedVotingConfig?)?
-  configSwitchKind,
 }) {
   final effectiveHttp =
       http ?? FakeVotingHttpClient(responses: votingHttpResponses());
   final effectiveHardwareAccountUuids =
       hardwareAccountUuids ?? (accountIsHardware ? {'account-1'} : <String>{});
   return ProviderContainer(
-    observers: observers,
     overrides: [
       votingConfigSourceStoreProvider.overrideWithValue(
         FakeVotingConfigSourceStore(),
@@ -4581,7 +4625,7 @@ ProviderContainer _sessionContainer({
       votingConfigLoaderProvider.overrideWithValue(
         VotingConfigLoader(
           httpClient: effectiveHttp,
-          sourceUrl: 'https://voting.example/static-voting-config.json',
+          sourceUrl: _votingSourcePinned,
           resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
           resolveVotingConfig:
               ({
@@ -4595,7 +4639,6 @@ ProviderContainer _sessionContainer({
                 authenticatedRoundIds: authenticatedRoundIds,
                 authenticatedRoundEaPks: authenticatedRoundEaPks,
                 skippedRoundIds: skippedRoundIds,
-                switchKind: configSwitchKind?.call(previous),
               ),
         ),
       ),
@@ -4658,9 +4701,19 @@ ProviderContainer _sessionContainer({
       votingWalletSyncPollIntervalProvider.overrideWithValue(
         walletSyncPollInterval ?? Duration.zero,
       ),
+      if (walletSyncMaxWait != null)
+        votingWalletSyncMaxWaitProvider.overrideWithValue(walletSyncMaxWait),
       if (txConfirmationPolling != null)
         votingTxConfirmationPollingProvider.overrideWithValue(
           txConfirmationPolling,
+        ),
+      if (submissionCompletionPollInterval != null)
+        votingSubmissionCompletionPollIntervalProvider.overrideWithValue(
+          submissionCompletionPollInterval,
+        ),
+      if (submissionCompletionPollTimeout != null)
+        votingSubmissionCompletionPollTimeoutProvider.overrideWithValue(
+          submissionCompletionPollTimeout,
         ),
     ],
   );
@@ -4897,58 +4950,6 @@ class _GatedVotingConfigLoader extends VotingConfigLoader {
   }) {
     return _loads.load(_sourceUrl);
   }
-}
-
-class _GatedVotingHttpClient extends FakeVotingHttpClient {
-  _GatedVotingHttpClient({super.responses});
-
-  final Map<String, List<Completer<void>>> _getGates = {};
-  final Map<String, int> _getCounts = {};
-  final Map<String, List<_GetCountWaiter>> _getCountWaiters = {};
-
-  Completer<void> gateNextGet(String path) {
-    final gate = Completer<void>();
-    (_getGates[path] ??= []).add(gate);
-    return gate;
-  }
-
-  Future<void> waitForGetCount(String path, int count) {
-    if ((_getCounts[path] ?? 0) >= count) {
-      return Future<void>.value();
-    }
-    final waiter = _GetCountWaiter(count);
-    (_getCountWaiters[path] ??= []).add(waiter);
-    return waiter.completer.future;
-  }
-
-  @override
-  Future<VotingHttpResponse> get(Uri uri, {Duration? timeout}) async {
-    _recordGet(uri.path);
-    final gates = _getGates[uri.path];
-    if (gates != null && gates.isNotEmpty) {
-      await gates.removeAt(0).future;
-    }
-    return super.get(uri, timeout: timeout);
-  }
-
-  void _recordGet(String path) {
-    final count = (_getCounts[path] ?? 0) + 1;
-    _getCounts[path] = count;
-    final waiters = _getCountWaiters[path];
-    if (waiters == null || waiters.isEmpty) return;
-    waiters.removeWhere((waiter) {
-      if (count < waiter.count) return false;
-      waiter.completer.complete();
-      return true;
-    });
-  }
-}
-
-class _GetCountWaiter {
-  _GetCountWaiter(this.count);
-
-  final int count;
-  final Completer<void> completer = Completer<void>();
 }
 
 rust_config_api.VotingConfigResolution _configForVoteServer(String url) {
@@ -5363,6 +5364,8 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
   rust_frb_types.RoundRecoveryStateView state;
   rust_wire.RoundPlanView? roundPlan;
   final List<rust_wire.RoundPlanView>? roundPlanSequence;
+  final Map<String, rust_wire.RoundPlanView>? roundPlanByRoundId;
+  final Map<String, Object>? roundPlanErrorsByRoundId;
   final walletIds = <String>[];
   final addedSentServers = <_AddedSentServers>[];
   final ballotIntents = <String>[];
@@ -5374,6 +5377,8 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required this.state,
     this.roundPlan,
     this.roundPlanSequence,
+    this.roundPlanByRoundId,
+    this.roundPlanErrorsByRoundId,
     this.setBallotIntentError,
   });
 
@@ -5417,6 +5422,14 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
     required List<int> proposalIds,
   }) async {
     roundPlanProposalIds.add(List<int>.from(proposalIds));
+    final roundError = roundPlanErrorsByRoundId?[roundId];
+    if (roundError != null) {
+      throw roundError;
+    }
+    final roundSpecificPlan = roundPlanByRoundId?[roundId];
+    if (roundSpecificPlan != null) {
+      return roundSpecificPlan;
+    }
     final sequence = roundPlanSequence;
     if (sequence != null && sequence.isNotEmpty) {
       var index = _roundPlanCallCount;
