@@ -1005,34 +1005,39 @@ pub fn generate_van_witness(
     })
 }
 
-/// Clear process-local voting state for a wallet or round.
+/// Clear process-local vote-tree sync state for a wallet or round.
 ///
-/// Passing a non-empty round ID clears round-scoped caches only. Passing `None`
-/// or an empty round ID also drops the cached vote-tree client for the wallet.
-/// This does not abort in-flight proof or vote work already running on worker
-/// threads.
+/// Passing a non-empty round ID clears only that round's cached vote-tree sync
+/// state by calling `zcash_voting::precompute::reset_vote_tree(db, round_id)`.
+/// Passing `None` or an empty round ID performs account-wide cleanup with
+/// `zcash_voting::precompute::reset_vote_tree(db, "")`.
+///
+/// This does not delete durable recovery rows or abort in-flight proof/vote
+/// work already running on worker threads.
 pub fn reset_voting_session_state(
     db_path: String,
     account_uuid: String,
     round_id: Option<String>,
 ) -> Result<(), String> {
     catch(|| {
-        // Empty/None round_id means clear account-wide cached vote tree state.
-        let account_wide = round_id.as_deref().map(str::is_empty).unwrap_or(true);
-        let tree_count = if account_wide {
-            let db = db::open_voting_db(&db_path, &account_uuid)?;
-            zcash_voting::precompute::reset_vote_tree(&db, "")
-                .map_err(|e| format!("clear_tree_sync_session failed: {e}"))?;
-            1
+        let scoped_round_id = round_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .unwrap_or("");
+        let reset_scope = if scoped_round_id.is_empty() {
+            "account"
         } else {
-            0
+            "round"
         };
+        let db = db::open_voting_db(&db_path, &account_uuid)?;
+        zcash_voting::precompute::reset_vote_tree(&db, scoped_round_id)
+            .map_err(|e| format!("reset_vote_tree failed: {e}"))?;
         log::info!(
             "voting: reset process-local session state \
-             (account_uuid={}, round_id={:?}, tree_entries={})",
+             (account_uuid={}, scope={}, round_id={:?})",
             account_uuid,
-            round_id,
-            tree_count
+            reset_scope,
+            round_id
         );
         Ok(())
     })
@@ -1409,8 +1414,8 @@ pub fn resolve_voting_config(
     dynamic_bytes: Vec<u8>,
     previous: Option<ResolvedVotingConfig>,
 ) -> Result<VotingConfigResolution, String> {
-    let resolved_static =
-        config::resolve_static_voting_config(&source, &static_bytes).map_err(|error| error.to_string())?;
+    let resolved_static = config::resolve_static_voting_config(&source, &static_bytes)
+        .map_err(|error| error.to_string())?;
     let next = config::resolve_dynamic_voting_config(
         resolved_static,
         &dynamic_bytes,
@@ -2185,7 +2190,7 @@ mod tests {
     }
 
     #[test]
-    fn reset_voting_session_state_with_round_preserves_tree_sync() {
+    fn reset_voting_session_state_with_round_drops_target_tree_sync() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let account_uuid = "wallet-api-round-reset";
@@ -2210,15 +2215,79 @@ mod tests {
         )
         .unwrap();
 
-        let witness = generate_van_witness(
+        let err = generate_van_witness(
             db_path.to_str().unwrap().to_string(),
             account_uuid.to_string(),
             ROUND_ID.to_string(),
             0,
             height,
         )
+        .unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn reset_voting_session_state_with_round_keeps_other_round_tree_sync() {
+        const OTHER_ROUND_ID: &str =
+            "0000000000000000000000000000000000000000000000000000000000000002";
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("voting.sqlite");
+        let account_uuid = "wallet-api-round-scope-reset";
+        let db = db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap();
+        db.init_round(&test_api_round_params(), None).unwrap();
+        let mut other_round_params = test_api_round_params();
+        other_round_params.vote_round_id = OTHER_ROUND_ID.to_string();
+        db.init_round(&other_round_params, None).unwrap();
+        db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
+        db.store_van_position(ROUND_ID, 0, 0).unwrap();
+        db.ensure_bundles(OTHER_ROUND_ID, &[test_note_info(0)])
+            .unwrap();
+        db.store_van_position(OTHER_ROUND_ID, 0, 0).unwrap();
+
+        let server_round_one = start_tree_server(1, vec![fp_one_base64()], 3);
+        let round_one_height = sync_vote_tree(
+            db_path.to_str().unwrap().to_string(),
+            account_uuid.to_string(),
+            ROUND_ID.to_string(),
+            server_round_one,
+        )
         .unwrap();
-        assert_eq!(witness.position, 0);
+
+        let server_round_two = start_tree_server(1, vec![fp_one_base64()], 3);
+        let round_two_height = sync_vote_tree(
+            db_path.to_str().unwrap().to_string(),
+            account_uuid.to_string(),
+            OTHER_ROUND_ID.to_string(),
+            server_round_two,
+        )
+        .unwrap();
+
+        reset_voting_session_state(
+            db_path.to_str().unwrap().to_string(),
+            account_uuid.to_string(),
+            Some(ROUND_ID.to_string()),
+        )
+        .unwrap();
+
+        let round_one_err = generate_van_witness(
+            db_path.to_str().unwrap().to_string(),
+            account_uuid.to_string(),
+            ROUND_ID.to_string(),
+            0,
+            round_one_height,
+        )
+        .unwrap_err();
+        assert!(!round_one_err.is_empty());
+
+        let round_two_witness = generate_van_witness(
+            db_path.to_str().unwrap().to_string(),
+            account_uuid.to_string(),
+            OTHER_ROUND_ID.to_string(),
+            0,
+            round_two_height,
+        )
+        .unwrap();
+        assert_eq!(round_two_witness.position, 0);
     }
 
     #[test]

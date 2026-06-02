@@ -76,19 +76,18 @@ wallet DB path plus the session account UUID where applicable.
 ### Reset Semantics
 
 `reset_voting_session_state(db_path, account_uuid, round_id)` clears only
-process-local state. It does not delete durable recovery rows, signed artifacts,
-transaction hashes, or share history, and it does not abort in-flight proof or
-vote jobs already running on worker threads.
+process-local vote-tree sync state. It does not delete durable recovery rows,
+signed artifacts, transaction hashes, or share history, and it does not abort
+in-flight proof or vote jobs already running on worker threads.
 
-- A non-empty `round_id` clears round-scoped caches only.
-- `None` or an empty `round_id` is an account-wide reset and additionally drops
-  the cached vote-tree client by calling
-  `zcash_voting::precompute::reset_vote_tree`.
+- A non-empty `round_id` performs round-scoped cleanup via
+  `zcash_voting::precompute::reset_vote_tree(db, round_id)`.
+- `None` or an empty `round_id` is an account-wide reset via
+  `zcash_voting::precompute::reset_vote_tree(db, "")`.
 
 Vote-tree sync and reset are owned by the crate
 (`zcash_voting::precompute::{sync_vote_tree, reset_vote_tree}`); Vizor does not
-maintain its own tree-sync registry. The tree client is account/DB scoped, not
-round scoped, so a round-scoped reset must not drop it.
+maintain its own tree-sync registry.
 
 Account-wide reset runs when switching away from the active account, removing an
 account, resetting the wallet, or locking/signing out. These lifecycle

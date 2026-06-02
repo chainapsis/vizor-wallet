@@ -422,12 +422,13 @@ Future<VanWitness> generateVanWitness({
   anchorHeight: anchorHeight,
 );
 
-/// Clear process-local voting state for a wallet or round.
+/// Clear process-local vote-tree sync state for a wallet or round.
 ///
-/// Passing a non-empty round ID clears round-scoped caches only. Passing `None`
-/// or an empty round ID also drops the cached vote-tree client for the wallet.
-/// This does not abort in-flight proof or vote work already running on worker
-/// threads.
+/// Passing a non-empty round ID clears only that round's cached vote-tree sync
+/// state. Passing `None` or an empty round ID performs account-wide cleanup.
+///
+/// This does not delete durable recovery rows or abort in-flight proof/vote
+/// work already running on worker threads.
 Future<void> resetVotingSessionState({
   required String dbPath,
   required String accountUuid,
