@@ -10,6 +10,7 @@ void main() {
   const sourceB =
       'https://voting.example/static-b.json?checksum=sha256:'
       'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const sourceWithoutChecksum = 'https://voting.example/static.json';
 
   test('loads stored source and filters invalid saved sources', () async {
     final store = FakeVotingConfigSourceStore(
@@ -75,6 +76,57 @@ void main() {
     expect(state.savedSources.single.name, 'Demo');
     expect(store.sourceUrl, sourceA);
     expect(store.savedSourcesJson, contains(sourceA));
+  });
+
+  test('set custom accepts source without checksum pin', () async {
+    final store = FakeVotingConfigSourceStore();
+    final container = _container(store);
+    addTearDown(container.dispose);
+    await container.read(votingConfigSourceProvider.future);
+
+    await container
+        .read(votingConfigSourceProvider.notifier)
+        .setCustom(sourceWithoutChecksum);
+
+    final state = container.read(votingConfigSourceProvider).value!;
+    expect(state.sourceUrl, sourceWithoutChecksum);
+    expect(state.isDefault, isFalse);
+    expect(store.sourceUrl, sourceWithoutChecksum);
+  });
+
+  test('stored custom source without checksum stays active', () async {
+    final store = FakeVotingConfigSourceStore(
+      sourceUrl: sourceWithoutChecksum,
+      savedSourcesJson:
+          '''
+        [
+          {"id":"a","name":"Alpha","sourceUrl":"$sourceA"}
+        ]
+      ''',
+    );
+    final container = _container(store);
+    addTearDown(container.dispose);
+
+    final state = await container.read(votingConfigSourceProvider.future);
+    expect(state.sourceUrl, sourceWithoutChecksum);
+    expect(state.isDefault, isFalse);
+    expect(store.sourceUrl, sourceWithoutChecksum);
+  });
+
+  test('set custom still rejects malformed checksum when provided', () async {
+    final store = FakeVotingConfigSourceStore();
+    final container = _container(store);
+    addTearDown(container.dispose);
+    await container.read(votingConfigSourceProvider.future);
+
+    await expectLater(
+      () => container
+          .read(votingConfigSourceProvider.notifier)
+          .setCustom(
+            'https://voting.example/static.json?checksum=sha256:INVALID',
+          ),
+      throwsA(isA<StaticVotingConfigSourceMalformed>()),
+    );
   });
 
   test('save source rejects same URL with different checksum', () async {

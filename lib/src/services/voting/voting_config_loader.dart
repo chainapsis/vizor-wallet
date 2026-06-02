@@ -11,8 +11,8 @@ import 'voting_models.dart';
 /// points at the current dynamic service configuration.
 const kDefaultStaticVotingConfigSource =
     'https://raw.githubusercontent.com/valargroup/token-holder-voting-config/'
-    '2785311d45758e85567d70a1f13709fa01b62c6b/prod/static-voting-config.json'
-    '?checksum=sha256:bed0116f961226b256a574b52461ce81d9f5294a57e190987dc155f07eb1e431';
+    '671f76403eea8aaf64a87cb484c4b0cdaea596db/prod/static-voting-config.json'
+    '?checksum=sha256:c06f1dfa2f0a30b3614aefcf00ac7e31d61ebc3cf551b3031d1b194232d1056d';
 
 /// Authenticates static config bytes and returns the dynamic config URL to
 /// fetch next. Injectable so tests can stub the Rust boundary.
@@ -45,8 +45,9 @@ class StaticVotingConfigSourceMalformed implements Exception {
 ///
 /// Returns normalized source metadata used for UI identity and source transport.
 ({String raw, Uri uri, String? sha256Hex}) parseStaticVotingConfigSource(
-  String raw,
-) {
+  String raw, {
+  bool requireChecksum = false,
+}) {
   final trimmed = raw.trim();
   final rawQuery = _extractRawQuery(trimmed);
   final parsed = Uri.tryParse(trimmed);
@@ -75,6 +76,11 @@ class StaticVotingConfigSourceMalformed implements Exception {
     throw StaticVotingConfigSourceMalformed('checksum must appear once: $raw');
   }
   final checksum = checksumValues?.single;
+  if (requireChecksum && checksum == null) {
+    throw StaticVotingConfigSourceMalformed(
+      'checksum query parameter is required: $raw',
+    );
+  }
   String? sha256Hex;
   if (checksum != null) {
     const prefix = 'sha256:';

@@ -191,7 +191,9 @@ class VotingConfigSourceNotifier
     final normalized = parseStaticVotingConfigSource(sourceUrl).raw;
     await ref.read(votingConfigSourceStoreProvider).writeSourceUrl(normalized);
     final previous = state.value ?? VotingConfigSourceState.defaultSource();
-    state = AsyncData(previous.copyWith(sourceUrl: normalized, isDefault: false));
+    state = AsyncData(
+      previous.copyWith(sourceUrl: normalized, isDefault: false),
+    );
   }
 
   /// Uses the bundled default source while preserving saved custom sources.
@@ -224,7 +226,9 @@ class VotingConfigSourceNotifier
           _sameSourceLocation(source.sourceUrl, normalizedUrl),
     );
     if (duplicateIndex >= 0) {
-      throw const DuplicateVotingConfigSource('This source URL is already added.');
+      throw const DuplicateVotingConfigSource(
+        'This source URL is already added.',
+      );
     }
     if (existingIndex >= 0) {
       nextSaved[existingIndex] = nextSaved[existingIndex].copyWith(

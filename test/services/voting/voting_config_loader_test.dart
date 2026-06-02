@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zcash_wallet/src/rust/api/voting_config.dart' as rust_config_api;
+import 'package:zcash_wallet/src/rust/api/voting_config.dart'
+    as rust_config_api;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/services/voting/resolved_voting_config_extensions.dart';
@@ -20,11 +21,11 @@ void main() {
     expect(
       source.uri.toString(),
       'https://raw.githubusercontent.com/valargroup/token-holder-voting-config/'
-      '2785311d45758e85567d70a1f13709fa01b62c6b/prod/static-voting-config.json',
+      '671f76403eea8aaf64a87cb484c4b0cdaea596db/prod/static-voting-config.json',
     );
     expect(
       source.sha256Hex,
-      'bed0116f961226b256a574b52461ce81d9f5294a57e190987dc155f07eb1e431',
+      'c06f1dfa2f0a30b3614aefcf00ac7e31d61ebc3cf551b3031d1b194232d1056d',
     );
     expect(source.raw, kDefaultStaticVotingConfigSource);
   });
@@ -101,6 +102,13 @@ void main() {
     }
   });
 
+  test('allows static config sources without checksum', () {
+    final source = parseStaticVotingConfigSource('https://example.com/static.json');
+    expect(source.uri.toString(), 'https://example.com/static.json');
+    expect(source.sha256Hex, isNull);
+    expect(source.raw, 'https://example.com/static.json');
+  });
+
   test('load fetches static then dynamic config and resolves', () async {
     final staticSource = parseStaticVotingConfigSource(
       'https://voting.example/static-voting-config.json?checksum=sha256:'
@@ -117,35 +125,37 @@ void main() {
     final loader = VotingConfigLoader(
       httpClient: http,
       sourceUrl: staticSource.raw,
-      resolveStaticVotingConfig: ({
-        required source,
-        required staticBytes,
-      }) async {
-        expect(source, staticSource.raw);
-        expect(staticBytes, utf8.encode('{"static":true}'));
-        staticResolved = true;
-        return dynamicUrl;
-      },
-      resolveVotingConfig: ({
-        required source,
-        required staticBytes,
-        required dynamicBytes,
-        previous,
-      }) async {
-        expect(staticResolved, isTrue);
-        expect(source, staticSource.raw);
-        expect(staticBytes, utf8.encode('{"static":true}'));
-        expect(dynamicBytes, utf8.encode('{"dynamic":true}'));
-        return rust_config_api.VotingConfigResolution(
-          config: _resolvedConfig(),
-          switchKind: rust_config.ConfigSwitchKind.initialLoad,
-        );
-      },
+      resolveStaticVotingConfig:
+          ({required source, required staticBytes}) async {
+            expect(source, staticSource.raw);
+            expect(staticBytes, utf8.encode('{"static":true}'));
+            staticResolved = true;
+            return dynamicUrl;
+          },
+      resolveVotingConfig:
+          ({
+            required source,
+            required staticBytes,
+            required dynamicBytes,
+            previous,
+          }) async {
+            expect(staticResolved, isTrue);
+            expect(source, staticSource.raw);
+            expect(staticBytes, utf8.encode('{"static":true}'));
+            expect(dynamicBytes, utf8.encode('{"dynamic":true}'));
+            return rust_config_api.VotingConfigResolution(
+              config: _resolvedConfig(),
+              switchKind: rust_config.ConfigSwitchKind.initialLoad,
+            );
+          },
     );
 
     final resolution = await loader.load();
     expect(resolution.config.apiBaseUrl.toString(), 'https://voting.example');
-    expect(resolution.config.pirEndpointUrls.single.toString(), 'https://pir.example');
+    expect(
+      resolution.config.pirEndpointUrls.single.toString(),
+      'https://pir.example',
+    );
     expect(http.requests.map((request) => request.uri.toString()), [
       'https://voting.example/static-voting-config.json',
       dynamicUrl,
@@ -154,28 +164,30 @@ void main() {
 
   test('load forwards previous resolved config to resolver', () async {
     const dynamicUrl = 'https://voting.example/dynamic-voting-config.json';
-    final staticUri =
-        parseStaticVotingConfigSource(kDefaultStaticVotingConfigSource).uri;
+    final staticUri = parseStaticVotingConfigSource(
+      kDefaultStaticVotingConfigSource,
+    ).uri;
     rust_config.ResolvedVotingConfig? capturedPrevious;
     final previous = _resolvedConfig();
     final loader = VotingConfigLoader(
       httpClient: FakeVotingHttpClient(
         responses: {staticUri.toString(): '{}', dynamicUrl: '{}'},
       ),
-      resolveStaticVotingConfig: ({required source, required staticBytes}) async =>
-          dynamicUrl,
-      resolveVotingConfig: ({
-        required source,
-        required staticBytes,
-        required dynamicBytes,
-        previous,
-      }) async {
-        capturedPrevious = previous;
-        return rust_config_api.VotingConfigResolution(
-          config: _resolvedConfig(),
-          switchKind: rust_config.ConfigSwitchKind.unchanged,
-        );
-      },
+      resolveStaticVotingConfig:
+          ({required source, required staticBytes}) async => dynamicUrl,
+      resolveVotingConfig:
+          ({
+            required source,
+            required staticBytes,
+            required dynamicBytes,
+            previous,
+          }) async {
+            capturedPrevious = previous;
+            return rust_config_api.VotingConfigResolution(
+              config: _resolvedConfig(),
+              switchKind: rust_config.ConfigSwitchKind.unchanged,
+            );
+          },
     );
 
     await loader.load(previous: previous);
@@ -184,24 +196,31 @@ void main() {
 
   test('static fetch failure surfaces typed transport exception', () async {
     final staticSource = parseStaticVotingConfigSource(
-      'https://voting.example/static-voting-config.json',
+      'https://voting.example/static-voting-config.json?checksum=sha256:'
+      '1111111111111111111111111111111111111111111111111111111111111111',
     );
     final loader = VotingConfigLoader(
       httpClient: FakeVotingHttpClient(
         responses: {
-          staticSource.uri.toString(): textResponse('unavailable', statusCode: 503),
+          staticSource.uri.toString(): textResponse(
+            'unavailable',
+            statusCode: 503,
+          ),
         },
       ),
       sourceUrl: staticSource.raw,
-      resolveStaticVotingConfig: ({required source, required staticBytes}) async =>
-          fail('resolveStaticVotingConfig must not run when static fetch fails'),
-      resolveVotingConfig: ({
-        required source,
-        required staticBytes,
-        required dynamicBytes,
-        previous,
-      }) async =>
-          fail('resolveVotingConfig must not run when static fetch fails'),
+      resolveStaticVotingConfig:
+          ({required source, required staticBytes}) async => fail(
+            'resolveStaticVotingConfig must not run when static fetch fails',
+          ),
+      resolveVotingConfig:
+          ({
+            required source,
+            required staticBytes,
+            required dynamicBytes,
+            previous,
+          }) async =>
+              fail('resolveVotingConfig must not run when static fetch fails'),
     );
 
     await expectLater(
@@ -220,7 +239,8 @@ void main() {
 
   test('dynamic fetch failure surfaces typed transport exception', () async {
     final staticSource = parseStaticVotingConfigSource(
-      'https://voting.example/static-voting-config.json',
+      'https://voting.example/static-voting-config.json?checksum=sha256:'
+      '2222222222222222222222222222222222222222222222222222222222222222',
     );
     const dynamicUrl = 'https://voting.example/dynamic-voting-config.json';
     final loader = VotingConfigLoader(
@@ -231,15 +251,16 @@ void main() {
         },
       ),
       sourceUrl: staticSource.raw,
-      resolveStaticVotingConfig: ({required source, required staticBytes}) async =>
-          dynamicUrl,
-      resolveVotingConfig: ({
-        required source,
-        required staticBytes,
-        required dynamicBytes,
-        previous,
-      }) async =>
-          fail('resolveVotingConfig must not run when dynamic fetch fails'),
+      resolveStaticVotingConfig:
+          ({required source, required staticBytes}) async => dynamicUrl,
+      resolveVotingConfig:
+          ({
+            required source,
+            required staticBytes,
+            required dynamicBytes,
+            previous,
+          }) async =>
+              fail('resolveVotingConfig must not run when dynamic fetch fails'),
     );
 
     await expectLater(
@@ -254,30 +275,32 @@ void main() {
 
   test('load succeeds and surfaces skipped round IDs', () async {
     const dynamicUrl = 'https://voting.example/dynamic-voting-config.json';
-    final staticUri =
-        parseStaticVotingConfigSource(kDefaultStaticVotingConfigSource).uri;
+    final staticUri = parseStaticVotingConfigSource(
+      kDefaultStaticVotingConfigSource,
+    ).uri;
     final loader = VotingConfigLoader(
       httpClient: FakeVotingHttpClient(
         responses: {staticUri.toString(): '{}', dynamicUrl: '{}'},
       ),
-      resolveStaticVotingConfig: ({required source, required staticBytes}) async =>
-          dynamicUrl,
-      resolveVotingConfig: ({
-        required source,
-        required staticBytes,
-        required dynamicBytes,
-        previous,
-      }) async {
-        return rust_config_api.VotingConfigResolution(
-          config: _resolvedConfig(
-            authenticatedRoundEaPks: const {},
-            skippedRoundIds: const [
-              '0000000000000000000000000000000000000000000000000000000000000009',
-            ],
-          ),
-          switchKind: rust_config.ConfigSwitchKind.initialLoad,
-        );
-      },
+      resolveStaticVotingConfig:
+          ({required source, required staticBytes}) async => dynamicUrl,
+      resolveVotingConfig:
+          ({
+            required source,
+            required staticBytes,
+            required dynamicBytes,
+            previous,
+          }) async {
+            return rust_config_api.VotingConfigResolution(
+              config: _resolvedConfig(
+                authenticatedRoundEaPks: const {},
+                skippedRoundIds: const [
+                  '0000000000000000000000000000000000000000000000000000000000000009',
+                ],
+              ),
+              switchKind: rust_config.ConfigSwitchKind.initialLoad,
+            );
+          },
     );
 
     final resolution = await loader.load();
@@ -314,8 +337,10 @@ rust_config.ResolvedVotingConfig _resolvedConfig({
     ),
     authenticatedRounds: effectiveAuthenticatedRoundEaPks.entries
         .map(
-          (entry) =>
-              rust_config.AuthenticatedRound(roundId: entry.key, eaPk: entry.value),
+          (entry) => rust_config.AuthenticatedRound(
+            roundId: entry.key,
+            eaPk: entry.value,
+          ),
         )
         .toList(growable: false),
     skippedRoundIds: skippedRoundIds,
@@ -323,7 +348,8 @@ rust_config.ResolvedVotingConfig _resolvedConfig({
       rust_config.ConfigCondition(
         kind: rust_config.ConfigConditionKind.dynamicSignaturesVerified,
         status: true,
-        message: 'dynamic round signatures verified: authenticated=1, skipped=0',
+        message:
+            'dynamic round signatures verified: authenticated=1, skipped=0',
       ),
     ],
   );
