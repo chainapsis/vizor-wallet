@@ -188,6 +188,10 @@ void main() {
     expect(find.text('me'), findsOneWidget);
     expect(find.text(compactAddress), findsOneWidget);
     expect(
+      tester.widget<Text>(find.text(compactAddress)).style?.color,
+      AppThemeData.light.colors.text.muted,
+    );
+    expect(
       find.byWidgetPredicate(
         (widget) => widget is Text && widget.data == 'Copy',
       ),

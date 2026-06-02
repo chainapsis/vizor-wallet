@@ -750,7 +750,7 @@ class _SendReviewSavedRecipientValue extends StatelessWidget {
               Text(
                 compactAddress,
                 style: AppTypography.labelLarge.copyWith(
-                  color: colors.text.accent,
+                  color: colors.text.muted,
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
