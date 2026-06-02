@@ -74,11 +74,15 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
         .map((round) => round.roundId)
         .toSet();
     final filteredRounds = rounds
-        .where((round) => authenticatedRoundIds.contains(round.roundId))
+        .where(
+          (round) =>
+              authenticatedRoundIds.contains(round.roundId) &&
+              !_isFinalizedRound(round.status),
+        )
         .toList(growable: false);
     if (filteredRounds.length != rounds.length) {
       debugPrint(
-        '[zcash] Voting: filtered unauthenticated rounds '
+        '[zcash] Voting: filtered rounds (unauthenticated or finalized) '
         'shown=${filteredRounds.length} total=${rounds.length}',
       );
     }
@@ -201,6 +205,10 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       return const [];
     }
   }
+}
+
+bool _isFinalizedRound(String status) {
+  return status.trim().toLowerCase() == 'finalized';
 }
 
 final votingRoundsProvider =

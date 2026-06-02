@@ -586,6 +586,33 @@ void main() {
     expect(rounds.map((round) => round.roundId), [kRoundId]);
   });
 
+  test('rounds provider hides finalized rounds', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://voting.example/static-voting-config.json': staticConfigJson(),
+        'https://voting.example/dynamic-voting-config.json': dynamicConfigJson(),
+        '/shielded-vote/v1/rounds': {
+          'rounds': [
+            {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+            {
+              'vote_round_id': kOtherRoundId,
+              'title': 'Finalized',
+              'status': 'finalized',
+            },
+          ],
+        },
+        '/shielded-vote/v1/endorsed-rounds/zodl': {
+          'vote_round_ids': [kRoundId, kOtherRoundId],
+        },
+      },
+    );
+    final container = _container(http: http);
+    addTearDown(container.dispose);
+
+    final rounds = await container.read(votingRoundsProvider.future);
+    expect(rounds.map((round) => round.roundId), [kRoundId]);
+  });
+
   test(
     'rounds provider marks locally completed active rounds as voted',
     () async {
