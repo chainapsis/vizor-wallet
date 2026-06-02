@@ -333,17 +333,14 @@ pub fn recovered_vote_share_wire_json(
     })
 }
 
-/// Generate opaque voting hotkey bytes for a hardware account.
+/// Generate opaque voting hotkey bytes for a local voting account.
 ///
-/// Wallets persist this random hotkey in secure storage and reuse it for
-/// delegation and vote commitment signing.
-///
-/// # Errors
-///
-/// Returns an error if network parsing fails or random hotkey generation fails.
+/// Vizor v2 uses the same random app-owned hotkey model for software and
+/// Keystone accounts. The app persists this random per-round hotkey in secure
+/// storage and reuses it for delegation setup and vote commitment signing.
 pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, String> {
     catch(|| {
-        // Hardware accounts use randomized per-round voting hotkeys.
+        // Voting hotkeys are app-owned random secrets, not wallet-seed-derived.
         let network = keys::parse_network(&network)?;
         zcash_voting::hotkey::generate_random_voting_hotkey(voting_network(network))
             .map_err(|e| format!("Voting hotkey generation failed: {e}"))
@@ -605,8 +602,8 @@ pub async fn setup_delegation_bundles(
 ///
 /// # Errors
 ///
-/// Returns an error if round input resolution, mnemonic-to-seed derivation,
-/// hotkey derivation, bundle preparation, or PIR precompute fails.
+/// Returns an error if round input resolution, hotkey validation, bundle
+/// preparation, or PIR precompute fails.
 pub async fn precompute_delegation_pir(
     ctx: ApiVotingRoundContext,
     pir_server_url: String,
@@ -617,7 +614,6 @@ pub async fn precompute_delegation_pir(
     let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
 
-    // Validate the app-owned stored voting hotkey for this network.
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
 
