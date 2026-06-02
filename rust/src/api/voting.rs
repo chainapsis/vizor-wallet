@@ -33,6 +33,32 @@ const PHASE_BUILDING_SHARE_PAYLOADS: &str = "building_share_payloads";
 const PHASE_SIGNING: &str = "signing";
 const PHASE_VOTE_COMMIT_STAGE: &str = "vote_commit_stage";
 
+/// Return the shared last-moment helper-share buffer, in Unix seconds.
+#[flutter_rust_bridge::frb(sync)]
+pub fn last_moment_buffer_seconds(
+    ceremony_start_seconds: u64,
+    vote_end_time_seconds: u64,
+) -> Option<u64> {
+    zcash_voting::share::policy::last_moment_buffer_seconds(
+        ceremony_start_seconds,
+        vote_end_time_seconds,
+    )
+}
+
+/// Return true when `now_seconds` is inside the active round's last-moment window.
+#[flutter_rust_bridge::frb(sync)]
+pub fn is_last_moment(
+    now_seconds: u64,
+    ceremony_start_seconds: u64,
+    vote_end_time_seconds: u64,
+) -> bool {
+    zcash_voting::share::policy::is_last_moment(
+        now_seconds,
+        ceremony_start_seconds,
+        vote_end_time_seconds,
+    )
+}
+
 // Fixed-width Keystone payload fields.
 const KEYSTONE_SIG_LEN: usize = 64;
 const KEYSTONE_SIGHASH_LEN: usize = 32;
@@ -1409,8 +1435,8 @@ pub fn resolve_voting_config(
     dynamic_bytes: Vec<u8>,
     previous: Option<ResolvedVotingConfig>,
 ) -> Result<VotingConfigResolution, String> {
-    let resolved_static =
-        config::resolve_static_voting_config(&source, &static_bytes).map_err(|error| error.to_string())?;
+    let resolved_static = config::resolve_static_voting_config(&source, &static_bytes)
+        .map_err(|error| error.to_string())?;
     let next = config::resolve_dynamic_voting_config(
         resolved_static,
         &dynamic_bytes,

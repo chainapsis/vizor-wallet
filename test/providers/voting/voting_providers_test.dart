@@ -1120,7 +1120,7 @@ void main() {
     expect(details.roundId, kEncodedRoundIdHex);
   });
 
-  test('round details expose last-moment scheduling window', () {
+  test('round details expose voting timestamps', () {
     final details = VotingRoundDetails.fromStatus(
       VotingRoundStatus.fromJson(
         roundStatusJson(roundId: kRoundId, ceremonyStart: 1000, voteEnd: 1600),
@@ -1134,45 +1134,6 @@ void main() {
     expect(
       details.voteEndTime,
       DateTime.fromMillisecondsSinceEpoch(1600000, isUtc: true),
-    );
-    expect(details.lastMomentBuffer, const Duration(seconds: 240));
-    expect(
-      details.isLastMoment(
-        DateTime.fromMillisecondsSinceEpoch(1359000, isUtc: true),
-      ),
-      isFalse,
-    );
-    expect(
-      details.isLastMoment(
-        DateTime.fromMillisecondsSinceEpoch(1360000, isUtc: true),
-      ),
-      isTrue,
-    );
-  });
-
-  test('round details cap last-moment buffer and reject invalid timing', () {
-    final capped = VotingRoundDetails.fromStatus(
-      VotingRoundStatus.fromJson(
-        roundStatusJson(
-          roundId: kRoundId,
-          ceremonyStart: 1000,
-          voteEnd: 100000,
-        ),
-      ),
-    );
-    final invalid = VotingRoundDetails.fromStatus(
-      VotingRoundStatus.fromJson(
-        roundStatusJson(roundId: kRoundId, ceremonyStart: 2000, voteEnd: 1000),
-      ),
-    );
-
-    expect(capped.lastMomentBuffer, const Duration(hours: 6));
-    expect(invalid.lastMomentBuffer, isNull);
-    expect(
-      invalid.isLastMoment(
-        DateTime.fromMillisecondsSinceEpoch(1500000, isUtc: true),
-      ),
-      isFalse,
     );
   });
 
@@ -3783,9 +3744,10 @@ void main() {
     'share submission schedules submit_at before last-moment buffer',
     () async {
       final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final voteEnd = nowSeconds + 1000;
+      final voteEnd = nowSeconds + 903;
       final ceremonyStart = nowSeconds - 100;
-      final deadline = voteEnd - ((voteEnd - ceremonyStart) * 0.4).round();
+      final lastMomentBuffer = 402;
+      final deadline = voteEnd - lastMomentBuffer;
       final http = FakeVotingHttpClient(
         responses: votingHttpResponses(
           roundStatus: roundStatusJson(
@@ -3836,6 +3798,8 @@ void main() {
       expect(submitAt, isA<int>());
       expect(submitAt as int, greaterThanOrEqualTo(nowSeconds));
       expect(submitAt, lessThan(deadline));
+      expect(rust.planLastMomentBufferSeconds, [BigInt.from(lastMomentBuffer)]);
+      expect(rust.planSingleShareValues, [false]);
       expect(rust.recordedShares.single.submitAt, BigInt.from(submitAt));
     },
   );
@@ -3891,6 +3855,7 @@ void main() {
           );
 
       expect(rust.draftSingleShareValues, [true]);
+      expect(rust.planSingleShareValues, [true]);
       expect(_postBody(http, '/shielded-vote/v1/shares')['submit_at'], 0);
       expect(rust.recordedShares.single.submitAt, BigInt.zero);
     },
@@ -5714,6 +5679,8 @@ class FakeVotingRustApi implements VotingRustApi {
   final precomputeFinished = Completer<void>();
   final resetVotingSessionStateCalls = <String>[];
   final draftSingleShareValues = <bool>[];
+  final planLastMomentBufferSeconds = <BigInt?>[];
+  final planSingleShareValues = <bool>[];
   final accountUuids = <String>[];
   final confirmedShares = <String>[];
   final keystoneDelegationRequestCalls = <int>[];
@@ -6211,6 +6178,8 @@ class FakeVotingRustApi implements VotingRustApi {
     BigInt? lastMomentBufferSeconds,
     required bool singleShare,
   }) async {
+    planLastMomentBufferSeconds.add(lastMomentBufferSeconds);
+    planSingleShareValues.add(singleShare);
     final targetCount = serverUrls.isEmpty ? 0 : (serverUrls.length / 2).ceil();
     final now = nowSeconds.toInt();
     final voteEnd = voteEndTimeSeconds.toInt();
@@ -6227,6 +6196,35 @@ class FakeVotingRustApi implements VotingRustApi {
           targetServers: serverUrls.take(targetCount).toList(growable: false),
         ),
     ];
+  }
+
+  @override
+  BigInt? lastMomentBufferSeconds({
+    required BigInt ceremonyStartSeconds,
+    required BigInt voteEndTimeSeconds,
+  }) {
+    final duration = voteEndTimeSeconds - ceremonyStartSeconds;
+    if (duration <= BigInt.zero) return null;
+    final buffer =
+        ((duration * BigInt.from(2)) + BigInt.from(4)) ~/ BigInt.from(5);
+    final max = BigInt.from(6 * 60 * 60);
+    return buffer < max ? buffer : max;
+  }
+
+  @override
+  bool isLastMoment({
+    required BigInt nowSeconds,
+    required BigInt ceremonyStartSeconds,
+    required BigInt voteEndTimeSeconds,
+  }) {
+    final buffer = lastMomentBufferSeconds(
+      ceremonyStartSeconds: ceremonyStartSeconds,
+      voteEndTimeSeconds: voteEndTimeSeconds,
+    );
+    final deadline = buffer == null ? null : voteEndTimeSeconds - buffer;
+    return deadline != null &&
+        nowSeconds >= deadline &&
+        nowSeconds < voteEndTimeSeconds;
   }
 
   @override

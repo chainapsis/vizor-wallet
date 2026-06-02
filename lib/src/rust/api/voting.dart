@@ -14,7 +14,27 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+
+/// Return the shared last-moment helper-share buffer, in Unix seconds.
+BigInt? lastMomentBufferSeconds({
+  required BigInt ceremonyStartSeconds,
+  required BigInt voteEndTimeSeconds,
+}) => RustLib.instance.api.crateApiVotingLastMomentBufferSeconds(
+  ceremonyStartSeconds: ceremonyStartSeconds,
+  voteEndTimeSeconds: voteEndTimeSeconds,
+);
+
+/// Return true when `now_seconds` is inside the active round's last-moment window.
+bool isLastMoment({
+  required BigInt nowSeconds,
+  required BigInt ceremonyStartSeconds,
+  required BigInt voteEndTimeSeconds,
+}) => RustLib.instance.api.crateApiVotingIsLastMoment(
+  nowSeconds: nowSeconds,
+  ceremonyStartSeconds: ceremonyStartSeconds,
+  voteEndTimeSeconds: voteEndTimeSeconds,
+);
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -152,14 +172,11 @@ Future<String> recoveredVoteShareWireJson({
   submitAt: submitAt,
 );
 
-/// Generate opaque voting hotkey bytes for a hardware account.
+/// Generate opaque voting hotkey bytes for a local voting account.
 ///
-/// Wallets persist this random hotkey in secure storage and reuse it for
-/// delegation and vote commitment signing.
-///
-/// # Errors
-///
-/// Returns an error if network parsing fails or random hotkey generation fails.
+/// Vizor v2 uses the same random app-owned hotkey model for software and
+/// Keystone accounts. The app persists this random per-round hotkey in secure
+/// storage and reuses it for delegation setup and vote commitment signing.
 Future<Uint8List> generateVotingHotkey({required String network}) =>
     RustLib.instance.api.crateApiVotingGenerateVotingHotkey(network: network);
 
@@ -183,8 +200,8 @@ Future<BundleLayout> setupDelegationBundles({
 ///
 /// # Errors
 ///
-/// Returns an error if round input resolution, mnemonic-to-seed derivation,
-/// hotkey derivation, bundle preparation, or PIR precompute fails.
+/// Returns an error if round input resolution, hotkey validation, bundle
+/// preparation, or PIR precompute fails.
 Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,

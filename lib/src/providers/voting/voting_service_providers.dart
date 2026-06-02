@@ -411,6 +411,17 @@ abstract interface class VotingRustApi {
     required bool singleShare,
   });
 
+  BigInt? lastMomentBufferSeconds({
+    required BigInt ceremonyStartSeconds,
+    required BigInt voteEndTimeSeconds,
+  });
+
+  bool isLastMoment({
+    required BigInt nowSeconds,
+    required BigInt ceremonyStartSeconds,
+    required BigInt voteEndTimeSeconds,
+  });
+
   Future<int> shareTrackingFlags({
     required rust_voting.ShareDelegationRecordView share,
     required BigInt nowSeconds,
@@ -795,6 +806,30 @@ class FrbVotingRustApi implements VotingRustApi {
       voteEndTimeSeconds: voteEndTimeSeconds,
       lastMomentBufferSeconds: lastMomentBufferSeconds,
       singleShare: singleShare,
+    );
+  }
+
+  @override
+  BigInt? lastMomentBufferSeconds({
+    required BigInt ceremonyStartSeconds,
+    required BigInt voteEndTimeSeconds,
+  }) {
+    return rust_api.lastMomentBufferSeconds(
+      ceremonyStartSeconds: ceremonyStartSeconds,
+      voteEndTimeSeconds: voteEndTimeSeconds,
+    );
+  }
+
+  @override
+  bool isLastMoment({
+    required BigInt nowSeconds,
+    required BigInt ceremonyStartSeconds,
+    required BigInt voteEndTimeSeconds,
+  }) {
+    return rust_api.isLastMoment(
+      nowSeconds: nowSeconds,
+      ceremonyStartSeconds: ceremonyStartSeconds,
+      voteEndTimeSeconds: voteEndTimeSeconds,
     );
   }
 

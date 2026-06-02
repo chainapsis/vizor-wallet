@@ -11,7 +11,6 @@ import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
 import '../../features/voting/voting_resume_plan.dart';
-import '../../features/voting/voting_share_timing.dart';
 import '../../rust/api/voting.dart' as rust_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
@@ -808,10 +807,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       var roundPlan = context.roundPlan;
       final api = ref.read(votingApiClientProvider(context.config.apiBaseUrl));
       final rust = ref.read(votingRustApiProvider);
-      final effectiveDraftVotes = VotingShareTimingPolicy.applyLastMomentMode(
-        draftVotes,
-        context.round,
-      );
+      final effectiveDraftVotes = draftVotes;
       if (effectiveDraftVotes.isNotEmpty) {
         // Write durable ballot intent before the cast loop so recovery can
         // resume from the correct choice if the user quits mid-vote.
@@ -939,11 +935,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           );
       var completedBundleTasks = 0;
       var completedQuestions = 0;
+      final startTiming = _roundShareTiming(context, _nowSeconds());
       debugPrint(
         '[zcash] Voting: cast votes start '
         'round=${context.round.roundId} bundleTasks=$totalBundleTasks '
         'proposals=$totalQuestions '
-        'lastMoment=${context.round.isLastMoment()}',
+        'lastMoment=${startTiming.isLastMoment}',
       );
       for (final recoveredWork in recoveredVoteWork) {
         final key = recoveredWork.key;
@@ -1133,10 +1130,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ),
             ),
           );
+          final timedDraftVote = _draftVoteForCurrentShareMode(
+            context,
+            draftVote,
+          );
           debugPrint(
             '[zcash] Voting: ZKP2 commitment stream start '
             'round=${context.round.roundId} bundle=$bundleIndex '
-            'proposal=${draftVote.proposalId}',
+            'proposal=${draftVote.proposalId} '
+            'singleShare=${timedDraftVote.singleShare}',
           );
           await for (final event
               in ref
@@ -1149,7 +1151,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                     bundleIndex: bundleIndex,
                     storedHotkeySecret: storedHotkeySecret,
                     vanWitness: witness,
-                    draftVotes: [draftVote],
+                    draftVotes: [timedDraftVote],
                   )) {
             final proposalId = event.proposalId;
             if (proposalId != null) {
@@ -1194,7 +1196,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 context,
                 commitments,
                 vcTreePositions: vcTreePositions,
-                singleShare: draftVote.singleShare,
+                singleShare: timedDraftVote.singleShare,
                 completedQuestions: completedQuestions,
                 totalQuestions: totalQuestions,
                 voteSubmissionProgress: _voteSubmissionProgress(
@@ -1393,14 +1395,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       throw StateError('No vote servers configured for share submission.');
     }
 
-    final nowSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
-    final voteEnd = context.round.voteEndTime;
-    final voteEndSeconds = voteEnd == null
-        ? nowSeconds
-        : voteEnd.toUtc().millisecondsSinceEpoch ~/ 1000;
-    final lastMomentBufferSeconds = context.round.lastMomentBuffer == null
-        ? null
-        : BigInt.from(context.round.lastMomentBuffer!.inSeconds);
+    final timing = _roundShareTiming(context, _nowSeconds());
     final bundleProgressMessage = _bundleProgressMessage(
       bundleIndex: commitments.bundleIndex,
       bundleCount: context.resumePlan.bundleCount,
@@ -1417,9 +1412,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final plans = await rust.planShareSubmissions(
         shareCount: shares.length,
         serverUrls: serverUrls,
-        nowSeconds: BigInt.from(nowSeconds),
-        voteEndTimeSeconds: BigInt.from(voteEndSeconds),
-        lastMomentBufferSeconds: lastMomentBufferSeconds,
+        nowSeconds: BigInt.from(timing.nowSeconds),
+        voteEndTimeSeconds: BigInt.from(timing.voteEndSeconds),
+        lastMomentBufferSeconds: timing.lastMomentBufferSeconds,
         singleShare: singleShare,
       );
       if (plans.length != shares.length) {
@@ -2917,6 +2912,63 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
   }
 
+  rust_wire.DraftVote _draftVoteForCurrentShareMode(
+    _VotingSessionContext context,
+    rust_wire.DraftVote draftVote,
+  ) {
+    if (draftVote.singleShare) return draftVote;
+    final timing = _roundShareTiming(context, _nowSeconds());
+    if (!timing.isLastMoment) return draftVote;
+    return rust_wire.DraftVote(
+      proposalId: draftVote.proposalId,
+      choice: draftVote.choice,
+      numOptions: draftVote.numOptions,
+      vcTreePosition: draftVote.vcTreePosition,
+      singleShare: true,
+    );
+  }
+
+  _RoundShareTiming _roundShareTiming(
+    _VotingSessionContext context,
+    int nowSeconds,
+  ) {
+    final start = context.round.ceremonyStart;
+    final end = context.round.voteEndTime;
+    if (start == null || end == null) {
+      return _RoundShareTiming(
+        nowSeconds: nowSeconds,
+        voteEndSeconds: nowSeconds,
+        lastMomentBufferSeconds: null,
+        isLastMoment: false,
+      );
+    }
+
+    final startSeconds = _unixSeconds(start);
+    final voteEndSeconds = _unixSeconds(end);
+    final rust = ref.read(votingRustApiProvider);
+    return _RoundShareTiming(
+      nowSeconds: nowSeconds,
+      voteEndSeconds: voteEndSeconds,
+      lastMomentBufferSeconds: rust.lastMomentBufferSeconds(
+        ceremonyStartSeconds: BigInt.from(startSeconds),
+        voteEndTimeSeconds: BigInt.from(voteEndSeconds),
+      ),
+      isLastMoment: rust.isLastMoment(
+        nowSeconds: BigInt.from(nowSeconds),
+        ceremonyStartSeconds: BigInt.from(startSeconds),
+        voteEndTimeSeconds: BigInt.from(voteEndSeconds),
+      ),
+    );
+  }
+
+  static int _nowSeconds() {
+    return DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
+  }
+
+  static int _unixSeconds(DateTime value) {
+    return value.toUtc().millisecondsSinceEpoch ~/ 1000;
+  }
+
   static bool _shouldSubmitVoteBundle(
     VotingResumePlan plan,
     VotingVoteKey key,
@@ -2976,6 +3028,20 @@ class _DraftVoteWork {
 
   final rust_wire.DraftVote draftVote;
   final List<int> bundleIndexes;
+}
+
+class _RoundShareTiming {
+  const _RoundShareTiming({
+    required this.nowSeconds,
+    required this.voteEndSeconds,
+    required this.lastMomentBufferSeconds,
+    required this.isLastMoment,
+  });
+
+  final int nowSeconds;
+  final int voteEndSeconds;
+  final BigInt? lastMomentBufferSeconds;
+  final bool isLastMoment;
 }
 
 enum _RecoveredVoteWorkKind { submitVote, submitShares }

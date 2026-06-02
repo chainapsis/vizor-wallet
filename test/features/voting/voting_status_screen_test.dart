@@ -3550,6 +3550,35 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   }
 
   @override
+  BigInt? lastMomentBufferSeconds({
+    required BigInt ceremonyStartSeconds,
+    required BigInt voteEndTimeSeconds,
+  }) {
+    final duration = voteEndTimeSeconds - ceremonyStartSeconds;
+    if (duration <= BigInt.zero) return null;
+    final buffer =
+        ((duration * BigInt.from(2)) + BigInt.from(4)) ~/ BigInt.from(5);
+    final max = BigInt.from(6 * 60 * 60);
+    return buffer < max ? buffer : max;
+  }
+
+  @override
+  bool isLastMoment({
+    required BigInt nowSeconds,
+    required BigInt ceremonyStartSeconds,
+    required BigInt voteEndTimeSeconds,
+  }) {
+    final buffer = lastMomentBufferSeconds(
+      ceremonyStartSeconds: ceremonyStartSeconds,
+      voteEndTimeSeconds: voteEndTimeSeconds,
+    );
+    final deadline = buffer == null ? null : voteEndTimeSeconds - buffer;
+    return deadline != null &&
+        nowSeconds >= deadline &&
+        nowSeconds < voteEndTimeSeconds;
+  }
+
+  @override
   Future<int> shareTrackingFlags({
     required rust_frb_types.ShareDelegationRecordView share,
     required BigInt nowSeconds,

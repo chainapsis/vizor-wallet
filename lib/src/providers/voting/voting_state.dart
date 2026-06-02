@@ -118,9 +118,6 @@ class VotingSessionError {
 /// Dynamic config authenticates round metadata, while the vote server returns
 /// the chain-bound round details such as snapshot height and tree roots.
 class VotingRoundDetails {
-  static const double _lastMomentBufferFraction = 0.4;
-  static const Duration _lastMomentBufferMax = Duration(hours: 6);
-
   final String roundId;
   final String title;
   final String status;
@@ -162,28 +159,6 @@ class VotingRoundDetails {
   DateTime? get voteEndTime => _dateFromJson(rawJson, 'vote_end_time');
 
   DateTime? get ceremonyStart => _dateFromJson(rawJson, 'ceremony_phase_start');
-
-  Duration? get lastMomentBuffer {
-    final start = ceremonyStart;
-    final end = voteEndTime;
-    if (start == null || end == null) return null;
-    final duration = end.difference(start);
-    if (duration <= Duration.zero) return null;
-    final buffer = Duration(
-      milliseconds: (duration.inMilliseconds * _lastMomentBufferFraction)
-          .round(),
-    );
-    return buffer < _lastMomentBufferMax ? buffer : _lastMomentBufferMax;
-  }
-
-  bool isLastMoment([DateTime? now]) {
-    final end = voteEndTime;
-    final buffer = lastMomentBuffer;
-    if (end == null || buffer == null) return false;
-    final threshold = end.subtract(buffer);
-    final current = (now ?? DateTime.now()).toUtc();
-    return current.isAfter(threshold) || current.isAtSameMomentAs(threshold);
-  }
 }
 
 /// Immutable state for a single `votingSessionProvider(roundId)` instance.
