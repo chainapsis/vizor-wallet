@@ -272,7 +272,7 @@ abstract interface class VotingRustApi {
   precomputeDelegationPir({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required String mnemonic,
+    required List<int> hotkeySeed,
     required int bundleIndex,
   });
 
@@ -281,6 +281,7 @@ abstract interface class VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
     required String mnemonic,
+    required List<int> hotkeySeed,
     required int bundleIndex,
   });
 
@@ -472,12 +473,6 @@ abstract interface class VotingRustApi {
     required int proposalId,
     required int shareIndex,
   });
-
-  Future<List<int>> deriveHotkey({
-    required String mnemonic,
-    required String roundId,
-    required String network,
-  });
 }
 
 /// Production implementation backed by generated FRB calls.
@@ -496,13 +491,13 @@ class FrbVotingRustApi implements VotingRustApi {
   precomputeDelegationPir({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required String mnemonic,
+    required List<int> hotkeySeed,
     required int bundleIndex,
   }) {
     return rust_api.precomputeDelegationPir(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
-      mnemonic: mnemonic,
+      hotkeySeed: hotkeySeed,
       bundleIndex: bundleIndex,
     );
   }
@@ -513,12 +508,14 @@ class FrbVotingRustApi implements VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
     required String mnemonic,
+    required List<int> hotkeySeed,
     required int bundleIndex,
   }) {
     return rust_api.buildProveAndSignDelegationPayloadWithProgress(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
       mnemonic: mnemonic,
+      hotkeySeed: hotkeySeed,
       bundleIndex: bundleIndex,
     );
   }
@@ -909,19 +906,6 @@ class FrbVotingRustApi implements VotingRustApi {
       bundleIndex: bundleIndex,
       proposalId: proposalId,
       shareIndex: shareIndex,
-    );
-  }
-
-  @override
-  Future<List<int>> deriveHotkey({
-    required String mnemonic,
-    required String roundId,
-    required String network,
-  }) {
-    return rust_api.deriveVotingHotkey(
-      mnemonic: mnemonic,
-      roundId: roundId,
-      network: network,
     );
   }
 }

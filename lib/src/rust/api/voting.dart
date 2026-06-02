@@ -13,7 +13,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -112,31 +112,11 @@ Future<String> recoveredVoteShareWireJson({
   submitAt: submitAt,
 );
 
-/// Derive the opaque per-account, per-round voting hotkey bytes.
+/// Generate opaque voting hotkey bytes for a local voting account.
 ///
-/// Rust derives the wallet seed from the account mnemonic, then derives scoped
-/// hotkey seed material locally and returns bytes for secure storage.
-/// The returned `Vec<u8>` is an unavoidable FRB copy boundary
-///
-/// # Errors
-///
-/// Returns an error if network parsing fails, mnemonic decoding fails, or
-/// contextual hotkey derivation fails.
-Future<Uint8List> deriveVotingHotkey({
-  required String mnemonic,
-  required String roundId,
-  required String network,
-}) => RustLib.instance.api.crateApiVotingDeriveVotingHotkey(
-  mnemonic: mnemonic,
-  roundId: roundId,
-  network: network,
-);
-
-/// Generate opaque voting hotkey bytes for a hardware account.
-///
-/// Hardware accounts cannot expose their wallet seed to derive the deterministic
-/// software hotkey, so the app persists this random per-round hotkey in secure
-/// storage and reuses it for vote commitment signing.
+/// Vizor v2 uses the same random app-owned hotkey model for software and
+/// Keystone accounts. The app persists this random per-round hotkey in secure
+/// storage and reuses it for delegation setup and vote commitment signing.
 ///
 /// # Errors
 ///
@@ -164,17 +144,17 @@ Future<BundleLayout> setupDelegationBundles({
 ///
 /// # Errors
 ///
-/// Returns an error if round input resolution, mnemonic-to-seed derivation,
-/// hotkey derivation, bundle preparation, or PIR precompute fails.
+/// Returns an error if round input resolution, hotkey validation, bundle
+/// preparation, or PIR precompute fails.
 Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
-  required String mnemonic,
+  required List<int> hotkeySeed,
   required int bundleIndex,
 }) => RustLib.instance.api.crateApiVotingPrecomputeDelegationPir(
   ctx: ctx,
   pirServerUrl: pirServerUrl,
-  mnemonic: mnemonic,
+  hotkeySeed: hotkeySeed,
   bundleIndex: bundleIndex,
 );
 
@@ -193,12 +173,14 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
   required String mnemonic,
+  required List<int> hotkeySeed,
   required int bundleIndex,
 }) => RustLib.instance.api
     .crateApiVotingBuildProveAndSignDelegationPayloadWithProgress(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
       mnemonic: mnemonic,
+      hotkeySeed: hotkeySeed,
       bundleIndex: bundleIndex,
     );
 

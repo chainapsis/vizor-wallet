@@ -1220,7 +1220,7 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('missing stored Keystone'));
+      expect(state.error?.message, contains('missing stored voting hotkey'));
       expect(rust.generateVotingHotkeyCalls, 0);
       expect(rust.keystoneDelegationRequestCalls, isEmpty);
     },
@@ -1276,7 +1276,7 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('missing stored Keystone'));
+      expect(state.error?.message, contains('missing stored voting hotkey'));
       expect(rust.generateVotingHotkeyCalls, 0);
       expect(rust.keystoneProofBundleCalls, isEmpty);
       expect(rust.storedDelegationTxHashes, isEmpty);
@@ -1566,8 +1566,8 @@ void main() {
 
       expect(rust.setupCalls, 0);
       expect(rust.delegationBundleCalls, isEmpty);
-      expect(rust.deriveHotkeyCalls, 1);
-      expect(hotkeyStore.hotkey, isNotNull);
+      expect(rust.generateVotingHotkeyCalls, 1);
+      expect(hotkeyStore.hotkey, [42, 43, 44]);
       expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
       expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 1);
     },
@@ -3626,7 +3626,7 @@ void main() {
     expect(rust.maxConcurrentSetups, 1);
   });
 
-  test('delegation PIR warmup passes the account mnemonic to Rust', () async {
+  test('delegation PIR warmup passes the stored hotkey seed to Rust', () async {
     final precomputeGate = Completer<void>();
     final rust = FakeVotingRustApi(precomputeGate: precomputeGate);
     final container = _sessionContainer(rust: rust);
@@ -3635,13 +3635,10 @@ void main() {
     await container.read(votingSessionProvider(kRoundId).future);
     await container
         .read(votingSessionProvider(kRoundId).notifier)
-        .precomputeDelegationPir(
-          accountUuid: 'account-1',
-          mnemonic: kTestMnemonic,
-        );
+        .precomputeDelegationPir(accountUuid: 'account-1');
     await rust.precomputeStarted.future;
 
-    expect(rust.precomputeMnemonics.single, kTestMnemonic);
+    expect(rust.precomputeHotkeySeeds.single, [9, 9, 9]);
 
     precomputeGate.complete();
     await rust.precomputeFinished.future;
@@ -3674,10 +3671,7 @@ void main() {
 
     await container
         .read(votingSessionProvider(kRoundId).notifier)
-        .precomputeDelegationPir(
-          accountUuid: 'account-1',
-          mnemonic: kTestMnemonic,
-        );
+        .precomputeDelegationPir(accountUuid: 'account-1');
 
     expect(rust.precomputedDelegationPir, isEmpty);
   });
@@ -3690,10 +3684,7 @@ void main() {
 
     await container.read(votingSessionProvider(kRoundId).future);
     final notifier = container.read(votingSessionProvider(kRoundId).notifier);
-    await notifier.precomputeDelegationPir(
-      accountUuid: 'account-1',
-      mnemonic: kTestMnemonic,
-    );
+    await notifier.precomputeDelegationPir(accountUuid: 'account-1');
     await rust.precomputeStarted.future;
 
     final delegationFuture = notifier.delegatePendingBundles(
@@ -3728,10 +3719,7 @@ void main() {
 
     await container.read(votingSessionProvider(kRoundId).future);
     final notifier = container.read(votingSessionProvider(kRoundId).notifier);
-    await notifier.precomputeDelegationPir(
-      accountUuid: 'account-1',
-      mnemonic: kTestMnemonic,
-    );
+    await notifier.precomputeDelegationPir(accountUuid: 'account-1');
     await notifier.delegatePendingBundles(mnemonic: kTestMnemonic);
 
     expect(rust.precomputedDelegationPir, [0]);
@@ -4818,7 +4806,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final recordedShares = <_RecordedShare>[];
   final syncedVoteTrees = <String>[];
   final precomputedDelegationPir = <int>[];
-  final precomputeMnemonics = <String>[];
+  final precomputeHotkeySeeds = <List<int>>[];
   final setupStarted = Completer<void>();
   final delegationProofStarted = Completer<void>();
   final keystoneDelegationProofStarted = Completer<void>();
@@ -4835,7 +4823,6 @@ class FakeVotingRustApi implements VotingRustApi {
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
   int generateVotingHotkeyCalls = 0;
   int parseSignedVotingPcztCalls = 0;
-  int deriveHotkeyCalls = 0;
   int extractSpendAuthSignatureCalls = 0;
 
   @override
@@ -4869,6 +4856,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
     required String mnemonic,
+    required List<int> hotkeySeed,
     required int bundleIndex,
   }) async* {
     accountUuids.add(ctx.accountUuid);
@@ -5065,12 +5053,12 @@ class FakeVotingRustApi implements VotingRustApi {
   Future<rust_wire.DelegationPirPrecomputeResultView> precomputeDelegationPir({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required String mnemonic,
+    required List<int> hotkeySeed,
     required int bundleIndex,
   }) async {
     accountUuids.add(ctx.accountUuid);
     precomputedDelegationPir.add(bundleIndex);
-    precomputeMnemonics.add(mnemonic);
+    precomputeHotkeySeeds.add(List<int>.from(hotkeySeed));
     if (!precomputeStarted.isCompleted) {
       precomputeStarted.complete();
     }
@@ -5495,16 +5483,6 @@ class FakeVotingRustApi implements VotingRustApi {
     required int shareIndex,
   }) async {
     confirmedShares.add('$bundleIndex:$proposalId:$shareIndex');
-  }
-
-  @override
-  Future<List<int>> deriveHotkey({
-    required String mnemonic,
-    required String roundId,
-    required String network,
-  }) async {
-    deriveHotkeyCalls++;
-    return [roundId.length, network.length, ...mnemonic.codeUnits.take(2)];
   }
 }
 

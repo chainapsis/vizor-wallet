@@ -237,10 +237,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
-  Future<void> precomputeDelegationPir({
-    required String accountUuid,
-    required String mnemonic,
-  }) async {
+  Future<void> precomputeDelegationPir({required String accountUuid}) async {
     final context = await _loadContext(_roundId);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     try {
@@ -252,6 +249,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final pirEndpoint = await _resolvePirEndpoint(context);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     if (pirEndpoint == null) return;
+    final hotkeySeed = await _ensureHotkey(context);
+    if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
 
     final rust = ref.read(votingRustApiProvider);
     final bundleSetup = await rust.setupDelegationBundles(
@@ -269,7 +268,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _delegationPirPrecomputes[key] ??= _runDelegationPirPrecompute(
         context: context,
         pirEndpoint: pirEndpoint,
-        mnemonic: mnemonic,
+        hotkeySeed: hotkeySeed,
         bundleIndex: bundleIndex,
       );
     }
@@ -312,7 +311,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _setStateForContext(context, nextState);
         current = nextState;
       }
-      await _ensureHotkey(context, mnemonic: mnemonic);
+      final hotkeySeed = await _ensureHotkey(context);
 
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
@@ -345,6 +344,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ctx: _apiRoundContext(context),
               pirServerUrl: pirEndpoint.toString(),
               mnemonic: mnemonic,
+              hotkeySeed: hotkeySeed,
               bundleIndex: bundleIndex,
             )) {
           signedDelegationPayload =
@@ -604,8 +604,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         return;
       }
 
-      final hotkeySeed = await _ensureHotkey(context);
       final signatures = await _loadKeystoneSignatures(context);
+      final hotkeySeed = await _ensureHotkey(
+        context,
+        alreadyBound: signatures.isNotEmpty,
+      );
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
       );
@@ -739,16 +742,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required List<rust_wire.DraftVote> draftVotes,
     List<int>? allProposalIds,
     Map<int, int>? proposalOptionCounts,
-    String? mnemonic,
   }) {
     return _enqueue(() async {
       final current = await future;
       final context = await _loadContext(_roundId);
       await _waitUntilWalletReadyForVoting(context);
-      final hotkeySeed = await _hotkeyForVoteCasting(
-        context,
-        mnemonic: mnemonic,
-      );
+      final hotkeySeed = await _hotkeyForVoteCasting(context);
       if (hotkeySeed == null) {
         _setError(
           'Voting hotkey is missing. Delegate this round before casting votes.',
@@ -1245,41 +1244,29 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   }
 
   Future<List<int>?> _hotkeyForVoteCasting(
-    _VotingSessionContext context, {
-    String? mnemonic,
-  }) async {
+    _VotingSessionContext context,
+  ) async {
     final existing = await _readStoredHotkey(context);
     if (existing != null) return existing;
-    if (context.isHardwareAccount || mnemonic == null || mnemonic.isEmpty) {
+    try {
+      return await _ensureHotkey(context);
+    } on VotingHotkeyUnavailable {
       return null;
     }
-    return _ensureHotkey(context, mnemonic: mnemonic);
   }
 
   Future<List<int>> _ensureHotkey(
     _VotingSessionContext context, {
-    String? mnemonic,
-    bool allowHardwareGeneration = false,
+    bool alreadyBound = false,
   }) async {
     final existing = await _readStoredHotkey(context);
     if (existing != null && existing.isNotEmpty) return existing;
+    if (alreadyBound || _hotkeyAlreadyBound(context)) {
+      throw const VotingHotkeyUnavailable('missing stored voting hotkey');
+    }
 
     final rust = ref.read(votingRustApiProvider);
-    late final List<int> hotkey;
-    if (context.isHardwareAccount) {
-      if (!allowHardwareGeneration) {
-        throw const VotingHotkeyUnavailable(
-          'missing stored Keystone voting hotkey',
-        );
-      }
-      hotkey = await rust.generateVotingHotkey(network: context.network);
-    } else {
-      hotkey = await rust.deriveHotkey(
-        mnemonic: mnemonic ?? (throw StateError('Missing wallet mnemonic.')),
-        roundId: context.round.roundId,
-        network: context.network,
-      );
-    }
+    final hotkey = await rust.generateVotingHotkey(network: context.network);
     await ref
         .read(votingHotkeyStoreProvider)
         .writeHotkey(
@@ -1299,6 +1286,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
     if (existing == null || existing.isEmpty) return null;
     return existing;
+  }
+
+  bool _hotkeyAlreadyBound(_VotingSessionContext context) {
+    if (context.roundPlan?.hotkeyBound ?? false) return true;
+    final plan = context.resumePlan;
+    return plan.submittedDelegationBundleIndexes.isNotEmpty ||
+        plan.pendingVoteSubmissionKeys.isNotEmpty ||
+        plan.submittedVoteConfirmationKeys.isNotEmpty ||
+        plan.commitmentBundlesByKey.isNotEmpty ||
+        plan.shareDelegations.isNotEmpty;
   }
 
   Future<void> _submitCommitmentShares(
@@ -2054,7 +2051,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _runDelegationPirPrecompute({
     required _VotingSessionContext context,
     required Uri pirEndpoint,
-    required String mnemonic,
+    required List<int> hotkeySeed,
     required int bundleIndex,
   }) async {
     final key = _delegationPirPrecomputeKey(context, bundleIndex);
@@ -2069,7 +2066,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           .precomputeDelegationPir(
             ctx: _apiRoundContext(context),
             pirServerUrl: pirEndpoint.toString(),
-            mnemonic: mnemonic,
+            hotkeySeed: hotkeySeed,
             bundleIndex: bundleIndex,
           );
       debugPrint(
@@ -2262,9 +2259,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final existingHotkey = await _readStoredHotkey(context);
     if (existingHotkey == null &&
         (signatures.isNotEmpty || (roundPlan?.hotkeyBound ?? false))) {
-      throw const VotingHotkeyUnavailable(
-        'missing stored Keystone voting hotkey',
-      );
+      throw const VotingHotkeyUnavailable('missing stored voting hotkey');
     }
 
     if (nextUnsignedBundle == null) {
@@ -2286,7 +2281,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     final hotkeySeed =
         existingHotkey ??
-        await _ensureHotkey(context, allowHardwareGeneration: true);
+        await _ensureHotkey(context, alreadyBound: signatures.isNotEmpty);
 
     _setStateForContext(
       context,

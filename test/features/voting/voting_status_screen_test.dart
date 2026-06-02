@@ -58,7 +58,7 @@ void main() {
 
   tearDownAll(RustLib.dispose);
 
-  testWidgets('status screen explains null mnemonic voting requirement', (
+  testWidgets('status screen submits vote-only path without mnemonic', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -66,45 +66,38 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
-    final http = FakeVotingHttpClient(responses: _votingHttpResponses());
-    final container = ProviderContainer(
-      overrides: [
-        appBootstrapProvider.overrideWithValue(_bootstrap),
-        syncProvider.overrideWith(_NoopSyncNotifier.new),
-        accountProvider.overrideWith(_NoMnemonicAccountNotifier.new),
-        votingConfigSourceStoreProvider.overrideWithValue(
-          _FakeVotingConfigSourceStore(),
-        ),
-        votingHttpClientProvider.overrideWithValue(http),
-        votingConfigLoaderProvider.overrideWithValue(
-          VotingConfigLoader(
-            httpClient: http,
-            staticConfigSource: StaticVotingConfigSource.parse(
-              'https://voting.example/static-voting-config.json',
-            ),
-          ),
-        ),
-        votingWalletDbPathProvider.overrideWithValue(() async => 'wallet.db'),
-        votingActiveAccountUuidProvider.overrideWithValue(
-          () async => 'account-1',
-        ),
-        votingRpcEndpointConfigProvider.overrideWithValue(
-          const RpcEndpointConfig(
-            networkName: 'main',
-            lightwalletdUrl: 'https://lightwalletd.example:443',
-          ),
-        ),
-        votingRecoveryServiceProvider.overrideWithValue(
-          VotingRecoveryService(api: _FakeVotingRecoveryApi()),
-        ),
-        votingDraftPersistenceProvider.overrideWithValue(
-          _MemoryVotingDraftPersistence(),
-        ),
-        votingRustApiProvider.overrideWithValue(_NoopVotingRustApi()),
-        votingWalletSyncReadinessCheckerProvider.overrideWithValue(
-          _FakeVotingWalletSyncReadinessChecker(),
-        ),
-      ],
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..addAll({
+          '/shielded-vote/v1/cast-vote': {
+            'tx_hash': 'vote-tx',
+            'code': 0,
+            'log': '',
+          },
+          '/shielded-vote/v1/tx/vote-tx': {
+            'height': 11,
+            'code': 0,
+            'log': '',
+            'events': [
+              {
+                'type': 'cast_vote',
+                'attributes': [
+                  {'key': 'leaf_index', 'value': '1,2'},
+                  {'key': 'vote_round_id', 'value': _roundId},
+                ],
+              },
+            ],
+          },
+          '/shielded-vote/v1/shares': {'status': 'queued'},
+        }),
+    );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _NoMnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
     );
     addTearDown(container.dispose);
     container.read(votingDraftProvider(_draftKey).notifier).setChoice(1, 0);
@@ -113,15 +106,10 @@ void main() {
       UncontrolledProviderScope(container: container, child: _statusHarness()),
     );
     await tester.pumpAndSettle();
-    await _pumpUntilFound(tester, find.text('Software account required'));
+    await _pumpUntilFound(tester, find.text('submission confirmed route'));
 
-    expect(find.text('Software account required'), findsOneWidget);
-    expect(
-      find.text(
-        'Coinholder voting requires a software account. Switch to a software account to vote in this round.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('submission confirmed route'), findsOneWidget);
+    expect(find.text('Software account required'), findsNothing);
     expect(find.text('Submitting votes'), findsNothing);
   });
 
@@ -2513,11 +2501,7 @@ class _NoopVotingRustApi implements VotingRustApi {
   }) async {}
 
   @override
-  Future<List<int>> deriveHotkey({
-    required String mnemonic,
-    required String roundId,
-    required String network,
-  }) async {
+  Future<List<int>> generateVotingHotkey({required String network}) async {
     return [9, 9, 9];
   }
 
@@ -2690,7 +2674,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   Future<rust_wire.DelegationPirPrecomputeResultView> precomputeDelegationPir({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required String mnemonic,
+    required List<int> hotkeySeed,
     required int bundleIndex,
   }) async {
     return rust_wire.DelegationPirPrecomputeResultView(
@@ -2707,6 +2691,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
     required String mnemonic,
+    required List<int> hotkeySeed,
     required int bundleIndex,
   }) async* {
     yield rust_api.ApiDelegationProofEvent(

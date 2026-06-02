@@ -476,8 +476,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
       String? softwareMnemonic;
-      if (!activeSession.isHardwareAccount &&
-          (draftVotes.isNotEmpty || needsDelegation)) {
+      if (!activeSession.isHardwareAccount && needsDelegation) {
         softwareMnemonic = await ref
             .read(accountProvider.notifier)
             .getMnemonicForAccount(key.accountUuid);
@@ -526,7 +525,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         intentProposalIds: intentProposalIds,
         proposalOptionCounts: proposalOptionCounts,
         initialSession: afterDelegation ?? activeSession,
-        mnemonic: softwareMnemonic,
       );
     } catch (error) {
       if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -668,7 +666,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required List<int> intentProposalIds,
     required Map<int, int> proposalOptionCounts,
     VotingSessionState? initialSession,
-    String? mnemonic,
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     final votePollingSession = _sessionForJob(key) ?? initialSession;
@@ -687,7 +684,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         draftVotes: draftVotes,
         allProposalIds: intentProposalIds,
         proposalOptionCounts: proposalOptionCounts,
-        mnemonic: mnemonic,
       );
     }
     if (!_isCurrentJob(key: key, generation: generation)) return;
