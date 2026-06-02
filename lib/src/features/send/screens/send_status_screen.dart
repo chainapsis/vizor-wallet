@@ -21,6 +21,9 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_book_label_lookup.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_transaction_progress_panel.dart';
 import '../services/sapling_params.dart';
 import '../widgets/sapling_params_prompt.dart';
@@ -498,6 +501,50 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     );
   }
 
+  TransactionReceiptBlockData _primaryBlockFor(
+    BuildContext context, {
+    required bool useFailedReceiptLayout,
+    required String? addressBookLabel,
+  }) {
+    final trimmedAddress = widget.args.address.trim();
+    final trimmedLabel = addressBookLabel?.trim();
+    if (trimmedLabel != null && trimmedLabel.isNotEmpty) {
+      return TransactionReceiptBlockData(
+        title: 'To',
+        child: TransactionReceiptSavedRecipientAddress(
+          address: trimmedAddress,
+          label: trimmedLabel,
+          onCopy: () => unawaited(_copyRecipientAddress()),
+        ),
+      );
+    }
+
+    return TransactionReceiptBlockData(
+      title: 'To',
+      child: TransactionReceiptAddressText(
+        address: trimmedAddress,
+        highlightEdges: widget.args.isShielded,
+        compact: !useFailedReceiptLayout && widget.args.isShielded,
+        highlightColor: useFailedReceiptLayout
+            ? null
+            : context.colors.text.brandCrimson,
+      ),
+      onCopy: useFailedReceiptLayout
+          ? () => unawaited(_copyRecipientAddress())
+          : null,
+    );
+  }
+
+  String? _recipientAddressBookLabel(
+    Iterable<AddressBookContact> addressBookContacts,
+  ) {
+    return addressBookLabelFor(
+      contacts: addressBookContacts,
+      network: AddressBookNetwork.zcash,
+      address: widget.args.address,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final receiptPhase = switch (_phase) {
@@ -510,6 +557,10 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
     final statusMessage = _statusMessage;
     final isKeystoneSubmitting =
         widget.keystone != null && _phase == _SendStatusPhase.sending;
+    final addressBookContacts =
+        ref.watch(addressBookProvider).value?.contacts ??
+        const <AddressBookContact>[];
+    final addressBookLabel = _recipientAddressBookLabel(addressBookContacts);
 
     return PopScope<void>(
       canPop: false,
@@ -560,23 +611,11 @@ class _SendStatusScreenState extends ConsumerState<SendStatusScreen> {
                                     amountText: _formatReceiptAmount(
                                       widget.args.amountZatoshi,
                                     ),
-                                    primaryBlock: TransactionReceiptBlockData(
-                                      title: 'To',
-                                      child: TransactionReceiptAddressText(
-                                        address: widget.args.address,
-                                        highlightEdges: widget.args.isShielded,
-                                        compact:
-                                            !useFailedReceiptLayout &&
-                                            widget.args.isShielded,
-                                        highlightColor: useFailedReceiptLayout
-                                            ? null
-                                            : context.colors.text.brandCrimson,
-                                      ),
-                                      onCopy: useFailedReceiptLayout
-                                          ? () => unawaited(
-                                              _copyRecipientAddress(),
-                                            )
-                                          : null,
+                                    primaryBlock: _primaryBlockFor(
+                                      context,
+                                      useFailedReceiptLayout:
+                                          useFailedReceiptLayout,
+                                      addressBookLabel: addressBookLabel,
                                     ),
                                     feeText: _formatFee(widget.args.feeZatoshi),
                                     extraBlocks: [

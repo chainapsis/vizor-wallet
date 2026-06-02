@@ -367,6 +367,88 @@ class TransactionReceiptAddressText extends StatelessWidget {
   }
 }
 
+class TransactionReceiptSavedRecipientAddress extends StatelessWidget {
+  const TransactionReceiptSavedRecipientAddress({
+    required this.address,
+    required this.label,
+    required this.onCopy,
+    super.key,
+  });
+
+  final String address;
+  final String label;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final trimmedAddress = address.trim();
+    final trimmedLabel = label.trim();
+    final displayAddress = compactTransactionReceiptSavedAddress(
+      trimmedAddress,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (trimmedLabel.isNotEmpty) ...[
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(AppIcons.user, size: 14, color: colors.icon.brandCrimson),
+              const SizedBox(width: AppSpacing.xxs),
+              Flexible(
+                child: Text(
+                  trimmedLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.bodyMediumStrong.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+        ],
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                displayAddress,
+                style: AppTypography.codeSmall.copyWith(
+                  color: colors.text.muted,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              _TransactionReceiptInlineCopyButton(onTap: onCopy),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+const _transactionReceiptSavedAddressEdgeLength = 16;
+const _transactionReceiptSavedAddressSeparator = ' ... ';
+
+String compactTransactionReceiptSavedAddress(String address) {
+  final trimmed = address.trim();
+  final compactLength =
+      _transactionReceiptSavedAddressEdgeLength * 2 +
+      _transactionReceiptSavedAddressSeparator.length;
+  if (trimmed.length <= compactLength) return trimmed;
+  return '${trimmed.substring(0, _transactionReceiptSavedAddressEdgeLength)}'
+      '$_transactionReceiptSavedAddressSeparator'
+      '${trimmed.substring(trimmed.length - _transactionReceiptSavedAddressEdgeLength)}';
+}
+
 class _TransactionReceiptActions extends StatelessWidget {
   const _TransactionReceiptActions({required this.view});
 
@@ -591,6 +673,28 @@ class _TransactionReceiptCopyAction extends StatelessWidget {
             const SizedBox(width: AppSpacing.xxs),
             AppIcon(AppIcons.copy, size: 16, color: colors.text.secondary),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TransactionReceiptInlineCopyButton extends StatelessWidget {
+  const _TransactionReceiptInlineCopyButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AppIcon(
+          AppIcons.copy,
+          size: 16,
+          color: context.colors.icon.muted,
         ),
       ),
     );

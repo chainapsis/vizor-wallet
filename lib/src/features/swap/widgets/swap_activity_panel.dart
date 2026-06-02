@@ -8,6 +8,7 @@ import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../domain/near_intents_explorer.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_activity_status_mapper.dart';
@@ -563,6 +564,8 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
       ref.watch(accountProvider).value,
       intent,
     );
+    final addressBookContacts =
+        ref.watch(addressBookProvider).value?.contacts ?? const [];
     final presentation = swapActivityStatusPresentationForIntent(
       state,
       intent,
@@ -572,6 +575,7 @@ class _SwapStatusForIntentState extends ConsumerState<_SwapStatusForIntent> {
               name: accountInfo.name,
               profilePictureId: accountInfo.profilePictureId,
             ),
+      addressBookContacts: addressBookContacts,
     );
     return SwapStatusPageContent(
       title: presentation.title,

@@ -20,6 +20,9 @@ import '../../../providers/privacy_mode_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_book_label_lookup.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../../send/widgets/transaction_receipt_view.dart';
 
 class ActivityTransactionStatusArgs {
@@ -371,6 +374,25 @@ class _ActivityTransactionStatusScreenState
     );
   }
 
+  /// Sent "To" block: a matched address-book contact shows its nickname +
+  /// crimson saved mark above the (truncated) address; copy sits at the end of
+  /// the address line and always copies the full address.
+  TransactionReceiptBlockData _recipientBlock({
+    required String address,
+    String? addressBookLabel,
+  }) {
+    final trimmedAddress = address.trim();
+    final nickname = addressBookLabel?.trim();
+    return TransactionReceiptBlockData(
+      title: 'To',
+      child: TransactionReceiptSavedRecipientAddress(
+        address: trimmedAddress,
+        label: nickname ?? '',
+        onCopy: () => unawaited(_copyText(trimmedAddress, 'Address copied')),
+      ),
+    );
+  }
+
   bool _shouldHighlightAddressEdges(String address) {
     return address.startsWith('u1') || address.startsWith('zs');
   }
@@ -379,6 +401,7 @@ class _ActivityTransactionStatusScreenState
     BuildContext context,
     rust_sync.TransactionInfo? tx,
     rust_sync.TransactionDetail? detail,
+    List<AddressBookContact> addressBookContacts,
   ) {
     final primaryAddress = detail?.primaryAddress?.trim();
     final useFailedReceiptLayout = tx?.expiredUnmined == true;
@@ -386,6 +409,17 @@ class _ActivityTransactionStatusScreenState
     if (tx?.txKind == 'sent' &&
         primaryAddress != null &&
         primaryAddress.isNotEmpty) {
+      final addressBookLabel = addressBookLabelFor(
+        contacts: addressBookContacts,
+        network: AddressBookNetwork.zcash,
+        address: primaryAddress,
+      );
+      if (addressBookLabel != null && addressBookLabel.trim().isNotEmpty) {
+        return _recipientBlock(
+          address: primaryAddress,
+          addressBookLabel: addressBookLabel,
+        );
+      }
       return _addressBlock(
         context,
         title: 'To',
@@ -446,6 +480,8 @@ class _ActivityTransactionStatusScreenState
 
     final tx = _transaction;
     final detail = _matchingDetailFor(tx);
+    final addressBookContacts =
+        ref.watch(addressBookProvider).value?.contacts ?? const [];
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final useFailedReceiptLayout = tx?.expiredUnmined == true;
     final error = useFailedReceiptLayout
@@ -491,7 +527,12 @@ class _ActivityTransactionStatusScreenState
                               tx,
                               privacyModeEnabled: privacyModeEnabled,
                             ),
-                            primaryBlock: _primaryBlockFor(context, tx, detail),
+                            primaryBlock: _primaryBlockFor(
+                              context,
+                              tx,
+                              detail,
+                              addressBookContacts,
+                            ),
                             extraBlocks: _extraBlocksFor(detail),
                             dateText: _dateText(tx),
                             feeText: _feeText(

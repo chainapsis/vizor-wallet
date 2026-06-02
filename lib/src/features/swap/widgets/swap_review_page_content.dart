@@ -6,6 +6,9 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_tooltip.dart';
+import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_book_label_lookup.dart';
+import '../../address_book/widgets/address_book_network_icon.dart';
 import '../domain/swap_address_plan.dart';
 import '../domain/swap_contract.dart';
 import '../models/swap_address_formatting.dart';
@@ -21,6 +24,7 @@ class SwapReviewPageContent extends StatelessWidget {
   const SwapReviewPageContent({
     required this.quote,
     required this.addressPlan,
+    this.addressBookContacts = const [],
     required this.accountLabel,
     required this.expired,
     required this.amountWarning,
@@ -35,6 +39,7 @@ class SwapReviewPageContent extends StatelessWidget {
 
   final SwapQuote quote;
   final SwapAddressPlan addressPlan;
+  final Iterable<AddressBookContact> addressBookContacts;
   final String? accountLabel;
   final String accountProfilePictureId;
   final bool expired;
@@ -72,6 +77,7 @@ class SwapReviewPageContent extends StatelessWidget {
           _ReviewDetailsList(
             quote: quote,
             addressPlan: addressPlan,
+            addressBookContacts: addressBookContacts,
             accountLabel: accountLabel,
             accountProfilePictureId: accountProfilePictureId,
             slippageToleranceTextOverride: slippageToleranceTextOverride,
@@ -445,6 +451,7 @@ class _ReviewDetailsList extends StatelessWidget {
   const _ReviewDetailsList({
     required this.quote,
     required this.addressPlan,
+    required this.addressBookContacts,
     required this.accountLabel,
     required this.accountProfilePictureId,
     required this.slippageToleranceTextOverride,
@@ -452,6 +459,7 @@ class _ReviewDetailsList extends StatelessWidget {
 
   final SwapQuote quote;
   final SwapAddressPlan addressPlan;
+  final Iterable<AddressBookContact> addressBookContacts;
   final String? accountLabel;
   final String accountProfilePictureId;
   final String? slippageToleranceTextOverride;
@@ -459,15 +467,38 @@ class _ReviewDetailsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sendsZec = quote.direction.sendsZec;
+    final externalAddress = _refundOrRecipientValue(addressPlan);
+    final addressNetwork = AddressBookNetwork.tryFromChainTicker(
+      addressPlan.externalAsset.chainTicker,
+    );
+    final addressBookLabel = addressNetwork == null
+        ? null
+        : addressBookLabelFor(
+            contacts: addressBookContacts,
+            network: addressNetwork,
+            address: externalAddress,
+          );
     final accountRow = _ReviewDetailRow(
       label: sendsZec ? 'From' : 'To',
       value: accountLabel ?? 'Current account',
       leadingValue: _AccountAvatar(profilePictureId: accountProfilePictureId),
     );
-    final addressRow = _ReviewDetailRow(
-      label: sendsZec ? 'To' : 'From',
-      value: compactSwapAddress(_refundOrRecipientValue(addressPlan)),
-    );
+    final addressRow = addressBookLabel == null || addressNetwork == null
+        ? _ReviewDetailRow(
+            label: sendsZec ? 'To' : 'From',
+            value: compactSwapAddress(externalAddress),
+          )
+        : _ReviewMatchedAddressRow(
+            label: sendsZec ? 'To' : 'From',
+            addressBookLabel: addressBookLabel,
+            network: addressNetwork,
+            value: compactSwapAddress(
+              externalAddress,
+              prefixLength: 7,
+              suffixLength: 5,
+              separator: '…',
+            ),
+          );
     return SizedBox(
       key: const ValueKey('swap_review_details'),
       width: 400,
@@ -502,6 +533,110 @@ class _ReviewDetailsList extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ReviewMatchedAddressRow extends StatelessWidget {
+  const _ReviewMatchedAddressRow({
+    required this.label,
+    required this.addressBookLabel,
+    required this.network,
+    required this.value,
+  });
+
+  final String label;
+  final String addressBookLabel;
+  final AddressBookNetwork network;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 32,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.s),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            addressBookLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: AppTypography.bodyMediumStrong.copyWith(
+                              color: colors.text.accent,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.xxs),
+                        AppIcon(
+                          AppIcons.user,
+                          size: 14,
+                          color: colors.icon.brandCrimson,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 18,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AddressBookNetworkIcon(network: network, size: 14),
+                    const SizedBox(width: AppSpacing.xxs),
+                    Text(
+                      network.label,
+                      maxLines: 1,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      style: AppTypography.codeSmall.copyWith(
+                        color: colors.text.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

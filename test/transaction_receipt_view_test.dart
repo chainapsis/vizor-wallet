@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/send/widgets/transaction_receipt_view.dart';
 
 void main() {
@@ -168,6 +169,43 @@ void main() {
     expect(plainText, contains('\n... '));
     expect(plainText, endsWith('n8fh5'));
     expect(plainText, isNot(_longAddress));
+  });
+
+  testWidgets('saved recipient address keeps copy icon next to compact text', (
+    tester,
+  ) async {
+    final compactAddress = compactTransactionReceiptSavedAddress(_longAddress);
+
+    await tester.pumpWidget(
+      _receiptHarness(
+        SizedBox(
+          width: 328,
+          child: TransactionReceiptSavedRecipientAddress(
+            address: _longAddress,
+            label: 'me',
+            onCopy: _noop,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('me'), findsOneWidget);
+    expect(find.text(compactAddress), findsOneWidget);
+    expect(find.text(_longAddress), findsNothing);
+
+    final addressRect = tester.getRect(find.text(compactAddress));
+    final copyRect = tester.getRect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppIcon &&
+            widget.name == AppIcons.copy &&
+            widget.size == 16,
+      ),
+    );
+
+    final copyGap = copyRect.left - addressRect.right;
+    expect(copyGap, greaterThan(0));
+    expect(copyGap, lessThanOrEqualTo(AppSpacing.xs));
   });
 }
 
