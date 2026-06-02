@@ -89,13 +89,7 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
       case ConfigSwitchKind.initialLoad:
         return;
       case ConfigSwitchKind.sameChainServiceUpdate:
-        _invalidateEndpointState();
-        return;
       case ConfigSwitchKind.newChainOrRound:
-        _invalidateEndpointState();
-        ref.invalidate(votingRoundsProvider);
-        ref.invalidate(votingSessionProvider);
-        return;
       case ConfigSwitchKind.protocolChanged:
         _invalidateEndpointState();
         ref.invalidate(votingRoundsProvider);
