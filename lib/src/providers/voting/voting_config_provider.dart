@@ -92,6 +92,19 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
     return resolution.config;
   }
 
+  /// Applies the Rust-computed switch plan to dependent voting state.
+  ///
+  /// `unchanged`/`initialLoad` keep all caches. The remaining kinds all imply
+  /// the vote/PIR endpoints, signing keys, rounds, or protocol moved, so every
+  /// endpoint-dependent cache is rebuilt to force re-resolution against the new
+  /// config:
+  ///
+  /// - shared transport/client + PIR resolver caches via [_invalidateEndpointState];
+  /// - the poll list ([votingRoundsProvider]) and the interactive session
+  ///   ([votingSessionProvider]) so status polls and session setup rerun;
+  /// - the submission-session family ([votingSubmissionSessionProvider]) so a
+  ///   subsequent submission re-resolves its endpoints (including the PIR
+  ///   endpoint, which `_resolvePirEndpoint` otherwise caches in session state).
   void _applySwitch(ConfigSwitchKind kind) {
     switch (kind) {
       case ConfigSwitchKind.unchanged:
@@ -103,6 +116,7 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
         _invalidateEndpointState();
         ref.invalidate(votingRoundsProvider);
         ref.invalidate(votingSessionProvider);
+        ref.invalidate(votingSubmissionSessionProvider);
         return;
     }
   }

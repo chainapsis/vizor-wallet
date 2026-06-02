@@ -6,6 +6,7 @@ use super::voting_helpers::{
     delegation_static_inputs, prepare_delegation_bundle_params, resolve_delegation_lwd_inputs,
     seed_from_mnemonic,
 };
+use flutter_rust_bridge::DartFnFuture;
 use crate::frb_generated::StreamSink;
 use crate::wallet::{
     keys,
@@ -13,6 +14,10 @@ use crate::wallet::{
 };
 use rand::{rngs::OsRng, RngCore};
 use secrecy::ExposeSecret;
+use zcash_voting::config::{self, ResolveConfigError};
+use zcash_voting::wire::{
+    ConfigSwitchKind, ResolveVotingConfigOptions, ResolvedVotingConfig, ResolvedVotingConfigSummary,
+};
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
 
@@ -196,8 +201,29 @@ pub fn plan_share_submissions(
 
 /// Build round params from server metadata while binding trusted `ea_pk`.
 ///
-/// The vote server supplies dynamic fields such as snapshot height and roots,
-/// but `ea_pk` must come from the authenticated dynamic config material.
+/// Trust model for the per-round parameters:
+///
+/// - `ea_pk` (the encryption-authority key votes are encrypted to) is the only
+///   field that cannot be independently re-derived by the wallet, so it is
+///   always sourced from the authenticated dynamic config and never from the
+///   vote server's round response. This call ignores any server-supplied
+///   `ea_pk` and substitutes the authenticated value for `round_id`.
+/// - `snapshot_height` and `nc_root` are accepted from the server here but are
+///   re-verified downstream against the wallet's own lightwalletd-synced
+///   Orchard commitment tree: `zcash_voting`'s witness generation
+///   (`validate_cached_tree_state_for_round`) requires the synced frontier
+///   height and root to match these exactly, so a wrong value fails closed
+///   before any vote material is produced.
+/// - `nullifier_imt_root` is accepted from the server here but is used
+///   downstream as the expected root that PIR nullifier proofs are verified
+///   against; a wrong root makes proof verification fail closed rather than
+///   enabling a forged non-membership claim.
+///
+/// In other words, every server-supplied field other than `ea_pk` is
+/// cross-checked against an independent source (lightwalletd or PIR proofs)
+/// downstream, and `ea_pk` is pinned to authenticated config here. A
+/// compromised or stale endpoint therefore cannot steer voting to the wrong
+/// authority or roots without being rejected.
 pub fn trusted_voting_round_params_from_config(
     resolved_config: zcash_voting::config::ResolvedVotingConfig,
     round_id: String,
@@ -1381,6 +1407,78 @@ pub fn set_ballot_intent(
         };
         db.set_ballot_intent(&round_id, proposal_id, decision, num_options)
             .map_err(|e| format!("set_ballot_intent failed: {e}"))
+    })
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VotingConfigResolution {
+    pub config: ResolvedVotingConfig,
+    pub switch_kind: ConfigSwitchKind,
+}
+
+/// Fallible response from the wallet-owned voting config transport callback.
+///
+/// This keeps ordinary transport failures (timeout/HTTP errors/etc.) in the
+/// value domain instead of crossing the FFI callback boundary as panics.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VotingConfigFetch {
+    pub bytes: Option<Vec<u8>>,
+    pub error: Option<String>,
+}
+
+/// Resolve static + dynamic voting config via a wallet-owned fetch callback.
+///
+/// Rust validates config authenticity and computes config switch semantics.
+/// The wallet keeps transport ownership via `fetch_bytes`.
+///
+/// Transport-error contract with the Dart caller: ordinary transport failures
+/// (timeouts, non-200 responses, etc.) are reported in the value domain via
+/// [`VotingConfigFetch::error`] rather than as panics across the FFI callback
+/// boundary. This function forwards that error string verbatim into the
+/// downstream resolver, which surfaces it back as
+/// [`ResolveConfigError::Transport`]; the string is then returned unchanged as
+/// the `Err` of this function. The Dart loader relies on this preservation: it
+/// passes an opaque token as the error string and looks for that exact token in
+/// the returned error to recover the original typed Dart exception (see
+/// `voting_config_loader.dart`). Do not reformat, wrap, or translate transport
+/// error strings here, or that round-trip will break and callers will lose the
+/// real error.
+pub async fn resolve_voting_config(
+    source: String,
+    previous: Option<ResolvedVotingConfig>,
+    fetch_bytes: impl Fn(String) -> DartFnFuture<VotingConfigFetch>,
+) -> Result<VotingConfigResolution, String> {
+    let next = config::resolve_config(&source, ResolveVotingConfigOptions::default(), |url| {
+        let response = fetch_bytes(url.clone());
+        async move {
+            let response = response.await;
+            match (response.bytes, response.error) {
+                (Some(bytes), None) => Ok::<_, String>(bytes),
+                (None, Some(error)) => Err(error),
+                (Some(_), Some(_)) => Err(
+                    "voting config transport callback returned both bytes and error".to_string(),
+                ),
+                (None, None) => Err(
+                    "voting config transport callback returned neither bytes nor error".to_string(),
+                ),
+            }
+        }
+    })
+    .await
+    .map_err(|error| match error {
+        ResolveConfigError::Transport(transport) => transport,
+        ResolveConfigError::Config(config_error) => config_error.to_string(),
+    })?;
+
+    let switch_kind = config::decide_config_switch(
+        previous.as_ref().map(ResolvedVotingConfigSummary::from),
+        ResolvedVotingConfigSummary::from(&next),
+    )
+    .kind;
+
+    Ok(VotingConfigResolution {
+        config: next,
+        switch_kind,
     })
 }
 

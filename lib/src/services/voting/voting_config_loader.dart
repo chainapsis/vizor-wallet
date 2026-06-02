@@ -116,6 +116,26 @@ class VotingConfigLoader {
   final String _sourceUrl;
   final Duration _timeout;
   final ResolveVotingConfigFn _resolveVotingConfig;
+
+  /// Sentinel prefix for the opaque token that preserves typed transport errors
+  /// across the Rust resolver round-trip.
+  ///
+  /// The FFI boundary only carries an error *string*, but callers
+  /// (e.g. the settings validator) need the original typed Dart exception
+  /// such as [VotingHttpException]. The contract is:
+  ///
+  ///   1. when [fetchBytes] throws, we stash the real error keyed by a unique
+  ///      `"$prefix$index"` token and hand only the token to Rust as the
+  ///      transport error string;
+  ///   2. Rust forwards that string verbatim and returns it unchanged as the
+  ///      resolver error (see `resolve_voting_config` in Rust), so the token
+  ///      survives the round-trip intact;
+  ///   3. on failure we extract the token from the thrown error and rethrow the
+  ///      original captured exception with its stack trace.
+  ///
+  /// This depends on Rust not reformatting transport error strings. If that
+  /// contract is ever broken the user would see a raw token instead of a
+  /// meaningful error, so both sides document it explicitly.
   static const _transportErrorTokenPrefix = '__voting_config_transport_error__:';
 
   /// Resolves voting config via Rust while keeping transport in Dart.

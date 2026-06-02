@@ -258,14 +258,7 @@ void main() {
                   return fakeResolveVotingConfig(
                     source: source,
                     previous: previous,
-                    fetchBytes: (url) async {
-                      final response = await fetchBytes(url);
-                      final bytes = response.bytes;
-                      if (bytes != null) return bytes;
-                      throw StateError(
-                        response.error ?? 'missing bytes from voting config fetch',
-                      );
-                    },
+                    fetchBytes: fetchBytes,
                     switchKind: rust_config.ConfigSwitchKind.newChainOrRound,
                     authenticatedRoundIds: const [kRoundId],
                   );
@@ -273,14 +266,7 @@ void main() {
                 return fakeResolveVotingConfig(
                   source: source,
                   previous: previous,
-                  fetchBytes: (url) async {
-                    final response = await fetchBytes(url);
-                    final bytes = response.bytes;
-                    if (bytes != null) return bytes;
-                    throw StateError(
-                      response.error ?? 'missing bytes from voting config fetch',
-                    );
-                  },
+                  fetchBytes: fetchBytes,
                   switchKind: previous == null
                       ? rust_config.ConfigSwitchKind.initialLoad
                       : rust_config.ConfigSwitchKind.unchanged,
@@ -702,7 +688,7 @@ void main() {
     },
   );
 
-  test('session provider rejects unauthenticated round IDs', () async {
+  test('session provider rejects explicitly skipped round IDs', () async {
     final http = FakeVotingHttpClient(responses: votingHttpResponses());
     final container = _sessionContainer(
       http: http,
@@ -717,7 +703,40 @@ void main() {
         isA<StateError>().having(
           (error) => error.message,
           'message',
-          contains('not authenticated by voting config'),
+          allOf(
+            contains('not authenticated by voting config'),
+            contains('failed dynamic-config authentication'),
+          ),
+        ),
+      ),
+    );
+    expect(
+      http.requests.any(
+        (request) => request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+      ),
+      isFalse,
+    );
+  });
+
+  test('session provider rejects rounds absent from the authenticated set', () async {
+    final http = FakeVotingHttpClient(responses: votingHttpResponses());
+    final container = _sessionContainer(
+      http: http,
+      authenticatedRoundIds: const [kOtherRoundId],
+      skippedRoundIds: const [],
+    );
+    addTearDown(container.dispose);
+
+    await expectLater(
+      container.read(votingSessionProvider(kRoundId).future),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          allOf(
+            contains('not authenticated by voting config'),
+            contains('absent from the authenticated round set'),
+          ),
         ),
       ),
     );
