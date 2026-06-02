@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart' show Theme;
 import 'package:flutter/widgets.dart';
 
+import '../../../core/layout/app_layout.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 
 enum TransactionReceiptPhase { loading, sending, pending, succeeded, failed }
+
+EdgeInsets get transactionReceiptIllustrationReservedPadding {
+  if (isDesktopLayoutPlatform) {
+    return const EdgeInsets.only(right: 255);
+  }
+  return EdgeInsets.zero;
+}
 
 class TransactionReceiptBlockData {
   const TransactionReceiptBlockData({

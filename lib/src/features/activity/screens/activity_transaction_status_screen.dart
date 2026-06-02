@@ -482,7 +482,7 @@ class _ActivityTransactionStatusScreenState
                     const SizedBox(height: AppSpacing.s),
                     Expanded(
                       child: Padding(
-                        padding: const EdgeInsets.only(right: 255),
+                        padding: transactionReceiptIllustrationReservedPadding,
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: TransactionReceiptView(
