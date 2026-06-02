@@ -189,12 +189,12 @@ Future<BundleLayout> setupDelegationBundles({
 Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
-  required List<int> hotkeySeed,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
 }) => RustLib.instance.api.crateApiVotingPrecomputeDelegationPir(
   ctx: ctx,
   pirServerUrl: pirServerUrl,
-  hotkeySeed: hotkeySeed,
+  storedHotkeySecret: storedHotkeySecret,
   bundleIndex: bundleIndex,
 );
 
@@ -213,14 +213,14 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
   required String mnemonic,
-  required List<int> hotkeySeed,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
 }) => RustLib.instance.api
     .crateApiVotingBuildProveAndSignDelegationPayloadWithProgress(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
       mnemonic: mnemonic,
-      hotkeySeed: hotkeySeed,
+      storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
     );
 
@@ -232,11 +232,11 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
 /// redaction for the requested bundle fails.
 Future<KeystoneSigningRequest> buildKeystoneDelegationRequest({
   required ApiVotingRoundContext ctx,
-  required List<int> hotkeySeed,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
 }) => RustLib.instance.api.crateApiVotingBuildKeystoneDelegationRequest(
   ctx: ctx,
-  hotkeySeed: hotkeySeed,
+  storedHotkeySecret: storedHotkeySecret,
   bundleIndex: bundleIndex,
 );
 
@@ -305,7 +305,7 @@ Stream<ApiDelegationProofEvent>
 buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
-  required List<int> hotkeySeed,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
   required List<int> keystoneSig,
   required List<int> keystoneSighash,
@@ -313,7 +313,7 @@ buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     .crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
-      hotkeySeed: hotkeySeed,
+      storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
       keystoneSig: keystoneSig,
       keystoneSighash: keystoneSighash,
@@ -469,7 +469,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   required String network,
   required String roundId,
   required int bundleIndex,
-  required List<int> hotkeySeed,
+  required List<int> storedHotkeySecret,
   required VanWitness vanWitness,
   required List<DraftVote> draftVotes,
 }) => RustLib.instance.api.crateApiVotingBuildVoteCommitmentsWithProgress(
@@ -478,7 +478,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   network: network,
   roundId: roundId,
   bundleIndex: bundleIndex,
-  hotkeySeed: hotkeySeed,
+  storedHotkeySecret: storedHotkeySecret,
   vanWitness: vanWitness,
   draftVotes: draftVotes,
 );

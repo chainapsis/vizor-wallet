@@ -115,7 +115,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<KeystoneSigningRequest> crateApiVotingBuildKeystoneDelegationRequest({
     required ApiVotingRoundContext ctx,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   });
 
@@ -124,7 +124,7 @@ abstract class RustLibApi extends BaseApi {
     required ApiVotingRoundContext ctx,
     required String pirServerUrl,
     required String mnemonic,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   });
 
@@ -132,7 +132,7 @@ abstract class RustLibApi extends BaseApi {
   crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
     required List<int> keystoneSighash,
@@ -144,7 +144,7 @@ abstract class RustLibApi extends BaseApi {
     required String network,
     required String roundId,
     required int bundleIndex,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required VanWitness vanWitness,
     required List<DraftVote> draftVotes,
   });
@@ -522,7 +522,7 @@ abstract class RustLibApi extends BaseApi {
   crateApiVotingPrecomputeDelegationPir({
     required ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   });
 
@@ -873,7 +873,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<KeystoneSigningRequest> crateApiVotingBuildKeystoneDelegationRequest({
     required ApiVotingRoundContext ctx,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) {
     return handler.executeNormal(
@@ -881,7 +881,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_api_voting_round_context(ctx, serializer);
-          sse_encode_list_prim_u_8_loose(hotkeySeed, serializer);
+          sse_encode_list_prim_u_8_loose(storedHotkeySecret, serializer);
           sse_encode_u_32(bundleIndex, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -895,7 +895,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVotingBuildKeystoneDelegationRequestConstMeta,
-        argValues: [ctx, hotkeySeed, bundleIndex],
+        argValues: [ctx, storedHotkeySecret, bundleIndex],
         apiImpl: this,
       ),
     );
@@ -904,7 +904,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiVotingBuildKeystoneDelegationRequestConstMeta =>
       const TaskConstMeta(
         debugName: "build_keystone_delegation_request",
-        argNames: ["ctx", "hotkeySeed", "bundleIndex"],
+        argNames: ["ctx", "storedHotkeySecret", "bundleIndex"],
       );
 
   @override
@@ -913,7 +913,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required ApiVotingRoundContext ctx,
     required String pirServerUrl,
     required String mnemonic,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) {
     final sink = RustStreamSink<ApiDelegationProofEvent>();
@@ -925,7 +925,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_box_autoadd_api_voting_round_context(ctx, serializer);
             sse_encode_String(pirServerUrl, serializer);
             sse_encode_String(mnemonic, serializer);
-            sse_encode_list_prim_u_8_loose(hotkeySeed, serializer);
+            sse_encode_list_prim_u_8_loose(storedHotkeySecret, serializer);
             sse_encode_u_32(bundleIndex, serializer);
             sse_encode_StreamSink_api_delegation_proof_event_Sse(
               sink,
@@ -948,7 +948,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             ctx,
             pirServerUrl,
             mnemonic,
-            hotkeySeed,
+            storedHotkeySecret,
             bundleIndex,
             sink,
           ],
@@ -967,7 +967,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "ctx",
           "pirServerUrl",
           "mnemonic",
-          "hotkeySeed",
+          "storedHotkeySecret",
           "bundleIndex",
           "sink",
         ],
@@ -978,7 +978,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
     required List<int> keystoneSighash,
@@ -991,7 +991,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             final serializer = SseSerializer(generalizedFrbRustBinding);
             sse_encode_box_autoadd_api_voting_round_context(ctx, serializer);
             sse_encode_String(pirServerUrl, serializer);
-            sse_encode_list_prim_u_8_loose(hotkeySeed, serializer);
+            sse_encode_list_prim_u_8_loose(storedHotkeySecret, serializer);
             sse_encode_u_32(bundleIndex, serializer);
             sse_encode_list_prim_u_8_loose(keystoneSig, serializer);
             sse_encode_list_prim_u_8_loose(keystoneSighash, serializer);
@@ -1015,7 +1015,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           argValues: [
             ctx,
             pirServerUrl,
-            hotkeySeed,
+            storedHotkeySecret,
             bundleIndex,
             keystoneSig,
             keystoneSighash,
@@ -1036,7 +1036,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "ctx",
           "pirServerUrl",
-          "hotkeySeed",
+          "storedHotkeySecret",
           "bundleIndex",
           "keystoneSig",
           "keystoneSighash",
@@ -1051,7 +1051,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String network,
     required String roundId,
     required int bundleIndex,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required VanWitness vanWitness,
     required List<DraftVote> draftVotes,
   }) {
@@ -1066,7 +1066,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_String(network, serializer);
             sse_encode_String(roundId, serializer);
             sse_encode_u_32(bundleIndex, serializer);
-            sse_encode_list_prim_u_8_loose(hotkeySeed, serializer);
+            sse_encode_list_prim_u_8_loose(storedHotkeySecret, serializer);
             sse_encode_box_autoadd_van_witness(vanWitness, serializer);
             sse_encode_list_draft_vote(draftVotes, serializer);
             sse_encode_StreamSink_api_vote_commit_event_Sse(sink, serializer);
@@ -1088,7 +1088,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             network,
             roundId,
             bundleIndex,
-            hotkeySeed,
+            storedHotkeySecret,
             vanWitness,
             draftVotes,
             sink,
@@ -1109,7 +1109,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "network",
           "roundId",
           "bundleIndex",
-          "hotkeySeed",
+          "storedHotkeySecret",
           "vanWitness",
           "draftVotes",
           "sink",
@@ -3582,7 +3582,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   crateApiVotingPrecomputeDelegationPir({
     required ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) {
     return handler.executeNormal(
@@ -3591,7 +3591,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_box_autoadd_api_voting_round_context(ctx, serializer);
           sse_encode_String(pirServerUrl, serializer);
-          sse_encode_list_prim_u_8_loose(hotkeySeed, serializer);
+          sse_encode_list_prim_u_8_loose(storedHotkeySecret, serializer);
           sse_encode_u_32(bundleIndex, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -3605,7 +3605,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVotingPrecomputeDelegationPirConstMeta,
-        argValues: [ctx, pirServerUrl, hotkeySeed, bundleIndex],
+        argValues: [ctx, pirServerUrl, storedHotkeySecret, bundleIndex],
         apiImpl: this,
       ),
     );
@@ -3614,7 +3614,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiVotingPrecomputeDelegationPirConstMeta =>
       const TaskConstMeta(
         debugName: "precompute_delegation_pir",
-        argNames: ["ctx", "pirServerUrl", "hotkeySeed", "bundleIndex"],
+        argNames: ["ctx", "pirServerUrl", "storedHotkeySecret", "bundleIndex"],
       );
 
   @override
