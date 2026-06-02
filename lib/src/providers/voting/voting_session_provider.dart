@@ -35,6 +35,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _operation = Future.value();
   final String _roundId;
   final Map<String, Future<void>> _delegationPirPrecomputes = {};
+  final Map<String, Future<List<int>>> _hotkeyEnsures = {};
   Timer? _shareTrackingTimer;
   String? _sessionAccountUuid;
   bool? _sessionIsHardwareAccount;
@@ -108,6 +109,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _isDisposed = true;
       _advanceSessionGeneration();
       _delegationPirPrecomputes.clear();
+      _hotkeyEnsures.clear();
       _shareTrackingTimer?.cancel();
       if (context == null) return;
       if (_activeSubmissionOwnsContext(context)) {
@@ -191,6 +193,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _sessionIsHardwareAccount = null;
     _currentContext = null;
     _delegationPirPrecomputes.clear();
+    _hotkeyEnsures.clear();
     _shareTrackingTimer?.cancel();
     if (!hadSessionAccount || _isDisposed) return;
 
@@ -1258,6 +1261,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<List<int>> _ensureHotkey(
     _VotingSessionContext context, {
     bool alreadyBound = false,
+  }) {
+    final key = _hotkeyEnsureKey(context);
+    final inFlight = _hotkeyEnsures[key];
+    if (inFlight != null) return inFlight;
+
+    late final Future<List<int>> ensureFuture;
+    ensureFuture = _ensureHotkeyUncached(context, alreadyBound: alreadyBound)
+        .whenComplete(() {
+          if (identical(_hotkeyEnsures[key], ensureFuture)) {
+            _hotkeyEnsures.remove(key);
+          }
+        });
+    _hotkeyEnsures[key] = ensureFuture;
+    return ensureFuture;
+  }
+
+  Future<List<int>> _ensureHotkeyUncached(
+    _VotingSessionContext context, {
+    required bool alreadyBound,
   }) async {
     final existing = await _readStoredHotkey(context);
     if (existing != null && existing.isNotEmpty) return existing;
@@ -1267,6 +1289,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     final rust = ref.read(votingRustApiProvider);
     final hotkey = await rust.generateVotingHotkey(network: context.network);
+    final storedAfterGeneration = await _readStoredHotkey(context);
+    if (storedAfterGeneration != null && storedAfterGeneration.isNotEmpty) {
+      return storedAfterGeneration;
+    }
     await ref
         .read(votingHotkeyStoreProvider)
         .writeHotkey(
@@ -1275,6 +1301,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           hotkey: hotkey,
         );
     return hotkey;
+  }
+
+  static String _hotkeyEnsureKey(_VotingSessionContext context) {
+    return '${context.accountUuid}:${context.round.roundId}';
   }
 
   Future<List<int>?> _readStoredHotkey(_VotingSessionContext context) async {

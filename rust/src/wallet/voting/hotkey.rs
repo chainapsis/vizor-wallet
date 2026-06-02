@@ -41,6 +41,6 @@ mod tests {
                 Ok(_) => panic!("short hotkey secret unexpectedly validated"),
                 Err(err) => err,
             };
-        assert!(err.contains("stored hotkey secret must be at least 32 bytes"));
+        assert!(err.contains("stored hotkey secret must be exactly 64 bytes"));
     }
 }
