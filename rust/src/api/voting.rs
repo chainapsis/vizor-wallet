@@ -12,6 +12,11 @@ use crate::wallet::{
     voting::{db, delegation, delegation::DelegationProgress, hotkey, network::voting_network},
 };
 use rand::{rngs::OsRng, RngCore};
+use secrecy::ExposeSecret;
+use zcash_voting::config;
+use zcash_voting::wire::{
+    ConfigSwitchKind, ResolveVotingConfigOptions, ResolvedVotingConfig, ResolvedVotingConfigSummary,
+};
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
 
@@ -193,6 +198,45 @@ pub fn plan_share_submissions(
     })
 }
 
+/// Build round params from server metadata while binding trusted `ea_pk`.
+///
+/// Trust model for the per-round parameters:
+///
+/// - `ea_pk` (the encryption-authority key votes are encrypted to) is the only
+///   field that cannot be independently re-derived by the wallet, so it is
+///   always sourced from the authenticated dynamic config and never from the
+///   vote server's round response. This call ignores any server-supplied
+///   `ea_pk` and substitutes the authenticated value for `round_id`.
+/// - `snapshot_height` and `nc_root` are accepted from the server here but are
+///   re-verified downstream against the wallet's own lightwalletd-synced
+///   Orchard commitment tree: `zcash_voting`'s witness generation
+///   (`validate_cached_tree_state_for_round`) requires the synced frontier
+///   height and root to match these exactly, so a wrong value fails closed
+///   before any vote material is produced.
+/// - `nullifier_imt_root` is accepted from the server here but is used
+///   downstream as the expected root that PIR nullifier proofs are verified
+///   against; a wrong root makes proof verification fail closed rather than
+///   enabling a forged non-membership claim.
+///
+/// In other words, every server-supplied field other than `ea_pk` is
+/// cross-checked against an independent source (lightwalletd or PIR proofs)
+/// downstream, and `ea_pk` is pinned to authenticated config here. A
+/// compromised or stale endpoint therefore cannot steer voting to the wrong
+/// authority or roots without being rejected.
+pub fn trusted_voting_round_params_from_config(
+    resolved_config: zcash_voting::config::ResolvedVotingConfig,
+    round_id: String,
+    snapshot_height: u64,
+    nc_root: Vec<u8>,
+    nullifier_imt_root: Vec<u8>,
+) -> Result<zcash_voting::wire::VotingRoundParams, String> {
+    catch(|| {
+        resolved_config
+            .trusted_voting_round_params(round_id, snapshot_height, nc_root, nullifier_imt_root)
+            .map_err(|e| e.to_string())
+    })
+}
+
 fn share_record(
     share: zcash_voting::wire::ShareDelegationRecordView,
 ) -> zcash_voting::ShareDelegationRecord {
@@ -289,18 +333,17 @@ pub fn recovered_vote_share_wire_json(
     })
 }
 
-/// Generate opaque voting hotkey bytes for a local voting account.
+/// Generate opaque voting hotkey bytes for a hardware account.
 ///
-/// Vizor v2 uses the same random app-owned hotkey model for software and
-/// Keystone accounts. The app persists this random per-round hotkey in secure
-/// storage and reuses it for delegation setup and vote commitment signing.
+/// Wallets persist this random hotkey in secure storage and reuse it for
+/// delegation and vote commitment signing.
 ///
 /// # Errors
 ///
 /// Returns an error if network parsing fails or random hotkey generation fails.
 pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, String> {
     catch(|| {
-        // Voting hotkeys are app-owned random secrets, not wallet-seed-derived.
+        // Hardware accounts use randomized per-round voting hotkeys.
         let network = keys::parse_network(&network)?;
         zcash_voting::hotkey::generate_random_voting_hotkey(voting_network(network))
             .map_err(|e| format!("Voting hotkey generation failed: {e}"))
@@ -535,7 +578,7 @@ pub async fn setup_delegation_bundles(
     ctx: ApiVotingRoundContext,
 ) -> Result<zcash_voting::wire::BundleLayout, String> {
     // Resolve static network + bundle policy inputs and open the sidecar DB.
-    let (voting_network, bundle_policy) =
+    let (_, voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_db = db::open_voting_db(&ctx.db_path, &ctx.account_uuid)?;
 
@@ -562,8 +605,8 @@ pub async fn setup_delegation_bundles(
 ///
 /// # Errors
 ///
-/// Returns an error if round input resolution, hotkey validation, bundle
-/// preparation, or PIR precompute fails.
+/// Returns an error if round input resolution, mnemonic-to-seed derivation,
+/// hotkey derivation, bundle preparation, or PIR precompute fails.
 pub async fn precompute_delegation_pir(
     ctx: ApiVotingRoundContext,
     pir_server_url: String,
@@ -571,8 +614,10 @@ pub async fn precompute_delegation_pir(
     bundle_index: u32,
 ) -> Result<zcash_voting::wire::DelegationPirPrecomputeResultView, String> {
     // Resolve static network and bundling policy inputs from round context.
-    let (voting_network, bundle_policy) =
+    let (_, voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
+
+    // Validate the app-owned stored voting hotkey for this network.
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
 
@@ -620,8 +665,8 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     bundle_index: u32,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
-    // Resolve static delegation inputs and validate the app-owned hotkey.
-    let (voting_network, bundle_policy) =
+    // Resolve static delegation inputs and validate the app-owned stored hotkey.
+    let (_, voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let seed = seed_from_mnemonic(mnemonic)?;
     let voting_hotkey =
@@ -677,7 +722,7 @@ pub async fn build_keystone_delegation_request(
     bundle_index: u32,
 ) -> Result<zcash_voting::wire::KeystoneSigningRequest, String> {
     // Resolve static round inputs and validate Keystone-provided hotkey bytes.
-    let (voting_network, bundle_policy) =
+    let (_, voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
@@ -790,8 +835,8 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     keystone_sighash: Vec<u8>,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
-    // Resolve static inputs and validate the persisted Keystone hotkey secret.
-    let (voting_network, bundle_policy) =
+    // Resolve static inputs and validate the persisted Keystone hotkey seed.
+    let (_, voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
@@ -1037,17 +1082,19 @@ async fn build_vote_commitments_result<F>(
 where
     F: Fn(zcash_voting::vote::VoteCommitStage) + Send + Sync + 'static,
 {
-    // Parse network once and move stored hotkey bytes into the blocking worker.
+    // Parse network once and keep hotkey bytes in a secrecy wrapper.
     let network = keys::parse_network(&network)?;
+    let stored_hotkey_secret = secrecy::SecretVec::new(stored_hotkey_secret);
 
     // Commit/prove work is CPU-heavy; run it on a blocking worker thread.
     let commitment_result = tokio::task::spawn_blocking(move || {
         let reporter = zcash_voting::VoteCommitStageBridge::new(on_stage);
         let voting_db = db::open_voting_db(&db_path, &account_uuid)?;
-        let voting_hotkey = hotkey::voting_hotkey_from_stored_secret(
-            stored_hotkey_secret,
+        let voting_hotkey = zcash_voting::VotingHotkey::from_stored_secret(
+            stored_hotkey_secret.expose_secret(),
             voting_network(network),
-        )?;
+        )
+        .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))?;
 
         zcash_voting::vote::commit_batch(
             &voting_db,
@@ -1178,10 +1225,8 @@ pub fn confirm_vote_submission(
     })
 }
 
-fn parse_tx_events_json(
-    events_json: &str,
-) -> Result<Vec<zcash_voting::confirmation::TxEvent>, String> {
-    let events: Vec<zcash_voting::confirmation::TxEvent> =
+fn parse_tx_events_json(events_json: &str) -> Result<Vec<zcash_voting::prelude::TxEvent>, String> {
+    let events: Vec<zcash_voting::prelude::TxEvent> =
         serde_json::from_str(events_json).map_err(|e| format!("invalid tx events JSON: {e}"))?;
     Ok(events)
 }
@@ -1334,6 +1379,61 @@ pub fn set_ballot_intent(
     })
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VotingConfigResolution {
+    pub config: ResolvedVotingConfig,
+    pub switch_kind: ConfigSwitchKind,
+}
+
+/// Authenticate the static voting config bytes and surface the dynamic URL.
+///
+/// The wallet fetches the static trust anchor with its own transport and passes
+/// the bytes here. Rust verifies the hash pin and decodes the static config,
+/// returning the `dynamic_config_url` the wallet must fetch next before calling
+/// [`resolve_voting_config`]. Config errors are returned as a flat string.
+pub fn resolve_static_voting_config(
+    source: String,
+    static_bytes: Vec<u8>,
+) -> Result<String, String> {
+    config::resolve_static_voting_config(&source, &static_bytes)
+        .map(|resolved| resolved.dynamic_config_url)
+        .map_err(|error| error.to_string())
+}
+
+/// Resolve and authenticate voting config from wallet-fetched bytes.
+///
+/// The wallet owns transport: it fetches the static bytes, calls
+/// [`resolve_static_voting_config`] to learn the dynamic URL, fetches the
+/// dynamic bytes, then passes both blobs here. Rust authenticates them and
+/// computes the config-switch classification against `previous`. Config errors
+/// are returned as a flat string; transport failures never reach this layer.
+pub fn resolve_voting_config(
+    source: String,
+    static_bytes: Vec<u8>,
+    dynamic_bytes: Vec<u8>,
+    previous: Option<ResolvedVotingConfig>,
+) -> Result<VotingConfigResolution, String> {
+    let resolved_static =
+        config::resolve_static_voting_config(&source, &static_bytes).map_err(|error| error.to_string())?;
+    let next = config::resolve_dynamic_voting_config(
+        resolved_static,
+        &dynamic_bytes,
+        ResolveVotingConfigOptions::default(),
+    )
+    .map_err(|error| error.to_string())?;
+
+    let switch_kind = config::decide_config_switch(
+        previous.as_ref().map(ResolvedVotingConfigSummary::from),
+        ResolvedVotingConfigSummary::from(&next),
+    )
+    .kind;
+
+    Ok(VotingConfigResolution {
+        config: next,
+        switch_kind,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1347,7 +1447,7 @@ mod tests {
         thread,
     };
     use zcash_client_backend::proto::service::TreeState;
-    use zcash_voting::confirmation::{TxEvent, TxEventAttribute};
+    use zcash_voting::prelude::{TxEvent, TxEventAttribute};
     use zcash_voting::BundlePolicy;
 
     fn b64(bytes: impl AsRef<[u8]>) -> String {
@@ -1439,6 +1539,45 @@ mod tests {
         assert_eq!(core.ea_pk, api.ea_pk);
         assert_eq!(core.nc_root, api.nc_root);
         assert_eq!(core.nullifier_imt_root, api.nullifier_imt_root);
+    }
+
+    #[test]
+    fn trusted_round_params_use_config_ea_pk() {
+        let trusted_ea_pk = vec![7u8; 32];
+        let config = zcash_voting::config::ResolvedVotingConfig {
+            source_fingerprint: "source".to_string(),
+            trusted_key_fingerprint: "keys".to_string(),
+            dynamic_config_fingerprint: "dynamic".to_string(),
+            vote_servers: vec![],
+            pir_endpoints: vec![],
+            supported_versions: zcash_voting::config::SupportedVersions {
+                pir: vec!["v0".to_string()],
+                vote_protocol: "v0".to_string(),
+                tally: "v0".to_string(),
+                vote_server: "v1".to_string(),
+            },
+            authenticated_rounds: vec![zcash_voting::config::AuthenticatedRound {
+                round_id: ROUND_ID.to_string(),
+                ea_pk: trusted_ea_pk.clone(),
+            }],
+            skipped_round_ids: vec![],
+            conditions: vec![],
+        };
+
+        let params = trusted_voting_round_params_from_config(
+            config,
+            ROUND_ID.to_string(),
+            123,
+            vec![2u8; 32],
+            vec![3u8; 32],
+        )
+        .unwrap();
+
+        assert_eq!(params.vote_round_id, ROUND_ID);
+        assert_eq!(params.snapshot_height, 123);
+        assert_eq!(params.ea_pk, trusted_ea_pk);
+        assert_eq!(params.nc_root, vec![2u8; 32]);
+        assert_eq!(params.nullifier_imt_root, vec![3u8; 32]);
     }
 
     #[test]
@@ -2447,7 +2586,7 @@ mod tests {
             .block_on(precompute_delegation_pir(
                 test_round_context(&db_path, "bogus", "wallet-1"),
                 "http://127.0.0.1:2".to_string(),
-                vec![1; 64],
+                vec![9; 64],
                 0,
             ))
             .unwrap_err();
@@ -2464,12 +2603,12 @@ mod tests {
             .block_on(precompute_delegation_pir(
                 test_round_context(&db_path, "regtest", "wallet-1"),
                 "http://127.0.0.1:2".to_string(),
-                vec![1, 2, 3],
+                vec![9; 1],
                 0,
             ))
             .unwrap_err();
 
-        assert!(err.contains("seed must be at least 32 bytes"));
+        assert!(err.contains("Voting hotkey reconstruction failed"));
     }
 
     #[test]
@@ -2480,7 +2619,7 @@ mod tests {
             .unwrap()
             .block_on(build_keystone_delegation_request(
                 test_round_context(&db_path, "bogus", "wallet-1"),
-                vec![9; 32],
+                vec![9; 64],
                 0,
             ))
             .unwrap_err();

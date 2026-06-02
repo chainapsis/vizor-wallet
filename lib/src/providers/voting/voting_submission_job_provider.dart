@@ -415,6 +415,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         activeSession,
       );
       final needsDelegation = _sessionNeedsDelegation(activeSession);
+      final needsDelegationSubmission = _sessionNeedsDelegationSubmission(
+        activeSession,
+      );
       if (draftVotes.isEmpty &&
           !canRecoverWithoutDraft &&
           !canPollDelegationWithoutDraft) {
@@ -476,7 +479,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         return;
       }
       String? softwareMnemonic;
-      if (!activeSession.isHardwareAccount && needsDelegation) {
+      if (!activeSession.isHardwareAccount && needsDelegationSubmission) {
         softwareMnemonic = await ref
             .read(accountProvider.notifier)
             .getMnemonicForAccount(key.accountUuid);
@@ -495,7 +498,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       if (needsDelegation) {
         if (!_isCurrentJob(key: key, generation: generation)) return;
         await sessionNotifier.delegatePendingBundles(
-          mnemonic: softwareMnemonic!,
+          mnemonic: softwareMnemonic,
         );
         if (!_isCurrentJob(key: key, generation: generation)) return;
         final afterDelegation = _sessionForJob(key);

@@ -11,7 +11,6 @@ import 'api/secret.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';
 import 'api/voting.dart';
-import 'api/voting_config.dart';
 import 'api/wallet.dart';
 import 'dart:async';
 import 'dart:convert';

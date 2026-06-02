@@ -62,7 +62,7 @@ void main() {
 
   tearDownAll(RustLib.dispose);
 
-  testWidgets('status screen explains null mnemonic voting requirement', (
+  testWidgets('status screen requires software account without mnemonic', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -70,43 +70,38 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
-    final http = FakeVotingHttpClient(responses: _votingHttpResponses());
-    final container = ProviderContainer(
-      overrides: [
-        appBootstrapProvider.overrideWithValue(_bootstrap),
-        syncProvider.overrideWith(_NoopSyncNotifier.new),
-        accountProvider.overrideWith(_NoMnemonicAccountNotifier.new),
-        votingConfigSourceStoreProvider.overrideWithValue(
-          _FakeVotingConfigSourceStore(),
-        ),
-        votingHttpClientProvider.overrideWithValue(http),
-        votingConfigLoaderProvider.overrideWithValue(
-          VotingConfigLoader(
-            httpClient: http,
-            sourceUrl: 'https://voting.example/static-voting-config.json',
-          ),
-        ),
-        votingWalletDbPathProvider.overrideWithValue(() async => 'wallet.db'),
-        votingActiveAccountUuidProvider.overrideWithValue(
-          () async => 'account-1',
-        ),
-        votingRpcEndpointConfigProvider.overrideWithValue(
-          const RpcEndpointConfig(
-            networkName: 'main',
-            lightwalletdUrl: 'https://lightwalletd.example:443',
-          ),
-        ),
-        votingRecoveryServiceProvider.overrideWithValue(
-          VotingRecoveryService(api: _FakeVotingRecoveryApi()),
-        ),
-        votingDraftPersistenceProvider.overrideWithValue(
-          _MemoryVotingDraftPersistence(),
-        ),
-        votingRustApiProvider.overrideWithValue(_NoopVotingRustApi()),
-        votingWalletSyncReadinessCheckerProvider.overrideWithValue(
-          _FakeVotingWalletSyncReadinessChecker(),
-        ),
-      ],
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..addAll({
+          '/shielded-vote/v1/cast-vote': {
+            'tx_hash': 'vote-tx',
+            'code': 0,
+            'log': '',
+          },
+          '/shielded-vote/v1/tx/vote-tx': {
+            'height': 11,
+            'code': 0,
+            'log': '',
+            'events': [
+              {
+                'type': 'cast_vote',
+                'attributes': [
+                  {'key': 'leaf_index', 'value': '1,2'},
+                  {'key': 'vote_round_id', 'value': _roundId},
+                ],
+              },
+            ],
+          },
+          '/shielded-vote/v1/shares': {'status': 'queued'},
+        }),
+    );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _NoMnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+      hotkeyStore: const _FakeVotingHotkeyStore([9, 9, 9]),
     );
     addTearDown(container.dispose);
     container.read(votingDraftProvider(_draftKey).notifier).setChoice(1, 0);
@@ -118,13 +113,7 @@ void main() {
     await _pumpUntilFound(tester, find.text('Software account required'));
 
     expect(find.text('Software account required'), findsOneWidget);
-    expect(
-      find.text(
-        'Coinholder voting requires a software account. Switch to a software account to vote in this round.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Submitting votes'), findsNothing);
+    expect(find.text('submission confirmed route'), findsNothing);
   });
 
   testWidgets('status screen reports empty draft as retryable error', (
@@ -1935,6 +1924,53 @@ ProviderContainer _statusContainer({
         VotingConfigLoader(
           httpClient: effectiveHttp,
           sourceUrl: 'https://voting.example/static-voting-config.json',
+          resolveStaticVotingConfig: ({
+            required String source,
+            required List<int> staticBytes,
+          }) async {
+            return 'https://voting.example/dynamic-voting-config.json';
+          },
+          resolveVotingConfig: ({
+            required String source,
+            required List<int> staticBytes,
+            required List<int> dynamicBytes,
+            rust_config.ResolvedVotingConfig? previous,
+          }) async {
+            return rust_config_api.VotingConfigResolution(
+              config: rust_config.ResolvedVotingConfig(
+                sourceFingerprint: 'test-source-fingerprint',
+                trustedKeyFingerprint: 'test-trusted-key-fingerprint',
+                dynamicConfigFingerprint: 'test-dynamic-config-fingerprint',
+                voteServers: [
+                  rust_config.ServiceEndpoint(
+                    url: 'https://voting.example',
+                    label: 'vote-primary',
+                  ),
+                ],
+                pirEndpoints: [
+                  rust_config.ServiceEndpoint(
+                    url: 'https://pir.example',
+                    label: 'pir-primary',
+                  ),
+                ],
+                supportedVersions: rust_config.SupportedVersions(
+                  pir: ['2.0'],
+                  voteProtocol: '2.0',
+                  tally: '2.0',
+                  voteServer: '2.0',
+                ),
+                authenticatedRounds: [
+                  rust_config.AuthenticatedRound(
+                    roundId: _roundId,
+                    eaPk: Uint8List.fromList([1, 2, 3]),
+                  ),
+                ],
+                skippedRoundIds: [],
+                conditions: [],
+              ),
+              switchKind: rust_config.ConfigSwitchKind.initialLoad,
+            );
+          },
         ),
       ),
       votingWalletDbPathProvider.overrideWithValue(() async => 'wallet.db'),
@@ -2176,18 +2212,41 @@ Map<String, Object> _votingHttpResponses() => {
     'log': '',
   },
   '/shielded-vote/v1/tx/delegation-tx': {
-    'height': 10,
+    'height': 11,
     'code': 0,
     'log': '',
     'events': [
       {
         'type': 'delegate_vote',
         'attributes': [
-          {'key': 'leaf_index', 'value': '0'},
+          {'key': 'leaf_index', 'value': '1'},
           {'key': 'vote_round_id', 'value': _roundId},
         ],
       },
     ],
+  },
+  '/shielded-vote/v1/cast-vote': {
+    'tx_hash': 'vote-tx',
+    'code': 0,
+    'log': '',
+  },
+  '/shielded-vote/v1/tx/vote-tx': {
+    'height': 11,
+    'code': 0,
+    'log': '',
+    'events': [
+      {
+        'type': 'cast_vote',
+        'attributes': [
+          {'key': 'leaf_index', 'value': '1,2'},
+          {'key': 'vote_round_id', 'value': _roundId},
+        ],
+      },
+    ],
+  },
+  '/shielded-vote/v1/shares': {'status': 'queued'},
+  'https://voting.example/shielded-vote/v1/share-status/$_roundId/$_shareIdOne': {
+    'status': 'confirmed',
   },
 };
 
@@ -2203,6 +2262,8 @@ const _draftKey = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
 const _bytes1x32Base64 = 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=';
 const _bytes2x32Base64 = 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=';
 const _bytes3x32Base64 = 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=';
+const _shareIdOne =
+    '0101010101010101010101010101010101010101010101010101010101010101';
 const _bytes12x64Base64 =
     'DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA==';
 
@@ -2532,14 +2593,17 @@ class _NoopVotingRustApi implements VotingRustApi {
     required List<int> ncRoot,
     required List<int> nullifierImtRoot,
   }) async {
-    final round = config.authenticatedRounds.firstWhere(
-      (entry) => entry.roundId == roundId,
-      orElse: () => config.authenticatedRounds.first,
-    );
+    rust_config.AuthenticatedRound? matchedRound;
+    for (final round in config.authenticatedRounds) {
+      if (round.roundId == roundId) {
+        matchedRound = round;
+        break;
+      }
+    }
     return rust_wire.VotingRoundParams(
       voteRoundId: roundId,
       snapshotHeight: snapshotHeight,
-      eaPk: round.eaPk,
+      eaPk: matchedRound?.eaPk ?? Uint8List.fromList(const [1, 2, 3]),
       ncRoot: Uint8List.fromList(ncRoot),
       nullifierImtRoot: Uint8List.fromList(nullifierImtRoot),
     );
@@ -2552,11 +2616,8 @@ class _NoopVotingRustApi implements VotingRustApi {
     String? roundId,
   }) async {}
 
-  Future<List<int>> deriveHotkey({
-    required String mnemonic,
-    required String roundId,
-    required String network,
-  }) async {
+  @override
+  Future<List<int>> generateVotingHotkey({required String network}) async {
     return [9, 9, 9];
   }
 
@@ -3409,60 +3470,6 @@ class _RustApiFake implements RustLibApi {
     required int mode,
   }) {
     return const Stream.empty();
-  }
-
-  @override
-  Future<String> crateApiVotingConfigResolveStaticVotingConfig({
-    required String source,
-    required List<int> staticBytes,
-  }) async {
-    return 'https://voting.example/dynamic-voting-config.json';
-  }
-
-  @override
-  Future<rust_config_api.VotingConfigResolution>
-  crateApiVotingConfigResolveVotingConfig({
-    required String source,
-    required List<int> staticBytes,
-    required List<int> dynamicBytes,
-    rust_config.ResolvedVotingConfig? previous,
-  }) async {
-    return rust_config_api.VotingConfigResolution(
-      config: rust_config.ResolvedVotingConfig(
-        sourceFingerprint: 'test-source-fingerprint',
-        trustedKeyFingerprint: 'test-trusted-key-fingerprint',
-        dynamicConfigFingerprint: 'test-dynamic-config-fingerprint',
-        voteServers: const [
-          rust_config.ServiceEndpoint(
-            url: 'https://voting.example',
-            label: 'primary',
-          ),
-        ],
-        pirEndpoints: const [
-          rust_config.ServiceEndpoint(
-            url: 'https://voting.example',
-            label: 'primary',
-          ),
-        ],
-        supportedVersions: const rust_config.SupportedVersions(
-          pir: ['v1'],
-          voteProtocol: '1',
-          tally: '1',
-          voteServer: '1',
-        ),
-        authenticatedRounds: [
-          rust_config.AuthenticatedRound(
-            roundId: _roundId,
-            eaPk: Uint8List.fromList(const [1, 2, 3]),
-          ),
-        ],
-        skippedRoundIds: const [],
-        conditions: const [],
-      ),
-      switchKind: previous == null
-          ? rust_config.ConfigSwitchKind.initialLoad
-          : rust_config.ConfigSwitchKind.unchanged,
-    );
   }
 
   @override
