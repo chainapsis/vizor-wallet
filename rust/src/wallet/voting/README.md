@@ -24,7 +24,7 @@ This document focuses on what Vizor's integration is responsible for.
 | --- | --- |
 | `db.rs` | Opens the voting sidecar DB via `VotingDb::open_wallet_sidecar` at the deterministic path next to the wallet DB. The voting schema is isolated from the wallet `user_version`. |
 | `network.rs` | Converts between wallet-layer network enums and `zcash_voting::Network` so wallet modules do not depend on API-layer helpers. |
-| `hotkey.rs` | Reconstructs app-owned voting hotkeys from stored opaque secret bytes before handing them to crate operations. The secret is never persisted by Rust. |
+| `hotkey.rs` | Validates app-owned voting hotkey seed material before handing it to crate operations. The secret is never persisted by Rust. |
 | `delegation.rs` | Prepares, proves, and signs delegation bundles (software and Keystone paths), forwarding `DelegationProgress` to callers. Wallet seed signing stays here. |
 | `../../api/voting.rs` | FRB boundary. Thin wrappers that open the sidecar DB and call crate lifecycle APIs (`delegate::*`, `vote::*`, `share::*`, `confirmation::*`, `session::*`, `precompute::*`). |
 | `../../api/voting_helpers.rs` | API-only helper glue for delegation input resolution and bundle-parameter construction used by the FRB boundary. |
@@ -35,9 +35,8 @@ Coinholder voting uses a crate-owned voting hotkey for delegation outputs and
 vote signing.
 
 - Software and hardware accounts both generate a random per-account, per-round
-  hotkey through `zcash_voting::hotkey::generate_random_voting_hotkey`. Dart
-  stores the opaque hotkey secret bytes and passes them back for later
-  delegation and vote work.
+  hotkey seed through `zcash_voting::hotkey::generate_random_voting_hotkey`.
+  Dart stores the seed and passes it back for later delegation and vote work.
 - If the stored hotkey is missing after any hotkey-bound artifact exists, the
   session must fail instead of generating replacement material. v2 does not try
   to recover deterministic hotkeys from the wallet seed.

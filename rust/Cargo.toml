@@ -59,7 +59,6 @@ base64 = "0.22"
 pbkdf2 = "0.12"
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
-blake2b_simd = "1"
 
 # Random number generation
 rand = "0.8"
