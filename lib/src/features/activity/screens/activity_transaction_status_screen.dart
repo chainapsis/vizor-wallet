@@ -419,14 +419,13 @@ class _ActivityTransactionStatusScreenState
             const SizedBox(height: AppSpacing.xxs),
           ],
           Row(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  displayAddress,
-                  style: AppTypography.codeSmall.copyWith(
-                    color: colors.text.muted,
-                  ),
+              Text(
+                displayAddress,
+                style: AppTypography.codeSmall.copyWith(
+                  color: colors.text.muted,
                 ),
               ),
               const SizedBox(width: AppSpacing.xs),
