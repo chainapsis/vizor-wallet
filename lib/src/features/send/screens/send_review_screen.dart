@@ -22,9 +22,13 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../../address_book/models/address_book_contact.dart';
+import '../../address_book/models/address_book_label_lookup.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../services/sapling_params.dart';
 import '../widgets/sapling_params_prompt.dart';
+import '../widgets/transaction_receipt_view.dart';
 
 class SendReviewArgs {
   const SendReviewArgs({
@@ -394,6 +398,16 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     showAppToast(context, 'Address copied');
   }
 
+  String? _recipientAddressBookLabel(
+    Iterable<AddressBookContact> addressBookContacts,
+  ) {
+    return addressBookLabelFor(
+      contacts: addressBookContacts,
+      network: AddressBookNetwork.zcash,
+      address: widget.args.address,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -401,6 +415,10 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
         .read(accountProvider.notifier)
         .isHardwareAccount(widget.args.proposalAccountUuid);
     final keystonePhase = _keystonePhase;
+    final addressBookContacts =
+        ref.watch(addressBookProvider).value?.contacts ??
+        const <AddressBookContact>[];
+    final addressBookLabel = _recipientAddressBookLabel(addressBookContacts);
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -429,6 +447,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
                             ),
                             feeText: _formatFee(widget.args.feeZatoshi),
                             addressSpans: _addressSpans(context),
+                            addressBookLabel: addressBookLabel,
                             messageExpanded: _messageExpanded,
                             onToggleMessageExpanded: _toggleMessageExpanded,
                             onCopyAddress: () =>
@@ -502,6 +521,7 @@ class _SendReviewReceiptCard extends StatelessWidget {
     required this.amountText,
     required this.feeText,
     required this.addressSpans,
+    required this.addressBookLabel,
     required this.messageExpanded,
     required this.onToggleMessageExpanded,
     required this.onCopyAddress,
@@ -511,6 +531,7 @@ class _SendReviewReceiptCard extends StatelessWidget {
   final String amountText;
   final String feeText;
   final List<TextSpan> addressSpans;
+  final String? addressBookLabel;
   final bool messageExpanded;
   final VoidCallback onToggleMessageExpanded;
   final VoidCallback onCopyAddress;
@@ -528,6 +549,9 @@ class _SendReviewReceiptCard extends StatelessWidget {
     final dividerTop = hasMemo ? 214.0 + messageBlockHeight + 16.0 : 214.0;
     final feeTop = dividerTop + 32.0;
     final receiptHeight = hasMemo && messageExpanded ? feeTop + 56.0 : 404.0;
+    final savedRecipientLabel = addressBookLabel?.trim();
+    final hasSavedRecipient =
+        savedRecipientLabel != null && savedRecipientLabel.isNotEmpty;
 
     return SizedBox(
       width: 352,
@@ -584,21 +608,30 @@ class _SendReviewReceiptCard extends StatelessWidget {
             left: AppSpacing.sm,
             top: 138,
             width: 320,
-            height: 60,
+            height: hasSavedRecipient ? 68 : 60,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _SendReviewFieldTitle(
                   label: 'To',
-                  rightLabel: _SendReviewCopyAction(onTap: onCopyAddress),
+                  rightLabel: hasSavedRecipient
+                      ? null
+                      : _SendReviewCopyAction(onTap: onCopyAddress),
                 ),
                 const SizedBox(height: AppSpacing.xs),
-                RichText(
-                  maxLines: 2,
-                  overflow: TextOverflow.clip,
-                  softWrap: false,
-                  text: TextSpan(children: addressSpans),
-                ),
+                if (hasSavedRecipient)
+                  _SendReviewSavedRecipientValue(
+                    address: args.address,
+                    label: savedRecipientLabel,
+                    onCopy: onCopyAddress,
+                  )
+                else
+                  RichText(
+                    maxLines: 2,
+                    overflow: TextOverflow.clip,
+                    softWrap: false,
+                    text: TextSpan(children: addressSpans),
+                  ),
               ],
             ),
           ),
@@ -665,6 +698,67 @@ class _SendReviewReceiptCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SendReviewSavedRecipientValue extends StatelessWidget {
+  const _SendReviewSavedRecipientValue({
+    required this.address,
+    required this.label,
+    required this.onCopy,
+  });
+
+  final String address;
+  final String label;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final compactAddress = compactTransactionReceiptSavedAddress(address);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(AppIcons.user, size: 14, color: colors.icon.brandCrimson),
+            const SizedBox(width: AppSpacing.xxs),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                compactAddress,
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              _SendReviewInlineCopyAction(onTap: onCopy),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -754,6 +848,28 @@ class _SendReviewCopyAction extends StatelessWidget {
               color: colors.icon.muted,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SendReviewInlineCopyAction extends StatelessWidget {
+  const _SendReviewInlineCopyAction({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AppIcon(
+          AppIcons.copy,
+          size: 16,
+          color: context.colors.icon.muted,
         ),
       ),
     );

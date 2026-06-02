@@ -7,7 +7,10 @@ import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
+import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
+import 'package:zcash_wallet/src/features/send/widgets/transaction_receipt_view.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 void main() {
@@ -166,6 +169,45 @@ void main() {
     );
   });
 
+  testWidgets('shows saved recipient label with inline copy action', (
+    tester,
+  ) async {
+    final compactAddress = compactTransactionReceiptSavedAddress(_longAddress);
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _sendReviewHarness(
+        _reviewArgs(addressType: 'unified', memo: _longMemo),
+        addressBookRepository: _FakeAddressBookRepository([
+          _contact(id: 'me', label: 'me', address: _longAddress),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('me'), findsOneWidget);
+    expect(find.text(compactAddress), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Text && widget.data == 'Copy',
+      ),
+      findsNothing,
+    );
+
+    final addressRect = tester.getRect(find.text(compactAddress));
+    final copyRect = tester.getRect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is AppIcon &&
+            widget.name == AppIcons.copy &&
+            widget.size == 16,
+      ),
+    );
+    final copyGap = copyRect.left - addressRect.right;
+    expect(copyGap, greaterThan(0));
+    expect(copyGap, lessThanOrEqualTo(AppSpacing.xs));
+  });
+
   testWidgets('renders defensive short recipient address without range error', (
     tester,
   ) async {
@@ -258,6 +300,7 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
 Widget _sendReviewHarness(
   SendReviewArgs args, {
   AppThemeData theme = AppThemeData.light,
+  AddressBookRepository? addressBookRepository,
 }) {
   final router = GoRouter(
     initialLocation: '/send/review',
@@ -273,12 +316,44 @@ Widget _sendReviewHarness(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      addressBookRepositoryProvider.overrideWithValue(
+        addressBookRepository ?? _FakeAddressBookRepository(),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: theme, child: child!),
     ),
   );
+}
+
+AddressBookContact _contact({
+  required String id,
+  required String label,
+  required String address,
+}) {
+  return AddressBookContact(
+    id: id,
+    label: label,
+    network: AddressBookNetwork.zcash,
+    address: address,
+    profilePictureId: 'knight',
+    createdAtMs: 1,
+    updatedAtMs: 1,
+  );
+}
+
+class _FakeAddressBookRepository implements AddressBookRepository {
+  _FakeAddressBookRepository([List<AddressBookContact> contacts = const []])
+    : contacts = [...contacts];
+
+  final List<AddressBookContact> contacts;
+
+  @override
+  Future<List<AddressBookContact>> loadContacts() async => [...contacts];
+
+  @override
+  Future<void> saveContacts(List<AddressBookContact> contacts) async {}
 }
 
 SendReviewArgs _reviewArgs({
