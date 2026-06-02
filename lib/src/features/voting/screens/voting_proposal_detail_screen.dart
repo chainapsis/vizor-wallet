@@ -35,18 +35,12 @@ class VotingProposalDetailScreen extends ConsumerStatefulWidget {
 
 class _VotingProposalDetailScreenState
     extends ConsumerState<VotingProposalDetailScreen> {
-  bool _votingPowerPreparationStarted = false;
-  bool _votingPowerPreparationInFlight = false;
-  String? _votingPowerPreparationKey;
   String? _delegationPirPrecomputeKey;
 
   @override
   void didUpdateWidget(covariant VotingProposalDetailScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.roundId != widget.roundId) {
-      _votingPowerPreparationStarted = false;
-      _votingPowerPreparationInFlight = false;
-      _votingPowerPreparationKey = null;
       _delegationPirPrecomputeKey = null;
     }
   }
@@ -86,7 +80,6 @@ class _VotingProposalDetailScreenState
                 : ref.watch(votingDraftProvider(draftKey));
             final proposals = proposalsFromRound(round);
             final completedVote = _CompletedVote.fromPlan(state.roundPlan);
-            _maybePrepareVotingPower(state);
             // Foreground recovery takes precedence over the read-only voted view.
             // Accepted helper shares may still be tracked after submission, but
             // that background work should not keep this screen resumable.
@@ -105,6 +98,7 @@ class _VotingProposalDetailScreenState
               );
             }
             if (completedVote != null) {
+              final votingPower = _votingPowerFor(state);
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _VotedPollContent(
@@ -113,8 +107,8 @@ class _VotingProposalDetailScreenState
                       : round.title,
                   snapshotHeight: round.snapshotHeight,
                   description: _roundDescription(round.rawJson),
-                  votingPowerZatoshi: state.eligibleWeightZatoshi,
-                  votingPowerPreparing: _votingPowerPreparationInFlight,
+                  votingPowerZatoshi: votingPower.zatoshi,
+                  votingPowerPreparing: votingPower.preparing,
                   votedAt: completedVote.votedAt,
                   proposals: proposals,
                   choicesByProposalId: completedVote.choicesByProposalId,
@@ -136,15 +130,18 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            _maybePrecomputeDelegationPir(state);
+            final votingPower = _votingPowerFor(state);
+            if (votingPower.zatoshi != null) {
+              _maybePrecomputeDelegationPir(state);
+            }
             return _ActivePollContent(
               roundId: roundId,
               title: round.title.isEmpty ? 'Coinholder poll' : round.title,
               snapshotHeight: round.snapshotHeight,
               description: _roundDescription(round.rawJson),
               endDate: _roundEndDate(round.rawJson),
-              votingPowerZatoshi: state.eligibleWeightZatoshi,
-              votingPowerPreparing: _votingPowerPreparationInFlight,
+              votingPowerZatoshi: votingPower.zatoshi,
+              votingPowerPreparing: votingPower.preparing,
               proposals: proposals,
               draft: draft,
               onChoice: draftKey == null
@@ -166,36 +163,19 @@ class _VotingProposalDetailScreenState
     );
   }
 
-  void _maybePrepareVotingPower(VotingSessionState state) {
-    final preparationKey = '${widget.roundId}|${state.accountUuid ?? ''}';
-    if (_votingPowerPreparationKey != preparationKey) {
-      _votingPowerPreparationKey = preparationKey;
-      _votingPowerPreparationStarted = false;
-      _votingPowerPreparationInFlight = false;
+  _VotingPowerView _votingPowerFor(VotingSessionState state) {
+    final sessionPower = state.eligibleWeightZatoshi;
+    if (sessionPower != null) {
+      return _VotingPowerView(zatoshi: sessionPower, preparing: false);
     }
-
-    if (_votingPowerPreparationStarted ||
-        state.eligibleWeightZatoshi != null ||
-        !_shouldPrepareVotingPower(state)) {
-      return;
+    if (!_shouldPrepareVotingPower(state)) {
+      return const _VotingPowerView(zatoshi: null, preparing: false);
     }
-
-    _votingPowerPreparationStarted = true;
-    _votingPowerPreparationInFlight = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(
-        ref
-            .read(votingSessionProvider(widget.roundId).notifier)
-            .prepareDelegation()
-            .whenComplete(() {
-              if (!mounted) return;
-              setState(() {
-                _votingPowerPreparationInFlight = false;
-              });
-            }),
-      );
-    });
+    final votingPower = ref.watch(votingPowerProvider(widget.roundId));
+    return _VotingPowerView(
+      zatoshi: votingPower.asData?.value.eligibleWeightZatoshi,
+      preparing: votingPower.isLoading,
+    );
   }
 
   // Warm the delegation PIR / padded-note secrets as soon as the round page
@@ -237,6 +217,13 @@ bool _shouldPrepareVotingPower(VotingSessionState state) {
     VotingSessionPhase.done => true,
     _ => false,
   };
+}
+
+class _VotingPowerView {
+  const _VotingPowerView({required this.zatoshi, required this.preparing});
+
+  final BigInt? zatoshi;
+  final bool preparing;
 }
 
 class _ActivePollContent extends StatefulWidget {

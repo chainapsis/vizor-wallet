@@ -167,6 +167,26 @@ class VotingRoundDetails {
   DateTime? get ceremonyStart => _dateFromJson(rawJson, 'ceremony_phase_start');
 }
 
+/// Cached light eligibility result used to render voting power before the full
+/// delegation flow resolves PIR or builds proofs.
+class VotingPowerState {
+  final String roundId;
+  final String accountUuid;
+  final int snapshotHeight;
+  final BigInt eligibleWeightZatoshi;
+  final int bundleCount;
+  final int droppedCount;
+
+  const VotingPowerState({
+    required this.roundId,
+    required this.accountUuid,
+    required this.snapshotHeight,
+    required this.eligibleWeightZatoshi,
+    required this.bundleCount,
+    required this.droppedCount,
+  });
+}
+
 /// Immutable state for a single `votingSessionProvider(roundId)` instance.
 ///
 /// State keeps bundle-indexed delegation progress and bundle/proposal-indexed

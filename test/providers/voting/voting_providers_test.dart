@@ -1189,6 +1189,112 @@ void main() {
     expect(rust.delegationBundleCalls, isEmpty);
   });
 
+  test(
+    'voting power provider prepares bundles without resolving PIR',
+    () async {
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(
+        rust: rust,
+        pirResolver: FakePirResolver(error: StateError('PIR was touched')),
+      );
+      addTearDown(container.dispose);
+
+      final votingPower = await container.read(
+        votingPowerProvider(kRoundId).future,
+      );
+
+      expect(votingPower.roundId, kRoundId);
+      expect(votingPower.accountUuid, 'account-1');
+      expect(votingPower.snapshotHeight, 123);
+      expect(votingPower.eligibleWeightZatoshi, BigInt.from(100));
+      expect(votingPower.bundleCount, 1);
+      expect(rust.setupCalls, 1);
+      expect(rust.generateVotingHotkeyCalls, 0);
+      expect(rust.precomputedDelegationPir, isEmpty);
+    },
+  );
+
+  test('voting power provider deduplicates concurrent reads', () async {
+    final setupGate = Completer<void>();
+    final rust = FakeVotingRustApi(setupGate: setupGate);
+    final container = _sessionContainer(rust: rust);
+    addTearDown(container.dispose);
+
+    final first = container.read(votingPowerProvider(kRoundId).future);
+    await rust.setupStarted.future;
+    final second = container.read(votingPowerProvider(kRoundId).future);
+
+    setupGate.complete();
+    final results = await Future.wait([first, second]);
+
+    expect(results.first.eligibleWeightZatoshi, BigInt.from(100));
+    expect(results.last.eligibleWeightZatoshi, BigInt.from(100));
+    expect(rust.setupCalls, 1);
+    expect(rust.maxConcurrentSetups, 1);
+  });
+
+  test('voting power provider waits for wallet sync before setup', () async {
+    final rust = FakeVotingRustApi();
+    final readiness = FakeVotingWalletSyncReadinessChecker(
+      responses: const [
+        VotingWalletSyncReadiness(
+          scannedHeight: 122,
+          snapshotHeight: 123,
+          chainTipHeight: 130,
+        ),
+        VotingWalletSyncReadiness(
+          scannedHeight: 123,
+          snapshotHeight: 123,
+          chainTipHeight: 130,
+        ),
+      ],
+    );
+    var syncStartCalls = 0;
+    final container = _sessionContainer(
+      rust: rust,
+      walletSyncReadinessChecker: readiness,
+      walletSyncStarter: () {
+        syncStartCalls++;
+      },
+      walletSyncPollInterval: Duration.zero,
+    );
+    addTearDown(container.dispose);
+
+    final votingPower = await container.read(
+      votingPowerProvider(kRoundId).future,
+    );
+
+    expect(votingPower.eligibleWeightZatoshi, BigInt.from(100));
+    expect(readiness.calls, 2);
+    expect(syncStartCalls, 1);
+    expect(rust.setupCalls, 1);
+  });
+
+  test('cached voting power does not satisfy delegation preparation', () async {
+    final rust = FakeVotingRustApi();
+    final container = _sessionContainer(rust: rust);
+    addTearDown(container.dispose);
+
+    await container.read(votingPowerProvider(kRoundId).future);
+    final initialSession = await container.read(
+      votingSessionProvider(kRoundId).future,
+    );
+
+    expect(initialSession.eligibleWeightZatoshi, isNull);
+    expect(rust.setupCalls, 1);
+
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .prepareDelegation();
+    final preparedSession = container
+        .read(votingSessionProvider(kRoundId))
+        .value!;
+
+    expect(preparedSession.pirEndpoint, Uri.parse('https://pir.example'));
+    expect(preparedSession.eligibleWeightZatoshi, BigInt.from(100));
+    expect(rust.setupCalls, 2);
+  });
+
   test('wallet sync guard waits before delegation setup', () async {
     final rust = FakeVotingRustApi();
     final readiness = FakeVotingWalletSyncReadinessChecker(

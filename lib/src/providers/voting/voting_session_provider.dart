@@ -53,15 +53,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   rust_api.ApiVotingRoundContext _apiRoundContext(
     _VotingSessionContext context,
   ) {
-    return rust_api.ApiVotingRoundContext(
+    return _apiVotingRoundContext(
       dbPath: context.dbPath,
       lightwalletdUrl: context.lightwalletdUrl,
       network: context.network,
       roundParams: context.roundParams,
-      roundName: context.round.title,
-      sessionJson: context.round.sessionJson,
+      round: context.round,
       accountUuid: context.accountUuid,
-      maxRealNotesPerBundle: null,
     );
   }
 
@@ -3130,8 +3128,30 @@ class _VotingSessionContext {
   });
 }
 
+class _VotingPowerContext {
+  const _VotingPowerContext({
+    required this.dbPath,
+    required this.accountUuid,
+    required this.network,
+    required this.lightwalletdUrl,
+    required this.round,
+    required this.roundParams,
+  });
+
+  final String dbPath;
+  final String accountUuid;
+  final String network;
+  final String lightwalletdUrl;
+  final VotingRoundDetails round;
+  final rust_wire.VotingRoundParams roundParams;
+}
+
 class _StaleVotingSessionAction implements Exception {
   const _StaleVotingSessionAction();
+}
+
+class _StaleVotingPowerRequest implements Exception {
+  const _StaleVotingPowerRequest();
 }
 
 class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
@@ -3157,12 +3177,158 @@ final votingSessionProvider =
       String
     >(VotingSessionNotifier.new);
 
+final votingPowerProvider = FutureProvider.family<VotingPowerState, String>((
+  ref,
+  roundId,
+) async {
+  final disposed = Completer<void>();
+  ref.onDispose(() {
+    if (!disposed.isCompleted) disposed.complete();
+  });
+
+  void throwIfDisposed() {
+    if (disposed.isCompleted) throw const _StaleVotingPowerRequest();
+  }
+
+  final activeAccountUuidLoader = ref.watch(votingActiveAccountUuidProvider);
+  final dbPathLoader = ref.watch(votingWalletDbPathProvider);
+  final endpoint = ref.watch(votingRpcEndpointConfigProvider);
+  final readinessChecker = ref.watch(votingWalletSyncReadinessCheckerProvider);
+  final syncStarter = ref.watch(votingWalletSyncStarterProvider);
+  final pollInterval = ref.watch(votingWalletSyncPollIntervalProvider);
+  final rust = ref.watch(votingRustApiProvider);
+  final config = await ref.watch(votingConfigProvider.future);
+  throwIfDisposed();
+
+  config.assertRoundAuthenticated(roundId);
+  final api = ref.read(votingApiClientProvider(config.apiServers));
+  final round = VotingRoundDetails.fromStatus(
+    await api.getRoundStatus(roundId),
+  );
+  throwIfDisposed();
+  final roundParams = await rust.trustedVotingRoundParamsFromConfig(
+    config: config,
+    roundId: round.roundId,
+    snapshotHeight: BigInt.from(round.snapshotHeight),
+    ncRoot: round.ncRoot,
+    nullifierImtRoot: round.nullifierImtRoot,
+  );
+  throwIfDisposed();
+  final accountUuid = await activeAccountUuidLoader.call();
+  if (accountUuid == null) {
+    throw StateError('No active account for voting power.');
+  }
+  final dbPath = await dbPathLoader.call();
+  throwIfDisposed();
+  final context = _VotingPowerContext(
+    dbPath: dbPath,
+    accountUuid: accountUuid,
+    network: endpoint.networkName,
+    lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    round: round,
+    roundParams: roundParams,
+  );
+  await _waitUntilWalletReadyForVotingPower(
+    context: context,
+    readinessChecker: readinessChecker,
+    syncStarter: syncStarter,
+    pollInterval: pollInterval,
+    disposed: disposed,
+  );
+  throwIfDisposed();
+  final timer = Stopwatch()..start();
+  final bundleSetup = await rust.setupDelegationBundles(
+    ctx: _apiVotingRoundContext(
+      dbPath: context.dbPath,
+      lightwalletdUrl: context.lightwalletdUrl,
+      network: context.network,
+      roundParams: context.roundParams,
+      round: context.round,
+      accountUuid: context.accountUuid,
+    ),
+  );
+  throwIfDisposed();
+  debugPrint(
+    '[zcash] Voting: voting power ready '
+    'round=${context.round.roundId} account=${context.accountUuid} '
+    'bundles=${bundleSetup.bundleCount} '
+    'elapsed=${formatElapsedSeconds(timer.elapsed)}',
+  );
+  return VotingPowerState(
+    roundId: context.round.roundId,
+    accountUuid: context.accountUuid,
+    snapshotHeight: context.round.snapshotHeight,
+    eligibleWeightZatoshi: bundleSetup.eligibleWeight,
+    bundleCount: bundleSetup.bundleCount,
+    droppedCount: bundleSetup.droppedCount,
+  );
+});
+
 final votingSubmissionSessionProvider = AsyncNotifierProvider.autoDispose
     .family<
       VotingSubmissionSessionNotifier,
       VotingSessionState,
       VotingSessionKey
     >(VotingSubmissionSessionNotifier.new);
+
+rust_api.ApiVotingRoundContext _apiVotingRoundContext({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required rust_wire.VotingRoundParams roundParams,
+  required VotingRoundDetails round,
+  required String accountUuid,
+}) {
+  return rust_api.ApiVotingRoundContext(
+    dbPath: dbPath,
+    lightwalletdUrl: lightwalletdUrl,
+    network: network,
+    roundParams: roundParams,
+    roundName: round.title,
+    sessionJson: round.sessionJson,
+    accountUuid: accountUuid,
+    maxRealNotesPerBundle: null,
+  );
+}
+
+Future<void> _waitUntilWalletReadyForVotingPower({
+  required _VotingPowerContext context,
+  required VotingWalletSyncReadinessChecker readinessChecker,
+  required void Function() syncStarter,
+  required Duration pollInterval,
+  required Completer<void> disposed,
+}) async {
+  var loggedWait = false;
+  while (true) {
+    if (disposed.isCompleted) throw const _StaleVotingPowerRequest();
+    final readiness = await readinessChecker.check(
+      dbPath: context.dbPath,
+      network: context.network,
+      snapshotHeight: context.round.snapshotHeight,
+    );
+    if (disposed.isCompleted) throw const _StaleVotingPowerRequest();
+    if (readiness.isReady) return;
+
+    if (!loggedWait) {
+      loggedWait = true;
+      debugPrint(
+        '[zcash] Voting: waiting for wallet scan before voting power '
+        'round=${context.round.roundId} '
+        'scanned=${readiness.scannedHeight} '
+        'snapshot=${readiness.snapshotHeight}',
+      );
+    }
+    try {
+      syncStarter();
+    } catch (e) {
+      debugPrint('[zcash] Voting: wallet sync start skipped: $e');
+    }
+    await Future.any<void>([
+      Future<void>.delayed(pollInterval),
+      disposed.future,
+    ]);
+  }
+}
 
 @visibleForTesting
 final votingTxConfirmationPollingProvider =

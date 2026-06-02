@@ -15,12 +15,15 @@ import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_tooltip.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
+import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../voting_poll_ordering.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_config_settings_panel.dart';
 import '../widgets/voting_pane_scroll_area.dart';
+
+const _votingPowerRouteWait = Duration(seconds: 3);
 
 class VotingPollsScreen extends ConsumerStatefulWidget {
   const VotingPollsScreen({super.key});
@@ -33,6 +36,7 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   bool _showSettings = false;
   bool _entryRefreshInFlight = true;
   bool _pollListRefreshInFlight = false;
+  String? _openingRoundId;
 
   @override
   void initState() {
@@ -101,7 +105,7 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
       );
     }
     final sortedItems = sortVotingRoundsForPollList(items);
-    _preSyncVisibleRoundTrees(sortedItems);
+    _warmVisibleActiveRound(sortedItems);
     return VotingPaneListView.separated(
       maxWidth: 560,
       padding: const EdgeInsets.fromLTRB(
@@ -114,18 +118,30 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
       separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.base),
       itemBuilder: (context, index) {
         final round = sortedItems[index];
-        return _PollCard(round: round, onAction: () => _openRoundAction(round));
+        return _PollCard(
+          round: round,
+          checkingVotingPower: _openingRoundId == round.roundId,
+          onAction: () => _openRoundAction(round),
+        );
       },
     );
   }
 
-  void _preSyncVisibleRoundTrees(Iterable<VotingRoundView> rounds) {
+  void _warmVisibleActiveRound(Iterable<VotingRoundView> rounds) {
+    var warmedTree = false;
+    var warmedPower = false;
     for (final round in rounds) {
-      if (!shouldPreSyncVotingTree(round.status)) continue;
-      unawaited(
-        ref.read(votingTreePreSyncProvider).preSyncRound(round.roundId),
-      );
-      return;
+      if (!warmedTree && shouldPreSyncVotingTree(round.status)) {
+        warmedTree = true;
+        unawaited(
+          ref.read(votingTreePreSyncProvider).preSyncRound(round.roundId),
+        );
+      }
+      if (!warmedPower && _shouldWarmVotingPower(round)) {
+        warmedPower = true;
+        unawaited(_warmVotingPower(round.roundId));
+      }
+      if (warmedTree && warmedPower) return;
     }
   }
 
@@ -135,11 +151,11 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
           .read(votingRoundsProvider.future)
           .then((rounds) {
             if (!mounted) return;
-            _preSyncVisibleRoundTrees(rounds);
+            _warmVisibleActiveRound(rounds);
           })
           .catchError((Object error) {
             debugPrint(
-              '[zcash] Voting: vote tree pre-sync skipped '
+              '[zcash] Voting: active round warm-up skipped '
               'reason=rounds-load-failed error=$error',
             );
           }),
@@ -148,11 +164,15 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
 
   void _openRoundAction(VotingRoundView round) {
     final state = _pollCardState(round);
-    final route =
-        state == _PollCardState.tallying || state == _PollCardState.closed
-        ? votingResultsRoute(round.roundId)
-        : votingPollRoute(round.roundId);
-    _pushRoundRoute(route);
+    if (state == _PollCardState.tallying || state == _PollCardState.closed) {
+      _pushRoundRoute(votingResultsRoute(round.roundId));
+      return;
+    }
+    if (state == _PollCardState.active || state == _PollCardState.voted) {
+      unawaited(_openRoundAfterVotingPower(round.roundId));
+      return;
+    }
+    _pushRoundRoute(votingPollRoute(round.roundId));
   }
 
   void _pushRoundRoute(String route) {
@@ -162,6 +182,48 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
         _reloadRoundsWithFreshConfig();
       }),
     );
+  }
+
+  Future<void> _openRoundAfterVotingPower(String roundId) async {
+    if (_openingRoundId != null) return;
+    setState(() {
+      _openingRoundId = roundId;
+    });
+    await _warmVotingPowerForRoute(roundId);
+    if (!mounted) return;
+    setState(() {
+      _openingRoundId = null;
+    });
+    _pushRoundRoute(votingPollRoute(roundId));
+  }
+
+  Future<void> _warmVotingPower(String roundId) async {
+    try {
+      await ref.read(votingPowerProvider(roundId).future);
+    } catch (e) {
+      debugPrint(
+        '[zcash] Voting: voting power warm-up skipped '
+        'round=$roundId error=$e',
+      );
+    }
+  }
+
+  Future<void> _warmVotingPowerForRoute(String roundId) async {
+    try {
+      await ref
+          .read(votingPowerProvider(roundId).future)
+          .timeout(_votingPowerRouteWait);
+    } on TimeoutException {
+      debugPrint(
+        '[zcash] Voting: voting power warm-up still pending; '
+        'opening poll round=$roundId',
+      );
+    } catch (e) {
+      debugPrint(
+        '[zcash] Voting: voting power warm-up skipped '
+        'round=$roundId error=$e',
+      );
+    }
   }
 
   void _reloadRoundsWithFreshConfig({bool entryRefresh = false}) {
@@ -314,9 +376,14 @@ class _VotingTopBarIconButtonState extends State<_VotingTopBarIconButton> {
 }
 
 class _PollCard extends StatelessWidget {
-  const _PollCard({required this.round, required this.onAction});
+  const _PollCard({
+    required this.round,
+    required this.checkingVotingPower,
+    required this.onAction,
+  });
 
   final VotingRoundView round;
+  final bool checkingVotingPower;
   final VoidCallback onAction;
 
   @override
@@ -392,10 +459,20 @@ class _PollCard extends StatelessWidget {
             Align(
               alignment: Alignment.centerRight,
               child: AppButton(
-                onPressed: onAction,
+                onPressed: checkingVotingPower ? null : onAction,
                 variant: _actionButtonVariant(state),
                 size: AppButtonSize.medium,
-                child: Text(_actionLabel(state)),
+                minWidth: 96,
+                leading: checkingVotingPower
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                      )
+                    : null,
+                child: Text(
+                  checkingVotingPower ? 'Checking' : _actionLabel(state),
+                ),
               ),
             ),
           ],
@@ -583,6 +660,11 @@ AppButtonVariant _actionButtonVariant(_PollCardState state) {
 }
 
 enum _PollCardState { inProgress, active, voted, tallying, closed }
+
+bool _shouldWarmVotingPower(VotingRoundView round) {
+  final state = _pollCardState(round);
+  return state == _PollCardState.active || state == _PollCardState.voted;
+}
 
 _PollCardState _pollCardState(VotingRoundView round) {
   return switch (votingPollListStatus(round.status)) {
