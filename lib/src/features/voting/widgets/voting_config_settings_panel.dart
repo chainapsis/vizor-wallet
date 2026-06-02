@@ -108,6 +108,10 @@ class _VotingConfigSettingsPanelState
     if (_validationField == 'url' && _submitError != null) {
       return _submitError;
     }
+    // While a save is in-flight, provider state may already include the
+    // just-saved source before this panel closes. Suppress inline URL
+    // validation during that transition to avoid a transient duplicate flash.
+    if (_isSubmitting) return null;
     final trimmed = _urlController.text.trim();
     if (trimmed.isEmpty) return null;
     try {

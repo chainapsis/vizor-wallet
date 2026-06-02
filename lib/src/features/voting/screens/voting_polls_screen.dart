@@ -162,8 +162,13 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   }
 
   void _reloadRoundsWithFreshConfig() {
-    ref.invalidate(votingConfigProvider);
-    unawaited(ref.read(votingRoundsProvider.notifier).reload());
+    unawaited(_refreshConfigAndReloadRounds());
+  }
+
+  Future<void> _refreshConfigAndReloadRounds() async {
+    await ref.read(votingConfigProvider.notifier).refresh();
+    if (!mounted) return;
+    await ref.read(votingRoundsProvider.notifier).reload();
   }
 
   void _openSettings() {

@@ -6,7 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
-import 'package:zcash_wallet/src/rust/api/voting_config.dart' as rust_config_api;
+import 'package:zcash_wallet/src/rust/api/voting_config.dart'
+    as rust_config_api;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
@@ -15,35 +16,46 @@ import 'package:zcash_wallet/src/services/voting/voting_http.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('setLoadedConfig commits resolution and updates refresh baseline', () async {
-    final initial = _resolution('initial', rust_config.ConfigSwitchKind.initialLoad);
-    final switched = _resolution(
+  test('refresh commits resolution and updates refresh baseline', () async {
+    final initial = _resolution(
+      'initial',
+      rust_config.ConfigSwitchKind.initialLoad,
+    );
+    final refreshedOnce = _resolution(
       'switched',
       rust_config.ConfigSwitchKind.newChainOrRound,
     );
-    final refreshed = _resolution(
+    final refreshedTwice = _resolution(
       'refreshed',
       rust_config.ConfigSwitchKind.unchanged,
     );
 
-    final loader = _RecordingVotingConfigLoader([initial, refreshed]);
+    final loader = _RecordingVotingConfigLoader([
+      initial,
+      refreshedOnce,
+      refreshedTwice,
+    ]);
     final container = ProviderContainer(
       overrides: [
-        votingConfigSourceStoreProvider.overrideWithValue(_InMemorySourceStore()),
+        votingConfigSourceStoreProvider.overrideWithValue(
+          _InMemorySourceStore(),
+        ),
         votingConfigLoaderProvider.overrideWithValue(loader),
       ],
     );
     addTearDown(container.dispose);
 
     await container.read(votingConfigProvider.future);
-    container.read(votingConfigProvider.notifier).setLoadedConfig(switched);
-
-    expect(container.read(votingConfigProvider).value, switched.config);
+    expect(container.read(votingConfigProvider).value, initial.config);
+    expect(loader.previousByCall, [null]);
 
     await container.read(votingConfigProvider.notifier).refresh();
+    expect(container.read(votingConfigProvider).value, refreshedOnce.config);
+    expect(loader.previousByCall, [null, initial.config]);
 
-    expect(loader.lastPrevious, switched.config);
-    expect(container.read(votingConfigProvider).value, refreshed.config);
+    await container.read(votingConfigProvider.notifier).refresh();
+    expect(loader.previousByCall, [null, initial.config, refreshedOnce.config]);
+    expect(container.read(votingConfigProvider).value, refreshedTwice.config);
   });
 }
 
@@ -74,21 +86,22 @@ class _InMemorySourceStore implements VotingConfigSourceStore {
 }
 
 class _RecordingVotingConfigLoader extends VotingConfigLoader {
-  _RecordingVotingConfigLoader(Iterable<rust_config_api.VotingConfigResolution> configs)
-    : _configs = Queue.of(configs),
+  _RecordingVotingConfigLoader(
+    Iterable<rust_config_api.VotingConfigResolution> configs,
+  ) : _configs = Queue.of(configs),
       super(
         httpClient: const _NoopVotingHttpClient(),
         sourceUrl: kDefaultStaticVotingConfigSource,
       );
 
   final Queue<rust_config_api.VotingConfigResolution> _configs;
-  rust_config.ResolvedVotingConfig? lastPrevious;
+  final List<rust_config.ResolvedVotingConfig?> previousByCall = [];
 
   @override
   Future<rust_config_api.VotingConfigResolution> load({
     rust_config.ResolvedVotingConfig? previous,
   }) async {
-    lastPrevious = previous;
+    previousByCall.add(previous);
     if (_configs.isEmpty) {
       throw StateError('No config responses queued.');
     }
