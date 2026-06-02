@@ -14,7 +14,6 @@ import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
-import '../../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../../services/voting/voting_models.dart';
 import '../../../services/voting/resolved_voting_config_extensions.dart';
 import '../voting_choice_style.dart';
@@ -30,7 +29,7 @@ final _roundTallyProvider = FutureProvider.autoDispose.family((
   String roundId,
 ) async {
   final config = await ref.watch(votingConfigProvider.future);
-  _assertAuthenticatedRoundId(config: config, requestedRoundId: roundId);
+  config.assertRoundAuthenticated(roundId);
   return ref
       .read(votingApiClientProvider(config.apiBaseUrl))
       .getRoundTally(roundId);
@@ -541,21 +540,6 @@ bool _roundIsTallying(VotingRoundDetails round) {
 
 bool _isTallyNotReadyError(Object error) {
   return error is VotingHttpException && error.statusCode == 404;
-}
-
-void _assertAuthenticatedRoundId({
-  required rust_config.ResolvedVotingConfig config,
-  required String requestedRoundId,
-}) {
-  if (config.isRoundAuthenticated(requestedRoundId)) {
-    return;
-  }
-  final reason = config.isRoundExplicitlySkipped(requestedRoundId)
-      ? 'it is present but failed dynamic-config authentication'
-      : 'it is absent from the authenticated round set';
-  throw StateError(
-    'Round $requestedRoundId is not authenticated by voting config: $reason.',
-  );
 }
 
 String _roundTitle(VotingRoundDetails round) {

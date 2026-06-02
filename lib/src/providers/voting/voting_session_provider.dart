@@ -2458,7 +2458,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     checkAction();
     final config = await ref.read(votingConfigProvider.future);
-    _assertAuthenticatedRoundId(config: config, requestedRoundId: roundId);
+    config.assertRoundAuthenticated(roundId);
     final api = ref.read(votingApiClientProvider(config.apiBaseUrl));
     final round = VotingRoundDetails.fromStatus(
       await api.getRoundStatus(roundId),
@@ -2511,21 +2511,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       roundPlan: roundPlan,
     );
     return context;
-  }
-
-  void _assertAuthenticatedRoundId({
-    required rust_config.ResolvedVotingConfig config,
-    required String requestedRoundId,
-  }) {
-    if (config.isRoundAuthenticated(requestedRoundId)) {
-      return;
-    }
-    final reason = config.isRoundExplicitlySkipped(requestedRoundId)
-        ? 'it is present but failed dynamic-config authentication'
-        : 'it is absent from the authenticated round set';
-    throw StateError(
-      'Round $requestedRoundId is not authenticated by voting config: $reason.',
-    );
   }
 
   Future<String> _accountUuidForSession() async {
