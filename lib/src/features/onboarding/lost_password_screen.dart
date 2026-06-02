@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../main.dart' show log;
+import '../../core/layout/app_pane_scaffold.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_decorative_divider.dart';
@@ -114,19 +114,13 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: _LostPasswordPane(
-            onBack: _handleBack,
-            child: _LostPasswordContent(
-              remainingSeconds: _remainingSeconds,
-              canReset: _canReset,
-              onReset: _handleReset,
-            ),
-          ),
+    return AppPaneScaffold(
+      child: _LostPasswordPane(
+        onBack: _handleBack,
+        child: _LostPasswordContent(
+          remainingSeconds: _remainingSeconds,
+          canReset: _canReset,
+          onReset: _handleReset,
         ),
       ),
     );

@@ -1,9 +1,9 @@
-import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/layout/app_layout.dart';
+import '../../core/layout/app_pane_scaffold.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
@@ -55,31 +55,21 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      // Transparent so the flutter_acrylic window effect on the native
-      // surface shows through the outer gap below.
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Padding(
-          // Only the 8 dp gap around the pane is transparent — this is
-          // the strip where the native acrylic is visible.
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: _Pane(
-            showBackButton: widget.showBackButton,
-            showEndpointSettings: _showEndpointSettings,
-            onShowEndpointSettings: () {
-              setState(() {
-                _showEndpointSettings = true;
-              });
-            },
-            onDismissEndpointSettings: () {
-              setState(() {
-                _showEndpointSettings = false;
-              });
-            },
-            child: const _Content(),
-          ),
-        ),
+    return AppPaneScaffold(
+      child: _Pane(
+        showBackButton: widget.showBackButton,
+        showEndpointSettings: _showEndpointSettings,
+        onShowEndpointSettings: () {
+          setState(() {
+            _showEndpointSettings = true;
+          });
+        },
+        onDismissEndpointSettings: () {
+          setState(() {
+            _showEndpointSettings = false;
+          });
+        },
+        child: const _Content(),
       ),
     );
   }

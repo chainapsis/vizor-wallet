@@ -1,9 +1,9 @@
-import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../main.dart' show log;
+import '../../core/layout/app_pane_scaffold.dart';
 import '../../core/security/password_policy.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
@@ -96,25 +96,19 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: _UnlockPane(
-            child: _UnlockContent(
-              passwordController: _passwordController,
-              canSubmit: _canSubmit,
-              messageText: _errorText ?? _passwordPolicyMessage,
-              onChanged: () {
-                setState(() {
-                  _errorText = null;
-                });
-              },
-              onSubmit: _submit,
-              onForgotPassword: () => context.go('/lost-password'),
-            ),
-          ),
+    return AppPaneScaffold(
+      child: _UnlockPane(
+        child: _UnlockContent(
+          passwordController: _passwordController,
+          canSubmit: _canSubmit,
+          messageText: _errorText ?? _passwordPolicyMessage,
+          onChanged: () {
+            setState(() {
+              _errorText = null;
+            });
+          },
+          onSubmit: _submit,
+          onForgotPassword: () => context.go('/lost-password'),
         ),
       ),
     );

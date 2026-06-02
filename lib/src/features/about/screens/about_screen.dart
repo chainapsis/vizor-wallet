@@ -2,13 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart'
-    show
-        Colors,
-        Scaffold,
-        Scrollbar,
-        ScrollbarTheme,
-        ScrollbarThemeData,
-        WidgetStatePropertyAll;
+    show Scrollbar, ScrollbarTheme, ScrollbarThemeData, WidgetStatePropertyAll;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +12,7 @@ import '../../../app_bootstrap.dart';
 import '../../../core/config/app_version_config.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/layout/app_pane_scaffold.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_decorative_divider.dart';
@@ -155,14 +150,8 @@ class _FullPaneShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: AppDesktopPane(padding: EdgeInsets.zero, child: child),
-        ),
-      ),
+    return AppPaneScaffold(
+      child: AppDesktopPane(padding: EdgeInsets.zero, child: child),
     );
   }
 }

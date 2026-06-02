@@ -2,7 +2,6 @@ import 'dart:async' show unawaited;
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
-import 'package:flutter/material.dart' show Colors, Scaffold;
 import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../main.dart' show log;
 import '../../app_bootstrap.dart';
 import '../../core/layout/app_layout.dart';
+import '../../core/layout/app_pane_scaffold.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_icon.dart';
@@ -67,20 +67,14 @@ class _StorageUnavailableScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: _StorageUnavailablePane(
-            child: _StorageUnavailableContent(
-              isRetrying: _isRetrying,
-              retryError: _retryError,
-              onRetry: () {
-                unawaited(_retry());
-              },
-            ),
-          ),
+    return AppPaneScaffold(
+      child: _StorageUnavailablePane(
+        child: _StorageUnavailableContent(
+          isRetrying: _isRetrying,
+          retryError: _retryError,
+          onRetry: () {
+            unawaited(_retry());
+          },
         ),
       ),
     );

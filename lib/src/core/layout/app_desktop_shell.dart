@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/app_toast.dart';
+import 'app_pane_scaffold.dart';
 
 class AppDesktopShell extends StatelessWidget {
   const AppDesktopShell({
@@ -87,7 +88,7 @@ class _AppDesktopShellLayout extends StatelessWidget {
       backgroundColor: Colors.transparent,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xs),
+          padding: appWindowPanePadding,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -209,11 +210,11 @@ class _AppMobileMainContent extends StatelessWidget {
     final colors = context.colors;
 
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xs),
-        child: Column(
-          children: [
-            SizedBox(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+            child: SizedBox(
               height: headerHeight,
               child: Row(
                 children: [
@@ -235,10 +236,10 @@ class _AppMobileMainContent extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.xs),
-            Expanded(child: pane),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Expanded(child: pane),
+        ],
       ),
     );
   }
@@ -260,7 +261,7 @@ class _AppMobileSidebarToggle extends StatelessWidget {
     final label = sidebarOpen ? 'Close menu' : 'Open menu';
 
     return Positioned(
-      top: viewPadding.top + AppSpacing.xs,
+      top: viewPadding.top,
       right: viewPadding.right + AppSpacing.xs,
       child: Semantics(
         button: true,
