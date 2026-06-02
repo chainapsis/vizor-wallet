@@ -3036,7 +3036,7 @@ final votingSessionProvider =
     >(VotingSessionNotifier.new);
 
 final votingSubmissionSessionProvider =
-    AsyncNotifierProvider.family<
+    AsyncNotifierProvider.autoDispose.family<
       VotingSubmissionSessionNotifier,
       VotingSessionState,
       VotingSessionKey

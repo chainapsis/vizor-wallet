@@ -803,6 +803,50 @@ void main() {
     );
   });
 
+  test('submission session provider disposes after last listener closes', () async {
+    const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
+    final provider = votingSubmissionSessionProvider(key);
+    final observer = _ProviderDisposalObserver(provider);
+    final container = _sessionContainer(observers: [observer]);
+    addTearDown(container.dispose);
+
+    final subscription = container.listen<AsyncValue<VotingSessionState>>(
+      provider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    await container.read(provider.future);
+
+    expect(observer.disposed, isFalse);
+
+    subscription.close();
+    await container.pump();
+
+    expect(observer.disposed, isTrue);
+  });
+
+  test('submission job session wrapper releases submission session', () async {
+    const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
+    final sessionProvider = votingSubmissionSessionProvider(key);
+    final observer = _ProviderDisposalObserver(sessionProvider);
+    final container = _sessionContainer(observers: [observer]);
+    addTearDown(container.dispose);
+
+    final subscription = container.listen<AsyncValue<VotingSessionState>>(
+      votingSubmissionJobSessionProvider(key),
+      (_, _) {},
+      fireImmediately: true,
+    );
+    await container.read(sessionProvider.future);
+
+    expect(observer.disposed, isFalse);
+
+    subscription.close();
+    await container.pump();
+
+    expect(observer.disposed, isTrue);
+  });
+
   test(
     'rounds provider loads planner state when summaries omit proposals',
     () async {
@@ -4264,6 +4308,18 @@ ProviderContainer _container({
   );
 }
 
+final class _ProviderDisposalObserver extends ProviderObserver {
+  _ProviderDisposalObserver(this.targetProvider);
+
+  final Object targetProvider;
+  bool disposed = false;
+
+  @override
+  void didDisposeProvider(ProviderObserverContext context) {
+    if (context.provider == targetProvider) disposed = true;
+  }
+}
+
 ProviderContainer _sessionContainer({
   FakeVotingHttpClient? http,
   FakeVotingRustApi? rust,
@@ -4275,6 +4331,7 @@ ProviderContainer _sessionContainer({
   ProviderListenable<String?>? activeAccountUuidListenable,
   bool accountIsHardware = false,
   Set<String>? hardwareAccountUuids,
+  List<ProviderObserver>? observers,
   VotingTxConfirmationPolling? txConfirmationPolling,
   VotingWalletSyncReadinessChecker? walletSyncReadinessChecker,
   void Function()? walletSyncStarter,
@@ -4288,6 +4345,7 @@ ProviderContainer _sessionContainer({
   final effectiveHardwareAccountUuids =
       hardwareAccountUuids ?? (accountIsHardware ? {'account-1'} : <String>{});
   return ProviderContainer(
+    observers: observers,
     overrides: [
       votingConfigSourceStoreProvider.overrideWithValue(
         FakeVotingConfigSourceStore(),

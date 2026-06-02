@@ -1048,7 +1048,10 @@ final votingSubmissionJobProvider =
     >(VotingSubmissionJobNotifier.new);
 
 final votingSubmissionJobSessionProvider =
-    Provider.family<AsyncValue<VotingSessionState>, VotingSessionKey>((
+    Provider.autoDispose.family<
+      AsyncValue<VotingSessionState>,
+      VotingSessionKey
+    >((
       ref,
       key,
     ) {
