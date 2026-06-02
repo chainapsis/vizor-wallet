@@ -12,7 +12,6 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
@@ -203,13 +202,10 @@ class _VotingProposalDetailScreenState
 
   // Warm the delegation PIR / padded-note secrets as soon as the round page
   // opens, rather than waiting for the review screen. The warm-up is decoupled
-  // from PCZT construction, so it only needs the round notes and a software
-  // seed; hardware accounts (no local mnemonic) are skipped.
+  // from PCZT construction, so it only needs the stored voting hotkey secret.
   void _maybePrecomputeDelegationPir(VotingSessionState state) {
     final accountUuid = state.accountUuid;
-    if (state.isHardwareAccount ||
-        accountUuid == null ||
-        !_shouldPrepareVotingPower(state)) {
+    if (accountUuid == null || !_shouldPrepareVotingPower(state)) {
       return;
     }
 
@@ -224,16 +220,9 @@ class _VotingProposalDetailScreenState
 
   Future<void> _startDelegationPirPrecompute(String accountUuid) async {
     try {
-      final mnemonic = await ref
-          .read(accountProvider.notifier)
-          .getMnemonicForAccount(accountUuid);
-      if (mnemonic == null || mnemonic.isEmpty) return;
       await ref
           .read(votingSessionProvider(widget.roundId).notifier)
-          .precomputeDelegationPir(
-            accountUuid: accountUuid,
-            mnemonic: mnemonic,
-          );
+          .precomputeDelegationPir(accountUuid: accountUuid);
     } catch (e) {
       debugPrint('[zcash] Voting: delegation PIR precompute skipped: $e');
     }

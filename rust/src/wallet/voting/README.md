@@ -2,7 +2,7 @@
 
 This module integrates the [`zcash_voting`](https://github.com/valargroup/zcash_voting)
 crate into Vizor. It owns the wallet-side concerns the crate intentionally leaves
-to the host app: seed handling and hotkey derivation, the voting sidecar
+to the host app: wallet seed handling, voting hotkey storage, the voting sidecar
 database, delegation signing, and the Flutter Rust Bridge (FRB) surface that
 exposes the crate lifecycle to Dart.
 
@@ -24,7 +24,7 @@ This document focuses on what Vizor's integration is responsible for.
 | --- | --- |
 | `db.rs` | Opens the voting sidecar DB via `VotingDb::open_wallet_sidecar` at the deterministic path next to the wallet DB. The voting schema is isolated from the wallet `user_version`. |
 | `network.rs` | Converts between wallet-layer network enums and `zcash_voting::Network` so wallet modules do not depend on API-layer helpers. |
-| `hotkey.rs` | Derives scoped, opaque voting hotkey seed material from the wallet seed for software accounts. The derived secret is never persisted by Rust. |
+| `hotkey.rs` | Reconstructs app-owned voting hotkeys from stored opaque secret bytes before handing them to crate operations. The secret is never persisted by Rust. |
 | `delegation.rs` | Prepares, proves, and signs delegation bundles (software and Keystone paths), forwarding `DelegationProgress` to callers. Wallet seed signing stays here. |
 | `../../api/voting.rs` | FRB boundary. Thin wrappers that open the sidecar DB and call crate lifecycle APIs (`delegate::*`, `vote::*`, `share::*`, `confirmation::*`, `session::*`, `precompute::*`). |
 | `../../api/voting_helpers.rs` | API-only helper glue for delegation input resolution and bundle-parameter construction used by the FRB boundary. |
@@ -34,14 +34,15 @@ This document focuses on what Vizor's integration is responsible for.
 Coinholder voting uses a crate-owned voting hotkey for delegation outputs and
 vote signing.
 
-- Software accounts derive the hotkey seed from the active account seed, round,
-  and network via `hotkey::derive_hotkey`, then hand it to
-  `zcash_voting::hotkey::voting_hotkey_from_seed`. The same tuple always yields
-  the same material; changing any member produces independent material.
-- Hardware accounts generate and store a random per-round hotkey seed because
-  the wallet seed is not available to the host app.
-- Locked wallets and software accounts without a stored mnemonic must fail
-  before any proof or recovery work starts.
+- Software and hardware accounts both generate a random per-account, per-round
+  hotkey through `zcash_voting::hotkey::generate_random_voting_hotkey`. Dart
+  stores the opaque hotkey secret bytes and passes them back for later
+  delegation and vote work.
+- If the stored hotkey is missing after any hotkey-bound artifact exists, the
+  session must fail instead of generating replacement material. v2 does not try
+  to recover deterministic hotkeys from the wallet seed.
+- Locked software wallets still need the mnemonic only for delegation SpendAuth
+  signing. Hotkey generation and vote signing do not require mnemonic access.
 
 The wallet seed never leaves the wallet boundary. Delegation signing in
 `delegation.rs::sign_delegation_request` consumes a crate-provided

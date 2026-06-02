@@ -281,7 +281,7 @@ abstract interface class VotingRustApi {
   precomputeDelegationPir({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required String mnemonic,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   });
 
@@ -290,6 +290,7 @@ abstract interface class VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
     required String mnemonic,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   });
 
@@ -297,7 +298,7 @@ abstract interface class VotingRustApi {
 
   Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   });
 
@@ -333,7 +334,7 @@ abstract interface class VotingRustApi {
   buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
     required List<int> keystoneSighash,
@@ -392,7 +393,7 @@ abstract interface class VotingRustApi {
     required String network,
     required String roundId,
     required int bundleIndex,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_voting.DraftVote> draftVotes,
   });
@@ -481,12 +482,6 @@ abstract interface class VotingRustApi {
     required int proposalId,
     required int shareIndex,
   });
-
-  Future<List<int>> deriveHotkey({
-    required String mnemonic,
-    required String roundId,
-    required String network,
-  });
 }
 
 /// Production implementation backed by generated FRB calls.
@@ -522,13 +517,13 @@ class FrbVotingRustApi implements VotingRustApi {
   precomputeDelegationPir({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required String mnemonic,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) {
     return rust_api.precomputeDelegationPir(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
-      mnemonic: mnemonic,
+      storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
     );
   }
@@ -539,12 +534,14 @@ class FrbVotingRustApi implements VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
     required String mnemonic,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) {
     return rust_api.buildProveAndSignDelegationPayloadWithProgress(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
       mnemonic: mnemonic,
+      storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
     );
   }
@@ -557,12 +554,12 @@ class FrbVotingRustApi implements VotingRustApi {
   @override
   Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) {
     return rust_api.buildKeystoneDelegationRequest(
       ctx: ctx,
-      hotkeySeed: hotkeySeed,
+      storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
     );
   }
@@ -632,7 +629,7 @@ class FrbVotingRustApi implements VotingRustApi {
   buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
     required List<int> keystoneSighash,
@@ -641,7 +638,7 @@ class FrbVotingRustApi implements VotingRustApi {
         .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
           ctx: ctx,
           pirServerUrl: pirServerUrl,
-          hotkeySeed: hotkeySeed,
+          storedHotkeySecret: storedHotkeySecret,
           bundleIndex: bundleIndex,
           keystoneSig: keystoneSig,
           keystoneSighash: keystoneSighash,
@@ -743,7 +740,7 @@ class FrbVotingRustApi implements VotingRustApi {
     required String network,
     required String roundId,
     required int bundleIndex,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_voting.DraftVote> draftVotes,
   }) {
@@ -753,7 +750,7 @@ class FrbVotingRustApi implements VotingRustApi {
       network: network,
       roundId: roundId,
       bundleIndex: bundleIndex,
-      hotkeySeed: hotkeySeed,
+      storedHotkeySecret: storedHotkeySecret,
       vanWitness: vanWitness,
       draftVotes: draftVotes,
     );
@@ -935,19 +932,6 @@ class FrbVotingRustApi implements VotingRustApi {
       bundleIndex: bundleIndex,
       proposalId: proposalId,
       shareIndex: shareIndex,
-    );
-  }
-
-  @override
-  Future<List<int>> deriveHotkey({
-    required String mnemonic,
-    required String roundId,
-    required String network,
-  }) {
-    return rust_api.deriveVotingHotkey(
-      mnemonic: mnemonic,
-      roundId: roundId,
-      network: network,
     );
   }
 }

@@ -2552,7 +2552,6 @@ class _NoopVotingRustApi implements VotingRustApi {
     String? roundId,
   }) async {}
 
-  @override
   Future<List<int>> deriveHotkey({
     required String mnemonic,
     required String roundId,
@@ -2584,7 +2583,7 @@ class _IneligibleVotingRustApi extends _VotingStatusRustApi {
     required String network,
     required String roundId,
     required int bundleIndex,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
   }) async* {
@@ -2730,7 +2729,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   Future<rust_wire.DelegationPirPrecomputeResultView> precomputeDelegationPir({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required String mnemonic,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async {
     return rust_wire.DelegationPirPrecomputeResultView(
@@ -2747,6 +2746,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
     required String mnemonic,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async* {
     yield rust_api.ApiDelegationProofEvent(
@@ -2813,7 +2813,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   @override
   Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async {
     keystoneDelegationRequestCalls++;
@@ -2866,7 +2866,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
   buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
     required List<int> keystoneSighash,
@@ -3003,7 +3003,7 @@ class _VotingStatusRustApi extends _NoopVotingRustApi {
     required String network,
     required String roundId,
     required int bundleIndex,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
   }) async* {

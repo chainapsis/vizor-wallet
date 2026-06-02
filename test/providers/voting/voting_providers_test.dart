@@ -1649,7 +1649,7 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('missing stored Keystone'));
+      expect(state.error?.message, contains('missing stored voting hotkey'));
       expect(rust.generateVotingHotkeyCalls, 0);
       expect(rust.keystoneDelegationRequestCalls, isEmpty);
     },
@@ -1705,7 +1705,7 @@ void main() {
       final state = container.read(votingSessionProvider(kRoundId)).value!;
 
       expect(state.phase, VotingSessionPhase.error);
-      expect(state.error?.message, contains('missing stored Keystone'));
+      expect(state.error?.message, contains('missing stored voting hotkey'));
       expect(rust.generateVotingHotkeyCalls, 0);
       expect(rust.keystoneProofBundleCalls, isEmpty);
       expect(rust.storedDelegationTxHashes, isEmpty);
@@ -1995,8 +1995,8 @@ void main() {
 
       expect(rust.setupCalls, 0);
       expect(rust.delegationBundleCalls, isEmpty);
-      expect(rust.deriveHotkeyCalls, 1);
-      expect(hotkeyStore.hotkey, isNotNull);
+      expect(rust.generateVotingHotkeyCalls, 1);
+      expect(hotkeyStore.hotkey, [42, 43, 44]);
       expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
       expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 1);
     },
@@ -4055,27 +4055,104 @@ void main() {
     expect(rust.maxConcurrentSetups, 1);
   });
 
-  test('delegation PIR warmup passes the account mnemonic to Rust', () async {
-    final precomputeGate = Completer<void>();
-    final rust = FakeVotingRustApi(precomputeGate: precomputeGate);
-    final container = _sessionContainer(rust: rust);
-    addTearDown(container.dispose);
+  test(
+    'hotkey generation is single-flight for PIR warmup and delegation',
+    () async {
+      final hotkeyGenerationGate = Completer<void>();
+      final precomputeGate = Completer<void>();
+      final rust = FakeVotingRustApi(
+        generatedHotkeys: const [
+          [42, 43, 44],
+          [99, 99, 99],
+        ],
+        hotkeyGenerationGate: hotkeyGenerationGate,
+        precomputeGate: precomputeGate,
+      );
+      final hotkeyStore = FakeVotingHotkeyStore(null);
+      final container = _sessionContainer(rust: rust, hotkeyStore: hotkeyStore);
+      addTearDown(container.dispose);
 
-    await container.read(votingSessionProvider(kRoundId).future);
-    await container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .precomputeDelegationPir(
-          accountUuid: 'account-1',
-          mnemonic: kTestMnemonic,
-        );
-    await rust.precomputeStarted.future;
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      final precomputeFuture = notifier.precomputeDelegationPir(
+        accountUuid: 'account-1',
+      );
+      await rust.hotkeyGenerationStarted.future;
 
-    expect(rust.precomputeMnemonics.single, kTestMnemonic);
+      final delegationFuture = notifier.delegatePendingBundles(
+        mnemonic: kTestMnemonic,
+      );
+      await Future<void>.delayed(Duration.zero);
 
-    precomputeGate.complete();
-    await rust.precomputeFinished.future;
-    await Future<void>.delayed(Duration.zero);
-  });
+      expect(rust.generateVotingHotkeyCalls, 1);
+
+      hotkeyGenerationGate.complete();
+      await rust.precomputeStarted.future;
+      precomputeGate.complete();
+      await Future.wait([precomputeFuture, delegationFuture]);
+
+      expect(rust.generateVotingHotkeyCalls, 1);
+      expect(hotkeyStore.hotkey, [42, 43, 44]);
+      expect(rust.precomputeStoredHotkeySecrets, [
+        [42, 43, 44],
+      ]);
+      expect(rust.delegationStoredHotkeySecrets, [
+        [42, 43, 44],
+      ]);
+    },
+  );
+
+  test(
+    'delegation PIR warmup passes the stored hotkey secret to Rust',
+    () async {
+      final precomputeGate = Completer<void>();
+      final rust = FakeVotingRustApi(precomputeGate: precomputeGate);
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .precomputeDelegationPir(accountUuid: 'account-1');
+      await rust.precomputeStarted.future;
+
+      expect(rust.precomputeStoredHotkeySecrets.single, [9, 9, 9]);
+
+      precomputeGate.complete();
+      await rust.precomputeFinished.future;
+      await Future<void>.delayed(Duration.zero);
+    },
+  );
+
+  test(
+    'delegation PIR warmup does not regenerate Keystone hotkey after signature',
+    () async {
+      final rust = FakeVotingRustApi();
+      rust.storedKeystoneSignatures[0] = rust_wire.KeystoneSignatureRecord(
+        bundleIndex: 0,
+        sig: Uint8List.fromList(const [3, 0]),
+        sighash: Uint8List.fromList(const [10, 0]),
+        rk: Uint8List.fromList(const [2, 0]),
+      );
+      final hotkeyStore = FakeVotingHotkeyStore(null);
+      final container = _sessionContainer(
+        rust: rust,
+        accountIsHardware: true,
+        hotkeyStore: hotkeyStore,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .precomputeDelegationPir(accountUuid: 'account-1');
+
+      expect(rust.generateVotingHotkeyCalls, 0);
+      expect(hotkeyStore.hotkey, isNull);
+      expect(rust.setupCalls, 0);
+      expect(rust.precomputedDelegationPir, isEmpty);
+    },
+  );
 
   test('delegation PIR warmup skips after account switch', () async {
     final rust = FakeVotingRustApi();
@@ -4103,10 +4180,7 @@ void main() {
 
     await container
         .read(votingSessionProvider(kRoundId).notifier)
-        .precomputeDelegationPir(
-          accountUuid: 'account-1',
-          mnemonic: kTestMnemonic,
-        );
+        .precomputeDelegationPir(accountUuid: 'account-1');
 
     expect(rust.precomputedDelegationPir, isEmpty);
   });
@@ -4119,10 +4193,7 @@ void main() {
 
     await container.read(votingSessionProvider(kRoundId).future);
     final notifier = container.read(votingSessionProvider(kRoundId).notifier);
-    await notifier.precomputeDelegationPir(
-      accountUuid: 'account-1',
-      mnemonic: kTestMnemonic,
-    );
+    await notifier.precomputeDelegationPir(accountUuid: 'account-1');
     await rust.precomputeStarted.future;
 
     final delegationFuture = notifier.delegatePendingBundles(
@@ -4157,10 +4228,7 @@ void main() {
 
     await container.read(votingSessionProvider(kRoundId).future);
     final notifier = container.read(votingSessionProvider(kRoundId).notifier);
-    await notifier.precomputeDelegationPir(
-      accountUuid: 'account-1',
-      mnemonic: kTestMnemonic,
-    );
+    await notifier.precomputeDelegationPir(accountUuid: 'account-1');
     await notifier.delegatePendingBundles(mnemonic: kTestMnemonic);
 
     expect(rust.precomputedDelegationPir, [0]);
@@ -5352,6 +5420,10 @@ class FakeVotingRustApi implements VotingRustApi {
     this.setupDelay = Duration.zero,
     this.setupGate,
     this.emitCommitments = false,
+    this.generatedHotkeys = const [
+      [42, 43, 44],
+    ],
+    this.hotkeyGenerationGate,
     this.precomputeGate,
     this.failPrecompute = false,
     this.bundleCount = 1,
@@ -5367,6 +5439,8 @@ class FakeVotingRustApi implements VotingRustApi {
   final Duration setupDelay;
   final Completer<void>? setupGate;
   final bool emitCommitments;
+  final List<List<int>> generatedHotkeys;
+  final Completer<void>? hotkeyGenerationGate;
   final Completer<void>? precomputeGate;
   final bool failPrecompute;
   final int bundleCount;
@@ -5392,11 +5466,13 @@ class FakeVotingRustApi implements VotingRustApi {
   final recordedShares = <_RecordedShare>[];
   final syncedVoteTrees = <String>[];
   final precomputedDelegationPir = <int>[];
-  final precomputeMnemonics = <String>[];
+  final precomputeStoredHotkeySecrets = <List<int>>[];
+  final delegationStoredHotkeySecrets = <List<int>>[];
   final setupStarted = Completer<void>();
   final delegationProofStarted = Completer<void>();
   final keystoneDelegationProofStarted = Completer<void>();
   final voteCommitmentStarted = Completer<void>();
+  final hotkeyGenerationStarted = Completer<void>();
   final precomputeStarted = Completer<void>();
   final precomputeFinished = Completer<void>();
   final resetVotingSessionStateCalls = <String>[];
@@ -5412,7 +5488,6 @@ class FakeVotingRustApi implements VotingRustApi {
   int trustedRoundParamsCalls = 0;
   int generateVotingHotkeyCalls = 0;
   int parseSignedVotingPcztCalls = 0;
-  int deriveHotkeyCalls = 0;
   int extractSpendAuthSignatureCalls = 0;
 
   @override
@@ -5471,10 +5546,12 @@ class FakeVotingRustApi implements VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
     required String mnemonic,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async* {
     accountUuids.add(ctx.accountUuid);
     delegationBundleCalls.add(bundleIndex);
+    delegationStoredHotkeySecrets.add(List<int>.from(storedHotkeySecret));
     final error = delegationStreamError;
     if (error != null) throw error;
     if (!delegationProofStarted.isCompleted) {
@@ -5511,14 +5588,21 @@ class FakeVotingRustApi implements VotingRustApi {
 
   @override
   Future<List<int>> generateVotingHotkey({required String network}) async {
-    generateVotingHotkeyCalls++;
-    return [42, 43, 44];
+    final callIndex = generateVotingHotkeyCalls++;
+    if (!hotkeyGenerationStarted.isCompleted) {
+      hotkeyGenerationStarted.complete();
+    }
+    await hotkeyGenerationGate?.future;
+    final hotkeyIndex = callIndex < generatedHotkeys.length
+        ? callIndex
+        : generatedHotkeys.length - 1;
+    return List<int>.from(generatedHotkeys[hotkeyIndex]);
   }
 
   @override
   Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async {
     accountUuids.add(ctx.accountUuid);
@@ -5602,7 +5686,7 @@ class FakeVotingRustApi implements VotingRustApi {
   buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
     required List<int> keystoneSighash,
@@ -5667,12 +5751,12 @@ class FakeVotingRustApi implements VotingRustApi {
   Future<rust_wire.DelegationPirPrecomputeResultView> precomputeDelegationPir({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required String mnemonic,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async {
     accountUuids.add(ctx.accountUuid);
     precomputedDelegationPir.add(bundleIndex);
-    precomputeMnemonics.add(mnemonic);
+    precomputeStoredHotkeySecrets.add(List<int>.from(storedHotkeySecret));
     if (!precomputeStarted.isCompleted) {
       precomputeStarted.complete();
     }
@@ -5782,7 +5866,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required String network,
     required String roundId,
     required int bundleIndex,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
   }) async* {
@@ -6097,16 +6181,6 @@ class FakeVotingRustApi implements VotingRustApi {
     required int shareIndex,
   }) async {
     confirmedShares.add('$bundleIndex:$proposalId:$shareIndex');
-  }
-
-  @override
-  Future<List<int>> deriveHotkey({
-    required String mnemonic,
-    required String roundId,
-    required String network,
-  }) async {
-    deriveHotkeyCalls++;
-    return [roundId.length, network.length, ...mnemonic.codeUnits.take(2)];
   }
 }
 

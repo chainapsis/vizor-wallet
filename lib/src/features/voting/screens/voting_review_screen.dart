@@ -9,7 +9,6 @@ import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
@@ -46,18 +45,9 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
       if (!mounted) return;
       final accountUuid = session.accountUuid;
       if (accountUuid == null) return;
-      final mnemonic = await ref
-          .read(accountProvider.notifier)
-          .getMnemonicForAccount(accountUuid);
-      if (!mounted) return;
-      if (mnemonic == null || mnemonic.isEmpty) return;
-      if (!mounted) return;
       await ref
           .read(votingSessionProvider(widget.roundId).notifier)
-          .precomputeDelegationPir(
-            accountUuid: accountUuid,
-            mnemonic: mnemonic,
-          );
+          .precomputeDelegationPir(accountUuid: accountUuid);
     } catch (e) {
       debugPrint('[zcash] Voting: delegation PIR precompute skipped: $e');
     }
