@@ -88,6 +88,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ApiVotingRoundContext dco_decode_api_voting_round_context(dynamic raw);
 
   @protected
+  AuthenticatedRound dco_decode_authenticated_round(dynamic raw);
+
+  @protected
   BlockMetaInfo dco_decode_block_meta_info(dynamic raw);
 
   @protected
@@ -216,6 +219,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> dco_decode_list_account_info(dynamic raw);
+
+  @protected
+  List<AuthenticatedRound> dco_decode_list_authenticated_round(dynamic raw);
 
   @protected
   List<BlockMetaInfo> dco_decode_list_block_meta_info(dynamic raw);
@@ -580,6 +586,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  AuthenticatedRound sse_decode_authenticated_round(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BlockMetaInfo sse_decode_block_meta_info(SseDeserializer deserializer);
 
   @protected
@@ -738,6 +749,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AccountInfo> sse_decode_list_account_info(SseDeserializer deserializer);
+
+  @protected
+  List<AuthenticatedRound> sse_decode_list_authenticated_round(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<BlockMetaInfo> sse_decode_list_block_meta_info(
@@ -1189,6 +1205,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_authenticated_round(
+    AuthenticatedRound self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_block_meta_info(BlockMetaInfo self, SseSerializer serializer);
 
   @protected
@@ -1377,6 +1399,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_account_info(
     List<AccountInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_authenticated_round(
+    List<AuthenticatedRound> self,
     SseSerializer serializer,
   );
 

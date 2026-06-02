@@ -729,6 +729,31 @@ void main() {
     );
   });
 
+  test('session provider uses Rust-assembled trusted round params', () async {
+    final rust = FakeVotingRustApi();
+    final serverRoundStatus = roundStatusJson(roundId: kRoundId)
+      ..['ea_pk'] = _bytes1x32Base64;
+    final container = _sessionContainer(
+      http: FakeVotingHttpClient(
+        responses: votingHttpResponses(roundStatus: serverRoundStatus),
+      ),
+      rust: rust,
+      authenticatedRoundIds: const [kRoundId],
+      authenticatedRoundEaPks: {
+        kRoundId: Uint8List.fromList(List.filled(32, 7)),
+      },
+    );
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+
+    expect(rust.trustedRoundParamsCalls, 1);
+    expect(
+      rust.lastTrustedRoundParams?.eaPk,
+      orderedEquals(List.filled(32, 7)),
+    );
+  });
+
   test(
     'rounds provider loads planner state when summaries omit proposals',
     () async {
@@ -828,7 +853,6 @@ void main() {
     );
 
     expect(details.roundId, kEncodedRoundIdHex);
-    expect(details.toRoundParams().voteRoundId, kEncodedRoundIdHex);
   });
 
   test('round details use the validated status round id', () {
@@ -4009,6 +4033,7 @@ ProviderContainer _sessionContainer({
   void Function()? walletSyncStarter,
   Duration? walletSyncPollInterval,
   List<String> authenticatedRoundIds = const [kRoundId, kOtherRoundId],
+  Map<String, Uint8List>? authenticatedRoundEaPks,
   List<String> skippedRoundIds = const [],
 }) {
   final effectiveHttp =
@@ -4034,6 +4059,7 @@ ProviderContainer _sessionContainer({
             previous: previous,
             fetchBytes: fetchBytes,
             authenticatedRoundIds: authenticatedRoundIds,
+            authenticatedRoundEaPks: authenticatedRoundEaPks,
             skippedRoundIds: skippedRoundIds,
           ),
         ),
@@ -4278,7 +4304,7 @@ Future<void> _waitForConfirmedShare(
 class _GatedVotingConfigLoads {
   _GatedVotingConfigLoads(this._configs);
 
-  final Map<String, VotingConfig> _configs;
+  final Map<String, rust_config_api.VotingConfigResolution> _configs;
   final Map<String, List<Object>> _failures = {};
   final Map<String, int> _loadCounts = {};
   final Map<String, List<Completer<void>>> _gates = {};
@@ -4293,7 +4319,7 @@ class _GatedVotingConfigLoads {
     (_failures[sourceUrl] ??= []).add(error);
   }
 
-  Future<VotingConfig> load(String sourceUrl) async {
+  Future<rust_config_api.VotingConfigResolution> load(String sourceUrl) async {
     _loadCounts[sourceUrl] = (_loadCounts[sourceUrl] ?? 0) + 1;
     final gates = _gates[sourceUrl];
     if (gates != null && gates.isNotEmpty) {
@@ -4330,19 +4356,46 @@ class _GatedVotingConfigLoader extends VotingConfigLoader {
   final String _sourceUrl;
 
   @override
-  Future<VotingConfig> load() {
+  Future<rust_config_api.VotingConfigResolution> load({
+    rust_config.ResolvedVotingConfig? previous,
+  }) {
     return _loads.load(_sourceUrl);
   }
 }
 
-VotingConfig _configForVoteServer(String url) {
-  return VotingConfig.fromJson(
-    dynamicConfigJson(
-      voteServers: [
-        {'url': url, 'label': 'primary'},
-      ],
+rust_config_api.VotingConfigResolution _configForVoteServer(String url) {
+  final defaultEaPk = Uint8List.fromList(List.filled(32, 1));
+  final config = rust_config.ResolvedVotingConfig(
+    sourceFingerprint: 'test-source-fingerprint',
+    trustedKeyFingerprint: 'test-trusted-key-fingerprint',
+    dynamicConfigFingerprint: 'test-dynamic-config-fingerprint',
+    voteServers: [rust_config.ServiceEndpoint(url: url, label: 'primary')],
+    pirEndpoints: const [
+      rust_config.ServiceEndpoint(url: 'https://pir.example', label: 'pir'),
+    ],
+    supportedVersions: const rust_config.SupportedVersions(
+      pir: ['v0'],
+      voteProtocol: 'v0',
+      tally: 'v0',
+      voteServer: 'v1',
     ),
-  )..validate();
+    authenticatedRounds: [
+      rust_config.AuthenticatedRound(
+        roundId: kRoundId,
+        eaPk: defaultEaPk,
+      ),
+      rust_config.AuthenticatedRound(
+        roundId: kOtherRoundId,
+        eaPk: defaultEaPk,
+      ),
+    ],
+    skippedRoundIds: const [],
+    conditions: const [],
+  );
+  return rust_config_api.VotingConfigResolution(
+    config: config,
+    switchKind: rust_config.ConfigSwitchKind.unchanged,
+  );
 }
 
 Map<String, dynamic> _postBody(FakeVotingHttpClient http, String path) {
@@ -4441,20 +4494,28 @@ const _fastTxConfirmationPolling = VotingTxConfirmationPolling(
 Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
   required String source,
   rust_config.ResolvedVotingConfig? previous,
-  required FutureOr<Uint8List> Function(String) fetchBytes,
+  required FutureOr<rust_config_api.VotingConfigFetch> Function(String) fetchBytes,
   List<String>? authenticatedRoundIds,
+  Map<String, Uint8List>? authenticatedRoundEaPks,
   List<String> skippedRoundIds = const [],
   rust_config.ConfigSwitchKind? switchKind,
 }) async {
+  Future<Uint8List> fetchOrThrow(String url) async {
+    final response = await fetchBytes(url);
+    final bytes = response.bytes;
+    if (bytes != null) return bytes;
+    throw StateError(response.error ?? 'missing bytes for $url');
+  }
+
   final staticJson = decodeVotingJsonObject(
-    utf8.decode(await fetchBytes(source)),
+    utf8.decode(await fetchOrThrow(source)),
   );
   final dynamicConfigUrl = staticJson['dynamic_config_url']?.toString();
   if (dynamicConfigUrl == null || dynamicConfigUrl.isEmpty) {
     throw const FormatException('Missing required string: dynamic_config_url');
   }
   final dynamicJson = decodeVotingJsonObject(
-    utf8.decode(await fetchBytes(dynamicConfigUrl)),
+    utf8.decode(await fetchOrThrow(dynamicConfigUrl)),
   );
 
   final voteServers = (dynamicJson['vote_servers'] as List<dynamic>)
@@ -4476,6 +4537,24 @@ Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
       )
       .toList(growable: false);
   final versions = dynamicJson['supported_versions'] as Map<String, dynamic>;
+  final dynamicRounds = dynamicJson['rounds'] as Map<String, dynamic>;
+  final effectiveAuthenticatedRoundIds =
+      authenticatedRoundIds ?? dynamicRounds.keys.toList(growable: false);
+  final authenticatedRounds = effectiveAuthenticatedRoundIds.map((roundId) {
+    final configuredEaPk = authenticatedRoundEaPks?[roundId];
+    if (configuredEaPk != null) {
+      return rust_config.AuthenticatedRound(roundId: roundId, eaPk: configuredEaPk);
+    }
+    final dynamicRound = dynamicRounds[roundId] as Map<String, dynamic>?;
+    final eaPkB64 = dynamicRound?['ea_pk']?.toString();
+    if (eaPkB64 == null || eaPkB64.isEmpty) {
+      throw FormatException('Missing required string: rounds.$roundId.ea_pk');
+    }
+    return rust_config.AuthenticatedRound(
+      roundId: roundId,
+      eaPk: base64Decode(eaPkB64),
+    );
+  }).toList(growable: false);
   final resolved = rust_config.ResolvedVotingConfig(
     sourceFingerprint: 'test-source-fingerprint',
     trustedKeyFingerprint: 'test-trusted-key-fingerprint',
@@ -4490,8 +4569,7 @@ Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
       tally: versions['tally'].toString(),
       voteServer: versions['vote_server'].toString(),
     ),
-    authenticatedRoundIds: authenticatedRoundIds ??
-        (dynamicJson['rounds'] as Map<String, dynamic>).keys.toList(growable: false),
+    authenticatedRounds: authenticatedRounds,
     skippedRoundIds: skippedRoundIds,
     conditions: const [],
   );
@@ -5088,15 +5166,43 @@ class FakeVotingRustApi implements VotingRustApi {
   final keystoneProofBundleCalls = <int>[];
   final deleteSkippedBundleKeepCounts = <int>[];
   final storedKeystoneSignatures = <int, rust_wire.KeystoneSignatureRecord>{};
+  rust_wire.VotingRoundParams? lastTrustedRoundParams;
+  rust_wire.VotingRoundParams? lastSetupRoundParams;
+  int trustedRoundParamsCalls = 0;
   int generateVotingHotkeyCalls = 0;
   int parseSignedVotingPcztCalls = 0;
   int deriveHotkeyCalls = 0;
   int extractSpendAuthSignatureCalls = 0;
 
   @override
+  Future<rust_wire.VotingRoundParams> trustedVotingRoundParamsFromConfig({
+    required rust_config.ResolvedVotingConfig config,
+    required String roundId,
+    required BigInt snapshotHeight,
+    required List<int> ncRoot,
+    required List<int> nullifierImtRoot,
+  }) async {
+    trustedRoundParamsCalls++;
+    final trustedRound = config.authenticatedRounds.firstWhere(
+      (round) => round.roundId == roundId,
+      orElse: () => throw StateError('round $roundId is not authenticated'),
+    );
+    final params = rust_wire.VotingRoundParams(
+      voteRoundId: roundId,
+      snapshotHeight: snapshotHeight,
+      eaPk: trustedRound.eaPk,
+      ncRoot: Uint8List.fromList(ncRoot),
+      nullifierImtRoot: Uint8List.fromList(nullifierImtRoot),
+    );
+    lastTrustedRoundParams = params;
+    return params;
+  }
+
+  @override
   Future<rust_round.BundleLayout> setupDelegationBundles({
     required rust_api.ApiVotingRoundContext ctx,
   }) async {
+    lastSetupRoundParams = ctx.roundParams;
     accountUuids.add(ctx.accountUuid);
     _activeSetups++;
     if (_activeSetups > maxConcurrentSetups) {

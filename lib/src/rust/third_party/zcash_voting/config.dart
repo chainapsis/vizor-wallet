@@ -6,6 +6,25 @@
 import '../../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// Dynamic round metadata authenticated by trusted static keys.
+class AuthenticatedRound {
+  final String roundId;
+  final Uint8List eaPk;
+
+  const AuthenticatedRound({required this.roundId, required this.eaPk});
+
+  @override
+  int get hashCode => roundId.hashCode ^ eaPk.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AuthenticatedRound &&
+          runtimeType == other.runtimeType &&
+          roundId == other.roundId &&
+          eaPk == other.eaPk;
+}
+
 /// Structured status emitted while resolving a voting config.
 class ConfigCondition {
   final ConfigConditionKind kind;
@@ -79,7 +98,7 @@ class ResolvedVotingConfig {
   final List<ServiceEndpoint> voteServers;
   final List<ServiceEndpoint> pirEndpoints;
   final SupportedVersions supportedVersions;
-  final List<String> authenticatedRoundIds;
+  final List<AuthenticatedRound> authenticatedRounds;
   final List<String> skippedRoundIds;
   final List<ConfigCondition> conditions;
 
@@ -90,7 +109,7 @@ class ResolvedVotingConfig {
     required this.voteServers,
     required this.pirEndpoints,
     required this.supportedVersions,
-    required this.authenticatedRoundIds,
+    required this.authenticatedRounds,
     required this.skippedRoundIds,
     required this.conditions,
   });
@@ -103,7 +122,7 @@ class ResolvedVotingConfig {
       voteServers.hashCode ^
       pirEndpoints.hashCode ^
       supportedVersions.hashCode ^
-      authenticatedRoundIds.hashCode ^
+      authenticatedRounds.hashCode ^
       skippedRoundIds.hashCode ^
       conditions.hashCode;
 
@@ -118,7 +137,7 @@ class ResolvedVotingConfig {
           voteServers == other.voteServers &&
           pirEndpoints == other.pirEndpoints &&
           supportedVersions == other.supportedVersions &&
-          authenticatedRoundIds == other.authenticatedRoundIds &&
+          authenticatedRounds == other.authenticatedRounds &&
           skippedRoundIds == other.skippedRoundIds &&
           conditions == other.conditions;
 }

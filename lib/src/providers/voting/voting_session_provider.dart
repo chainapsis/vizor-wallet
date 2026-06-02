@@ -57,7 +57,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       dbPath: context.dbPath,
       lightwalletdUrl: context.lightwalletdUrl,
       network: context.network,
-      roundParams: context.round.toRoundParams(),
+      roundParams: context.roundParams,
       roundName: context.round.title,
       sessionJson: context.round.sessionJson,
       accountUuid: context.accountUuid,
@@ -2411,7 +2411,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final round = VotingRoundDetails.fromStatus(
       await api.getRoundStatus(roundId),
     );
-    _assertRoundMetadataTrusted(round: round, config: config);
+    final roundParams = await ref
+        .read(votingRustApiProvider)
+        .trustedVotingRoundParamsFromConfig(
+          config: config,
+          roundId: round.roundId,
+          snapshotHeight: BigInt.from(round.snapshotHeight),
+          ncRoot: round.ncRoot,
+          nullifierImtRoot: round.nullifierImtRoot,
+        );
     checkAction();
     final accountUuid = await _accountUuidForSession();
     final isHardwareAccount = await _isHardwareAccountForSession();
@@ -2446,6 +2454,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       config: config,
       round: round,
+      roundParams: roundParams,
       resumePlan: resumePlan,
       roundPlan: roundPlan,
     );
@@ -2465,16 +2474,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     throw StateError(
       'Round $requestedRoundId is not authenticated by voting config: $reason.',
     );
-  }
-
-  void _assertRoundMetadataTrusted({
-    required VotingRoundDetails round,
-    required rust_config.ResolvedVotingConfig config,
-  }) {
-    // Prototype safety rail: require authenticated round id in the session path.
-    // Follow-up: compare round.eaPk/ncRoot/nullifierImtRoot against Rust-exposed
-    // signed metadata once that map is surfaced in ResolvedVotingConfig.
-    _assertAuthenticatedRoundId(config: config, requestedRoundId: round.roundId);
   }
 
   Future<String> _accountUuidForSession() async {
@@ -2953,6 +2952,7 @@ class _VotingSessionContext {
   final String lightwalletdUrl;
   final rust_config.ResolvedVotingConfig config;
   final VotingRoundDetails round;
+  final rust_wire.VotingRoundParams roundParams;
   final VotingResumePlan resumePlan;
   final rust_wire.RoundPlanView? roundPlan;
 
@@ -2965,6 +2965,7 @@ class _VotingSessionContext {
     required this.lightwalletdUrl,
     required this.config,
     required this.round,
+    required this.roundParams,
     required this.resumePlan,
     this.roundPlan,
   });

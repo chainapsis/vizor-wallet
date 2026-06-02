@@ -6,7 +6,6 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/services/voting/resolved_voting_config_extensions.dart';
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
-import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 
 import 'fake_voting_http.dart';
 
@@ -96,8 +95,10 @@ void main() {
         final dynamicBytes = await fetchBytes(
           'https://voting.example/dynamic-voting-config.json',
         );
-        expect(staticBytes, isA<Uint8List>());
-        expect(dynamicBytes, isA<Uint8List>());
+        expect(staticBytes.bytes, isA<Uint8List>());
+        expect(staticBytes.error, isNull);
+        expect(dynamicBytes.bytes, isA<Uint8List>());
+        expect(dynamicBytes.error, isNull);
         return rust_config_api.VotingConfigResolution(
           config: _resolvedConfig(),
           switchKind: rust_config.ConfigSwitchKind.initialLoad,
@@ -148,7 +149,9 @@ void main() {
         previous,
         required fetchBytes,
       }) async {
-        await fetchBytes(source);
+        final response = await fetchBytes(source);
+        expect(response.bytes, isNull);
+        expect(response.error, isNotNull);
         return rust_config_api.VotingConfigResolution(
           config: _resolvedConfig(),
           switchKind: rust_config.ConfigSwitchKind.initialLoad,
@@ -156,7 +159,8 @@ void main() {
       },
     );
 
-    expect(loader.load(), throwsA(isA<VotingHttpException>()));
+    final resolution = await loader.load();
+    expect(resolution.config.apiBaseUrl.toString(), 'https://voting.example');
   });
 
   test('load succeeds and surfaces skipped round IDs', () async {
@@ -165,7 +169,7 @@ void main() {
       resolveVotingConfig: ({required source, previous, required fetchBytes}) async {
         return rust_config_api.VotingConfigResolution(
           config: _resolvedConfig(
-            authenticatedRoundIds: const [],
+            authenticatedRoundEaPks: const {},
             skippedRoundIds: const [
               '0000000000000000000000000000000000000000000000000000000000000009',
             ],
@@ -177,16 +181,20 @@ void main() {
 
     final resolution = await loader.load();
     expect(resolution.config.skippedRoundIds, hasLength(1));
-    expect(resolution.config.authenticatedRoundIds, isEmpty);
+    expect(resolution.config.authenticatedRounds, isEmpty);
   });
 }
 
 rust_config.ResolvedVotingConfig _resolvedConfig({
-  List<String> authenticatedRoundIds = const [
-    '0000000000000000000000000000000000000000000000000000000000000001',
-  ],
+  Map<String, Uint8List>? authenticatedRoundEaPks,
   List<String> skippedRoundIds = const [],
 }) {
+  final effectiveAuthenticatedRoundEaPks =
+      authenticatedRoundEaPks ??
+      {
+        '0000000000000000000000000000000000000000000000000000000000000001':
+            Uint8List.fromList(List.filled(32, 1)),
+      };
   return rust_config.ResolvedVotingConfig(
     sourceFingerprint: 'source-fp',
     trustedKeyFingerprint: 'key-fp',
@@ -203,7 +211,12 @@ rust_config.ResolvedVotingConfig _resolvedConfig({
       tally: 'v0',
       voteServer: 'v1',
     ),
-    authenticatedRoundIds: authenticatedRoundIds,
+    authenticatedRounds: effectiveAuthenticatedRoundEaPks.entries
+        .map(
+          (entry) =>
+              rust_config.AuthenticatedRound(roundId: entry.key, eaPk: entry.value),
+        )
+        .toList(growable: false),
     skippedRoundIds: skippedRoundIds,
     conditions: const [
       rust_config.ConfigCondition(

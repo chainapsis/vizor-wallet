@@ -11,6 +11,7 @@ import '../../providers/rpc_endpoint_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../rust/api/sync.dart' as rust_sync;
 import '../../rust/api/voting.dart' as rust_api;
+import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/round.dart' as rust_round;
 import '../../rust/third_party/zcash_voting/share_policy.dart'
@@ -264,6 +265,14 @@ class AppSecureStoreVotingHotkeyStore implements VotingHotkeyStore {
 /// Keeping this boundary explicit lets tests verify sequencing, recovery skips,
 /// and progress forwarding without invoking FRB or cryptographic proof work.
 abstract interface class VotingRustApi {
+  Future<rust_voting.VotingRoundParams> trustedVotingRoundParamsFromConfig({
+    required rust_config.ResolvedVotingConfig config,
+    required String roundId,
+    required BigInt snapshotHeight,
+    required List<int> ncRoot,
+    required List<int> nullifierImtRoot,
+  });
+
   Future<rust_round.BundleLayout> setupDelegationBundles({
     required rust_api.ApiVotingRoundContext ctx,
   });
@@ -483,6 +492,23 @@ abstract interface class VotingRustApi {
 /// Production implementation backed by generated FRB calls.
 class FrbVotingRustApi implements VotingRustApi {
   const FrbVotingRustApi();
+
+  @override
+  Future<rust_voting.VotingRoundParams> trustedVotingRoundParamsFromConfig({
+    required rust_config.ResolvedVotingConfig config,
+    required String roundId,
+    required BigInt snapshotHeight,
+    required List<int> ncRoot,
+    required List<int> nullifierImtRoot,
+  }) {
+    return rust_api.trustedVotingRoundParamsFromConfig(
+      resolvedConfig: config,
+      roundId: roundId,
+      snapshotHeight: snapshotHeight,
+      ncRoot: ncRoot,
+      nullifierImtRoot: nullifierImtRoot,
+    );
+  }
 
   @override
   Future<rust_round.BundleLayout> setupDelegationBundles({

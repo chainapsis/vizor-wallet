@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import '../third_party/zcash_voting/config.dart';
 import '../third_party/zcash_voting/delegate.dart';
 import '../third_party/zcash_voting/round.dart';
 import '../third_party/zcash_voting/share_policy.dart';
@@ -67,6 +68,24 @@ Future<List<ShareSubmissionPlan>> planShareSubmissions({
   voteEndTimeSeconds: voteEndTimeSeconds,
   lastMomentBufferSeconds: lastMomentBufferSeconds,
   singleShare: singleShare,
+);
+
+/// Build round params from server metadata while binding trusted `ea_pk`.
+///
+/// The vote server supplies dynamic fields such as snapshot height and roots,
+/// but `ea_pk` must come from the authenticated dynamic config material.
+Future<VotingRoundParams> trustedVotingRoundParamsFromConfig({
+  required ResolvedVotingConfig resolvedConfig,
+  required String roundId,
+  required BigInt snapshotHeight,
+  required List<int> ncRoot,
+  required List<int> nullifierImtRoot,
+}) => RustLib.instance.api.crateApiVotingTrustedVotingRoundParamsFromConfig(
+  resolvedConfig: resolvedConfig,
+  roundId: roundId,
+  snapshotHeight: snapshotHeight,
+  ncRoot: ncRoot,
+  nullifierImtRoot: nullifierImtRoot,
 );
 
 /// Return share-tracking action flags using `zcash_voting::share_policy`.

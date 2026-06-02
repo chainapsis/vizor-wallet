@@ -171,16 +171,6 @@ class VotingRoundDetails {
     );
   }
 
-  rust_wire.VotingRoundParams toRoundParams() {
-    return rust_wire.VotingRoundParams(
-      voteRoundId: roundId,
-      snapshotHeight: BigInt.from(snapshotHeight),
-      eaPk: eaPk,
-      ncRoot: ncRoot,
-      nullifierImtRoot: nullifierImtRoot,
-    );
-  }
-
   String get sessionJson => jsonEncode(rawJson);
 
   DateTime? get voteEndTime => _dateFromJson(rawJson, 'vote_end_time');

@@ -194,6 +194,24 @@ pub fn plan_share_submissions(
     })
 }
 
+/// Build round params from server metadata while binding trusted `ea_pk`.
+///
+/// The vote server supplies dynamic fields such as snapshot height and roots,
+/// but `ea_pk` must come from the authenticated dynamic config material.
+pub fn trusted_voting_round_params_from_config(
+    resolved_config: zcash_voting::config::ResolvedVotingConfig,
+    round_id: String,
+    snapshot_height: u64,
+    nc_root: Vec<u8>,
+    nullifier_imt_root: Vec<u8>,
+) -> Result<zcash_voting::wire::VotingRoundParams, String> {
+    catch(|| {
+        resolved_config
+            .trusted_voting_round_params(round_id, snapshot_height, nc_root, nullifier_imt_root)
+            .map_err(|e| e.to_string())
+    })
+}
+
 fn share_record(
     share: zcash_voting::wire::ShareDelegationRecordView,
 ) -> zcash_voting::ShareDelegationRecord {
@@ -1495,6 +1513,45 @@ mod tests {
         assert_eq!(core.ea_pk, api.ea_pk);
         assert_eq!(core.nc_root, api.nc_root);
         assert_eq!(core.nullifier_imt_root, api.nullifier_imt_root);
+    }
+
+    #[test]
+    fn trusted_round_params_use_config_ea_pk() {
+        let trusted_ea_pk = vec![7u8; 32];
+        let config = zcash_voting::config::ResolvedVotingConfig {
+            source_fingerprint: "source".to_string(),
+            trusted_key_fingerprint: "keys".to_string(),
+            dynamic_config_fingerprint: "dynamic".to_string(),
+            vote_servers: vec![],
+            pir_endpoints: vec![],
+            supported_versions: zcash_voting::config::SupportedVersions {
+                pir: vec!["v0".to_string()],
+                vote_protocol: "v0".to_string(),
+                tally: "v0".to_string(),
+                vote_server: "v1".to_string(),
+            },
+            authenticated_rounds: vec![zcash_voting::config::AuthenticatedRound {
+                round_id: ROUND_ID.to_string(),
+                ea_pk: trusted_ea_pk.clone(),
+            }],
+            skipped_round_ids: vec![],
+            conditions: vec![],
+        };
+
+        let params = trusted_voting_round_params_from_config(
+            config,
+            ROUND_ID.to_string(),
+            123,
+            vec![2u8; 32],
+            vec![3u8; 32],
+        )
+        .unwrap();
+
+        assert_eq!(params.vote_round_id, ROUND_ID);
+        assert_eq!(params.snapshot_height, 123);
+        assert_eq!(params.ea_pk, trusted_ea_pk);
+        assert_eq!(params.nc_root, vec![2u8; 32]);
+        assert_eq!(params.nullifier_imt_root, vec![3u8; 32]);
     }
 
     #[test]
