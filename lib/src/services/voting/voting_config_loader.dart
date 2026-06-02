@@ -92,7 +92,6 @@ class StaticVotingConfigSourceMalformed implements Exception {
   final strippedQuery = _stripChecksumQuery(parsed.query);
   final uri = Uri(
     scheme: parsed.scheme,
-    userInfo: parsed.userInfo,
     host: parsed.host,
     port: parsed.hasPort ? parsed.port : null,
     path: parsed.path,

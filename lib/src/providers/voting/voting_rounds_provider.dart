@@ -37,9 +37,9 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       return inFlight;
     }
 
-    final completer = Completer<void>();
-    _reloadFuture = completer.future;
-    try {
+    final run = () async {
+      // AsyncValue.guard captures load failures into AsyncError state, so reload
+      // completion only signals that refresh work is done (not that it succeeded).
       do {
         _reloadQueued = false;
         state = const AsyncLoading<List<VotingRoundView>>();
@@ -47,10 +47,10 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
           () => _withRoundsRetry(_load),
         );
       } while (_reloadQueued);
-      completer.complete();
-    } catch (error, stackTrace) {
-      completer.completeError(error, stackTrace);
-      rethrow;
+    }();
+    _reloadFuture = run;
+    try {
+      await run;
     } finally {
       _reloadFuture = null;
     }
