@@ -263,7 +263,6 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 
   void dismiss() {
-    if (state.isInFlight) return;
     _cancelCompletionPoll();
     _releaseGuard();
     _releaseSessionSubscription();
@@ -866,11 +865,35 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     required int generation,
   }) {
     _completionPollTimer?.cancel();
-    _completionPollTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    final timeout = ref.read(votingSubmissionCompletionPollTimeoutProvider);
+    if (timeout <= Duration.zero) {
+      _failJob(
+        key: key,
+        generation: generation,
+        message: _completionPollTimeoutMessage,
+      );
+      return;
+    }
+    final configuredInterval = ref.read(
+      votingSubmissionCompletionPollIntervalProvider,
+    );
+    final pollInterval = configuredInterval > Duration.zero
+        ? configuredInterval
+        : const Duration(milliseconds: 10);
+    final startedAt = DateTime.now();
+    _completionPollTimer = Timer.periodic(pollInterval, (timer) {
       if (!_isCurrentJob(key: key, generation: generation) ||
           !state.isInFlight) {
         timer.cancel();
         if (identical(_completionPollTimer, timer)) _completionPollTimer = null;
+        return;
+      }
+      if (DateTime.now().difference(startedAt) >= timeout) {
+        _failJob(
+          key: key,
+          generation: generation,
+          message: _completionPollTimeoutMessage,
+        );
         return;
       }
       final session = _sessionForJob(key);
@@ -971,6 +994,9 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   static const _genericVotingStatusErrorMessage =
       'Voting could not continue for this account. Retry, or switch to an '
       'eligible account if this account cannot vote in this poll.';
+  static const _completionPollTimeoutMessage =
+      'Submission confirmation is taking longer than expected. Retry to '
+      'resume confirmation, or dismiss this job and try again later.';
 
   bool _canRecoverWithoutDraft(VotingSessionState session) {
     final roundPlan = session.roundPlan;
@@ -1127,3 +1153,15 @@ final votingSubmissionJobSessionProvider = Provider.autoDispose
     .family<AsyncValue<VotingSessionState>, VotingSessionKey>((ref, key) {
       return ref.watch(votingSubmissionSessionProvider(key));
     });
+
+@visibleForTesting
+final votingSubmissionCompletionPollIntervalProvider = Provider<Duration>((
+  ref,
+) {
+  return const Duration(seconds: 1);
+});
+
+@visibleForTesting
+final votingSubmissionCompletionPollTimeoutProvider = Provider<Duration>((ref) {
+  return const Duration(minutes: 3);
+});
