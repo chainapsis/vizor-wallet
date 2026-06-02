@@ -826,6 +826,77 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
     );
   }
 
+  Widget _buildActionButtons({
+    required BuildContext context,
+    required AppColors colors,
+    required bool isDark,
+    required bool fullWidth,
+  }) {
+    if (!fullWidth) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _sendButton(context: context, minWidth: _actionButtonMinWidth),
+          const SizedBox(width: AppSpacing.xs),
+          _receiveButton(
+            context: context,
+            colors: colors,
+            isDark: isDark,
+            minWidth: _actionButtonMinWidth,
+          ),
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final actionButtonWidth = (constraints.maxWidth - AppSpacing.xs) / 2;
+        return Row(
+          mainAxisSize: MainAxisSize.max,
+          children: [
+            _sendButton(context: context, minWidth: actionButtonWidth),
+            const SizedBox(width: AppSpacing.xs),
+            _receiveButton(
+              context: context,
+              colors: colors,
+              isDark: isDark,
+              minWidth: actionButtonWidth,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _sendButton({
+    required BuildContext context,
+    required double minWidth,
+  }) {
+    return AppButton(
+      onPressed: () => context.push('/send'),
+      variant: AppButtonVariant.primary,
+      minWidth: minWidth,
+      leading: const AppIcon(AppIcons.plane),
+      child: const Text('Send'),
+    );
+  }
+
+  Widget _receiveButton({
+    required BuildContext context,
+    required AppColors colors,
+    required bool isDark,
+    required double minWidth,
+  }) {
+    return AppButton(
+      onPressed: () => context.push('/receive'),
+      variant: AppButtonVariant.secondary,
+      minWidth: minWidth,
+      focusRingColor: isDark ? null : colors.button.secondary.bg,
+      leading: const AppIcon(AppIcons.arrowDownCircle),
+      child: const Text('Receive'),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -836,6 +907,7 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
       suffix: ' $currencyTickerLower',
     );
     final isDark = AppTheme.of(context) == AppThemeData.dark;
+    final useFullWidthActionButtons = !isDesktopLayoutPlatform;
     final targetStripHeight = widget.hasTransparentBalance
         ? _transparentStripHeight
         : 0.0;
@@ -1119,45 +1191,12 @@ class _HomeBalanceCardState extends State<_HomeBalanceCard> {
                                                     ),
                                               ),
                                               const Spacer(),
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  AppButton(
-                                                    onPressed: () =>
-                                                        context.push('/send'),
-                                                    variant: AppButtonVariant
-                                                        .primary,
-                                                    minWidth:
-                                                        _actionButtonMinWidth,
-                                                    leading: const AppIcon(
-                                                      AppIcons.plane,
-                                                    ),
-                                                    child: const Text('Send'),
-                                                  ),
-                                                  const SizedBox(
-                                                    width: AppSpacing.xs,
-                                                  ),
-                                                  AppButton(
-                                                    onPressed: () => context
-                                                        .push('/receive'),
-                                                    variant: AppButtonVariant
-                                                        .secondary,
-                                                    minWidth:
-                                                        _actionButtonMinWidth,
-                                                    focusRingColor: isDark
-                                                        ? null
-                                                        : colors
-                                                              .button
-                                                              .secondary
-                                                              .bg,
-                                                    leading: const AppIcon(
-                                                      AppIcons.arrowDownCircle,
-                                                    ),
-                                                    child: const Text(
-                                                      'Receive',
-                                                    ),
-                                                  ),
-                                                ],
+                                              _buildActionButtons(
+                                                context: context,
+                                                colors: colors,
+                                                isDark: isDark,
+                                                fullWidth:
+                                                    useFullWidthActionButtons,
                                               ),
                                             ],
                                           ),
