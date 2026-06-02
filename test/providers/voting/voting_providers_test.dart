@@ -598,6 +598,33 @@ void main() {
     },
   );
 
+  test('session provider rejects unauthenticated round IDs', () async {
+    final http = FakeVotingHttpClient(responses: votingHttpResponses());
+    final container = _sessionContainer(
+      http: http,
+      authenticatedRoundIds: const [kOtherRoundId],
+      skippedRoundIds: const [kRoundId],
+    );
+    addTearDown(container.dispose);
+
+    await expectLater(
+      container.read(votingSessionProvider(kRoundId).future),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('not authenticated by voting config'),
+        ),
+      ),
+    );
+    expect(
+      http.requests.any(
+        (request) => request.uri.path == '/shielded-vote/v1/round/$kRoundId',
+      ),
+      isFalse,
+    );
+  });
+
   test(
     'rounds provider loads planner state when summaries omit proposals',
     () async {
@@ -3877,6 +3904,8 @@ ProviderContainer _sessionContainer({
   VotingWalletSyncReadinessChecker? walletSyncReadinessChecker,
   void Function()? walletSyncStarter,
   Duration? walletSyncPollInterval,
+  List<String> authenticatedRoundIds = const [kRoundId, kOtherRoundId],
+  List<String> skippedRoundIds = const [],
 }) {
   final effectiveHttp =
       http ?? FakeVotingHttpClient(responses: votingHttpResponses());
@@ -3900,7 +3929,8 @@ ProviderContainer _sessionContainer({
             source: source,
             previous: previous,
             fetchBytes: fetchBytes,
-            authenticatedRoundIds: const [kRoundId, kOtherRoundId],
+            authenticatedRoundIds: authenticatedRoundIds,
+            skippedRoundIds: skippedRoundIds,
           ),
         ),
       ),

@@ -2406,10 +2406,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     checkAction();
     final config = await ref.read(votingConfigProvider.future);
+    _assertAuthenticatedRoundId(config: config, requestedRoundId: roundId);
     final api = ref.read(votingApiClientProvider(config.apiBaseUrl));
     final round = VotingRoundDetails.fromStatus(
       await api.getRoundStatus(roundId),
     );
+    _assertRoundMetadataTrusted(round: round, config: config);
     checkAction();
     final accountUuid = await _accountUuidForSession();
     final isHardwareAccount = await _isHardwareAccountForSession();
@@ -2448,6 +2450,31 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       roundPlan: roundPlan,
     );
     return context;
+  }
+
+  void _assertAuthenticatedRoundId({
+    required rust_config.ResolvedVotingConfig config,
+    required String requestedRoundId,
+  }) {
+    if (config.isRoundAuthenticated(requestedRoundId)) {
+      return;
+    }
+    final reason = config.isRoundExplicitlySkipped(requestedRoundId)
+        ? 'it is present but failed dynamic-config authentication'
+        : 'it is absent from the authenticated round set';
+    throw StateError(
+      'Round $requestedRoundId is not authenticated by voting config: $reason.',
+    );
+  }
+
+  void _assertRoundMetadataTrusted({
+    required VotingRoundDetails round,
+    required rust_config.ResolvedVotingConfig config,
+  }) {
+    // Prototype safety rail: require authenticated round id in the session path.
+    // Follow-up: compare round.eaPk/ncRoot/nullifierImtRoot against Rust-exposed
+    // signed metadata once that map is surfaced in ResolvedVotingConfig.
+    _assertAuthenticatedRoundId(config: config, requestedRoundId: round.roundId);
   }
 
   Future<String> _accountUuidForSession() async {
