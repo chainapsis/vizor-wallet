@@ -19,10 +19,12 @@ import '../../rust/third_party/zcash_voting/share_policy.dart'
 import '../../rust/third_party/zcash_voting/vote.dart' as rust_vote;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../services/voting/pir_snapshot_resolver.dart';
+import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_config_loader.dart';
 import '../../services/voting/voting_helper_health_tracker.dart';
 import '../../services/voting/voting_http.dart';
+import '../../services/voting/voting_retry.dart';
 import 'voting_config_source_provider.dart';
 
 /// Transport shared by the voting service clients.
@@ -38,19 +40,91 @@ final votingConfigLoaderProvider = Provider<VotingConfigLoader>((ref) {
   return VotingConfigLoader(
     httpClient: ref.watch(votingHttpClientProvider),
     sourceUrl: source?.sourceUrl,
+    timeout: ref.watch(votingConfigLoaderTimeoutProvider),
   );
 });
 
-/// REST client for chain-facing vote server endpoints.
-final votingApiClientProvider = Provider.family<VotingApiClient, Uri>((
-  ref,
-  baseUrl,
-) {
-  return VotingApiClient(
-    baseUrl: baseUrl,
-    httpClient: ref.watch(votingHttpClientProvider),
+/// Static/dynamic config fetch timeout.
+final votingConfigLoaderTimeoutProvider = Provider<Duration>((ref) {
+  return const Duration(seconds: 10);
+});
+
+/// Timeout for chain-facing vote server endpoints.
+final votingApiRequestTimeoutProvider = Provider<Duration>((ref) {
+  return const Duration(seconds: 10);
+});
+
+/// Timeout for helper share endpoints.
+final votingHelperRequestTimeoutProvider = Provider<Duration>((ref) {
+  return const Duration(seconds: 5);
+});
+
+/// Timeout for PIR `/root` probe requests.
+final votingPirProbeTimeoutProvider = Provider<Duration>((ref) {
+  return const Duration(seconds: 10);
+});
+
+/// Baseline policy for transient voting transport errors.
+final votingTransportRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
+  return VotingRetryPolicy.transientHttp(
+    name: 'voting-transport',
+    delays: const [Duration(milliseconds: 300), Duration(seconds: 1)],
   );
 });
+
+/// Retry policy for chain broadcasts (`cast-vote`, `delegate-vote`).
+final votingBroadcastRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
+  return VotingRetryPolicy.transientHttp(
+    name: 'voting-broadcast',
+    delays: const [Duration(seconds: 2), Duration(seconds: 4)],
+  );
+});
+
+/// Retry policy for helper share and share-status calls.
+final votingHelperRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
+  return VotingRetryPolicy.transientHttp(
+    name: 'voting-helper',
+    delays: const [Duration(milliseconds: 200), Duration(milliseconds: 600)],
+  );
+});
+
+/// Retry policy for PIR endpoint probes.
+final votingPirProbeRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
+  return VotingRetryPolicy.transientHttp(
+    name: 'voting-pir-probe',
+    delays: const [Duration.zero],
+  );
+});
+
+/// Retry policy used by voting config refresh/load.
+final votingConfigRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
+  return ref.watch(votingTransportRetryPolicyProvider);
+});
+
+/// Retry policy used by rounds list reload.
+final votingRoundsRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
+  return ref.watch(votingTransportRetryPolicyProvider);
+});
+
+/// Retry policy for chain reads (rounds/status/tally/tx).
+final votingApiReadRetryPolicyProvider = Provider<VotingRetryPolicy>((ref) {
+  return ref.watch(votingTransportRetryPolicyProvider);
+});
+
+/// REST client for chain-facing vote server endpoints.
+final votingApiClientProvider =
+    Provider.family<VotingApiClient, VotingApiServerSet>((ref, servers) {
+      return VotingApiClient(
+        baseUrl: servers.primary,
+        fallbackBaseUrls: servers.failovers,
+        httpClient: ref.watch(votingHttpClientProvider),
+        timeout: ref.watch(votingApiRequestTimeoutProvider),
+        helperTimeout: ref.watch(votingHelperRequestTimeoutProvider),
+        readRetryPolicy: ref.watch(votingApiReadRetryPolicyProvider),
+        helperRetryPolicy: ref.watch(votingHelperRetryPolicyProvider),
+        broadcastRetryPolicy: ref.watch(votingBroadcastRetryPolicyProvider),
+      );
+    });
 
 /// Tracks helper servers that repeatedly fail so recovery can prefer healthier
 /// endpoints without blocking voting when every helper is degraded.
@@ -62,7 +136,11 @@ final votingHelperHealthTrackerProvider = Provider<VotingHelperHealthTracker>((
 
 /// Resolves PIR endpoints before proof generation.
 final votingPirResolverProvider = Provider<PirSnapshotResolver>((ref) {
-  return PirSnapshotResolver(httpClient: ref.watch(votingHttpClientProvider));
+  return PirSnapshotResolver(
+    httpClient: ref.watch(votingHttpClientProvider),
+    timeout: ref.watch(votingPirProbeTimeoutProvider),
+    retryPolicy: ref.watch(votingPirProbeRetryPolicyProvider),
+  );
 });
 
 /// Adapter over durable Rust recovery/share-tracking state.
@@ -124,6 +202,12 @@ final votingWalletSyncStarterProvider = Provider<void Function()>((ref) {
 /// Delay between contiguous scan readiness checks while waiting to vote.
 final votingWalletSyncPollIntervalProvider = Provider<Duration>((ref) {
   return const Duration(seconds: 2);
+});
+
+/// Upper bound for waiting on wallet scan readiness before surfacing retryable
+/// session error state.
+final votingWalletSyncMaxWaitProvider = Provider<Duration>((ref) {
+  return const Duration(minutes: 3);
 });
 
 /// Checks whether wallet scan progress has reached a voting snapshot height.
@@ -364,8 +448,8 @@ abstract interface class VotingRustApi {
 
   /// Clear process-local Rust voting caches for a round or account.
   ///
-  /// A non-null, non-empty `roundId` clears only prepared delegation PCZTs for
-  /// that round. `null` performs account-wide cleanup, including vote-tree sync
+  /// A non-null, non-empty `roundId` clears vote-tree sync cache for that
+  /// round. `null` (or empty) performs account-wide cleanup of vote-tree sync
   /// state for `accountUuid`.
   Future<void> resetVotingSessionState({
     required String dbPath,

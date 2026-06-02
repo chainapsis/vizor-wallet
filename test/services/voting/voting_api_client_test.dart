@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/services/voting/voting_api_client.dart';
+import 'package:zcash_wallet/src/services/voting/voting_retry.dart';
 
 import 'fake_voting_http.dart';
 
@@ -497,10 +498,7 @@ void main() {
     final confirmation = await client.getTxConfirmation('delegation-tx');
 
     expect(confirmation?.height, 12);
-    expect(
-      confirmation?.events.single['attributes'].single['value'],
-      '3',
-    );
+    expect(confirmation?.events.single['attributes'].single['value'], '3');
   });
 
   test('rejects malformed transaction confirmation bodies', () async {
@@ -538,7 +536,10 @@ void main() {
     final client = VotingApiClient(
       baseUrl: Uri.parse('https://voting.valargroup.org'),
       httpClient: http,
-      broadcastRetryDelays: const [Duration(milliseconds: 1)],
+      broadcastRetryPolicy: VotingRetryPolicy.transientHttp(
+        name: 'test-broadcast-retry',
+        delays: const [Duration(milliseconds: 1)],
+      ),
       delay: (delay) async => delays.add(delay),
     );
 
@@ -552,6 +553,65 @@ void main() {
       '/shielded-vote/v1/cast-vote',
     ]);
     expect(delays, const [Duration(milliseconds: 1)]);
+  });
+
+  test('retries transient round reads for 500 responses', () async {
+    final delays = <Duration>[];
+    final http = FakeVotingHttpClient(
+      responses: {
+        '/shielded-vote/v1/rounds': SequentialVotingHttpResponses([
+          jsonResponse({'error': 'upstream'}, statusCode: 500),
+          {'rounds': const []},
+        ]),
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: http,
+      readRetryPolicy: VotingRetryPolicy.transientHttp(
+        name: 'test-read-retry',
+        delays: const [Duration(milliseconds: 2)],
+      ),
+      delay: (delay) async => delays.add(delay),
+    );
+
+    final rounds = await client.listRounds();
+
+    expect(rounds, isEmpty);
+    expect(http.requests.length, 2);
+    expect(delays, const [Duration(milliseconds: 2)]);
+  });
+
+  test('fails over chain reads to secondary vote server', () async {
+    final primary = Uri.parse('https://vote-primary.example');
+    final secondary = Uri.parse('https://vote-secondary.example');
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://vote-primary.example/shielded-vote/v1/round/$hexRoundId':
+            timeoutResponse(),
+        'https://vote-secondary.example/shielded-vote/v1/round/$hexRoundId': {
+          'round': {'vote_round_id': encodedRoundId, 'status': 'active'},
+        },
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: primary,
+      fallbackBaseUrls: [secondary],
+      httpClient: http,
+      readRetryPolicy: VotingRetryPolicy.transientHttp(
+        name: 'test-failover-read',
+        delays: const [],
+      ),
+      delay: (_) async {},
+    );
+
+    final status = await client.getRoundStatus(hexRoundId);
+
+    expect(status.roundId, hexRoundId);
+    expect(http.requests.map((request) => request.uri.host), [
+      'vote-primary.example',
+      'vote-secondary.example',
+    ]);
   });
 
   test('rejects malformed successful broadcast responses', () async {
@@ -606,7 +666,10 @@ void main() {
       final client = VotingApiClient(
         baseUrl: Uri.parse('https://voting.valargroup.org'),
         httpClient: http,
-        broadcastRetryDelays: const [Duration.zero],
+        broadcastRetryPolicy: VotingRetryPolicy.transientHttp(
+          name: 'test-delegate-retry',
+          delays: const [Duration.zero],
+        ),
         delay: (_) async {},
       );
 
@@ -646,6 +709,38 @@ void main() {
       'vote_round_id': hexRoundId,
     });
     expect(http.requests.single.timeout, const Duration(seconds: 5));
+  });
+
+  test('retries helper share submission on transient timeout', () async {
+    final delays = <Duration>[];
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://helper.example/shielded-vote/v1/shares':
+            SequentialVotingHttpResponses([
+              timeoutResponse(),
+              {'status': 'queued'},
+            ]),
+      },
+    );
+    final client = VotingApiClient(
+      baseUrl: Uri.parse('https://voting.valargroup.org'),
+      httpClient: http,
+      helperRetryPolicy: VotingRetryPolicy.transientHttp(
+        name: 'test-helper-retry',
+        delays: const [Duration(milliseconds: 2)],
+      ),
+      delay: (delay) async => delays.add(delay),
+    );
+
+    final result = await client.submitShare(
+      roundId: encodedRoundId,
+      serverUrl: Uri.parse('https://helper.example'),
+      share: {'share_index': 0},
+    );
+
+    expect(result.status, 'queued');
+    expect(http.requests.length, 2);
+    expect(delays, const [Duration(milliseconds: 2)]);
   });
 
   test('helper responses require known status values', () async {

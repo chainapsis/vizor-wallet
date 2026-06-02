@@ -7,32 +7,57 @@ import 'voting_models.dart';
 
 /// Minimal REST client for vote-sdk's `/shielded-vote/v1` API surface.
 ///
-/// Chain-facing calls use the configured vote server base URL. Helper-server
-/// share calls take an explicit [serverUrl] because foreground submission and
-/// recovery may target different helper subsets over time.
+/// Chain-facing calls use the configured vote server base URL with optional
+/// failover endpoints. Helper-server share calls take an explicit [serverUrl]
+/// because foreground submission and recovery may target different helper
+/// subsets over time.
 class VotingApiClient {
   VotingApiClient({
     required Uri baseUrl,
     required VotingHttpClient httpClient,
+    List<Uri> fallbackBaseUrls = const [],
     Duration timeout = const Duration(seconds: 10),
     Duration helperTimeout = const Duration(seconds: 5),
-    List<Duration> broadcastRetryDelays = const [
-      Duration(seconds: 2),
-      Duration(seconds: 4),
-    ],
+    VotingRetryPolicy? readRetryPolicy,
+    VotingRetryPolicy? helperRetryPolicy,
+    VotingRetryPolicy? broadcastRetryPolicy,
     Future<void> Function(Duration delay)? delay,
   }) : _baseUrl = baseUrl,
        _httpClient = httpClient,
+       _fallbackBaseUrls = _dedupeBaseUrls(fallbackBaseUrls, baseUrl: baseUrl),
        _timeout = timeout,
        _helperTimeout = helperTimeout,
-       _broadcastRetryDelays = List.unmodifiable(broadcastRetryDelays),
+       _readRetryPolicy =
+           readRetryPolicy ??
+           VotingRetryPolicy.transientHttp(
+             name: 'voting-api-read',
+             delays: const [Duration(milliseconds: 300), Duration(seconds: 1)],
+           ),
+       _helperRetryPolicy =
+           helperRetryPolicy ??
+           VotingRetryPolicy.transientHttp(
+             name: 'voting-api-helper',
+             delays: const [
+               Duration(milliseconds: 200),
+               Duration(milliseconds: 600),
+             ],
+           ),
+       _broadcastRetryPolicy =
+           broadcastRetryPolicy ??
+           VotingRetryPolicy.transientHttp(
+             name: 'voting-api-broadcast',
+             delays: const [Duration(seconds: 2), Duration(seconds: 4)],
+           ),
        _delay = delay ?? Future<void>.delayed;
 
   final Uri _baseUrl;
+  final List<Uri> _fallbackBaseUrls;
   final VotingHttpClient _httpClient;
   final Duration _timeout;
   final Duration _helperTimeout;
-  final List<Duration> _broadcastRetryDelays;
+  final VotingRetryPolicy _readRetryPolicy;
+  final VotingRetryPolicy _helperRetryPolicy;
+  final VotingRetryPolicy _broadcastRetryPolicy;
   final Future<void> Function(Duration delay) _delay;
 
   /// Lists rounds from the vote server.
@@ -40,7 +65,13 @@ class VotingApiClient {
   /// Current vote-sdk returns `{ "rounds": [...] }`. An empty `{}` is accepted
   /// because proto3 JSON omits empty repeated fields.
   Future<List<VotingRoundSummary>> listRounds() async {
-    final decoded = await _getJson(_endpoint(['rounds']));
+    final decoded = await _withVoteServerFailover(
+      policy: _readRetryPolicy,
+      operation: (baseUrl) => _getJson(
+        _endpoint(['rounds'], baseUrl: baseUrl),
+        retryPolicy: _readRetryPolicy,
+      ),
+    );
     final object = _objectFromValue(decoded);
     final values = object['rounds'];
     if (values == null) {
@@ -60,10 +91,24 @@ class VotingApiClient {
 
   /// Fetches the currently active round, returning null when the chain has none.
   Future<VotingRoundStatus?> getActiveRoundStatus() async {
-    final uri = _endpoint(['rounds', 'active']);
-    final response = await _httpClient.get(uri, timeout: _timeout);
+    late final Uri requestUri;
+    final response = await _withVoteServerFailover(
+      policy: _readRetryPolicy,
+      operation: (baseUrl) {
+        requestUri = _endpoint(['rounds', 'active'], baseUrl: baseUrl);
+        return _runRequestWithRetry(
+          retryPolicy: _readRetryPolicy,
+          operation: () async {
+            final response = await _get(requestUri, timeout: _timeout);
+            if (response.statusCode != 404) {
+              _throwIfNotSuccess(requestUri, response);
+            }
+            return response;
+          },
+        );
+      },
+    );
     if (response.statusCode == 404) return null;
-    _throwIfNotSuccess(uri, response);
     final decoded = jsonDecode(response.bodyText);
     final object = _objectFromValue(decoded);
     if (!object.containsKey('round')) {
@@ -77,7 +122,13 @@ class VotingApiClient {
   /// Fetches one round and unwraps the ZODL-style `{ "round": ... }` envelope.
   Future<VotingRoundStatus> getRoundStatus(String roundId) async {
     final normalizedRoundId = normalizeVotingRoundId(roundId);
-    final decoded = await _getJson(_endpoint(['round', normalizedRoundId]));
+    final decoded = await _withVoteServerFailover(
+      policy: _readRetryPolicy,
+      operation: (baseUrl) => _getJson(
+        _endpoint(['round', normalizedRoundId], baseUrl: baseUrl),
+        retryPolicy: _readRetryPolicy,
+      ),
+    );
     final status = VotingRoundStatus.fromJson(
       _requiredNestedObject(decoded, 'round'),
     );
@@ -91,8 +142,12 @@ class VotingApiClient {
 
   Future<VotingRoundTally> getRoundTally(String roundId) async {
     final normalizedRoundId = normalizeVotingRoundId(roundId);
-    final decoded = await _getJson(
-      _endpoint(['tally-results', normalizedRoundId]),
+    final decoded = await _withVoteServerFailover(
+      policy: _readRetryPolicy,
+      operation: (baseUrl) => _getJson(
+        _endpoint(['tally-results', normalizedRoundId], baseUrl: baseUrl),
+        retryPolicy: _readRetryPolicy,
+      ),
     );
     final object = _objectFromValue(decoded);
     _validateTallyResultsEnvelope(object, expectedRoundId: normalizedRoundId);
@@ -107,8 +162,16 @@ class VotingApiClient {
     int proposalId,
   ) async {
     final normalizedRoundId = normalizeVotingRoundId(roundId);
-    final decoded = await _getJson(
-      _endpoint(['tally', normalizedRoundId, proposalId.toString()]),
+    final decoded = await _withVoteServerFailover(
+      policy: _readRetryPolicy,
+      operation: (baseUrl) => _getJson(
+        _endpoint([
+          'tally',
+          normalizedRoundId,
+          proposalId.toString(),
+        ], baseUrl: baseUrl),
+        retryPolicy: _readRetryPolicy,
+      ),
     );
     final tally = VotingRoundTally.fromJson(
       _objectFromValue(decoded),
@@ -126,15 +189,17 @@ class VotingApiClient {
   ///
   /// Deterministic vote-chain rejections are returned as [VotingTxResult] when
   /// the service responds with HTTP 422. Transient gateway or network failures
-  /// are retried according to [_broadcastRetryDelays].
+  /// are retried according to [_broadcastRetryPolicy].
   Future<VotingTxResult> submitDelegation({
     required Map<String, dynamic> submission,
   }) async {
-    final decoded = await _withBroadcastRetry(
-      () => _postJson(
-        _endpoint(['delegate-vote']),
+    final decoded = await _withVoteServerFailover(
+      policy: _broadcastRetryPolicy,
+      operation: (baseUrl) => _postJson(
+        _endpoint(['delegate-vote'], baseUrl: baseUrl),
         submission,
         allowStatusCodes: const {422},
+        retryPolicy: _broadcastRetryPolicy,
       ),
     );
     return VotingTxResult.fromJson(_objectFromValue(decoded));
@@ -144,25 +209,42 @@ class VotingApiClient {
   ///
   /// Deterministic vote-chain rejections are returned as [VotingTxResult] when
   /// the service responds with HTTP 422. Transient gateway or network failures
-  /// are retried according to [_broadcastRetryDelays].
+  /// are retried according to [_broadcastRetryPolicy].
   Future<VotingTxResult> submitVoteCommitment({
     required Map<String, dynamic> commitment,
   }) async {
-    final decoded = await _withBroadcastRetry(
-      () => _postJson(
-        _endpoint(['cast-vote']),
+    final decoded = await _withVoteServerFailover(
+      policy: _broadcastRetryPolicy,
+      operation: (baseUrl) => _postJson(
+        _endpoint(['cast-vote'], baseUrl: baseUrl),
         commitment,
         allowStatusCodes: const {422},
+        retryPolicy: _broadcastRetryPolicy,
       ),
     );
     return VotingTxResult.fromJson(_objectFromValue(decoded));
   }
 
   Future<VotingTxConfirmation?> getTxConfirmation(String txHash) async {
-    final uri = _endpoint(['tx', txHash]);
-    final response = await _httpClient.get(uri, timeout: _timeout);
+    late final Uri requestUri;
+    final response = await _withVoteServerFailover(
+      policy: _readRetryPolicy,
+      operation: (baseUrl) {
+        requestUri = _endpoint(['tx', txHash], baseUrl: baseUrl);
+        return _runRequestWithRetry(
+          retryPolicy: _readRetryPolicy,
+          operation: () async {
+            final response = await _get(requestUri, timeout: _timeout);
+            if (response.statusCode != 404 && response.statusCode != 422) {
+              _throwIfNotSuccess(requestUri, response);
+            }
+            return response;
+          },
+        );
+      },
+    );
     if (response.statusCode == 404) return null;
-    _throwIfNotSuccess(uri, response, allowStatusCodes: const {422});
+    _throwIfNotSuccess(requestUri, response, allowStatusCodes: const {422});
     return VotingTxConfirmation.fromJson(
       _objectFromValue(jsonDecode(response.bodyText)),
     );
@@ -183,6 +265,7 @@ class VotingApiClient {
       _endpoint(['shares'], baseUrl: serverUrl),
       body,
       timeout: _helperTimeout,
+      retryPolicy: _helperRetryPolicy,
     );
     return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
   }
@@ -200,6 +283,7 @@ class VotingApiClient {
         shareId,
       ], baseUrl: serverUrl),
       timeout: _helperTimeout,
+      retryPolicy: _helperRetryPolicy,
     );
     return VotingShareStatus.fromJson(_objectFromValue(decoded));
   }
@@ -220,6 +304,7 @@ class VotingApiClient {
       _endpoint(['shares'], baseUrl: serverUrl),
       body,
       timeout: _helperTimeout,
+      retryPolicy: _helperRetryPolicy,
     );
     return VotingShareSubmissionResult.fromJson(_objectFromValue(decoded));
   }
@@ -239,9 +324,19 @@ class VotingApiClient {
     );
   }
 
-  Future<Object?> _getJson(Uri uri, {Duration? timeout}) async {
-    final response = await _httpClient.get(uri, timeout: timeout ?? _timeout);
-    _throwIfNotSuccess(uri, response);
+  Future<Object?> _getJson(
+    Uri uri, {
+    Duration? timeout,
+    VotingRetryPolicy? retryPolicy,
+  }) async {
+    final response = await _runRequestWithRetry(
+      retryPolicy: retryPolicy,
+      operation: () async {
+        final response = await _get(uri, timeout: timeout ?? _timeout);
+        _throwIfNotSuccess(uri, response);
+        return response;
+      },
+    );
     return jsonDecode(response.bodyText);
   }
 
@@ -250,23 +345,63 @@ class VotingApiClient {
     Map<String, dynamic> body, {
     Set<int> allowStatusCodes = const {},
     Duration? timeout,
+    VotingRetryPolicy? retryPolicy,
   }) async {
-    final response = await _httpClient.postJson(
-      uri,
-      body,
-      timeout: timeout ?? _timeout,
+    final response = await _runRequestWithRetry(
+      retryPolicy: retryPolicy,
+      operation: () async {
+        final response = await _post(uri, body, timeout: timeout ?? _timeout);
+        _throwIfNotSuccess(uri, response, allowStatusCodes: allowStatusCodes);
+        return response;
+      },
     );
-    _throwIfNotSuccess(uri, response, allowStatusCodes: allowStatusCodes);
     return jsonDecode(response.bodyText);
   }
 
-  Future<T> _withBroadcastRetry<T>(Future<T> Function() operation) async {
-    return retryVotingOperation(
+  Future<VotingHttpResponse> _get(Uri uri, {required Duration timeout}) {
+    return _httpClient.get(uri, timeout: timeout);
+  }
+
+  Future<VotingHttpResponse> _post(
+    Uri uri,
+    Map<String, dynamic> body, {
+    required Duration timeout,
+  }) {
+    return _httpClient.postJson(uri, body, timeout: timeout);
+  }
+
+  Future<T> _runRequestWithRetry<T>({
+    required Future<T> Function() operation,
+    VotingRetryPolicy? retryPolicy,
+  }) {
+    if (retryPolicy == null) {
+      return operation();
+    }
+    return withVotingRetry(
+      policy: retryPolicy,
       operation: operation,
-      delays: _broadcastRetryDelays,
-      label: 'broadcast',
       delay: _delay,
     );
+  }
+
+  Future<T> _withVoteServerFailover<T>({
+    required VotingRetryPolicy policy,
+    required Future<T> Function(Uri baseUrl) operation,
+  }) async {
+    final candidates = [_baseUrl, ..._fallbackBaseUrls];
+    Object? lastError;
+    for (var attempt = 0; attempt < candidates.length; attempt++) {
+      final baseUrl = candidates[attempt];
+      try {
+        return await operation(baseUrl);
+      } catch (error) {
+        lastError = error;
+        if (attempt == candidates.length - 1 || !policy.shouldRetry(error)) {
+          rethrow;
+        }
+      }
+    }
+    throw StateError('vote-server failover exited unexpectedly: $lastError');
   }
 
   static void _throwIfNotSuccess(
@@ -282,6 +417,20 @@ class VotingApiClient {
         body: response.bodyText,
       );
     }
+  }
+
+  static List<Uri> _dedupeBaseUrls(
+    List<Uri> fallbackBaseUrls, {
+    required Uri baseUrl,
+  }) {
+    final keys = <String>{baseUrl.toString()};
+    final deduped = <Uri>[];
+    for (final uri in fallbackBaseUrls) {
+      if (keys.add(uri.toString())) {
+        deduped.add(uri);
+      }
+    }
+    return List<Uri>.unmodifiable(deduped);
   }
 }
 

@@ -6,6 +6,35 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
 import 'package:zcash_wallet/src/services/voting/resolved_voting_config_extensions.dart';
 
 void main() {
+  test('apiServers exposes primary and failover vote servers', () {
+    final config = _resolvedConfig(
+      authenticatedRoundIds: const [],
+      voteServerUrls: const [
+        'https://vote-primary.example',
+        'https://vote-secondary.example',
+        'https://vote-secondary.example',
+      ],
+    );
+
+    expect(config.apiBaseUrl, Uri.parse('https://vote-primary.example'));
+    expect(config.apiFailoverBaseUrls, [
+      Uri.parse('https://vote-secondary.example'),
+    ]);
+    expect(config.apiServers.all, [
+      Uri.parse('https://vote-primary.example'),
+      Uri.parse('https://vote-secondary.example'),
+    ]);
+  });
+
+  test('apiServers throws when vote server list is empty', () {
+    final config = _resolvedConfig(
+      authenticatedRoundIds: const [],
+      voteServerUrls: const [],
+    );
+
+    expect(() => config.apiServers, throwsA(isA<StateError>()));
+  });
+
   test('assertRoundAuthenticated accepts authenticated round ids', () {
     final config = _resolvedConfig(
       authenticatedRoundIds: const [
@@ -67,14 +96,20 @@ void main() {
 rust_config.ResolvedVotingConfig _resolvedConfig({
   required List<String> authenticatedRoundIds,
   List<String> skippedRoundIds = const [],
+  List<String> voteServerUrls = const ['https://voting.example'],
 }) {
   return rust_config.ResolvedVotingConfig(
     sourceFingerprint: 'source-fp',
     trustedKeyFingerprint: 'key-fp',
     dynamicConfigFingerprint: 'dynamic-fp',
-    voteServers: const [
-      rust_config.ServiceEndpoint(url: 'https://voting.example', label: 'vote'),
-    ],
+    voteServers: voteServerUrls
+        .map(
+          (url) => rust_config.ServiceEndpoint(
+            url: url,
+            label: 'vote-${Uri.parse(url).host}',
+          ),
+        )
+        .toList(growable: false),
     pirEndpoints: const [
       rust_config.ServiceEndpoint(url: 'https://pir.example', label: 'pir'),
     ],
