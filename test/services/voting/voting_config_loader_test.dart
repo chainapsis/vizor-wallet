@@ -61,6 +61,17 @@ void main() {
     expect(source.sha256Hex, hex);
   });
 
+  test('preserves percent-encoded query values when stripping checksum', () {
+    const hex =
+        '2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a';
+    final source = parseStaticVotingConfigSource(
+      'https://example.com/static.json?sig=a%2Fb&checksum=sha256:$hex',
+    );
+
+    expect(source.uri.toString(), 'https://example.com/static.json?sig=a%2Fb');
+    expect(source.sha256Hex, hex);
+  });
+
   test('rejects malformed static config sources', () {
     const validHex =
         '0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a';

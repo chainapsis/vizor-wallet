@@ -66,9 +66,7 @@ class StaticVotingConfigSourceMalformed implements Exception {
   final queryParametersAll = parsed.queryParametersAll;
   final checksumValues = queryParametersAll['checksum'];
   if (checksumValues != null && checksumValues.length != 1) {
-    throw StaticVotingConfigSourceMalformed(
-      'checksum must appear once: $raw',
-    );
+    throw StaticVotingConfigSourceMalformed('checksum must appear once: $raw');
   }
   final checksum = checksumValues?.single;
   String? sha256Hex;
@@ -90,12 +88,14 @@ class StaticVotingConfigSourceMalformed implements Exception {
   }
 
   final strippedQuery = _stripChecksumQuery(parsed.query);
-  final uri = Uri(
+  final normalizedBase = Uri(
     scheme: parsed.scheme,
     host: parsed.host,
     port: parsed.hasPort ? parsed.port : null,
     path: parsed.path,
-    query: strippedQuery.isEmpty ? null : strippedQuery,
+  ).toString();
+  final uri = Uri.parse(
+    strippedQuery.isEmpty ? normalizedBase : '$normalizedBase?$strippedQuery',
   );
   return (raw: trimmed, uri: uri, sha256Hex: sha256Hex);
 }
@@ -106,7 +106,9 @@ String _stripChecksumQuery(String rawQuery) {
   for (final segment in rawQuery.split('&')) {
     if (segment.isEmpty) continue;
     final separator = segment.indexOf('=');
-    final encodedKey = separator == -1 ? segment : segment.substring(0, separator);
+    final encodedKey = separator == -1
+        ? segment
+        : segment.substring(0, separator);
     final key = Uri.decodeQueryComponent(encodedKey);
     if (key == 'checksum') continue;
     kept.add(segment);
