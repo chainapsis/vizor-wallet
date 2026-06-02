@@ -1960,8 +1960,23 @@ void main() {
       final draftPersistence = FakeVotingDraftPersistence();
       const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
       await draftPersistence.save(key, const VotingDraftState(choices: {7: 1}));
+      const castStep = rust_wire.NextStepView(
+        kind: 'cast_vote',
+        bundleIndex: 0,
+        proposalId: 7,
+        choice: 1,
+        shareIndex: 0,
+      );
       final recoveryApi = FakeVotingRecoveryApi(
         state: recoveryState(bundleCount: 1),
+        roundPlan: apiRoundPlan(
+          roundId: kRoundId,
+          pendingRecovery: true,
+          nextSteps: const [castStep],
+          openProposals: Uint32List.fromList(const [7]),
+          allDecided: false,
+          needsDraftSetup: false,
+        ),
       );
       final container = _sessionContainer(
         http: http,
@@ -1984,6 +1999,126 @@ void main() {
       expect(hotkeyStore.hotkey, isNotNull);
       expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
       expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 1);
+    },
+  );
+
+  test(
+    'software submission prepares draft setup before ballot intent',
+    () async {
+      final setupGate = Completer<void>();
+      final rust = FakeVotingRustApi(
+        emitCommitments: true,
+        setupGate: setupGate,
+      );
+      final roundStatus = roundStatusJson(roundId: kRoundId)
+        ..['proposals'] = [
+          {
+            'id': 7,
+            'title': 'Question',
+            'options': [
+              {'index': 0, 'label': 'No'},
+              {'index': 1, 'label': 'Yes'},
+            ],
+          },
+        ];
+      final draftPersistence = FakeVotingDraftPersistence();
+      const key = VotingSessionKey(roundId: kRoundId, accountUuid: 'account-1');
+      await draftPersistence.save(key, const VotingDraftState(choices: {7: 1}));
+      final needsSetupPlan = apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List.fromList(const [7]),
+        allDecided: false,
+        needsDraftSetup: true,
+      );
+      const delegateStep = rust_wire.NextStepView(
+        kind: 'delegate',
+        bundleIndex: 0,
+        proposalId: 0,
+        choice: 0,
+        shareIndex: 0,
+      );
+      final delegatePlan = apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: true,
+        nextSteps: const [delegateStep],
+        openProposals: Uint32List.fromList(const [7]),
+        allDecided: false,
+        needsDraftSetup: false,
+      );
+      const castStep = rust_wire.NextStepView(
+        kind: 'cast_vote',
+        bundleIndex: 0,
+        proposalId: 7,
+        choice: 1,
+        shareIndex: 0,
+      );
+      final votePlan = apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: true,
+        nextSteps: const [castStep],
+        openProposals: Uint32List.fromList(const [7]),
+        allDecided: false,
+        needsDraftSetup: false,
+      );
+      final completedPlan = apiRoundPlan(
+        roundId: kRoundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List(0),
+        allDecided: true,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+      );
+      final recoveryApi = FakeVotingRecoveryApi(
+        state: recoveryState(bundleCount: 1),
+        roundPlanSequence: [
+          needsSetupPlan,
+          needsSetupPlan,
+          needsSetupPlan,
+          delegatePlan,
+          delegatePlan,
+          votePlan,
+          votePlan,
+          completedPlan,
+          completedPlan,
+          completedPlan,
+        ],
+      );
+      final http = FakeVotingHttpClient(
+        responses: votingHttpResponses(roundStatus: roundStatus),
+      );
+      final container = _sessionContainer(
+        http: http,
+        rust: rust,
+        recoveryApi: recoveryApi,
+        draftPersistence: draftPersistence,
+      );
+      addTearDown(container.dispose);
+
+      final startedKey = await container
+          .read(votingSubmissionJobsProvider.notifier)
+          .start(kRoundId);
+      expect(startedKey, key);
+      await rust.setupStarted.future;
+
+      expect(recoveryApi.ballotIntents, isEmpty);
+      expect(rust.voteCommitmentKeys, isEmpty);
+
+      setupGate.complete();
+      final completed = await _waitForJobStatus(
+        container,
+        key,
+        VotingSubmissionJobStatus.complete,
+      );
+
+      expect(completed.errorMessage, isNull);
+      expect(rust.setupCalls, 1);
+      expect(rust.delegationBundleCalls, [0]);
+      expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
+      expect(recoveryApi.ballotIntents, ['7:2:false:1']);
+      expect(rust.voteCommitmentKeys, ['0:7']);
     },
   );
 

@@ -958,8 +958,10 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
 
   bool _sessionNeedsDelegation(VotingSessionState? session) {
     if (session == null) return false;
-    if (_planNeedsDelegation(session.roundPlan)) return true;
-    if (session.roundPlan != null) {
+    final roundPlan = session.roundPlan;
+    if (_planNeedsDelegation(roundPlan)) return true;
+    if (roundPlan != null && roundPlanNeedsDraftSetup(roundPlan)) return true;
+    if (roundPlan != null) {
       return _canPollDelegationWithoutDraft(session);
     }
     return session.resumePlan?.submittedDelegationBundleIndexes.isNotEmpty ??
