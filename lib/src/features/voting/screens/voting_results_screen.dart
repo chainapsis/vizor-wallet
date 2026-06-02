@@ -14,6 +14,7 @@ import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
+import '../../../services/voting/voting_models.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import '../voting_poll_ordering.dart';
@@ -90,7 +91,9 @@ class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (error, _) {
                   final round = session.value?.round;
-                  if (round != null && _roundIsTallying(round)) {
+                  if (round != null &&
+                      _roundIsTallying(round) &&
+                      _isTallyNotReadyError(error)) {
                     return _pendingResults();
                   }
                   _clearPendingTallyRefresh();
@@ -531,6 +534,10 @@ bool _isTallying(Map<String, dynamic> json) {
 bool _roundIsTallying(VotingRoundDetails round) {
   return votingPollListStatus(round.status) == VotingPollListStatus.tallying ||
       _isTallying(round.rawJson);
+}
+
+bool _isTallyNotReadyError(Object error) {
+  return error is VotingHttpException && error.statusCode == 404;
 }
 
 String _roundTitle(VotingRoundDetails round) {
