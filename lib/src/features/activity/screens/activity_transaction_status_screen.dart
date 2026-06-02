@@ -385,6 +385,7 @@ class _ActivityTransactionStatusScreenState
   }) {
     final colors = context.colors;
     final trimmedAddress = address.trim();
+    final displayAddress = compactActivityReceiptAddress(trimmedAddress);
     final nickname = addressBookLabel?.trim();
     final hasNickname = nickname != null && nickname.isNotEmpty;
     return TransactionReceiptBlockData(
@@ -420,11 +421,9 @@ class _ActivityTransactionStatusScreenState
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Show the full address (wrapping across lines) rather than an
-              // aggressive prefix/suffix truncation.
               Expanded(
                 child: Text(
-                  trimmedAddress,
+                  displayAddress,
                   style: AppTypography.codeSmall.copyWith(
                     color: colors.text.muted,
                   ),
@@ -607,6 +606,20 @@ class _ActivityTransactionStatusScreenState
       ),
     );
   }
+}
+
+const _activityReceiptAddressEdgeLength = 16;
+const _activityReceiptAddressSeparator = ' ... ';
+
+String compactActivityReceiptAddress(String address) {
+  final trimmed = address.trim();
+  final compactLength =
+      _activityReceiptAddressEdgeLength * 2 +
+      _activityReceiptAddressSeparator.length;
+  if (trimmed.length <= compactLength) return trimmed;
+  return '${trimmed.substring(0, _activityReceiptAddressEdgeLength)}'
+      '$_activityReceiptAddressSeparator'
+      '${trimmed.substring(trimmed.length - _activityReceiptAddressEdgeLength)}';
 }
 
 /// Icon-only copy affordance placed at the end of the recipient address line.
