@@ -535,7 +535,7 @@ pub async fn setup_delegation_bundles(
     ctx: ApiVotingRoundContext,
 ) -> Result<zcash_voting::wire::BundleLayout, String> {
     // Resolve static network + bundle policy inputs and open the sidecar DB.
-    let (_, voting_network, bundle_policy) =
+    let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_db = db::open_voting_db(&ctx.db_path, &ctx.account_uuid)?;
 
@@ -571,7 +571,7 @@ pub async fn precompute_delegation_pir(
     bundle_index: u32,
 ) -> Result<zcash_voting::wire::DelegationPirPrecomputeResultView, String> {
     // Resolve static network and bundling policy inputs from round context.
-    let (_, voting_network, bundle_policy) =
+    let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
@@ -621,7 +621,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
     // Resolve static delegation inputs and validate the app-owned hotkey.
-    let (_, voting_network, bundle_policy) =
+    let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let seed = seed_from_mnemonic(mnemonic)?;
     let voting_hotkey =
@@ -677,7 +677,7 @@ pub async fn build_keystone_delegation_request(
     bundle_index: u32,
 ) -> Result<zcash_voting::wire::KeystoneSigningRequest, String> {
     // Resolve static round inputs and validate Keystone-provided hotkey bytes.
-    let (_, voting_network, bundle_policy) =
+    let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
@@ -791,7 +791,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
     // Resolve static inputs and validate the persisted Keystone hotkey secret.
-    let (_, voting_network, bundle_policy) =
+    let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_hotkey =
         hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;

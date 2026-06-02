@@ -3627,6 +3627,53 @@ void main() {
   });
 
   test(
+    'hotkey generation is single-flight for PIR warmup and delegation',
+    () async {
+      final hotkeyGenerationGate = Completer<void>();
+      final precomputeGate = Completer<void>();
+      final rust = FakeVotingRustApi(
+        generatedHotkeys: const [
+          [42, 43, 44],
+          [99, 99, 99],
+        ],
+        hotkeyGenerationGate: hotkeyGenerationGate,
+        precomputeGate: precomputeGate,
+      );
+      final hotkeyStore = FakeVotingHotkeyStore(null);
+      final container = _sessionContainer(rust: rust, hotkeyStore: hotkeyStore);
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      final notifier = container.read(votingSessionProvider(kRoundId).notifier);
+      final precomputeFuture = notifier.precomputeDelegationPir(
+        accountUuid: 'account-1',
+      );
+      await rust.hotkeyGenerationStarted.future;
+
+      final delegationFuture = notifier.delegatePendingBundles(
+        mnemonic: kTestMnemonic,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(rust.generateVotingHotkeyCalls, 1);
+
+      hotkeyGenerationGate.complete();
+      await rust.precomputeStarted.future;
+      precomputeGate.complete();
+      await Future.wait([precomputeFuture, delegationFuture]);
+
+      expect(rust.generateVotingHotkeyCalls, 1);
+      expect(hotkeyStore.hotkey, [42, 43, 44]);
+      expect(rust.precomputeStoredHotkeySecrets, [
+        [42, 43, 44],
+      ]);
+      expect(rust.delegationStoredHotkeySecrets, [
+        [42, 43, 44],
+      ]);
+    },
+  );
+
+  test(
     'delegation PIR warmup passes the stored hotkey secret to Rust',
     () async {
       final precomputeGate = Completer<void>();
@@ -4769,6 +4816,10 @@ class FakeVotingRustApi implements VotingRustApi {
     this.setupDelay = Duration.zero,
     this.setupGate,
     this.emitCommitments = false,
+    this.generatedHotkeys = const [
+      [42, 43, 44],
+    ],
+    this.hotkeyGenerationGate,
     this.precomputeGate,
     this.failPrecompute = false,
     this.bundleCount = 1,
@@ -4784,6 +4835,8 @@ class FakeVotingRustApi implements VotingRustApi {
   final Duration setupDelay;
   final Completer<void>? setupGate;
   final bool emitCommitments;
+  final List<List<int>> generatedHotkeys;
+  final Completer<void>? hotkeyGenerationGate;
   final Completer<void>? precomputeGate;
   final bool failPrecompute;
   final int bundleCount;
@@ -4810,10 +4863,12 @@ class FakeVotingRustApi implements VotingRustApi {
   final syncedVoteTrees = <String>[];
   final precomputedDelegationPir = <int>[];
   final precomputeStoredHotkeySecrets = <List<int>>[];
+  final delegationStoredHotkeySecrets = <List<int>>[];
   final setupStarted = Completer<void>();
   final delegationProofStarted = Completer<void>();
   final keystoneDelegationProofStarted = Completer<void>();
   final voteCommitmentStarted = Completer<void>();
+  final hotkeyGenerationStarted = Completer<void>();
   final precomputeStarted = Completer<void>();
   final precomputeFinished = Completer<void>();
   final resetVotingSessionStateCalls = <String>[];
@@ -4864,6 +4919,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }) async* {
     accountUuids.add(ctx.accountUuid);
     delegationBundleCalls.add(bundleIndex);
+    delegationStoredHotkeySecrets.add(List<int>.from(storedHotkeySecret));
     final error = delegationStreamError;
     if (error != null) throw error;
     if (!delegationProofStarted.isCompleted) {
@@ -4900,8 +4956,15 @@ class FakeVotingRustApi implements VotingRustApi {
 
   @override
   Future<List<int>> generateVotingHotkey({required String network}) async {
-    generateVotingHotkeyCalls++;
-    return [42, 43, 44];
+    final callIndex = generateVotingHotkeyCalls++;
+    if (!hotkeyGenerationStarted.isCompleted) {
+      hotkeyGenerationStarted.complete();
+    }
+    await hotkeyGenerationGate?.future;
+    final hotkeyIndex = callIndex < generatedHotkeys.length
+        ? callIndex
+        : generatedHotkeys.length - 1;
+    return List<int>.from(generatedHotkeys[hotkeyIndex]);
   }
 
   @override
