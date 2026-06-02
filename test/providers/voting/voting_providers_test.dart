@@ -3593,6 +3593,32 @@ void main() {
     expect(rust.syncedVoteTrees, [kRoundId]);
   });
 
+  test('vote tree pre-sync retries failover servers', () async {
+    final rust = FakeVotingRustApi(
+      failingVoteTreeNodeUrls: const {'https://voting.example'},
+    );
+    final http = FakeVotingHttpClient(
+      responses: votingHttpResponses(
+        dynamicConfig: dynamicConfigJson(
+          voteServers: const [
+            {'url': 'https://voting.example', 'label': 'primary'},
+            {'url': 'https://voting-failover.example', 'label': 'failover'},
+          ],
+        ),
+      ),
+    );
+    final container = _sessionContainer(http: http, rust: rust);
+    addTearDown(container.dispose);
+
+    final service = container.read(votingTreePreSyncProvider);
+    await service.preSyncRound(kRoundId);
+
+    expect(rust.syncedVoteTreeNodeUrls, [
+      'https://voting.example',
+      'https://voting-failover.example',
+    ]);
+  });
+
   test('vote tree sync runs before each proposal', () async {
     final rust = FakeVotingRustApi();
     final container = _sessionContainer(rust: rust);
@@ -3622,6 +3648,44 @@ void main() {
 
     expect(rust.syncedVoteTrees, [kRoundId, kRoundId]);
     expect(rust.voteCommitBundleCalls, [0, 0]);
+  });
+
+  test('cast-time vote tree sync retries failover servers', () async {
+    final rust = FakeVotingRustApi(
+      failingVoteTreeNodeUrls: const {'https://voting.example'},
+    );
+    final http = FakeVotingHttpClient(
+      responses: votingHttpResponses(
+        dynamicConfig: dynamicConfigJson(
+          voteServers: const [
+            {'url': 'https://voting.example', 'label': 'primary'},
+            {'url': 'https://voting-failover.example', 'label': 'failover'},
+          ],
+        ),
+      ),
+    );
+    final container = _sessionContainer(http: http, rust: rust);
+    addTearDown(container.dispose);
+
+    await container.read(votingSessionProvider(kRoundId).future);
+    await container
+        .read(votingSessionProvider(kRoundId).notifier)
+        .castVotes(
+          draftVotes: [
+            rust_wire.DraftVote(
+              proposalId: 7,
+              choice: 1,
+              numOptions: 2,
+              vcTreePosition: BigInt.zero,
+              singleShare: false,
+            ),
+          ],
+        );
+
+    expect(rust.syncedVoteTreeNodeUrls, [
+      'https://voting.example',
+      'https://voting-failover.example',
+    ]);
   });
 
   test('vote commitments submit shares and record recovery rows', () async {
@@ -5671,6 +5735,7 @@ class FakeVotingRustApi implements VotingRustApi {
     this.keystoneDelegationProofGate,
     this.voteCommitmentGate,
     this.onDeleteSkippedBundles,
+    this.failingVoteTreeNodeUrls = const {},
   });
 
   final Duration setupDelay;
@@ -5688,6 +5753,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final Completer<void>? keystoneDelegationProofGate;
   final Completer<void>? voteCommitmentGate;
   final void Function(int keepCount)? onDeleteSkippedBundles;
+  final Set<String> failingVoteTreeNodeUrls;
   int setupCalls = 0;
   int _activeSetups = 0;
   int maxConcurrentSetups = 0;
@@ -5702,6 +5768,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final operationLog = <String>[];
   final recordedShares = <_RecordedShare>[];
   final syncedVoteTrees = <String>[];
+  final syncedVoteTreeNodeUrls = <String>[];
   final precomputedDelegationPir = <int>[];
   final precomputeStoredHotkeySecrets = <List<int>>[];
   final delegationStoredHotkeySecrets = <List<int>>[];
@@ -6069,6 +6136,10 @@ class FakeVotingRustApi implements VotingRustApi {
     required String nodeUrl,
   }) async {
     syncedVoteTrees.add(roundId);
+    syncedVoteTreeNodeUrls.add(nodeUrl);
+    if (failingVoteTreeNodeUrls.contains(nodeUrl)) {
+      throw StateError('syncVoteTree failed for $nodeUrl');
+    }
     return 10;
   }
 

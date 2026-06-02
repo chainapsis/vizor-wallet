@@ -1083,14 +1083,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             'proposal=${draftVote.proposalId}',
           );
           final syncTimer = Stopwatch()..start();
-          final anchorHeight = await ref
-              .read(votingRustApiProvider)
-              .syncVoteTree(
-                dbPath: context.dbPath,
-                accountUuid: context.accountUuid,
-                roundId: context.round.roundId,
-                nodeUrl: context.config.apiBaseUrl.toString(),
-              );
+          final anchorHeight = await _syncVoteTreeWithFailover(
+            context: context,
+            bundleIndex: bundleIndex,
+            proposalId: draftVote.proposalId,
+          );
           debugPrint(
             '[zcash] Voting: vote tree sync completed '
             'round=${context.round.roundId} bundle=$bundleIndex '
@@ -1514,6 +1511,39 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
       }
     }
+  }
+
+  Future<int> _syncVoteTreeWithFailover({
+    required _VotingSessionContext context,
+    required int bundleIndex,
+    required int proposalId,
+  }) async {
+    final nodeUrls = context.config.apiServers.all;
+    Object? lastError;
+    for (var attempt = 0; attempt < nodeUrls.length; attempt++) {
+      final nodeUrl = nodeUrls[attempt];
+      try {
+        return await ref
+            .read(votingRustApiProvider)
+            .syncVoteTree(
+              dbPath: context.dbPath,
+              accountUuid: context.accountUuid,
+              roundId: context.round.roundId,
+              nodeUrl: nodeUrl.toString(),
+            );
+      } catch (error) {
+        lastError = error;
+        if (attempt == nodeUrls.length - 1) {
+          rethrow;
+        }
+        debugPrint(
+          '[zcash] Voting: vote tree sync retrying failover '
+          'round=${context.round.roundId} bundle=$bundleIndex '
+          'proposal=$proposalId from=$nodeUrl error=$error',
+        );
+      }
+    }
+    throw StateError('vote tree sync failover exited unexpectedly: $lastError');
   }
 
   String? _bundleProgressMessage({

@@ -46,8 +46,8 @@ class VotingTreePreSyncService {
         return;
       }
       final dbPath = await _ref.read(votingWalletDbPathProvider).call();
-      final primaryApiServer = config.apiServers.primary;
-      final key = '$dbPath|$accountUuid|$primaryApiServer|$roundId';
+      final apiServers = config.apiServers.all;
+      final key = '$dbPath|$accountUuid|${apiServers.join(',')}|$roundId';
       if (_completed.contains(key)) return;
       final existing = _inFlight[key];
       if (existing != null) {
@@ -60,7 +60,7 @@ class VotingTreePreSyncService {
         dbPath: dbPath,
         accountUuid: accountUuid,
         roundId: roundId,
-        nodeUrl: primaryApiServer.toString(),
+        nodeUrls: apiServers,
       );
       _inFlight[key] = future;
       await future;
@@ -77,28 +77,47 @@ class VotingTreePreSyncService {
     required String dbPath,
     required String accountUuid,
     required String roundId,
-    required String nodeUrl,
+    required List<Uri> nodeUrls,
   }) async {
     final timer = Stopwatch()..start();
     debugPrint('[zcash] Voting: vote tree pre-sync start round=$roundId');
+    Object? lastError;
     try {
-      final height = await _ref
-          .read(votingRustApiProvider)
-          .syncVoteTree(
-            dbPath: dbPath,
-            accountUuid: accountUuid,
-            roundId: roundId,
-            nodeUrl: nodeUrl,
+      for (var attempt = 0; attempt < nodeUrls.length; attempt++) {
+        final nodeUrl = nodeUrls[attempt];
+        try {
+          final height = await _ref
+              .read(votingRustApiProvider)
+              .syncVoteTree(
+                dbPath: dbPath,
+                accountUuid: accountUuid,
+                roundId: roundId,
+                nodeUrl: nodeUrl.toString(),
+              );
+          _completed.add(key);
+          debugPrint(
+            '[zcash] Voting: vote tree pre-sync completed '
+            'round=$roundId height=$height nodeUrl=$nodeUrl '
+            'elapsed=${formatElapsedSeconds(timer.elapsed)}',
           );
-      _completed.add(key);
-      debugPrint(
-        '[zcash] Voting: vote tree pre-sync completed '
-        'round=$roundId height=$height elapsed=${formatElapsedSeconds(timer.elapsed)}',
-      );
+          return;
+        } catch (e) {
+          lastError = e;
+          if (attempt < nodeUrls.length - 1) {
+            debugPrint(
+              '[zcash] Voting: vote tree pre-sync retrying failover '
+              'round=$roundId from=$nodeUrl error=$e',
+            );
+            continue;
+          }
+          rethrow;
+        }
+      }
     } catch (e) {
       debugPrint(
         '[zcash] Voting: vote tree pre-sync failed '
-        'round=$roundId elapsed=${formatElapsedSeconds(timer.elapsed)} error=$e',
+        'round=$roundId elapsed=${formatElapsedSeconds(timer.elapsed)} '
+        'error=${lastError ?? e}',
       );
     } finally {
       _inFlight.remove(key);
