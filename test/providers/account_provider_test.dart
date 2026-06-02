@@ -43,6 +43,56 @@ void main() {
   });
 
   test(
+    'account removal secret cleanup deletes hotkeys before mnemonic',
+    () async {
+      final steps = <String>[];
+
+      await deleteAccountSecretsForRemoval(
+        accountUuid: 'account-1',
+        deleteVotingHotkeys: () async {
+          steps.add('hotkeys');
+        },
+        deleteMnemonic: () async {
+          steps.add('mnemonic');
+        },
+      );
+
+      expect(steps, ['hotkeys', 'mnemonic']);
+    },
+  );
+
+  test(
+    'account removal secret cleanup surfaces secret deletion failures',
+    () async {
+      final steps = <String>[];
+
+      await expectLater(
+        deleteAccountSecretsForRemoval(
+          accountUuid: 'account-1',
+          deleteVotingHotkeys: () async {
+            steps.add('hotkeys');
+            throw StateError('hotkey delete failed');
+          },
+          deleteMnemonic: () async {
+            steps.add('mnemonic');
+          },
+        ),
+        throwsA(
+          isA<AccountRemovalCleanupException>()
+              .having((e) => e.accountUuid, 'accountUuid', 'account-1')
+              .having(
+                (e) => e.failedSteps,
+                'failedSteps',
+                contains('voting hotkeys'),
+              ),
+        ),
+      );
+
+      expect(steps, ['hotkeys', 'mnemonic']);
+    },
+  );
+
+  test(
     'next active account stays unchanged when removing a non-active account',
     () {
       const accounts = [

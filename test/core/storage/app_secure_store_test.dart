@@ -97,7 +97,7 @@ void main() {
     'voting hotkey round-trips, requires unlock, and deletes idempotently',
     () async {
       await store.configurePassword(_oldPassword);
-      final hotkey = List<int>.generate(32, (index) => index);
+      final hotkey = List<int>.generate(64, (index) => index);
 
       await store.writeVotingHotkey(
         accountUuid: 'account-1',
@@ -146,12 +146,12 @@ void main() {
     await store.writeVotingHotkey(
       accountUuid: 'account-1',
       roundId: 'round-1',
-      hotkey: const [1],
+      hotkey: List<int>.filled(64, 1),
     );
     await store.writeVotingHotkey(
       accountUuid: 'account-2',
       roundId: 'round-1',
-      hotkey: const [2],
+      hotkey: List<int>.filled(64, 2),
     );
 
     await store.deleteVotingHotkeysForAccount('account-1');
@@ -168,7 +168,52 @@ void main() {
         accountUuid: 'account-2',
         roundId: 'round-1',
       ),
-      const [2],
+      List<int>.filled(64, 2),
+    );
+  });
+
+  test('readVotingHotkey returns null for invalid base64 payload', () async {
+    await store.configurePassword(_oldPassword);
+    await store.writeSecretString(
+      AppSecureStore.votingHotkeyStorageKey(
+        accountUuid: 'account-1',
+        roundId: 'round-1',
+      ),
+      'this-is-not-valid-base64***',
+    );
+
+    expect(
+      await store.readVotingHotkey(
+        accountUuid: 'account-1',
+        roundId: 'round-1',
+      ),
+      isNull,
+    );
+  });
+
+  test('writeVotingHotkey rejects non-64-byte stored secrets', () async {
+    await store.configurePassword(_oldPassword);
+
+    await expectLater(
+      () => store.writeVotingHotkey(
+        accountUuid: 'account-1',
+        roundId: 'round-1',
+        hotkey: List<int>.filled(63, 7),
+      ),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.message,
+          'message',
+          contains('stored hotkey secret must be exactly 64 bytes'),
+        ),
+      ),
+    );
+    expect(
+      await store.readVotingHotkey(
+        accountUuid: 'account-1',
+        roundId: 'round-1',
+      ),
+      isNull,
     );
   });
 
@@ -300,7 +345,7 @@ void main() {
     await store.writeVotingHotkey(
       accountUuid: 'account-1',
       roundId: 'round-1',
-      hotkey: const [1, 2, 3],
+      hotkey: List<int>.generate(64, (index) => index % 3),
     );
     await store.writeSecretString(_externalEncryptedKey, 'external secret');
     final externalPayload = await store.readPlain(_externalEncryptedKey);
@@ -318,7 +363,7 @@ void main() {
         accountUuid: 'account-1',
         roundId: 'round-1',
       ),
-      const [1, 2, 3],
+      List<int>.generate(64, (index) => index % 3),
     );
   });
 

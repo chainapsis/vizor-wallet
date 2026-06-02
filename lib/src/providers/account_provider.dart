@@ -45,6 +45,21 @@ class WalletCreationCurrentBlockHeightException implements Exception {
   String toString() => kWalletCreationCurrentBlockHeightErrorMessage;
 }
 
+class AccountRemovalCleanupException implements Exception {
+  const AccountRemovalCleanupException({
+    required this.accountUuid,
+    required this.failedSteps,
+  });
+
+  final String accountUuid;
+  final List<String> failedSteps;
+
+  @override
+  String toString() =>
+      'Failed to delete account secrets for $accountUuid: '
+      '${failedSteps.join(', ')}';
+}
+
 class AccountNotifier extends AsyncNotifier<AccountState> {
   static final _storage = AppSecureStore.instance;
 
@@ -380,6 +395,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final dbPath = await _getDbPath();
     final network = await _getNetwork();
     await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);
+    await deleteAccountSecretsForRemoval(
+      accountUuid: uuid,
+      deleteVotingHotkeys: () => _storage.deleteVotingHotkeysForAccount(uuid),
+      deleteMnemonic: () => _storage.deleteAccountMnemonic(uuid),
+    );
     final rustDeleteWatch = Stopwatch()..start();
     await rust_wallet.deleteAccount(
       dbPath: dbPath,
@@ -391,20 +411,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       '${rustDeleteWatch.elapsedMilliseconds}ms uuid=$uuid',
     );
     try {
-      await _storage.deleteAccountMnemonic(uuid);
-    } catch (e, st) {
-      log('removeAccount: failed to delete mnemonic for $uuid: $e\n$st');
-    }
-    try {
       await ref
           .read(swapActivityStoreProvider)
           .deleteForAccount(accountUuid: uuid);
     } catch (_) {}
-    try {
-      await _storage.deleteVotingHotkeysForAccount(uuid);
-    } catch (e, st) {
-      log('removeAccount: failed to delete voting hotkeys for $uuid: $e\n$st');
-    }
 
     final updated = [
       for (var i = 0; i < remaining.length; i++)
@@ -721,4 +731,33 @@ List<String> walletDbCleanupPaths(String dbPath) {
     for (final target in targets)
       for (final suffix in _sqliteCompanionSuffixes) '$target$suffix',
   ];
+}
+
+@visibleForTesting
+Future<void> deleteAccountSecretsForRemoval({
+  required String accountUuid,
+  required Future<void> Function() deleteVotingHotkeys,
+  required Future<void> Function() deleteMnemonic,
+}) async {
+  final failedSteps = <String>[];
+  try {
+    await deleteVotingHotkeys();
+  } catch (e, st) {
+    log(
+      'removeAccount: failed to delete voting hotkeys for $accountUuid: $e\n$st',
+    );
+    failedSteps.add('voting hotkeys');
+  }
+  try {
+    await deleteMnemonic();
+  } catch (e, st) {
+    log('removeAccount: failed to delete mnemonic for $accountUuid: $e\n$st');
+    failedSteps.add('mnemonic');
+  }
+  if (failedSteps.isNotEmpty) {
+    throw AccountRemovalCleanupException(
+      accountUuid: accountUuid,
+      failedSteps: failedSteps,
+    );
+  }
 }

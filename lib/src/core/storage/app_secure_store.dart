@@ -31,6 +31,7 @@ const _accountMnemonicKeyPrefix = 'zcash_account_mnemonic_';
 const _accountMnemonicMigrationCompleteKey =
     'zcash_mnemonic_storage_migrated_v1';
 const _votingHotkeyKeyPrefix = 'zcash_account_voting_hotkey_';
+const _votingHotkeySecretLength = 64;
 
 class PasswordRotationRecoveryFailedException implements Exception {
   const PasswordRotationRecoveryFailedException();
@@ -209,7 +210,15 @@ class AppSecureStore {
       requireUnlockedSession: true,
     );
     if (encoded == null || encoded.isEmpty) return null;
-    return base64Decode(encoded);
+    try {
+      return base64Decode(encoded);
+    } on FormatException catch (error) {
+      debugPrint(
+        '[zcash] Voting: invalid stored hotkey encoding '
+        'for round "$roundId": ${error.message}',
+      );
+      return null;
+    }
   }
 
   Future<void> writeString(String key, String value) async {
@@ -247,6 +256,13 @@ class AppSecureStore {
     required String roundId,
     required List<int> hotkey,
   }) {
+    if (hotkey.length != _votingHotkeySecretLength) {
+      throw ArgumentError.value(
+        hotkey.length,
+        'hotkey',
+        'stored hotkey secret must be exactly $_votingHotkeySecretLength bytes',
+      );
+    }
     return writeSecretString(
       votingHotkeyStorageKey(accountUuid: accountUuid, roundId: roundId),
       base64Encode(hotkey),
