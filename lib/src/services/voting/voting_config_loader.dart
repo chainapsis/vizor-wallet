@@ -26,6 +26,13 @@ typedef ResolveVotingConfigFn = Future<rust_config_api.VotingConfigResolution>
       fetchBytes,
     });
 
+class _CapturedFetchError {
+  const _CapturedFetchError(this.error, this.stackTrace);
+
+  final Object error;
+  final StackTrace stackTrace;
+}
+
 class StaticVotingConfigSourceMalformed implements Exception {
   final String message;
 
@@ -104,37 +111,66 @@ class VotingConfigLoader {
   final String _sourceUrl;
   final Duration _timeout;
   final ResolveVotingConfigFn _resolveVotingConfig;
+  static const _transportErrorTokenPrefix = '__voting_config_transport_error__:';
 
   /// Resolves voting config via Rust while keeping transport in Dart.
   Future<rust_config_api.VotingConfigResolution> load({
     rust_config.ResolvedVotingConfig? previous,
   }) async {
-    final resolution = await _resolveVotingConfig(
-      source: _sourceUrl,
-      previous: previous,
-      fetchBytes: (url) async {
-        try {
-          final requestUrl = Uri.parse(url);
-          final response = await _httpClient.get(requestUrl, timeout: _timeout);
-          if (response.statusCode != 200) {
-            throw VotingHttpException(
-              uri: requestUrl,
-              statusCode: response.statusCode,
-              body: response.bodyText,
+    var transportErrorIndex = 0;
+    final capturedTransportErrors = <String, _CapturedFetchError>{};
+    try {
+      final resolution = await _resolveVotingConfig(
+        source: _sourceUrl,
+        previous: previous,
+        fetchBytes: (url) async {
+          try {
+            final requestUrl = Uri.parse(url);
+            final response = await _httpClient.get(requestUrl, timeout: _timeout);
+            if (response.statusCode != 200) {
+              throw VotingHttpException(
+                uri: requestUrl,
+                statusCode: response.statusCode,
+                body: response.bodyText,
+              );
+            }
+            return rust_config_api.VotingConfigFetch(bytes: response.bodyBytes);
+          } catch (error, stackTrace) {
+            final token = '$_transportErrorTokenPrefix${transportErrorIndex++}';
+            capturedTransportErrors[token] = _CapturedFetchError(
+              error,
+              stackTrace,
             );
+            return rust_config_api.VotingConfigFetch(error: token);
           }
-          return rust_config_api.VotingConfigFetch(bytes: response.bodyBytes);
-        } catch (error) {
-          return rust_config_api.VotingConfigFetch(error: error.toString());
-        }
-      },
-    );
-    if (resolution.config.skippedRoundIds.isNotEmpty) {
-      debugPrint(
-        '[zcash] Voting: skipped unauthenticated round ids: '
-        '${resolution.config.skippedRoundIds.join(",")}',
+        },
       );
+      if (resolution.config.skippedRoundIds.isNotEmpty) {
+        debugPrint(
+          '[zcash] Voting: skipped unauthenticated round ids: '
+          '${resolution.config.skippedRoundIds.join(",")}',
+        );
+      }
+      return resolution;
+    } catch (error, stackTrace) {
+      final token = _extractTransportErrorToken(error);
+      final capturedError = capturedTransportErrors[token];
+      if (capturedError != null) {
+        Error.throwWithStackTrace(capturedError.error, capturedError.stackTrace);
+      }
+      Error.throwWithStackTrace(error, stackTrace);
     }
-    return resolution;
+  }
+
+  String _extractTransportErrorToken(Object error) {
+    if (error is String) return error;
+    final text = error.toString();
+    final markerIndex = text.indexOf(_transportErrorTokenPrefix);
+    if (markerIndex == -1) return text;
+    final tokenTail = text.substring(markerIndex);
+    final tokenMatch = RegExp(
+      '^${RegExp.escape(_transportErrorTokenPrefix)}\\d+',
+    ).firstMatch(tokenTail);
+    return tokenMatch?.group(0) ?? text;
   }
 }

@@ -6,6 +6,7 @@ import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
     as rust_config;
 import 'package:zcash_wallet/src/services/voting/resolved_voting_config_extensions.dart';
 import 'package:zcash_wallet/src/services/voting/voting_config_loader.dart';
+import 'package:zcash_wallet/src/services/voting/voting_models.dart';
 
 import 'fake_voting_http.dart';
 
@@ -133,7 +134,7 @@ void main() {
     expect(capturedPrevious, same(previous));
   });
 
-  test('fetch failure surfaces as transport exception', () async {
+  test('fetch failure preserves typed transport exception', () async {
     final staticSource = parseStaticVotingConfigSource(
       'https://voting.example/static-voting-config.json',
     );
@@ -150,17 +151,25 @@ void main() {
         required fetchBytes,
       }) async {
         final response = await fetchBytes(source);
-        expect(response.bytes, isNull);
-        expect(response.error, isNotNull);
-        return rust_config_api.VotingConfigResolution(
-          config: _resolvedConfig(),
-          switchKind: rust_config.ConfigSwitchKind.initialLoad,
-        );
+        if (response.error case final token?) {
+          throw token;
+        }
+        fail('expected transport error from fetch callback');
       },
     );
 
-    final resolution = await loader.load();
-    expect(resolution.config.apiBaseUrl.toString(), 'https://voting.example');
+    await expectLater(
+      loader.load(),
+      throwsA(
+        isA<VotingHttpException>()
+            .having((error) => error.statusCode, 'statusCode', 503)
+            .having(
+              (error) => error.uri.toString(),
+              'uri',
+              staticSource.uri.toString(),
+            ),
+      ),
+    );
   });
 
   test('load succeeds and surfaces skipped round IDs', () async {
