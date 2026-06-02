@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
+import '../../../core/layout/app_layout.dart';
 import '../../../core/motion/onboarding_motion.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
@@ -60,6 +61,7 @@ class ImportOnboardingShell extends StatelessWidget {
 
     return AppDesktopShell(
       sidebarWidth: 256,
+      showSidebar: isDesktopLayoutPlatform,
       sidebar: SlideTransition(
         position: Tween<Offset>(
           begin: const Offset(-1, 0),

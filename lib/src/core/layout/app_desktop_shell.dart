@@ -10,12 +10,14 @@ class AppDesktopShell extends StatelessWidget {
     required this.sidebar,
     required this.pane,
     this.sidebarWidth = 256,
+    this.showSidebar = true,
     super.key,
   });
 
   final Widget sidebar;
   final Widget pane;
   final double sidebarWidth;
+  final bool showSidebar;
 
   @override
   Widget build(BuildContext context) {
@@ -27,8 +29,10 @@ class AppDesktopShell extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(width: sidebarWidth, child: sidebar),
-              const SizedBox(width: AppSpacing.xs),
+              if (showSidebar) ...[
+                SizedBox(width: sidebarWidth, child: sidebar),
+                const SizedBox(width: AppSpacing.xs),
+              ],
               Expanded(child: pane),
             ],
           ),
