@@ -685,25 +685,12 @@ class _AppTextFieldState extends State<AppTextField> {
             top: messageTop,
             left: 0,
             right: 0,
-            child: Row(
-              children: [
-                IgnorePointer(
-                  child:
-                      widget.messageIcon ??
-                      defaultMessageIcon ??
-                      const SizedBox(),
-                ),
-                if (widget.messageIcon != null || defaultMessageIcon != null)
-                  const IgnorePointer(child: SizedBox(width: AppSpacing.xxs)),
-                Expanded(
-                  child: _AppTextFieldMessageText(
-                    text: widget.messageText!,
-                    style:
-                        widget.messageStyle ??
-                        AppTypography.labelMedium.copyWith(color: messageColor),
-                  ),
-                ),
-              ],
+            child: _AppTextFieldMessage(
+              text: widget.messageText!,
+              icon: widget.messageIcon ?? defaultMessageIcon,
+              style:
+                  widget.messageStyle ??
+                  AppTypography.labelMedium.copyWith(color: messageColor),
             ),
           ),
       ],
@@ -711,15 +698,29 @@ class _AppTextFieldState extends State<AppTextField> {
   }
 }
 
-class _AppTextFieldMessageText extends StatelessWidget {
-  const _AppTextFieldMessageText({required this.text, required this.style});
+class _AppTextFieldMessage extends StatelessWidget {
+  const _AppTextFieldMessage({
+    required this.text,
+    required this.style,
+    this.icon,
+  });
+
+  static const _rowKey = ValueKey('app-text-field-message-row');
+  static const _iconSlotKey = ValueKey('app-text-field-message-icon-slot');
+  static const _textKey = ValueKey('app-text-field-message-text');
+  static const _tooltipTargetKey = ValueKey(
+    'app-text-field-message-tooltip-target',
+  );
 
   final String text;
   final TextStyle style;
+  final Widget? icon;
 
   @override
   Widget build(BuildContext context) {
-    final child = Text(
+    final hasIcon = icon != null;
+    final textChild = Text(
+      key: _textKey,
       text,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
@@ -728,8 +729,42 @@ class _AppTextFieldMessageText extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (!constraints.maxWidth.isFinite || constraints.maxWidth <= 0) {
-          return IgnorePointer(child: child);
+        const iconWidth = AppIconSize.medium;
+        final leadingWidth = hasIcon ? iconWidth + AppSpacing.xxs : 0.0;
+        final textMaxWidth = constraints.maxWidth - leadingWidth;
+        final textLayoutWidth = textMaxWidth <= 0 ? 0.0 : textMaxWidth;
+        final messageRow = Row(
+          key: _rowKey,
+          children: [
+            if (hasIcon) ...[
+              IgnorePointer(
+                child: SizedBox(
+                  key: _iconSlotKey,
+                  width: iconWidth,
+                  height: iconWidth,
+                  child: Center(child: icon),
+                ),
+              ),
+              const IgnorePointer(child: SizedBox(width: AppSpacing.xxs)),
+            ],
+            Expanded(child: textChild),
+          ],
+        );
+        final visibleMessage = IgnorePointer(child: messageRow);
+        Widget messageLine({Widget? overlay}) {
+          return SizedBox(
+            height: AppIconSize.medium,
+            child: Stack(
+              children: [
+                visibleMessage,
+                if (overlay != null) Positioned.fill(child: overlay),
+              ],
+            ),
+          );
+        }
+
+        if (!constraints.maxWidth.isFinite) {
+          return messageLine();
         }
 
         final textPainter = TextPainter(
@@ -738,13 +773,19 @@ class _AppTextFieldMessageText extends StatelessWidget {
           textScaler: MediaQuery.textScalerOf(context),
           ellipsis: '...',
           maxLines: 1,
-        )..layout(maxWidth: constraints.maxWidth);
+        )..layout(maxWidth: textLayoutWidth);
 
         if (!textPainter.didExceedMaxLines) {
-          return IgnorePointer(child: child);
+          return messageLine();
         }
 
-        return AppTooltip(message: text, preferBelow: true, child: child);
+        return messageLine(
+          overlay: AppTooltip(
+            message: text,
+            preferBelow: true,
+            child: const SizedBox.expand(key: _tooltipTargetKey),
+          ),
+        );
       },
     );
   }

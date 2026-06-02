@@ -120,6 +120,85 @@ void main() {
     expect(tooltip.preferBelow, isTrue);
   });
 
+  testWidgets('truncated message tooltip anchors to icon and text row', (
+    tester,
+  ) async {
+    const message =
+        'Use only English letters, numbers, and symbols before continuing.';
+
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        child: SizedBox(
+          width: 128,
+          height: 86,
+          child: AppTextField(
+            label: 'Password',
+            messageText: message,
+            tone: AppTextFieldTone.destructive,
+          ),
+        ),
+      ),
+    );
+
+    final tooltipTarget = find.descendant(
+      of: find.byType(Tooltip),
+      matching: find.byKey(
+        const ValueKey('app-text-field-message-tooltip-target'),
+      ),
+    );
+    final iconSlot = find.byKey(
+      const ValueKey('app-text-field-message-icon-slot'),
+    );
+
+    expect(tooltipTarget, findsOneWidget);
+    expect(iconSlot, findsOneWidget);
+
+    final fieldRect = tester.getRect(find.byType(AppTextField));
+    final targetRect = tester.getRect(tooltipTarget);
+    final textRect = tester.getRect(find.text(message));
+
+    expect(targetRect.left, moreOrLessEquals(fieldRect.left));
+    expect(targetRect.width, moreOrLessEquals(fieldRect.width));
+    expect(textRect.left, greaterThan(targetRect.left));
+  });
+
+  testWidgets('truncated message tooltip appears when hovering icon slot', (
+    tester,
+  ) async {
+    const message =
+        'Use only English letters, numbers, and symbols before continuing.';
+
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        child: SizedBox(
+          width: 128,
+          height: 86,
+          child: AppTextField(
+            label: 'Password',
+            messageText: message,
+            tone: AppTextFieldTone.destructive,
+          ),
+        ),
+      ),
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+
+    await mouse.moveTo(
+      tester
+          .getRect(
+            find.byKey(const ValueKey('app-text-field-message-icon-slot')),
+          )
+          .center,
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(find.text(message), findsNWidgets(2));
+  });
+
   testWidgets('truncated message tooltip does not block root unfocus', (
     tester,
   ) async {
@@ -143,6 +222,7 @@ void main() {
             controller: controller,
             focusNode: focusNode,
             messageText: message,
+            tone: AppTextFieldTone.destructive,
           ),
         ),
       ),
@@ -156,6 +236,22 @@ void main() {
     await tester.pump();
 
     expect(rootTapCount, 1);
+    expect(focusNode.hasFocus, isFalse);
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    await tester.tapAt(
+      tester
+          .getRect(
+            find.byKey(const ValueKey('app-text-field-message-icon-slot')),
+          )
+          .center,
+    );
+    await tester.pump();
+
+    expect(rootTapCount, 2);
     expect(focusNode.hasFocus, isFalse);
   });
 
