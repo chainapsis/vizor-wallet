@@ -14,7 +14,6 @@ import '../../../core/privacy/privacy_mask.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
-import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/privacy_mode_provider.dart';
@@ -378,64 +377,18 @@ class _ActivityTransactionStatusScreenState
   /// Sent "To" block: a matched address-book contact shows its nickname +
   /// crimson saved mark above the (truncated) address; copy sits at the end of
   /// the address line and always copies the full address.
-  TransactionReceiptBlockData _recipientBlock(
-    BuildContext context, {
+  TransactionReceiptBlockData _recipientBlock({
     required String address,
     String? addressBookLabel,
   }) {
-    final colors = context.colors;
     final trimmedAddress = address.trim();
-    final displayAddress = compactActivityReceiptAddress(trimmedAddress);
     final nickname = addressBookLabel?.trim();
-    final hasNickname = nickname != null && nickname.isNotEmpty;
     return TransactionReceiptBlockData(
       title: 'To',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (hasNickname) ...[
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppIcon(
-                  AppIcons.user,
-                  size: 14,
-                  color: colors.icon.brandCrimson,
-                ),
-                const SizedBox(width: AppSpacing.xxs),
-                Flexible(
-                  child: Text(
-                    nickname,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodyMediumStrong.copyWith(
-                      color: colors.text.accent,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.xxs),
-          ],
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                displayAddress,
-                style: AppTypography.codeSmall.copyWith(
-                  color: colors.text.muted,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              _InlineCopyButton(
-                onTap: () =>
-                    unawaited(_copyText(trimmedAddress, 'Address copied')),
-              ),
-            ],
-          ),
-        ],
+      child: TransactionReceiptSavedRecipientAddress(
+        address: trimmedAddress,
+        label: nickname ?? '',
+        onCopy: () => unawaited(_copyText(trimmedAddress, 'Address copied')),
       ),
     );
   }
@@ -463,7 +416,6 @@ class _ActivityTransactionStatusScreenState
       );
       if (addressBookLabel != null && addressBookLabel.trim().isNotEmpty) {
         return _recipientBlock(
-          context,
           address: primaryAddress,
           addressBookLabel: addressBookLabel,
         );
@@ -601,43 +553,6 @@ class _ActivityTransactionStatusScreenState
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-const _activityReceiptAddressEdgeLength = 16;
-const _activityReceiptAddressSeparator = ' ... ';
-
-String compactActivityReceiptAddress(String address) {
-  final trimmed = address.trim();
-  final compactLength =
-      _activityReceiptAddressEdgeLength * 2 +
-      _activityReceiptAddressSeparator.length;
-  if (trimmed.length <= compactLength) return trimmed;
-  return '${trimmed.substring(0, _activityReceiptAddressEdgeLength)}'
-      '$_activityReceiptAddressSeparator'
-      '${trimmed.substring(trimmed.length - _activityReceiptAddressEdgeLength)}';
-}
-
-/// Icon-only copy affordance placed at the end of the recipient address line.
-class _InlineCopyButton extends StatelessWidget {
-  const _InlineCopyButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: AppIcon(
-          AppIcons.copy,
-          size: 16,
-          color: context.colors.icon.muted,
         ),
       ),
     );
