@@ -921,4 +921,3 @@ class FrbVotingRustApi implements VotingRustApi {
     );
   }
 }
-

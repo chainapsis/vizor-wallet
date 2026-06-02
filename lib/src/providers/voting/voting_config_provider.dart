@@ -1,15 +1,13 @@
-import 'dart:async';
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../rust/api/voting_config.dart';
 import '../../rust/third_party/zcash_voting/config.dart';
-import '../../services/voting/voting_models.dart';
+import '../../services/voting/voting_retry.dart';
 import 'voting_config_source_provider.dart';
 import 'voting_rounds_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_session_provider.dart';
+import 'voting_submission_guard_provider.dart';
 import 'voting_tree_sync_provider.dart';
 
 /// Resolves the active dynamic voting configuration for the current source.
@@ -37,7 +35,10 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
       if (latest != null) return latest;
       final error = state.error;
       if (error != null) {
-        Error.throwWithStackTrace(error, state.stackTrace ?? StackTrace.current);
+        Error.throwWithStackTrace(
+          error,
+          state.stackTrace ?? StackTrace.current,
+        );
       }
       throw StateError('Ignored stale voting config load.');
     } catch (_) {
@@ -96,16 +97,16 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
   /// Applies the Rust-computed switch plan to dependent voting state.
   ///
   /// `unchanged`/`initialLoad` keep all caches. The remaining kinds all imply
-  /// the vote/PIR endpoints, signing keys, rounds, or protocol moved, so every
-  /// endpoint-dependent cache is rebuilt to force re-resolution against the new
+  /// the vote/PIR endpoints, signing keys, rounds, or protocol moved, so
+  /// endpoint-dependent caches are rebuilt to force re-resolution against the new
   /// config:
   ///
   /// - shared transport/client + PIR resolver caches via [_invalidateEndpointState];
   /// - the poll list ([votingRoundsProvider]) and the interactive session
   ///   ([votingSessionProvider]) so status polls and session setup rerun;
   /// - the submission-session family ([votingSubmissionSessionProvider]) so a
-  ///   subsequent submission re-resolves its endpoints (including the PIR
-  ///   endpoint, which `_resolvePirEndpoint` otherwise caches in session state).
+  ///   subsequent submission re-resolves its endpoints. Active submission guards
+  ///   keep existing sessions alive until their jobs release process-local state.
   void _applySwitch(ConfigSwitchKind kind) {
     switch (kind) {
       case ConfigSwitchKind.unchanged:
@@ -116,8 +117,10 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
       case ConfigSwitchKind.protocolChanged:
         _invalidateEndpointState();
         ref.invalidate(votingRoundsProvider);
-        ref.invalidate(votingSessionProvider);
-        ref.invalidate(votingSubmissionSessionProvider);
+        if (ref.read(votingSubmissionGuardProvider).isEmpty) {
+          ref.invalidate(votingSessionProvider);
+          ref.invalidate(votingSubmissionSessionProvider);
+        }
         return;
     }
   }
@@ -130,32 +133,11 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
   }
 
   Future<T> _withConfigRetry<T>(Future<T> Function() operation) async {
-    Object? lastError;
-    for (var attempt = 0; attempt <= _configRetryDelays.length; attempt++) {
-      try {
-        return await operation();
-      } catch (error) {
-        lastError = error;
-        if (attempt == _configRetryDelays.length ||
-            !_isConfigRetryable(error)) {
-          rethrow;
-        }
-        await Future<void>.delayed(_configRetryDelays[attempt]);
-      }
-    }
-    throw StateError('config load retry exited unexpectedly: $lastError');
-  }
-
-  static bool _isConfigRetryable(Object error) {
-    if (error is TimeoutException ||
-        error is SocketException ||
-        error is HttpException) {
-      return true;
-    }
-    if (error is VotingHttpException) {
-      return error.statusCode == 502 || error.statusCode == 503;
-    }
-    return false;
+    return retryVotingOperation(
+      operation: operation,
+      delays: _configRetryDelays,
+      label: 'config load',
+    );
   }
 }
 

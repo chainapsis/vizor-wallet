@@ -197,7 +197,10 @@ class VotingSubmissionJobsNotifier extends Notifier<VotingSubmissionJobsState> {
   }
 
   void dismiss(VotingSessionKey key) {
-    ref.read(votingSubmissionJobProvider(key).notifier).dismiss();
+    final jobProvider = votingSubmissionJobProvider(key);
+    if (ref.read(jobProvider).isInFlight) return;
+    ref.read(jobProvider.notifier).dismiss();
+    ref.invalidate(votingSessionProvider(key.roundId));
     state = state.removeJobKey(key);
   }
 
@@ -741,6 +744,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     _cancelCompletionPoll();
     _releaseGuard();
     _releaseSessionSubscription();
+    ref.invalidate(votingSessionProvider(key.roundId));
     state = state.copyWith(
       status: VotingSubmissionJobStatus.complete,
       clearErrorMessage: true,
@@ -1047,13 +1051,7 @@ final votingSubmissionJobProvider =
       VotingSessionKey
     >(VotingSubmissionJobNotifier.new);
 
-final votingSubmissionJobSessionProvider =
-    Provider.autoDispose.family<
-      AsyncValue<VotingSessionState>,
-      VotingSessionKey
-    >((
-      ref,
-      key,
-    ) {
+final votingSubmissionJobSessionProvider = Provider.autoDispose
+    .family<AsyncValue<VotingSessionState>, VotingSessionKey>((ref, key) {
       return ref.watch(votingSubmissionSessionProvider(key));
     });

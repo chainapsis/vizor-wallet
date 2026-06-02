@@ -1,6 +1,3 @@
-import 'dart:async';
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +7,7 @@ import '../../rust/third_party/zcash_voting/wire.dart' as rust_voting;
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_models.dart';
+import '../../services/voting/voting_retry.dart';
 import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
@@ -43,9 +41,7 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       do {
         _reloadQueued = false;
         state = const AsyncLoading<List<VotingRoundView>>();
-        state = await AsyncValue.guard(
-          () => _withRoundsRetry(_load),
-        );
+        state = await AsyncValue.guard(() => _withRoundsRetry(_load));
       } while (_reloadQueued);
     }();
     _reloadFuture = run;
@@ -74,7 +70,10 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
         'shown=${filteredRounds.length} total=${rounds.length}',
       );
     }
-    final recoveryStates = await _roundListRecoveryStates(filteredRounds, api: api);
+    final recoveryStates = await _roundListRecoveryStates(
+      filteredRounds,
+      api: api,
+    );
     return [
       for (final round in filteredRounds)
         VotingRoundView.fromSummary(
@@ -193,32 +192,11 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
   }
 
   Future<T> _withRoundsRetry<T>(Future<T> Function() operation) async {
-    Object? lastError;
-    for (var attempt = 0; attempt <= _roundsRetryDelays.length; attempt++) {
-      try {
-        return await operation();
-      } catch (error) {
-        lastError = error;
-        if (attempt == _roundsRetryDelays.length ||
-            !_isRoundsRetryable(error)) {
-          rethrow;
-        }
-        await Future<void>.delayed(_roundsRetryDelays[attempt]);
-      }
-    }
-    throw StateError('round reload retry exited unexpectedly: $lastError');
-  }
-
-  static bool _isRoundsRetryable(Object error) {
-    if (error is TimeoutException ||
-        error is SocketException ||
-        error is HttpException) {
-      return true;
-    }
-    if (error is VotingHttpException) {
-      return error.statusCode == 502 || error.statusCode == 503;
-    }
-    return false;
+    return retryVotingOperation(
+      operation: operation,
+      delays: _roundsRetryDelays,
+      label: 'round reload',
+    );
   }
 }
 

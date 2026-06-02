@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
+import 'voting_retry.dart';
 import 'voting_http.dart';
 import 'voting_models.dart';
 
@@ -261,32 +261,12 @@ class VotingApiClient {
   }
 
   Future<T> _withBroadcastRetry<T>(Future<T> Function() operation) async {
-    Object? lastError;
-    for (var attempt = 0; attempt <= _broadcastRetryDelays.length; attempt++) {
-      try {
-        return await operation();
-      } catch (error) {
-        lastError = error;
-        if (attempt == _broadcastRetryDelays.length ||
-            !_isBroadcastRetryable(error)) {
-          rethrow;
-        }
-        await _delay(_broadcastRetryDelays[attempt]);
-      }
-    }
-    throw StateError('broadcast retry exited unexpectedly: $lastError');
-  }
-
-  static bool _isBroadcastRetryable(Object error) {
-    if (error is TimeoutException ||
-        error is SocketException ||
-        error is HttpException) {
-      return true;
-    }
-    if (error is VotingHttpException) {
-      return error.statusCode == 502 || error.statusCode == 503;
-    }
-    return false;
+    return retryVotingOperation(
+      operation: operation,
+      delays: _broadcastRetryDelays,
+      label: 'broadcast',
+      delay: _delay,
+    );
   }
 
   static void _throwIfNotSuccess(
