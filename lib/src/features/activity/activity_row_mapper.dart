@@ -88,7 +88,6 @@ ActivityRowData buildTransactionActivityRow({
         : null,
     statusColor: isFailed ? colors.text.destructive : colors.text.secondary,
     timestampText: formatActivityTimestamp(_txTimestamp(transaction)),
-    backgroundColor: isFailed ? colors.state.selected : null,
     onTap: onTap,
   );
 }

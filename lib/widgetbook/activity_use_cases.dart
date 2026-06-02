@@ -312,7 +312,6 @@ ActivityRowData _failedSentRow(BuildContext context) {
     statusIconName: AppIcons.skull,
     statusColor: colors.text.destructive,
     timestampText: 'Apr, 25 10:25',
-    backgroundColor: colors.state.selected,
   );
 }
 
