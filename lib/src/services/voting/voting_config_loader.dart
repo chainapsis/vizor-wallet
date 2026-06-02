@@ -62,6 +62,11 @@ class StaticVotingConfigSourceMalformed implements Exception {
       'URL must not include a fragment',
     );
   }
+  if (_containsEncodedChecksumKey(parsed.query)) {
+    throw StaticVotingConfigSourceMalformed(
+      'checksum key must be literal "checksum": $raw',
+    );
+  }
 
   final queryParametersAll = parsed.queryParametersAll;
   final checksumValues = queryParametersAll['checksum'];
@@ -98,6 +103,21 @@ class StaticVotingConfigSourceMalformed implements Exception {
     strippedQuery.isEmpty ? normalizedBase : '$normalizedBase?$strippedQuery',
   );
   return (raw: trimmed, uri: uri, sha256Hex: sha256Hex);
+}
+
+bool _containsEncodedChecksumKey(String rawQuery) {
+  if (rawQuery.isEmpty) return false;
+  for (final segment in rawQuery.split('&')) {
+    if (segment.isEmpty) continue;
+    final separator = segment.indexOf('=');
+    final encodedKey = separator == -1
+        ? segment
+        : segment.substring(0, separator);
+    if (encodedKey == 'checksum') continue;
+    final decodedKey = Uri.decodeQueryComponent(encodedKey);
+    if (decodedKey == 'checksum') return true;
+  }
+  return false;
 }
 
 String _stripChecksumQuery(String rawQuery) {

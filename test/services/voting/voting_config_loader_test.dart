@@ -92,6 +92,7 @@ void main() {
       'https://example.com/static.json?checksum=sha256:$validHex&checksum=sha256:$validHex',
       'https://example.com/static.json?checksum=sha256:'
           'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz',
+      'https://example.com/static.json?%63hecksum=sha256:$validHex',
     ]) {
       expect(
         () => parseStaticVotingConfigSource(source),
