@@ -1697,8 +1697,23 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(SingleChildScrollView), findsWidgets);
 
-    await tester.scrollUntilVisible(find.text('Confirm & submit'), 300);
-    expect(find.text('Confirm & submit'), findsOneWidget);
+    final submitButton = find.text('Confirm & submit');
+    expect(submitButton, findsOneWidget);
+    expect(tester.getBottomLeft(submitButton).dy, lessThanOrEqualTo(520));
+
+    await tester.drag(
+      find
+          .descendant(
+            of: find.byType(VotingReviewScreen),
+            matching: find.byType(SingleChildScrollView),
+          )
+          .first,
+      const Offset(0, -400),
+    );
+    await tester.pumpAndSettle();
+
+    expect(submitButton, findsOneWidget);
+    expect(tester.getBottomLeft(submitButton).dy, lessThanOrEqualTo(520));
   });
 
   testWidgets('pending vote continue keeps the session account', (
