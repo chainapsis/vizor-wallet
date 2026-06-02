@@ -221,6 +221,9 @@ class _SidebarSyncStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final indicatorLeft =
+        AppSidebarLayoutScope.syncIndicatorLeftOffsetOf(context) ??
+        _indicatorLeft;
     final status = _SidebarSyncStatusData.from(sync);
     final textColor = switch (status.kind) {
       _SidebarSyncStatusKind.syncing => colors.sync.textSyncing,
@@ -240,7 +243,7 @@ class _SidebarSyncStatus extends StatelessWidget {
           clipBehavior: Clip.none,
           children: [
             Positioned(
-              left: _indicatorLeft,
+              left: indicatorLeft,
               top: (_height - _indicatorHeight) / 2,
               child: DecoratedBox(
                 decoration: BoxDecoration(

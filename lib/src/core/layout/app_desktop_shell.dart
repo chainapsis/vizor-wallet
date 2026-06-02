@@ -47,6 +47,27 @@ bool get _usesMobileShellPlatform {
   return Platform.isAndroid || Platform.isIOS;
 }
 
+class AppSidebarLayoutScope extends InheritedWidget {
+  const AppSidebarLayoutScope({
+    required this.syncIndicatorLeftOffset,
+    required super.child,
+    super.key,
+  });
+
+  final double syncIndicatorLeftOffset;
+
+  static double? syncIndicatorLeftOffsetOf(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<AppSidebarLayoutScope>()
+        ?.syncIndicatorLeftOffset;
+  }
+
+  @override
+  bool updateShouldNotify(AppSidebarLayoutScope oldWidget) {
+    return syncIndicatorLeftOffset != oldWidget.syncIndicatorLeftOffset;
+  }
+}
+
 class _AppDesktopShellLayout extends StatelessWidget {
   const _AppDesktopShellLayout({
     required this.sidebar,
@@ -332,9 +353,12 @@ class _AppMobileSidebarPanel extends StatelessWidget {
       ),
       child: SafeArea(
         left: false,
-        child: Padding(
-          padding: EdgeInsets.only(top: topContentInset),
-          child: child,
+        child: AppSidebarLayoutScope(
+          syncIndicatorLeftOffset: -AppSpacing.sm,
+          child: Padding(
+            padding: EdgeInsets.only(top: topContentInset),
+            child: child,
+          ),
         ),
       ),
     );
