@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,13 +10,15 @@ import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../providers/voting/voting_config_provider.dart';
+import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_submission_job_provider.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_resume_plan.dart';
 
-class VotingSubmissionConfirmationScreen extends ConsumerWidget {
+class VotingSubmissionConfirmationScreen extends ConsumerStatefulWidget {
   const VotingSubmissionConfirmationScreen({
     super.key,
     required this.roundId,
@@ -25,12 +29,24 @@ class VotingSubmissionConfirmationScreen extends ConsumerWidget {
   final String? accountUuid;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final jobKey = accountUuid == null || accountUuid!.isEmpty
+  ConsumerState<VotingSubmissionConfirmationScreen> createState() =>
+      _VotingSubmissionConfirmationScreenState();
+}
+
+class _VotingSubmissionConfirmationScreenState
+    extends ConsumerState<VotingSubmissionConfirmationScreen> {
+  bool _isReturningToPolls = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final jobKey = widget.accountUuid == null || widget.accountUuid!.isEmpty
         ? null
-        : VotingSessionKey(roundId: roundId, accountUuid: accountUuid!);
+        : VotingSessionKey(
+            roundId: widget.roundId,
+            accountUuid: widget.accountUuid!,
+          );
     final session = jobKey == null
-        ? ref.watch(votingSessionProvider(roundId))
+        ? ref.watch(votingSessionProvider(widget.roundId))
         : ref.watch(votingSubmissionJobSessionProvider(jobKey));
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -73,14 +89,8 @@ class VotingSubmissionConfirmationScreen extends ConsumerWidget {
                   votingPower: state.eligibleWeightZatoshi == null
                       ? 'Not available'
                       : formatVotingPower(state.eligibleWeightZatoshi!),
-                  onDone: () {
-                    if (jobKey != null) {
-                      ref
-                          .read(votingSubmissionJobsProvider.notifier)
-                          .dismiss(jobKey);
-                    }
-                    context.go('/voting');
-                  },
+                  doneEnabled: !_isReturningToPolls,
+                  onDone: () => unawaited(_returnToPolls(jobKey)),
                 );
               },
             ),
@@ -88,6 +98,33 @@ class VotingSubmissionConfirmationScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _returnToPolls(VotingSessionKey? jobKey) async {
+    if (_isReturningToPolls) return;
+    setState(() {
+      _isReturningToPolls = true;
+    });
+    try {
+      await refreshVotingPollList(
+        config: ref.read(votingConfigProvider.notifier),
+        readRounds: () => ref.read(votingRoundsProvider.notifier),
+        shouldReload: () => mounted,
+      );
+      if (!mounted) return;
+      if (jobKey != null) {
+        ref.read(votingSubmissionJobsProvider.notifier).dismiss(jobKey);
+      }
+      context.go('/voting');
+    } catch (error) {
+      if (!mounted) return;
+      debugPrint(
+        '[zcash] Voting: poll list refresh before return failed: $error',
+      );
+      setState(() {
+        _isReturningToPolls = false;
+      });
+    }
   }
 }
 
@@ -99,6 +136,7 @@ class _ConfirmationScaffold extends StatelessWidget {
     required this.message,
     required this.votingPower,
     this.onDone,
+    this.doneEnabled = true,
   });
 
   final bool confirmed;
@@ -107,6 +145,7 @@ class _ConfirmationScaffold extends StatelessWidget {
   final String message;
   final String votingPower;
   final VoidCallback? onDone;
+  final bool doneEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -194,7 +233,9 @@ class _ConfirmationScaffold extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: AppButton(
-                      onPressed: onDone ?? () => context.go('/voting'),
+                      onPressed: doneEnabled
+                          ? onDone ?? () => context.go('/voting')
+                          : null,
                       variant: AppButtonVariant.primary,
                       child: const Text('Done'),
                     ),

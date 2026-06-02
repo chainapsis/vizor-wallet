@@ -31,14 +31,15 @@ class VotingPollsScreen extends ConsumerStatefulWidget {
 
 class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   bool _showSettings = false;
+  bool _entryRefreshInFlight = true;
+  bool _pollListRefreshInFlight = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _reloadRoundsWithFreshConfig();
-      _preSyncLoadedRounds();
+      _reloadRoundsWithFreshConfig(entryRefresh: true);
     });
   }
 
@@ -57,47 +58,24 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
                 _VotingTopBar(onSettings: _openSettings),
                 const SizedBox(height: AppSpacing.s),
                 Expanded(
-                  child: rounds.when(
-                    skipLoadingOnRefresh: false,
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (error, _) => _VotingMessage(
-                      title: "Couldn't load polls",
-                      message: error.toString(),
-                      actionLabel: 'Try again',
-                      onAction: () => _reloadRoundsWithFreshConfig(),
-                    ),
-                    data: (items) {
-                      if (items.isEmpty) {
-                        return const _VotingMessage(
-                          title: 'No polls available',
-                          message:
-                              'There are no coinholder polls to display yet.',
-                        );
-                      }
-                      final sortedItems = sortVotingRoundsForPollList(items);
-                      _preSyncVisibleRoundTrees(sortedItems);
-                      return VotingPaneListView.separated(
-                        maxWidth: 560,
-                        padding: const EdgeInsets.fromLTRB(
-                          AppSpacing.md,
-                          AppSpacing.sm,
-                          AppSpacing.md,
-                          40,
+                  child: _entryRefreshInFlight && !rounds.hasValue
+                      ? const Center(child: CircularProgressIndicator())
+                      : (_pollListRefreshInFlight || _entryRefreshInFlight) &&
+                            rounds.hasValue
+                      ? _buildRoundList(rounds.requireValue)
+                      : rounds.when(
+                          skipLoadingOnRefresh: false,
+                          skipLoadingOnReload: false,
+                          loading: () =>
+                              const Center(child: CircularProgressIndicator()),
+                          error: (error, _) => _VotingMessage(
+                            title: "Couldn't load polls",
+                            message: error.toString(),
+                            actionLabel: 'Try again',
+                            onAction: () => _reloadRoundsWithFreshConfig(),
+                          ),
+                          data: _buildRoundList,
                         ),
-                        itemCount: sortedItems.length,
-                        separatorBuilder: (_, _) =>
-                            const SizedBox(height: AppSpacing.base),
-                        itemBuilder: (context, index) {
-                          final round = sortedItems[index];
-                          return _PollCard(
-                            round: round,
-                            onAction: () => _openRoundAction(round),
-                          );
-                        },
-                      );
-                    },
-                  ),
                 ),
               ],
             ),
@@ -112,6 +90,32 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildRoundList(List<VotingRoundView> items) {
+    if (items.isEmpty) {
+      return const _VotingMessage(
+        title: 'No polls available',
+        message: 'There are no coinholder polls to display yet.',
+      );
+    }
+    final sortedItems = sortVotingRoundsForPollList(items);
+    _preSyncVisibleRoundTrees(sortedItems);
+    return VotingPaneListView.separated(
+      maxWidth: 560,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.md,
+        40,
+      ),
+      itemCount: sortedItems.length,
+      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.base),
+      itemBuilder: (context, index) {
+        final round = sortedItems[index];
+        return _PollCard(round: round, onAction: () => _openRoundAction(round));
+      },
     );
   }
 
@@ -156,19 +160,37 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
       context.push(route).whenComplete(() {
         if (!mounted) return;
         _reloadRoundsWithFreshConfig();
-        _preSyncLoadedRounds();
       }),
     );
   }
 
-  void _reloadRoundsWithFreshConfig() {
-    unawaited(_refreshConfigAndReloadRounds());
+  void _reloadRoundsWithFreshConfig({bool entryRefresh = false}) {
+    if (!entryRefresh && ref.read(votingRoundsProvider).hasValue) {
+      setState(() {
+        _pollListRefreshInFlight = true;
+      });
+    }
+    unawaited(
+      _refreshConfigAndReloadRounds().whenComplete(() {
+        if (!mounted) return;
+        setState(() {
+          if (entryRefresh) {
+            _entryRefreshInFlight = false;
+          }
+          _pollListRefreshInFlight = false;
+        });
+      }),
+    );
   }
 
   Future<void> _refreshConfigAndReloadRounds() async {
-    await ref.read(votingConfigProvider.notifier).refresh();
+    await refreshVotingPollList(
+      config: ref.read(votingConfigProvider.notifier),
+      readRounds: () => ref.read(votingRoundsProvider.notifier),
+      shouldReload: () => mounted,
+    );
     if (!mounted) return;
-    await ref.read(votingRoundsProvider.notifier).reload();
+    _preSyncLoadedRounds();
   }
 
   void _openSettings() {

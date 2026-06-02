@@ -12,6 +12,20 @@ import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
 
+/// Refreshes the dynamic voting config and then reloads the poll list.
+///
+/// Call this before returning to the poll menu after completing voting work so
+/// row statuses are current before `/voting` becomes visible.
+Future<void> refreshVotingPollList({
+  required VotingConfigNotifier config,
+  required VotingRoundsNotifier Function() readRounds,
+  bool Function()? shouldReload,
+}) async {
+  await config.refresh();
+  if (shouldReload != null && !shouldReload()) return;
+  await readRounds().reload();
+}
+
 /// Provides poll-list rows with explicit, route-driven reloads.
 class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
   static const _roundsRetryDelays = <Duration>[

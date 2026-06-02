@@ -1014,6 +1014,67 @@ void main() {
     },
   );
 
+  test(
+    'rounds reload keeps previous rows visible while refresh is pending',
+    () async {
+      final responses = <String, Object>{
+        'https://voting.example/static-voting-config.json': staticConfigJson(),
+        'https://voting.example/dynamic-voting-config.json':
+            dynamicConfigJson(),
+        '/shielded-vote/v1/rounds': {
+          'rounds': [
+            {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+          ],
+        },
+      };
+      final http = _GatedVotingHttpClient(responses: responses);
+      final container = _sessionContainer(http: http);
+      addTearDown(container.dispose);
+
+      final initial = await container.read(votingRoundsProvider.future);
+      expect(initial.single.title, 'Poll');
+
+      final roundsGate = http.gateNextGet('/shielded-vote/v1/rounds');
+      final reload = container.read(votingRoundsProvider.notifier).reload();
+      await http.waitForGetCount('/shielded-vote/v1/rounds', 2);
+      final refreshing = container.read(votingRoundsProvider);
+
+      expect(refreshing.isLoading, isTrue);
+      expect(refreshing.hasValue, isTrue);
+      expect(refreshing.requireValue.single.title, 'Poll');
+
+      roundsGate.complete();
+      await reload;
+    },
+  );
+
+  test('poll refresh skips rounds reload when guard cancels', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://voting.example/static-voting-config.json': staticConfigJson(),
+        'https://voting.example/dynamic-voting-config.json':
+            dynamicConfigJson(),
+      },
+    );
+    final container = _container(http: http);
+    addTearDown(container.dispose);
+    await container.read(votingConfigProvider.future);
+
+    final roundsNotifier = _CountingVotingRoundsNotifier();
+    var readRoundsCalled = false;
+    await refreshVotingPollList(
+      config: container.read(votingConfigProvider.notifier),
+      shouldReload: () => false,
+      readRounds: () {
+        readRoundsCalled = true;
+        return roundsNotifier;
+      },
+    );
+
+    expect(readRoundsCalled, isFalse);
+    expect(roundsNotifier.reloadCount, 0);
+  });
+
   test('rounds reload fails closed when refresh fails', () async {
     final responses = <String, Object>{
       'https://voting.example/static-voting-config.json': staticConfigJson(),
@@ -4426,6 +4487,18 @@ final class _ProviderDisposalObserver extends ProviderObserver {
   }
 }
 
+class _CountingVotingRoundsNotifier extends VotingRoundsNotifier {
+  int reloadCount = 0;
+
+  @override
+  Future<List<VotingRoundView>> build() async => const [];
+
+  @override
+  Future<void> reload() async {
+    reloadCount++;
+  }
+}
+
 ProviderContainer _sessionContainer({
   FakeVotingHttpClient? http,
   FakeVotingRustApi? rust,
@@ -4777,6 +4850,58 @@ class _GatedVotingConfigLoader extends VotingConfigLoader {
   }) {
     return _loads.load(_sourceUrl);
   }
+}
+
+class _GatedVotingHttpClient extends FakeVotingHttpClient {
+  _GatedVotingHttpClient({super.responses});
+
+  final Map<String, List<Completer<void>>> _getGates = {};
+  final Map<String, int> _getCounts = {};
+  final Map<String, List<_GetCountWaiter>> _getCountWaiters = {};
+
+  Completer<void> gateNextGet(String path) {
+    final gate = Completer<void>();
+    (_getGates[path] ??= []).add(gate);
+    return gate;
+  }
+
+  Future<void> waitForGetCount(String path, int count) {
+    if ((_getCounts[path] ?? 0) >= count) {
+      return Future<void>.value();
+    }
+    final waiter = _GetCountWaiter(count);
+    (_getCountWaiters[path] ??= []).add(waiter);
+    return waiter.completer.future;
+  }
+
+  @override
+  Future<VotingHttpResponse> get(Uri uri, {Duration? timeout}) async {
+    _recordGet(uri.path);
+    final gates = _getGates[uri.path];
+    if (gates != null && gates.isNotEmpty) {
+      await gates.removeAt(0).future;
+    }
+    return super.get(uri, timeout: timeout);
+  }
+
+  void _recordGet(String path) {
+    final count = (_getCounts[path] ?? 0) + 1;
+    _getCounts[path] = count;
+    final waiters = _getCountWaiters[path];
+    if (waiters == null || waiters.isEmpty) return;
+    waiters.removeWhere((waiter) {
+      if (count < waiter.count) return false;
+      waiter.completer.complete();
+      return true;
+    });
+  }
+}
+
+class _GetCountWaiter {
+  _GetCountWaiter(this.count);
+
+  final int count;
+  final Completer<void> completer = Completer<void>();
 }
 
 rust_config_api.VotingConfigResolution _configForVoteServer(String url) {

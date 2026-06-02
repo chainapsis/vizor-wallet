@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_proposal_detail_screen.dart';
+import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_review_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_results_screen.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_status_screen.dart';
@@ -22,7 +23,9 @@ import 'package:zcash_wallet/src/features/voting/voting_resume_plan.dart';
 import 'package:zcash_wallet/src/features/voting/voting_routes.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_config_source_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_rounds_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_session_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_service_providers.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
@@ -276,6 +279,98 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'submitted route refreshes poll rows before returning to vote menu',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1512, 982));
+      addTearDown(() async {
+        await tester.binding.setSurfaceSize(null);
+      });
+
+      late _CountingVotingConfigNotifier configNotifier;
+      late _BlockingVotingRoundsNotifier roundsNotifier;
+      final reloadGate = Completer<void>();
+      final completedRoundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List(0),
+        allDecided: true,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+      );
+      final container = _statusContainer(
+        accountOverride: _MnemonicAccountNotifier.new,
+        overrides: [
+          votingConfigProvider.overrideWith(() {
+            configNotifier = _CountingVotingConfigNotifier();
+            return configNotifier;
+          }),
+          votingSessionProvider(_roundId).overrideWith(
+            () => _StaticVotingSessionNotifier(
+              VotingSessionState(
+                roundId: _roundId,
+                accountUuid: 'account-1',
+                phase: VotingSessionPhase.done,
+                roundPlan: completedRoundPlan,
+              ),
+            ),
+          ),
+          votingRoundsProvider.overrideWith(() {
+            roundsNotifier = _BlockingVotingRoundsNotifier(
+              reloadGate.future,
+              initialRows: const [
+                VotingRoundView(
+                  roundId: _roundId,
+                  title: 'Stale poll',
+                  status: 'active',
+                ),
+              ],
+              refreshedRows: const [
+                VotingRoundView(
+                  roundId: _roundId,
+                  title: 'Refreshed poll',
+                  status: 'closed',
+                ),
+              ],
+            );
+            return roundsNotifier;
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _submissionHarness(votingRoute: const VotingPollsScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _pumpUntilFound(tester, find.text('Submission confirmed!'));
+
+      await tester.tap(find.text('Done'));
+      await tester.pump();
+
+      expect(configNotifier.refreshCount, 1);
+      expect(roundsNotifier.reloadCount, 1);
+      expect(find.text('Refreshed poll'), findsNothing);
+
+      await tester.tap(find.text('Done'));
+      await tester.pump();
+
+      expect(configNotifier.refreshCount, 1);
+      expect(roundsNotifier.reloadCount, 1);
+
+      reloadGate.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Refreshed poll'), findsOneWidget);
+      expect(find.text('View results'), findsOneWidget);
+      expect(find.text('Stale poll'), findsNothing);
+    },
+  );
 
   testWidgets('status screen does not complete all-decided empty account', (
     tester,
@@ -2129,7 +2224,7 @@ Widget _proposalHarness({String? initialLocation}) {
   );
 }
 
-Widget _submissionHarness() {
+Widget _submissionHarness({Widget votingRoute = const Text('voting route')}) {
   final router = GoRouter(
     initialLocation: '/voting/poll/$_roundId/submitted',
     routes: [
@@ -2139,7 +2234,7 @@ Widget _submissionHarness() {
           roundId: state.pathParameters['roundId']!,
         ),
       ),
-      GoRoute(path: '/voting', builder: (_, _) => const Text('voting route')),
+      GoRoute(path: '/voting', builder: (_, _) => votingRoute),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
@@ -2619,6 +2714,68 @@ class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
     int? choice,
   }) async {
     ballotIntents.add('$proposalId:$numOptions:$skipped:${choice ?? 'null'}');
+  }
+}
+
+class _StaticVotingSessionNotifier extends VotingSessionNotifier {
+  _StaticVotingSessionNotifier(this._state) : super(_state.roundId);
+
+  final VotingSessionState _state;
+
+  @override
+  Future<VotingSessionState> build() async => _state;
+}
+
+class _CountingVotingConfigNotifier extends VotingConfigNotifier {
+  int refreshCount = 0;
+
+  @override
+  Future<rust_config.ResolvedVotingConfig> build() async {
+    return const rust_config.ResolvedVotingConfig(
+      sourceFingerprint: 'source-fingerprint',
+      trustedKeyFingerprint: 'trusted-key-fingerprint',
+      dynamicConfigFingerprint: 'dynamic-config-fingerprint',
+      voteServers: [],
+      pirEndpoints: [],
+      supportedVersions: rust_config.SupportedVersions(
+        pir: [],
+        voteProtocol: 'vote-protocol',
+        tally: 'tally',
+        voteServer: 'vote-server',
+      ),
+      authenticatedRounds: [],
+      skippedRoundIds: [],
+      conditions: [],
+    );
+  }
+
+  @override
+  Future<void> refresh() async {
+    refreshCount++;
+  }
+}
+
+class _BlockingVotingRoundsNotifier extends VotingRoundsNotifier {
+  _BlockingVotingRoundsNotifier(
+    this.reloadGate, {
+    this.initialRows = const [],
+    this.refreshedRows = const [],
+  });
+
+  final Future<void> reloadGate;
+  final List<VotingRoundView> initialRows;
+  final List<VotingRoundView> refreshedRows;
+  int reloadCount = 0;
+
+  @override
+  Future<List<VotingRoundView>> build() async => initialRows;
+
+  @override
+  Future<void> reload() async {
+    reloadCount++;
+    state = const AsyncLoading<List<VotingRoundView>>();
+    await reloadGate;
+    state = AsyncData(refreshedRows);
   }
 }
 
