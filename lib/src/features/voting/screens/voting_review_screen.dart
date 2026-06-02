@@ -181,8 +181,6 @@ class _ReviewRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final valueTone = votingChoiceTone(value);
-    final stackValue = !skipped && valueTone == VotingChoiceTone.multi;
     final titleColor = skipped
         ? colors.text.secondary.withValues(alpha: 0.64)
         : colors.text.secondary;
@@ -197,7 +195,7 @@ class _ReviewRow extends StatelessWidget {
       value,
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
-      textAlign: stackValue ? TextAlign.left : TextAlign.right,
+      textAlign: TextAlign.left,
       style: AppTypography.bodyMediumStrong.copyWith(color: valueColor),
     );
     return Container(
@@ -210,23 +208,14 @@ class _ReviewRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.medium),
         border: Border.all(color: colors.border.subtle),
       ),
-      child: stackValue
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                titleText,
-                const SizedBox(height: AppSpacing.xxs),
-                valueText,
-              ],
-            )
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: titleText),
-                const SizedBox(width: AppSpacing.sm),
-                Flexible(child: valueText),
-              ],
-            ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          titleText,
+          const SizedBox(height: AppSpacing.xxs),
+          valueText,
+        ],
+      ),
     );
   }
 }
