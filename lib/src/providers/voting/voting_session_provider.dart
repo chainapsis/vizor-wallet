@@ -252,7 +252,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final pirEndpoint = await _resolvePirEndpoint(context);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     if (pirEndpoint == null) return;
-    final storedHotkeySecret = await _ensureHotkey(context);
+    final signatures = context.isHardwareAccount
+        ? await _loadKeystoneSignatures(context)
+        : const <int, rust_wire.KeystoneSignatureRecord>{};
+    if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
+    final List<int> storedHotkeySecret;
+    try {
+      storedHotkeySecret = await _ensureHotkey(
+        context,
+        alreadyBound: signatures.isNotEmpty,
+      );
+    } on VotingHotkeyUnavailable catch (e) {
+      debugPrint(
+        '[zcash] Voting: delegation PIR precompute skipped '
+        'round=${context.round.roundId} reason=missing-hotkey error=$e',
+      );
+      return;
+    }
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
 
     final rust = ref.read(votingRustApiProvider);
