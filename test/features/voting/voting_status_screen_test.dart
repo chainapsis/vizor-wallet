@@ -1108,6 +1108,87 @@ void main() {
     expect(find.textContaining("Couldn't load results"), findsNothing);
   });
 
+  testWidgets('results screen refreshes pending tally responses', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final round = _roundStatusJson()..['status'] = 'tallying';
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round}
+        ..['/shielded-vote/v1/tally-results/$_roundId'] =
+            SequentialVotingHttpResponses([
+              {
+                'vote_round_id': _roundId,
+                'status': 'pending',
+                'results': const [],
+              },
+              {
+                'vote_round_id': _roundId,
+                'results': [
+                  {'proposal_id': 1, 'vote_decision': 0, 'total_value': 8},
+                ],
+              },
+            ]),
+    );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _resultsHarness()),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Results pending...'), findsOneWidget);
+    expect(_tallyRequestCount(http), 1);
+
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Results pending...'), findsNothing);
+    expect(find.text('First proposal'), findsOneWidget);
+    expect(find.text('1.00 ZEC'), findsOneWidget);
+    expect(_tallyRequestCount(http), greaterThanOrEqualTo(2));
+  });
+
+  testWidgets('results screen treats not-ready tally errors as pending', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final round = _roundStatusJson()..['status'] = '2';
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round}
+        ..['/shielded-vote/v1/tally-results/$_roundId'] = jsonResponse({
+          'error': 'tally not ready',
+        }, statusCode: 404),
+    );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: _resultsHarness()),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Results pending...'), findsOneWidget);
+    expect(find.textContaining("Couldn't load results"), findsNothing);
+  });
+
   testWidgets('reviewing partial votes warns and marks skipped rows', (
     tester,
   ) async {
@@ -2059,6 +2140,12 @@ Map<String, Object> _votingHttpResponses() => {
   'https://voting.example/dynamic-voting-config.json': _dynamicConfigJson(),
   '/shielded-vote/v1/round/$_roundId': {'round': _roundStatusJson()},
 };
+
+int _tallyRequestCount(FakeVotingHttpClient http) {
+  return http.requests
+      .where((request) => request.uri.path.endsWith('/tally-results/$_roundId'))
+      .length;
+}
 
 const _roundId =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,26 +16,53 @@ import '../../../providers/voting/voting_session_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
+import '../voting_poll_ordering.dart';
 import '../widgets/voting_pane_scroll_area.dart';
 
 const int _ballotDivisorZatoshi = 12500000;
+const _pendingTallyRefreshInterval = Duration(seconds: 10);
 
-final _roundTallyProvider = FutureProvider.family((ref, String roundId) async {
+final _roundTallyProvider = FutureProvider.autoDispose.family((
+  ref,
+  String roundId,
+) async {
   final config = await ref.watch(votingConfigProvider.future);
   return ref
       .read(votingApiClientProvider(config.apiBaseUrl))
       .getRoundTally(roundId);
 });
 
-class VotingResultsScreen extends ConsumerWidget {
+class VotingResultsScreen extends ConsumerStatefulWidget {
   const VotingResultsScreen({super.key, required this.roundId});
 
   final String roundId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(votingSessionProvider(roundId));
-    final tally = ref.watch(_roundTallyProvider(roundId));
+  ConsumerState<VotingResultsScreen> createState() =>
+      _VotingResultsScreenState();
+}
+
+class _VotingResultsScreenState extends ConsumerState<VotingResultsScreen> {
+  Timer? _pendingTallyRefreshTimer;
+
+  @override
+  void didUpdateWidget(covariant VotingResultsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.roundId != widget.roundId) {
+      _clearPendingTallyRefresh();
+    }
+  }
+
+  @override
+  void dispose() {
+    _clearPendingTallyRefresh();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = ref.watch(votingSessionProvider(widget.roundId));
+    final tally = ref.watch(_roundTallyProvider(widget.roundId));
 
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
@@ -59,10 +88,18 @@ class VotingResultsScreen extends ConsumerWidget {
               child: tally.when(
                 skipLoadingOnRefresh: false,
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, _) => _Message("Couldn't load results: $error"),
+                error: (error, _) {
+                  final round = session.value?.round;
+                  if (round != null && _roundIsTallying(round)) {
+                    return _pendingResults();
+                  }
+                  _clearPendingTallyRefresh();
+                  return _Message("Couldn't load results: $error");
+                },
                 data: (result) {
                   final round = session.value?.round;
                   if (round == null) {
+                    _clearPendingTallyRefresh();
                     if (session.hasError) {
                       return _Message(
                         "Couldn't load poll details: ${session.error}",
@@ -72,8 +109,9 @@ class VotingResultsScreen extends ConsumerWidget {
                   }
                   final proposals = proposalsFromRound(round);
                   if (_isTallying(result.rawJson)) {
-                    return const _Message('Results pending...');
+                    return _pendingResults();
                   }
+                  _clearPendingTallyRefresh();
                   return VotingPaneScrollView(
                     maxWidth: 720,
                     scrollPadding: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -125,6 +163,25 @@ class VotingResultsScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Widget _pendingResults() {
+    _schedulePendingTallyRefresh();
+    return const _Message('Results pending...');
+  }
+
+  void _schedulePendingTallyRefresh() {
+    if (_pendingTallyRefreshTimer != null) return;
+    _pendingTallyRefreshTimer = Timer(_pendingTallyRefreshInterval, () {
+      _pendingTallyRefreshTimer = null;
+      if (!mounted) return;
+      ref.invalidate(_roundTallyProvider(widget.roundId));
+    });
+  }
+
+  void _clearPendingTallyRefresh() {
+    _pendingTallyRefreshTimer?.cancel();
+    _pendingTallyRefreshTimer = null;
   }
 }
 
@@ -466,8 +523,14 @@ class _Message extends StatelessWidget {
 bool _isTallying(Map<String, dynamic> json) {
   final status = (json['status'] ?? json['phase'] ?? '')
       .toString()
+      .trim()
       .toLowerCase();
-  return status == 'tallying' || status == 'pending';
+  return status == '2' || status == 'tallying' || status == 'pending';
+}
+
+bool _roundIsTallying(VotingRoundDetails round) {
+  return votingPollListStatus(round.status) == VotingPollListStatus.tallying ||
+      _isTallying(round.rawJson);
 }
 
 String _roundTitle(VotingRoundDetails round) {
