@@ -51,9 +51,19 @@ class StaticVotingConfigSourceMalformed implements Exception {
   String? sha256Hex;
   if (checksum != null) {
     const prefix = 'sha256:';
-    if (checksum.startsWith(prefix)) {
-      sha256Hex = checksum.substring(prefix.length);
+    if (!checksum.startsWith(prefix)) {
+      throw StaticVotingConfigSourceMalformed(
+        'checksum must use sha256: prefix: $raw',
+      );
     }
+    final checksumHex = checksum.substring(prefix.length);
+    final isLowerHex = RegExp(r'^[0-9a-f]+$').hasMatch(checksumHex);
+    if (checksumHex.length != 64 || !isLowerHex) {
+      throw StaticVotingConfigSourceMalformed(
+        'checksum must be 64 lowercase hex chars: $raw',
+      );
+    }
+    sha256Hex = checksumHex;
   }
 
   final strippedQuery = Map<String, String>.from(parsed.queryParameters)
