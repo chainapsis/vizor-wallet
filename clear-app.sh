@@ -1,7 +1,7 @@
 #!/bin/bash
-# Clear the Zcash wallet app from iOS simulator (including keychain data)
+# Clear the Vizor app from iOS simulator (including keychain data)
 
-BUNDLE_ID="com.zcash.zcashWallet"
+BUNDLE_ID="com.keplr.vizor"
 
 DEVICE=$(xcrun simctl list devices booted -j | python3 -c "import sys,json; ds=[d for r in json.load(sys.stdin)['devices'].values() for d in r if d['state']=='Booted']; print(ds[0]['udid'] if ds else '')")
 
