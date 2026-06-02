@@ -12,7 +12,6 @@ import '../../../providers/voting/voting_config_source_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_service_providers.dart';
 import '../../../providers/voting/voting_submission_guard_provider.dart';
-import '../../../rust/api/voting_config.dart';
 import '../../../services/voting/voting_config_loader.dart';
 import '../../../services/voting/voting_models.dart';
 
@@ -148,11 +147,11 @@ class _VotingConfigSettingsPanelState
     });
 
     try {
-      final resolution = await _validateSource(url);
+      await _validateSource(url);
       await ref
           .read(votingConfigSourceProvider.notifier)
           .saveSource(id: _editingSourceId, name: name, sourceUrl: url);
-      await _refreshAndClose(resolution: resolution);
+      await _refreshAndClose();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -195,11 +194,11 @@ class _VotingConfigSettingsPanelState
     });
 
     try {
-      final resolution = await _validateSource(saved.sourceUrl);
+      await _validateSource(saved.sourceUrl);
       await ref
           .read(votingConfigSourceProvider.notifier)
           .setCustom(saved.sourceUrl);
-      await _refreshAndClose(resolution: resolution);
+      await _refreshAndClose();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -264,21 +263,17 @@ class _VotingConfigSettingsPanelState
     return true;
   }
 
-  Future<VotingConfigResolution> _validateSource(String input) async {
+  Future<void> _validateSource(String input) async {
     final parsed = parseStaticVotingConfigSource(input);
-    return VotingConfigLoader(
+    await VotingConfigLoader(
       httpClient: ref.read(votingHttpClientProvider),
       sourceUrl: parsed.raw,
     ).load();
   }
 
-  Future<void> _refreshAndClose({VotingConfigResolution? resolution}) async {
-    if (resolution == null) {
-      await ref.read(votingConfigProvider.notifier).refresh();
-    } else {
-      ref.read(votingConfigProvider.notifier).setLoadedConfig(resolution);
-    }
-    await ref.read(votingRoundsProvider.notifier).refresh();
+  Future<void> _refreshAndClose() async {
+    ref.invalidate(votingConfigProvider);
+    await ref.read(votingRoundsProvider.notifier).reload();
     if (!mounted) return;
     setState(() {
       _isSubmitting = false;

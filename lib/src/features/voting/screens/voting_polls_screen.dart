@@ -13,6 +13,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_tooltip.dart';
+import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../providers/voting/voting_tree_sync_provider.dart';
@@ -30,24 +31,15 @@ class VotingPollsScreen extends ConsumerStatefulWidget {
 
 class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   bool _showSettings = false;
-  VotingRoundsNotifier? _roundsNotifier;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final notifier = ref.read(votingRoundsProvider.notifier);
-      _roundsNotifier = notifier;
-      notifier.startPolling();
+      _reloadRoundsWithFreshConfig();
       _preSyncLoadedRounds();
     });
-  }
-
-  @override
-  void dispose() {
-    _roundsNotifier?.stopPolling();
-    super.dispose();
   }
 
   @override
@@ -73,8 +65,7 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
                       title: "Couldn't load polls",
                       message: error.toString(),
                       actionLabel: 'Try again',
-                      onAction: () =>
-                          ref.read(votingRoundsProvider.notifier).refresh(),
+                      onAction: () => _reloadRoundsWithFreshConfig(),
                     ),
                     data: (items) {
                       if (items.isEmpty) {
@@ -161,20 +152,18 @@ class _VotingPollsScreenState extends ConsumerState<VotingPollsScreen> {
   }
 
   void _pushRoundRoute(String route) {
-    final VotingRoundsNotifier notifier =
-        _roundsNotifier ?? ref.read(votingRoundsProvider.notifier);
-    _roundsNotifier = notifier;
-    notifier.stopPolling();
     unawaited(
       context.push(route).whenComplete(() {
         if (!mounted) return;
-        final VotingRoundsNotifier notifier =
-            _roundsNotifier ?? ref.read(votingRoundsProvider.notifier);
-        _roundsNotifier = notifier;
-        notifier.startPolling();
+        _reloadRoundsWithFreshConfig();
         _preSyncLoadedRounds();
       }),
     );
+  }
+
+  void _reloadRoundsWithFreshConfig() {
+    ref.invalidate(votingConfigProvider);
+    unawaited(ref.read(votingRoundsProvider.notifier).reload());
   }
 
   void _openSettings() {

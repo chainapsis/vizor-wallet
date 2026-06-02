@@ -13,7 +13,7 @@ import 'package:zcash_wallet/src/providers/voting/voting_rounds_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 
 void main() {
-  testWidgets('poll list pauses polling while a pushed poll route is open', (
+  testWidgets('poll list reloads when screen opens and route returns', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -63,27 +63,24 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(roundsNotifier.startCount, 1);
-    expect(roundsNotifier.stopCount, 0);
+    expect(roundsNotifier.reloadCount, 1);
 
     await tester.tap(find.text('View results'));
     await tester.pumpAndSettle();
 
     expect(find.text('results route'), findsOneWidget);
-    expect(roundsNotifier.stopCount, 1);
+    expect(roundsNotifier.reloadCount, 1);
 
     router.pop();
     await tester.pumpAndSettle();
 
     expect(find.text('View results'), findsOneWidget);
-    expect(roundsNotifier.startCount, 2);
+    expect(roundsNotifier.reloadCount, 2);
   });
 }
 
 class _TrackingVotingRoundsNotifier extends VotingRoundsNotifier {
-  int startCount = 0;
-  int stopCount = 0;
-  int refreshCount = 0;
+  int reloadCount = 0;
 
   @override
   Future<List<VotingRoundView>> build() async {
@@ -98,20 +95,8 @@ class _TrackingVotingRoundsNotifier extends VotingRoundsNotifier {
   }
 
   @override
-  void startPolling({
-    Duration interval = VotingRoundsNotifier.defaultPollInterval,
-  }) {
-    startCount++;
-  }
-
-  @override
-  void stopPolling() {
-    stopCount++;
-  }
-
-  @override
-  Future<void> refresh() async {
-    refreshCount++;
+  Future<void> reload() async {
+    reloadCount++;
   }
 }
 

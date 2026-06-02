@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,54 +14,45 @@ import 'voting_config_provider.dart';
 import 'voting_service_providers.dart';
 import 'voting_state.dart';
 
-/// Provides poll-list rows and route-controlled polling.
-///
-/// Polling is opt-in through [startPolling] so screens can pause network traffic
-/// when the voting tab is not mounted or visible.
+/// Provides poll-list rows with explicit, route-driven reloads.
 class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
-  static const defaultPollInterval = Duration(seconds: 10);
+  static const _roundsRetryDelays = <Duration>[
+    Duration(milliseconds: 300),
+    Duration(seconds: 1),
+  ];
 
-  Timer? _pollTimer;
-  bool _refreshInFlight = false;
+  Future<void>? _reloadFuture;
+  bool _reloadQueued = false;
 
   @override
   Future<List<VotingRoundView>> build() async {
-    ref.onDispose(stopPolling);
     ref.watch(votingActiveAccountUuidProvider);
     return _load();
   }
 
-  void startPolling({Duration interval = defaultPollInterval}) {
-    if (_pollTimer != null) return;
-    _pollTimer = Timer.periodic(interval, (_) => refresh());
-    unawaited(refresh());
-  }
-
-  void stopPolling() {
-    _pollTimer?.cancel();
-    _pollTimer = null;
-  }
-
-  Future<void> refresh() async {
-    if (_refreshInFlight || state.isLoading) return;
-    _refreshInFlight = true;
-    final previous = state.value;
-    if (previous == null) {
-      state = const AsyncLoading<List<VotingRoundView>>();
+  Future<void> reload() async {
+    final inFlight = _reloadFuture;
+    if (inFlight != null) {
+      _reloadQueued = true;
+      return inFlight;
     }
+
+    final completer = Completer<void>();
+    _reloadFuture = completer.future;
     try {
-      state = AsyncData(await _load());
-    } catch (error, stackTrace) {
-      if (previous == null) {
-        state = AsyncError(error, stackTrace);
-      } else {
-        debugPrint(
-          '[zcash] Voting: keeping previous poll list after refresh failed: '
-          '$error',
+      do {
+        _reloadQueued = false;
+        state = const AsyncLoading<List<VotingRoundView>>();
+        state = await AsyncValue.guard(
+          () => _withRoundsRetry(_load),
         );
-      }
+      } while (_reloadQueued);
+      completer.complete();
+    } catch (error, stackTrace) {
+      completer.completeError(error, stackTrace);
+      rethrow;
     } finally {
-      _refreshInFlight = false;
+      _reloadFuture = null;
     }
   }
 
@@ -201,6 +193,35 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       );
       return const [];
     }
+  }
+
+  Future<T> _withRoundsRetry<T>(Future<T> Function() operation) async {
+    Object? lastError;
+    for (var attempt = 0; attempt <= _roundsRetryDelays.length; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (attempt == _roundsRetryDelays.length ||
+            !_isRoundsRetryable(error)) {
+          rethrow;
+        }
+        await Future<void>.delayed(_roundsRetryDelays[attempt]);
+      }
+    }
+    throw StateError('round reload retry exited unexpectedly: $lastError');
+  }
+
+  static bool _isRoundsRetryable(Object error) {
+    if (error is TimeoutException ||
+        error is SocketException ||
+        error is HttpException) {
+      return true;
+    }
+    if (error is VotingHttpException) {
+      return error.statusCode == 502 || error.statusCode == 503;
+    }
+    return false;
   }
 }
 

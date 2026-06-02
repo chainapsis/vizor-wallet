@@ -80,6 +80,53 @@ void main() {
     );
   });
 
+  test('config provider retries transient static fetch failures', () async {
+    final http = FakeVotingHttpClient(
+      responses: {
+        'https://voting.example/static-voting-config.json':
+            SequentialVotingHttpResponses([timeoutResponse(), staticConfigJson()]),
+        'https://voting.example/dynamic-voting-config.json':
+            dynamicConfigJson(),
+      },
+    );
+    final container = _container(http: http);
+    addTearDown(container.dispose);
+
+    final config = await container.read(votingConfigProvider.future);
+    expect(config.apiBaseUrl, Uri.parse('https://voting.example'));
+    expect(
+      http.requests
+          .where(
+            (request) =>
+                request.uri.toString() ==
+                'https://voting.example/static-voting-config.json',
+          )
+          .length,
+      2,
+    );
+  });
+
+  test('config provider fails closed when refresh fails', () async {
+    final responses = <String, Object>{
+      'https://voting.example/static-voting-config.json': staticConfigJson(),
+      'https://voting.example/dynamic-voting-config.json': dynamicConfigJson(),
+    };
+    final http = FakeVotingHttpClient(responses: responses);
+    final container = _container(http: http);
+    addTearDown(container.dispose);
+
+    await container.read(votingConfigProvider.future);
+    responses['https://voting.example/static-voting-config.json'] = StateError(
+      'network down',
+    );
+
+    await container.read(votingConfigProvider.notifier).refresh();
+
+    final state = container.read(votingConfigProvider);
+    expect(state.hasError, isTrue);
+    expect(state.error, isA<StateError>());
+  });
+
   test('config provider ignores stale refresh after source changes', () async {
     const firstSource = 'https://voting-a.example/static-voting-config.json';
     const secondSource = 'https://voting-b.example/static-voting-config.json';
@@ -874,7 +921,7 @@ void main() {
     },
   );
 
-  test('rounds refresh keeps previous data when polling fails', () async {
+  test('rounds reload fails closed when refresh fails', () async {
     final responses = <String, Object>{
       'https://voting.example/static-voting-config.json': staticConfigJson(),
       'https://voting.example/dynamic-voting-config.json': dynamicConfigJson(),
@@ -891,13 +938,13 @@ void main() {
     final container = _sessionContainer(http: http);
     addTearDown(container.dispose);
 
-    final first = await container.read(votingRoundsProvider.future);
+    await container.read(votingRoundsProvider.future);
     responses['/shielded-vote/v1/rounds'] = StateError('network down');
-    await container.read(votingRoundsProvider.notifier).refresh();
+    await container.read(votingRoundsProvider.notifier).reload();
 
-    final refreshed = container.read(votingRoundsProvider);
-    expect(refreshed.hasValue, isTrue);
-    expect(refreshed.value, first);
+    final reloaded = container.read(votingRoundsProvider);
+    expect(reloaded.hasError, isTrue);
+    expect(reloaded.error, isA<StateError>());
   });
 
   test('round details normalize base64 vote_round_id to hex', () {
