@@ -53,6 +53,11 @@ class StaticVotingConfigSourceMalformed implements Exception {
   if (parsed == null || parsed.scheme != 'https' || parsed.host.isEmpty) {
     throw StaticVotingConfigSourceMalformed('not an HTTPS URL: $raw');
   }
+  if (parsed.userInfo.isNotEmpty) {
+    throw const StaticVotingConfigSourceMalformed(
+      'URL must not include user info',
+    );
+  }
 
   final checksum = parsed.queryParameters['checksum'];
   String? sha256Hex;
