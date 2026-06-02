@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../swap/models/swap_address_formatting.dart';
 import '../../../providers/voting/voting_config_provider.dart';
 import '../../../providers/voting/voting_config_source_provider.dart';
 import '../../../providers/voting/voting_rounds_provider.dart';
@@ -454,18 +456,33 @@ class _CurrentSourceText extends StatelessWidget {
     final label = source.isDefault
         ? 'Default'
         : _compactSourceUrl(source.sourceUrl);
-    return Text.rich(
-      TextSpan(
-        text: 'Current: ',
-        children: [
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text.rich(
           TextSpan(
-            text: label,
-            style: TextStyle(color: colors.text.brandCrimson),
+            text: 'Current: ',
+            children: [
+              TextSpan(
+                text: label,
+                style: TextStyle(color: colors.text.brandCrimson),
+              ),
+            ],
+          ),
+          textAlign: TextAlign.center,
+          style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
+        ),
+        if (source.isDefault) ...[
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            source.sourceUrl,
+            textAlign: TextAlign.center,
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.secondary,
+            ),
           ),
         ],
-      ),
-      textAlign: TextAlign.center,
-      style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
+      ],
     );
   }
 }
@@ -532,9 +549,9 @@ class _SourceCard extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xxs),
                   Text(
-                    _compactSourceUrl(sourceUrl),
+                    _middleTruncateSourceUrl(sourceUrl),
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    overflow: TextOverflow.clip,
                     style: AppTypography.labelMedium.copyWith(
                       color: colors.text.secondary,
                     ),
@@ -543,6 +560,17 @@ class _SourceCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.sm),
+            _SmallIconButton(
+              icon: AppIcons.copy,
+              semanticLabel: 'Copy source URL',
+              onTap: () {
+                copyTextWithToast(
+                  context,
+                  text: sourceUrl,
+                  toastMessage: 'Source URL copied.',
+                );
+              },
+            ),
             if (onEdit != null)
               _SmallIconButton(
                 icon: AppIcons.options,
@@ -874,6 +902,17 @@ String _compactSourceUrl(String raw) {
   } on StaticVotingConfigSourceMalformed {
     return trimmed;
   }
+}
+
+String _middleTruncateSourceUrl(String raw) {
+  final compact = _compactSourceUrl(raw);
+  return compactSwapAddress(
+    compact,
+    maxLength: 56,
+    prefixLength: 28,
+    suffixLength: 25,
+    separator: '...',
+  );
 }
 
 bool _sameSourceUrl(String lhs, String rhs) {
