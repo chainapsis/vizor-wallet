@@ -90,11 +90,6 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: AppRouteBackLink(),
-                        ),
-                        const SizedBox(height: AppSpacing.xl),
                         Center(
                           child: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 620),
@@ -102,6 +97,11 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                const Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: AppRouteBackLink(),
+                                ),
+                                const SizedBox(height: AppSpacing.xl),
                                 Text(
                                   'Review your answers',
                                   textAlign: TextAlign.left,
