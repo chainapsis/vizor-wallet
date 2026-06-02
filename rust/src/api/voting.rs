@@ -1380,25 +1380,26 @@ mod tests {
         thread,
     };
     use zcash_client_backend::proto::service::TreeState;
+    use zcash_voting::prelude::{TxEvent, TxEventAttribute};
     use zcash_voting::BundlePolicy;
 
     fn b64(bytes: impl AsRef<[u8]>) -> String {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
 
-    fn tx_events_json(events: Vec<zcash_voting::wire::TxEvent>) -> String {
+    fn tx_events_json(events: Vec<TxEvent>) -> String {
         serde_json::to_string(&events).unwrap()
     }
 
-    fn delegate_event(round_id: &str, leaf_index: u32) -> zcash_voting::wire::TxEvent {
-        zcash_voting::wire::TxEvent {
+    fn delegate_event(round_id: &str, leaf_index: u32) -> TxEvent {
+        TxEvent {
             event_type: "delegate_vote".to_string(),
             attributes: vec![
-                zcash_voting::wire::TxEventAttribute {
+                TxEventAttribute {
                     key: "vote_round_id".to_string(),
                     value: round_id.to_string(),
                 },
-                zcash_voting::wire::TxEventAttribute {
+                TxEventAttribute {
                     key: "leaf_index".to_string(),
                     value: leaf_index.to_string(),
                 },
@@ -1406,19 +1407,15 @@ mod tests {
         }
     }
 
-    fn cast_vote_event(
-        round_id: &str,
-        van_position: u32,
-        vc_tree_position: u64,
-    ) -> zcash_voting::wire::TxEvent {
-        zcash_voting::wire::TxEvent {
+    fn cast_vote_event(round_id: &str, van_position: u32, vc_tree_position: u64) -> TxEvent {
+        TxEvent {
             event_type: "cast_vote".to_string(),
             attributes: vec![
-                zcash_voting::wire::TxEventAttribute {
+                TxEventAttribute {
                     key: "vote_round_id".to_string(),
                     value: round_id.to_string(),
                 },
-                zcash_voting::wire::TxEventAttribute {
+                TxEventAttribute {
                     key: "leaf_index".to_string(),
                     value: format!("{van_position},{vc_tree_position}"),
                 },
