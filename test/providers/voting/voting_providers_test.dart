@@ -3695,6 +3695,36 @@ void main() {
     },
   );
 
+  test(
+    'delegation PIR warmup does not regenerate Keystone hotkey after signature',
+    () async {
+      final rust = FakeVotingRustApi();
+      rust.storedKeystoneSignatures[0] = rust_wire.KeystoneSignatureRecord(
+        bundleIndex: 0,
+        sig: Uint8List.fromList(const [3, 0]),
+        sighash: Uint8List.fromList(const [10, 0]),
+        rk: Uint8List.fromList(const [2, 0]),
+      );
+      final hotkeyStore = FakeVotingHotkeyStore(null);
+      final container = _sessionContainer(
+        rust: rust,
+        accountIsHardware: true,
+        hotkeyStore: hotkeyStore,
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .precomputeDelegationPir(accountUuid: 'account-1');
+
+      expect(rust.generateVotingHotkeyCalls, 0);
+      expect(hotkeyStore.hotkey, isNull);
+      expect(rust.setupCalls, 0);
+      expect(rust.precomputedDelegationPir, isEmpty);
+    },
+  );
+
   test('delegation PIR warmup skips after account switch', () async {
     final rust = FakeVotingRustApi();
     final activeAccountProvider =
