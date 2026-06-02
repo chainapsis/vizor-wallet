@@ -25,10 +25,15 @@ class VotingProposalView {
 }
 
 class VotingOptionView {
-  const VotingOptionView({required this.index, required this.label});
+  const VotingOptionView({
+    required this.index,
+    required this.label,
+    this.description = '',
+  });
 
   final int index;
   final String label;
+  final String description;
 }
 
 /// Stable owner key for voting UI state that must not cross accounts.
@@ -317,7 +322,14 @@ VotingOptionView _optionFromJson(Object? value, {required int fallbackIndex}) {
   return VotingOptionView(
     index: _intFromJson(json, const ['index']) ?? fallbackIndex,
     label:
-        _stringFromJson(json, const ['label']) ?? 'Option ${fallbackIndex + 1}',
+        _stringFromJson(json, const [
+          'label',
+          'short_title',
+          'shortTitle',
+          'title',
+        ]) ??
+        'Option ${fallbackIndex + 1}',
+    description: _stringFromJson(json, const ['description']) ?? '',
   );
 }
 

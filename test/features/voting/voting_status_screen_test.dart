@@ -1273,12 +1273,21 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
 
+    const optionDescription =
+        'Mint option explanation for detail screens only.';
     final round = _roundStatusJson()
       ..['status'] = 'closed'
       ..['summary'] = 'Completed poll'
       ..['proposals'] = [
         _proposalJson(1, 'First proposal', ['Yes', 'No']),
-        _proposalJson(2, 'Second proposal', ['Mint', 'Burn']),
+        {
+          'id': 2,
+          'title': 'Second proposal',
+          'options': [
+            {'index': 0, 'label': 'Mint', 'description': optionDescription},
+            {'index': 1, 'label': 'Burn'},
+          ],
+        },
       ];
     final http = FakeVotingHttpClient(
       responses: _votingHttpResponses()
@@ -1328,6 +1337,7 @@ void main() {
     expect(find.text('Voted: Yes'), findsOneWidget);
     expect(find.text('Second proposal'), findsOneWidget);
     expect(find.text('Mint'), findsOneWidget);
+    expect(find.text(optionDescription), findsNothing);
     expect(find.text('0.13 ZEC'), findsOneWidget);
     expect(find.text('Burn'), findsOneWidget);
     expect(find.text('0.00 ZEC'), findsOneWidget);
@@ -1572,6 +1582,71 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('status account: account-1'), findsOneWidget);
+  });
+
+  testWidgets('review uses short option label without option description', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final longDescription =
+        'Keep the existing halving schedule for new ZEC. Only fees and '
+        'donated funds are smoothed and reissued.';
+    final round = _roundStatusJson()
+      ..['proposals'] = [
+        {
+          'id': 1,
+          'title': 'NSM issuance smoothing',
+          'description': 'Question about the NSM issuance smoothing policy.',
+          'options': [
+            {
+              'index': 0,
+              'label': 'Preserve halvings',
+              'description': longDescription,
+            },
+            {
+              'index': 1,
+              'label': 'Smooth issuance curve',
+              'description': 'Replace halvings with a gradual issuance curve.',
+            },
+          ],
+        },
+      ];
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _NoMnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Preserve halvings'), findsOneWidget);
+    expect(find.text(longDescription), findsOneWidget);
+
+    await tester.tap(find.text('Preserve halvings'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Review answers'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review your answers'), findsOneWidget);
+    expect(find.text('Preserve halvings'), findsOneWidget);
+    expect(find.text(longDescription), findsNothing);
   });
 
   testWidgets('review screen scrolls long ballots without overflowing', (

@@ -1005,8 +1005,13 @@ class _VotedProposalCard extends StatelessWidget {
           Row(
             children: [
               _ProposalBadge('Proposal ${proposal.id}'),
-              const Spacer(),
-              _ChoiceBadge(choiceLabel),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _ChoiceBadge(choiceLabel),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.s),
@@ -1083,6 +1088,8 @@ class _ChoiceBadge extends StatelessWidget {
       ),
       child: Text(
         label,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
         style: AppTypography.labelMedium.copyWith(color: palette.text),
       ),
     );
@@ -1294,6 +1301,7 @@ class _OptionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final description = option.description.trim();
     final palette = votingChoicePalette(context, option.label);
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadii.small),
@@ -1313,15 +1321,37 @@ class _OptionRow extends StatelessWidget {
           ),
         ),
         child: Row(
+          crossAxisAlignment: description.isEmpty
+              ? CrossAxisAlignment.center
+              : CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Text(
-                option.label,
-                style: AppTypography.labelLarge.copyWith(
-                  color: selected ? palette.text : colors.text.accent,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    option.label,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: selected ? palette.text : colors.text.accent,
+                    ),
+                  ),
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      description,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: selected
+                            ? palette.text.withValues(alpha: 0.82)
+                            : colors.text.secondary,
+                        height: 16 / 12,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
+            const SizedBox(width: AppSpacing.sm),
             Text(
               selected ? 'Selected' : 'Choose',
               style: AppTypography.bodySmall.copyWith(

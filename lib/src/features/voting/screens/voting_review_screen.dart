@@ -181,12 +181,25 @@ class _ReviewRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final valueTone = votingChoiceTone(value);
+    final stackValue = !skipped && valueTone == VotingChoiceTone.multi;
     final titleColor = skipped
         ? colors.text.secondary.withValues(alpha: 0.64)
         : colors.text.secondary;
     final valueColor = skipped
         ? colors.text.secondary.withValues(alpha: 0.72)
         : votingChoicePalette(context, value).text;
+    final titleText = Text(
+      title,
+      style: AppTypography.bodyMedium.copyWith(color: titleColor),
+    );
+    final valueText = Text(
+      value,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      textAlign: stackValue ? TextAlign.left : TextAlign.right,
+      style: AppTypography.bodyMediumStrong.copyWith(color: valueColor),
+    );
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.xs),
       padding: const EdgeInsets.all(AppSpacing.sm),
@@ -197,27 +210,23 @@ class _ReviewRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.medium),
         border: Border.all(color: colors.border.subtle),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: AppTypography.bodyMedium.copyWith(color: titleColor),
+      child: stackValue
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                titleText,
+                const SizedBox(height: AppSpacing.xxs),
+                valueText,
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: titleText),
+                const SizedBox(width: AppSpacing.sm),
+                Flexible(child: valueText),
+              ],
             ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Flexible(
-            child: Text(
-              value,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: AppTypography.bodyMediumStrong.copyWith(color: valueColor),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

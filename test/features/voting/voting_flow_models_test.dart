@@ -42,6 +42,53 @@ void main() {
     ]);
   });
 
+  test(
+    'proposal parser preserves option descriptions separately from labels',
+    () {
+      final proposals = proposalsFromJson({
+        'proposals': [
+          {
+            'id': 1,
+            'title': 'Issuance smoothing',
+            'options': [
+              {
+                'index': 0,
+                'label': 'Preserve halvings',
+                'description':
+                    'Keep the existing halving schedule for new ZEC.',
+              },
+              {
+                'index': 1,
+                'short_title': 'Smooth issuance curve',
+                'description':
+                    'Replace halvings with a gradual issuance curve.',
+              },
+              {'index': 2, 'shortTitle': 'Delay reissuance'},
+              {'index': 3, 'title': 'Do not smooth issuance'},
+            ],
+          },
+        ],
+      });
+
+      expect(proposals.single.options.map((option) => option.label), [
+        'Preserve halvings',
+        'Smooth issuance curve',
+        'Delay reissuance',
+        'Do not smooth issuance',
+      ]);
+      expect(
+        proposals.single.options.first.description,
+        'Keep the existing halving schedule for new ZEC.',
+      );
+      expect(
+        proposals.single.options[1].description,
+        'Replace halvings with a gradual issuance curve.',
+      );
+      expect(proposals.single.options[2].description, isEmpty);
+      expect(proposals.single.options[3].description, isEmpty);
+    },
+  );
+
   test('proposal parser rejects missing proposal ids', () {
     expect(
       () => proposalsFromJson({
