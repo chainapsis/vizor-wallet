@@ -83,6 +83,15 @@ class VotingConfigSourceState {
   }
 }
 
+class DuplicateVotingConfigSource implements Exception {
+  const DuplicateVotingConfigSource(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Persistence boundary for the active voting config source.
 ///
 /// Config source URLs are not wallet secrets, but they are kept behind this
@@ -209,6 +218,14 @@ class VotingConfigSourceNotifier
     final existingIndex = id == null
         ? -1
         : nextSaved.indexWhere((source) => source.id == id);
+    final duplicateIndex = nextSaved.indexWhere(
+      (source) =>
+          source.id != id &&
+          _sameSourceLocation(source.sourceUrl, normalizedUrl),
+    );
+    if (duplicateIndex >= 0) {
+      throw const DuplicateVotingConfigSource('This source URL is already added.');
+    }
     if (existingIndex >= 0) {
       nextSaved[existingIndex] = nextSaved[existingIndex].copyWith(
         name: trimmedName,
@@ -335,6 +352,16 @@ bool _sameSourceUrl(String lhs, String rhs) {
     final left = parseStaticVotingConfigSource(lhs.trim());
     final right = parseStaticVotingConfigSource(rhs.trim());
     return left.uri == right.uri && left.sha256Hex == right.sha256Hex;
+  } on StaticVotingConfigSourceMalformed {
+    return lhs.trim() == rhs.trim();
+  }
+}
+
+bool _sameSourceLocation(String lhs, String rhs) {
+  try {
+    final left = parseStaticVotingConfigSource(lhs.trim());
+    final right = parseStaticVotingConfigSource(rhs.trim());
+    return left.uri == right.uri;
   } on StaticVotingConfigSourceMalformed {
     return lhs.trim() == rhs.trim();
   }

@@ -47,6 +47,20 @@ void main() {
     );
   });
 
+  test('preserves repeated non-checksum query parameters', () {
+    const hex =
+        '1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
+    final source = parseStaticVotingConfigSource(
+      'https://example.com/static.json?foo=one&foo=two&checksum=sha256:$hex',
+    );
+
+    expect(
+      source.uri.toString(),
+      'https://example.com/static.json?foo=one&foo=two',
+    );
+    expect(source.sha256Hex, hex);
+  });
+
   test('rejects malformed static config sources', () {
     const validHex =
         '0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a';
@@ -63,6 +77,7 @@ void main() {
       'https://example.com/static.json?checksum=sha256:',
       'https://example.com/static.json?checksum=sha256:$shortHex',
       'https://example.com/static.json?checksum=sha256:$uppercaseHex',
+      'https://example.com/static.json?checksum=sha256:$validHex&checksum=sha256:$validHex',
       'https://example.com/static.json?checksum=sha256:'
           'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz',
     ]) {

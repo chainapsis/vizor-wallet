@@ -58,7 +58,14 @@ class StaticVotingConfigSourceMalformed implements Exception {
     );
   }
 
-  final checksum = parsed.queryParameters['checksum'];
+  final queryParametersAll = parsed.queryParametersAll;
+  final checksumValues = queryParametersAll['checksum'];
+  if (checksumValues != null && checksumValues.length != 1) {
+    throw StaticVotingConfigSourceMalformed(
+      'checksum must appear once: $raw',
+    );
+  }
+  final checksum = checksumValues?.single;
   String? sha256Hex;
   if (checksum != null) {
     const prefix = 'sha256:';
@@ -77,18 +84,31 @@ class StaticVotingConfigSourceMalformed implements Exception {
     sha256Hex = checksumHex;
   }
 
-  final strippedQuery = Map<String, String>.from(parsed.queryParameters)
-    ..remove('checksum');
+  final strippedQuery = _stripChecksumQuery(parsed.query);
   final uri = Uri(
     scheme: parsed.scheme,
     userInfo: parsed.userInfo,
     host: parsed.host,
     port: parsed.hasPort ? parsed.port : null,
     path: parsed.path,
-    queryParameters: strippedQuery.isEmpty ? null : strippedQuery,
+    query: strippedQuery.isEmpty ? null : strippedQuery,
     fragment: parsed.fragment.isEmpty ? null : parsed.fragment,
   );
   return (raw: trimmed, uri: uri, sha256Hex: sha256Hex);
+}
+
+String _stripChecksumQuery(String rawQuery) {
+  if (rawQuery.isEmpty) return '';
+  final kept = <String>[];
+  for (final segment in rawQuery.split('&')) {
+    if (segment.isEmpty) continue;
+    final separator = segment.indexOf('=');
+    final encodedKey = separator == -1 ? segment : segment.substring(0, separator);
+    final key = Uri.decodeQueryComponent(encodedKey);
+    if (key == 'checksum') continue;
+    kept.add(segment);
+  }
+  return kept.join('&');
 }
 
 /// Loads the two-stage voting configuration and fails closed on any mismatch.

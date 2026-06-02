@@ -272,7 +272,7 @@ class _VotingConfigSettingsPanelState
   }
 
   Future<void> _refreshAndClose() async {
-    ref.invalidate(votingConfigProvider);
+    await ref.read(votingConfigProvider.notifier).refresh();
     await ref.read(votingRoundsProvider.notifier).reload();
     if (!mounted) return;
     setState(() {
@@ -286,12 +286,12 @@ class _VotingConfigSettingsPanelState
     VotingConfigSourceState source, {
     String? excludingId,
   }) {
-    if (_sameSourceUrl(input, kDefaultStaticVotingConfigSource)) {
+    if (_sameSourceLocation(input, kDefaultStaticVotingConfigSource)) {
       return 'This source URL is already added.';
     }
     for (final saved in source.savedSources) {
       if (saved.id == excludingId) continue;
-      if (_sameSourceUrl(input, saved.sourceUrl)) {
+      if (_sameSourceLocation(input, saved.sourceUrl)) {
         return 'This source URL is already added.';
       }
     }
@@ -300,6 +300,7 @@ class _VotingConfigSettingsPanelState
 
   String _messageFromError(Object error) {
     if (error is StaticVotingConfigSourceMalformed) return error.message;
+    if (error is DuplicateVotingConfigSource) return error.message;
     if (error is VotingHttpException) {
       return "Couldn't load voting config from that source.";
     }
@@ -876,6 +877,16 @@ bool _sameSourceUrl(String lhs, String rhs) {
     final left = parseStaticVotingConfigSource(lhs.trim());
     final right = parseStaticVotingConfigSource(rhs.trim());
     return left.uri == right.uri && left.sha256Hex == right.sha256Hex;
+  } on StaticVotingConfigSourceMalformed {
+    return lhs.trim() == rhs.trim();
+  }
+}
+
+bool _sameSourceLocation(String lhs, String rhs) {
+  try {
+    final left = parseStaticVotingConfigSource(lhs.trim());
+    final right = parseStaticVotingConfigSource(rhs.trim());
+    return left.uri == right.uri;
   } on StaticVotingConfigSourceMalformed {
     return lhs.trim() == rhs.trim();
   }
