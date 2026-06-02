@@ -73,6 +73,7 @@ void main() {
       'https:///static.json?checksum=sha256:$validHex',
       'not-a-url',
       'https://user:token@example.com/static.json?checksum=sha256:$validHex',
+      'https://example.com/static.json#v2',
       'https://example.com/static.json?checksum=sha512:$validHex',
       'https://example.com/static.json?checksum=sha256:',
       'https://example.com/static.json?checksum=sha256:$shortHex',

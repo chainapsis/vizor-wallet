@@ -57,6 +57,11 @@ class StaticVotingConfigSourceMalformed implements Exception {
       'URL must not include user info',
     );
   }
+  if (parsed.hasFragment) {
+    throw const StaticVotingConfigSourceMalformed(
+      'URL must not include a fragment',
+    );
+  }
 
   final queryParametersAll = parsed.queryParametersAll;
   final checksumValues = queryParametersAll['checksum'];
@@ -92,7 +97,6 @@ class StaticVotingConfigSourceMalformed implements Exception {
     port: parsed.hasPort ? parsed.port : null,
     path: parsed.path,
     query: strippedQuery.isEmpty ? null : strippedQuery,
-    fragment: parsed.fragment.isEmpty ? null : parsed.fragment,
   );
   return (raw: trimmed, uri: uri, sha256Hex: sha256Hex);
 }

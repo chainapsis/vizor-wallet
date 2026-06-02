@@ -29,7 +29,11 @@ import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/api/voting.dart' as rust_api;
+import 'package:zcash_wallet/src/rust/api/voting_config.dart'
+    as rust_config_api;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart'
+    as rust_config;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/delegate.dart'
     as rust_delegate;
 import 'package:zcash_wallet/src/rust/third_party/zcash_voting/round.dart'
@@ -2166,6 +2170,25 @@ Map<String, Object> _votingHttpResponses() => {
   'https://voting.example/static-voting-config.json': _staticConfigJson(),
   'https://voting.example/dynamic-voting-config.json': _dynamicConfigJson(),
   '/shielded-vote/v1/round/$_roundId': {'round': _roundStatusJson()},
+  '/shielded-vote/v1/delegate-vote': {
+    'tx_hash': 'delegation-tx',
+    'code': 0,
+    'log': '',
+  },
+  '/shielded-vote/v1/tx/delegation-tx': {
+    'height': 10,
+    'code': 0,
+    'log': '',
+    'events': [
+      {
+        'type': 'delegate_vote',
+        'attributes': [
+          {'key': 'leaf_index', 'value': '0'},
+          {'key': 'vote_round_id', 'value': _roundId},
+        ],
+      },
+    ],
+  },
 };
 
 int _tallyRequestCount(FakeVotingHttpClient http) {
@@ -2501,6 +2524,27 @@ class _MutableVotingRecoveryApi extends _FakeVotingRecoveryApi {
 }
 
 class _NoopVotingRustApi implements VotingRustApi {
+  @override
+  Future<rust_wire.VotingRoundParams> trustedVotingRoundParamsFromConfig({
+    required rust_config.ResolvedVotingConfig config,
+    required String roundId,
+    required BigInt snapshotHeight,
+    required List<int> ncRoot,
+    required List<int> nullifierImtRoot,
+  }) async {
+    final round = config.authenticatedRounds.firstWhere(
+      (entry) => entry.roundId == roundId,
+      orElse: () => config.authenticatedRounds.first,
+    );
+    return rust_wire.VotingRoundParams(
+      voteRoundId: roundId,
+      snapshotHeight: snapshotHeight,
+      eaPk: round.eaPk,
+      ncRoot: Uint8List.fromList(ncRoot),
+      nullifierImtRoot: Uint8List.fromList(nullifierImtRoot),
+    );
+  }
+
   @override
   Future<void> resetVotingSessionState({
     required String dbPath,
@@ -3365,6 +3409,60 @@ class _RustApiFake implements RustLibApi {
     required int mode,
   }) {
     return const Stream.empty();
+  }
+
+  @override
+  Future<String> crateApiVotingConfigResolveStaticVotingConfig({
+    required String source,
+    required List<int> staticBytes,
+  }) async {
+    return 'https://voting.example/dynamic-voting-config.json';
+  }
+
+  @override
+  Future<rust_config_api.VotingConfigResolution>
+  crateApiVotingConfigResolveVotingConfig({
+    required String source,
+    required List<int> staticBytes,
+    required List<int> dynamicBytes,
+    rust_config.ResolvedVotingConfig? previous,
+  }) async {
+    return rust_config_api.VotingConfigResolution(
+      config: rust_config.ResolvedVotingConfig(
+        sourceFingerprint: 'test-source-fingerprint',
+        trustedKeyFingerprint: 'test-trusted-key-fingerprint',
+        dynamicConfigFingerprint: 'test-dynamic-config-fingerprint',
+        voteServers: const [
+          rust_config.ServiceEndpoint(
+            url: 'https://voting.example',
+            label: 'primary',
+          ),
+        ],
+        pirEndpoints: const [
+          rust_config.ServiceEndpoint(
+            url: 'https://voting.example',
+            label: 'primary',
+          ),
+        ],
+        supportedVersions: const rust_config.SupportedVersions(
+          pir: ['v1'],
+          voteProtocol: '1',
+          tally: '1',
+          voteServer: '1',
+        ),
+        authenticatedRounds: [
+          rust_config.AuthenticatedRound(
+            roundId: _roundId,
+            eaPk: Uint8List.fromList(const [1, 2, 3]),
+          ),
+        ],
+        skippedRoundIds: const [],
+        conditions: const [],
+      ),
+      switchKind: previous == null
+          ? rust_config.ConfigSwitchKind.initialLoad
+          : rust_config.ConfigSwitchKind.unchanged,
+    );
   }
 
   @override
