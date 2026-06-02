@@ -30,11 +30,9 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
       _lifecycleListener?.dispose();
     });
     try {
-      final resolution = await _resolve();
-      if (!_isCurrentLoad(generation)) {
-        return _staleLoadResult();
-      }
-      return _commitResolution(resolution);
+      final config = await _loadAndCommit(generation);
+      if (config != null) return config;
+      return _staleLoadResult();
     } catch (_) {
       if (!_isCurrentLoad(generation)) {
         return _staleLoadResult();
@@ -47,9 +45,9 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
     final generation = ++_loadGeneration;
     state = const AsyncLoading<ResolvedVotingConfig>();
     try {
-      final resolution = await _resolve();
-      if (!_isCurrentLoad(generation)) return;
-      state = AsyncData(_commitResolution(resolution));
+      final config = await _loadAndCommit(generation);
+      if (config == null) return;
+      state = AsyncData(config);
     } catch (error, stackTrace) {
       if (!_isCurrentLoad(generation)) return;
       state = AsyncError(error, stackTrace);
@@ -76,11 +74,16 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
     throw StateError('Ignored stale voting config load.');
   }
 
-  Future<VotingConfigResolution> _resolve() async {
+  /// Resolves config and commits cache mutations only for active loads.
+  ///
+  /// Returning `null` signals this generation became stale while resolving.
+  Future<ResolvedVotingConfig?> _loadAndCommit(int generation) async {
     await ref.read(votingConfigSourceProvider.future);
-    return ref
+    final resolution = await ref
         .read(votingConfigLoaderProvider)
         .load(previous: _previousResolvedConfig);
+    if (!_isCurrentLoad(generation)) return null;
+    return _commitResolution(resolution);
   }
 
   ResolvedVotingConfig _commitResolution(VotingConfigResolution resolution) {

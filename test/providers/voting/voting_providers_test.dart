@@ -216,6 +216,110 @@ void main() {
     },
   );
 
+  test(
+    'stale config resolution does not invalidate rounds cache',
+    () async {
+      var resolveCount = 0;
+      final staleLoadStarted = Completer<void>();
+      final staleLoadGate = Completer<void>();
+      final http = FakeVotingHttpClient(
+        responses: {
+          'https://voting.example/static-voting-config.json': staticConfigJson(),
+          'https://voting.example/dynamic-voting-config.json': dynamicConfigJson(),
+          '/shielded-vote/v1/rounds': {
+            'rounds': [
+              {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+            ],
+          },
+          '/shielded-vote/v1/endorsed-rounds/zodl': {
+            'vote_round_ids': [kRoundId],
+          },
+        },
+      );
+      final container = ProviderContainer(
+        overrides: [
+          votingConfigSourceStoreProvider.overrideWithValue(
+            FakeVotingConfigSourceStore(),
+          ),
+          votingHttpClientProvider.overrideWithValue(http),
+          votingConfigLoaderProvider.overrideWithValue(
+            VotingConfigLoader(
+              httpClient: http,
+              sourceUrl: 'https://voting.example/static-voting-config.json',
+              resolveVotingConfig: ({
+                required source,
+                previous,
+                required fetchBytes,
+              }) async {
+                resolveCount++;
+                if (resolveCount == 2) {
+                  staleLoadStarted.complete();
+                  await staleLoadGate.future;
+                  return fakeResolveVotingConfig(
+                    source: source,
+                    previous: previous,
+                    fetchBytes: (url) async {
+                      final response = await fetchBytes(url);
+                      final bytes = response.bytes;
+                      if (bytes != null) return bytes;
+                      throw StateError(
+                        response.error ?? 'missing bytes from voting config fetch',
+                      );
+                    },
+                    switchKind: rust_config.ConfigSwitchKind.newChainOrRound,
+                    authenticatedRoundIds: const [kRoundId],
+                  );
+                }
+                return fakeResolveVotingConfig(
+                  source: source,
+                  previous: previous,
+                  fetchBytes: (url) async {
+                    final response = await fetchBytes(url);
+                    final bytes = response.bytes;
+                    if (bytes != null) return bytes;
+                    throw StateError(
+                      response.error ?? 'missing bytes from voting config fetch',
+                    );
+                  },
+                  switchKind: previous == null
+                      ? rust_config.ConfigSwitchKind.initialLoad
+                      : rust_config.ConfigSwitchKind.unchanged,
+                  authenticatedRoundIds: const [kRoundId],
+                );
+              },
+            ),
+          ),
+          votingActiveAccountUuidProvider.overrideWithValue(() async => null),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingRoundsProvider.future);
+      final roundsCallsBefore = http.requests
+          .where((request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'))
+          .length;
+
+      final staleRefresh = container.read(votingConfigProvider.notifier).refresh();
+      await staleLoadStarted.future;
+
+      await container.read(votingConfigProvider.notifier).refresh();
+      await container.read(votingRoundsProvider.future);
+      final roundsCallsBeforeStaleCompletion = http.requests
+          .where((request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'))
+          .length;
+
+      staleLoadGate.complete();
+      await staleRefresh;
+      await container.read(votingRoundsProvider.future);
+      final roundsCallsAfterStaleCompletion = http.requests
+          .where((request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'))
+          .length;
+
+      expect(roundsCallsBeforeStaleCompletion, roundsCallsBefore);
+      expect(roundsCallsAfterStaleCompletion, roundsCallsBeforeStaleCompletion);
+    },
+  );
+
   test('config switch newChainOrRound invalidates rounds provider', () async {
     var refreshCount = 0;
     final http = FakeVotingHttpClient(
