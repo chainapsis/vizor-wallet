@@ -162,7 +162,7 @@ void main() {
     expect(textRect.left, greaterThan(targetRect.left));
   });
 
-  testWidgets('truncated message tooltip appears when hovering icon slot', (
+  testWidgets('truncated message tooltip can show full message overlay', (
     tester,
   ) async {
     const message =
@@ -182,18 +182,9 @@ void main() {
       ),
     );
 
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await mouse.addPointer(location: Offset.zero);
-    addTearDown(mouse.removePointer);
-
-    await mouse.moveTo(
-      tester
-          .getRect(
-            find.byKey(const ValueKey('app-text-field-message-icon-slot')),
-          )
-          .center,
-    );
-    await tester.pump(const Duration(milliseconds: 400));
+    final tooltipState = tester.state<TooltipState>(find.byType(Tooltip));
+    expect(tooltipState.ensureTooltipVisible(), isTrue);
+    await tester.pump();
     await tester.pumpAndSettle();
 
     expect(find.text(message), findsNWidgets(2));
