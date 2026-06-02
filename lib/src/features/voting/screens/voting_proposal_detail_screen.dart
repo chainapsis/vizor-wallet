@@ -85,9 +85,7 @@ class _VotingProposalDetailScreenState
                 ? const VotingDraftState()
                 : ref.watch(votingDraftProvider(draftKey));
             final proposals = proposalsFromRound(round);
-            final completedVote = draft.isEmpty
-                ? _CompletedVote.fromPlan(state.roundPlan)
-                : null;
+            final completedVote = _CompletedVote.fromPlan(state.roundPlan);
             _maybePrepareVotingPower(state);
             // Foreground recovery takes precedence over the read-only voted view.
             // Accepted helper shares may still be tracked after submission, but
