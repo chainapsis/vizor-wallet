@@ -38,8 +38,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
   @protected
-  FutureOr<Uint8List> Function(String)
-  dco_decode_DartFn_Inputs_String_Output_list_prim_u_8_strict_AnyhowException(
+  FutureOr<VotingConfigFetch> Function(String)
+  dco_decode_DartFn_Inputs_String_Output_voting_config_fetch_AnyhowException(
     dynamic raw,
   );
 
@@ -492,6 +492,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   VoteShareWire dco_decode_vote_share_wire(dynamic raw);
+
+  @protected
+  VotingConfigFetch dco_decode_voting_config_fetch(dynamic raw);
 
   @protected
   VotingConfigResolution dco_decode_voting_config_resolution(dynamic raw);
@@ -1067,6 +1070,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   VoteShareWire sse_decode_vote_share_wire(SseDeserializer deserializer);
 
   @protected
+  VotingConfigFetch sse_decode_voting_config_fetch(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   VotingConfigResolution sse_decode_voting_config_resolution(
     SseDeserializer deserializer,
   );
@@ -1102,8 +1110,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
-  sse_encode_DartFn_Inputs_String_Output_list_prim_u_8_strict_AnyhowException(
-    FutureOr<Uint8List> Function(String) self,
+  sse_encode_DartFn_Inputs_String_Output_voting_config_fetch_AnyhowException(
+    FutureOr<VotingConfigFetch> Function(String) self,
     SseSerializer serializer,
   );
 
@@ -1790,6 +1798,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_vote_share_wire(VoteShareWire self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_voting_config_fetch(
+    VotingConfigFetch self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_voting_config_resolution(

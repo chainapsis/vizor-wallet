@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -21,7 +20,10 @@ typedef ResolveVotingConfigFn = Future<rust_config_api.VotingConfigResolution>
     Function({
       required String source,
       rust_config.ResolvedVotingConfig? previous,
-      required FutureOr<Uint8List> Function(String) fetchBytes,
+      required FutureOr<rust_config_api.VotingConfigFetch> Function(
+        String,
+      )
+      fetchBytes,
     });
 
 class StaticVotingConfigSourceMalformed implements Exception {
@@ -101,16 +103,20 @@ class VotingConfigLoader {
       source: _sourceUrl,
       previous: previous,
       fetchBytes: (url) async {
-        final requestUrl = Uri.parse(url);
-        final response = await _httpClient.get(requestUrl, timeout: _timeout);
-        if (response.statusCode != 200) {
-          throw VotingHttpException(
-            uri: requestUrl,
-            statusCode: response.statusCode,
-            body: response.bodyText,
-          );
+        try {
+          final requestUrl = Uri.parse(url);
+          final response = await _httpClient.get(requestUrl, timeout: _timeout);
+          if (response.statusCode != 200) {
+            throw VotingHttpException(
+              uri: requestUrl,
+              statusCode: response.statusCode,
+              body: response.bodyText,
+            );
+          }
+          return rust_config_api.VotingConfigFetch(bytes: response.bodyBytes);
+        } catch (error) {
+          return rust_config_api.VotingConfigFetch(error: error.toString());
         }
-        return response.bodyBytes;
       },
     );
     if (resolution.config.skippedRoundIds.isNotEmpty) {

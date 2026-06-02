@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import '../third_party/zcash_voting/config.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `eq`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`
 
 /// Resolve static + dynamic voting config via a wallet-owned fetch callback.
 ///
@@ -16,12 +16,34 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<VotingConfigResolution> resolveVotingConfig({
   required String source,
   ResolvedVotingConfig? previous,
-  required FutureOr<Uint8List> Function(String) fetchBytes,
+  required FutureOr<VotingConfigFetch> Function(String) fetchBytes,
 }) => RustLib.instance.api.crateApiVotingConfigResolveVotingConfig(
   source: source,
   previous: previous,
   fetchBytes: fetchBytes,
 );
+
+/// Fallible response from the wallet-owned voting config transport callback.
+///
+/// This keeps ordinary transport failures (timeout/HTTP errors/etc.) in the
+/// value domain instead of crossing the FFI callback boundary as panics.
+class VotingConfigFetch {
+  final Uint8List? bytes;
+  final String? error;
+
+  const VotingConfigFetch({this.bytes, this.error});
+
+  @override
+  int get hashCode => bytes.hashCode ^ error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VotingConfigFetch &&
+          runtimeType == other.runtimeType &&
+          bytes == other.bytes &&
+          error == other.error;
+}
 
 class VotingConfigResolution {
   final ResolvedVotingConfig config;

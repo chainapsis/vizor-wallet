@@ -594,7 +594,7 @@ abstract class RustLibApi extends BaseApi {
   Future<VotingConfigResolution> crateApiVotingConfigResolveVotingConfig({
     required String source,
     ResolvedVotingConfig? previous,
-    required FutureOr<Uint8List> Function(String) fetchBytes,
+    required FutureOr<VotingConfigFetch> Function(String) fetchBytes,
   });
 
   Future<BigInt> crateApiSyncRewindToHeight({
@@ -4029,7 +4029,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<VotingConfigResolution> crateApiVotingConfigResolveVotingConfig({
     required String source,
     ResolvedVotingConfig? previous,
-    required FutureOr<Uint8List> Function(String) fetchBytes,
+    required FutureOr<VotingConfigFetch> Function(String) fetchBytes,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -4040,7 +4040,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             previous,
             serializer,
           );
-          sse_encode_DartFn_Inputs_String_Output_list_prim_u_8_strict_AnyhowException(
+          sse_encode_DartFn_Inputs_String_Output_voting_config_fetch_AnyhowException(
             fetchBytes,
             serializer,
           );
@@ -4988,13 +4988,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   Future<void> Function(int, dynamic)
-  encode_DartFn_Inputs_String_Output_list_prim_u_8_strict_AnyhowException(
-    FutureOr<Uint8List> Function(String) raw,
+  encode_DartFn_Inputs_String_Output_voting_config_fetch_AnyhowException(
+    FutureOr<VotingConfigFetch> Function(String) raw,
   ) {
     return (callId, rawArg0) async {
       final arg0 = dco_decode_String(rawArg0);
 
-      Box<Uint8List>? rawOutput;
+      Box<VotingConfigFetch>? rawOutput;
       Box<AnyhowException>? rawError;
       try {
         rawOutput = Box(await raw(arg0));
@@ -5006,7 +5006,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       assert((rawOutput != null) ^ (rawError != null));
       if (rawOutput != null) {
         serializer.buffer.putUint8(0);
-        sse_encode_list_prim_u_8_strict(rawOutput.value, serializer);
+        sse_encode_voting_config_fetch(rawOutput.value, serializer);
       } else {
         serializer.buffer.putUint8(1);
         sse_encode_AnyhowException(rawError!.value, serializer);
@@ -5029,8 +5029,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  FutureOr<Uint8List> Function(String)
-  dco_decode_DartFn_Inputs_String_Output_list_prim_u_8_strict_AnyhowException(
+  FutureOr<VotingConfigFetch> Function(String)
+  dco_decode_DartFn_Inputs_String_Output_voting_config_fetch_AnyhowException(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -6443,6 +6443,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       shareComms: dco_decode_list_String(arr[7]),
       primaryBlind: dco_decode_String(arr[8]),
       submitAt: dco_decode_u_64(arr[9]),
+    );
+  }
+
+  @protected
+  VotingConfigFetch dco_decode_voting_config_fetch(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return VotingConfigFetch(
+      bytes: dco_decode_opt_list_prim_u_8_strict(arr[0]),
+      error: dco_decode_opt_String(arr[1]),
     );
   }
 
@@ -8355,6 +8367,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  VotingConfigFetch sse_decode_voting_config_fetch(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_bytes = sse_decode_opt_list_prim_u_8_strict(deserializer);
+    var var_error = sse_decode_opt_String(deserializer);
+    return VotingConfigFetch(bytes: var_bytes, error: var_error);
+  }
+
+  @protected
   VotingConfigResolution sse_decode_voting_config_resolution(
     SseDeserializer deserializer,
   ) {
@@ -8463,13 +8485,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
-  sse_encode_DartFn_Inputs_String_Output_list_prim_u_8_strict_AnyhowException(
-    FutureOr<Uint8List> Function(String) self,
+  sse_encode_DartFn_Inputs_String_Output_voting_config_fetch_AnyhowException(
+    FutureOr<VotingConfigFetch> Function(String) self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_DartOpaque(
-      encode_DartFn_Inputs_String_Output_list_prim_u_8_strict_AnyhowException(
+      encode_DartFn_Inputs_String_Output_voting_config_fetch_AnyhowException(
         self,
       ),
       serializer,
@@ -9984,6 +10006,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_String(self.shareComms, serializer);
     sse_encode_String(self.primaryBlind, serializer);
     sse_encode_u_64(self.submitAt, serializer);
+  }
+
+  @protected
+  void sse_encode_voting_config_fetch(
+    VotingConfigFetch self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_list_prim_u_8_strict(self.bytes, serializer);
+    sse_encode_opt_String(self.error, serializer);
   }
 
   @protected

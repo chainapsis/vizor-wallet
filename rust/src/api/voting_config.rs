@@ -1,7 +1,4 @@
-use std::panic::UnwindSafe;
-
 use flutter_rust_bridge::DartFnFuture;
-use futures::FutureExt;
 use zcash_voting::config::{self, ResolveConfigError};
 use zcash_voting::wire::{
     ConfigSwitchKind, ResolveVotingConfigOptions, ResolvedVotingConfig, ResolvedVotingConfigSummary,
@@ -13,6 +10,16 @@ pub struct VotingConfigResolution {
     pub switch_kind: ConfigSwitchKind,
 }
 
+/// Fallible response from the wallet-owned voting config transport callback.
+///
+/// This keeps ordinary transport failures (timeout/HTTP errors/etc.) in the
+/// value domain instead of crossing the FFI callback boundary as panics.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VotingConfigFetch {
+    pub bytes: Option<Vec<u8>>,
+    pub error: Option<String>,
+}
+
 /// Resolve static + dynamic voting config via a wallet-owned fetch callback.
 ///
 /// Rust validates config authenticity and computes config switch semantics.
@@ -20,14 +27,21 @@ pub struct VotingConfigResolution {
 pub async fn resolve_voting_config(
     source: String,
     previous: Option<ResolvedVotingConfig>,
-    fetch_bytes: impl Fn(String) -> DartFnFuture<Vec<u8>> + UnwindSafe,
+    fetch_bytes: impl Fn(String) -> DartFnFuture<VotingConfigFetch>,
 ) -> Result<VotingConfigResolution, String> {
     let next = config::resolve_config(&source, ResolveVotingConfigOptions::default(), |url| {
         let response = fetch_bytes(url.clone());
         async move {
-            match std::panic::AssertUnwindSafe(response).catch_unwind().await {
-                Ok(bytes) => Ok::<_, String>(bytes),
-                Err(_) => Err("voting config transport callback panicked".to_string()),
+            let response = response.await;
+            match (response.bytes, response.error) {
+                (Some(bytes), None) => Ok::<_, String>(bytes),
+                (None, Some(error)) => Err(error),
+                (Some(_), Some(_)) => Err(
+                    "voting config transport callback returned both bytes and error".to_string(),
+                ),
+                (None, None) => Err(
+                    "voting config transport callback returned neither bytes nor error".to_string(),
+                ),
             }
         }
     })
