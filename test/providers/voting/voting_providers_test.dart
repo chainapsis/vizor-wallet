@@ -586,7 +586,7 @@ void main() {
     expect(rounds.map((round) => round.roundId), [kRoundId]);
   });
 
-  test('rounds provider hides finalized rounds', () async {
+  test('rounds provider does not filter by endorsements set', () async {
     final http = FakeVotingHttpClient(
       responses: {
         'https://voting.example/static-voting-config.json': staticConfigJson(),
@@ -602,7 +602,7 @@ void main() {
           ],
         },
         '/shielded-vote/v1/endorsed-rounds/zodl': {
-          'vote_round_ids': [kRoundId, kOtherRoundId],
+          'vote_round_ids': [kRoundId],
         },
       },
     );
@@ -610,7 +610,7 @@ void main() {
     addTearDown(container.dispose);
 
     final rounds = await container.read(votingRoundsProvider.future);
-    expect(rounds.map((round) => round.roundId), [kRoundId]);
+    expect(rounds.map((round) => round.roundId), [kRoundId, kOtherRoundId]);
   });
 
   test(

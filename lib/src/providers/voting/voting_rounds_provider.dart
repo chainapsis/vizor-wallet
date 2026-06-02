@@ -70,23 +70,20 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
     final endorser = ref.read(votingEndorserClientProvider(config.apiBaseUrl));
 
     final rounds = await api.listRounds();
+    final endorsedIds = await endorser.getEndorsedSet();
     final authenticatedRoundIds = config.authenticatedRounds
         .map((round) => round.roundId)
         .toSet();
     final filteredRounds = rounds
-        .where(
-          (round) =>
-              authenticatedRoundIds.contains(round.roundId) &&
-              !_isFinalizedRound(round.status),
-        )
+        .where((round) => authenticatedRoundIds.contains(round.roundId))
         .toList(growable: false);
     if (filteredRounds.length != rounds.length) {
       debugPrint(
-        '[zcash] Voting: filtered rounds (unauthenticated or finalized) '
+        '[zcash] Voting: filtered rounds '
+        '(unauthenticated) '
         'shown=${filteredRounds.length} total=${rounds.length}',
       );
     }
-    final endorsedIds = await endorser.getEndorsedSet();
     final recoveryStates = await _roundListRecoveryStates(filteredRounds, api: api);
     return [
       for (final round in filteredRounds)
@@ -205,10 +202,6 @@ class VotingRoundsNotifier extends AsyncNotifier<List<VotingRoundView>> {
       return const [];
     }
   }
-}
-
-bool _isFinalizedRound(String status) {
-  return status.trim().toLowerCase() == 'finalized';
 }
 
 final votingRoundsProvider =

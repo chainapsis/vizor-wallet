@@ -54,10 +54,10 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
     }
   }
 
-  /// Replaces state with a config that was already loaded and validated.
-  void setLoadedConfig(VotingConfig config) {
+  /// Commits a preloaded resolution through the normal switch path.
+  void setLoadedConfig(VotingConfigResolution resolution) {
     _loadGeneration++;
-    state = AsyncData(config);
+    state = AsyncData(_commitResolution(resolution));
   }
 
   bool _isCurrentLoad(int generation) {
