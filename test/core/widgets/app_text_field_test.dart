@@ -85,6 +85,80 @@ void main() {
     expect(focusNode.hasFocus, isFalse);
   });
 
+  testWidgets('message text does not use tooltip when it fits', (tester) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        child: SizedBox(
+          width: 352,
+          height: 86,
+          child: AppTextField(label: 'Send to', messageText: 'Valid address'),
+        ),
+      ),
+    );
+
+    expect(find.byType(Tooltip), findsNothing);
+  });
+
+  testWidgets('truncated message text uses below-preferred tooltip', (
+    tester,
+  ) async {
+    const message =
+        'Use only English letters, numbers, and symbols before continuing.';
+
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        child: SizedBox(
+          width: 128,
+          height: 86,
+          child: AppTextField(label: 'Password', messageText: message),
+        ),
+      ),
+    );
+
+    final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+    expect(tooltip.message, message);
+    expect(tooltip.preferBelow, isTrue);
+  });
+
+  testWidgets('truncated message tooltip does not block root unfocus', (
+    tester,
+  ) async {
+    const message =
+        'Use only English letters, numbers, and symbols before continuing.';
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    var rootTapCount = 0;
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      _ThemedHarness(
+        includeRootUnfocus: true,
+        onRootTap: () => rootTapCount += 1,
+        child: SizedBox(
+          width: 128,
+          height: 86,
+          child: AppTextField(
+            label: 'Password',
+            controller: controller,
+            focusNode: focusNode,
+            messageText: message,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    await tester.tapAt(tester.getRect(find.text(message)).center);
+    await tester.pump();
+
+    expect(rootTapCount, 1);
+    expect(focusNode.hasFocus, isFalse);
+  });
+
   testWidgets('multiline clear button uses the Figma hit target', (
     tester,
   ) async {

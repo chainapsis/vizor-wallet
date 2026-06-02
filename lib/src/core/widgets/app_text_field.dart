@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
+import 'app_tooltip.dart';
 
 enum AppTextFieldTone { neutral, destructive, success, brandCrimson }
 
@@ -684,29 +685,67 @@ class _AppTextFieldState extends State<AppTextField> {
             top: messageTop,
             left: 0,
             right: 0,
-            child: IgnorePointer(
-              child: Row(
-                children: [
-                  widget.messageIcon ?? defaultMessageIcon ?? const SizedBox(),
-                  if (widget.messageIcon != null || defaultMessageIcon != null)
-                    const SizedBox(width: AppSpacing.xxs),
-                  Expanded(
-                    child: Text(
-                      widget.messageText!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          widget.messageStyle ??
-                          AppTypography.labelMedium.copyWith(
-                            color: messageColor,
-                          ),
-                    ),
+            child: Row(
+              children: [
+                IgnorePointer(
+                  child:
+                      widget.messageIcon ??
+                      defaultMessageIcon ??
+                      const SizedBox(),
+                ),
+                if (widget.messageIcon != null || defaultMessageIcon != null)
+                  const IgnorePointer(child: SizedBox(width: AppSpacing.xxs)),
+                Expanded(
+                  child: _AppTextFieldMessageText(
+                    text: widget.messageText!,
+                    style:
+                        widget.messageStyle ??
+                        AppTypography.labelMedium.copyWith(color: messageColor),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
       ],
+    );
+  }
+}
+
+class _AppTextFieldMessageText extends StatelessWidget {
+  const _AppTextFieldMessageText({required this.text, required this.style});
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: style,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.maxWidth.isFinite || constraints.maxWidth <= 0) {
+          return IgnorePointer(child: child);
+        }
+
+        final textPainter = TextPainter(
+          text: TextSpan(text: text, style: style),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          ellipsis: '...',
+          maxLines: 1,
+        )..layout(maxWidth: constraints.maxWidth);
+
+        if (!textPainter.didExceedMaxLines) {
+          return IgnorePointer(child: child);
+        }
+
+        return AppTooltip(message: text, preferBelow: true, child: child);
+      },
     );
   }
 }

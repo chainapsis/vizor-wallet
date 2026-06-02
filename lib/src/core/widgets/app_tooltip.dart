@@ -8,6 +8,7 @@ class AppTooltip extends StatelessWidget {
     required this.child,
     this.message,
     this.richMessage,
+    this.preferBelow = false,
     super.key,
   }) : assert(
          (message == null) != (richMessage == null),
@@ -16,6 +17,7 @@ class AppTooltip extends StatelessWidget {
 
   final String? message;
   final InlineSpan? richMessage;
+  final bool preferBelow;
   final Widget child;
 
   @override
@@ -35,7 +37,7 @@ class AppTooltip extends StatelessWidget {
       textStyle: textStyle,
       waitDuration: const Duration(milliseconds: 350),
       showDuration: const Duration(seconds: 8),
-      preferBelow: false,
+      preferBelow: preferBelow,
       constraints: const BoxConstraints(maxWidth: 340),
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s,
