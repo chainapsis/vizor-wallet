@@ -48,6 +48,7 @@ class StaticVotingConfigSourceMalformed implements Exception {
   String raw,
 ) {
   final trimmed = raw.trim();
+  final rawQuery = _extractRawQuery(trimmed);
   final parsed = Uri.tryParse(trimmed);
   if (parsed == null || parsed.scheme != 'https' || parsed.host.isEmpty) {
     throw StaticVotingConfigSourceMalformed('not an HTTPS URL: $raw');
@@ -62,7 +63,7 @@ class StaticVotingConfigSourceMalformed implements Exception {
       'URL must not include a fragment',
     );
   }
-  if (_containsEncodedChecksumKey(parsed.query)) {
+  if (_containsEncodedChecksumKey(rawQuery)) {
     throw StaticVotingConfigSourceMalformed(
       'checksum key must be literal "checksum": $raw',
     );
@@ -92,7 +93,7 @@ class StaticVotingConfigSourceMalformed implements Exception {
     sha256Hex = checksumHex;
   }
 
-  final strippedQuery = _stripChecksumQuery(parsed.query);
+  final strippedQuery = _stripChecksumQuery(rawQuery);
   final normalizedBase = Uri(
     scheme: parsed.scheme,
     host: parsed.host,
@@ -103,6 +104,16 @@ class StaticVotingConfigSourceMalformed implements Exception {
     strippedQuery.isEmpty ? normalizedBase : '$normalizedBase?$strippedQuery',
   );
   return (raw: trimmed, uri: uri, sha256Hex: sha256Hex);
+}
+
+String _extractRawQuery(String rawUrl) {
+  final questionMarkIndex = rawUrl.indexOf('?');
+  if (questionMarkIndex == -1 || questionMarkIndex == rawUrl.length - 1) {
+    return '';
+  }
+  final fragmentIndex = rawUrl.indexOf('#', questionMarkIndex + 1);
+  final queryEnd = fragmentIndex == -1 ? rawUrl.length : fragmentIndex;
+  return rawUrl.substring(questionMarkIndex + 1, queryEnd);
 }
 
 bool _containsEncodedChecksumKey(String rawQuery) {
