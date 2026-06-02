@@ -5417,6 +5417,7 @@ class FakeVotingRecoveryApi implements VotingRecoveryApi {
 
 class FakeVotingDraftPersistence implements VotingDraftPersistence {
   final _stored = <VotingSessionKey, VotingDraftState>{};
+  final _deletedAccountUuids = <String>{};
 
   @override
   Future<VotingDraftState> load(VotingSessionKey key) async {
@@ -5425,11 +5426,18 @@ class FakeVotingDraftPersistence implements VotingDraftPersistence {
 
   @override
   Future<void> save(VotingSessionKey key, VotingDraftState draft) async {
+    if (_deletedAccountUuids.contains(key.accountUuid)) return;
     if (draft.choices.isEmpty) {
       _stored.remove(key);
     } else {
       _stored[key] = VotingDraftState(choices: Map.of(draft.choices));
     }
+  }
+
+  @override
+  Future<void> deleteForAccount(String accountUuid) async {
+    _deletedAccountUuids.add(accountUuid);
+    _stored.removeWhere((key, _) => key.accountUuid == accountUuid);
   }
 }
 

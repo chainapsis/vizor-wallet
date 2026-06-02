@@ -14,6 +14,7 @@ import '../core/profile_pictures.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/swap/providers/swap_activity_store.dart';
+import '../features/voting/voting_flow_models.dart';
 import '../rust/api/voting.dart' as rust_voting;
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
@@ -404,6 +405,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       await _storage.deleteVotingHotkeysForAccount(uuid);
     } catch (e, st) {
       log('removeAccount: failed to delete voting hotkeys for $uuid: $e\n$st');
+    }
+    try {
+      await ref.read(votingDraftPersistenceProvider).deleteForAccount(uuid);
+    } catch (e, st) {
+      log('removeAccount: failed to delete voting drafts for $uuid: $e\n$st');
     }
 
     final updated = [

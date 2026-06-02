@@ -342,6 +342,25 @@ class AppSecureStore {
     );
   }
 
+  /// Deletes plain storage entries whose keys start with [prefix].
+  ///
+  /// Secret values that use the mnemonic or voting hotkey storage helpers should
+  /// keep using their dedicated deletion paths.
+  Future<void> deletePlainKeysWithPrefix(String prefix) async {
+    if (prefix.isEmpty) return;
+    final storedValues = await _runStorageOperation(
+      'read keys with prefix "$prefix"',
+      _storage.readAll,
+    );
+    for (final key in storedValues.keys.toList(growable: false)) {
+      if (!key.startsWith(prefix)) continue;
+      await _runStorageOperation(
+        'delete "$key"',
+        () => _storage.delete(key: key),
+      );
+    }
+  }
+
   Future<bool> isPasswordConfigured() async {
     final verifier = await readPlain(_passwordVerifierKey);
     final salt = await readPlain(_passwordVerifierSaltKey);

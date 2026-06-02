@@ -189,6 +189,10 @@ abstract interface class VotingDraftPersistence {
   Future<VotingDraftState> load(VotingSessionKey key);
 
   Future<void> save(VotingSessionKey key, VotingDraftState draft);
+
+  /// Deletes drafts for an account and rejects later saves for that account in
+  /// this process.
+  Future<void> deleteForAccount(String accountUuid);
 }
 
 final votingDraftPersistenceProvider = Provider<VotingDraftPersistence>(
@@ -199,6 +203,8 @@ class SecureVotingDraftPersistence implements VotingDraftPersistence {
   const SecureVotingDraftPersistence();
 
   static const _keyPrefix = 'zcash_voting_draft_votes_';
+  static final _deletedAccountUuids = <String>{};
+  static Future<void> _mutationChain = Future.value();
 
   @override
   Future<VotingDraftState> load(VotingSessionKey key) async {
@@ -219,19 +225,39 @@ class SecureVotingDraftPersistence implements VotingDraftPersistence {
 
   @override
   Future<void> save(VotingSessionKey key, VotingDraftState draft) async {
-    final storageKey = _storageKey(key);
-    if (draft.choices.isEmpty) {
-      await AppSecureStore.instance.delete(storageKey);
-      return;
-    }
-    final encoded = <String, int>{
-      for (final entry in draft.choices.entries) '${entry.key}': entry.value,
-    };
-    await AppSecureStore.instance.writePlain(storageKey, jsonEncode(encoded));
+    await _runMutation(() async {
+      if (_deletedAccountUuids.contains(key.accountUuid)) return;
+      final storageKey = _storageKey(key);
+      if (draft.choices.isEmpty) {
+        await AppSecureStore.instance.delete(storageKey);
+        return;
+      }
+      final encoded = <String, int>{
+        for (final entry in draft.choices.entries) '${entry.key}': entry.value,
+      };
+      await AppSecureStore.instance.writePlain(storageKey, jsonEncode(encoded));
+    });
+  }
+
+  @override
+  Future<void> deleteForAccount(String accountUuid) {
+    return _runMutation(() async {
+      if (accountUuid.isEmpty) return;
+      _deletedAccountUuids.add(accountUuid);
+      await AppSecureStore.instance.deletePlainKeysWithPrefix(
+        '$_keyPrefix$accountUuid|',
+      );
+    });
   }
 
   static String _storageKey(VotingSessionKey key) =>
       '$_keyPrefix${key.accountUuid}|${key.roundId}';
+
+  static Future<void> _runMutation(Future<void> Function() operation) {
+    final next = _mutationChain.then((_) => operation());
+    _mutationChain = next.catchError((_) {});
+    return next;
+  }
 }
 
 List<VotingProposalView> proposalsFromRound(VotingRoundDetails round) {

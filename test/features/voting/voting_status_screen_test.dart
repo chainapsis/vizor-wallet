@@ -3145,6 +3145,7 @@ class _FakeVotingConfigSourceStore implements VotingConfigSourceStore {
 
 class _MemoryVotingDraftPersistence implements VotingDraftPersistence {
   final _drafts = <VotingSessionKey, VotingDraftState>{};
+  final _deletedAccountUuids = <String>{};
 
   @override
   Future<VotingDraftState> load(VotingSessionKey key) async {
@@ -3153,7 +3154,14 @@ class _MemoryVotingDraftPersistence implements VotingDraftPersistence {
 
   @override
   Future<void> save(VotingSessionKey key, VotingDraftState draft) async {
+    if (_deletedAccountUuids.contains(key.accountUuid)) return;
     _drafts[key] = draft;
+  }
+
+  @override
+  Future<void> deleteForAccount(String accountUuid) async {
+    _deletedAccountUuids.add(accountUuid);
+    _drafts.removeWhere((key, _) => key.accountUuid == accountUuid);
   }
 }
 

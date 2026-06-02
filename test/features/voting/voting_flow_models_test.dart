@@ -1,10 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/voting/voting_flow_models.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    FlutterSecureStorage.setMockInitialValues({});
+  });
+
   test('proposal parser preserves explicit service proposal ids', () {
     final proposals = proposalsFromJson({
       'proposals': [
@@ -97,6 +104,45 @@ void main() {
     expect(draft.clearChoice(2).isEmpty, true);
   });
 
+  test('secure draft persistence deletes matching account drafts', () async {
+    const persistence = SecureVotingDraftPersistence();
+    const removedAccountRoundOne = VotingSessionKey(
+      accountUuid: 'account-1',
+      roundId: 'round-1',
+    );
+    const removedAccountRoundTwo = VotingSessionKey(
+      accountUuid: 'account-1',
+      roundId: 'round-2',
+    );
+    const retainedAccountRound = VotingSessionKey(
+      accountUuid: 'account-2',
+      roundId: 'round-1',
+    );
+
+    await persistence.save(
+      removedAccountRoundOne,
+      const VotingDraftState(choices: {1: 0}),
+    );
+    await persistence.save(
+      removedAccountRoundTwo,
+      const VotingDraftState(choices: {2: 1}),
+    );
+    await persistence.save(
+      retainedAccountRound,
+      const VotingDraftState(choices: {3: 0}),
+    );
+
+    await persistence.deleteForAccount('account-1');
+    await persistence.save(
+      removedAccountRoundOne,
+      const VotingDraftState(choices: {4: 1}),
+    );
+
+    expect((await persistence.load(removedAccountRoundOne)).isEmpty, true);
+    expect((await persistence.load(removedAccountRoundTwo)).isEmpty, true);
+    expect((await persistence.load(retainedAccountRound)).choices, {3: 0});
+  });
+
   test('draft notifier merges early edits with persisted choices', () async {
     final key = const VotingSessionKey(
       roundId: 'round-1',
@@ -172,6 +218,9 @@ class _DelayedDraftPersistence implements VotingDraftPersistence {
       }
     }
   }
+
+  @override
+  Future<void> deleteForAccount(String accountUuid) async {}
 
   void completeLoad(VotingDraftState draft) {
     _load.complete(draft);
