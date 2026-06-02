@@ -198,7 +198,7 @@ fn wire__crate__api__voting__build_keystone_delegation_request_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_ctx =
                 <crate::api::voting::ApiVotingRoundContext>::sse_decode(&mut deserializer);
-            let api_hotkey_seed = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_stored_hotkey_secret = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_bundle_index = <u32>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
@@ -206,7 +206,7 @@ fn wire__crate__api__voting__build_keystone_delegation_request_impl(
                     (move || async move {
                         let output_ok = crate::api::voting::build_keystone_delegation_request(
                             api_ctx,
-                            api_hotkey_seed,
+                            api_stored_hotkey_secret,
                             api_bundle_index,
                         )
                         .await?;
@@ -230,11 +230,11 @@ fn wire__crate__api__voting__build_prove_and_sign_delegation_payload_with_progre
             let api_ctx = <crate::api::voting::ApiVotingRoundContext>::sse_decode(&mut deserializer);
 let api_pir_server_url = <String>::sse_decode(&mut deserializer);
 let api_mnemonic = <String>::sse_decode(&mut deserializer);
-let api_hotkey_seed = <Vec<u8>>::sse_decode(&mut deserializer);
+let api_stored_hotkey_secret = <Vec<u8>>::sse_decode(&mut deserializer);
 let api_bundle_index = <u32>::sse_decode(&mut deserializer);
 let api_sink = <StreamSink<crate::api::voting::ApiDelegationProofEvent,flutter_rust_bridge::for_generated::SseCodec>>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
                     transform_result_sse::<_, String>((move || async move {
-                         let output_ok = crate::api::voting::build_prove_and_sign_delegation_payload_with_progress(api_ctx, api_pir_server_url, api_mnemonic, api_hotkey_seed, api_bundle_index, api_sink).await?;   Ok(output_ok)
+                         let output_ok = crate::api::voting::build_prove_and_sign_delegation_payload_with_progress(api_ctx, api_pir_server_url, api_mnemonic, api_stored_hotkey_secret, api_bundle_index, api_sink).await?;   Ok(output_ok)
                     })().await)
                 } })
 }
@@ -249,13 +249,13 @@ fn wire__crate__api__voting__build_prove_delegation_payload_with_keystone_signat
             let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_ctx = <crate::api::voting::ApiVotingRoundContext>::sse_decode(&mut deserializer);
 let api_pir_server_url = <String>::sse_decode(&mut deserializer);
-let api_hotkey_seed = <Vec<u8>>::sse_decode(&mut deserializer);
+let api_stored_hotkey_secret = <Vec<u8>>::sse_decode(&mut deserializer);
 let api_bundle_index = <u32>::sse_decode(&mut deserializer);
 let api_keystone_sig = <Vec<u8>>::sse_decode(&mut deserializer);
 let api_keystone_sighash = <Vec<u8>>::sse_decode(&mut deserializer);
 let api_sink = <StreamSink<crate::api::voting::ApiDelegationProofEvent,flutter_rust_bridge::for_generated::SseCodec>>::sse_decode(&mut deserializer);deserializer.end(); move |context| async move {
                     transform_result_sse::<_, String>((move || async move {
-                         let output_ok = crate::api::voting::build_prove_delegation_payload_with_keystone_signature_with_progress(api_ctx, api_pir_server_url, api_hotkey_seed, api_bundle_index, api_keystone_sig, api_keystone_sighash, api_sink).await?;   Ok(output_ok)
+                         let output_ok = crate::api::voting::build_prove_delegation_payload_with_keystone_signature_with_progress(api_ctx, api_pir_server_url, api_stored_hotkey_secret, api_bundle_index, api_keystone_sig, api_keystone_sighash, api_sink).await?;   Ok(output_ok)
                     })().await)
                 } })
 }
@@ -286,7 +286,7 @@ fn wire__crate__api__voting__build_vote_commitments_with_progress_impl(
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_round_id = <String>::sse_decode(&mut deserializer);
             let api_bundle_index = <u32>::sse_decode(&mut deserializer);
-            let api_hotkey_seed = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_stored_hotkey_secret = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_van_witness = <zcash_voting::vote::VanWitness>::sse_decode(&mut deserializer);
             let api_draft_votes =
                 <Vec<zcash_voting::wire::DraftVote>>::sse_decode(&mut deserializer);
@@ -304,7 +304,7 @@ fn wire__crate__api__voting__build_vote_commitments_with_progress_impl(
                             api_network,
                             api_round_id,
                             api_bundle_index,
-                            api_hotkey_seed,
+                            api_stored_hotkey_secret,
                             api_van_witness,
                             api_draft_votes,
                             api_sink,
@@ -2801,7 +2801,7 @@ fn wire__crate__api__voting__precompute_delegation_pir_impl(
             let api_ctx =
                 <crate::api::voting::ApiVotingRoundContext>::sse_decode(&mut deserializer);
             let api_pir_server_url = <String>::sse_decode(&mut deserializer);
-            let api_hotkey_seed = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_stored_hotkey_secret = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_bundle_index = <u32>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
@@ -2810,7 +2810,7 @@ fn wire__crate__api__voting__precompute_delegation_pir_impl(
                         let output_ok = crate::api::voting::precompute_delegation_pir(
                             api_ctx,
                             api_pir_server_url,
-                            api_hotkey_seed,
+                            api_stored_hotkey_secret,
                             api_bundle_index,
                         )
                         .await?;

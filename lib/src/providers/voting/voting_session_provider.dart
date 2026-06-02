@@ -249,7 +249,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final pirEndpoint = await _resolvePirEndpoint(context);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     if (pirEndpoint == null) return;
-    final hotkeySeed = await _ensureHotkey(context);
+    final storedHotkeySecret = await _ensureHotkey(context);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
 
     final rust = ref.read(votingRustApiProvider);
@@ -268,7 +268,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _delegationPirPrecomputes[key] ??= _runDelegationPirPrecompute(
         context: context,
         pirEndpoint: pirEndpoint,
-        hotkeySeed: hotkeySeed,
+        storedHotkeySecret: storedHotkeySecret,
         bundleIndex: bundleIndex,
       );
     }
@@ -311,7 +311,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _setStateForContext(context, nextState);
         current = nextState;
       }
-      final hotkeySeed = await _ensureHotkey(context);
+      final storedHotkeySecret = await _ensureHotkey(context);
 
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
@@ -344,7 +344,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
               ctx: _apiRoundContext(context),
               pirServerUrl: pirEndpoint.toString(),
               mnemonic: mnemonic,
-              hotkeySeed: hotkeySeed,
+              storedHotkeySecret: storedHotkeySecret,
               bundleIndex: bundleIndex,
             )) {
           signedDelegationPayload =
@@ -605,7 +605,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
 
       final signatures = await _loadKeystoneSignatures(context);
-      final hotkeySeed = await _ensureHotkey(
+      final storedHotkeySecret = await _ensureHotkey(
         context,
         alreadyBound: signatures.isNotEmpty,
       );
@@ -653,7 +653,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
                   ctx: _apiRoundContext(context),
                   pirServerUrl: pirEndpoint.toString(),
-                  hotkeySeed: hotkeySeed,
+                  storedHotkeySecret: storedHotkeySecret,
                   bundleIndex: bundleIndex,
                   keystoneSig: signature.sig,
                   keystoneSighash: signature.sighash,
@@ -747,8 +747,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final current = await future;
       final context = await _loadContext(_roundId);
       await _waitUntilWalletReadyForVoting(context);
-      final hotkeySeed = await _hotkeyForVoteCasting(context);
-      if (hotkeySeed == null) {
+      final storedHotkeySecret = await _hotkeyForVoteCasting(context);
+      if (storedHotkeySecret == null) {
         _setError(
           'Voting hotkey is missing. Delegate this round before casting votes.',
           cause: const VotingHotkeyUnavailable('missing stored hotkey'),
@@ -1103,7 +1103,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                     network: context.network,
                     roundId: context.round.roundId,
                     bundleIndex: bundleIndex,
-                    hotkeySeed: hotkeySeed,
+                    storedHotkeySecret: storedHotkeySecret,
                     vanWitness: witness,
                     draftVotes: [draftVote],
                   )) {
@@ -2051,7 +2051,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> _runDelegationPirPrecompute({
     required _VotingSessionContext context,
     required Uri pirEndpoint,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async {
     final key = _delegationPirPrecomputeKey(context, bundleIndex);
@@ -2066,7 +2066,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           .precomputeDelegationPir(
             ctx: _apiRoundContext(context),
             pirServerUrl: pirEndpoint.toString(),
-            hotkeySeed: hotkeySeed,
+            storedHotkeySecret: storedHotkeySecret,
             bundleIndex: bundleIndex,
           );
       debugPrint(
@@ -2279,7 +2279,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       return;
     }
 
-    final hotkeySeed =
+    final storedHotkeySecret =
         existingHotkey ??
         await _ensureHotkey(context, alreadyBound: signatures.isNotEmpty);
 
@@ -2301,7 +2301,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         .read(votingRustApiProvider)
         .buildKeystoneDelegationRequest(
           ctx: _apiRoundContext(context),
-          hotkeySeed: hotkeySeed,
+          storedHotkeySecret: storedHotkeySecret,
           bundleIndex: nextUnsignedBundle,
         );
 

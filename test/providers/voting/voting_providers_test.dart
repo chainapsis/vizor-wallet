@@ -3626,24 +3626,27 @@ void main() {
     expect(rust.maxConcurrentSetups, 1);
   });
 
-  test('delegation PIR warmup passes the stored hotkey seed to Rust', () async {
-    final precomputeGate = Completer<void>();
-    final rust = FakeVotingRustApi(precomputeGate: precomputeGate);
-    final container = _sessionContainer(rust: rust);
-    addTearDown(container.dispose);
+  test(
+    'delegation PIR warmup passes the stored hotkey secret to Rust',
+    () async {
+      final precomputeGate = Completer<void>();
+      final rust = FakeVotingRustApi(precomputeGate: precomputeGate);
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
 
-    await container.read(votingSessionProvider(kRoundId).future);
-    await container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .precomputeDelegationPir(accountUuid: 'account-1');
-    await rust.precomputeStarted.future;
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .precomputeDelegationPir(accountUuid: 'account-1');
+      await rust.precomputeStarted.future;
 
-    expect(rust.precomputeHotkeySeeds.single, [9, 9, 9]);
+      expect(rust.precomputeStoredHotkeySecrets.single, [9, 9, 9]);
 
-    precomputeGate.complete();
-    await rust.precomputeFinished.future;
-    await Future<void>.delayed(Duration.zero);
-  });
+      precomputeGate.complete();
+      await rust.precomputeFinished.future;
+      await Future<void>.delayed(Duration.zero);
+    },
+  );
 
   test('delegation PIR warmup skips after account switch', () async {
     final rust = FakeVotingRustApi();
@@ -4806,7 +4809,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final recordedShares = <_RecordedShare>[];
   final syncedVoteTrees = <String>[];
   final precomputedDelegationPir = <int>[];
-  final precomputeHotkeySeeds = <List<int>>[];
+  final precomputeStoredHotkeySecrets = <List<int>>[];
   final setupStarted = Completer<void>();
   final delegationProofStarted = Completer<void>();
   final keystoneDelegationProofStarted = Completer<void>();
@@ -4856,7 +4859,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
     required String mnemonic,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async* {
     accountUuids.add(ctx.accountUuid);
@@ -4904,7 +4907,7 @@ class FakeVotingRustApi implements VotingRustApi {
   @override
   Future<rust_delegate.KeystoneSigningRequest> buildKeystoneDelegationRequest({
     required rust_api.ApiVotingRoundContext ctx,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async {
     accountUuids.add(ctx.accountUuid);
@@ -4988,7 +4991,7 @@ class FakeVotingRustApi implements VotingRustApi {
   buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
     required List<int> keystoneSig,
     required List<int> keystoneSighash,
@@ -5053,12 +5056,12 @@ class FakeVotingRustApi implements VotingRustApi {
   Future<rust_wire.DelegationPirPrecomputeResultView> precomputeDelegationPir({
     required rust_api.ApiVotingRoundContext ctx,
     required String pirServerUrl,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required int bundleIndex,
   }) async {
     accountUuids.add(ctx.accountUuid);
     precomputedDelegationPir.add(bundleIndex);
-    precomputeHotkeySeeds.add(List<int>.from(hotkeySeed));
+    precomputeStoredHotkeySecrets.add(List<int>.from(storedHotkeySecret));
     if (!precomputeStarted.isCompleted) {
       precomputeStarted.complete();
     }
@@ -5168,7 +5171,7 @@ class FakeVotingRustApi implements VotingRustApi {
     required String network,
     required String roundId,
     required int bundleIndex,
-    required List<int> hotkeySeed,
+    required List<int> storedHotkeySecret,
     required rust_vote.VanWitness vanWitness,
     required List<rust_wire.DraftVote> draftVotes,
   }) async* {

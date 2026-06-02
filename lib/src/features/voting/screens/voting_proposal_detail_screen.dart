@@ -202,7 +202,7 @@ class _VotingProposalDetailScreenState
 
   // Warm the delegation PIR / padded-note secrets as soon as the round page
   // opens, rather than waiting for the review screen. The warm-up is decoupled
-  // from PCZT construction, so it only needs the stored voting hotkey seed.
+  // from PCZT construction, so it only needs the stored voting hotkey secret.
   void _maybePrecomputeDelegationPir(VotingSessionState state) {
     final accountUuid = state.accountUuid;
     if (accountUuid == null || !_shouldPrepareVotingPower(state)) {

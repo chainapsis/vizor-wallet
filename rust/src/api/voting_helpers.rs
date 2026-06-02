@@ -60,8 +60,7 @@ pub(super) fn prepare_delegation_bundle_params<'a>(
     lwd: zcash_voting::delegate::DelegationLwdInputs,
     session_json: Option<&'a str>,
     account_uuid: &'a str,
-    network: zcash_voting::Network,
-    hotkey_seed: &'a [u8],
+    voting_hotkey: &'a zcash_voting::VotingHotkey,
     bundle_index: u32,
     bundle_policy: zcash_voting::BundlePolicy,
 ) -> zcash_voting::delegate::PrepareDelegationBundleParams<'a> {
@@ -69,8 +68,7 @@ pub(super) fn prepare_delegation_bundle_params<'a>(
         lwd,
         session_json,
         account_uuid,
-        network,
-        hotkey_seed,
+        voting_hotkey,
         bundle_index,
         bundle_policy,
     }
