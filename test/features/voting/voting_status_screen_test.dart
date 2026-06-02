@@ -1211,6 +1211,39 @@ void main() {
     expect(find.textContaining("Couldn't load results"), findsOneWidget);
   });
 
+  testWidgets('results screen rejects unauthenticated round ids', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final http = FakeVotingHttpClient(responses: _votingHttpResponses());
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _resultsHarness(
+          initialLocation: '/voting/poll/$_unauthenticatedRoundId/results',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining("Couldn't load results"), findsOneWidget);
+    expect(
+      find.textContaining('not authenticated by voting config'),
+      findsOneWidget,
+    );
+    expect(_tallyRequestCount(http, _unauthenticatedRoundId), 0);
+  });
+
   testWidgets('reviewing partial votes warns and marks skipped rows', (
     tester,
   ) async {
@@ -2127,9 +2160,9 @@ Widget _submissionHarness() {
   );
 }
 
-Widget _resultsHarness() {
+Widget _resultsHarness({String? initialLocation}) {
   final router = GoRouter(
-    initialLocation: '/voting/poll/$_roundId/results',
+    initialLocation: initialLocation ?? '/voting/poll/$_roundId/results',
     routes: [
       GoRoute(
         path: '/voting/poll/:roundId/results',
@@ -2250,14 +2283,19 @@ Map<String, Object> _votingHttpResponses() => {
   },
 };
 
-int _tallyRequestCount(FakeVotingHttpClient http) {
+int _tallyRequestCount(FakeVotingHttpClient http, [String? roundId]) {
+  final targetRoundId = roundId ?? _roundId;
   return http.requests
-      .where((request) => request.uri.path.endsWith('/tally-results/$_roundId'))
+      .where(
+        (request) => request.uri.path.endsWith('/tally-results/$targetRoundId'),
+      )
       .length;
 }
 
 const _roundId =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const _unauthenticatedRoundId =
+    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const _draftKey = VotingSessionKey(roundId: _roundId, accountUuid: 'account-1');
 const _bytes1x32Base64 = 'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=';
 const _bytes2x32Base64 = 'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=';
