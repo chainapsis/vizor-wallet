@@ -107,7 +107,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                               children: [
                                 Text(
                                   'Review your answers',
-                                  textAlign: TextAlign.left,
+                                  textAlign: TextAlign.center,
                                   style: AppTypography.displaySmall.copyWith(
                                     color: context.colors.text.accent,
                                   ),
