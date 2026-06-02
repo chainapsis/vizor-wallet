@@ -726,7 +726,7 @@ class ZcashWalletApp extends ConsumerWidget {
               child: _WindowsUpdatePromptHost(
                 router: router,
                 child: _RpcEndpointFailoverToastListener(
-                  child: _LinuxOpaqueWindowBackground(
+                  child: _PlatformOpaqueWindowBackground(
                     child: DesktopWindowTitlebarSafeArea(
                       child: GestureDetector(
                         onTap: () {
@@ -1201,18 +1201,30 @@ Future<void> _openLinuxUpdateRelease(LinuxUpdateInfo update) async {
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-class _LinuxOpaqueWindowBackground extends StatelessWidget {
-  const _LinuxOpaqueWindowBackground({required this.child});
+class _PlatformOpaqueWindowBackground extends StatelessWidget {
+  const _PlatformOpaqueWindowBackground({required this.child});
 
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.linux) {
+    if (!_paintsOpaqueWindowBackground) {
       return child;
     }
     return ColoredBox(color: context.colors.background.ground, child: child);
   }
+}
+
+bool get _paintsOpaqueWindowBackground {
+  if (kIsWeb) return false;
+  return switch (defaultTargetPlatform) {
+    TargetPlatform.android ||
+    TargetPlatform.iOS ||
+    TargetPlatform.linux => true,
+    TargetPlatform.fuchsia ||
+    TargetPlatform.macOS ||
+    TargetPlatform.windows => false,
+  };
 }
 
 class _RpcEndpointFailoverToastListener extends StatelessWidget {
