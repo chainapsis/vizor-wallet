@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../rust/api/voting_config.dart';
 import '../../rust/third_party/zcash_voting/config.dart';
 import 'voting_config_source_provider.dart';
 import 'voting_rounds_provider.dart';
@@ -29,11 +30,11 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
       _lifecycleListener?.dispose();
     });
     try {
-      final config = await _load();
+      final resolution = await _resolve();
       if (!_isCurrentLoad(generation)) {
         return _staleLoadResult();
       }
-      return config;
+      return _commitResolution(resolution);
     } catch (_) {
       if (!_isCurrentLoad(generation)) {
         return _staleLoadResult();
@@ -45,9 +46,14 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
   Future<void> refresh() async {
     final generation = ++_loadGeneration;
     state = const AsyncLoading<ResolvedVotingConfig>();
-    final config = await AsyncValue.guard(_load);
-    if (!_isCurrentLoad(generation)) return;
-    state = config;
+    try {
+      final resolution = await _resolve();
+      if (!_isCurrentLoad(generation)) return;
+      state = AsyncData(_commitResolution(resolution));
+    } catch (error, stackTrace) {
+      if (!_isCurrentLoad(generation)) return;
+      state = AsyncError(error, stackTrace);
+    }
   }
 
   bool _isCurrentLoad(int generation) {
@@ -64,11 +70,14 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
     throw StateError('Ignored stale voting config load.');
   }
 
-  Future<ResolvedVotingConfig> _load() async {
+  Future<VotingConfigResolution> _resolve() async {
     await ref.read(votingConfigSourceProvider.future);
-    final resolution = await ref
+    return ref
         .read(votingConfigLoaderProvider)
         .load(previous: _previousResolvedConfig);
+  }
+
+  ResolvedVotingConfig _commitResolution(VotingConfigResolution resolution) {
     _applySwitch(resolution.switchKind);
     _previousResolvedConfig = resolution.config;
     return resolution.config;
