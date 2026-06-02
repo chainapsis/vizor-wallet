@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart' hide debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,7 +10,6 @@ import '../../core/formatting/hex_codec.dart';
 import '../../features/voting/voting_error_messages.dart';
 import '../../features/voting/voting_flow_models.dart';
 import '../../features/voting/voting_formatters.dart';
-import '../../features/voting/voting_recovery_service.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../features/voting/voting_share_timing.dart';
 import '../../rust/api/voting.dart' as rust_api;
@@ -69,60 +67,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     );
   }
 
-  VotingRustApi get _rustApi => ref.read(votingRustApiProvider);
-
-  VotingApiClient _apiClientForConfig(rust_config.ResolvedVotingConfig config) {
-    return ref.read(votingApiClientProvider(config.apiServers));
-  }
-
-  VotingApiClient _apiClientForContext(_VotingSessionContext context) {
-    return _apiClientForConfig(context.config);
-  }
-
-  VotingRecoveryService get _recoveryService {
-    return ref.read(votingRecoveryServiceProvider);
-  }
-
-  VotingHelperHealthTracker get _helperHealthTracker {
-    return ref.read(votingHelperHealthTrackerProvider);
-  }
-
-  PirSnapshotResolver get _pirResolver {
-    return ref.read(votingPirResolverProvider);
-  }
-
-  Future<String> _walletDbPath() {
-    return ref.read(votingWalletDbPathProvider).call();
-  }
-
-  Future<String?> _activeAccountUuid() {
-    return ref.read(votingActiveAccountUuidProvider).call();
-  }
-
-  Future<bool> _accountIsHardware(String accountUuid) {
-    return ref.read(votingAccountIsHardwareProvider).call(accountUuid);
-  }
-
-  VotingTxConfirmationPolling get _txConfirmationPolling {
-    return ref.read(votingTxConfirmationPollingProvider);
-  }
-
-  VotingWalletSyncReadinessChecker get _walletSyncReadinessChecker {
-    return ref.read(votingWalletSyncReadinessCheckerProvider);
-  }
-
-  Duration get _walletSyncMaxWait {
-    return ref.read(votingWalletSyncMaxWaitProvider);
-  }
-
-  Duration get _walletSyncPollInterval {
-    return ref.read(votingWalletSyncPollIntervalProvider);
-  }
-
-  void _startWalletSync() {
-    ref.read(votingWalletSyncStarterProvider).call();
-  }
-
   @override
   Future<VotingSessionState> build() async {
     _reactivateForBuild();
@@ -157,13 +101,13 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   void _registerDisposeHandler() {
     if (_disposeHandlerRegistered) return;
     _disposeHandlerRegistered = true;
-    final rust = _rustApi;
+    final rust = ref.read(votingRustApiProvider);
     ref.onDispose(() {
       _disposeHandlerRegistered = false;
       _activeAccountListenerRegistered = false;
       _submissionGuardListenerRegistered = false;
-      // Provider disposal is round-scoped: clear this round's process-local
-      // vote-tree sync cache while leaving other rounds untouched.
+      // Provider disposal is round-scoped: clear abandoned prepared PCZTs but
+      // keep account-wide vote-tree sync state reusable across rounds.
       final context = _currentContext;
       _isDisposed = true;
       _advanceSessionGeneration();
@@ -238,7 +182,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       if (!_activeSubmissionOwnsContext(previousContext)) {
         unawaited(
           _resetVotingSessionState(
-            rust: _rustApi,
+            rust: ref.read(votingRustApiProvider),
             context: previousContext,
             reason: 'active-account-switch',
           ),
@@ -299,6 +243,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     });
   }
 
+  void clearVoteSubmissionProgressForJobStart() {
+    final current = state.value;
+    if (current == null) return;
+    state = AsyncData(
+      current.copyWith(
+        clearVoteSubmissionProgress: true,
+        clearCurrentVoteKey: true,
+        clearError: true,
+      ),
+    );
+  }
+
   Future<void> precomputeDelegationPir({required String accountUuid}) async {
     final context = await _loadContext(_roundId);
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
@@ -330,7 +286,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
 
-    final rust = _rustApi;
+    final rust = ref.read(votingRustApiProvider);
     final bundleSetup = await rust.setupDelegationBundles(
       ctx: _apiRoundContext(context),
     );
@@ -405,7 +361,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
       );
-      final rust = _rustApi;
+      final rust = ref.read(votingRustApiProvider);
       final completedBundleIndexes = await _confirmSubmittedDelegations(
         context: context,
         plan: plan,
@@ -535,7 +491,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       }
 
       final context = await _loadContext(_roundId);
-      final rust = _rustApi;
+      final rust = ref.read(votingRustApiProvider);
       final signatures = Map<int, rust_wire.KeystoneSignatureRecord>.from(
         current.keystoneSignatures,
       );
@@ -709,7 +665,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       if (completedBundleIndexes == null) return;
 
-      final rust = _rustApi;
+      final rust = ref.read(votingRustApiProvider);
       for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
         final signature = signatures[bundleIndex];
         if (signature == null) {
@@ -851,8 +807,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       var plan = context.resumePlan;
       var roundPlan = context.roundPlan;
-      final api = _apiClientForContext(context);
-      final rust = _rustApi;
+      final api = ref.read(votingApiClientProvider(context.config.apiServers));
+      final rust = ref.read(votingRustApiProvider);
       final effectiveDraftVotes = VotingShareTimingPolicy.applyLastMomentMode(
         draftVotes,
         context.round,
@@ -1300,6 +1256,10 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       );
       final refreshedPlan = await _loadResumePlan(context);
       final refreshedRoundPlan = await _loadRoundPlan(context);
+      final hasBlockingWork = hasBlockingRoundRecoveryWork(refreshedRoundPlan);
+      if (!hasBlockingWork) {
+        await _clearPersistedDraftChoices(context);
+      }
       debugPrint(
         '[zcash] Voting: resume plan after vote flow loaded '
         'round=${context.round.roundId} '
@@ -1311,7 +1271,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       _setStateForContext(
         context,
         (state.value ?? current).copyWith(
-          phase: VotingSessionPhase.submittingShares,
+          phase: _phaseForPlans(refreshedRoundPlan),
           resumePlan: refreshedPlan,
           roundPlan: refreshedRoundPlan,
           voteProgress: progress,
@@ -1370,7 +1330,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       throw const VotingHotkeyUnavailable('missing stored voting hotkey');
     }
 
-    final rust = _rustApi;
+    final rust = ref.read(votingRustApiProvider);
     final hotkey = await rust.generateVotingHotkey(network: context.network);
     final storedAfterGeneration = await _readStoredHotkey(context);
     if (storedAfterGeneration != null && storedAfterGeneration.isNotEmpty) {
@@ -1421,9 +1381,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int totalQuestions,
     required double? voteSubmissionProgress,
   }) async {
-    final api = _apiClientForContext(context);
-    final rust = _rustApi;
-    final helperHealth = _helperHealthTracker;
+    final api = ref.read(votingApiClientProvider(context.config.apiServers));
+    final rust = ref.read(votingRustApiProvider);
+    final helperHealth = ref.read(votingHelperHealthTrackerProvider);
     final serverUrls = context.config.voteServers
         .map((endpoint) => endpoint.url.toString())
         .toList(growable: false);
@@ -1554,6 +1514,42 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
+  Future<int> _syncVoteTreeWithFailover({
+    required _VotingSessionContext context,
+    required int bundleIndex,
+    required int proposalId,
+  }) async {
+    final nodeUrls = context.config.apiServers.all;
+    final rust = ref.read(votingRustApiProvider);
+    Object? lastError;
+    for (var attempt = 0; attempt < nodeUrls.length; attempt++) {
+      final nodeUrl = nodeUrls[attempt];
+      try {
+        return await rust.syncVoteTree(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+          nodeUrl: nodeUrl.toString(),
+        );
+      } catch (error) {
+        lastError = error;
+        if (attempt == nodeUrls.length - 1) {
+          rethrow;
+        }
+        await rust.resetVotingSessionState(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+        );
+        debugPrint(
+          '[zcash] Voting: vote tree sync retrying failover '
+          'round=${context.round.roundId} bundle=$bundleIndex '
+          'proposal=$proposalId from=$nodeUrl error=$error',
+        );
+      }
+    }
+    throw StateError('vote tree sync failover exited unexpectedly: $lastError');
+  }
+
   String? _bundleProgressMessage({
     required int bundleIndex,
     required int bundleCount,
@@ -1634,8 +1630,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context,
     rust_wire.SignedVoteCommitmentsView commitments,
   ) async {
-    final api = _apiClientForContext(context);
-    final rust = _rustApi;
+    final api = ref.read(votingApiClientProvider(context.config.apiServers));
+    final rust = ref.read(votingRustApiProvider);
     final vcTreePositions = <int, BigInt>{};
     for (final commitment in commitments.commitments) {
       debugPrint(
@@ -1674,11 +1670,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
       final confirmation = await _awaitTxConfirmation(api, result.txHash);
       if (confirmation == null) {
-        throw _VotingTxConfirmationTimeout(
-          'Vote commitment transaction ${result.txHash} for bundle '
-          '${commitments.bundleIndex}, proposal ${commitment.proposalId} '
-          'was submitted but not confirmed in time. Retry to resume '
-          'confirmation before continuing.',
+        throw StateError(
+          'Transaction ${result.txHash} was not confirmed in time.',
         );
       }
       if (confirmation.code != 0) {
@@ -1727,8 +1720,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required rust_wire.RoundPlanView? roundPlan,
     required Map<int, VotingSessionProgress> progress,
   }) async {
-    final api = _apiClientForContext(context);
-    final rust = _rustApi;
+    final api = ref.read(votingApiClientProvider(context.config.apiServers));
+    final rust = ref.read(votingRustApiProvider);
     final completedBundleIndexes = <int>{};
     final submittedDelegationsByBundle = <int, String>{};
     for (final work
@@ -1790,8 +1783,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required int bundleIndex,
     required rust_wire.SignedDelegationPayloadView submission,
   }) async {
-    final api = _apiClientForContext(context);
-    final rust = _rustApi;
+    final api = ref.read(votingApiClientProvider(context.config.apiServers));
+    final rust = ref.read(votingRustApiProvider);
     final submitTimer = Stopwatch()..start();
     debugPrint(
       '[zcash] Voting: submitting delegation '
@@ -1830,10 +1823,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     final confirmation = await _awaitTxConfirmation(api, result.txHash);
     if (confirmation == null) {
-      throw _VotingTxConfirmationTimeout(
-        'Delegation transaction ${result.txHash} for bundle $bundleIndex was '
-        'submitted but not confirmed in time. Retry to resume confirmation '
-        'before continuing.',
+      throw StateError(
+        'Transaction ${result.txHash} was not confirmed in time.',
       );
     }
     if (confirmation.code != 0) {
@@ -1861,7 +1852,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     VotingApiClient api,
     String txHash,
   ) async {
-    final polling = _txConfirmationPolling;
+    final polling = ref.read(votingTxConfirmationPollingProvider);
     final attempts = polling.attempts;
     final delay = polling.delay;
     final timer = Stopwatch()..start();
@@ -1910,9 +1901,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         ),
       );
 
-      final api = _apiClientForContext(context);
-      final rust = _rustApi;
-      final helperHealth = _helperHealthTracker;
+      final api = ref.read(votingApiClientProvider(context.config.apiServers));
+      final rust = ref.read(votingRustApiProvider);
+      final helperHealth = ref.read(votingHelperHealthTrackerProvider);
       final configuredServerUrls = context.config.voteServers
           .map((endpoint) => endpoint.url.toString())
           .toList(growable: false);
@@ -2011,7 +2002,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     required rust_wire.ShareDelegationRecordView share,
     required List<String> serverUrls,
   }) async {
-    final rust = _rustApi;
+    final rust = ref.read(votingRustApiProvider);
     final key = VotingVoteKey(
       bundleIndex: share.bundleIndex,
       proposalId: share.proposalId,
@@ -2046,7 +2037,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
     final shareId = bytesToHex(share.nullifier);
     final acceptedUrls = <String>[];
-    final helperHealth = _helperHealthTracker;
+    final helperHealth = ref.read(votingHelperHealthTrackerProvider);
     for (final serverUrl in helperHealth.candidateServers(serverUrls)) {
       try {
         await api.resubmitShare(
@@ -2327,14 +2318,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _logStaleSessionUpdate('action');
       } catch (e, st) {
         debugPrint('[zcash] Voting: session action failed: $e\n$st');
-        if (_shouldResetSessionStateOnActionError(e)) {
-          await _cleanupCurrentSessionState(reason: 'action-failed');
-        } else {
-          debugPrint(
-            '[zcash] Voting: process-local cleanup skipped '
-            'round=$_roundId reason=transient-action-failure error=$e',
-          );
-        }
+        await _cleanupCurrentSessionState(reason: 'action-failed');
         _setError(_actionErrorMessage(e), cause: e);
       } finally {
         _runningActionGeneration = previousActionGeneration;
@@ -2346,34 +2330,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   static String _actionErrorMessage(Object error) {
     return friendlyVotingErrorMessage(error);
-  }
-
-  static bool _shouldResetSessionStateOnActionError(Object error) {
-    if (error is _VotingRecoverableActionException) return false;
-    if (error is TimeoutException ||
-        error is SocketException ||
-        error is HttpException) {
-      return false;
-    }
-    if (error is VotingHttpException) {
-      return !_isTransientVotingHttpStatus(error.statusCode);
-    }
-    return true;
-  }
-
-  static bool _isTransientVotingHttpStatus(int statusCode) {
-    switch (statusCode) {
-      case 408:
-      case 425:
-      case 429:
-      case 500:
-      case 502:
-      case 503:
-      case 504:
-        return true;
-      default:
-        return false;
-    }
   }
 
   static bool _needsDelegationPreparation(VotingSessionState state) {
@@ -2490,7 +2446,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       ),
     );
 
-    final resolver = _pirResolver;
+    final resolver = ref.read(votingPirResolverProvider);
     late final PirSnapshotResolution resolution;
     try {
       resolution = await resolver.resolve(
@@ -2553,37 +2509,43 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     checkAction();
     final config = await ref.read(votingConfigProvider.future);
     config.assertRoundAuthenticated(roundId);
-    final api = _apiClientForConfig(config);
+    final api = ref.read(votingApiClientProvider(config.apiServers));
     final round = VotingRoundDetails.fromStatus(
       await api.getRoundStatus(roundId),
     );
-    final roundParams = await _rustApi.trustedVotingRoundParamsFromConfig(
-      config: config,
-      roundId: round.roundId,
-      snapshotHeight: BigInt.from(round.snapshotHeight),
-      ncRoot: round.ncRoot,
-      nullifierImtRoot: round.nullifierImtRoot,
-    );
+    final roundParams = await ref
+        .read(votingRustApiProvider)
+        .trustedVotingRoundParamsFromConfig(
+          config: config,
+          roundId: round.roundId,
+          snapshotHeight: BigInt.from(round.snapshotHeight),
+          ncRoot: round.ncRoot,
+          nullifierImtRoot: round.nullifierImtRoot,
+        );
     checkAction();
     final accountUuid = await _accountUuidForSession();
     final isHardwareAccount = await _isHardwareAccountForSession();
     final endpoint = ref.read(votingRpcEndpointConfigProvider);
-    final dbPath = await _walletDbPath();
+    final dbPath = await ref.read(votingWalletDbPathProvider).call();
     checkAction();
-    final resumePlan = await _recoveryService.loadResumePlan(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: round.roundId,
-    );
+    final resumePlan = await ref
+        .read(votingRecoveryServiceProvider)
+        .loadResumePlan(
+          dbPath: dbPath,
+          accountUuid: accountUuid,
+          roundId: round.roundId,
+        );
     // Build a temporary context without roundPlan to derive proposalIds.
     final proposals = proposalsFromRound(round);
     final proposalIds = proposals.map((p) => p.id).toList();
-    final roundPlan = await _recoveryService.loadRoundPlan(
-      dbPath: dbPath,
-      accountUuid: accountUuid,
-      roundId: round.roundId,
-      proposalIds: proposalIds,
-    );
+    final roundPlan = await ref
+        .read(votingRecoveryServiceProvider)
+        .loadRoundPlan(
+          dbPath: dbPath,
+          accountUuid: accountUuid,
+          roundId: round.roundId,
+          proposalIds: proposalIds,
+        );
     checkAction();
     final context = _VotingSessionContext(
       sessionGeneration: _sessionGeneration,
@@ -2605,7 +2567,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     final existing = _sessionAccountUuid;
     if (existing != null) return existing;
 
-    final accountUuid = await _activeAccountUuid();
+    final accountUuid = await ref.read(votingActiveAccountUuidProvider).call();
     if (accountUuid == null) {
       throw StateError('No active account for voting session.');
     }
@@ -2618,17 +2580,21 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     if (existing != null) return existing;
 
     final accountUuid = await _accountUuidForSession();
-    final isHardware = await _accountIsHardware(accountUuid);
+    final isHardware = await ref
+        .read(votingAccountIsHardwareProvider)
+        .call(accountUuid);
     _sessionIsHardwareAccount = isHardware;
     return isHardware;
   }
 
   Future<VotingResumePlan> _loadResumePlan(_VotingSessionContext context) {
-    return _recoveryService.loadResumePlan(
-      dbPath: context.dbPath,
-      accountUuid: context.accountUuid,
-      roundId: context.round.roundId,
-    );
+    return ref
+        .read(votingRecoveryServiceProvider)
+        .loadResumePlan(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+        );
   }
 
   /// Loads the crate planner's round plan.
@@ -2636,12 +2602,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context,
   ) {
     final proposals = proposalsFromRound(context.round);
-    return _recoveryService.loadRoundPlan(
-      dbPath: context.dbPath,
-      accountUuid: context.accountUuid,
-      roundId: context.round.roundId,
-      proposalIds: proposals.map((p) => p.id).toList(),
-    );
+    return ref
+        .read(votingRecoveryServiceProvider)
+        .loadRoundPlan(
+          dbPath: context.dbPath,
+          accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
+          proposalIds: proposals.map((p) => p.id).toList(),
+        );
   }
 
   Future<void> _waitUntilWalletReadyForVoting(
@@ -2649,15 +2617,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   ) async {
     var loggedWait = false;
     final sessionInvalidated = _sessionInvalidated.future;
-    final maxWait = _walletSyncMaxWait;
-    final waitStartedAt = DateTime.now();
     while (true) {
       _throwIfContextStale(context, 'wallet-sync-wait');
-      final readiness = await _walletSyncReadinessChecker.check(
-        dbPath: context.dbPath,
-        network: context.network,
-        snapshotHeight: context.round.snapshotHeight,
-      );
+      final readiness = await ref
+          .read(votingWalletSyncReadinessCheckerProvider)
+          .check(
+            dbPath: context.dbPath,
+            network: context.network,
+            snapshotHeight: context.round.snapshotHeight,
+          );
       _throwIfContextStale(context, 'wallet-sync-readiness');
       if (readiness.isReady) {
         _setWalletSyncReadinessState(
@@ -2683,23 +2651,14 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         readiness: readiness,
         waiting: true,
       );
-      final elapsed = DateTime.now().difference(waitStartedAt);
-      if (elapsed >= maxWait) {
-        throw _VotingWalletSyncWaitTimeout(
-          roundId: context.round.roundId,
-          scannedHeight: readiness.scannedHeight,
-          snapshotHeight: readiness.snapshotHeight,
-          waited: elapsed,
-        );
-      }
       _throwIfContextStale(context, 'wallet-sync-start');
       try {
-        _startWalletSync();
+        ref.read(votingWalletSyncStarterProvider).call();
       } catch (e) {
         debugPrint('[zcash] Voting: wallet sync start skipped: $e');
       }
       await Future.any<void>([
-        Future<void>.delayed(_walletSyncPollInterval),
+        Future<void>.delayed(ref.read(votingWalletSyncPollIntervalProvider)),
         sessionInvalidated,
       ]);
     }
@@ -2858,7 +2817,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     try {
       final context = await _loadContext(_roundId);
       await _resetVotingSessionState(
-        rust: _rustApi,
+        rust: ref.read(votingRustApiProvider),
         context: context,
         reason: reason,
       );
@@ -2870,11 +2829,11 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  /// Clear this round's process-local vote-tree sync cache in Rust.
+  /// Clear round-scoped Rust voting caches for this session.
   ///
-  /// Passing the round ID performs round-scoped cleanup and leaves other rounds
-  /// under the same account intact. This reset does not abort in-flight proof
-  /// or vote jobs.
+  /// Passing the round ID intentionally preserves the account-wide vote-tree
+  /// sync client while discarding prepared delegation PCZTs for abandoned work.
+  /// This cache reset does not abort in-flight proof or vote jobs.
   static Future<void> _resetVotingSessionState({
     required VotingRustApi rust,
     required _VotingSessionContext context,
@@ -2922,9 +2881,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       accountUuid: context.accountUuid,
     );
     final notifier = ref.read(votingDraftProvider(draftKey).notifier);
-    final draft = await notifier.ensureLoaded();
-    for (final proposalId in draft.choices.keys.toList(growable: false)) {
-      notifier.clearChoice(proposalId);
+    try {
+      final draft = await notifier.ensureLoaded();
+      if (draft.isEmpty) return;
+      await notifier.clearAll();
+    } catch (error) {
+      debugPrint(
+        '[zcash] Voting: draft cleanup skipped '
+        'round=${context.round.roundId} account=${context.accountUuid} '
+        'error=$error',
+      );
     }
   }
 
@@ -3099,33 +3065,6 @@ class _VotingSessionContext {
   });
 }
 
-abstract class _VotingRecoverableActionException implements Exception {
-  const _VotingRecoverableActionException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
-class _VotingTxConfirmationTimeout extends _VotingRecoverableActionException {
-  const _VotingTxConfirmationTimeout(super.message);
-}
-
-class _VotingWalletSyncWaitTimeout extends _VotingRecoverableActionException {
-  _VotingWalletSyncWaitTimeout({
-    required String roundId,
-    required int scannedHeight,
-    required int snapshotHeight,
-    required Duration waited,
-  }) : super(
-         'Wallet sync has not reached the voting snapshot yet '
-         '(round=$roundId scanned=${formatBlockHeight(scannedHeight)} '
-         'snapshot=${formatBlockHeight(snapshotHeight)} '
-         'waited=${formatElapsedSeconds(waited)}). Keep syncing and retry.',
-       );
-}
-
 class _StaleVotingSessionAction implements Exception {
   const _StaleVotingSessionAction();
 }
@@ -3153,8 +3092,8 @@ final votingSessionProvider =
       String
     >(VotingSessionNotifier.new);
 
-final votingSubmissionSessionProvider =
-    AsyncNotifierProvider.autoDispose.family<
+final votingSubmissionSessionProvider = AsyncNotifierProvider.autoDispose
+    .family<
       VotingSubmissionSessionNotifier,
       VotingSessionState,
       VotingSessionKey
