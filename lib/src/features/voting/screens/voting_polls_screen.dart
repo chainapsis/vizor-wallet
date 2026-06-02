@@ -222,15 +222,6 @@ class _VotingTopBar extends StatelessWidget {
                 onTap: onSettings,
               ),
             ),
-            Text(
-              'Coinholder polling',
-              textAlign: TextAlign.center,
-              style: AppTypography.headlineSmall.copyWith(
-                color: context.colors.text.accent,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.18,
-              ),
-            ),
           ],
         ),
       ),
@@ -371,15 +362,6 @@ class _PollCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            Text(
-              'Poll description',
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.secondary,
-                height: 20 / 14,
-                letterSpacing: -0.22,
-              ),
-            ),
-            const SizedBox(height: 2),
             Text(
               description.isEmpty ? round.roundId : description,
               maxLines: 4,
