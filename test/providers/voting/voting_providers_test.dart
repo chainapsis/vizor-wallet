@@ -2312,6 +2312,67 @@ void main() {
     },
   );
 
+  test('submission completion poll timeout marks job as error', () async {
+    final beforeConfirmation = apiRoundPlan(
+      roundId: kRoundId,
+      pendingRecovery: true,
+      nextSteps: const [
+        rust_wire.NextStepView(
+          kind: 'submit_shares',
+          bundleIndex: 0,
+          proposalId: 7,
+          shareIndex: 0,
+          choice: 0,
+        ),
+      ],
+      openProposals: Uint32List(0),
+      allDecided: false,
+      recoveredDelegationWork: const [],
+    );
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationWorkflows: [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'delegation-tx',
+            vanLeafPosition: null,
+          ),
+        ],
+      ),
+      roundPlanSequence: [beforeConfirmation],
+    );
+    final container = _sessionContainer(
+      recoveryApi: recoveryApi,
+      txConfirmationPolling: _fastTxConfirmationPolling,
+      submissionCompletionPollTimeout: Duration.zero,
+    );
+    addTearDown(container.dispose);
+
+    final key = await container
+        .read(votingSubmissionJobsProvider.notifier)
+        .start(kRoundId);
+    expect(key, isNotNull);
+
+    final failed = await _waitForJobStatus(
+      container,
+      key!,
+      VotingSubmissionJobStatus.error,
+    );
+
+    expect(
+      failed.errorMessage,
+      contains('Submission confirmation is taking longer than expected'),
+    );
+    expect(
+      container
+          .read(votingSubmissionGuardProvider.notifier)
+          .guardForAccount(key.accountUuid),
+      isNull,
+    );
+  });
+
   test(
     'hardware submission resumes submitted delegation without draft',
     () async {
@@ -4561,6 +4622,8 @@ ProviderContainer _sessionContainer({
   VotingWalletSyncReadinessChecker? walletSyncReadinessChecker,
   void Function()? walletSyncStarter,
   Duration? walletSyncPollInterval,
+  Duration? submissionCompletionPollInterval,
+  Duration? submissionCompletionPollTimeout,
   List<String> authenticatedRoundIds = const [kRoundId, kOtherRoundId],
   Map<String, Uint8List>? authenticatedRoundEaPks,
   List<String> skippedRoundIds = const [],
@@ -4658,6 +4721,14 @@ ProviderContainer _sessionContainer({
       votingWalletSyncPollIntervalProvider.overrideWithValue(
         walletSyncPollInterval ?? Duration.zero,
       ),
+      if (submissionCompletionPollInterval != null)
+        votingSubmissionCompletionPollIntervalProvider.overrideWithValue(
+          submissionCompletionPollInterval,
+        ),
+      if (submissionCompletionPollTimeout != null)
+        votingSubmissionCompletionPollTimeoutProvider.overrideWithValue(
+          submissionCompletionPollTimeout,
+        ),
       if (txConfirmationPolling != null)
         votingTxConfirmationPollingProvider.overrideWithValue(
           txConfirmationPolling,
