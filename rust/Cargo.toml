@@ -26,7 +26,7 @@ zcash_client_backend = { version = "0.22", features = [
 ] }
 zcash_client_sqlite = { version = "0.20", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "8e9b69ff8639632932eb8a11420b17603589162e", package = "zcash_voting" }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "ea25788b9bddc96c06ffba74af9415e1c3cfe9b0", package = "zcash_voting" }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
 orchard = { version = "=0.13.1", features = ["unstable-voting-circuits"] }
 sapling-crypto = { version = "0.7", default-features = false, features = ["circuit"] }
@@ -59,7 +59,6 @@ base64 = "0.22"
 pbkdf2 = "0.12"
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
-blake2b_simd = "1"
 
 # Random number generation
 rand = "0.8"
@@ -99,3 +98,14 @@ vote-commitment-tree = "0.3"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+
+# Flutter debug builds use Cargokit + Cargo's dev profile (`cargo build`
+# without `--release`). Rust crypto and voting flows are slow under the default
+# debug opt-level=0, so keep debug assertions and symbols while making local
+# Flutter/debug voting builds usable. Release builds are unaffected by this
+# profile.
+[profile.dev]
+opt-level = 3
+
+[profile.dev.package."*"]
+opt-level = 3

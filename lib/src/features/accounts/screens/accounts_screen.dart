@@ -18,9 +18,11 @@ import '../../../core/widgets/app_decorative_divider.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../../providers/voting/voting_submission_guard_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../swap/providers/swap_activity_store.dart';
 import '../widgets/account_name_modal.dart';
@@ -52,6 +54,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   }
 
   void _showRemoveAccountModal(AccountInfo account) {
+    if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
     _showModal(_AccountModalType.removeAccount, account);
   }
 
@@ -91,6 +94,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     required bool isLastAccount,
     AccountRemoveProgressCallback? onProgress,
   }) async {
+    if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
     if (isLastAccount) {
       await _resetWalletFromAccountRemoval(onProgress);
       return;
@@ -135,6 +139,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   Future<void> _resetWalletFromAccountRemoval(
     AccountRemoveProgressCallback? onProgress,
   ) async {
+    if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
     final syncNotifier = ref.read(syncProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
 
@@ -257,6 +262,19 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     } catch (e) {
       log('switchAccount: refreshAfterSend failed: $e');
     }
+  }
+
+  /// Blocks wallet mutations that would delete account state during submission.
+  ///
+  /// Account switching remains allowed while a vote submission is guarded.
+  /// This UI guard only covers destructive account removal and wallet reset
+  /// flows; `AccountNotifier` repeats the same check before mutating state.
+  bool _blockDestructiveWalletChangeIfVotingSubmissionInProgress() {
+    final guards = ref.read(votingSubmissionGuardProvider);
+    if (guards.isEmpty) return false;
+    final guard = guards.first;
+    showAppToast(context, guard.message);
+    return true;
   }
 
   static AccountInfo? _activeAccountFor(

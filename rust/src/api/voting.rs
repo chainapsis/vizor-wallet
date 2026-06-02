@@ -1,18 +1,17 @@
 use std::{panic, sync::Arc};
 
+#[cfg(test)]
+use super::voting_helpers::bundle_policy;
 use super::voting_helpers::{
     delegation_static_inputs, prepare_delegation_bundle_params, resolve_delegation_lwd_inputs,
     seed_from_mnemonic,
 };
-#[cfg(test)]
-use super::voting_helpers::bundle_policy;
 use crate::frb_generated::StreamSink;
 use crate::wallet::{
     keys,
     voting::{db, delegation, delegation::DelegationProgress, hotkey, network::voting_network},
 };
 use rand::{rngs::OsRng, RngCore};
-use secrecy::ExposeSecret;
 
 pub use zcash_voting::vote::{DraftVote, SignedVoteCommitments};
 
@@ -85,6 +84,15 @@ pub struct ApiVotingRoundContext {
     pub session_json: Option<String>,
     pub account_uuid: String,
     pub max_real_notes_per_bundle: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+/// Parsed fields from a Keystone-signed voting PCZT.
+pub struct ParsedSignedVotingPczt {
+    /// ZIP-244 sighash extracted from the signed PCZT.
+    pub sighash: Vec<u8>,
+    /// Orchard SpendAuth signature extracted from the signed PCZT.
+    pub spend_auth_sig: Vec<u8>,
 }
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
@@ -281,52 +289,25 @@ pub fn recovered_vote_share_wire_json(
     })
 }
 
-/// Derive the opaque per-account, per-round voting hotkey bytes.
+/// Generate opaque voting hotkey bytes for a local voting account.
 ///
-/// Rust derives the wallet seed from the account mnemonic, then derives scoped
-/// hotkey seed material locally and returns bytes for secure storage.
-/// The returned `Vec<u8>` is an unavoidable FRB copy boundary
-///
-/// # Errors
-///
-/// Returns an error if network parsing fails, mnemonic decoding fails, or
-/// contextual hotkey derivation fails.
-pub fn derive_voting_hotkey(
-    mnemonic: String,
-    round_id: String,
-    network: String,
-) -> Result<Vec<u8>, String> {
-    catch(|| {
-        // Parse network and derive deterministic round-scoped hotkey.
-        let network = keys::parse_network(&network)?;
-        let seed = seed_from_mnemonic(mnemonic)?;
-        hotkey::derive_hotkey(&seed, &round_id, network).map(|hotkey| {
-            // FRB returns owned bytes, so this copy cannot be zeroized by Rust
-            // after Dart receives it.
-            hotkey.expose_secret().to_vec()
-        })
-    })
-}
-
-/// Generate opaque voting hotkey bytes for a hardware account.
-///
-/// Hardware accounts cannot expose their wallet seed to derive the deterministic
-/// software hotkey, so the app persists this random per-round hotkey in secure
-/// storage and reuses it for vote commitment signing.
+/// Vizor v2 uses the same random app-owned hotkey model for software and
+/// Keystone accounts. The app persists this random per-round hotkey in secure
+/// storage and reuses it for delegation setup and vote commitment signing.
 ///
 /// # Errors
 ///
 /// Returns an error if network parsing fails or random hotkey generation fails.
 pub fn generate_voting_hotkey(network: String) -> Result<Vec<u8>, String> {
     catch(|| {
-        // Hardware accounts use randomized per-round voting hotkeys.
+        // Voting hotkeys are app-owned random secrets, not wallet-seed-derived.
         let network = keys::parse_network(&network)?;
         zcash_voting::hotkey::generate_random_voting_hotkey(voting_network(network))
             .map_err(|e| format!("Voting hotkey generation failed: {e}"))
             .map(|hotkey| {
                 // FRB returns owned bytes, so this copy cannot be zeroized by Rust
                 // after Dart receives it.
-                hotkey.secret_seed().to_vec()
+                hotkey.stored_secret().to_vec()
             })
     })
 }
@@ -554,7 +535,7 @@ pub async fn setup_delegation_bundles(
     ctx: ApiVotingRoundContext,
 ) -> Result<zcash_voting::wire::BundleLayout, String> {
     // Resolve static network + bundle policy inputs and open the sidecar DB.
-    let (_, voting_network, bundle_policy) =
+    let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let voting_db = db::open_voting_db(&ctx.db_path, &ctx.account_uuid)?;
 
@@ -581,22 +562,19 @@ pub async fn setup_delegation_bundles(
 ///
 /// # Errors
 ///
-/// Returns an error if round input resolution, mnemonic-to-seed derivation,
-/// hotkey derivation, bundle preparation, or PIR precompute fails.
+/// Returns an error if round input resolution, hotkey validation, bundle
+/// preparation, or PIR precompute fails.
 pub async fn precompute_delegation_pir(
     ctx: ApiVotingRoundContext,
     pir_server_url: String,
-    mnemonic: String,
+    stored_hotkey_secret: Vec<u8>,
     bundle_index: u32,
 ) -> Result<zcash_voting::wire::DelegationPirPrecomputeResultView, String> {
     // Resolve static network and bundling policy inputs from round context.
-    let (wallet_network, voting_network, bundle_policy) =
+    let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
-
-    // Derive wallet seed and round-scoped delegation hotkey from the mnemonic.
-    let seed = seed_from_mnemonic(mnemonic)?;
-    let round_id = ctx.round_params.vote_round_id.clone();
-    let hotkey_secret = hotkey::derive_hotkey(&seed, &round_id, wallet_network)?;
+    let voting_hotkey =
+        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
 
     // Fetch lightwalletd-backed round inputs used for delegation bundle prep.
     let lwd = resolve_delegation_lwd_inputs(
@@ -612,8 +590,7 @@ pub async fn precompute_delegation_pir(
         lwd,
         ctx.session_json.as_deref(),
         &ctx.account_uuid,
-        voting_network,
-        hotkey_secret.expose_secret(),
+        &voting_hotkey,
         bundle_index,
         bundle_policy,
     );
@@ -639,15 +616,16 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     ctx: ApiVotingRoundContext,
     pir_server_url: String,
     mnemonic: String,
+    stored_hotkey_secret: Vec<u8>,
     bundle_index: u32,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
-    // Resolve static delegation inputs and derive the round-scoped hotkey.
-    let (wallet_network, voting_network, bundle_policy) =
+    // Resolve static delegation inputs and validate the app-owned hotkey.
+    let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
     let seed = seed_from_mnemonic(mnemonic)?;
-    let round_id = ctx.round_params.vote_round_id.clone();
-    let hotkey_secret = hotkey::derive_hotkey(&seed, &round_id, wallet_network)?;
+    let voting_hotkey =
+        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
 
     // Resolve lightwalletd inputs and assemble delegation prepare parameters.
     let lwd = resolve_delegation_lwd_inputs(
@@ -661,8 +639,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
         lwd,
         ctx.session_json.as_deref(),
         &ctx.account_uuid,
-        voting_network,
-        hotkey_secret.expose_secret(),
+        &voting_hotkey,
         bundle_index,
         bundle_policy,
     );
@@ -683,8 +660,7 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
     )
     .await
     .and_then(|bundle| {
-        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle)
-            .map_err(|e| e.to_string())
+        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
     });
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
@@ -697,13 +673,14 @@ pub async fn build_prove_and_sign_delegation_payload_with_progress(
 /// redaction for the requested bundle fails.
 pub async fn build_keystone_delegation_request(
     ctx: ApiVotingRoundContext,
-    hotkey_seed: Vec<u8>,
+    stored_hotkey_secret: Vec<u8>,
     bundle_index: u32,
 ) -> Result<zcash_voting::wire::KeystoneSigningRequest, String> {
     // Resolve static round inputs and validate Keystone-provided hotkey bytes.
-    let (_, voting_network, bundle_policy) =
+    let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
-    let hotkey_secret = hotkey::validated_hotkey_seed(hotkey_seed, voting_network)?;
+    let voting_hotkey =
+        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
 
     // Resolve lightwalletd-backed round inputs and build request parameters.
     let lwd = resolve_delegation_lwd_inputs(
@@ -717,8 +694,7 @@ pub async fn build_keystone_delegation_request(
         lwd,
         ctx.session_json.as_deref(),
         &ctx.account_uuid,
-        voting_network,
-        hotkey_secret.expose_secret(),
+        &voting_hotkey,
         bundle_index,
         bundle_policy,
     );
@@ -728,33 +704,29 @@ pub async fn build_keystone_delegation_request(
         .await
 }
 
-/// Extract the ZIP-244 sighash from PCZT bytes.
+/// Parse the fields Dart needs from a Keystone-signed voting PCZT.
 ///
 /// # Errors
 ///
-/// Returns an error if `pczt_bytes` cannot be decoded or does not contain a
-/// spend authorization sighash.
-pub fn extract_pczt_sighash(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
-    catch(|| {
-        // Decode PCZT and expose its ZIP-244 spend authorization sighash bytes.
-        zcash_voting::delegate::pczt_sighash(&pczt_bytes)
-            .map(|sighash| sighash.to_vec())
-            .map_err(|e| format!("extract_pczt_sighash failed: {e}"))
-    })
-}
-
-/// Extract a Keystone SpendAuth signature from signed PCZT bytes.
-pub fn extract_spend_auth_signature_from_signed_pczt(
+/// Returns an error if the signed PCZT cannot be decoded, does not contain a
+/// spend authorization sighash, or does not contain a SpendAuth signature for
+/// the expected action.
+pub fn parse_signed_voting_pczt(
     signed_pczt_bytes: Vec<u8>,
     action_index: u32,
-) -> Result<Vec<u8>, String> {
+) -> Result<ParsedSignedVotingPczt, String> {
     catch(|| {
-        // Convert FRB index to host index type for extraction helper.
         let action_index =
             usize::try_from(action_index).map_err(|_| "action_index does not fit in usize")?;
-        zcash_voting::delegate::spend_auth_signature(&signed_pczt_bytes, action_index)
-            .map(|sig| sig.to_vec())
-            .map_err(|e| format!("extract_spend_auth_sig failed: {e}"))
+        let sighash = zcash_voting::delegate::pczt_sighash(&signed_pczt_bytes)
+            .map_err(|e| format!("extract_pczt_sighash failed: {e}"))?;
+        let spend_auth_sig =
+            zcash_voting::delegate::spend_auth_signature(&signed_pczt_bytes, action_index)
+                .map_err(|e| format!("extract_spend_auth_sig failed: {e}"))?;
+        Ok(ParsedSignedVotingPczt {
+            sighash: sighash.to_vec(),
+            spend_auth_sig: spend_auth_sig.to_vec(),
+        })
     })
 }
 
@@ -812,16 +784,17 @@ pub fn get_keystone_signatures(
 pub async fn build_prove_delegation_payload_with_keystone_signature_with_progress(
     ctx: ApiVotingRoundContext,
     pir_server_url: String,
-    hotkey_seed: Vec<u8>,
+    stored_hotkey_secret: Vec<u8>,
     bundle_index: u32,
     keystone_sig: Vec<u8>,
     keystone_sighash: Vec<u8>,
     sink: StreamSink<ApiDelegationProofEvent>,
 ) -> Result<(), String> {
-    // Resolve static inputs and validate the persisted Keystone hotkey seed.
-    let (_, voting_network, bundle_policy) =
+    // Resolve static inputs and validate the persisted Keystone hotkey secret.
+    let (voting_network, bundle_policy) =
         delegation_static_inputs(&ctx.network, ctx.max_real_notes_per_bundle)?;
-    let hotkey_secret = hotkey::validated_hotkey_seed(hotkey_seed, voting_network)?;
+    let voting_hotkey =
+        hotkey::voting_hotkey_from_stored_secret(stored_hotkey_secret, voting_network)?;
 
     // Resolve round inputs and build delegation preparation parameters.
     let lwd = resolve_delegation_lwd_inputs(
@@ -835,8 +808,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
         lwd,
         ctx.session_json.as_deref(),
         &ctx.account_uuid,
-        voting_network,
-        hotkey_secret.expose_secret(),
+        &voting_hotkey,
         bundle_index,
         bundle_policy,
     );
@@ -859,8 +831,7 @@ pub async fn build_prove_delegation_payload_with_keystone_signature_with_progres
     )
     .await
     .and_then(|bundle| {
-        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle)
-            .map_err(|e| e.to_string())
+        zcash_voting::wire::SignedDelegationPayloadView::try_from(bundle).map_err(|e| e.to_string())
     });
     emit_signed_delegation_result(sink.as_ref(), signed_result)
 }
@@ -900,9 +871,10 @@ pub fn confirm_delegation_submission(
     round_id: String,
     bundle_index: u32,
     tx_hash: String,
-    events: Vec<zcash_voting::wire::TxEvent>,
+    events_json: String,
 ) -> Result<zcash_voting::wire::DelegationConfirmation, String> {
     catch(|| {
+        let events = parse_tx_events_json(&events_json)?;
         // Parse tx events and persist confirmation details for this bundle.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::confirmation::confirm_delegation_submission(
@@ -1057,7 +1029,7 @@ async fn build_vote_commitments_result<F>(
     network: String,
     round_id: String,
     bundle_index: u32,
-    hotkey_seed: Vec<u8>,
+    stored_hotkey_secret: Vec<u8>,
     van_witness: zcash_voting::wire::VanWitness,
     draft_votes: Vec<zcash_voting::wire::DraftVote>,
     on_stage: F,
@@ -1065,19 +1037,17 @@ async fn build_vote_commitments_result<F>(
 where
     F: Fn(zcash_voting::vote::VoteCommitStage) + Send + Sync + 'static,
 {
-    // Parse network once and keep hotkey bytes in a secrecy wrapper.
+    // Parse network once and move stored hotkey bytes into the blocking worker.
     let network = keys::parse_network(&network)?;
-    let hotkey_seed = secrecy::SecretVec::new(hotkey_seed);
 
     // Commit/prove work is CPU-heavy; run it on a blocking worker thread.
     let commitment_result = tokio::task::spawn_blocking(move || {
         let reporter = zcash_voting::VoteCommitStageBridge::new(on_stage);
         let voting_db = db::open_voting_db(&db_path, &account_uuid)?;
-        let voting_hotkey = zcash_voting::hotkey::voting_hotkey_from_seed(
-            hotkey_seed.expose_secret(),
+        let voting_hotkey = hotkey::voting_hotkey_from_stored_secret(
+            stored_hotkey_secret,
             voting_network(network),
-        )
-        .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))?;
+        )?;
 
         zcash_voting::vote::commit_batch(
             &voting_db,
@@ -1096,8 +1066,7 @@ where
     let commitments = commitment_result?;
 
     // Convert internal commitment type into the FRB wire view.
-    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments)
-        .map_err(|e| e.to_string())
+    zcash_voting::wire::SignedVoteCommitmentsView::try_from(commitments).map_err(|e| e.to_string())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1111,7 +1080,7 @@ pub async fn build_vote_commitments_with_progress(
     network: String,
     round_id: String,
     bundle_index: u32,
-    hotkey_seed: Vec<u8>,
+    stored_hotkey_secret: Vec<u8>,
     van_witness: zcash_voting::wire::VanWitness,
     draft_votes: Vec<zcash_voting::wire::DraftVote>,
     sink: StreamSink<ApiVoteCommitEvent>,
@@ -1125,7 +1094,7 @@ pub async fn build_vote_commitments_with_progress(
         network,
         round_id,
         bundle_index,
-        hotkey_seed,
+        stored_hotkey_secret,
         van_witness,
         draft_votes,
         move |stage| {
@@ -1191,9 +1160,10 @@ pub fn confirm_vote_submission(
     bundle_index: u32,
     proposal_id: u32,
     tx_hash: String,
-    events: Vec<zcash_voting::wire::TxEvent>,
+    events_json: String,
 ) -> Result<zcash_voting::wire::VoteConfirmation, String> {
     catch(|| {
+        let events = parse_tx_events_json(&events_json)?;
         // Parse tx events and persist vote confirmation fields.
         let db = db::open_voting_db(&db_path, &account_uuid)?;
         zcash_voting::confirmation::confirm_vote_submission(
@@ -1206,6 +1176,14 @@ pub fn confirm_vote_submission(
         )
         .map_err(|e| e.to_string())
     })
+}
+
+fn parse_tx_events_json(
+    events_json: &str,
+) -> Result<Vec<zcash_voting::confirmation::TxEvent>, String> {
+    let events: Vec<zcash_voting::confirmation::TxEvent> =
+        serde_json::from_str(events_json).map_err(|e| format!("invalid tx events JSON: {e}"))?;
+    Ok(events)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1359,9 +1337,8 @@ pub fn set_ballot_intent(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wallet::network::WalletNetwork;
     use crate::wallet::voting::test_support::{
-        test_api_round_params, test_note_info, ROUND_ID, TEST_ACCOUNT_UUID, TEST_MNEMONIC,
+        test_api_round_params, test_note_info, ROUND_ID, TEST_ACCOUNT_UUID,
     };
     use base64::Engine as _;
     use std::{
@@ -1370,22 +1347,46 @@ mod tests {
         thread,
     };
     use zcash_client_backend::proto::service::TreeState;
+    use zcash_voting::confirmation::{TxEvent, TxEventAttribute};
     use zcash_voting::BundlePolicy;
 
     fn b64(bytes: impl AsRef<[u8]>) -> String {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
 
-    fn tx_event(event_type: &str, attributes: &[(&str, &str)]) -> zcash_voting::wire::TxEvent {
-        zcash_voting::wire::TxEvent {
-            event_type: event_type.to_string(),
-            attributes: attributes
-                .iter()
-                .map(|(key, value)| zcash_voting::wire::TxEventAttribute {
-                    key: (*key).to_string(),
-                    value: (*value).to_string(),
-                })
-                .collect(),
+    fn tx_events_json(events: Vec<TxEvent>) -> String {
+        serde_json::to_string(&events).unwrap()
+    }
+
+    fn delegate_event(round_id: &str, leaf_index: u32) -> TxEvent {
+        TxEvent {
+            event_type: "delegate_vote".to_string(),
+            attributes: vec![
+                TxEventAttribute {
+                    key: "vote_round_id".to_string(),
+                    value: round_id.to_string(),
+                },
+                TxEventAttribute {
+                    key: "leaf_index".to_string(),
+                    value: leaf_index.to_string(),
+                },
+            ],
+        }
+    }
+
+    fn cast_vote_event(round_id: &str, van_position: u32, vc_tree_position: u64) -> TxEvent {
+        TxEvent {
+            event_type: "cast_vote".to_string(),
+            attributes: vec![
+                TxEventAttribute {
+                    key: "vote_round_id".to_string(),
+                    value: round_id.to_string(),
+                },
+                TxEventAttribute {
+                    key: "leaf_index".to_string(),
+                    value: format!("{van_position},{vc_tree_position}"),
+                },
+            ],
         }
     }
 
@@ -1404,29 +1405,6 @@ mod tests {
             account_uuid: account_uuid.to_string(),
             max_real_notes_per_bundle: None,
         }
-    }
-
-    #[test]
-    fn derive_voting_hotkey_happy_path_is_deterministic() {
-        let hotkey_a = derive_voting_hotkey(
-            TEST_MNEMONIC.to_string(),
-            ROUND_ID.to_string(),
-            "regtest".to_string(),
-        )
-        .unwrap();
-        let hotkey_b = derive_voting_hotkey(
-            TEST_MNEMONIC.to_string(),
-            ROUND_ID.to_string(),
-            "regtest".to_string(),
-        )
-        .unwrap();
-
-        assert_eq!(hotkey_a, hotkey_b);
-        assert_eq!(hotkey_a.len(), 64);
-
-        let seed = seed_from_mnemonic(TEST_MNEMONIC.to_string()).unwrap();
-        let expected = hotkey::derive_hotkey(&seed, ROUND_ID, WalletNetwork::Regtest).unwrap();
-        assert_eq!(hotkey_a, expected.expose_secret().to_vec());
     }
 
     #[test]
@@ -2426,10 +2404,7 @@ mod tests {
             ROUND_ID.to_string(),
             0,
             "delegate-confirmed-tx".to_string(),
-            vec![tx_event(
-                "delegate_vote",
-                &[("vote_round_id", ROUND_ID), ("leaf_index", "42")],
-            )],
+            tx_events_json(vec![delegate_event(ROUND_ID, 42)]),
         )
         .unwrap();
         assert_eq!(delegation.tx_hash, "delegate-confirmed-tx");
@@ -2442,10 +2417,7 @@ mod tests {
             0,
             7,
             "vote-confirmed-tx".to_string(),
-            vec![tx_event(
-                "cast_vote",
-                &[("vote_round_id", ROUND_ID), ("leaf_index", "42,88")],
-            )],
+            tx_events_json(vec![cast_vote_event(ROUND_ID, 42, 88)]),
         )
         .unwrap();
         assert_eq!(vote.tx_hash, "vote-confirmed-tx");
@@ -2475,7 +2447,7 @@ mod tests {
             .block_on(precompute_delegation_pir(
                 test_round_context(&db_path, "bogus", "wallet-1"),
                 "http://127.0.0.1:2".to_string(),
-                "mnemonic".to_string(),
+                vec![1; 64],
                 0,
             ))
             .unwrap_err();
@@ -2484,7 +2456,7 @@ mod tests {
     }
 
     #[test]
-    fn precompute_delegation_pir_rejects_invalid_mnemonic_before_network_io() {
+    fn precompute_delegation_pir_rejects_invalid_hotkey_before_network_io() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let err = tokio::runtime::Runtime::new()
@@ -2492,12 +2464,12 @@ mod tests {
             .block_on(precompute_delegation_pir(
                 test_round_context(&db_path, "regtest", "wallet-1"),
                 "http://127.0.0.1:2".to_string(),
-                "mnemonic".to_string(),
+                vec![1, 2, 3],
                 0,
             ))
             .unwrap_err();
 
-        assert!(err.contains("Invalid mnemonic"));
+        assert!(err.contains("seed must be at least 32 bytes"));
     }
 
     #[test]

@@ -12,8 +12,8 @@ import '../third_party/zcash_voting/vote.dart';
 import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -112,31 +112,11 @@ Future<String> recoveredVoteShareWireJson({
   submitAt: submitAt,
 );
 
-/// Derive the opaque per-account, per-round voting hotkey bytes.
+/// Generate opaque voting hotkey bytes for a local voting account.
 ///
-/// Rust derives the wallet seed from the account mnemonic, then derives scoped
-/// hotkey seed material locally and returns bytes for secure storage.
-/// The returned `Vec<u8>` is an unavoidable FRB copy boundary
-///
-/// # Errors
-///
-/// Returns an error if network parsing fails, mnemonic decoding fails, or
-/// contextual hotkey derivation fails.
-Future<Uint8List> deriveVotingHotkey({
-  required String mnemonic,
-  required String roundId,
-  required String network,
-}) => RustLib.instance.api.crateApiVotingDeriveVotingHotkey(
-  mnemonic: mnemonic,
-  roundId: roundId,
-  network: network,
-);
-
-/// Generate opaque voting hotkey bytes for a hardware account.
-///
-/// Hardware accounts cannot expose their wallet seed to derive the deterministic
-/// software hotkey, so the app persists this random per-round hotkey in secure
-/// storage and reuses it for vote commitment signing.
+/// Vizor v2 uses the same random app-owned hotkey model for software and
+/// Keystone accounts. The app persists this random per-round hotkey in secure
+/// storage and reuses it for delegation setup and vote commitment signing.
 ///
 /// # Errors
 ///
@@ -164,17 +144,17 @@ Future<BundleLayout> setupDelegationBundles({
 ///
 /// # Errors
 ///
-/// Returns an error if round input resolution, mnemonic-to-seed derivation,
-/// hotkey derivation, bundle preparation, or PIR precompute fails.
+/// Returns an error if round input resolution, hotkey validation, bundle
+/// preparation, or PIR precompute fails.
 Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
-  required String mnemonic,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
 }) => RustLib.instance.api.crateApiVotingPrecomputeDelegationPir(
   ctx: ctx,
   pirServerUrl: pirServerUrl,
-  mnemonic: mnemonic,
+  storedHotkeySecret: storedHotkeySecret,
   bundleIndex: bundleIndex,
 );
 
@@ -193,12 +173,14 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
   required String mnemonic,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
 }) => RustLib.instance.api
     .crateApiVotingBuildProveAndSignDelegationPayloadWithProgress(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
       mnemonic: mnemonic,
+      storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
     );
 
@@ -210,32 +192,28 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
 /// redaction for the requested bundle fails.
 Future<KeystoneSigningRequest> buildKeystoneDelegationRequest({
   required ApiVotingRoundContext ctx,
-  required List<int> hotkeySeed,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
 }) => RustLib.instance.api.crateApiVotingBuildKeystoneDelegationRequest(
   ctx: ctx,
-  hotkeySeed: hotkeySeed,
+  storedHotkeySecret: storedHotkeySecret,
   bundleIndex: bundleIndex,
 );
 
-/// Extract the ZIP-244 sighash from PCZT bytes.
+/// Parse the fields Dart needs from a Keystone-signed voting PCZT.
 ///
 /// # Errors
 ///
-/// Returns an error if `pczt_bytes` cannot be decoded or does not contain a
-/// spend authorization sighash.
-Future<Uint8List> extractPcztSighash({required List<int> pcztBytes}) =>
-    RustLib.instance.api.crateApiVotingExtractPcztSighash(pcztBytes: pcztBytes);
-
-/// Extract a Keystone SpendAuth signature from signed PCZT bytes.
-Future<Uint8List> extractSpendAuthSignatureFromSignedPczt({
+/// Returns an error if the signed PCZT cannot be decoded, does not contain a
+/// spend authorization sighash, or does not contain a SpendAuth signature for
+/// the expected action.
+Future<ParsedSignedVotingPczt> parseSignedVotingPczt({
   required List<int> signedPcztBytes,
   required int actionIndex,
-}) =>
-    RustLib.instance.api.crateApiVotingExtractSpendAuthSignatureFromSignedPczt(
-      signedPcztBytes: signedPcztBytes,
-      actionIndex: actionIndex,
-    );
+}) => RustLib.instance.api.crateApiVotingParseSignedVotingPczt(
+  signedPcztBytes: signedPcztBytes,
+  actionIndex: actionIndex,
+);
 
 /// Persist a Keystone signature for one delegation bundle.
 ///
@@ -287,7 +265,7 @@ Stream<ApiDelegationProofEvent>
 buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
-  required List<int> hotkeySeed,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
   required List<int> keystoneSig,
   required List<int> keystoneSighash,
@@ -295,7 +273,7 @@ buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     .crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
-      hotkeySeed: hotkeySeed,
+      storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
       keystoneSig: keystoneSig,
       keystoneSighash: keystoneSighash,
@@ -335,14 +313,14 @@ Future<DelegationConfirmation> confirmDelegationSubmission({
   required String roundId,
   required int bundleIndex,
   required String txHash,
-  required List<TxEvent> events,
+  required String eventsJson,
 }) => RustLib.instance.api.crateApiVotingConfirmDelegationSubmission(
   dbPath: dbPath,
   accountUuid: accountUuid,
   roundId: roundId,
   bundleIndex: bundleIndex,
   txHash: txHash,
-  events: events,
+  eventsJson: eventsJson,
 );
 
 /// Delete bundle rows at or above `keep_count` for partial-bundle recovery.
@@ -451,7 +429,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   required String network,
   required String roundId,
   required int bundleIndex,
-  required List<int> hotkeySeed,
+  required List<int> storedHotkeySecret,
   required VanWitness vanWitness,
   required List<DraftVote> draftVotes,
 }) => RustLib.instance.api.crateApiVotingBuildVoteCommitmentsWithProgress(
@@ -460,7 +438,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   network: network,
   roundId: roundId,
   bundleIndex: bundleIndex,
-  hotkeySeed: hotkeySeed,
+  storedHotkeySecret: storedHotkeySecret,
   vanWitness: vanWitness,
   draftVotes: draftVotes,
 );
@@ -513,7 +491,7 @@ Future<VoteConfirmation> confirmVoteSubmission({
   required int bundleIndex,
   required int proposalId,
   required String txHash,
-  required List<TxEvent> events,
+  required String eventsJson,
 }) => RustLib.instance.api.crateApiVotingConfirmVoteSubmission(
   dbPath: dbPath,
   accountUuid: accountUuid,
@@ -521,7 +499,7 @@ Future<VoteConfirmation> confirmVoteSubmission({
   bundleIndex: bundleIndex,
   proposalId: proposalId,
   txHash: txHash,
-  events: events,
+  eventsJson: eventsJson,
 );
 
 /// Record helper-server submission state for one encrypted vote share.
@@ -764,4 +742,29 @@ class ApiVotingRoundContext {
           sessionJson == other.sessionJson &&
           accountUuid == other.accountUuid &&
           maxRealNotesPerBundle == other.maxRealNotesPerBundle;
+}
+
+/// Parsed fields from a Keystone-signed voting PCZT.
+class ParsedSignedVotingPczt {
+  /// ZIP-244 sighash extracted from the signed PCZT.
+  final Uint8List sighash;
+
+  /// Orchard SpendAuth signature extracted from the signed PCZT.
+  final Uint8List spendAuthSig;
+
+  const ParsedSignedVotingPczt({
+    required this.sighash,
+    required this.spendAuthSig,
+  });
+
+  @override
+  int get hashCode => sighash.hashCode ^ spendAuthSig.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ParsedSignedVotingPczt &&
+          runtimeType == other.runtimeType &&
+          sighash == other.sighash &&
+          spendAuthSig == other.spendAuthSig;
 }

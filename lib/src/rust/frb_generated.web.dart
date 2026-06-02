@@ -279,12 +279,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<TxDataRequest> dco_decode_list_tx_data_request(dynamic raw);
 
   @protected
-  List<TxEvent> dco_decode_list_tx_event(dynamic raw);
-
-  @protected
-  List<TxEventAttribute> dco_decode_list_tx_event_attribute(dynamic raw);
-
-  @protected
   List<VoteRecoveryView> dco_decode_list_vote_recovery_view(dynamic raw);
 
   @protected
@@ -327,6 +321,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  ParsedSignedVotingPczt dco_decode_parsed_signed_voting_pczt(dynamic raw);
 
   @protected
   ProposalResult dco_decode_proposal_result(dynamic raw);
@@ -408,12 +405,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TxDataRequest dco_decode_tx_data_request(dynamic raw);
-
-  @protected
-  TxEvent dco_decode_tx_event(dynamic raw);
-
-  @protected
-  TxEventAttribute dco_decode_tx_event_attribute(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -775,14 +766,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  List<TxEvent> sse_decode_list_tx_event(SseDeserializer deserializer);
-
-  @protected
-  List<TxEventAttribute> sse_decode_list_tx_event_attribute(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   List<VoteRecoveryView> sse_decode_list_vote_recovery_view(
     SseDeserializer deserializer,
   );
@@ -837,6 +820,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  ParsedSignedVotingPczt sse_decode_parsed_signed_voting_pczt(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ProposalResult sse_decode_proposal_result(SseDeserializer deserializer);
@@ -932,12 +920,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TxDataRequest sse_decode_tx_data_request(SseDeserializer deserializer);
-
-  @protected
-  TxEvent sse_decode_tx_event(SseDeserializer deserializer);
-
-  @protected
-  TxEventAttribute sse_decode_tx_event_attribute(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -1387,15 +1369,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_tx_event(List<TxEvent> self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_list_tx_event_attribute(
-    List<TxEventAttribute> self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_vote_recovery_view(
     List<VoteRecoveryView> self,
     SseSerializer serializer,
@@ -1455,6 +1428,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_parsed_signed_voting_pczt(
+    ParsedSignedVotingPczt self,
     SseSerializer serializer,
   );
 
@@ -1577,15 +1556,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_tx_data_request(TxDataRequest self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_tx_event(TxEvent self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_tx_event_attribute(
-    TxEventAttribute self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);
