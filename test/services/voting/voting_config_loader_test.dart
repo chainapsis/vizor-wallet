@@ -49,10 +49,20 @@ void main() {
   test('rejects malformed static config sources', () {
     const validHex =
         '0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a';
+    const shortHex =
+        '0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a';
+    const uppercaseHex =
+        'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
     for (final source in [
       'http://example.com/static.json?checksum=sha256:$validHex',
       'https:///static.json?checksum=sha256:$validHex',
       'not-a-url',
+      'https://example.com/static.json?checksum=sha512:$validHex',
+      'https://example.com/static.json?checksum=sha256:',
+      'https://example.com/static.json?checksum=sha256:$shortHex',
+      'https://example.com/static.json?checksum=sha256:$uppercaseHex',
+      'https://example.com/static.json?checksum=sha256:'
+          'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz',
     ]) {
       expect(
         () => parseStaticVotingConfigSource(source),
