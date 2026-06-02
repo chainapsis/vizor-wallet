@@ -18,7 +18,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<String> resolveStaticVotingConfig({
   required String source,
   required List<int> staticBytes,
-}) => RustLib.instance.api.crateApiVotingConfigResolveStaticVotingConfig(
+}) => RustLib.instance.api.crateApiVotingResolveStaticVotingConfig(
   source: source,
   staticBytes: staticBytes,
 );
@@ -35,12 +35,19 @@ Future<VotingConfigResolution> resolveVotingConfig({
   required List<int> staticBytes,
   required List<int> dynamicBytes,
   ResolvedVotingConfig? previous,
-}) => RustLib.instance.api.crateApiVotingConfigResolveVotingConfig(
-  source: source,
-  staticBytes: staticBytes,
-  dynamicBytes: dynamicBytes,
-  previous: previous,
-);
+}) async {
+  final resolution = await RustLib.instance.api
+      .crateApiVotingResolveVotingConfig(
+        source: source,
+        staticBytes: staticBytes,
+        dynamicBytes: dynamicBytes,
+        previous: previous,
+      );
+  return VotingConfigResolution(
+    config: resolution.config,
+    switchKind: resolution.switchKind,
+  );
+}
 
 class VotingConfigResolution {
   final ResolvedVotingConfig config;

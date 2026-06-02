@@ -295,7 +295,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     }
   }
 
-  Future<void> delegatePendingBundles({required String mnemonic}) {
+  Future<void> delegatePendingBundles({String? mnemonic}) {
     return _enqueue(() async {
       var current = await future;
       if (_needsDelegationPreparation(current)) {
@@ -323,6 +323,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         return;
       }
       if (plan.pendingDelegationBundleIndexes.isNotEmpty) {
+        // Software delegation proving still needs the account mnemonic in the
+        // current Rust API. Keystone signing uses a separate flow
+        // (`delegatePendingBundlesWithKeystoneSignatures`) and never reaches
+        // this branch.
+        if (mnemonic == null || mnemonic.isEmpty) {
+          _setError(
+            'Software delegation requires this account mnemonic. Unlock this account or switch to one with mnemonic access.',
+            context: context,
+          );
+          return;
+        }
         final nextState = (state.value ?? current).copyWith(
           phase: VotingSessionPhase.delegating,
           resumePlan: plan,
@@ -364,7 +375,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             in rust.buildProveAndSignDelegationPayloadWithProgress(
               ctx: _apiRoundContext(context),
               pirServerUrl: pirEndpoint.toString(),
-              mnemonic: mnemonic,
+              mnemonic: mnemonic!,
               storedHotkeySecret: storedHotkeySecret,
               bundleIndex: bundleIndex,
             )) {

@@ -14,7 +14,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -152,31 +152,10 @@ Future<String> recoveredVoteShareWireJson({
   submitAt: submitAt,
 );
 
-/// Derive the opaque per-account, per-round voting hotkey bytes.
-///
-/// Rust derives the wallet seed from the account mnemonic, then derives scoped
-/// hotkey seed material locally and returns bytes for secure storage.
-/// The returned `Vec<u8>` is an unavoidable FRB copy boundary
-///
-/// # Errors
-///
-/// Returns an error if network parsing fails, mnemonic decoding fails, or
-/// contextual hotkey derivation fails.
-Future<Uint8List> deriveVotingHotkey({
-  required String mnemonic,
-  required String roundId,
-  required String network,
-}) => RustLib.instance.api.crateApiVotingDeriveVotingHotkey(
-  mnemonic: mnemonic,
-  roundId: roundId,
-  network: network,
-);
-
 /// Generate opaque voting hotkey bytes for a hardware account.
 ///
-/// Hardware accounts cannot expose their wallet seed to derive the deterministic
-/// software hotkey, so the app persists this random per-round hotkey in secure
-/// storage and reuses it for vote commitment signing.
+/// Wallets persist this random hotkey in secure storage and reuse it for
+/// delegation and vote commitment signing.
 ///
 /// # Errors
 ///
@@ -209,12 +188,12 @@ Future<BundleLayout> setupDelegationBundles({
 Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
-  required String mnemonic,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
 }) => RustLib.instance.api.crateApiVotingPrecomputeDelegationPir(
   ctx: ctx,
   pirServerUrl: pirServerUrl,
-  mnemonic: mnemonic,
+  storedHotkeySecret: storedHotkeySecret,
   bundleIndex: bundleIndex,
 );
 
@@ -233,12 +212,14 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
   required String mnemonic,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
 }) => RustLib.instance.api
     .crateApiVotingBuildProveAndSignDelegationPayloadWithProgress(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
       mnemonic: mnemonic,
+      storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
     );
 
@@ -250,11 +231,11 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
 /// redaction for the requested bundle fails.
 Future<KeystoneSigningRequest> buildKeystoneDelegationRequest({
   required ApiVotingRoundContext ctx,
-  required List<int> hotkeySeed,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
 }) => RustLib.instance.api.crateApiVotingBuildKeystoneDelegationRequest(
   ctx: ctx,
-  hotkeySeed: hotkeySeed,
+  storedHotkeySecret: storedHotkeySecret,
   bundleIndex: bundleIndex,
 );
 
@@ -323,7 +304,7 @@ Stream<ApiDelegationProofEvent>
 buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
-  required List<int> hotkeySeed,
+  required List<int> storedHotkeySecret,
   required int bundleIndex,
   required List<int> keystoneSig,
   required List<int> keystoneSighash,
@@ -331,7 +312,7 @@ buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     .crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
-      hotkeySeed: hotkeySeed,
+      storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
       keystoneSig: keystoneSig,
       keystoneSighash: keystoneSighash,
@@ -487,7 +468,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   required String network,
   required String roundId,
   required int bundleIndex,
-  required List<int> hotkeySeed,
+  required List<int> storedHotkeySecret,
   required VanWitness vanWitness,
   required List<DraftVote> draftVotes,
 }) => RustLib.instance.api.crateApiVotingBuildVoteCommitmentsWithProgress(
@@ -496,7 +477,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   network: network,
   roundId: roundId,
   bundleIndex: bundleIndex,
-  hotkeySeed: hotkeySeed,
+  storedHotkeySecret: storedHotkeySecret,
   vanWitness: vanWitness,
   draftVotes: draftVotes,
 );
@@ -681,6 +662,39 @@ Future<void> setBallotIntent({
   choice: choice,
 );
 
+/// Authenticate the static voting config bytes and surface the dynamic URL.
+///
+/// The wallet fetches the static trust anchor with its own transport and passes
+/// the bytes here. Rust verifies the hash pin and decodes the static config,
+/// returning the `dynamic_config_url` the wallet must fetch next before calling
+/// [`resolve_voting_config`]. Config errors are returned as a flat string.
+Future<String> resolveStaticVotingConfig({
+  required String source,
+  required List<int> staticBytes,
+}) => RustLib.instance.api.crateApiVotingResolveStaticVotingConfig(
+  source: source,
+  staticBytes: staticBytes,
+);
+
+/// Resolve and authenticate voting config from wallet-fetched bytes.
+///
+/// The wallet owns transport: it fetches the static bytes, calls
+/// [`resolve_static_voting_config`] to learn the dynamic URL, fetches the
+/// dynamic bytes, then passes both blobs here. Rust authenticates them and
+/// computes the config-switch classification against `previous`. Config errors
+/// are returned as a flat string; transport failures never reach this layer.
+Future<VotingConfigResolution> resolveVotingConfig({
+  required String source,
+  required List<int> staticBytes,
+  required List<int> dynamicBytes,
+  ResolvedVotingConfig? previous,
+}) => RustLib.instance.api.crateApiVotingResolveVotingConfig(
+  source: source,
+  staticBytes: staticBytes,
+  dynamicBytes: dynamicBytes,
+  previous: previous,
+);
+
 /// Progress event emitted while building, proving, and signing a delegation payload.
 ///
 /// A terminal `"result"` event carries `signed_delegation_payload`; earlier
@@ -825,4 +839,25 @@ class ParsedSignedVotingPczt {
           runtimeType == other.runtimeType &&
           sighash == other.sighash &&
           spendAuthSig == other.spendAuthSig;
+}
+
+class VotingConfigResolution {
+  final ResolvedVotingConfig config;
+  final ConfigSwitchKind switchKind;
+
+  const VotingConfigResolution({
+    required this.config,
+    required this.switchKind,
+  });
+
+  @override
+  int get hashCode => config.hashCode ^ switchKind.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VotingConfigResolution &&
+          runtimeType == other.runtimeType &&
+          config == other.config &&
+          switchKind == other.switchKind;
 }
