@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import '../../core/formatting/date_format.dart';
 import '../../features/voting/voting_resume_plan.dart';
+import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
@@ -170,16 +171,6 @@ class VotingRoundDetails {
     );
   }
 
-  rust_wire.VotingRoundParams toRoundParams() {
-    return rust_wire.VotingRoundParams(
-      voteRoundId: roundId,
-      snapshotHeight: BigInt.from(snapshotHeight),
-      eaPk: eaPk,
-      ncRoot: ncRoot,
-      nullifierImtRoot: nullifierImtRoot,
-    );
-  }
-
   String get sessionJson => jsonEncode(rawJson);
 
   DateTime? get voteEndTime => _dateFromJson(rawJson, 'vote_end_time');
@@ -224,7 +215,7 @@ class VotingSessionState {
   final String? accountUuid;
 
   final VotingSessionPhase phase;
-  final VotingConfig? config;
+  final rust_config.ResolvedVotingConfig? config;
   final VotingRoundDetails? round;
   final VotingResumePlan? resumePlan;
 
@@ -308,7 +299,7 @@ class VotingSessionState {
   VotingSessionState copyWith({
     String? accountUuid,
     VotingSessionPhase? phase,
-    VotingConfig? config,
+    rust_config.ResolvedVotingConfig? config,
     VotingRoundDetails? round,
     VotingResumePlan? resumePlan,
     rust_wire.RoundPlanView? roundPlan,

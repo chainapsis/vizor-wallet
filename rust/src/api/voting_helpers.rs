@@ -1,7 +1,7 @@
 use secrecy::SecretVec;
 use zeroize::Zeroizing;
 
-use crate::wallet::{keys, voting::network::voting_network};
+use crate::wallet::{keys, network::WalletNetwork, voting::network::voting_network};
 
 /// Convert API bundle-size input into a validated voting bundle policy.
 pub(super) fn bundle_policy(
@@ -21,11 +21,18 @@ pub(super) fn seed_from_mnemonic(mnemonic: String) -> Result<SecretVec<u8>, Stri
 pub(super) fn delegation_static_inputs(
     network: &str,
     max_real_notes_per_bundle: Option<u32>,
-) -> Result<(zcash_voting::Network, zcash_voting::BundlePolicy), String> {
+) -> Result<
+    (
+        WalletNetwork,
+        zcash_voting::Network,
+        zcash_voting::BundlePolicy,
+    ),
+    String,
+> {
     let wallet_network = keys::parse_network(network)?;
     let voting_network = voting_network(wallet_network);
     let bundle_policy = bundle_policy(max_real_notes_per_bundle)?;
-    Ok((voting_network, bundle_policy))
+    Ok((wallet_network, voting_network, bundle_policy))
 }
 
 /// Fetch lightwalletd-backed delegation inputs after local validation succeeds.
@@ -53,7 +60,8 @@ pub(super) fn prepare_delegation_bundle_params<'a>(
     lwd: zcash_voting::delegate::DelegationLwdInputs,
     session_json: Option<&'a str>,
     account_uuid: &'a str,
-    voting_hotkey: &'a zcash_voting::VotingHotkey,
+    network: zcash_voting::Network,
+    hotkey_seed: &'a [u8],
     bundle_index: u32,
     bundle_policy: zcash_voting::BundlePolicy,
 ) -> zcash_voting::delegate::PrepareDelegationBundleParams<'a> {
@@ -61,7 +69,8 @@ pub(super) fn prepare_delegation_bundle_params<'a>(
         lwd,
         session_json,
         account_uuid,
-        voting_hotkey,
+        network,
+        hotkey_seed,
         bundle_index,
         bundle_policy,
     }

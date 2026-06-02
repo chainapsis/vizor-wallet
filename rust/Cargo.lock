@@ -960,7 +960,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2098,6 +2098,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
 
 [[package]]
+name = "multimap"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
+
+[[package]]
 name = "no_std_io2"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2630,7 +2636,7 @@ dependencies = [
  "itertools 0.10.5",
  "lazy_static",
  "log",
- "multimap",
+ "multimap 0.8.3",
  "petgraph 0.6.5",
  "prettyplease 0.1.25",
  "prost 0.11.9",
@@ -2647,10 +2653,10 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
- "heck 0.4.1",
- "itertools 0.10.5",
+ "heck 0.5.0",
+ "itertools 0.14.0",
  "log",
- "multimap",
+ "multimap 0.10.1",
  "petgraph 0.8.3",
  "prettyplease 0.2.37",
  "prost 0.14.3",
@@ -2680,7 +2686,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -2931,9 +2937,11 @@ dependencies = [
  "aes-gcm",
  "base64",
  "bip0039",
+ "blake2b_simd",
  "bls12_381",
  "ff",
  "flutter_rust_bridge",
+ "futures",
  "hex",
  "incrementalmerkletree",
  "jubjub",
@@ -3014,7 +3022,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3953,7 +3961,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree"
 version = "0.3.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=ea25788b9bddc96c06ffba74af9415e1c3cfe9b0#ea25788b9bddc96c06ffba74af9415e1c3cfe9b0"
+source = "git+https://github.com/valargroup/zcash_voting?rev=64262252e4cd84ed63c66bad63b96b3bd7dd541b#64262252e4cd84ed63c66bad63b96b3bd7dd541b"
 dependencies = [
  "anyhow",
  "ff",
@@ -3969,7 +3977,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.5.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=ea25788b9bddc96c06ffba74af9415e1c3cfe9b0#ea25788b9bddc96c06ffba74af9415e1c3cfe9b0"
+source = "git+https://github.com/valargroup/zcash_voting?rev=64262252e4cd84ed63c66bad63b96b3bd7dd541b#64262252e4cd84ed63c66bad63b96b3bd7dd541b"
 dependencies = [
  "base64",
  "ff",
@@ -3978,7 +3986,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=ea25788b9bddc96c06ffba74af9415e1c3cfe9b0)",
+ "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=64262252e4cd84ed63c66bad63b96b3bd7dd541b)",
 ]
 
 [[package]]
@@ -4690,7 +4698,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "0.10.1"
-source = "git+https://github.com/valargroup/zcash_voting?rev=ea25788b9bddc96c06ffba74af9415e1c3cfe9b0#ea25788b9bddc96c06ffba74af9415e1c3cfe9b0"
+source = "git+https://github.com/valargroup/zcash_voting?rev=64262252e4cd84ed63c66bad63b96b3bd7dd541b#64262252e4cd84ed63c66bad63b96b3bd7dd541b"
 dependencies = [
  "anyhow",
  "base64",
@@ -4730,7 +4738,7 @@ dependencies = [
  "uuid",
  "valar-spiral-rs",
  "valar-ypir",
- "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=ea25788b9bddc96c06ffba74af9415e1c3cfe9b0)",
+ "vote-commitment-tree 0.3.1 (git+https://github.com/valargroup/zcash_voting?rev=64262252e4cd84ed63c66bad63b96b3bd7dd541b)",
  "vote-commitment-tree-client",
  "voting-circuits",
  "zcash_client_backend",

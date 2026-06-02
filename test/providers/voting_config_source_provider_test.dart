@@ -77,6 +77,30 @@ void main() {
     expect(store.savedSourcesJson, contains(sourceA));
   });
 
+  test('save source rejects same URL with different checksum', () async {
+    const sourceAAltChecksum =
+        'https://voting.example/static-a.json?checksum=sha256:'
+        'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+    final store = FakeVotingConfigSourceStore();
+    final container = _container(store);
+    addTearDown(container.dispose);
+    await container.read(votingConfigSourceProvider.future);
+    await container
+        .read(votingConfigSourceProvider.notifier)
+        .saveSource(name: 'Alpha', sourceUrl: sourceA);
+
+    await expectLater(
+      () => container
+          .read(votingConfigSourceProvider.notifier)
+          .saveSource(name: 'Alpha alt', sourceUrl: sourceAAltChecksum),
+      throwsA(isA<DuplicateVotingConfigSource>()),
+    );
+
+    final state = container.read(votingConfigSourceProvider).value!;
+    expect(state.savedSources, hasLength(1));
+    expect(state.savedSources.single.sourceUrl, sourceA);
+  });
+
   test('deleting the active saved source falls back to default', () async {
     final store = FakeVotingConfigSourceStore(
       sourceUrl: sourceA,

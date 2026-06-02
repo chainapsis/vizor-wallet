@@ -13,8 +13,10 @@ import '../../features/voting/voting_formatters.dart';
 import '../../features/voting/voting_resume_plan.dart';
 import '../../features/voting/voting_share_timing.dart';
 import '../../rust/api/voting.dart' as rust_api;
+import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import '../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../../services/voting/pir_snapshot_resolver.dart';
+import '../../services/voting/resolved_voting_config_extensions.dart';
 import '../../services/voting/voting_api_client.dart';
 import '../../services/voting/voting_helper_health_tracker.dart';
 import '../../services/voting/voting_models.dart';
@@ -56,7 +58,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       dbPath: context.dbPath,
       lightwalletdUrl: context.lightwalletdUrl,
       network: context.network,
-      roundParams: context.round.toRoundParams(),
+      roundParams: context.roundParams,
       roundName: context.round.title,
       sessionJson: context.round.sessionJson,
       accountUuid: context.accountUuid,
@@ -2445,10 +2447,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
     checkAction();
     final config = await ref.read(votingConfigProvider.future);
+    _assertAuthenticatedRoundId(config: config, requestedRoundId: roundId);
     final api = ref.read(votingApiClientProvider(config.apiBaseUrl));
     final round = VotingRoundDetails.fromStatus(
       await api.getRoundStatus(roundId),
     );
+    final roundParams = await ref
+        .read(votingRustApiProvider)
+        .trustedVotingRoundParamsFromConfig(
+          config: config,
+          roundId: round.roundId,
+          snapshotHeight: BigInt.from(round.snapshotHeight),
+          ncRoot: round.ncRoot,
+          nullifierImtRoot: round.nullifierImtRoot,
+        );
     checkAction();
     final accountUuid = await _accountUuidForSession();
     final isHardwareAccount = await _isHardwareAccountForSession();
@@ -2483,10 +2495,26 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       config: config,
       round: round,
+      roundParams: roundParams,
       resumePlan: resumePlan,
       roundPlan: roundPlan,
     );
     return context;
+  }
+
+  void _assertAuthenticatedRoundId({
+    required rust_config.ResolvedVotingConfig config,
+    required String requestedRoundId,
+  }) {
+    if (config.isRoundAuthenticated(requestedRoundId)) {
+      return;
+    }
+    final reason = config.isRoundExplicitlySkipped(requestedRoundId)
+        ? 'it is present but failed dynamic-config authentication'
+        : 'it is absent from the authenticated round set';
+    throw StateError(
+      'Round $requestedRoundId is not authenticated by voting config: $reason.',
+    );
   }
 
   Future<String> _accountUuidForSession() async {
@@ -2963,8 +2991,9 @@ class _VotingSessionContext {
   final bool isHardwareAccount;
   final String network;
   final String lightwalletdUrl;
-  final VotingConfig config;
+  final rust_config.ResolvedVotingConfig config;
   final VotingRoundDetails round;
+  final rust_wire.VotingRoundParams roundParams;
   final VotingResumePlan resumePlan;
   final rust_wire.RoundPlanView? roundPlan;
 
@@ -2977,6 +3006,7 @@ class _VotingSessionContext {
     required this.lightwalletdUrl,
     required this.config,
     required this.round,
+    required this.roundParams,
     required this.resumePlan,
     this.roundPlan,
   });

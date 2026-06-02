@@ -108,10 +108,14 @@ class _VotingConfigSettingsPanelState
     if (_validationField == 'url' && _submitError != null) {
       return _submitError;
     }
+    // While a save is in-flight, provider state may already include the
+    // just-saved source before this panel closes. Suppress inline URL
+    // validation during that transition to avoid a transient duplicate flash.
+    if (_isSubmitting) return null;
     final trimmed = _urlController.text.trim();
     if (trimmed.isEmpty) return null;
     try {
-      StaticVotingConfigSource.parse(trimmed);
+      parseStaticVotingConfigSource(trimmed);
     } on StaticVotingConfigSourceMalformed catch (error) {
       return error.message;
     }
@@ -125,7 +129,7 @@ class _VotingConfigSettingsPanelState
     final url = _urlController.text.trim();
     if (name.length > _maxSourceNameLength || url.isEmpty) return false;
     try {
-      StaticVotingConfigSource.parse(url);
+      parseStaticVotingConfigSource(url);
     } on StaticVotingConfigSourceMalformed {
       return false;
     }
@@ -147,11 +151,11 @@ class _VotingConfigSettingsPanelState
     });
 
     try {
-      final config = await _validateSource(url);
+      await _validateSource(url);
       await ref
           .read(votingConfigSourceProvider.notifier)
           .saveSource(id: _editingSourceId, name: name, sourceUrl: url);
-      await _refreshAndClose(config: config);
+      await _refreshAndClose();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -194,11 +198,11 @@ class _VotingConfigSettingsPanelState
     });
 
     try {
-      final config = await _validateSource(saved.sourceUrl);
+      await _validateSource(saved.sourceUrl);
       await ref
           .read(votingConfigSourceProvider.notifier)
           .setCustom(saved.sourceUrl);
-      await _refreshAndClose(config: config);
+      await _refreshAndClose();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -263,21 +267,17 @@ class _VotingConfigSettingsPanelState
     return true;
   }
 
-  Future<VotingConfig> _validateSource(String input) async {
-    final parsed = StaticVotingConfigSource.parse(input);
-    return VotingConfigLoader(
+  Future<void> _validateSource(String input) async {
+    final parsed = parseStaticVotingConfigSource(input);
+    await VotingConfigLoader(
       httpClient: ref.read(votingHttpClientProvider),
-      staticConfigSource: parsed,
+      sourceUrl: parsed.raw,
     ).load();
   }
 
-  Future<void> _refreshAndClose({VotingConfig? config}) async {
-    if (config == null) {
-      await ref.read(votingConfigProvider.notifier).refresh();
-    } else {
-      ref.read(votingConfigProvider.notifier).setLoadedConfig(config);
-    }
-    await ref.read(votingRoundsProvider.notifier).refresh();
+  Future<void> _refreshAndClose() async {
+    await ref.read(votingConfigProvider.notifier).refresh();
+    await ref.read(votingRoundsProvider.notifier).reload();
     if (!mounted) return;
     setState(() {
       _isSubmitting = false;
@@ -290,12 +290,12 @@ class _VotingConfigSettingsPanelState
     VotingConfigSourceState source, {
     String? excludingId,
   }) {
-    if (_sameSourceUrl(input, kDefaultStaticVotingConfigSource)) {
+    if (_sameSourceLocation(input, kDefaultStaticVotingConfigSource)) {
       return 'This source URL is already added.';
     }
     for (final saved in source.savedSources) {
       if (saved.id == excludingId) continue;
-      if (_sameSourceUrl(input, saved.sourceUrl)) {
+      if (_sameSourceLocation(input, saved.sourceUrl)) {
         return 'This source URL is already added.';
       }
     }
@@ -304,9 +304,7 @@ class _VotingConfigSettingsPanelState
 
   String _messageFromError(Object error) {
     if (error is StaticVotingConfigSourceMalformed) return error.message;
-    if (error is VotingConfigChecksumMismatch) {
-      return 'Static config checksum did not match.';
-    }
+    if (error is DuplicateVotingConfigSource) return error.message;
     if (error is VotingHttpException) {
       return "Couldn't load voting config from that source.";
     }
@@ -870,7 +868,7 @@ class _SmallIconButtonState extends State<_SmallIconButton> {
 String _compactSourceUrl(String raw) {
   final trimmed = raw.trim();
   try {
-    final source = StaticVotingConfigSource.parse(trimmed);
+    final source = parseStaticVotingConfigSource(trimmed);
     final path = source.uri.path.replaceFirst(RegExp(r'^/'), '');
     return path.isEmpty ? source.uri.host : '${source.uri.host}/$path';
   } on StaticVotingConfigSourceMalformed {
@@ -880,9 +878,19 @@ String _compactSourceUrl(String raw) {
 
 bool _sameSourceUrl(String lhs, String rhs) {
   try {
-    final left = StaticVotingConfigSource.parse(lhs.trim());
-    final right = StaticVotingConfigSource.parse(rhs.trim());
+    final left = parseStaticVotingConfigSource(lhs.trim());
+    final right = parseStaticVotingConfigSource(rhs.trim());
     return left.uri == right.uri && left.sha256Hex == right.sha256Hex;
+  } on StaticVotingConfigSourceMalformed {
+    return lhs.trim() == rhs.trim();
+  }
+}
+
+bool _sameSourceLocation(String lhs, String rhs) {
+  try {
+    final left = parseStaticVotingConfigSource(lhs.trim());
+    final right = parseStaticVotingConfigSource(rhs.trim());
+    return left.uri == right.uri;
   } on StaticVotingConfigSourceMalformed {
     return lhs.trim() == rhs.trim();
   }

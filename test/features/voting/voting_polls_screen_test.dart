@@ -8,12 +8,14 @@ import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/voting/screens/voting_polls_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/voting/voting_config_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_rounds_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
+import 'package:zcash_wallet/src/rust/third_party/zcash_voting/config.dart';
 
 void main() {
-  testWidgets('poll list pauses polling while a pushed poll route is open', (
+  testWidgets('poll list reloads when screen opens and route returns', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -22,6 +24,7 @@ void main() {
     });
 
     late _TrackingVotingRoundsNotifier roundsNotifier;
+    late _TrackingVotingConfigNotifier configNotifier;
     late final GoRouter router;
     router = GoRouter(
       initialLocation: '/voting',
@@ -49,6 +52,10 @@ void main() {
           accountProvider.overrideWith(_SoftwareAccountNotifier.new),
           syncProvider.overrideWith(_NoopSyncNotifier.new),
           swapFeatureEnabledProvider.overrideWithValue(false),
+          votingConfigProvider.overrideWith(() {
+            configNotifier = _TrackingVotingConfigNotifier();
+            return configNotifier;
+          }),
           votingRoundsProvider.overrideWith(() {
             roundsNotifier = _TrackingVotingRoundsNotifier();
             return roundsNotifier;
@@ -63,27 +70,55 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(roundsNotifier.startCount, 1);
-    expect(roundsNotifier.stopCount, 0);
+    expect(roundsNotifier.reloadCount, 1);
+    expect(configNotifier.refreshCount, 1);
 
     await tester.tap(find.text('View results'));
     await tester.pumpAndSettle();
 
     expect(find.text('results route'), findsOneWidget);
-    expect(roundsNotifier.stopCount, 1);
+    expect(roundsNotifier.reloadCount, 1);
 
     router.pop();
     await tester.pumpAndSettle();
 
     expect(find.text('View results'), findsOneWidget);
-    expect(roundsNotifier.startCount, 2);
+    expect(roundsNotifier.reloadCount, 2);
+    expect(configNotifier.refreshCount, 2);
   });
 }
 
-class _TrackingVotingRoundsNotifier extends VotingRoundsNotifier {
-  int startCount = 0;
-  int stopCount = 0;
+class _TrackingVotingConfigNotifier extends VotingConfigNotifier {
   int refreshCount = 0;
+
+  @override
+  Future<ResolvedVotingConfig> build() async {
+    return const ResolvedVotingConfig(
+      sourceFingerprint: 'source-fingerprint',
+      trustedKeyFingerprint: 'trusted-key-fingerprint',
+      dynamicConfigFingerprint: 'dynamic-config-fingerprint',
+      voteServers: [],
+      pirEndpoints: [],
+      supportedVersions: SupportedVersions(
+        pir: [],
+        voteProtocol: 'vote-protocol',
+        tally: 'tally',
+        voteServer: 'vote-server',
+      ),
+      authenticatedRounds: [],
+      skippedRoundIds: [],
+      conditions: [],
+    );
+  }
+
+  @override
+  Future<void> refresh() async {
+    refreshCount++;
+  }
+}
+
+class _TrackingVotingRoundsNotifier extends VotingRoundsNotifier {
+  int reloadCount = 0;
 
   @override
   Future<List<VotingRoundView>> build() async {
@@ -98,20 +133,8 @@ class _TrackingVotingRoundsNotifier extends VotingRoundsNotifier {
   }
 
   @override
-  void startPolling({
-    Duration interval = VotingRoundsNotifier.defaultPollInterval,
-  }) {
-    startCount++;
-  }
-
-  @override
-  void stopPolling() {
-    stopCount++;
-  }
-
-  @override
-  Future<void> refresh() async {
-    refreshCount++;
+  Future<void> reload() async {
+    reloadCount++;
   }
 }
 

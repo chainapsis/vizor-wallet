@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ff::PrimeField;
 use secrecy::{ExposeSecret, SecretVec};
 use zcash_keys::keys::UnifiedSpendingKey;
+use zeroize::Zeroizing;
 use zip32::{fingerprint::SeedFingerprint, AccountId};
 
 use crate::wallet::sync::open_wallet_db_for_read;
@@ -132,7 +133,8 @@ pub async fn precompute_delegation_pir(
         lwd,
         session_json,
         account_uuid,
-        voting_hotkey,
+        network,
+        hotkey_seed,
         bundle_index,
         bundle_policy,
     } = prepare_params;
@@ -141,11 +143,12 @@ pub async fn precompute_delegation_pir(
     let pir_server_url = pir_server_url.to_string();
     let account_uuid = account_uuid.to_string();
     let session_json = session_json.map(str::to_string);
-    let voting_hotkey = voting_hotkey.clone();
+    // Keep the copied hotkey seed zeroized after the blocking task returns.
+    let hotkey_seed = Zeroizing::new(hotkey_seed.to_vec());
 
     tokio::task::spawn_blocking(move || {
         let voting_db = open_voting_db(&db_path, &account_uuid)?;
-        let wallet_db = open_wallet_db_for_read(&db_path, wallet_network(voting_hotkey.network()))?;
+        let wallet_db = open_wallet_db_for_read(&db_path, wallet_network(network))?;
         let prepared = zcash_voting::delegate::prepare_delegation_bundle(
             &voting_db,
             &wallet_db,
@@ -153,7 +156,8 @@ pub async fn precompute_delegation_pir(
                 lwd,
                 session_json: session_json.as_deref(),
                 account_uuid: &account_uuid,
-                voting_hotkey: &voting_hotkey,
+                network,
+                hotkey_seed: hotkey_seed.as_slice(),
                 bundle_index,
                 bundle_policy,
             },
@@ -199,10 +203,7 @@ where
         .map_err(|e| format!("Invalid voting round params: {e}"))?;
     on_progress(DelegationProgress::SelectingNotes);
     let voting_db = open_voting_db(db_path, account_uuid)?;
-    let wallet_db = open_wallet_db_for_read(
-        db_path,
-        wallet_network(prepare_params.voting_hotkey.network()),
-    )?;
+    let wallet_db = open_wallet_db_for_read(db_path, wallet_network(prepare_params.network))?;
 
     let prepared_bundle =
         zcash_voting::delegate::prepare_delegation_bundle(&voting_db, &wallet_db, prepare_params)
@@ -293,10 +294,7 @@ pub async fn build_keystone_delegation_request(
     prepare_params: PrepareDelegationBundleParams<'_>,
 ) -> Result<zcash_voting::delegate::KeystoneSigningRequest, String> {
     let voting_db = open_voting_db(db_path, account_uuid)?;
-    let wallet_db = open_wallet_db_for_read(
-        db_path,
-        wallet_network(prepare_params.voting_hotkey.network()),
-    )?;
+    let wallet_db = open_wallet_db_for_read(db_path, wallet_network(prepare_params.network))?;
     let prepared =
         zcash_voting::delegate::prepare_delegation_bundle(&voting_db, &wallet_db, prepare_params)
             .map_err(|e| e.to_string())?;
@@ -332,10 +330,7 @@ where
 
     on_progress(DelegationProgress::SelectingNotes);
     let voting_db = open_voting_db(db_path, account_uuid)?;
-    let wallet_db = open_wallet_db_for_read(
-        db_path,
-        wallet_network(prepare_params.voting_hotkey.network()),
-    )?;
+    let wallet_db = open_wallet_db_for_read(db_path, wallet_network(prepare_params.network))?;
     let prepared_bundle =
         zcash_voting::delegate::prepare_delegation_bundle(&voting_db, &wallet_db, prepare_params)
             .map_err(|e| e.to_string())?;
@@ -405,11 +400,8 @@ mod tests {
                     },
                     session_json: None,
                     account_uuid: TEST_ACCOUNT_UUID,
-                    voting_hotkey: &zcash_voting::VotingHotkey::from_stored_secret(
-                        &[9; 32],
-                        zcash_voting::Network::Regtest,
-                    )
-                    .unwrap(),
+                    network: zcash_voting::Network::Regtest,
+                    hotkey_seed: &[9; 32],
                     bundle_index: 0,
                     bundle_policy: BundlePolicy::default(),
                 },

@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import '../third_party/zcash_voting/config.dart';
 import '../third_party/zcash_voting/delegate.dart';
 import '../third_party/zcash_voting/round.dart';
 import '../third_party/zcash_voting/share_policy.dart';
@@ -13,7 +14,7 @@ import '../third_party/zcash_voting/wire.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `build_vote_commitments_result`, `catch`, `emit_signed_delegation_result`, `emit_signed_vote_result`, `log_sink_closed`, `parse_tx_events_json`, `require_len`, `share_record`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 /// Returns the vote-chain delegation submission body as validated wire JSON.
 ///
@@ -69,6 +70,45 @@ Future<List<ShareSubmissionPlan>> planShareSubmissions({
   singleShare: singleShare,
 );
 
+/// Build round params from server metadata while binding trusted `ea_pk`.
+///
+/// Trust model for the per-round parameters:
+///
+/// - `ea_pk` (the encryption-authority key votes are encrypted to) is the only
+///   field that cannot be independently re-derived by the wallet, so it is
+///   always sourced from the authenticated dynamic config and never from the
+///   vote server's round response. This call ignores any server-supplied
+///   `ea_pk` and substitutes the authenticated value for `round_id`.
+/// - `snapshot_height` and `nc_root` are accepted from the server here but are
+///   re-verified downstream against the wallet's own lightwalletd-synced
+///   Orchard commitment tree: `zcash_voting`'s witness generation
+///   (`validate_cached_tree_state_for_round`) requires the synced frontier
+///   height and root to match these exactly, so a wrong value fails closed
+///   before any vote material is produced.
+/// - `nullifier_imt_root` is accepted from the server here but is used
+///   downstream as the expected root that PIR nullifier proofs are verified
+///   against; a wrong root makes proof verification fail closed rather than
+///   enabling a forged non-membership claim.
+///
+/// In other words, every server-supplied field other than `ea_pk` is
+/// cross-checked against an independent source (lightwalletd or PIR proofs)
+/// downstream, and `ea_pk` is pinned to authenticated config here. A
+/// compromised or stale endpoint therefore cannot steer voting to the wrong
+/// authority or roots without being rejected.
+Future<VotingRoundParams> trustedVotingRoundParamsFromConfig({
+  required ResolvedVotingConfig resolvedConfig,
+  required String roundId,
+  required BigInt snapshotHeight,
+  required List<int> ncRoot,
+  required List<int> nullifierImtRoot,
+}) => RustLib.instance.api.crateApiVotingTrustedVotingRoundParamsFromConfig(
+  resolvedConfig: resolvedConfig,
+  roundId: roundId,
+  snapshotHeight: snapshotHeight,
+  ncRoot: ncRoot,
+  nullifierImtRoot: nullifierImtRoot,
+);
+
 /// Return share-tracking action flags using `zcash_voting::share_policy`.
 ///
 /// [`SHARE_TRACKING_FLAG_READY`] means the share is ready for status polling.
@@ -112,11 +152,31 @@ Future<String> recoveredVoteShareWireJson({
   submitAt: submitAt,
 );
 
-/// Generate opaque voting hotkey bytes for a local voting account.
+/// Derive the opaque per-account, per-round voting hotkey bytes.
 ///
-/// Vizor v2 uses the same random app-owned hotkey model for software and
-/// Keystone accounts. The app persists this random per-round hotkey in secure
-/// storage and reuses it for delegation setup and vote commitment signing.
+/// Rust derives the wallet seed from the account mnemonic, then derives scoped
+/// hotkey seed material locally and returns bytes for secure storage.
+/// The returned `Vec<u8>` is an unavoidable FRB copy boundary
+///
+/// # Errors
+///
+/// Returns an error if network parsing fails, mnemonic decoding fails, or
+/// contextual hotkey derivation fails.
+Future<Uint8List> deriveVotingHotkey({
+  required String mnemonic,
+  required String roundId,
+  required String network,
+}) => RustLib.instance.api.crateApiVotingDeriveVotingHotkey(
+  mnemonic: mnemonic,
+  roundId: roundId,
+  network: network,
+);
+
+/// Generate opaque voting hotkey bytes for a hardware account.
+///
+/// Hardware accounts cannot expose their wallet seed to derive the deterministic
+/// software hotkey, so the app persists this random per-round hotkey in secure
+/// storage and reuses it for vote commitment signing.
 ///
 /// # Errors
 ///
@@ -144,17 +204,17 @@ Future<BundleLayout> setupDelegationBundles({
 ///
 /// # Errors
 ///
-/// Returns an error if round input resolution, hotkey validation, bundle
-/// preparation, or PIR precompute fails.
+/// Returns an error if round input resolution, mnemonic-to-seed derivation,
+/// hotkey derivation, bundle preparation, or PIR precompute fails.
 Future<DelegationPirPrecomputeResultView> precomputeDelegationPir({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
-  required List<int> storedHotkeySecret,
+  required String mnemonic,
   required int bundleIndex,
 }) => RustLib.instance.api.crateApiVotingPrecomputeDelegationPir(
   ctx: ctx,
   pirServerUrl: pirServerUrl,
-  storedHotkeySecret: storedHotkeySecret,
+  mnemonic: mnemonic,
   bundleIndex: bundleIndex,
 );
 
@@ -173,14 +233,12 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
   required String mnemonic,
-  required List<int> storedHotkeySecret,
   required int bundleIndex,
 }) => RustLib.instance.api
     .crateApiVotingBuildProveAndSignDelegationPayloadWithProgress(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
       mnemonic: mnemonic,
-      storedHotkeySecret: storedHotkeySecret,
       bundleIndex: bundleIndex,
     );
 
@@ -192,11 +250,11 @@ Stream<ApiDelegationProofEvent> buildProveAndSignDelegationPayloadWithProgress({
 /// redaction for the requested bundle fails.
 Future<KeystoneSigningRequest> buildKeystoneDelegationRequest({
   required ApiVotingRoundContext ctx,
-  required List<int> storedHotkeySecret,
+  required List<int> hotkeySeed,
   required int bundleIndex,
 }) => RustLib.instance.api.crateApiVotingBuildKeystoneDelegationRequest(
   ctx: ctx,
-  storedHotkeySecret: storedHotkeySecret,
+  hotkeySeed: hotkeySeed,
   bundleIndex: bundleIndex,
 );
 
@@ -265,7 +323,7 @@ Stream<ApiDelegationProofEvent>
 buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
   required ApiVotingRoundContext ctx,
   required String pirServerUrl,
-  required List<int> storedHotkeySecret,
+  required List<int> hotkeySeed,
   required int bundleIndex,
   required List<int> keystoneSig,
   required List<int> keystoneSighash,
@@ -273,7 +331,7 @@ buildProveDelegationPayloadWithKeystoneSignatureWithProgress({
     .crateApiVotingBuildProveDelegationPayloadWithKeystoneSignatureWithProgress(
       ctx: ctx,
       pirServerUrl: pirServerUrl,
-      storedHotkeySecret: storedHotkeySecret,
+      hotkeySeed: hotkeySeed,
       bundleIndex: bundleIndex,
       keystoneSig: keystoneSig,
       keystoneSighash: keystoneSighash,
@@ -429,7 +487,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   required String network,
   required String roundId,
   required int bundleIndex,
-  required List<int> storedHotkeySecret,
+  required List<int> hotkeySeed,
   required VanWitness vanWitness,
   required List<DraftVote> draftVotes,
 }) => RustLib.instance.api.crateApiVotingBuildVoteCommitmentsWithProgress(
@@ -438,7 +496,7 @@ Stream<ApiVoteCommitEvent> buildVoteCommitmentsWithProgress({
   network: network,
   roundId: roundId,
   bundleIndex: bundleIndex,
-  storedHotkeySecret: storedHotkeySecret,
+  hotkeySeed: hotkeySeed,
   vanWitness: vanWitness,
   draftVotes: draftVotes,
 );
