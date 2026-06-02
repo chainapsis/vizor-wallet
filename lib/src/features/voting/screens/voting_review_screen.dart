@@ -145,7 +145,7 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
                                           ),
                                     variant: AppButtonVariant.primary,
                                     minWidth: 240,
-                                    child: const Text('Confirm and submit'),
+                                    child: const Text('Confirm & submit'),
                                   ),
                                 ),
                               ],

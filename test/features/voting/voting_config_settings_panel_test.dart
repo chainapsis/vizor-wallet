@@ -50,7 +50,7 @@ void main() {
     await tester.tap(find.text('Add custom source'));
     await tester.pump();
 
-    expect(find.text('Add Custom Source'), findsNothing);
+    expect(find.text('Static config URL'), findsNothing);
   });
 }
 

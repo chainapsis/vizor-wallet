@@ -66,7 +66,7 @@ class VotingSubmissionConfirmationScreen extends ConsumerWidget {
                 }
                 return _ConfirmationScaffold(
                   confirmed: true,
-                  title: 'Submission confirmed',
+                  title: 'Submission confirmed!',
                   pollTitle: pollTitle,
                   message:
                       'Your vote was successfully published and cannot be changed.',

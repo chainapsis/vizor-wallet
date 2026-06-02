@@ -108,17 +108,20 @@ class _VotingProposalDetailScreenState
               );
             }
             if (completedVote != null) {
-              return _VotedPollContent(
-                roundTitle: round.title.isEmpty
-                    ? 'Coinholder poll'
-                    : round.title,
-                snapshotHeight: round.snapshotHeight,
-                description: _roundDescription(round.rawJson),
-                votingPowerZatoshi: state.eligibleWeightZatoshi,
-                votingPowerPreparing: _votingPowerPreparationInFlight,
-                votedAt: completedVote.votedAt,
-                proposals: proposals,
-                choicesByProposalId: completedVote.choicesByProposalId,
+              return Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: _VotedPollContent(
+                  roundTitle: round.title.isEmpty
+                      ? 'Coinholder poll'
+                      : round.title,
+                  snapshotHeight: round.snapshotHeight,
+                  description: _roundDescription(round.rawJson),
+                  votingPowerZatoshi: state.eligibleWeightZatoshi,
+                  votingPowerPreparing: _votingPowerPreparationInFlight,
+                  votedAt: completedVote.votedAt,
+                  proposals: proposals,
+                  choicesByProposalId: completedVote.choicesByProposalId,
+                ),
               );
             }
             final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
