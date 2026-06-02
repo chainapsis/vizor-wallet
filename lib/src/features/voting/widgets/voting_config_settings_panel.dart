@@ -44,8 +44,10 @@ class _VotingConfigSettingsPanelState
   String? _editingSourceId;
   bool _showEditor = false;
   bool _isSubmitting = false;
+  bool _isSavingSelection = false;
   String? _submitError;
   String? _validationField;
+  _ConfigSourceSelection? _pendingSelection;
 
   @override
   void dispose() {
@@ -168,42 +170,89 @@ class _VotingConfigSettingsPanelState
     }
   }
 
-  Future<void> _useDefault(VotingConfigSourceState source) async {
-    if (_isSubmitting || source.isDefault) return;
-    if (_blockIfVotingSubmissionInProgress()) return;
+  void _selectSource(_ConfigSourceSelection selection) {
+    if (_isSubmitting) return;
     setState(() {
-      _isSubmitting = true;
+      _pendingSelection = selection;
       _submitError = null;
       _validationField = null;
     });
-
-    try {
-      await ref.read(votingConfigSourceProvider.notifier).resetDefault();
-      await _refreshAndClose();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _submitError = _messageFromError(error);
-        _validationField = null;
-        _isSubmitting = false;
-      });
-    }
   }
 
-  Future<void> _useSaved(SavedVotingConfigSource saved) async {
-    if (_isSubmitting) return;
+  _ConfigSourceSelection _activeSelection(VotingConfigSourceState source) {
+    return _ConfigSourceSelection(
+      sourceUrl: source.sourceUrl,
+      isDefault: source.isDefault,
+    );
+  }
+
+  _ConfigSourceSelection _selectedSource(VotingConfigSourceState source) {
+    final active = _activeSelection(source);
+    final pending = _pendingSelection;
+    if (pending == null) return active;
+    if (_isSelectionAvailable(pending, source)) return pending;
+    return active;
+  }
+
+  bool _isSelectionAvailable(
+    _ConfigSourceSelection selection,
+    VotingConfigSourceState source,
+  ) {
+    if (selection.isDefault) return true;
+    if (!source.isDefault &&
+        _sameSourceUrl(selection.sourceUrl, source.sourceUrl)) {
+      return true;
+    }
+    for (final saved in source.savedSources) {
+      if (_sameSourceUrl(selection.sourceUrl, saved.sourceUrl)) return true;
+    }
+    return false;
+  }
+
+  bool _hasSavedSource(VotingConfigSourceState source, String sourceUrl) {
+    for (final saved in source.savedSources) {
+      if (_sameSourceUrl(sourceUrl, saved.sourceUrl)) return true;
+    }
+    return false;
+  }
+
+  bool _showUnsavedActiveSource(VotingConfigSourceState source) {
+    return !source.isDefault && !_hasSavedSource(source, source.sourceUrl);
+  }
+
+  bool _sameSelection(_ConfigSourceSelection lhs, _ConfigSourceSelection rhs) {
+    if (lhs.isDefault || rhs.isDefault) {
+      return lhs.isDefault && rhs.isDefault;
+    }
+    return _sameSourceUrl(lhs.sourceUrl, rhs.sourceUrl);
+  }
+
+  bool _canSaveSelection(VotingConfigSourceState source) {
+    if (_isSubmitting) return false;
+    if (ref.read(votingSubmissionGuardProvider).isNotEmpty) return false;
+    return !_sameSelection(_selectedSource(source), _activeSelection(source));
+  }
+
+  Future<void> _saveSelection(VotingConfigSourceState source) async {
+    if (!_canSaveSelection(source)) return;
     if (_blockIfVotingSubmissionInProgress()) return;
+    final selected = _selectedSource(source);
     setState(() {
       _isSubmitting = true;
+      _isSavingSelection = true;
       _submitError = null;
       _validationField = null;
     });
 
     try {
-      await _validateSource(saved.sourceUrl);
-      await ref
-          .read(votingConfigSourceProvider.notifier)
-          .setCustom(saved.sourceUrl);
+      if (selected.isDefault) {
+        await ref.read(votingConfigSourceProvider.notifier).resetDefault();
+      } else {
+        await _validateSource(selected.sourceUrl);
+        await ref
+            .read(votingConfigSourceProvider.notifier)
+            .setCustom(selected.sourceUrl);
+      }
       await _refreshAndClose();
     } catch (error) {
       if (!mounted) return;
@@ -211,6 +260,7 @@ class _VotingConfigSettingsPanelState
         _submitError = _messageFromError(error);
         _validationField = null;
         _isSubmitting = false;
+        _isSavingSelection = false;
       });
     }
   }
@@ -238,6 +288,12 @@ class _VotingConfigSettingsPanelState
       } else if (mounted) {
         setState(() {
           _isSubmitting = false;
+          final pending = _pendingSelection;
+          if (pending != null &&
+              !pending.isDefault &&
+              _sameSourceUrl(pending.sourceUrl, saved.sourceUrl)) {
+            _pendingSelection = null;
+          }
           if (_editingSourceId == saved.id) {
             _editingSourceId = null;
             _showEditor = false;
@@ -254,6 +310,7 @@ class _VotingConfigSettingsPanelState
         _submitError = _messageFromError(error);
         _validationField = null;
         _isSubmitting = false;
+        _isSavingSelection = false;
       });
     }
   }
@@ -265,6 +322,7 @@ class _VotingConfigSettingsPanelState
       _submitError = guards.first.message;
       _validationField = null;
       _isSubmitting = false;
+      _isSavingSelection = false;
     });
     return true;
   }
@@ -283,6 +341,8 @@ class _VotingConfigSettingsPanelState
     if (!mounted) return;
     setState(() {
       _isSubmitting = false;
+      _isSavingSelection = false;
+      _pendingSelection = null;
     });
     widget.onUpdated?.call();
   }
@@ -345,12 +405,12 @@ class _VotingConfigSettingsPanelState
             data: (source) {
               final nameMessage = _nameMessage();
               final urlMessage = _urlMessage(source);
+              final selectedSource = _selectedSource(source);
+              final showUnsavedActiveSource = _showUnsavedActiveSource(source);
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _PanelHeader(onClose: widget.onClose),
-                  const SizedBox(height: AppSpacing.xs),
-                  _CurrentSourceText(source: source),
                   if (_submitError != null && _validationField == null) ...[
                     const SizedBox(height: AppSpacing.xs),
                     Text(
@@ -371,31 +431,65 @@ class _VotingConfigSettingsPanelState
                             title: 'Coinholder poll',
                             sourceUrl: kDefaultStaticVotingConfigSource,
                             isDefault: true,
-                            selected: source.isDefault,
-                            onUse: source.isDefault || submissionInProgress
+                            selected: selectedSource.isDefault,
+                            active: source.isDefault,
+                            onSelect: _isSubmitting || submissionInProgress
                                 ? null
-                                : () => _useDefault(source),
+                                : () => _selectSource(
+                                    const _ConfigSourceSelection(
+                                      sourceUrl:
+                                          kDefaultStaticVotingConfigSource,
+                                      isDefault: true,
+                                    ),
+                                  ),
                           ),
+                          if (showUnsavedActiveSource) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            _SourceCard(
+                              title: 'Custom source',
+                              sourceUrl: source.sourceUrl,
+                              selected:
+                                  !selectedSource.isDefault &&
+                                  _sameSourceUrl(
+                                    selectedSource.sourceUrl,
+                                    source.sourceUrl,
+                                  ),
+                              active: true,
+                              onSelect: _isSubmitting || submissionInProgress
+                                  ? null
+                                  : () => _selectSource(
+                                      _ConfigSourceSelection(
+                                        sourceUrl: source.sourceUrl,
+                                        isDefault: false,
+                                      ),
+                                    ),
+                            ),
+                          ],
                           for (final saved in source.savedSources) ...[
                             const SizedBox(height: AppSpacing.xs),
                             _SourceCard(
                               title: saved.name,
                               sourceUrl: saved.sourceUrl,
                               selected:
+                                  !selectedSource.isDefault &&
+                                  _sameSourceUrl(
+                                    selectedSource.sourceUrl,
+                                    saved.sourceUrl,
+                                  ),
+                              active:
                                   !source.isDefault &&
                                   _sameSourceUrl(
                                     source.sourceUrl,
                                     saved.sourceUrl,
                                   ),
-                              onUse:
-                                  submissionInProgress ||
-                                      (!source.isDefault &&
-                                          _sameSourceUrl(
-                                            source.sourceUrl,
-                                            saved.sourceUrl,
-                                          ))
+                              onSelect: _isSubmitting || submissionInProgress
                                   ? null
-                                  : () => _useSaved(saved),
+                                  : () => _selectSource(
+                                      _ConfigSourceSelection(
+                                        sourceUrl: saved.sourceUrl,
+                                        isDefault: false,
+                                      ),
+                                    ),
                               onEdit: submissionInProgress
                                   ? null
                                   : () => _startEdit(saved),
@@ -422,14 +516,32 @@ class _VotingConfigSettingsPanelState
                               onSave: _saveEditor,
                             )
                           else
-                            AppButton(
-                              onPressed: _isSubmitting || submissionInProgress
-                                  ? null
-                                  : _startAdd,
-                              variant: AppButtonVariant.secondary,
-                              minWidth: 220,
-                              leading: const AppIcon(AppIcons.addNew),
-                              child: const Text('Add custom source'),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                AppButton(
+                                  onPressed: _canSaveSelection(source)
+                                      ? () => _saveSelection(source)
+                                      : null,
+                                  variant: AppButtonVariant.primary,
+                                  minWidth: 128,
+                                  trailing: const AppIcon(AppIcons.check),
+                                  child: Text(
+                                    _isSavingSelection ? 'Saving...' : 'Save',
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.xs),
+                                AppButton(
+                                  onPressed:
+                                      _isSubmitting || submissionInProgress
+                                      ? null
+                                      : _startAdd,
+                                  variant: AppButtonVariant.secondary,
+                                  minWidth: 220,
+                                  leading: const AppIcon(AppIcons.addNew),
+                                  child: const Text('Add custom source'),
+                                ),
+                              ],
                             ),
                         ],
                       ),
@@ -445,55 +557,14 @@ class _VotingConfigSettingsPanelState
   }
 }
 
-class _CurrentSourceText extends StatelessWidget {
-  const _CurrentSourceText({required this.source});
-
-  final VotingConfigSourceState source;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final label = source.isDefault
-        ? 'Default'
-        : _compactSourceUrl(source.sourceUrl);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text.rich(
-          TextSpan(
-            text: 'Current: ',
-            children: [
-              TextSpan(
-                text: label,
-                style: TextStyle(color: colors.text.brandCrimson),
-              ),
-            ],
-          ),
-          textAlign: TextAlign.center,
-          style: AppTypography.bodyMedium.copyWith(color: colors.text.primary),
-        ),
-        if (source.isDefault) ...[
-          const SizedBox(height: AppSpacing.xxs),
-          Text(
-            source.sourceUrl,
-            textAlign: TextAlign.center,
-            style: AppTypography.labelMedium.copyWith(
-              color: colors.text.secondary,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
 class _SourceCard extends StatelessWidget {
   const _SourceCard({
     required this.title,
     required this.sourceUrl,
     required this.selected,
+    required this.active,
     this.isDefault = false,
-    this.onUse,
+    this.onSelect,
     this.onEdit,
     this.onDelete,
   });
@@ -501,98 +572,111 @@ class _SourceCard extends StatelessWidget {
   final String title;
   final String sourceUrl;
   final bool selected;
+  final bool active;
   final bool isDefault;
-  final VoidCallback? onUse;
+  final VoidCallback? onSelect;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: selected ? colors.background.raised : colors.surface.card,
-        borderRadius: BorderRadius.circular(AppRadii.small),
-        border: Border.all(
-          color: selected ? colors.border.medium : colors.border.subtle,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            _SelectionIndicator(selected: selected),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+    final enabled = onSelect != null;
+    return Semantics(
+      container: true,
+      explicitChildNodes: true,
+      label: title,
+      button: true,
+      selected: selected,
+      enabled: enabled,
+      onTap: onSelect,
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onSelect,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: selected ? colors.background.raised : colors.surface.card,
+              borderRadius: BorderRadius.circular(AppRadii.small),
+              border: Border.all(
+                color: selected ? colors.border.medium : colors.border.subtle,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          title,
+                  _SelectionIndicator(selected: selected),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.labelLarge.copyWith(
+                                  color: colors.text.accent,
+                                ),
+                              ),
+                            ),
+                            if (isDefault) ...[
+                              const SizedBox(width: AppSpacing.xxs),
+                              _DefaultBadge(),
+                            ],
+                            if (active) ...[
+                              const SizedBox(width: AppSpacing.xxs),
+                              _ActiveBadge(),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          _middleTruncateSourceUrl(sourceUrl),
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.labelLarge.copyWith(
-                            color: colors.text.accent,
+                          overflow: TextOverflow.clip,
+                          style: AppTypography.labelMedium.copyWith(
+                            color: colors.text.secondary,
                           ),
                         ),
-                      ),
-                      if (isDefault) ...[
-                        const SizedBox(width: AppSpacing.xxs),
-                        _DefaultBadge(),
                       ],
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  Text(
-                    _middleTruncateSourceUrl(sourceUrl),
-                    maxLines: 1,
-                    overflow: TextOverflow.clip,
-                    style: AppTypography.labelMedium.copyWith(
-                      color: colors.text.secondary,
                     ),
                   ),
+                  const SizedBox(width: AppSpacing.sm),
+                  _SmallIconButton(
+                    icon: AppIcons.copy,
+                    semanticLabel: 'Copy source URL',
+                    onTap: () {
+                      copyTextWithToast(
+                        context,
+                        text: sourceUrl,
+                        toastMessage: 'Source URL copied.',
+                      );
+                    },
+                  ),
+                  if (onEdit != null)
+                    _SmallIconButton(
+                      icon: AppIcons.options,
+                      semanticLabel: 'Edit saved source',
+                      onTap: onEdit!,
+                    ),
+                  if (onDelete != null)
+                    _SmallIconButton(
+                      icon: AppIcons.trash,
+                      semanticLabel: 'Delete saved source',
+                      onTap: onDelete!,
+                    ),
                 ],
               ),
             ),
-            const SizedBox(width: AppSpacing.sm),
-            _SmallIconButton(
-              icon: AppIcons.copy,
-              semanticLabel: 'Copy source URL',
-              onTap: () {
-                copyTextWithToast(
-                  context,
-                  text: sourceUrl,
-                  toastMessage: 'Source URL copied.',
-                );
-              },
-            ),
-            if (onEdit != null)
-              _SmallIconButton(
-                icon: AppIcons.options,
-                semanticLabel: 'Edit saved source',
-                onTap: onEdit!,
-              ),
-            if (onDelete != null)
-              _SmallIconButton(
-                icon: AppIcons.trash,
-                semanticLabel: 'Delete saved source',
-                onTap: onDelete!,
-              ),
-            AppButton(
-              onPressed: onUse,
-              variant: selected
-                  ? AppButtonVariant.secondary
-                  : AppButtonVariant.primary,
-              size: AppButtonSize.small,
-              minWidth: 64,
-              child: Text(selected ? 'Active' : 'Use'),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -767,6 +851,31 @@ class _DefaultBadge extends StatelessWidget {
   }
 }
 
+class _ActiveBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background.neutralStrongOpacity,
+        borderRadius: BorderRadius.circular(AppRadii.xSmall),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xxs,
+          vertical: 2,
+        ),
+        child: Text(
+          'Active',
+          style: AppTypography.labelSmall.copyWith(
+            color: colors.text.brandCrimson,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PanelHeader extends StatelessWidget {
   const _PanelHeader({required this.onClose});
 
@@ -776,7 +885,7 @@ class _PanelHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
-      height: 32,
+      height: 44,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -891,6 +1000,16 @@ class _SmallIconButtonState extends State<_SmallIconButton> {
       _hovered = hovered;
     });
   }
+}
+
+class _ConfigSourceSelection {
+  const _ConfigSourceSelection({
+    required this.sourceUrl,
+    required this.isDefault,
+  });
+
+  final String sourceUrl;
+  final bool isDefault;
 }
 
 String _compactSourceUrl(String raw) {
