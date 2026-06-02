@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 import 'app_icon.dart';
+import 'app_tooltip.dart';
 
 enum AppTextFieldTone { neutral, destructive, success, brandCrimson }
 
@@ -684,29 +685,108 @@ class _AppTextFieldState extends State<AppTextField> {
             top: messageTop,
             left: 0,
             right: 0,
-            child: IgnorePointer(
-              child: Row(
-                children: [
-                  widget.messageIcon ?? defaultMessageIcon ?? const SizedBox(),
-                  if (widget.messageIcon != null || defaultMessageIcon != null)
-                    const SizedBox(width: AppSpacing.xxs),
-                  Expanded(
-                    child: Text(
-                      widget.messageText!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          widget.messageStyle ??
-                          AppTypography.labelMedium.copyWith(
-                            color: messageColor,
-                          ),
-                    ),
-                  ),
-                ],
-              ),
+            child: _AppTextFieldMessage(
+              text: widget.messageText!,
+              icon: widget.messageIcon ?? defaultMessageIcon,
+              style:
+                  widget.messageStyle ??
+                  AppTypography.labelMedium.copyWith(color: messageColor),
             ),
           ),
       ],
+    );
+  }
+}
+
+class _AppTextFieldMessage extends StatelessWidget {
+  const _AppTextFieldMessage({
+    required this.text,
+    required this.style,
+    this.icon,
+  });
+
+  static const _rowKey = ValueKey('app-text-field-message-row');
+  static const _iconSlotKey = ValueKey('app-text-field-message-icon-slot');
+  static const _textKey = ValueKey('app-text-field-message-text');
+  static const _tooltipTargetKey = ValueKey(
+    'app-text-field-message-tooltip-target',
+  );
+
+  final String text;
+  final TextStyle style;
+  final Widget? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasIcon = icon != null;
+    final textChild = Text(
+      key: _textKey,
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: style,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const iconWidth = AppIconSize.medium;
+        final leadingWidth = hasIcon ? iconWidth + AppSpacing.xxs : 0.0;
+        final textMaxWidth = constraints.maxWidth - leadingWidth;
+        final textLayoutWidth = textMaxWidth <= 0 ? 0.0 : textMaxWidth;
+        final messageRow = Row(
+          key: _rowKey,
+          children: [
+            if (hasIcon) ...[
+              IgnorePointer(
+                child: SizedBox(
+                  key: _iconSlotKey,
+                  width: iconWidth,
+                  height: iconWidth,
+                  child: Center(child: icon),
+                ),
+              ),
+              const IgnorePointer(child: SizedBox(width: AppSpacing.xxs)),
+            ],
+            Expanded(child: textChild),
+          ],
+        );
+        final visibleMessage = IgnorePointer(child: messageRow);
+        Widget messageLine({Widget? overlay}) {
+          return SizedBox(
+            height: AppIconSize.medium,
+            child: Stack(
+              children: [
+                visibleMessage,
+                if (overlay != null) Positioned.fill(child: overlay),
+              ],
+            ),
+          );
+        }
+
+        if (!constraints.maxWidth.isFinite) {
+          return messageLine();
+        }
+
+        final textPainter = TextPainter(
+          text: TextSpan(text: text, style: style),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          ellipsis: '...',
+          maxLines: 1,
+        )..layout(maxWidth: textLayoutWidth);
+
+        if (!textPainter.didExceedMaxLines) {
+          return messageLine();
+        }
+
+        return messageLine(
+          overlay: AppTooltip(
+            message: text,
+            preferBelow: true,
+            child: const SizedBox.expand(key: _tooltipTargetKey),
+          ),
+        );
+      },
     );
   }
 }

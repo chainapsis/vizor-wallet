@@ -85,6 +85,167 @@ void main() {
     expect(focusNode.hasFocus, isFalse);
   });
 
+  testWidgets('message text does not use tooltip when it fits', (tester) async {
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        child: SizedBox(
+          width: 352,
+          height: 86,
+          child: AppTextField(label: 'Send to', messageText: 'Valid address'),
+        ),
+      ),
+    );
+
+    expect(find.byType(Tooltip), findsNothing);
+  });
+
+  testWidgets('truncated message text uses below-preferred tooltip', (
+    tester,
+  ) async {
+    const message =
+        'Use only English letters, numbers, and symbols before continuing.';
+
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        child: SizedBox(
+          width: 128,
+          height: 86,
+          child: AppTextField(label: 'Password', messageText: message),
+        ),
+      ),
+    );
+
+    final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+    expect(tooltip.message, message);
+    expect(tooltip.preferBelow, isTrue);
+  });
+
+  testWidgets('truncated message tooltip anchors to icon and text row', (
+    tester,
+  ) async {
+    const message =
+        'Use only English letters, numbers, and symbols before continuing.';
+
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        child: SizedBox(
+          width: 128,
+          height: 86,
+          child: AppTextField(
+            label: 'Password',
+            messageText: message,
+            tone: AppTextFieldTone.destructive,
+          ),
+        ),
+      ),
+    );
+
+    final tooltipTarget = find.descendant(
+      of: find.byType(Tooltip),
+      matching: find.byKey(
+        const ValueKey('app-text-field-message-tooltip-target'),
+      ),
+    );
+    final iconSlot = find.byKey(
+      const ValueKey('app-text-field-message-icon-slot'),
+    );
+
+    expect(tooltipTarget, findsOneWidget);
+    expect(iconSlot, findsOneWidget);
+
+    final fieldRect = tester.getRect(find.byType(AppTextField));
+    final targetRect = tester.getRect(tooltipTarget);
+    final textRect = tester.getRect(find.text(message));
+
+    expect(targetRect.left, moreOrLessEquals(fieldRect.left));
+    expect(targetRect.width, moreOrLessEquals(fieldRect.width));
+    expect(textRect.left, greaterThan(targetRect.left));
+  });
+
+  testWidgets('truncated message tooltip can show full message overlay', (
+    tester,
+  ) async {
+    const message =
+        'Use only English letters, numbers, and symbols before continuing.';
+
+    await tester.pumpWidget(
+      const _ThemedHarness(
+        child: SizedBox(
+          width: 128,
+          height: 86,
+          child: AppTextField(
+            label: 'Password',
+            messageText: message,
+            tone: AppTextFieldTone.destructive,
+          ),
+        ),
+      ),
+    );
+
+    final tooltipState = tester.state<TooltipState>(find.byType(Tooltip));
+    expect(tooltipState.ensureTooltipVisible(), isTrue);
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text(message), findsNWidgets(2));
+  });
+
+  testWidgets('truncated message tooltip does not block root unfocus', (
+    tester,
+  ) async {
+    const message =
+        'Use only English letters, numbers, and symbols before continuing.';
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    var rootTapCount = 0;
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      _ThemedHarness(
+        includeRootUnfocus: true,
+        onRootTap: () => rootTapCount += 1,
+        child: SizedBox(
+          width: 128,
+          height: 86,
+          child: AppTextField(
+            label: 'Password',
+            controller: controller,
+            focusNode: focusNode,
+            messageText: message,
+            tone: AppTextFieldTone.destructive,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    await tester.tapAt(tester.getRect(find.text(message)).center);
+    await tester.pump();
+
+    expect(rootTapCount, 1);
+    expect(focusNode.hasFocus, isFalse);
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    await tester.tapAt(
+      tester
+          .getRect(
+            find.byKey(const ValueKey('app-text-field-message-icon-slot')),
+          )
+          .center,
+    );
+    await tester.pump();
+
+    expect(rootTapCount, 2);
+    expect(focusNode.hasFocus, isFalse);
+  });
+
   testWidgets('multiline clear button uses the Figma hit target', (
     tester,
   ) async {
