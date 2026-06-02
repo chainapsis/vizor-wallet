@@ -7,43 +7,40 @@ import '../frb_generated.dart';
 import '../third_party/zcash_voting/config.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `eq`, `fmt`
 
-/// Resolve static + dynamic voting config via a wallet-owned fetch callback.
+/// Authenticate the static voting config bytes and surface the dynamic URL.
 ///
-/// Rust validates config authenticity and computes config switch semantics.
-/// The wallet keeps transport ownership via `fetch_bytes`.
-Future<VotingConfigResolution> resolveVotingConfig({
+/// The wallet fetches the static trust anchor with its own transport and passes
+/// the bytes here. Rust verifies the hash pin and decodes the static config,
+/// returning the `dynamic_config_url` the wallet must fetch next before calling
+/// [`resolve_voting_config`]. Config errors are returned as a flat string.
+Future<String> resolveStaticVotingConfig({
   required String source,
-  ResolvedVotingConfig? previous,
-  required FutureOr<VotingConfigFetch> Function(String) fetchBytes,
-}) => RustLib.instance.api.crateApiVotingConfigResolveVotingConfig(
+  required List<int> staticBytes,
+}) => RustLib.instance.api.crateApiVotingConfigResolveStaticVotingConfig(
   source: source,
-  previous: previous,
-  fetchBytes: fetchBytes,
+  staticBytes: staticBytes,
 );
 
-/// Fallible response from the wallet-owned voting config transport callback.
+/// Resolve and authenticate voting config from wallet-fetched bytes.
 ///
-/// This keeps ordinary transport failures (timeout/HTTP errors/etc.) in the
-/// value domain instead of crossing the FFI callback boundary as panics.
-class VotingConfigFetch {
-  final Uint8List? bytes;
-  final String? error;
-
-  const VotingConfigFetch({this.bytes, this.error});
-
-  @override
-  int get hashCode => bytes.hashCode ^ error.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is VotingConfigFetch &&
-          runtimeType == other.runtimeType &&
-          bytes == other.bytes &&
-          error == other.error;
-}
+/// The wallet owns transport: it fetches the static bytes, calls
+/// [`resolve_static_voting_config`] to learn the dynamic URL, fetches the
+/// dynamic bytes, then passes both blobs here. Rust authenticates them and
+/// computes the config-switch classification against `previous`. Config errors
+/// are returned as a flat string; transport failures never reach this layer.
+Future<VotingConfigResolution> resolveVotingConfig({
+  required String source,
+  required List<int> staticBytes,
+  required List<int> dynamicBytes,
+  ResolvedVotingConfig? previous,
+}) => RustLib.instance.api.crateApiVotingConfigResolveVotingConfig(
+  source: source,
+  staticBytes: staticBytes,
+  dynamicBytes: dynamicBytes,
+  previous: previous,
+);
 
 class VotingConfigResolution {
   final ResolvedVotingConfig config;

@@ -6,7 +6,6 @@ use super::voting_helpers::{
     delegation_static_inputs, prepare_delegation_bundle_params, resolve_delegation_lwd_inputs,
     seed_from_mnemonic,
 };
-use flutter_rust_bridge::DartFnFuture;
 use crate::frb_generated::StreamSink;
 use crate::wallet::{
     keys,
@@ -14,7 +13,7 @@ use crate::wallet::{
 };
 use rand::{rngs::OsRng, RngCore};
 use secrecy::ExposeSecret;
-use zcash_voting::config::{self, ResolveConfigError};
+use zcash_voting::config;
 use zcash_voting::wire::{
     ConfigSwitchKind, ResolveVotingConfigOptions, ResolvedVotingConfig, ResolvedVotingConfigSummary,
 };
@@ -1416,59 +1415,42 @@ pub struct VotingConfigResolution {
     pub switch_kind: ConfigSwitchKind,
 }
 
-/// Fallible response from the wallet-owned voting config transport callback.
+/// Authenticate the static voting config bytes and surface the dynamic URL.
 ///
-/// This keeps ordinary transport failures (timeout/HTTP errors/etc.) in the
-/// value domain instead of crossing the FFI callback boundary as panics.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VotingConfigFetch {
-    pub bytes: Option<Vec<u8>>,
-    pub error: Option<String>,
+/// The wallet fetches the static trust anchor with its own transport and passes
+/// the bytes here. Rust verifies the hash pin and decodes the static config,
+/// returning the `dynamic_config_url` the wallet must fetch next before calling
+/// [`resolve_voting_config`]. Config errors are returned as a flat string.
+pub fn resolve_static_voting_config(
+    source: String,
+    static_bytes: Vec<u8>,
+) -> Result<String, String> {
+    config::resolve_static_voting_config(&source, &static_bytes)
+        .map(|resolved| resolved.dynamic_config_url)
+        .map_err(|error| error.to_string())
 }
 
-/// Resolve static + dynamic voting config via a wallet-owned fetch callback.
+/// Resolve and authenticate voting config from wallet-fetched bytes.
 ///
-/// Rust validates config authenticity and computes config switch semantics.
-/// The wallet keeps transport ownership via `fetch_bytes`.
-///
-/// Transport-error contract with the Dart caller: ordinary transport failures
-/// (timeouts, non-200 responses, etc.) are reported in the value domain via
-/// [`VotingConfigFetch::error`] rather than as panics across the FFI callback
-/// boundary. This function forwards that error string verbatim into the
-/// downstream resolver, which surfaces it back as
-/// [`ResolveConfigError::Transport`]; the string is then returned unchanged as
-/// the `Err` of this function. The Dart loader relies on this preservation: it
-/// passes an opaque token as the error string and looks for that exact token in
-/// the returned error to recover the original typed Dart exception (see
-/// `voting_config_loader.dart`). Do not reformat, wrap, or translate transport
-/// error strings here, or that round-trip will break and callers will lose the
-/// real error.
-pub async fn resolve_voting_config(
+/// The wallet owns transport: it fetches the static bytes, calls
+/// [`resolve_static_voting_config`] to learn the dynamic URL, fetches the
+/// dynamic bytes, then passes both blobs here. Rust authenticates them and
+/// computes the config-switch classification against `previous`. Config errors
+/// are returned as a flat string; transport failures never reach this layer.
+pub fn resolve_voting_config(
     source: String,
+    static_bytes: Vec<u8>,
+    dynamic_bytes: Vec<u8>,
     previous: Option<ResolvedVotingConfig>,
-    fetch_bytes: impl Fn(String) -> DartFnFuture<VotingConfigFetch>,
 ) -> Result<VotingConfigResolution, String> {
-    let next = config::resolve_config(&source, ResolveVotingConfigOptions::default(), |url| {
-        let response = fetch_bytes(url.clone());
-        async move {
-            let response = response.await;
-            match (response.bytes, response.error) {
-                (Some(bytes), None) => Ok::<_, String>(bytes),
-                (None, Some(error)) => Err(error),
-                (Some(_), Some(_)) => Err(
-                    "voting config transport callback returned both bytes and error".to_string(),
-                ),
-                (None, None) => Err(
-                    "voting config transport callback returned neither bytes nor error".to_string(),
-                ),
-            }
-        }
-    })
-    .await
-    .map_err(|error| match error {
-        ResolveConfigError::Transport(transport) => transport,
-        ResolveConfigError::Config(config_error) => config_error.to_string(),
-    })?;
+    let resolved_static =
+        config::resolve_static_voting_config(&source, &static_bytes).map_err(|error| error.to_string())?;
+    let next = config::resolve_dynamic_voting_config(
+        resolved_static,
+        &dynamic_bytes,
+        ResolveVotingConfigOptions::default(),
+    )
+    .map_err(|error| error.to_string())?;
 
     let switch_kind = config::decide_config_switch(
         previous.as_ref().map(ResolvedVotingConfigSummary::from),

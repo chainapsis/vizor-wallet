@@ -72,8 +72,29 @@ Future<List<ShareSubmissionPlan>> planShareSubmissions({
 
 /// Build round params from server metadata while binding trusted `ea_pk`.
 ///
-/// The vote server supplies dynamic fields such as snapshot height and roots,
-/// but `ea_pk` must come from the authenticated dynamic config material.
+/// Trust model for the per-round parameters:
+///
+/// - `ea_pk` (the encryption-authority key votes are encrypted to) is the only
+///   field that cannot be independently re-derived by the wallet, so it is
+///   always sourced from the authenticated dynamic config and never from the
+///   vote server's round response. This call ignores any server-supplied
+///   `ea_pk` and substitutes the authenticated value for `round_id`.
+/// - `snapshot_height` and `nc_root` are accepted from the server here but are
+///   re-verified downstream against the wallet's own lightwalletd-synced
+///   Orchard commitment tree: `zcash_voting`'s witness generation
+///   (`validate_cached_tree_state_for_round`) requires the synced frontier
+///   height and root to match these exactly, so a wrong value fails closed
+///   before any vote material is produced.
+/// - `nullifier_imt_root` is accepted from the server here but is used
+///   downstream as the expected root that PIR nullifier proofs are verified
+///   against; a wrong root makes proof verification fail closed rather than
+///   enabling a forged non-membership claim.
+///
+/// In other words, every server-supplied field other than `ea_pk` is
+/// cross-checked against an independent source (lightwalletd or PIR proofs)
+/// downstream, and `ea_pk` is pinned to authenticated config here. A
+/// compromised or stale endpoint therefore cannot steer voting to the wrong
+/// authority or roots without being rejected.
 Future<VotingRoundParams> trustedVotingRoundParamsFromConfig({
   required ResolvedVotingConfig resolvedConfig,
   required String roundId,

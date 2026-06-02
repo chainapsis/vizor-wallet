@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 
 import '../../rust/api/voting_config.dart' as rust_config_api;
@@ -16,22 +14,23 @@ const kDefaultStaticVotingConfigSource =
     '2785311d45758e85567d70a1f13709fa01b62c6b/prod/static-voting-config.json'
     '?checksum=sha256:bed0116f961226b256a574b52461ce81d9f5294a57e190987dc155f07eb1e431';
 
-typedef ResolveVotingConfigFn = Future<rust_config_api.VotingConfigResolution>
-    Function({
+/// Authenticates static config bytes and returns the dynamic config URL to
+/// fetch next. Injectable so tests can stub the Rust boundary.
+typedef ResolveStaticVotingConfigFn =
+    Future<String> Function({
       required String source,
-      rust_config.ResolvedVotingConfig? previous,
-      required FutureOr<rust_config_api.VotingConfigFetch> Function(
-        String,
-      )
-      fetchBytes,
+      required List<int> staticBytes,
     });
 
-class _CapturedFetchError {
-  const _CapturedFetchError(this.error, this.stackTrace);
-
-  final Object error;
-  final StackTrace stackTrace;
-}
+/// Resolves the full voting config from the static and dynamic config bytes.
+/// Injectable so tests can stub the Rust boundary.
+typedef ResolveVotingConfigFn =
+    Future<rust_config_api.VotingConfigResolution> Function({
+      required String source,
+      required List<int> staticBytes,
+      required List<int> dynamicBytes,
+      rust_config.ResolvedVotingConfig? previous,
+    });
 
 class StaticVotingConfigSourceMalformed implements Exception {
   final String message;
@@ -98,104 +97,77 @@ class StaticVotingConfigSourceMalformed implements Exception {
 /// URL and contains the dynamic config URL plus trusted signing keys. The
 /// dynamic config then supplies service endpoints, supported protocol versions,
 /// and signed round metadata for later config resolution to verify.
+///
+/// Transport stays in Dart: this loader fetches the static bytes, asks Rust for
+/// the authenticated dynamic config URL, fetches those bytes too, and hands both
+/// blobs back to Rust for full resolution. Transport failures surface directly
+/// as [VotingHttpException]; Rust only sees config (authenticity) errors.
 class VotingConfigLoader {
   VotingConfigLoader({
     required VotingHttpClient httpClient,
     String? sourceUrl,
     Duration timeout = const Duration(seconds: 10),
-    ResolveVotingConfigFn resolveVotingConfig = rust_config_api.resolveVotingConfig,
+    ResolveStaticVotingConfigFn resolveStaticVotingConfig =
+        rust_config_api.resolveStaticVotingConfig,
+    ResolveVotingConfigFn resolveVotingConfig =
+        rust_config_api.resolveVotingConfig,
   }) : _httpClient = httpClient,
-       _sourceUrl =
-           parseStaticVotingConfigSource(
-             sourceUrl ?? kDefaultStaticVotingConfigSource,
-           ).raw,
+       _source = parseStaticVotingConfigSource(
+         sourceUrl ?? kDefaultStaticVotingConfigSource,
+       ),
        _timeout = timeout,
+       _resolveStaticVotingConfig = resolveStaticVotingConfig,
        _resolveVotingConfig = resolveVotingConfig;
 
   final VotingHttpClient _httpClient;
-  final String _sourceUrl;
+  final ({String raw, Uri uri, String? sha256Hex}) _source;
   final Duration _timeout;
+  final ResolveStaticVotingConfigFn _resolveStaticVotingConfig;
   final ResolveVotingConfigFn _resolveVotingConfig;
 
-  /// Sentinel prefix for the opaque token that preserves typed transport errors
-  /// across the Rust resolver round-trip.
+  /// Resolves config via Rust while keeping transport in Dart.
   ///
-  /// The FFI boundary only carries an error *string*, but callers
-  /// (e.g. the settings validator) need the original typed Dart exception
-  /// such as [VotingHttpException]. The contract is:
-  ///
-  ///   1. when [fetchBytes] throws, we stash the real error keyed by a unique
-  ///      `"$prefix$index"` token and hand only the token to Rust as the
-  ///      transport error string;
-  ///   2. Rust forwards that string verbatim and returns it unchanged as the
-  ///      resolver error (see `resolve_voting_config` in Rust), so the token
-  ///      survives the round-trip intact;
-  ///   3. on failure we extract the token from the thrown error and rethrow the
-  ///      original captured exception with its stack trace.
-  ///
-  /// This depends on Rust not reformatting transport error strings. If that
-  /// contract is ever broken the user would see a raw token instead of a
-  /// meaningful error, so both sides document it explicitly.
-  static const _transportErrorTokenPrefix = '__voting_config_transport_error__:';
-
-  /// Resolves voting config via Rust while keeping transport in Dart.
+  /// Throws [VotingHttpException] when either fetch fails and rethrows the flat
+  /// Rust error string when authentication/validation fails.
   Future<rust_config_api.VotingConfigResolution> load({
     rust_config.ResolvedVotingConfig? previous,
   }) async {
-    var transportErrorIndex = 0;
-    final capturedTransportErrors = <String, _CapturedFetchError>{};
-    try {
-      final resolution = await _resolveVotingConfig(
-        source: _sourceUrl,
-        previous: previous,
-        fetchBytes: (url) async {
-          try {
-            final requestUrl = Uri.parse(url);
-            final response = await _httpClient.get(requestUrl, timeout: _timeout);
-            if (response.statusCode != 200) {
-              throw VotingHttpException(
-                uri: requestUrl,
-                statusCode: response.statusCode,
-                body: response.bodyText,
-              );
-            }
-            return rust_config_api.VotingConfigFetch(bytes: response.bodyBytes);
-          } catch (error, stackTrace) {
-            final token = '$_transportErrorTokenPrefix${transportErrorIndex++}';
-            capturedTransportErrors[token] = _CapturedFetchError(
-              error,
-              stackTrace,
-            );
-            return rust_config_api.VotingConfigFetch(error: token);
-          }
-        },
+    // The raw source carries the hash-pin checksum (verified by Rust over the
+    // bytes), but the fetch must hit the checksum-stripped URL.
+    final staticBytes = await _fetchBytes(_source.uri);
+
+    final dynamicConfigUrl = await _resolveStaticVotingConfig(
+      source: _source.raw,
+      staticBytes: staticBytes,
+    );
+
+    final dynamicBytes = await _fetchBytes(Uri.parse(dynamicConfigUrl));
+
+    final resolution = await _resolveVotingConfig(
+      source: _source.raw,
+      staticBytes: staticBytes,
+      dynamicBytes: dynamicBytes,
+      previous: previous,
+    );
+
+    if (resolution.config.skippedRoundIds.isNotEmpty) {
+      debugPrint(
+        '[zcash] Voting: skipped unauthenticated round ids: '
+        '${resolution.config.skippedRoundIds.join(",")}',
       );
-      if (resolution.config.skippedRoundIds.isNotEmpty) {
-        debugPrint(
-          '[zcash] Voting: skipped unauthenticated round ids: '
-          '${resolution.config.skippedRoundIds.join(",")}',
-        );
-      }
-      return resolution;
-    } catch (error, stackTrace) {
-      final token = _extractTransportErrorToken(error);
-      final capturedError = capturedTransportErrors[token];
-      if (capturedError != null) {
-        Error.throwWithStackTrace(capturedError.error, capturedError.stackTrace);
-      }
-      Error.throwWithStackTrace(error, stackTrace);
     }
+    return resolution;
   }
 
-  String _extractTransportErrorToken(Object error) {
-    if (error is String) return error;
-    final text = error.toString();
-    final markerIndex = text.indexOf(_transportErrorTokenPrefix);
-    if (markerIndex == -1) return text;
-    final tokenTail = text.substring(markerIndex);
-    final tokenMatch = RegExp(
-      '^${RegExp.escape(_transportErrorTokenPrefix)}\\d+',
-    ).firstMatch(tokenTail);
-    return tokenMatch?.group(0) ?? text;
+  Future<List<int>> _fetchBytes(Uri uri) async {
+    final response = await _httpClient.get(uri, timeout: _timeout);
+    if (response.statusCode != 200) {
+      throw VotingHttpException(
+        uri: uri,
+        statusCode: response.statusCode,
+        body: response.bodyText,
+      );
+    }
+    return response.bodyBytes;
   }
 }

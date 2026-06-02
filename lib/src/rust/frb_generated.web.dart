@@ -38,15 +38,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
   @protected
-  FutureOr<VotingConfigFetch> Function(String)
-  dco_decode_DartFn_Inputs_String_Output_voting_config_fetch_AnyhowException(
-    dynamic raw,
-  );
-
-  @protected
-  Object dco_decode_DartOpaque(dynamic raw);
-
-  @protected
   RustStreamSink<ApiDelegationProofEvent>
   dco_decode_StreamSink_api_delegation_proof_event_Sse(dynamic raw);
 
@@ -203,9 +194,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
-
-  @protected
-  PlatformInt64 dco_decode_isize(dynamic raw);
 
   @protected
   KeystoneAccountInfo dco_decode_keystone_account_info(dynamic raw);
@@ -500,9 +488,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   VoteShareWire dco_decode_vote_share_wire(dynamic raw);
 
   @protected
-  VotingConfigFetch dco_decode_voting_config_fetch(dynamic raw);
-
-  @protected
   VotingConfigResolution dco_decode_voting_config_resolution(dynamic raw);
 
   @protected
@@ -522,9 +507,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
-
-  @protected
-  Object sse_decode_DartOpaque(SseDeserializer deserializer);
 
   @protected
   RustStreamSink<ApiDelegationProofEvent>
@@ -727,9 +709,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
-
-  @protected
-  PlatformInt64 sse_decode_isize(SseDeserializer deserializer);
 
   @protected
   KeystoneAccountInfo sse_decode_keystone_account_info(
@@ -1086,11 +1065,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   VoteShareWire sse_decode_vote_share_wire(SseDeserializer deserializer);
 
   @protected
-  VotingConfigFetch sse_decode_voting_config_fetch(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   VotingConfigResolution sse_decode_voting_config_resolution(
     SseDeserializer deserializer,
   );
@@ -1123,16 +1097,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     AnyhowException self,
     SseSerializer serializer,
   );
-
-  @protected
-  void
-  sse_encode_DartFn_Inputs_String_Output_voting_config_fetch_AnyhowException(
-    FutureOr<VotingConfigFetch> Function(String) self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_DartOpaque(Object self, SseSerializer serializer);
 
   @protected
   void sse_encode_StreamSink_api_delegation_proof_event_Sse(
@@ -1373,9 +1337,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_isize(PlatformInt64 self, SseSerializer serializer);
 
   @protected
   void sse_encode_keystone_account_info(
@@ -1826,12 +1787,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_vote_share_wire(VoteShareWire self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_voting_config_fetch(
-    VotingConfigFetch self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_voting_config_resolution(

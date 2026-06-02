@@ -246,27 +246,27 @@ void main() {
             VotingConfigLoader(
               httpClient: http,
               sourceUrl: 'https://voting.example/static-voting-config.json',
+              resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
               resolveVotingConfig: ({
                 required source,
+                required staticBytes,
+                required dynamicBytes,
                 previous,
-                required fetchBytes,
               }) async {
                 resolveCount++;
                 if (resolveCount == 2) {
                   staleLoadStarted.complete();
                   await staleLoadGate.future;
                   return fakeResolveVotingConfig(
-                    source: source,
+                    dynamicBytes: dynamicBytes,
                     previous: previous,
-                    fetchBytes: fetchBytes,
                     switchKind: rust_config.ConfigSwitchKind.newChainOrRound,
                     authenticatedRoundIds: const [kRoundId],
                   );
                 }
                 return fakeResolveVotingConfig(
-                  source: source,
+                  dynamicBytes: dynamicBytes,
                   previous: previous,
-                  fetchBytes: fetchBytes,
                   switchKind: previous == null
                       ? rust_config.ConfigSwitchKind.initialLoad
                       : rust_config.ConfigSwitchKind.unchanged,
@@ -332,14 +332,15 @@ void main() {
           VotingConfigLoader(
             httpClient: http,
             sourceUrl: 'https://voting.example/static-voting-config.json',
+            resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
             resolveVotingConfig: ({
               required source,
+              required staticBytes,
+              required dynamicBytes,
               previous,
-              required fetchBytes,
             }) => fakeResolveVotingConfig(
-              source: source,
+              dynamicBytes: dynamicBytes,
               previous: previous,
-              fetchBytes: fetchBytes,
               switchKind: refreshCount++ == 0
                   ? rust_config.ConfigSwitchKind.initialLoad
                   : rust_config.ConfigSwitchKind.newChainOrRound,
@@ -391,14 +392,15 @@ void main() {
           VotingConfigLoader(
             httpClient: http,
             sourceUrl: 'https://voting.example/static-voting-config.json',
+            resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
             resolveVotingConfig: ({
               required source,
+              required staticBytes,
+              required dynamicBytes,
               previous,
-              required fetchBytes,
             }) => fakeResolveVotingConfig(
-              source: source,
+              dynamicBytes: dynamicBytes,
               previous: previous,
-              fetchBytes: fetchBytes,
               switchKind: previous == null
                   ? rust_config.ConfigSwitchKind.initialLoad
                   : rust_config.ConfigSwitchKind.unchanged,
@@ -562,14 +564,15 @@ void main() {
           VotingConfigLoader(
             httpClient: http,
             sourceUrl: 'https://voting.example/static-voting-config.json',
+            resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
             resolveVotingConfig: ({
               required source,
+              required staticBytes,
+              required dynamicBytes,
               previous,
-              required fetchBytes,
             }) => fakeResolveVotingConfig(
-              source: source,
+              dynamicBytes: dynamicBytes,
               previous: previous,
-              fetchBytes: fetchBytes,
               authenticatedRoundIds: const [kRoundId],
             ),
           ),
@@ -693,6 +696,9 @@ void main() {
     final container = _sessionContainer(
       http: http,
       authenticatedRoundIds: const [kOtherRoundId],
+      authenticatedRoundEaPks: {
+        kOtherRoundId: Uint8List.fromList(List.filled(32, 7)),
+      },
       skippedRoundIds: const [kRoundId],
     );
     addTearDown(container.dispose);
@@ -723,6 +729,9 @@ void main() {
     final container = _sessionContainer(
       http: http,
       authenticatedRoundIds: const [kOtherRoundId],
+      authenticatedRoundEaPks: {
+        kOtherRoundId: Uint8List.fromList(List.filled(32, 7)),
+      },
       skippedRoundIds: const [],
     );
     addTearDown(container.dispose);
@@ -4019,14 +4028,15 @@ ProviderContainer _container({
         VotingConfigLoader(
           httpClient: http,
           sourceUrl: 'https://voting.example/static-voting-config.json',
+          resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
           resolveVotingConfig: ({
             required source,
+            required staticBytes,
+            required dynamicBytes,
             previous,
-            required fetchBytes,
           }) => fakeResolveVotingConfig(
-            source: source,
+            dynamicBytes: dynamicBytes,
             previous: previous,
-            fetchBytes: fetchBytes,
             authenticatedRoundIds: const [kRoundId, kOtherRoundId],
           ),
         ),
@@ -4069,14 +4079,15 @@ ProviderContainer _sessionContainer({
         VotingConfigLoader(
           httpClient: effectiveHttp,
           sourceUrl: 'https://voting.example/static-voting-config.json',
+          resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
           resolveVotingConfig: ({
             required source,
+            required staticBytes,
+            required dynamicBytes,
             previous,
-            required fetchBytes,
           }) => fakeResolveVotingConfig(
-            source: source,
+            dynamicBytes: dynamicBytes,
             previous: previous,
-            fetchBytes: fetchBytes,
             authenticatedRoundIds: authenticatedRoundIds,
             authenticatedRoundEaPks: authenticatedRoundEaPks,
             skippedRoundIds: skippedRoundIds,
@@ -4510,32 +4521,27 @@ const _fastTxConfirmationPolling = VotingTxConfirmationPolling(
   delay: Duration.zero,
 );
 
-Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
+Future<String> fakeResolveStaticVotingConfig({
   required String source,
+  required List<int> staticBytes,
+}) async {
+  final staticJson = decodeVotingJsonObject(utf8.decode(staticBytes));
+  final dynamicConfigUrl = staticJson['dynamic_config_url']?.toString();
+  if (dynamicConfigUrl == null || dynamicConfigUrl.isEmpty) {
+    throw const FormatException('Missing required string: dynamic_config_url');
+  }
+  return dynamicConfigUrl;
+}
+
+Future<rust_config_api.VotingConfigResolution> fakeResolveVotingConfig({
+  required List<int> dynamicBytes,
   rust_config.ResolvedVotingConfig? previous,
-  required FutureOr<rust_config_api.VotingConfigFetch> Function(String) fetchBytes,
   List<String>? authenticatedRoundIds,
   Map<String, Uint8List>? authenticatedRoundEaPks,
   List<String> skippedRoundIds = const [],
   rust_config.ConfigSwitchKind? switchKind,
 }) async {
-  Future<Uint8List> fetchOrThrow(String url) async {
-    final response = await fetchBytes(url);
-    final bytes = response.bytes;
-    if (bytes != null) return bytes;
-    throw StateError(response.error ?? 'missing bytes for $url');
-  }
-
-  final staticJson = decodeVotingJsonObject(
-    utf8.decode(await fetchOrThrow(source)),
-  );
-  final dynamicConfigUrl = staticJson['dynamic_config_url']?.toString();
-  if (dynamicConfigUrl == null || dynamicConfigUrl.isEmpty) {
-    throw const FormatException('Missing required string: dynamic_config_url');
-  }
-  final dynamicJson = decodeVotingJsonObject(
-    utf8.decode(await fetchOrThrow(dynamicConfigUrl)),
-  );
+  final dynamicJson = decodeVotingJsonObject(utf8.decode(dynamicBytes));
 
   final voteServers = (dynamicJson['vote_servers'] as List<dynamic>)
       .cast<Map<String, dynamic>>()
@@ -4629,6 +4635,13 @@ Map<String, dynamic> dynamicConfigJson({
   },
   'rounds': {
     kRoundId: {
+      'auth_version': 1,
+      'ea_pk': _bytes1x32Base64,
+      'signatures': [
+        {'key_id': 'demo', 'alg': 'ed25519', 'sig': _bytes12x64Base64},
+      ],
+    },
+    kOtherRoundId: {
       'auth_version': 1,
       'ea_pk': _bytes1x32Base64,
       'signatures': [
