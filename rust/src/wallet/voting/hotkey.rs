@@ -23,7 +23,8 @@ pub fn voting_hotkey_from_stored_secret(
     stored_hotkey_secret: Vec<u8>,
     network: zcash_voting::Network,
 ) -> Result<zcash_voting::VotingHotkey, String> {
-    zcash_voting::VotingHotkey::from_stored_secret(&stored_hotkey_secret, network)
+    let stored_hotkey_secret = validated_hotkey_seed(stored_hotkey_secret, network)?;
+    zcash_voting::VotingHotkey::from_stored_secret(stored_hotkey_secret.expose_secret(), network)
         .map_err(|e| format!("Voting hotkey reconstruction failed: {e}"))
 }
 
