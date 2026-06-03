@@ -327,16 +327,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> delegatePendingBundles({String? mnemonic}) {
     return _enqueue(() async {
       var current = await future;
-      if (_needsDelegationPreparation(current)) {
-        await _prepareDelegationUnlocked();
-        current = await future;
-        if (current.phase == VotingSessionPhase.error ||
-            current.phase == VotingSessionPhase.waitingForWalletSync) {
-          return;
-        }
-      }
-
-      final context = await _loadContext(_roundId);
+      var context = await _loadContext(_roundId);
       if (context.isHardwareAccount) {
         _setError(
           'Sign delegation bundles with Keystone before submitting.',
@@ -344,14 +335,28 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      final plan = current.resumePlan ?? context.resumePlan;
-      final roundPlan = current.roundPlan ?? context.roundPlan;
-      final pirEndpoint = current.pirEndpoint;
-      if (pirEndpoint == null) {
-        _setError('PIR endpoint has not been resolved.', context: context);
-        return;
+      var plan = current.resumePlan ?? context.resumePlan;
+      var roundPlan = current.roundPlan ?? context.roundPlan;
+      if (_needsFreshDelegationWork(plan, roundPlan) &&
+          _needsDelegationPreparation(current)) {
+        await _prepareDelegationUnlocked();
+        current = await future;
+        if (current.phase == VotingSessionPhase.error ||
+            current.phase == VotingSessionPhase.waitingForWalletSync) {
+          return;
+        }
+        context = await _loadContext(_roundId);
+        plan = current.resumePlan ?? context.resumePlan;
+        roundPlan = current.roundPlan ?? context.roundPlan;
       }
-      if (plan.pendingDelegationBundleIndexes.isNotEmpty) {
+
+      final hasPendingBundles = plan.pendingDelegationBundleIndexes.isNotEmpty;
+      final pirEndpoint = current.pirEndpoint;
+      if (hasPendingBundles) {
+        if (pirEndpoint == null) {
+          _setError('PIR endpoint has not been resolved.', context: context);
+          return;
+        }
         // Software delegation proving still needs the account mnemonic in the
         // current Rust API. Keystone signing uses a separate flow
         // (`delegatePendingBundlesWithKeystoneSignatures`) and never reaches
@@ -372,7 +377,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _setStateForContext(context, nextState);
         current = nextState;
       }
-      final storedHotkeySecret = await _ensureHotkey(context);
+      final storedHotkeySecret = hasPendingBundles
+          ? await _ensureHotkey(context)
+          : null;
 
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
@@ -403,9 +410,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         await for (final event
             in rust.buildProveAndSignDelegationPayloadWithProgress(
               ctx: _apiRoundContext(context),
-              pirServerUrl: pirEndpoint.toString(),
+              pirServerUrl: pirEndpoint!.toString(),
               mnemonic: mnemonic!,
-              storedHotkeySecret: storedHotkeySecret,
+              storedHotkeySecret: storedHotkeySecret!,
               bundleIndex: bundleIndex,
             )) {
           signedDelegationPayload =
@@ -644,16 +651,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> delegatePendingBundlesWithKeystoneSignatures() {
     return _enqueue(() async {
       var current = await future;
-      if (_needsDelegationPreparation(current)) {
-        await _prepareDelegationUnlocked();
-        current = await future;
-        if (current.phase == VotingSessionPhase.error ||
-            current.phase == VotingSessionPhase.waitingForWalletSync) {
-          return;
-        }
-      }
-
-      final context = await _loadContext(_roundId);
+      var context = await _loadContext(_roundId);
       if (!context.isHardwareAccount) {
         _setError(
           'Keystone voting is only available for hardware accounts.',
@@ -661,19 +659,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      final plan = current.resumePlan ?? context.resumePlan;
-      final roundPlan = current.roundPlan ?? context.roundPlan;
-      final pirEndpoint = current.pirEndpoint;
-      if (pirEndpoint == null) {
-        _setError('PIR endpoint has not been resolved.', context: context);
-        return;
+      var plan = current.resumePlan ?? context.resumePlan;
+      var roundPlan = current.roundPlan ?? context.roundPlan;
+      if (_needsFreshDelegationWork(plan, roundPlan) &&
+          _needsDelegationPreparation(current)) {
+        await _prepareDelegationUnlocked();
+        current = await future;
+        if (current.phase == VotingSessionPhase.error ||
+            current.phase == VotingSessionPhase.waitingForWalletSync) {
+          return;
+        }
+        context = await _loadContext(_roundId);
+        plan = current.resumePlan ?? context.resumePlan;
+        roundPlan = current.roundPlan ?? context.roundPlan;
       }
-
-      final signatures = await _loadKeystoneSignatures(context);
-      final storedHotkeySecret = await _ensureHotkey(
-        context,
-        alreadyBound: signatures.isNotEmpty,
-      );
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
       );
@@ -684,6 +683,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         progress: progress,
       );
       if (completedBundleIndexes == null) return;
+
+      final hasPendingBundles = plan.pendingDelegationBundleIndexes.isNotEmpty;
+      final signatures = hasPendingBundles
+          ? await _loadKeystoneSignatures(context)
+          : current.keystoneSignatures;
+      final List<int>? storedHotkeySecret;
+      if (hasPendingBundles) {
+        storedHotkeySecret = await _ensureHotkey(
+          context,
+          alreadyBound: signatures.isNotEmpty,
+        );
+      } else {
+        storedHotkeySecret = null;
+      }
+      final pirEndpoint = current.pirEndpoint;
+      if (hasPendingBundles && pirEndpoint == null) {
+        _setError('PIR endpoint has not been resolved.', context: context);
+        return;
+      }
 
       final rust = ref.read(votingRustApiProvider);
       for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
@@ -718,8 +736,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             in rust
                 .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
                   ctx: _apiRoundContext(context),
-                  pirServerUrl: pirEndpoint.toString(),
-                  storedHotkeySecret: storedHotkeySecret,
+                  pirServerUrl: pirEndpoint!.toString(),
+                  storedHotkeySecret: storedHotkeySecret!,
                   bundleIndex: bundleIndex,
                   keystoneSig: signature.sig,
                   keystoneSighash: signature.sighash,
@@ -2356,6 +2374,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   static bool _needsDelegationPreparation(VotingSessionState state) {
     return state.pirEndpoint == null || state.eligibleWeightZatoshi == null;
+  }
+
+  static bool _needsFreshDelegationWork(
+    VotingResumePlan plan,
+    rust_wire.RoundPlanView? roundPlan,
+  ) {
+    if (plan.pendingDelegationBundleIndexes.isNotEmpty) return true;
+    if (roundPlan == null) return false;
+    return roundPlan.nextSteps.any((step) => step.kind == 'delegate') ||
+        roundPlanNeedsDraftSetup(roundPlan);
   }
 
   Future<void> _prepareKeystoneSigningUnlocked() async {

@@ -2511,6 +2511,8 @@ void main() {
         rust: rust,
         recoveryApi: _submittedDelegationOnlyRecoveryApi(),
         accountMnemonic: null,
+        hotkeyStore: const FailingVotingHotkeyStore(),
+        pirResolver: FakePirResolver(error: StateError('unexpected PIR')),
         txConfirmationPolling: _fastTxConfirmationPolling,
       );
       addTearDown(container.dispose);
@@ -2530,6 +2532,7 @@ void main() {
       );
 
       expect(completed.errorMessage, isNull);
+      expect(rust.setupCalls, 0);
       expect(rust.delegationBundleCalls, isEmpty);
       expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
       expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 0);
@@ -2551,6 +2554,8 @@ void main() {
         rust: rust,
         recoveryApi: _submittedDelegationOnlyRecoveryApi(),
         accountIsHardware: true,
+        hotkeyStore: const FailingVotingHotkeyStore(),
+        pirResolver: FakePirResolver(error: StateError('unexpected PIR')),
         txConfirmationPolling: _fastTxConfirmationPolling,
       );
       addTearDown(container.dispose);
@@ -2570,6 +2575,7 @@ void main() {
       );
 
       expect(completed.errorMessage, isNull);
+      expect(rust.setupCalls, 0);
       expect(rust.keystoneDelegationRequestCalls, isEmpty);
       expect(rust.keystoneProofBundleCalls, isEmpty);
       expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
