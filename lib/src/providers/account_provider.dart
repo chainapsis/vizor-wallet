@@ -466,8 +466,18 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final prev = state.value ?? const AccountState();
     final activeAccountUuid = prev.activeAccountUuid;
     if (activeAccountUuid != null) {
-      // Do not delay routing to unlock while best-effort process cleanup runs.
-      unawaited(_resetVotingProcessStateForAccount(activeAccountUuid));
+      final guardedSubmission = ref
+          .read(votingSubmissionGuardProvider.notifier)
+          .guardForAccount(activeAccountUuid);
+      if (guardedSubmission == null) {
+        // Do not delay routing to unlock while best-effort process cleanup runs.
+        unawaited(_resetVotingProcessStateForAccount(activeAccountUuid));
+      } else {
+        log(
+          'AccountNotifier: skipped voting process reset for lock while '
+          'submission is guarded for $activeAccountUuid',
+        );
+      }
     }
     state = AsyncData(
       AccountState(
