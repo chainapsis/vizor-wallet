@@ -76,27 +76,16 @@ class _VotingProposalDetailScreenState
                 message: 'The selected poll could not be loaded.',
               );
             }
-            if (votingPollListStatus(round.status) !=
-                VotingPollListStatus.active) {
-              _redirectToResults(round.roundId);
-              return const Center(child: CircularProgressIndicator());
-            }
             if (shouldPreSyncVotingTree(round.status)) {
               unawaited(
                 ref.read(votingTreePreSyncProvider).preSyncRound(round.roundId),
               );
             }
             final accountUuid = state.accountUuid;
-            final draftKey = accountUuid == null
-                ? null
-                : VotingSessionKey(roundId: roundId, accountUuid: accountUuid);
-            final draft = draftKey == null
-                ? const VotingDraftState()
-                : ref.watch(votingDraftProvider(draftKey));
             final proposals = proposalsFromRound(round);
             final forumUri = votingRoundForumUriFromJson(round.rawJson);
             final completedVote = _CompletedVote.fromPlan(state.roundPlan);
-            _maybePrepareVotingPower(state);
+            final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
             // Foreground recovery takes precedence over the read-only voted view.
             // Accepted helper shares may still be tracked after submission, but
             // that background work should not keep this screen resumable.
@@ -116,6 +105,7 @@ class _VotingProposalDetailScreenState
               );
             }
             if (completedVote != null) {
+              _maybePrepareVotingPower(state);
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _VotedPollContent(
@@ -133,7 +123,6 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
             if (pendingVote != null) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
@@ -149,6 +138,18 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
+            if (votingPollListStatus(round.status) !=
+                VotingPollListStatus.active) {
+              _redirectToResults(round.roundId);
+              return const Center(child: CircularProgressIndicator());
+            }
+            final draftKey = accountUuid == null
+                ? null
+                : VotingSessionKey(roundId: roundId, accountUuid: accountUuid);
+            final draft = draftKey == null
+                ? const VotingDraftState()
+                : ref.watch(votingDraftProvider(draftKey));
+            _maybePrepareVotingPower(state);
             _maybePrecomputeDelegationPir(state);
             return _ActivePollContent(
               roundId: roundId,

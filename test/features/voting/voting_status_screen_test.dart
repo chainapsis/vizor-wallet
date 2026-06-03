@@ -1274,6 +1274,52 @@ void main() {
     expect(find.text('Review answers'), findsNothing);
   });
 
+  testWidgets('proposal detail shows recovery before non-active redirect', (
+    tester,
+  ) async {
+    final round = _roundStatusJson()..['status'] = 'pending';
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..roundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: true,
+        nextSteps: const [
+          rust_wire.NextStepView(
+            kind: 'cast_vote',
+            bundleIndex: 0,
+            proposalId: 1,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        ],
+        openProposals: Uint32List(0),
+        allDecided: false,
+      );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final sessionState = container.read(votingSessionProvider(_roundId)).value!;
+    expect(sessionState.roundPlan?.blockingRecovery, isTrue);
+    expect(find.text('Vote in progress'), findsOneWidget);
+    expect(find.text('Continue voting'), findsOneWidget);
+    expect(find.text('results route'), findsNothing);
+  });
+
   testWidgets('poll stops preparing voting power when setup fails', (
     tester,
   ) async {
@@ -2155,10 +2201,7 @@ void main() {
 
     expect(find.text('Sign bundle 1 of 1'), findsOneWidget);
     expect(find.text('Memo'), findsOneWidget);
-    expect(
-      find.textContaining('Amount: 0.00000100 ZEC'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
     expect(find.text('Scan signature'), findsOneWidget);
     expect(find.text('Software account required'), findsNothing);
     await tester.tap(find.text('Scan signature'));

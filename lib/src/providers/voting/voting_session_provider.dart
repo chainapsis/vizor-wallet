@@ -840,17 +840,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final api = ref.read(votingApiClientProvider(context.config.apiServers));
       final rust = ref.read(votingRustApiProvider);
       final effectiveDraftVotes = draftVotes;
-      if (effectiveDraftVotes.isNotEmpty) {
+      final draftVotesByProposal = {
+        for (final draftVote in effectiveDraftVotes)
+          draftVote.proposalId: draftVote,
+      };
+      final intentProposalIds = {
+        ...?allProposalIds,
+        ...draftVotesByProposal.keys,
+      }.toList()..sort();
+      Future<bool> writeBallotIntents() async {
+        if (effectiveDraftVotes.isEmpty) return true;
         // Write durable ballot intent before the cast loop so recovery can
         // resume from the correct choice if the user quits mid-vote.
-        final draftVotesByProposal = {
-          for (final draftVote in effectiveDraftVotes)
-            draftVote.proposalId: draftVote,
-        };
-        final intentProposalIds = {
-          ...?allProposalIds,
-          ...draftVotesByProposal.keys,
-        }.toList()..sort();
         for (final proposalId in intentProposalIds) {
           final draftVote = draftVotesByProposal[proposalId];
           final numOptions =
@@ -862,7 +863,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 'missing numOptions for proposal_id $proposalId',
               ),
             );
-            return;
+            return false;
           }
           await ref
               .read(votingRecoveryServiceProvider)
@@ -876,7 +877,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 choice: draftVote?.choice,
               );
         }
+        return true;
       }
+
       var confirmedSubmittedVotes = false;
       for (final work in _pendingVotePollingWork(roundPlan)) {
         final key = VotingVoteKey(
@@ -971,6 +974,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
           );
           return;
         }
+      }
+      if (!await writeBallotIntents()) {
+        return;
       }
       final totalQuestions = recoveredVoteWork.length + voteWork.length;
       final totalBundleTasks =
@@ -1579,6 +1585,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         await rust.resetVotingSessionState(
           dbPath: context.dbPath,
           accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
         );
         debugPrint(
           '[zcash] Voting: vote tree sync retrying failover '

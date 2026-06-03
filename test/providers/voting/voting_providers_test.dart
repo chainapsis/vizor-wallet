@@ -1556,10 +1556,7 @@ void main() {
     expect(state.keystoneSigningRequest?.bundleIndex, 0);
     expect(state.error, isNull);
     expect(rust.deleteSkippedBundleKeepCounts, isEmpty);
-    expect(
-      rust.resetVotingSessionStateCalls,
-      contains('account-1:$kRoundId'),
-    );
+    expect(rust.resetVotingSessionStateCalls, contains('account-1:$kRoundId'));
     expect(rust.keystoneDelegationRequestCalls, [0, 0]);
     expect(rust.setupCalls, 2);
   });
@@ -1662,31 +1659,34 @@ void main() {
     },
   );
 
-  test('hardware voting surfaces non-recoverable Keystone request failures', () async {
-    final rust = FakeVotingRustApi(
-      keystoneDelegationRequestFailuresByCall: {
-        0: StateError(
-          'delegate::keystone_request failed: invalid branch id from lightwalletd',
-        ),
-      },
-    );
-    final container = _sessionContainer(rust: rust, accountIsHardware: true);
-    addTearDown(container.dispose);
+  test(
+    'hardware voting surfaces non-recoverable Keystone request failures',
+    () async {
+      final rust = FakeVotingRustApi(
+        keystoneDelegationRequestFailuresByCall: {
+          0: StateError(
+            'delegate::keystone_request failed: invalid branch id from lightwalletd',
+          ),
+        },
+      );
+      final container = _sessionContainer(rust: rust, accountIsHardware: true);
+      addTearDown(container.dispose);
 
-    await container.read(votingSessionProvider(kRoundId).future);
-    await container
-        .read(votingSessionProvider(kRoundId).notifier)
-        .prepareKeystoneSigning();
-    final state = container.read(votingSessionProvider(kRoundId)).value!;
+      await container.read(votingSessionProvider(kRoundId).future);
+      await container
+          .read(votingSessionProvider(kRoundId).notifier)
+          .prepareKeystoneSigning();
+      final state = container.read(votingSessionProvider(kRoundId)).value!;
 
-    expect(state.phase, VotingSessionPhase.error);
-    expect(
-      state.error?.message,
-      contains('invalid branch id from lightwalletd'),
-    );
-    expect(rust.keystoneDelegationRequestCalls, [0]);
-    expect(rust.deleteSkippedBundleKeepCounts, isEmpty);
-  });
+      expect(state.phase, VotingSessionPhase.error);
+      expect(
+        state.error?.message,
+        contains('invalid branch id from lightwalletd'),
+      );
+      expect(rust.keystoneDelegationRequestCalls, [0]);
+      expect(rust.deleteSkippedBundleKeepCounts, isEmpty);
+    },
+  );
 
   test(
     'hardware voting permits prepared-only recovery without stored hotkey',
@@ -3923,7 +3923,7 @@ void main() {
       'https://voting.example',
       'https://voting-failover.example',
     ]);
-    expect(rust.resetVotingSessionStateCalls, ['account-1:*']);
+    expect(rust.resetVotingSessionStateCalls, ['account-1:$kRoundId']);
   });
 
   test('vote commitments submit shares and record recovery rows', () async {
@@ -4687,23 +4687,24 @@ void main() {
 
   test('hotkey failure moves session into error phase', () async {
     final rust = FakeVotingRustApi();
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationTxHashes: [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'delegation-0',
+            vanLeafPosition: null,
+          ),
+        ],
+        votes: [vote(bundleIndex: 0, proposalId: 7)],
+      ),
+    );
     final container = _sessionContainer(
       rust: rust,
       hotkeyStore: const FailingVotingHotkeyStore(),
-      recoveryApi: FakeVotingRecoveryApi(
-        state: recoveryState(
-          bundleCount: 1,
-          delegationTxHashes: [
-            rust_frb_types.DelegationRecoveryView(
-              bundleIndex: 0,
-              phase: VotingWorkflowPhase.submittedDelegation,
-              txHash: 'delegation-0',
-              vanLeafPosition: null,
-            ),
-          ],
-          votes: [vote(bundleIndex: 0, proposalId: 7)],
-        ),
-      ),
+      recoveryApi: recoveryApi,
     );
     addTearDown(container.dispose);
 
@@ -4725,6 +4726,7 @@ void main() {
 
     expect(state.phase, VotingSessionPhase.error);
     expect(state.error?.cause, isA<VotingHotkeyUnavailable>());
+    expect(recoveryApi.ballotIntents, isEmpty);
     expect(rust.resetVotingSessionStateCalls, contains('account-1:$kRoundId'));
   });
 }
