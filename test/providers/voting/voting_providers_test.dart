@@ -3853,7 +3853,7 @@ void main() {
       'https://voting.example',
       'https://voting-failover.example',
     ]);
-    expect(rust.resetVotingSessionStateCalls, ['account-1:*']);
+    expect(rust.resetVotingSessionStateCalls, ['account-1:$kRoundId']);
   });
 
   test('vote tree sync runs before each proposal', () async {

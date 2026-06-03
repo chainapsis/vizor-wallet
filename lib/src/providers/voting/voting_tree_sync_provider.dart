@@ -109,6 +109,7 @@ class VotingTreePreSyncService {
                 .resetVotingSessionState(
                   dbPath: dbPath,
                   accountUuid: accountUuid,
+                  roundId: roundId,
                 );
             debugPrint(
               '[zcash] Voting: vote tree pre-sync retrying failover '
