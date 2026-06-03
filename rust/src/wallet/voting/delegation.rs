@@ -24,22 +24,24 @@ use zcash_voting::storage::VotingDb;
 use zcash_voting::BundlePolicy;
 
 const ZATOSHI_PER_ZEC: u64 = 100_000_000;
-const WHALE_PROTECTION_NOTE_VALUE_ZATOSHI: u64 = 500 * ZATOSHI_PER_ZEC;
+const WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI: u64 = 500 * ZATOSHI_PER_ZEC;
 const WHALE_PROTECTION_MAX_REAL_NOTES_PER_BUNDLE: usize = 1;
 
-/// Lower the bundle cap when the selected snapshot contains a large note.
+/// Lower the bundle cap when the selected snapshot balance is large.
 ///
 /// The current `zcash_voting` policy applies to the whole round, so this
-/// guarantees any note at or above the whale threshold is never bundled with
-/// another real note in Vizor's delegation flow.
+/// treats whale protection as an all-or-nothing rule for Vizor's delegation
+/// flow.
 fn whale_protected_bundle_policy(
     notes: &[zcash_voting::NoteInfo],
     bundle_policy: BundlePolicy,
 ) -> Result<BundlePolicy, String> {
-    let has_whale_note = notes
-        .iter()
-        .any(|note| note.value >= WHALE_PROTECTION_NOTE_VALUE_ZATOSHI);
-    if has_whale_note
+    let snapshot_balance = notes.iter().try_fold(0u64, |total, note| {
+        total
+            .checked_add(note.value)
+            .ok_or_else(|| "snapshot balance overflow during whale protection".to_string())
+    })?;
+    if snapshot_balance >= WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI
         && bundle_policy.max_real_notes_per_bundle() > WHALE_PROTECTION_MAX_REAL_NOTES_PER_BUNDLE
     {
         return BundlePolicy::new(WHALE_PROTECTION_MAX_REAL_NOTES_PER_BUNDLE)
@@ -496,7 +498,10 @@ mod tests {
     #[test]
     fn whale_protected_bundle_policy_leaves_non_whale_policy_unchanged() {
         let requested = BundlePolicy::new(3).unwrap();
-        let notes = vec![note_with_value(1, WHALE_PROTECTION_NOTE_VALUE_ZATOSHI - 1)];
+        let notes = vec![note_with_value(
+            1,
+            WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI - 1,
+        )];
 
         let policy = whale_protected_bundle_policy(&notes, requested).unwrap();
 
@@ -506,7 +511,10 @@ mod tests {
     #[test]
     fn whale_protected_bundle_policy_uses_single_note_policy_at_threshold() {
         let requested = BundlePolicy::default();
-        let notes = vec![note_with_value(1, WHALE_PROTECTION_NOTE_VALUE_ZATOSHI)];
+        let notes = vec![
+            note_with_value(1, WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI - 1),
+            note_with_value(2, 1),
+        ];
 
         let policy = whale_protected_bundle_policy(&notes, requested).unwrap();
 
@@ -519,7 +527,10 @@ mod tests {
     #[test]
     fn whale_protected_bundle_policy_keeps_requested_single_note_policy() {
         let requested = BundlePolicy::new(1).unwrap();
-        let notes = vec![note_with_value(1, WHALE_PROTECTION_NOTE_VALUE_ZATOSHI)];
+        let notes = vec![note_with_value(
+            1,
+            WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI,
+        )];
 
         let policy = whale_protected_bundle_policy(&notes, requested).unwrap();
 
@@ -527,9 +538,9 @@ mod tests {
     }
 
     #[test]
-    fn whale_protection_plans_singleton_bundles_for_whale_sets() {
+    fn whale_protection_plans_singleton_bundles_for_large_snapshot_balances() {
         let notes = vec![
-            note_with_value(1, WHALE_PROTECTION_NOTE_VALUE_ZATOSHI),
+            note_with_value(1, WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI - 2),
             note_with_value(2, zcash_voting::governance::BALLOT_DIVISOR),
             note_with_value(3, zcash_voting::governance::BALLOT_DIVISOR),
         ];
