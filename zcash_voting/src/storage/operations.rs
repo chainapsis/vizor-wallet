@@ -1369,8 +1369,7 @@ mod tests {
     fn test_params() -> VotingRoundParams {
         // Use SpendAuthG as a valid Pallas point for ea_pk in tests.
         use group::GroupEncoding;
-        let ea_pk =
-            pasta_curves::pallas::Point::from(voting_circuits::vote_proof::spend_auth_g_affine());
+        let ea_pk = pasta_curves::pallas::Point::from(voting_circuits::spend_auth_g_affine());
         VotingRoundParams {
             vote_round_id: ROUND_ID.to_string(),
             snapshot_height: 1000,

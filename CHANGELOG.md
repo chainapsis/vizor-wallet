@@ -4,6 +4,12 @@ All notable changes to this workspace will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# 0.10.2
+
+## Security
+- Bumped `voting-circuits` to `0.7.0`, which rejects Halo2 proofs that verify
+  but leave trailing unread transcript bytes.
+
 # 0.10.1
 
 ## Security
