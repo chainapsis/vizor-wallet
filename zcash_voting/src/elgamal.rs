@@ -46,7 +46,7 @@ pub fn encrypt_shares(shares: &[u64], ea_pk: &[u8]) -> Result<Vec<EncryptedShare
     }
 
     // SpendAuthG — the generator hardcoded in the ZKP #2 circuit.
-    let g = pallas::Point::from(voting_circuits::vote_proof::spend_auth_g_affine());
+    let g = pallas::Point::from(voting_circuits::spend_auth_g_affine());
 
     let mut encrypted = Vec::with_capacity(shares.len());
     for (i, &value) in shares.iter().enumerate() {
@@ -104,7 +104,7 @@ mod tests {
 
     /// Generate a random El Gamal keypair: (sk, pk) where pk = sk * G.
     fn keygen() -> (pallas::Scalar, pallas::Point) {
-        let g = pallas::Point::from(voting_circuits::vote_proof::spend_auth_g_affine());
+        let g = pallas::Point::from(voting_circuits::spend_auth_g_affine());
         let sk = pallas::Scalar::random(OsRng);
         let pk = g * sk;
         (sk, pk)
@@ -121,7 +121,7 @@ mod tests {
     fn test_roundtrip_encrypt_decrypt() {
         let (sk, pk) = keygen();
         let pk_bytes = pk.to_bytes().to_vec();
-        let g = pallas::Point::from(voting_circuits::vote_proof::spend_auth_g_affine());
+        let g = pallas::Point::from(voting_circuits::spend_auth_g_affine());
 
         for &value in &[0u64, 1, 42, 1000, u64::MAX >> 1] {
             let result = encrypt_shares(&[value], &pk_bytes).unwrap();
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_encryption_formula_matches_returned_randomness() {
-        let g = pallas::Point::from(voting_circuits::vote_proof::spend_auth_g_affine());
+        let g = pallas::Point::from(voting_circuits::spend_auth_g_affine());
         let (_, pk) = keygen();
         let pk_bytes = pk.to_bytes().to_vec();
 
@@ -196,13 +196,13 @@ mod tests {
             core::array::from_fn(|i| pallas::Base::from(1001u64 + i as u64));
 
         // Compute shares_hash using the circuit helper.
-        let hash = voting_circuits::vote_proof::shares_hash(blinds, c1_x, c2_x, c1_y, c2_y);
+        let hash = voting_circuits::shares_hash(blinds, c1_x, c2_x, c1_y, c2_y);
 
         // Verify it's not zero (sanity).
         assert_ne!(hash, pallas::Base::zero());
 
         // Verify determinism: same inputs → same hash.
-        let hash2 = voting_circuits::vote_proof::shares_hash(blinds, c1_x, c2_x, c1_y, c2_y);
+        let hash2 = voting_circuits::shares_hash(blinds, c1_x, c2_x, c1_y, c2_y);
         assert_eq!(hash, hash2);
     }
 
