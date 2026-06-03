@@ -113,6 +113,38 @@ pub async fn setup_delegation_bundles(
         .map_err(|e| format!("ensure_bundles_with_skipped_suffix failed: {e}"))
 }
 
+/// Select notes and check whether a wallet can vote without persisting bundles.
+///
+/// The selected notes are taken at the round snapshot height. The result uses
+/// the same smart bundle quantization that delegation setup uses, but this path
+/// does not initialize round rows or create bundle rows in the sidecar DB.
+///
+/// # Errors
+///
+/// Returns an error if lightwalletd note selection fails or if any selected
+/// note row is malformed.
+pub async fn check_voting_eligibility(
+    voting_db: &VotingDb,
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: zcash_voting::Network,
+    snapshot_height: u64,
+    bundle_policy: BundlePolicy,
+) -> Result<zcash_voting::MinimumVotingEligibility, String> {
+    let selected = select_notes_with_lwd(
+        voting_db,
+        db_path,
+        lightwalletd_url,
+        network,
+        snapshot_height,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let note_infos = selected.voting_note_infos();
+    zcash_voting::minimum_voting_eligibility_for_notes(&note_infos, bundle_policy)
+        .map_err(|e| e.to_string())
+}
+
 /// Warms PIR state for a single delegation bundle.
 ///
 /// Validates the PIR endpoint against the round snapshot, persists witnesses,

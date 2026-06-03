@@ -17,6 +17,7 @@ import '../../../providers/voting/voting_tree_sync_provider.dart';
 import '../../../providers/voting/voting_state.dart';
 import '../../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../voting_choice_style.dart';
+import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
 import '../voting_poll_ordering.dart';
@@ -86,10 +87,19 @@ class _VotingProposalDetailScreenState
             final forumUri = votingRoundForumUriFromJson(round.rawJson);
             final completedVote = _CompletedVote.fromPlan(state.roundPlan);
             final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
+            final hasConfirmedVotingEligibility =
+                state.hasConfirmedVotingEligibility;
+            final isVotingEligibilityPending = _isVotingEligibilityPending(
+              state,
+            );
+            final hasBlockingRecovery = hasBlockingRoundRecoveryWork(
+              state.roundPlan,
+            );
+            _maybePrepareVotingPower(state);
             // Foreground recovery takes precedence over the read-only voted view.
             // Accepted helper shares may still be tracked after submission, but
             // that background work should not keep this screen resumable.
-            if (hasBlockingRoundRecoveryWork(state.roundPlan)) {
+            if (hasBlockingRecovery && hasConfirmedVotingEligibility) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _PendingVoteContent(
@@ -104,8 +114,8 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            if (completedVote != null) {
-              _maybePrepareVotingPower(state);
+            if (completedVote != null &&
+                (hasConfirmedVotingEligibility || isVotingEligibilityPending)) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _VotedPollContent(
@@ -123,7 +133,7 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            if (pendingVote != null) {
+            if (pendingVote != null && hasConfirmedVotingEligibility) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _PendingVoteContent(
@@ -139,7 +149,8 @@ class _VotingProposalDetailScreenState
               );
             }
             if (votingPollListStatus(round.status) !=
-                VotingPollListStatus.active) {
+                    VotingPollListStatus.active &&
+                !hasBlockingRecovery) {
               _redirectToResults(round.roundId);
               return const Center(child: CircularProgressIndicator());
             }
@@ -149,7 +160,19 @@ class _VotingProposalDetailScreenState
             final draft = draftKey == null
                 ? const VotingDraftState()
                 : ref.watch(votingDraftProvider(draftKey));
-            _maybePrepareVotingPower(state);
+            final votingPowerPreparing =
+                _votingPowerPreparationInFlight ||
+                (state.eligibleWeightZatoshi == null &&
+                    state.error == null &&
+                    _shouldPrepareVotingPower(state));
+            final votingEligibilityMessage = _votingEligibilityMessage(
+              state,
+              preparing: votingPowerPreparing,
+            );
+            final votingError = state.error;
+            final votingEligibilityError = votingError == null
+                ? false
+                : isVotingEligibilityErrorText(votingError.message);
             _maybePrecomputeDelegationPir(state);
             return _ActivePollContent(
               roundId: roundId,
@@ -158,13 +181,24 @@ class _VotingProposalDetailScreenState
               description: _roundDescription(round.rawJson),
               forumUri: forumUri,
               endDate: _roundEndDate(round.rawJson),
-              votingPowerZatoshi: state.eligibleWeightZatoshi,
-              votingPowerPreparing: _votingPowerPreparationInFlight,
+              votingPowerZatoshi: votingEligibilityError
+                  ? BigInt.zero
+                  : state.eligibleWeightZatoshi,
+              votingPowerPreparing: votingPowerPreparing,
+              votingEligibilityConfirmed: hasConfirmedVotingEligibility,
+              votingEligibilityMessage: votingEligibilityError
+                  ? null
+                  : votingEligibilityMessage,
+              votingEligibilityErrorMessage: votingEligibilityError
+                  ? votingEligibilityMessage
+                  : null,
+              onVotingEligibilityRetry: _retryVotingPowerPreparation,
               proposals: proposals,
               draft: draft,
               onChoice: draftKey == null
                   ? (_, _) {}
                   : (proposalId, choice) {
+                      if (!hasConfirmedVotingEligibility) return;
                       final notifier = ref.read(
                         votingDraftProvider(draftKey).notifier,
                       );
@@ -190,7 +224,10 @@ class _VotingProposalDetailScreenState
     });
   }
 
-  void _maybePrepareVotingPower(VotingSessionState state) {
+  void _maybePrepareVotingPower(
+    VotingSessionState state, {
+    bool force = false,
+  }) {
     final preparationKey = '${widget.roundId}|${state.accountUuid ?? ''}';
     if (_votingPowerPreparationKey != preparationKey) {
       _votingPowerPreparationKey = preparationKey;
@@ -198,9 +235,13 @@ class _VotingProposalDetailScreenState
       _votingPowerPreparationInFlight = false;
     }
 
-    if (_votingPowerPreparationStarted ||
-        state.eligibleWeightZatoshi != null ||
-        !_shouldPrepareVotingPower(state)) {
+    final canPrepare = force
+        ? _canForcePrepareVotingPower(state)
+        : _shouldPrepareVotingPower(state);
+
+    if ((!force && _votingPowerPreparationStarted) ||
+        (!force && state.eligibleWeightZatoshi != null) ||
+        !canPrepare) {
       return;
     }
 
@@ -211,7 +252,15 @@ class _VotingProposalDetailScreenState
       unawaited(
         ref
             .read(votingSessionProvider(widget.roundId).notifier)
-            .prepareDelegation()
+            .refreshEligibleWeight()
+            .catchError((Object error, StackTrace stackTrace) {
+              debugPrint(
+                '[zcash] Voting: voting eligibility refresh failed '
+                'round=${widget.roundId} account=${state.accountUuid} '
+                'error=$error',
+              );
+              return null;
+            })
             .whenComplete(() {
               if (!mounted) return;
               setState(() {
@@ -222,12 +271,25 @@ class _VotingProposalDetailScreenState
     });
   }
 
+  void _retryVotingPowerPreparation() {
+    if (_votingPowerPreparationInFlight) return;
+    final state = ref.read(votingSessionProvider(widget.roundId)).value;
+    if (state == null) return;
+    setState(() {
+      _votingPowerPreparationStarted = false;
+      _votingPowerPreparationInFlight = false;
+    });
+    _maybePrepareVotingPower(state, force: true);
+  }
+
   // Warm the delegation PIR / padded-note secrets as soon as the round page
   // opens, rather than waiting for the review screen. The warm-up is decoupled
   // from PCZT construction, so it only needs the stored voting hotkey secret.
   void _maybePrecomputeDelegationPir(VotingSessionState state) {
     final accountUuid = state.accountUuid;
-    if (accountUuid == null || !_shouldPrepareVotingPower(state)) {
+    if (accountUuid == null ||
+        !state.hasConfirmedVotingEligibility ||
+        !_shouldPrepareVotingPower(state)) {
       return;
     }
 
@@ -263,6 +325,26 @@ bool _shouldPrepareVotingPower(VotingSessionState state) {
   };
 }
 
+bool _canForcePrepareVotingPower(VotingSessionState state) {
+  return _shouldPrepareVotingPower(state) ||
+      state.phase == VotingSessionPhase.error;
+}
+
+bool _isVotingEligibilityPending(VotingSessionState state) {
+  return state.eligibleWeightZatoshi == null && state.error == null;
+}
+
+String? _votingEligibilityMessage(
+  VotingSessionState state, {
+  required bool preparing,
+}) {
+  if (state.hasConfirmedVotingEligibility) return null;
+  final error = state.error;
+  if (error != null) return friendlyVotingErrorText(error.message);
+  if (preparing) return null;
+  return 'Voting power unavailable.';
+}
+
 class _ActivePollContent extends StatefulWidget {
   const _ActivePollContent({
     required this.roundId,
@@ -273,6 +355,10 @@ class _ActivePollContent extends StatefulWidget {
     required this.endDate,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    required this.votingEligibilityConfirmed,
+    required this.votingEligibilityMessage,
+    required this.votingEligibilityErrorMessage,
+    required this.onVotingEligibilityRetry,
     required this.proposals,
     required this.draft,
     required this.onChoice,
@@ -286,6 +372,10 @@ class _ActivePollContent extends StatefulWidget {
   final DateTime? endDate;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+  final bool votingEligibilityConfirmed;
+  final String? votingEligibilityMessage;
+  final String? votingEligibilityErrorMessage;
+  final VoidCallback onVotingEligibilityRetry;
   final List<VotingProposalView> proposals;
   final VotingDraftState draft;
   final void Function(int proposalId, int? choice) onChoice;
@@ -297,7 +387,24 @@ class _ActivePollContent extends StatefulWidget {
 class _ActivePollContentState extends State<_ActivePollContent> {
   bool _descriptionExpanded = false;
 
+  Future<void> _showIneligibleDialog() async {
+    final message = widget.votingEligibilityErrorMessage;
+    if (message == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _IneligiblePollDialog(message: message),
+    );
+  }
+
   Future<void> _handleBottomActionPressed() async {
+    if (_canRetryVotingEligibility) {
+      widget.onVotingEligibilityRetry();
+      return;
+    }
+    if (!widget.votingEligibilityConfirmed) {
+      await _showIneligibleDialog();
+      return;
+    }
     final skippedCount = widget.proposals
         .where((proposal) => widget.draft.choices[proposal.id] == null)
         .length;
@@ -315,6 +422,13 @@ class _ActivePollContentState extends State<_ActivePollContent> {
     if (mounted) {
       context.push(votingReviewRoute(widget.roundId));
     }
+  }
+
+  bool get _canRetryVotingEligibility {
+    return !widget.votingEligibilityConfirmed &&
+        !widget.votingPowerPreparing &&
+        widget.votingEligibilityMessage != null &&
+        widget.votingEligibilityErrorMessage == null;
   }
 
   @override
@@ -369,6 +483,8 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                         endDate: widget.endDate,
                         votingPowerZatoshi: widget.votingPowerZatoshi,
                         votingPowerPreparing: widget.votingPowerPreparing,
+                        votingEligibilityMessage:
+                            widget.votingEligibilityMessage,
                         expanded: _descriptionExpanded,
                         onToggleDescription: () => setState(() {
                           _descriptionExpanded = !_descriptionExpanded;
@@ -376,15 +492,37 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                       );
                     }
                     if (index == widget.proposals.length + 1) {
+                      final canRetryEligibility = _canRetryVotingEligibility;
+                      final isIneligible =
+                          !widget.votingEligibilityConfirmed &&
+                          widget.votingEligibilityErrorMessage != null;
                       return _ReviewAnswersButton(
-                        enabled: !widget.draft.isEmpty,
+                        enabled:
+                            canRetryEligibility ||
+                            isIneligible ||
+                            widget.votingEligibilityConfirmed &&
+                                !widget.draft.isEmpty,
+                        label: canRetryEligibility
+                            ? 'Retry eligibility'
+                            : isIneligible
+                            ? 'Not eligible'
+                            : 'Review answers',
                         onPressed: _handleBottomActionPressed,
                       );
                     }
                     final proposal = widget.proposals[index - 1];
+                    final isIneligible =
+                        !widget.votingEligibilityConfirmed &&
+                        widget.votingEligibilityErrorMessage != null;
                     return _ProposalCard(
                       proposal: proposal,
-                      selectedChoice: widget.draft.choices[proposal.id],
+                      selectedChoice: widget.votingEligibilityConfirmed
+                          ? widget.draft.choices[proposal.id]
+                          : null,
+                      enabled: widget.votingEligibilityConfirmed,
+                      onDisabledOptionTap: isIneligible
+                          ? _showIneligibleDialog
+                          : null,
                       onChoice: (choice) =>
                           widget.onChoice(proposal.id, choice),
                     );
@@ -480,6 +618,77 @@ class _SkippedQuestionsDialog extends StatelessWidget {
   }
 }
 
+class _IneligiblePollDialog extends StatelessWidget {
+  const _IneligiblePollDialog({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Dialog(
+      backgroundColor: colors.background.ground,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: colors.background.neutralSubtleOpacity,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: AppIcon(
+                        AppIcons.warning,
+                        size: AppIconSize.medium,
+                        color: colors.icon.regular,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      'Not eligible for this poll',
+                      style: AppTypography.bodyLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                message,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
+                onPressed: () => Navigator.of(context).pop(),
+                minWidth: 312,
+                child: const Text('Done'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PollSummary extends StatelessWidget {
   const _PollSummary({
     required this.title,
@@ -489,6 +698,7 @@ class _PollSummary extends StatelessWidget {
     required this.endDate,
     required this.votingPowerZatoshi,
     required this.votingPowerPreparing,
+    required this.votingEligibilityMessage,
     required this.expanded,
     required this.onToggleDescription,
   });
@@ -500,6 +710,7 @@ class _PollSummary extends StatelessWidget {
   final DateTime? endDate;
   final BigInt? votingPowerZatoshi;
   final bool votingPowerPreparing;
+  final String? votingEligibilityMessage;
   final bool expanded;
   final VoidCallback onToggleDescription;
 
@@ -572,6 +783,17 @@ class _PollSummary extends StatelessWidget {
             ],
           ],
         ),
+        if (votingEligibilityMessage != null) ...[
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            votingEligibilityMessage!,
+            style: AppTypography.bodySmall.copyWith(
+              color: colors.text.secondary,
+              height: 16 / 12,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
         if (hasDescription) ...[
           const SizedBox(height: AppSpacing.xs),
           LayoutBuilder(
@@ -676,9 +898,14 @@ class _ViewMoreButton extends StatelessWidget {
 }
 
 class _ReviewAnswersButton extends StatelessWidget {
-  const _ReviewAnswersButton({required this.enabled, required this.onPressed});
+  const _ReviewAnswersButton({
+    required this.enabled,
+    required this.label,
+    required this.onPressed,
+  });
 
   final bool enabled;
+  final String label;
   final VoidCallback onPressed;
 
   @override
@@ -690,7 +917,7 @@ class _ReviewAnswersButton extends StatelessWidget {
           variant: AppButtonVariant.primary,
           size: AppButtonSize.large,
           minWidth: constraints.maxWidth,
-          child: const Text('Review answers'),
+          child: Text(label),
         );
       },
     );
@@ -1133,11 +1360,15 @@ class _ProposalCard extends StatelessWidget {
   const _ProposalCard({
     required this.proposal,
     required this.selectedChoice,
+    required this.enabled,
+    required this.onDisabledOptionTap,
     required this.onChoice,
   });
 
   final VotingProposalView proposal;
   final int? selectedChoice;
+  final bool enabled;
+  final VoidCallback? onDisabledOptionTap;
   final ValueChanged<int?> onChoice;
 
   @override
@@ -1206,6 +1437,8 @@ class _ProposalCard extends StatelessWidget {
             _OptionRow(
               option: option,
               selected: selectedChoice == option.index,
+              enabled: enabled,
+              onDisabledTap: onDisabledOptionTap,
               onTap: () => onChoice(
                 selectedChoice == option.index ? null : option.index,
               ),
@@ -1316,11 +1549,15 @@ class _OptionRow extends StatelessWidget {
   const _OptionRow({
     required this.option,
     required this.selected,
+    required this.enabled,
+    required this.onDisabledTap,
     required this.onTap,
   });
 
   final VotingOptionView option;
   final bool selected;
+  final bool enabled;
+  final VoidCallback? onDisabledTap;
   final VoidCallback onTap;
 
   @override
@@ -1328,21 +1565,31 @@ class _OptionRow extends StatelessWidget {
     final colors = context.colors;
     final description = option.description.trim();
     final palette = votingChoicePalette(context, option.label);
+    final primaryTextColor = enabled
+        ? selected
+              ? palette.text
+              : colors.text.accent
+        : colors.text.secondary.withValues(alpha: 0.56);
+    final secondaryTextColor = enabled
+        ? selected
+              ? palette.text.withValues(alpha: 0.82)
+              : colors.text.secondary
+        : colors.text.secondary.withValues(alpha: 0.48);
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadii.small),
-      onTap: onTap,
+      onTap: enabled ? onTap : onDisabledTap,
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm,
           vertical: AppSpacing.xs,
         ),
         decoration: BoxDecoration(
-          color: selected
+          color: enabled && selected
               ? palette.background
               : colors.background.neutralSubtleOpacity,
           borderRadius: BorderRadius.circular(AppRadii.small),
           border: Border.all(
-            color: selected ? palette.border : colors.border.subtle,
+            color: enabled && selected ? palette.border : colors.border.subtle,
           ),
         ),
         child: Row(
@@ -1357,7 +1604,7 @@ class _OptionRow extends StatelessWidget {
                   Text(
                     option.label,
                     style: AppTypography.labelLarge.copyWith(
-                      color: selected ? palette.text : colors.text.accent,
+                      color: primaryTextColor,
                     ),
                   ),
                   if (description.isNotEmpty) ...[
@@ -1365,9 +1612,7 @@ class _OptionRow extends StatelessWidget {
                     Text(
                       description,
                       style: AppTypography.bodySmall.copyWith(
-                        color: selected
-                            ? palette.text.withValues(alpha: 0.82)
-                            : colors.text.secondary,
+                        color: secondaryTextColor,
                         height: 16 / 12,
                         letterSpacing: 0,
                       ),
@@ -1380,7 +1625,7 @@ class _OptionRow extends StatelessWidget {
             Text(
               selected ? 'Selected' : 'Choose',
               style: AppTypography.bodySmall.copyWith(
-                color: selected ? palette.text : colors.text.secondary,
+                color: enabled && selected ? palette.text : secondaryTextColor,
               ),
             ),
           ],

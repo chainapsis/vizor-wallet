@@ -832,6 +832,7 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
 
   bool _showTransitionCue = false;
   int _cueGeneration = 0;
+  Timer? _cueTimer;
 
   @override
   void didUpdateWidget(covariant _KeystoneSigningPanel oldWidget) {
@@ -842,17 +843,24 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
   }
 
   void _triggerTransitionCue() {
+    _cueTimer?.cancel();
     setState(() {
       _showTransitionCue = true;
     });
 
     final generation = ++_cueGeneration;
-    Future<void>.delayed(_transitionCueDuration, () {
+    _cueTimer = Timer(_transitionCueDuration, () {
       if (!mounted || generation != _cueGeneration) return;
       setState(() {
         _showTransitionCue = false;
       });
     });
+  }
+
+  @override
+  void dispose() {
+    _cueTimer?.cancel();
+    super.dispose();
   }
 
   @override

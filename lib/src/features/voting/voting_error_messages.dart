@@ -4,7 +4,45 @@ String friendlyVotingErrorMessage(Object error) {
   return friendlyVotingErrorText(error.toString());
 }
 
+bool isVotingEligibilityErrorText(String text) {
+  final message = _normalizedVotingErrorText(text);
+  final lowerMessage = message.toLowerCase();
+  return _noSpendableNotesPattern.firstMatch(message) != null ||
+      _minimumVotingEligibilityPattern.firstMatch(message) != null ||
+      lowerMessage.startsWith('this account is not eligible for this poll.') ||
+      lowerMessage.startsWith(
+        'voting requires at least 5 eligible shielded notes totaling 0.125 zec',
+      );
+}
+
 String friendlyVotingErrorText(String text) {
+  final message = _normalizedVotingErrorText(text);
+  final noSpendableNotes = _noSpendableNotesPattern.firstMatch(message);
+  if (noSpendableNotes != null) {
+    final heightText = noSpendableNotes.group(1);
+    final snapshot = heightText == null
+        ? 'the poll snapshot block'
+        : 'snapshot block ${formatBlockHeight(int.parse(heightText))}';
+    return 'This account is not eligible for this poll. It had no eligible '
+        'shielded funds at $snapshot. Switch to an eligible account to vote.';
+  }
+
+  final minimumVotingEligibility = _minimumVotingEligibilityPattern.firstMatch(
+    message,
+  );
+  if (minimumVotingEligibility != null) {
+    final heightText = minimumVotingEligibility.group(1);
+    final snapshot = heightText == null
+        ? 'the poll snapshot block'
+        : 'snapshot block ${formatBlockHeight(int.parse(heightText))}';
+    return 'Voting requires at least 5 eligible shielded notes totaling '
+        '0.125 ZEC at $snapshot. Switch to an eligible account to vote.';
+  }
+
+  return message.isEmpty ? 'Voting session action failed.' : message;
+}
+
+String _normalizedVotingErrorText(String text) {
   var message = text.trim();
   for (final prefix in const [
     'Exception: ',
@@ -18,19 +56,15 @@ String friendlyVotingErrorText(String text) {
       break;
     }
   }
-
-  final noSpendableNotes = RegExp(
-    r'no spendable voting notes at snapshot height (\d+)',
-    caseSensitive: false,
-  ).firstMatch(message);
-  if (noSpendableNotes != null) {
-    final heightText = noSpendableNotes.group(1);
-    final snapshot = heightText == null
-        ? 'the poll snapshot block'
-        : 'snapshot block ${formatBlockHeight(int.parse(heightText))}';
-    return 'This account is not eligible for this poll. It had no eligible '
-        'shielded funds at $snapshot. Switch to an eligible account to vote.';
-  }
-
-  return message.isEmpty ? 'Voting session action failed.' : message;
+  return message;
 }
+
+final _noSpendableNotesPattern = RegExp(
+  r'no spendable voting notes at snapshot height (\d+)',
+  caseSensitive: false,
+);
+
+final _minimumVotingEligibilityPattern = RegExp(
+  r'minimum voting eligibility requires at least 5 eligible notes and 12500000 zatoshi voting weight; selected \d+ distinct eligible notes with \d+ zatoshi voting weight(?: at snapshot height (\d+))?',
+  caseSensitive: false,
+);

@@ -245,6 +245,12 @@ class VotingSessionState {
 
   bool get hasError => phase == VotingSessionPhase.error;
 
+  bool get hasConfirmedVotingEligibility =>
+      eligibleWeightZatoshi != null &&
+      eligibleWeightZatoshi! > BigInt.zero &&
+      error == null &&
+      phase != VotingSessionPhase.error;
+
   int get keystoneResolvedBundlePrefixCount =>
       resolvedKeystoneBundlePrefixCount(
         plan: resumePlan,
