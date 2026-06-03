@@ -64,7 +64,11 @@ class VotingTreePreSyncService {
         nodeUrls: apiServers,
       );
       _inFlight[key] = future;
-      await future;
+      try {
+        await future;
+      } finally {
+        _inFlight.remove(key);
+      }
     } catch (e) {
       debugPrint(
         '[zcash] Voting: vote tree pre-sync setup failed '
@@ -81,17 +85,18 @@ class VotingTreePreSyncService {
     required List<Uri> nodeUrls,
   }) async {
     final guard = _ref.read(votingVoteTreeRoundGuardProvider);
-    if (guard.isHeld(roundId)) {
-      debugPrint(
-        '[zcash] Voting: vote tree pre-sync skipped round=$roundId '
-        'reason=interactive-sync-active',
-      );
-      return;
-    }
-    final timer = Stopwatch()..start();
-    debugPrint('[zcash] Voting: vote tree pre-sync start round=$roundId');
     Object? lastError;
+    Stopwatch? timer;
     try {
+      if (guard.isHeld(roundId)) {
+        debugPrint(
+          '[zcash] Voting: vote tree pre-sync skipped round=$roundId '
+          'reason=interactive-sync-active',
+        );
+        return;
+      }
+      timer = Stopwatch()..start();
+      debugPrint('[zcash] Voting: vote tree pre-sync start round=$roundId');
       for (var attempt = 0; attempt < nodeUrls.length; attempt++) {
         if (guard.isHeld(roundId)) {
           debugPrint(
@@ -144,11 +149,9 @@ class VotingTreePreSyncService {
     } catch (e) {
       debugPrint(
         '[zcash] Voting: vote tree pre-sync failed '
-        'round=$roundId elapsed=${formatElapsedSeconds(timer.elapsed)} '
+        'round=$roundId elapsed=${formatElapsedSeconds(timer?.elapsed ?? Duration.zero)} '
         'error=${lastError ?? e}',
       );
-    } finally {
-      _inFlight.remove(key);
     }
   }
 }

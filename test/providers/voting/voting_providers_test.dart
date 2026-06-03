@@ -3616,6 +3616,27 @@ void main() {
   );
 
   test(
+    'vote tree pre-sync warms tree after skipping during interactive sync',
+    () async {
+      final rust = FakeVotingRustApi();
+      final container = _sessionContainer(rust: rust);
+      addTearDown(container.dispose);
+
+      final guard = container.read(votingVoteTreeRoundGuardProvider);
+      final service = container.read(votingTreePreSyncProvider);
+      final releaseGuard = Completer<void>();
+      final held = guard.runHeld(kRoundId, () => releaseGuard.future);
+      await service.preSyncRound(kRoundId);
+      expect(rust.syncedVoteTrees, isEmpty);
+      releaseGuard.complete();
+      await held;
+      await service.preSyncRound(kRoundId);
+
+      expect(rust.syncedVoteTrees, [kRoundId]);
+    },
+  );
+
+  test(
     'vote tree pre-sync does not reset cache during castVotes witness wait',
     () async {
       final witnessGate = Completer<void>();
