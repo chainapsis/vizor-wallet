@@ -5,6 +5,3 @@ members = [
     "vote-commitment-tree-client",
 ]
 resolver = "2"
-
-[patch.crates-io]
-imt-tree = { git = "https://github.com/valargroup/vote-nullifier-pir.git", branch = "codex/halo2-gadgets-0.5-imt-tree" }

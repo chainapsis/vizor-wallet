@@ -64,15 +64,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # PIR (private nullifier exclusion proofs).
-pir-client = { version = "=0.2.0", default-features = false, optional = true }
+pir-client = { version = "=0.3.0", default-features = false, optional = true }
 # Supply-chain pins for the Valar-owned PIR/tree dependency surface. These
 # direct optional dependencies constrain the versions Cargo may resolve when
 # the client features are enabled; they do not change whether upstream build
 # scripts execute.
-pir-types = { version = "=0.1.0", default-features = false, optional = true }
+pir-types = { version = "=0.2.0", default-features = false, optional = true }
 valar-spiral-rs = { version = "=0.5.2", default-features = false, optional = true }
 valar-ypir = { version = "=0.1.5", default-features = false, optional = true }
-imt-tree = { git = "https://github.com/valargroup/vote-nullifier-pir.git", branch = "codex/halo2-gadgets-0.5-imt-tree", version = "=0.1.1", optional = true }
+imt-tree = { version = "=0.2.0", optional = true }
 
 # Direct Hyper/Rustls HTTP transport. Behind `client-pir` and `client-tree-sync`.
 bytes = { version = "1", optional = true }

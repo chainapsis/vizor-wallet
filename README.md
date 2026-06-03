@@ -14,11 +14,11 @@ Client-side cryptographic library for Zcash shielded voting. Implements proof ge
 
 ```
 zcash_voting
-├── vote-commitment-tree ──── imt-tree (vote-nullifier-pir)
+├── vote-commitment-tree ──── imt-tree
 ├── vote-commitment-tree-client
-├── pir-client (vote-nullifier-pir)
-├── voting-circuits ── ZK delegation + vote proofs, orchard fork
-└── librustzcash ───── pczt, zcash_keys, zcash_client_sqlite, ...
+├── pir-client
+├── voting-circuits ── ZK delegation + vote proofs
+└── Zcash crates ───── orchard, pczt, zcash_keys, zcash_primitives, ...
 ```
 
 ## Building
@@ -32,11 +32,21 @@ The workspace depends on the private [valargroup/voting-circuits](https://github
 
 ## Dependency Strategy
 
-This workspace uses `[patch.crates-io]` (in the root `Cargo.toml`) to override two dependency trees:
+This workspace tracks the upstream Zcash crates directly:
 
-- **orchard 0.11** — Resolved from [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits), which bundles an orchard fork with public visibility for `constants`, `spec`, and a `shared_primitives::spend_authority` gadget.
+- **orchard 0.14** — Resolved from crates.io with the
+  `unstable-voting-circuits` feature enabled for governance proof paths.
 
-- **librustzcash crates** (pczt, zcash_keys, zcash_client_sqlite, etc.) — Resolved from [valargroup/librustzcash](https://github.com/valargroup/librustzcash) branch `valargroup/pczt-governance-extensions-0.11`. Adds public getters and methods needed for governance PCZT construction and Merkle witness generation.
+- **voting-circuits 0.7** — Resolved from
+  [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
+  for the Orchard-backed delegation and vote proof circuits.
+
+- **vote-nullifier-pir crates** — `imt-tree 0.2`, `pir-types 0.2`, and
+  `pir-client 0.3` are resolved from crates.io.
+
+- **librustzcash crates** — `pczt 0.7`, `zcash_keys 0.14`,
+  `zcash_primitives 0.28`, and `zcash_protocol 0.9` are resolved from
+  crates.io.
 
 ## FFI
 

@@ -1115,8 +1115,9 @@ checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "imt-tree"
-version = "0.1.1"
-source = "git+https://github.com/valargroup/vote-nullifier-pir.git?branch=codex%2Fhalo2-gadgets-0.5-imt-tree#8bf777c3abeceac8be9be94aaff37afd2c948658"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d0a4887bb71d68b3d0c5db9d42bb76df38b0dff4d261b863dada6383b6c2012"
 dependencies = [
  "anyhow",
  "ff",
@@ -1450,9 +1451,9 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pir-client"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f18409a3bbbc58985c0ba79ec464c65e6ebab19cc1a82c5d4e184c3484520100"
+checksum = "edef04868dc19983199d26c205129b86fd95e2856e3f7a7c096438e7debafb69"
 dependencies = [
  "anyhow",
  "ff",
@@ -1469,9 +1470,9 @@ dependencies = [
 
 [[package]]
 name = "pir-types"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fd3d6025cac852a7b3b81d6d07d6e21cc03bb3d5873fc13144a74c56f325b9d"
+checksum = "27fca477d53f99bc04e449bb984231bb383c41ddc24a0304ecea48563c17e25b"
 dependencies = [
  "anyhow",
  "ff",
@@ -2337,7 +2338,7 @@ dependencies = [
 [[package]]
 name = "voting-circuits"
 version = "0.7.0"
-source = "git+https://github.com/valargroup/voting-circuits.git?branch=codex%2Forchard-0.14-halo2-0.5#fc25195d147ae2fb7d4c2ab9c150ceb739d51b8e"
+source = "git+https://github.com/valargroup/voting-circuits.git?branch=codex%2Forchard-0.14-halo2-0.5#ca95582b528dcf028725e0c44cde2b167b923703"
 dependencies = [
  "blake2b_simd",
  "ff",
