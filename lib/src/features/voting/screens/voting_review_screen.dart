@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../core/privacy/sensitive_privacy_overlay.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
@@ -60,128 +61,147 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
     return AppDesktopShell(
       sidebar: const AppMainSidebar(),
       pane: AppDesktopPane(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: session.when(
-          skipLoadingOnRefresh: false,
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => _Message("Couldn't load review: $error"),
-          data: (state) {
-            final round = state.round;
-            final proposals = round == null
-                ? <VotingProposalView>[]
-                : proposalsFromRound(round);
-            final roundForumUri = round == null
-                ? null
-                : votingRoundForumUriFromJson(round.rawJson);
-            final accountUuid = state.accountUuid;
-            final draft = accountUuid == null
-                ? const VotingDraftState()
-                : ref.watch(
-                    votingDraftProvider(
-                      VotingSessionKey(
-                        roundId: widget.roundId,
-                        accountUuid: accountUuid,
-                      ),
-                    ),
-                  );
-            final onSubmit = draft.isEmpty
-                ? null
-                : () => context.go(
-                    votingStatusRoute(widget.roundId, accountUuid: accountUuid),
-                  );
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, scrollConstraints) {
-                      return SingleChildScrollView(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            minHeight: scrollConstraints.maxHeight,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const SizedBox(
-                                height: AppBackLink.height,
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: AppRouteBackLink(minWidth: 60),
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.s),
-                              Center(
-                                child: ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 620,
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        'Review your answers',
-                                        textAlign: TextAlign.center,
-                                        style: AppTypography.displaySmall
-                                            .copyWith(
-                                              color: context.colors.text.accent,
-                                            ),
-                                      ),
-                                      if (roundForumUri != null) ...[
-                                        const SizedBox(height: AppSpacing.xs),
-                                        Align(
-                                          alignment: Alignment.centerRight,
-                                          child: VotingForumLinkButton(
-                                            uri: roundForumUri,
-                                          ),
-                                        ),
-                                      ],
-                                      const SizedBox(height: AppSpacing.md),
-                                      for (final proposal in proposals)
-                                        _ReviewRow(
-                                          proposal: proposal,
-                                          value: _reviewValue(proposal, draft),
-                                          skipped:
-                                              draft.choices[proposal.id] ==
-                                              null,
-                                        ),
-                                      if (draft.isEmpty) ...[
-                                        const SizedBox(height: AppSpacing.xs),
-                                        const _Message(
-                                          'Choose at least one option before submitting.',
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.md),
-                            ],
+        padding: EdgeInsets.zero,
+        child: SensitivePrivacyOverlay(
+          sensitiveContentVisible: true,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: session.when(
+              skipLoadingOnRefresh: false,
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, _) => _Message("Couldn't load review: $error"),
+              data: (state) {
+                final round = state.round;
+                final proposals = round == null
+                    ? <VotingProposalView>[]
+                    : proposalsFromRound(round);
+                final roundForumUri = round == null
+                    ? null
+                    : votingRoundForumUriFromJson(round.rawJson);
+                final accountUuid = state.accountUuid;
+                final draft = accountUuid == null
+                    ? const VotingDraftState()
+                    : ref.watch(
+                        votingDraftProvider(
+                          VotingSessionKey(
+                            roundId: widget.roundId,
+                            accountUuid: accountUuid,
                           ),
                         ),
                       );
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(
-                    top: AppSpacing.xs,
-                    bottom: AppSpacing.md,
-                  ),
-                  child: Center(
-                    child: AppButton(
-                      onPressed: onSubmit,
-                      variant: AppButtonVariant.primary,
-                      minWidth: 240,
-                      child: const Text('Confirm & submit'),
+                final onSubmit = draft.isEmpty
+                    ? null
+                    : () => context.go(
+                        votingStatusRoute(
+                          widget.roundId,
+                          accountUuid: accountUuid,
+                        ),
+                      );
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, scrollConstraints) {
+                          return SingleChildScrollView(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minHeight: scrollConstraints.maxHeight,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const SizedBox(
+                                    height: AppBackLink.height,
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: AppRouteBackLink(minWidth: 60),
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.s),
+                                  Center(
+                                    child: ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        maxWidth: 620,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            'Review your answers',
+                                            textAlign: TextAlign.center,
+                                            style: AppTypography.displaySmall
+                                                .copyWith(
+                                                  color: context
+                                                      .colors
+                                                      .text
+                                                      .accent,
+                                                ),
+                                          ),
+                                          if (roundForumUri != null) ...[
+                                            const SizedBox(
+                                              height: AppSpacing.xs,
+                                            ),
+                                            Align(
+                                              alignment: Alignment.centerRight,
+                                              child: VotingForumLinkButton(
+                                                uri: roundForumUri,
+                                              ),
+                                            ),
+                                          ],
+                                          const SizedBox(height: AppSpacing.md),
+                                          for (final proposal in proposals)
+                                            _ReviewRow(
+                                              proposal: proposal,
+                                              value: _reviewValue(
+                                                proposal,
+                                                draft,
+                                              ),
+                                              skipped:
+                                                  draft.choices[proposal.id] ==
+                                                  null,
+                                            ),
+                                          if (draft.isEmpty) ...[
+                                            const SizedBox(
+                                              height: AppSpacing.xs,
+                                            ),
+                                            const _Message(
+                                              'Choose at least one option before submitting.',
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.md),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ),
-              ],
-            );
-          },
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        top: AppSpacing.xs,
+                        bottom: AppSpacing.md,
+                      ),
+                      child: Center(
+                        child: AppButton(
+                          onPressed: onSubmit,
+                          variant: AppButtonVariant.primary,
+                          minWidth: 240,
+                          child: const Text('Confirm & submit'),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
