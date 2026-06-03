@@ -54,7 +54,7 @@ rand = "0.8"
 
 # Hashing
 blake2b_simd = "1"
-halo2_gadgets = "0.4"
+halo2_gadgets = "=0.5.0"
 halo2_proofs = "0.3"
 sinsemilla = "0.1"
 
@@ -72,7 +72,7 @@ pir-client = { version = "=0.2.0", default-features = false, optional = true }
 pir-types = { version = "=0.1.0", default-features = false, optional = true }
 valar-spiral-rs = { version = "=0.5.2", default-features = false, optional = true }
 valar-ypir = { version = "=0.1.5", default-features = false, optional = true }
-imt-tree = { version = "=0.1.1", optional = true }
+imt-tree = { git = "https://github.com/valargroup/vote-nullifier-pir.git", branch = "codex/halo2-gadgets-0.5-imt-tree", version = "=0.1.1", optional = true }
 
 # Direct Hyper/Rustls HTTP transport. Behind `client-pir` and `client-tree-sync`.
 bytes = { version = "1", optional = true }
@@ -95,17 +95,17 @@ anyhow = "1"
 thiserror = "2"
 
 # Single orchard node: every consumer resolves upstream `orchard` from
-# crates.io at 0.13.1. The `unstable-voting-circuits` feature is required by
+# crates.io at 0.14. The `unstable-voting-circuits` feature is required by
 # integration tests in `zkp1.rs` (`Note::new`, `Note::dummy`,
 # `Rho::from_nf_old`).
 subtle = "2.6"
-orchard = { version = "=0.13.1", features = ["unstable-voting-circuits"] }
-voting-circuits = "=0.7.0"
+orchard = { version = "0.14", features = ["unstable-voting-circuits"] }
+voting-circuits = { git = "https://github.com/valargroup/voting-circuits.git", branch = "codex/orchard-0.14-halo2-0.5", version = "=0.7.0" }
 nonempty = "0.11"
 zip32 = "0.2"
 incrementalmerkletree = "0.8"
 
-zcash_protocol = "0.8"
-zcash_keys = { version = "0.13", features = ["orchard"] }
-pczt = { version = "0.6", features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
-zcash_primitives = "0.27"
+zcash_protocol = "0.9"
+zcash_keys = { version = "0.14", features = ["orchard"] }
+pczt = { version = "0.7", features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
+zcash_primitives = "0.28"
