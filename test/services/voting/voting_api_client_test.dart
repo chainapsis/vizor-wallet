@@ -556,6 +556,32 @@ void main() {
         'vote-primary.example',
         'vote-secondary.example',
       ]);
+
+      final flakyFallbackHttp = FakeVotingHttpClient(
+        responses: {
+          'https://vote-primary.example/shielded-vote/v1/tx/flaky-tx':
+              jsonResponse({'error': 'not found'}, statusCode: 404),
+          'https://vote-secondary.example/shielded-vote/v1/tx/flaky-tx':
+              jsonResponse({'error': 'unavailable'}, statusCode: 503),
+        },
+      );
+      final flakyFallbackClient = VotingApiClient(
+        baseUrl: primary,
+        fallbackBaseUrls: [secondary],
+        httpClient: flakyFallbackHttp,
+        delay: (_) async {},
+      );
+
+      await expectLater(
+        flakyFallbackClient.getTxConfirmation('flaky-tx'),
+        completion(isNull),
+      );
+      expect(flakyFallbackHttp.requests.map((request) => request.uri.host), [
+        'vote-primary.example',
+        'vote-secondary.example',
+        'vote-secondary.example',
+        'vote-secondary.example',
+      ]);
     },
   );
 

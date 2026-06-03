@@ -354,8 +354,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// Remove an account from the wallet.
   ///
   /// Destructive account changes are blocked while any vote submission is in
-  /// progress. Once removal is allowed, voting state, durable voting rows, and
-  /// hotkeys for that account are cleared with the wallet account data.
+  /// progress. Once removal is allowed, process-local voting state is cleared
+  /// before the wallet delete. Durable voting rows, hotkeys, and other
+  /// account-scoped sidecars are cleared after the wallet account is deleted.
   Future<void> removeAccount(String uuid) async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
     final prev = state.value ?? const AccountState();
@@ -381,7 +382,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final dbPath = await _getDbPath();
     final network = await _getNetwork();
     await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);
-    await _deleteDurableVotingStateForAccount(uuid, dbPath: dbPath);
     final rustDeleteWatch = Stopwatch()..start();
     await rust_wallet.deleteAccount(
       dbPath: dbPath,
@@ -392,6 +392,14 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       'removeAccount: rust delete complete in '
       '${rustDeleteWatch.elapsedMilliseconds}ms uuid=$uuid',
     );
+    try {
+      await _deleteDurableVotingStateForAccount(uuid, dbPath: dbPath);
+    } catch (e, st) {
+      log(
+        'removeAccount: failed to delete durable voting state for '
+        '$uuid after wallet deletion: $e\n$st',
+      );
+    }
     try {
       await _storage.deleteAccountMnemonic(uuid);
     } catch (e, st) {
@@ -515,9 +523,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   /// Delete durable voting sidecar rows scoped to an account.
   ///
-  /// Unlike process-local voting reset, this is not best-effort. If sidecar
-  /// cleanup fails, account removal stops before deleting the wallet account so
-  /// the durable voting rows do not become orphaned.
+  /// This runs only after the wallet account delete succeeds. The caller decides
+  /// whether a cleanup failure should abort the broader lifecycle.
   Future<void> _deleteDurableVotingStateForAccount(
     String accountUuid, {
     required String dbPath,
