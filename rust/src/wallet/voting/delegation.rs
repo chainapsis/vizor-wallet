@@ -1,12 +1,8 @@
-use std::{borrow::Borrow, sync::Arc};
+use std::sync::Arc;
 
 use ff::PrimeField;
-use prost::Message;
 use secrecy::{ExposeSecret, SecretVec};
-use zcash_client_backend::proto::service::TreeState;
-use zcash_client_sqlite::WalletDb;
 use zcash_keys::keys::UnifiedSpendingKey;
-use zcash_protocol::consensus::Parameters;
 use zeroize::Zeroizing;
 use zip32::{fingerprint::SeedFingerprint, AccountId};
 
@@ -19,63 +15,26 @@ pub use zcash_voting::delegate::DelegationProgress;
 use zcash_voting::delegate::{
     DelegationSigningRequest, PrepareDelegationBundleParams, PreparedDelegationBundle,
 };
-use zcash_voting::selection::{select_notes_with_lwd, select_notes_with_wallet_db};
+use zcash_voting::selection::select_notes_with_lwd;
 use zcash_voting::storage::VotingDb;
 use zcash_voting::BundlePolicy;
 
 const ZATOSHI_PER_ZEC: u64 = 100_000_000;
-const WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI: u64 = 500 * ZATOSHI_PER_ZEC;
-const WHALE_PROTECTION_MAX_REAL_NOTES_PER_BUNDLE: usize = 1;
+const WHALE_PROTECTION_NOTE_VALUE_ZATOSHI: u64 = 500 * ZATOSHI_PER_ZEC;
 
-/// Lower the bundle cap when the selected snapshot balance is large.
+/// Isolate large notes while preserving normal packing for smaller notes.
 ///
-/// The current `zcash_voting` policy applies to the whole round, so this
-/// treats whale protection as an all-or-nothing rule for Vizor's delegation
-/// flow.
-fn whale_protected_bundle_policy(
-    notes: &[zcash_voting::NoteInfo],
-    bundle_policy: BundlePolicy,
-) -> Result<BundlePolicy, String> {
-    let snapshot_balance = notes.iter().try_fold(0u64, |total, note| {
-        total
-            .checked_add(note.value)
-            .ok_or_else(|| "snapshot balance overflow during whale protection".to_string())
-    })?;
-    if snapshot_balance >= WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI
-        && bundle_policy.max_real_notes_per_bundle() > WHALE_PROTECTION_MAX_REAL_NOTES_PER_BUNDLE
-    {
-        return BundlePolicy::new(WHALE_PROTECTION_MAX_REAL_NOTES_PER_BUNDLE)
-            .map_err(|e| e.to_string());
-    }
-    Ok(bundle_policy)
+/// `zcash_voting` owns the final bundle planning. Vizor only supplies the
+/// threshold that marks a note as large enough to receive its own bundle.
+fn whale_protected_bundle_policy(bundle_policy: BundlePolicy) -> BundlePolicy {
+    bundle_policy.with_isolated_note_threshold(WHALE_PROTECTION_NOTE_VALUE_ZATOSHI)
 }
 
-fn prepare_params_with_whale_protection<'a, C, P, CL, R>(
-    wallet_db: &WalletDb<C, P, CL, R>,
+fn prepare_params_with_whale_protection<'a>(
     mut prepare_params: PrepareDelegationBundleParams<'a>,
-) -> Result<PrepareDelegationBundleParams<'a>, String>
-where
-    C: Borrow<rusqlite::Connection>,
-    P: Parameters,
-{
-    // The shared crate expects a final policy before it prepares the bundle, so
-    // inspect the same snapshot note set here and then call into the crate.
-    let anchor_tree_state =
-        TreeState::decode(prepare_params.lwd.anchor_tree_state_bytes.as_slice()).map_err(|e| {
-            format!("decode delegation anchor tree state for whale protection failed: {e}")
-        })?;
-    let selected = select_notes_with_wallet_db(
-        wallet_db,
-        prepare_params.voting_hotkey.network(),
-        prepare_params.account_uuid,
-        prepare_params.lwd.round_params.snapshot_height,
-        anchor_tree_state,
-    )
-    .map_err(|e| e.to_string())?;
-    let note_infos = selected.voting_note_infos();
-    prepare_params.bundle_policy =
-        whale_protected_bundle_policy(&note_infos, prepare_params.bundle_policy)?;
-    Ok(prepare_params)
+) -> PrepareDelegationBundleParams<'a> {
+    prepare_params.bundle_policy = whale_protected_bundle_policy(prepare_params.bundle_policy);
+    prepare_params
 }
 
 /// Completes the proof phase for a previously prepared delegation bundle.
@@ -163,7 +122,7 @@ pub async fn setup_delegation_bundles(
     .await
     .map_err(|e| e.to_string())?;
     let note_infos = selected.voting_note_infos();
-    let bundle_policy = whale_protected_bundle_policy(&note_infos, bundle_policy)?;
+    let bundle_policy = whale_protected_bundle_policy(bundle_policy);
     voting_db
         .ensure_bundles_with_skipped_suffix_with_policy(
             round_params.vote_round_id.as_str(),
@@ -201,7 +160,7 @@ pub async fn check_voting_eligibility(
     .await
     .map_err(|e| e.to_string())?;
     let note_infos = selected.voting_note_infos();
-    let bundle_policy = whale_protected_bundle_policy(&note_infos, bundle_policy)?;
+    let bundle_policy = whale_protected_bundle_policy(bundle_policy);
     zcash_voting::minimum_voting_eligibility_for_notes(&note_infos, bundle_policy)
         .map_err(|e| e.to_string())
 }
@@ -254,7 +213,7 @@ pub async fn precompute_delegation_pir(
             bundle_index,
             bundle_policy,
         };
-        let prepare_params = prepare_params_with_whale_protection(&wallet_db, prepare_params)?;
+        let prepare_params = prepare_params_with_whale_protection(prepare_params);
         let prepared = zcash_voting::delegate::prepare_delegation_bundle(
             &voting_db,
             &wallet_db,
@@ -305,7 +264,7 @@ where
         db_path,
         wallet_network(prepare_params.voting_hotkey.network()),
     )?;
-    let prepare_params = prepare_params_with_whale_protection(&wallet_db, prepare_params)?;
+    let prepare_params = prepare_params_with_whale_protection(prepare_params);
 
     let prepared_bundle =
         zcash_voting::delegate::prepare_delegation_bundle(&voting_db, &wallet_db, prepare_params)
@@ -400,7 +359,7 @@ pub async fn build_keystone_delegation_request(
         db_path,
         wallet_network(prepare_params.voting_hotkey.network()),
     )?;
-    let prepare_params = prepare_params_with_whale_protection(&wallet_db, prepare_params)?;
+    let prepare_params = prepare_params_with_whale_protection(prepare_params);
     let prepared =
         zcash_voting::delegate::prepare_delegation_bundle(&voting_db, &wallet_db, prepare_params)
             .map_err(|e| e.to_string())?;
@@ -440,7 +399,7 @@ where
         db_path,
         wallet_network(prepare_params.voting_hotkey.network()),
     )?;
-    let prepare_params = prepare_params_with_whale_protection(&wallet_db, prepare_params)?;
+    let prepare_params = prepare_params_with_whale_protection(prepare_params);
     let prepared_bundle =
         zcash_voting::delegate::prepare_delegation_bundle(&voting_db, &wallet_db, prepare_params)
             .map_err(|e| e.to_string())?;
@@ -496,65 +455,26 @@ mod tests {
     }
 
     #[test]
-    fn whale_protected_bundle_policy_leaves_non_whale_policy_unchanged() {
-        let requested = BundlePolicy::new(3).unwrap();
-        let notes = vec![note_with_value(
-            1,
-            WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI - 1,
-        )];
-
-        let policy = whale_protected_bundle_policy(&notes, requested).unwrap();
-
-        assert_eq!(policy.max_real_notes_per_bundle(), 3);
-    }
-
-    #[test]
-    fn whale_protected_bundle_policy_uses_single_note_policy_at_threshold() {
-        let requested = BundlePolicy::default();
+    fn whale_protection_isolates_large_notes_and_packs_smaller_notes() {
         let notes = vec![
-            note_with_value(1, WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI - 1),
-            note_with_value(2, 1),
-        ];
-
-        let policy = whale_protected_bundle_policy(&notes, requested).unwrap();
-
-        assert_eq!(
-            policy.max_real_notes_per_bundle(),
-            WHALE_PROTECTION_MAX_REAL_NOTES_PER_BUNDLE
-        );
-    }
-
-    #[test]
-    fn whale_protected_bundle_policy_keeps_requested_single_note_policy() {
-        let requested = BundlePolicy::new(1).unwrap();
-        let notes = vec![note_with_value(
-            1,
-            WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI,
-        )];
-
-        let policy = whale_protected_bundle_policy(&notes, requested).unwrap();
-
-        assert_eq!(policy, requested);
-    }
-
-    #[test]
-    fn whale_protection_plans_singleton_bundles_for_large_snapshot_balances() {
-        let notes = vec![
-            note_with_value(1, WHALE_PROTECTION_SNAPSHOT_BALANCE_ZATOSHI - 2),
-            note_with_value(2, zcash_voting::governance::BALLOT_DIVISOR),
-            note_with_value(3, zcash_voting::governance::BALLOT_DIVISOR),
+            note_with_value(1, WHALE_PROTECTION_NOTE_VALUE_ZATOSHI),
+            note_with_value(2, 400 * ZATOSHI_PER_ZEC),
+            note_with_value(3, 200 * ZATOSHI_PER_ZEC),
         ];
         let default_plan =
             zcash_voting::round::note_bundles_with_policy(&notes, BundlePolicy::default()).unwrap();
         assert_eq!(default_plan[0].len(), 3);
 
-        let policy = whale_protected_bundle_policy(&notes, BundlePolicy::default()).unwrap();
+        let policy = whale_protected_bundle_policy(BundlePolicy::default());
         let protected_plan = zcash_voting::round::note_bundles_with_policy(&notes, policy).unwrap();
-
-        assert_eq!(protected_plan.len(), 3);
-        assert!(protected_plan
+        let protected_positions: Vec<Vec<u64>> = protected_plan
             .iter()
-            .all(|bundle| bundle.len() == WHALE_PROTECTION_MAX_REAL_NOTES_PER_BUNDLE));
+            .map(|bundle| bundle.iter().map(|note| note.position).collect())
+            .collect();
+
+        assert_eq!(protected_plan.len(), 2);
+        assert!(protected_positions.contains(&vec![1]));
+        assert!(protected_positions.contains(&vec![2, 3]));
     }
 
     #[test]
