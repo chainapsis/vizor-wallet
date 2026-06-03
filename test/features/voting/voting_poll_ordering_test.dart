@@ -3,6 +3,32 @@ import 'package:zcash_wallet/src/features/voting/voting_poll_ordering.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_state.dart';
 
 void main() {
+  test('treats pending status as tallying for poll list classification', () {
+    expect(votingPollListStatus('pending'), VotingPollListStatus.tallying);
+    expect(
+      votingPollOrderingState(_round('pending', status: 'pending', end: '')),
+      VotingPollOrderingState.closed,
+    );
+  });
+
+  test('sorts pending polls with tallying and closed rounds', () {
+    final rounds = [
+      _round('active', status: 'active', end: '2026-02-01T00:00:00Z'),
+      _round('pending', status: 'pending', end: '2026-03-01T00:00:00Z'),
+      _round('tallying', status: 'tallying', end: '2026-03-15T00:00:00Z'),
+      _round('closed', status: 'closed', end: '2026-04-01T00:00:00Z'),
+    ];
+
+    final sorted = sortVotingRoundsForPollList(rounds);
+
+    expect(sorted.map((round) => round.roundId), [
+      'active',
+      'closed',
+      'tallying',
+      'pending',
+    ]);
+  });
+
   test('prioritizes in-progress polls before normal active polls', () {
     final rounds = [
       _round('closed-old', status: 'finalized', end: '2026-01-01T00:00:00Z'),

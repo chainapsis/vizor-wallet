@@ -45,6 +45,7 @@ VotingPollListStatus votingPollListStatus(String value) {
   if (status == '1') return VotingPollListStatus.active;
   if (status == '2') return VotingPollListStatus.tallying;
   if (status == '3') return VotingPollListStatus.closed;
+  if (status == 'pending') return VotingPollListStatus.tallying;
   if (status.contains('tally')) return VotingPollListStatus.tallying;
   if (status.contains('closed') ||
       status.contains('complete') ||
