@@ -19,6 +19,7 @@ import '../../../rust/third_party/zcash_voting/wire.dart' as rust_wire;
 import '../voting_choice_style.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
+import '../voting_poll_ordering.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
@@ -40,6 +41,7 @@ class _VotingProposalDetailScreenState
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
   String? _delegationPirPrecomputeKey;
+  String? _resultsRedirectRoundId;
 
   @override
   void didUpdateWidget(covariant VotingProposalDetailScreen oldWidget) {
@@ -49,6 +51,7 @@ class _VotingProposalDetailScreenState
       _votingPowerPreparationInFlight = false;
       _votingPowerPreparationKey = null;
       _delegationPirPrecomputeKey = null;
+      _resultsRedirectRoundId = null;
     }
   }
 
@@ -72,6 +75,11 @@ class _VotingProposalDetailScreenState
                 title: 'Poll unavailable',
                 message: 'The selected poll could not be loaded.',
               );
+            }
+            if (votingPollListStatus(round.status) !=
+                VotingPollListStatus.active) {
+              _redirectToResults(round.roundId);
+              return const Center(child: CircularProgressIndicator());
             }
             if (shouldPreSyncVotingTree(round.status)) {
               unawaited(
@@ -170,6 +178,15 @@ class _VotingProposalDetailScreenState
         ),
       ),
     );
+  }
+
+  void _redirectToResults(String roundId) {
+    if (_resultsRedirectRoundId == roundId) return;
+    _resultsRedirectRoundId = roundId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.go(votingResultsRoute(roundId));
+    });
   }
 
   void _maybePrepareVotingPower(VotingSessionState state) {

@@ -1247,6 +1247,33 @@ void main() {
     expect(find.text('Review answers'), findsNothing);
   });
 
+  testWidgets('proposal detail routes non-active rounds to results', (
+    tester,
+  ) async {
+    final round = _roundStatusJson()..['status'] = 'pending';
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: _MutableVotingRecoveryApi(),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('results route'), findsOneWidget);
+    expect(find.text('Review answers'), findsNothing);
+  });
+
   testWidgets('poll stops preparing voting power when setup fails', (
     tester,
   ) async {
@@ -2563,6 +2590,10 @@ Widget _proposalHarness({String? initialLocation}) {
         builder: (_, state) => Text(
           'status account: ${state.uri.queryParameters['account'] ?? ''}',
         ),
+      ),
+      GoRoute(
+        path: '/voting/poll/:roundId/results',
+        builder: (_, _) => const Text('results route'),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
