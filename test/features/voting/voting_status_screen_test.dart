@@ -1516,6 +1516,53 @@ void main() {
     expect(find.text('Review answers'), findsNothing);
   });
 
+  testWidgets('proposal detail shows completed vote before eligibility loads', (
+    tester,
+  ) async {
+    final round = _roundStatusJson()..['status'] = 'pending';
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..roundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: false,
+        nextSteps: const [],
+        openProposals: Uint32List.fromList(const [1]),
+        allDecided: true,
+        completedVoteArtifact: true,
+        completedForDisplay: true,
+        completedVoteDisplay: rust_wire.CompletedVoteDisplayView(
+          choices: const [
+            rust_wire.CompletedVoteChoiceView(proposalId: 1, choice: 0),
+          ],
+          votedAt: BigInt.from(1717260000),
+        ),
+      );
+    final rust = _PendingVotingEligibilityRustApi(recoveryApi);
+    addTearDown(rust.completeEligible);
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: rust,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await _pumpUntilFound(tester, find.textContaining('Voted'));
+    await _pumpUntilCondition(tester, () => rust.eligibilityCheckCalls == 1);
+
+    expect(find.textContaining('Voted'), findsOneWidget);
+    expect(find.text('results route'), findsNothing);
+  });
+
   testWidgets('proposal detail shows recovery before non-active redirect', (
     tester,
   ) async {
@@ -1590,6 +1637,41 @@ void main() {
     expect(find.text('Voting power unavailable'), findsOneWidget);
     expect(find.text('Retry eligibility'), findsOneWidget);
     expect(find.text('Preparing voting power'), findsNothing);
+  });
+
+  testWidgets('poll retries voting power from error state', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1152, 768));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    final recoveryApi = _MutableVotingRecoveryApi();
+    final rust = _RetryableVotingPowerRustApi(recoveryApi);
+    final container = _statusContainer(
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: rust,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _pumpUntilFound(tester, find.text('Retry eligibility'));
+
+    expect(rust.eligibilityCheckCalls, 1);
+
+    await tester.tap(find.text('Retry eligibility'));
+    await _pumpUntilCondition(tester, () => rust.eligibilityCheckCalls == 2);
+    await tester.pumpAndSettle();
+
+    expect(rust.eligibilityCheckCalls, 2);
+    expect(find.text('Retry eligibility'), findsNothing);
+    expect(find.text('Review answers'), findsOneWidget);
   });
 
   testWidgets('proposal detail shows read-only options when eligibility fails', (
@@ -3791,6 +3873,50 @@ class _FailingVotingPowerRustApi extends _NoopVotingRustApi {
     required rust_api.ApiVotingRoundContext ctx,
   }) async {
     throw StateError('snapshot setup unavailable');
+  }
+}
+
+class _PendingVotingEligibilityRustApi extends _VotingStatusRustApi {
+  _PendingVotingEligibilityRustApi(super.recoveryApi);
+
+  final _eligibility = Completer<rust_api.ApiVotingEligibility>();
+
+  void completeEligible() {
+    if (_eligibility.isCompleted) return;
+    _eligibility.complete(
+      rust_api.ApiVotingEligibility(
+        isEligible: true,
+        distinctNoteCount: 5,
+        eligibleWeightZatoshi: BigInt.from(100),
+      ),
+    );
+  }
+
+  @override
+  Future<rust_api.ApiVotingEligibility> checkVotingEligibility({
+    required rust_api.ApiVotingRoundContext ctx,
+  }) {
+    eligibilityCheckCalls++;
+    return _eligibility.future;
+  }
+}
+
+class _RetryableVotingPowerRustApi extends _VotingStatusRustApi {
+  _RetryableVotingPowerRustApi(super.recoveryApi);
+
+  @override
+  Future<rust_api.ApiVotingEligibility> checkVotingEligibility({
+    required rust_api.ApiVotingRoundContext ctx,
+  }) async {
+    eligibilityCheckCalls++;
+    if (eligibilityCheckCalls == 1) {
+      throw StateError('temporary setup unavailable');
+    }
+    return rust_api.ApiVotingEligibility(
+      isEligible: true,
+      distinctNoteCount: 5,
+      eligibleWeightZatoshi: BigInt.from(100),
+    );
   }
 }
 

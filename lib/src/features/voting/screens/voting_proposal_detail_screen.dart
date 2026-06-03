@@ -89,6 +89,9 @@ class _VotingProposalDetailScreenState
             final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
             final hasConfirmedVotingEligibility =
                 state.hasConfirmedVotingEligibility;
+            final isVotingEligibilityPending = _isVotingEligibilityPending(
+              state,
+            );
             final hasBlockingRecovery = hasBlockingRoundRecoveryWork(
               state.roundPlan,
             );
@@ -111,7 +114,8 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            if (completedVote != null && hasConfirmedVotingEligibility) {
+            if (completedVote != null &&
+                (hasConfirmedVotingEligibility || isVotingEligibilityPending)) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _VotedPollContent(
@@ -231,9 +235,13 @@ class _VotingProposalDetailScreenState
       _votingPowerPreparationInFlight = false;
     }
 
+    final canPrepare = force
+        ? _canForcePrepareVotingPower(state)
+        : _shouldPrepareVotingPower(state);
+
     if ((!force && _votingPowerPreparationStarted) ||
         (!force && state.eligibleWeightZatoshi != null) ||
-        !_shouldPrepareVotingPower(state)) {
+        !canPrepare) {
       return;
     }
 
@@ -315,6 +323,15 @@ bool _shouldPrepareVotingPower(VotingSessionState state) {
     VotingSessionPhase.done => true,
     _ => false,
   };
+}
+
+bool _canForcePrepareVotingPower(VotingSessionState state) {
+  return _shouldPrepareVotingPower(state) ||
+      state.phase == VotingSessionPhase.error;
+}
+
+bool _isVotingEligibilityPending(VotingSessionState state) {
+  return state.eligibleWeightZatoshi == null && state.error == null;
 }
 
 String? _votingEligibilityMessage(
