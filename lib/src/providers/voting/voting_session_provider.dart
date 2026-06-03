@@ -267,6 +267,17 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       await _waitUntilWalletReadyForVoting(context);
     } on _StaleVotingSessionAction {
       return;
+    } on _VotingWalletSyncTimeout catch (e) {
+      _setWalletSyncReadinessState(
+        context: context,
+        readiness: e.readiness,
+        waiting: false,
+      );
+      debugPrint(
+        '[zcash] Voting: delegation PIR precompute skipped '
+        'round=${context.round.roundId} reason=wallet-sync-timeout error=$e',
+      );
+      return;
     }
     if (!_isCurrentPrecomputeContext(context, accountUuid)) return;
     final pirEndpoint = await _resolvePirEndpoint(context);
@@ -2712,6 +2723,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
     _VotingSessionContext context,
   ) async {
     var loggedWait = false;
+    final maxWait = ref.read(votingWalletSyncMaxWaitProvider);
+    final waitTimer = Stopwatch()..start();
     final sessionInvalidated = _sessionInvalidated.future;
     while (true) {
       _throwIfContextStale(context, 'wallet-sync-wait');
@@ -2753,10 +2766,15 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       } catch (e) {
         debugPrint('[zcash] Voting: wallet sync start skipped: $e');
       }
-      await Future.any<void>([
-        Future<void>.delayed(ref.read(votingWalletSyncPollIntervalProvider)),
-        sessionInvalidated,
-      ]);
+      final remainingWait = maxWait - waitTimer.elapsed;
+      if (remainingWait.compareTo(Duration.zero) <= 0) {
+        throw _VotingWalletSyncTimeout(readiness: readiness, maxWait: maxWait);
+      }
+      final pollInterval = ref.read(votingWalletSyncPollIntervalProvider);
+      final delay = remainingWait.compareTo(pollInterval) < 0
+          ? remainingWait
+          : pollInterval;
+      await Future.any<void>([Future<void>.delayed(delay), sessionInvalidated]);
     }
   }
 
@@ -3245,6 +3263,25 @@ class _VotingSessionContext {
 
 class _StaleVotingSessionAction implements Exception {
   const _StaleVotingSessionAction();
+}
+
+class _VotingWalletSyncTimeout implements Exception {
+  const _VotingWalletSyncTimeout({
+    required this.readiness,
+    required this.maxWait,
+  });
+
+  final VotingWalletSyncReadiness readiness;
+  final Duration maxWait;
+
+  @override
+  String toString() {
+    return 'Wallet sync did not reach this poll snapshot within '
+        '${formatElapsedSeconds(maxWait)}. Scanned block '
+        '${formatBlockHeight(readiness.scannedHeight)} of '
+        '${formatBlockHeight(readiness.snapshotHeight)}. Let wallet sync '
+        'catch up and retry.';
+  }
 }
 
 class VotingSubmissionSessionNotifier extends VotingSessionNotifier {
