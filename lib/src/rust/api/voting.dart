@@ -456,6 +456,25 @@ Future<VanWitness> generateVanWitness({
 /// Clear process-local vote-tree sync state for a wallet or round.
 ///
 /// Passing a non-empty round ID clears only that round's cached vote-tree sync
+/// state by calling `zcash_voting::precompute::reset_vote_tree(db, round_id)`.
+/// Passing `None` or an empty round ID performs account-wide vote-tree cleanup
+/// with `zcash_voting::precompute::reset_vote_tree(db, "")`.
+///
+/// This does not clear unsigned delegation setup fields, delete durable recovery
+/// rows, or abort in-flight proof/vote work already running on worker threads.
+Future<void> resetVoteTree({
+  required String dbPath,
+  required String accountUuid,
+  String? roundId,
+}) => RustLib.instance.api.crateApiVotingResetVoteTree(
+  dbPath: dbPath,
+  accountUuid: accountUuid,
+  roundId: roundId,
+);
+
+/// Clear process-local voting session state for a wallet or round.
+///
+/// Passing a non-empty round ID clears only that round's cached vote-tree sync
 /// state and unsigned delegation setup fields by calling
 /// `zcash_voting::precompute::reset_voting_session_state(db, round_id)`.
 /// Passing `None` or an empty round ID performs account-wide vote-tree cleanup

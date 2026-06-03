@@ -237,7 +237,12 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   Future<BigInt?> refreshEligibleWeight() {
     return _enqueue(_refreshEligibleWeightUnlocked).then((_) {
-      return state.value?.eligibleWeightZatoshi;
+      final current = state.value;
+      final error = current?.error;
+      if (error != null && !isVotingEligibilityErrorText(error.message)) {
+        throw error.cause ?? StateError(error.message);
+      }
+      return current?.eligibleWeightZatoshi;
     });
   }
 
@@ -331,16 +336,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> delegatePendingBundles({String? mnemonic}) {
     return _enqueue(() async {
       var current = await future;
-      if (_needsDelegationPreparation(current)) {
-        await _prepareDelegationUnlocked();
-        current = await future;
-        if (current.phase == VotingSessionPhase.error ||
-            current.phase == VotingSessionPhase.waitingForWalletSync) {
-          return;
-        }
-      }
-
-      final context = await _loadContext(_roundId);
+      var context = await _loadContext(_roundId);
       if (context.isHardwareAccount) {
         _setError(
           'Sign delegation bundles with Keystone before submitting.',
@@ -348,14 +344,28 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      final plan = current.resumePlan ?? context.resumePlan;
-      final roundPlan = current.roundPlan ?? context.roundPlan;
-      final pirEndpoint = current.pirEndpoint;
-      if (pirEndpoint == null) {
-        _setError('PIR endpoint has not been resolved.', context: context);
-        return;
+      var plan = current.resumePlan ?? context.resumePlan;
+      var roundPlan = current.roundPlan ?? context.roundPlan;
+      if (_needsFreshDelegationWork(plan, roundPlan) &&
+          _needsDelegationPreparation(current)) {
+        await _prepareDelegationUnlocked();
+        current = await future;
+        if (current.phase == VotingSessionPhase.error ||
+            current.phase == VotingSessionPhase.waitingForWalletSync) {
+          return;
+        }
+        context = await _loadContext(_roundId);
+        plan = current.resumePlan ?? context.resumePlan;
+        roundPlan = current.roundPlan ?? context.roundPlan;
       }
-      if (plan.pendingDelegationBundleIndexes.isNotEmpty) {
+
+      final hasPendingBundles = plan.pendingDelegationBundleIndexes.isNotEmpty;
+      final pirEndpoint = current.pirEndpoint;
+      if (hasPendingBundles) {
+        if (pirEndpoint == null) {
+          _setError('PIR endpoint has not been resolved.', context: context);
+          return;
+        }
         // Software delegation proving still needs the account mnemonic in the
         // current Rust API. Keystone signing uses a separate flow
         // (`delegatePendingBundlesWithKeystoneSignatures`) and never reaches
@@ -376,7 +386,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         _setStateForContext(context, nextState);
         current = nextState;
       }
-      final storedHotkeySecret = await _ensureHotkey(context);
+      final storedHotkeySecret = hasPendingBundles
+          ? await _ensureHotkey(context)
+          : null;
 
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
@@ -407,9 +419,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         await for (final event
             in rust.buildProveAndSignDelegationPayloadWithProgress(
               ctx: _apiRoundContext(context),
-              pirServerUrl: pirEndpoint.toString(),
+              pirServerUrl: pirEndpoint!.toString(),
               mnemonic: mnemonic!,
-              storedHotkeySecret: storedHotkeySecret,
+              storedHotkeySecret: storedHotkeySecret!,
               bundleIndex: bundleIndex,
             )) {
           signedDelegationPayload =
@@ -648,16 +660,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
   Future<void> delegatePendingBundlesWithKeystoneSignatures() {
     return _enqueue(() async {
       var current = await future;
-      if (_needsDelegationPreparation(current)) {
-        await _prepareDelegationUnlocked();
-        current = await future;
-        if (current.phase == VotingSessionPhase.error ||
-            current.phase == VotingSessionPhase.waitingForWalletSync) {
-          return;
-        }
-      }
-
-      final context = await _loadContext(_roundId);
+      var context = await _loadContext(_roundId);
       if (!context.isHardwareAccount) {
         _setError(
           'Keystone voting is only available for hardware accounts.',
@@ -665,19 +668,20 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         );
         return;
       }
-      final plan = current.resumePlan ?? context.resumePlan;
-      final roundPlan = current.roundPlan ?? context.roundPlan;
-      final pirEndpoint = current.pirEndpoint;
-      if (pirEndpoint == null) {
-        _setError('PIR endpoint has not been resolved.', context: context);
-        return;
+      var plan = current.resumePlan ?? context.resumePlan;
+      var roundPlan = current.roundPlan ?? context.roundPlan;
+      if (_needsFreshDelegationWork(plan, roundPlan) &&
+          _needsDelegationPreparation(current)) {
+        await _prepareDelegationUnlocked();
+        current = await future;
+        if (current.phase == VotingSessionPhase.error ||
+            current.phase == VotingSessionPhase.waitingForWalletSync) {
+          return;
+        }
+        context = await _loadContext(_roundId);
+        plan = current.resumePlan ?? context.resumePlan;
+        roundPlan = current.roundPlan ?? context.roundPlan;
       }
-
-      final signatures = await _loadKeystoneSignatures(context);
-      final storedHotkeySecret = await _ensureHotkey(
-        context,
-        alreadyBound: signatures.isNotEmpty,
-      );
       final progress = Map<int, VotingSessionProgress>.from(
         current.delegationProgress,
       );
@@ -688,6 +692,25 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         progress: progress,
       );
       if (completedBundleIndexes == null) return;
+
+      final hasPendingBundles = plan.pendingDelegationBundleIndexes.isNotEmpty;
+      final signatures = hasPendingBundles
+          ? await _loadKeystoneSignatures(context)
+          : current.keystoneSignatures;
+      final List<int>? storedHotkeySecret;
+      if (hasPendingBundles) {
+        storedHotkeySecret = await _ensureHotkey(
+          context,
+          alreadyBound: signatures.isNotEmpty,
+        );
+      } else {
+        storedHotkeySecret = null;
+      }
+      final pirEndpoint = current.pirEndpoint;
+      if (hasPendingBundles && pirEndpoint == null) {
+        _setError('PIR endpoint has not been resolved.', context: context);
+        return;
+      }
 
       final rust = ref.read(votingRustApiProvider);
       for (final bundleIndex in plan.pendingDelegationBundleIndexes) {
@@ -722,8 +745,8 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             in rust
                 .buildProveDelegationPayloadWithKeystoneSignatureWithProgress(
                   ctx: _apiRoundContext(context),
-                  pirServerUrl: pirEndpoint.toString(),
-                  storedHotkeySecret: storedHotkeySecret,
+                  pirServerUrl: pirEndpoint!.toString(),
+                  storedHotkeySecret: storedHotkeySecret!,
                   bundleIndex: bundleIndex,
                   keystoneSig: signature.sig,
                   keystoneSighash: signature.sighash,
@@ -817,15 +840,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final current = await future;
       final context = await _loadContext(_roundId);
       await _waitUntilWalletReadyForVoting(context);
-      final storedHotkeySecret = await _hotkeyForVoteCasting(context);
-      if (storedHotkeySecret == null) {
-        _setError(
-          'Voting hotkey is missing. Delegate this round before casting votes.',
-          cause: const VotingHotkeyUnavailable('missing stored hotkey'),
-          context: context,
-        );
-        return;
-      }
 
       final progress = Map<VotingVoteKey, VotingSessionProgress>.from(
         current.voteProgress,
@@ -835,17 +849,18 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       final api = ref.read(votingApiClientProvider(context.config.apiServers));
       final rust = ref.read(votingRustApiProvider);
       final effectiveDraftVotes = draftVotes;
-      if (effectiveDraftVotes.isNotEmpty) {
+      final draftVotesByProposal = {
+        for (final draftVote in effectiveDraftVotes)
+          draftVote.proposalId: draftVote,
+      };
+      final intentProposalIds = {
+        ...?allProposalIds,
+        ...draftVotesByProposal.keys,
+      }.toList()..sort();
+      Future<bool> writeBallotIntents() async {
+        if (effectiveDraftVotes.isEmpty) return true;
         // Write durable ballot intent before the cast loop so recovery can
         // resume from the correct choice if the user quits mid-vote.
-        final draftVotesByProposal = {
-          for (final draftVote in effectiveDraftVotes)
-            draftVote.proposalId: draftVote,
-        };
-        final intentProposalIds = {
-          ...?allProposalIds,
-          ...draftVotesByProposal.keys,
-        }.toList()..sort();
         for (final proposalId in intentProposalIds) {
           final draftVote = draftVotesByProposal[proposalId];
           final numOptions =
@@ -857,7 +872,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 'missing numOptions for proposal_id $proposalId',
               ),
             );
-            return;
+            return false;
           }
           await ref
               .read(votingRecoveryServiceProvider)
@@ -871,7 +886,9 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                 choice: draftVote?.choice,
               );
         }
+        return true;
       }
+
       var confirmedSubmittedVotes = false;
       for (final work in _pendingVotePollingWork(roundPlan)) {
         final key = VotingVoteKey(
@@ -953,6 +970,23 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
             bundleIndexes: bundleIndexesByProposal[draftVote.proposalId]!,
           ),
       ].where((work) => work.bundleIndexes.isNotEmpty).toList();
+      final List<int>? storedHotkeySecret;
+      if (voteWork.isEmpty) {
+        storedHotkeySecret = null;
+      } else {
+        storedHotkeySecret = await _hotkeyForVoteCasting(context);
+        if (storedHotkeySecret == null) {
+          _setError(
+            'Voting hotkey is missing. Delegate this round before casting votes.',
+            cause: const VotingHotkeyUnavailable('missing stored hotkey'),
+            context: context,
+          );
+          return;
+        }
+      }
+      if (!await writeBallotIntents()) {
+        return;
+      }
       final totalQuestions = recoveredVoteWork.length + voteWork.length;
       final totalBundleTasks =
           recoveredVoteWork.length +
@@ -1173,7 +1207,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
                     network: context.network,
                     roundId: context.round.roundId,
                     bundleIndex: bundleIndex,
-                    storedHotkeySecret: storedHotkeySecret,
+                    storedHotkeySecret: storedHotkeySecret!,
                     vanWitness: witness,
                     draftVotes: [timedDraftVote],
                   )) {
@@ -1560,6 +1594,7 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
         await rust.resetVotingSessionState(
           dbPath: context.dbPath,
           accountUuid: context.accountUuid,
+          roundId: context.round.roundId,
         );
         debugPrint(
           '[zcash] Voting: vote tree sync retrying failover '
@@ -1913,15 +1948,6 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
       var context = await _loadContext(_roundId);
       var plan = await _loadResumePlan(context);
       var roundPlan = await _loadRoundPlan(context);
-      if (plan.unconfirmedShareDelegations.isNotEmpty &&
-          !current.hasConfirmedVotingEligibility) {
-        await _ensureVotingEligibilityUnlocked();
-        current = await future;
-        if (!current.hasConfirmedVotingEligibility) return;
-        context = await _loadContext(_roundId);
-        plan = await _loadResumePlan(context);
-        roundPlan = await _loadRoundPlan(context);
-      }
       _setStateForContext(
         context,
         current.copyWith(
@@ -2364,6 +2390,16 @@ class VotingSessionNotifier extends AsyncNotifier<VotingSessionState> {
 
   static bool _needsDelegationPreparation(VotingSessionState state) {
     return state.pirEndpoint == null || state.eligibleWeightZatoshi == null;
+  }
+
+  static bool _needsFreshDelegationWork(
+    VotingResumePlan plan,
+    rust_wire.RoundPlanView? roundPlan,
+  ) {
+    if (plan.pendingDelegationBundleIndexes.isNotEmpty) return true;
+    if (roundPlan == null) return false;
+    return roundPlan.nextSteps.any((step) => step.kind == 'delegate') ||
+        roundPlanNeedsDraftSetup(roundPlan);
   }
 
   Future<void> _prepareKeystoneSigningUnlocked() async {

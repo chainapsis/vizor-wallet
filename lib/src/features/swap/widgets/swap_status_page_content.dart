@@ -9,6 +9,7 @@ import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_tooltip.dart';
+import '../../address_book/widgets/address_book_network_icon.dart';
 import '../domain/swap_contract.dart';
 import '../models/swap_detail_tooltips.dart';
 import '../models/swap_status_presentation.dart';
@@ -234,14 +235,20 @@ class _SwapStatusPageContentState extends State<SwapStatusPageContent> {
                       onChanged: widget.onTabChanged,
                     ),
                     const SizedBox(height: AppSpacing.md),
-                    tabContent,
+                    if (widget.activeTab == SwapStatusTab.details)
+                      Flexible(fit: FlexFit.loose, child: tabContent)
+                    else
+                      tabContent,
                   ] else
-                    _SwapFinalDetails(rows: widget.details),
+                    Flexible(
+                      fit: FlexFit.loose,
+                      child: _SwapFinalDetails(rows: widget.details),
+                    ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.xs),
           Align(
             alignment: Alignment.center,
             child: _NearIntentsLink(onPressed: widget.onOpenExplorer),
@@ -978,6 +985,7 @@ class _SwapTransactionDetailsState extends State<_SwapTransactionDetails> {
         ? const <SwapStatusDetailRowData>[]
         : widget.rows.skip(anchorIndex + 1).toList();
     final content = Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: widget.expanded
           ? [
@@ -1016,9 +1024,12 @@ class _SwapTransactionDetailsState extends State<_SwapTransactionDetails> {
     );
 
     if (!widget.expanded) {
-      return KeyedSubtree(
-        key: const ValueKey('swap_transaction_details_collapsed'),
-        child: content,
+      return _StatusDetailsScrollView(
+        key: const ValueKey('swap_transaction_details_collapsed_scroll_view'),
+        child: KeyedSubtree(
+          key: const ValueKey('swap_transaction_details_collapsed'),
+          child: content,
+        ),
       );
     }
 
@@ -1083,17 +1094,32 @@ class _SwapFinalDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      key: const ValueKey('swap_final_details'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var index = 0; index < rows.length; index++) ...[
-          _InsetDetailRow(row: rows[index]),
-          if (_finalDetailSectionGapAfter(rows, index))
-            const SizedBox(height: AppSpacing.sm),
+    return _StatusDetailsScrollView(
+      key: const ValueKey('swap_final_details_scroll_view'),
+      child: Column(
+        key: const ValueKey('swap_final_details'),
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var index = 0; index < rows.length; index++) ...[
+            _InsetDetailRow(row: rows[index]),
+            if (_finalDetailSectionGapAfter(rows, index))
+              const SizedBox(height: AppSpacing.sm),
+          ],
         ],
-      ],
+      ),
     );
+  }
+}
+
+class _StatusDetailsScrollView extends StatelessWidget {
+  const _StatusDetailsScrollView({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(primary: false, child: child);
   }
 }
 
@@ -1135,86 +1161,195 @@ class _DetailRow extends StatelessWidget {
                     );
                   }
                 : null),
-        child: SizedBox(
-          height: 32,
-          child: row.value.isEmpty
-              ? Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        row.label,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.xxs),
-                      AppIcon(
-                        chevronUp ? AppIcons.collapsed : AppIcons.expand,
-                        size: 16,
-                        color: colors.icon.regular.withValues(alpha: 0.72),
-                      ),
-                    ],
-                  ),
-                )
-              : Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        row.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.secondary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.s),
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerRight,
+        child: row.addressBookLabel != null
+            ? _matchedAddressCell(context)
+            : SizedBox(
+                height: 32,
+                child: row.value.isEmpty
+                    ? Center(
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (showAccountAvatar) ...[
-                              AppProfilePicture(
-                                profilePictureId:
-                                    row.accountProfilePictureId ??
-                                    kDefaultProfilePictureId,
-                                size: AppProfilePictureSize.medium,
-                              ),
-                              const SizedBox(width: AppSpacing.xs),
-                            ],
-                            Flexible(
-                              child: Text(
-                                row.value,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.end,
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: colors.text.accent,
-                                ),
+                            Text(
+                              row.label,
+                              style: AppTypography.labelLarge.copyWith(
+                                color: colors.text.secondary,
                               ),
                             ),
-                            if (row.copyable || row.help) ...[
-                              const SizedBox(width: AppSpacing.xxs),
-                              _StatusDetailActionIcon(
-                                icon: row.copyable
-                                    ? AppIcons.copy
-                                    : AppIcons.help,
-                                tooltipMessage: row.help
-                                    ? row.helpTooltip ??
-                                          _swapStatusHelpTooltip(row.label)
-                                    : null,
+                            const SizedBox(width: AppSpacing.xxs),
+                            AppIcon(
+                              chevronUp ? AppIcons.collapsed : AppIcons.expand,
+                              size: 16,
+                              color: colors.icon.regular.withValues(
+                                alpha: 0.72,
                               ),
-                            ],
+                            ),
                           ],
                         ),
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              row.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelLarge.copyWith(
+                                color: colors.text.secondary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.s),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (showAccountAvatar) ...[
+                                    AppProfilePicture(
+                                      profilePictureId:
+                                          row.accountProfilePictureId ??
+                                          kDefaultProfilePictureId,
+                                      size: AppProfilePictureSize.medium,
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                  ],
+                                  Flexible(
+                                    child: Text(
+                                      row.value,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.end,
+                                      style: AppTypography.labelLarge.copyWith(
+                                        color: colors.text.accent,
+                                      ),
+                                    ),
+                                  ),
+                                  if (row.copyable || row.help) ...[
+                                    const SizedBox(width: AppSpacing.xxs),
+                                    _StatusDetailActionIcon(
+                                      icon: row.copyable
+                                          ? AppIcons.copy
+                                          : AppIcons.help,
+                                      tooltipMessage: row.help
+                                          ? row.helpTooltip ??
+                                                _swapStatusHelpTooltip(
+                                                  row.label,
+                                                )
+                                          : null,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+      ),
+    );
+  }
+
+  /// Renders an address row that matches a saved address-book contact. The
+  /// first line keeps the regular two-column detail-row geometry; the metadata
+  /// line below is right-aligned across the full row so the network and compact
+  /// address are not squeezed into the value column.
+  Widget _matchedAddressCell(BuildContext context) {
+    final colors = context.colors;
+    final network = row.addressNetwork;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 32,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    row.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.secondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.s),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            row.addressBookLabel!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: AppTypography.bodyMediumStrong.copyWith(
+                              color: colors.text.accent,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.xxs),
+                        AppIcon(
+                          AppIcons.user,
+                          size: 14,
+                          color: colors.icon.brandCrimson,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 18,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (network != null) ...[
+                      AddressBookNetworkIcon(network: network, size: 14),
+                      const SizedBox(width: AppSpacing.xxs),
+                      Text(
+                        network.label,
+                        maxLines: 1,
+                        style: AppTypography.labelSmall.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                    ],
+                    Text(
+                      row.value,
+                      maxLines: 1,
+                      style: AppTypography.codeSmall.copyWith(
+                        color: colors.text.muted,
                       ),
                     ),
+                    if (row.copyable) ...[
+                      const SizedBox(width: AppSpacing.xxs),
+                      const _StatusDetailActionIcon(
+                        icon: AppIcons.copy,
+                        tooltipMessage: null,
+                      ),
+                    ],
                   ],
                 ),
-        ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

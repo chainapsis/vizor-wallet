@@ -20,6 +20,7 @@ import '../voting_choice_style.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
+import '../voting_poll_ordering.dart';
 import '../voting_resume_plan.dart';
 import '../voting_routes.dart';
 import '../widgets/voting_metadata_widgets.dart';
@@ -41,6 +42,7 @@ class _VotingProposalDetailScreenState
   bool _votingPowerPreparationInFlight = false;
   String? _votingPowerPreparationKey;
   String? _delegationPirPrecomputeKey;
+  String? _resultsRedirectRoundId;
 
   @override
   void didUpdateWidget(covariant VotingProposalDetailScreen oldWidget) {
@@ -50,6 +52,7 @@ class _VotingProposalDetailScreenState
       _votingPowerPreparationInFlight = false;
       _votingPowerPreparationKey = null;
       _delegationPirPrecomputeKey = null;
+      _resultsRedirectRoundId = null;
     }
   }
 
@@ -80,23 +83,20 @@ class _VotingProposalDetailScreenState
               );
             }
             final accountUuid = state.accountUuid;
-            final draftKey = accountUuid == null
-                ? null
-                : VotingSessionKey(roundId: roundId, accountUuid: accountUuid);
-            final draft = draftKey == null
-                ? const VotingDraftState()
-                : ref.watch(votingDraftProvider(draftKey));
             final proposals = proposalsFromRound(round);
             final forumUri = votingRoundForumUriFromJson(round.rawJson);
             final completedVote = _CompletedVote.fromPlan(state.roundPlan);
+            final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
             final hasConfirmedVotingEligibility =
                 state.hasConfirmedVotingEligibility;
+            final hasBlockingRecovery = hasBlockingRoundRecoveryWork(
+              state.roundPlan,
+            );
             _maybePrepareVotingPower(state);
             // Foreground recovery takes precedence over the read-only voted view.
             // Accepted helper shares may still be tracked after submission, but
             // that background work should not keep this screen resumable.
-            if (hasBlockingRoundRecoveryWork(state.roundPlan) &&
-                hasConfirmedVotingEligibility) {
+            if (hasBlockingRecovery && hasConfirmedVotingEligibility) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _PendingVoteContent(
@@ -129,7 +129,6 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
-            final pendingVote = _PendingVoteRecovery.fromPlan(state.roundPlan);
             if (pendingVote != null && hasConfirmedVotingEligibility) {
               return Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
@@ -145,6 +144,18 @@ class _VotingProposalDetailScreenState
                 ),
               );
             }
+            if (votingPollListStatus(round.status) !=
+                    VotingPollListStatus.active &&
+                !hasBlockingRecovery) {
+              _redirectToResults(round.roundId);
+              return const Center(child: CircularProgressIndicator());
+            }
+            final draftKey = accountUuid == null
+                ? null
+                : VotingSessionKey(roundId: roundId, accountUuid: accountUuid);
+            final draft = draftKey == null
+                ? const VotingDraftState()
+                : ref.watch(votingDraftProvider(draftKey));
             final votingPowerPreparing =
                 _votingPowerPreparationInFlight ||
                 (state.eligibleWeightZatoshi == null &&
@@ -177,6 +188,7 @@ class _VotingProposalDetailScreenState
               votingEligibilityErrorMessage: votingEligibilityError
                   ? votingEligibilityMessage
                   : null,
+              onVotingEligibilityRetry: _retryVotingPowerPreparation,
               proposals: proposals,
               draft: draft,
               onChoice: draftKey == null
@@ -199,7 +211,19 @@ class _VotingProposalDetailScreenState
     );
   }
 
-  void _maybePrepareVotingPower(VotingSessionState state) {
+  void _redirectToResults(String roundId) {
+    if (_resultsRedirectRoundId == roundId) return;
+    _resultsRedirectRoundId = roundId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.go(votingResultsRoute(roundId));
+    });
+  }
+
+  void _maybePrepareVotingPower(
+    VotingSessionState state, {
+    bool force = false,
+  }) {
     final preparationKey = '${widget.roundId}|${state.accountUuid ?? ''}';
     if (_votingPowerPreparationKey != preparationKey) {
       _votingPowerPreparationKey = preparationKey;
@@ -207,8 +231,8 @@ class _VotingProposalDetailScreenState
       _votingPowerPreparationInFlight = false;
     }
 
-    if (_votingPowerPreparationStarted ||
-        state.eligibleWeightZatoshi != null ||
+    if ((!force && _votingPowerPreparationStarted) ||
+        (!force && state.eligibleWeightZatoshi != null) ||
         !_shouldPrepareVotingPower(state)) {
       return;
     }
@@ -221,6 +245,14 @@ class _VotingProposalDetailScreenState
         ref
             .read(votingSessionProvider(widget.roundId).notifier)
             .refreshEligibleWeight()
+            .catchError((Object error, StackTrace stackTrace) {
+              debugPrint(
+                '[zcash] Voting: voting eligibility refresh failed '
+                'round=${widget.roundId} account=${state.accountUuid} '
+                'error=$error',
+              );
+              return null;
+            })
             .whenComplete(() {
               if (!mounted) return;
               setState(() {
@@ -229,6 +261,17 @@ class _VotingProposalDetailScreenState
             }),
       );
     });
+  }
+
+  void _retryVotingPowerPreparation() {
+    if (_votingPowerPreparationInFlight) return;
+    final state = ref.read(votingSessionProvider(widget.roundId)).value;
+    if (state == null) return;
+    setState(() {
+      _votingPowerPreparationStarted = false;
+      _votingPowerPreparationInFlight = false;
+    });
+    _maybePrepareVotingPower(state, force: true);
   }
 
   // Warm the delegation PIR / padded-note secrets as soon as the round page
@@ -298,6 +341,7 @@ class _ActivePollContent extends StatefulWidget {
     required this.votingEligibilityConfirmed,
     required this.votingEligibilityMessage,
     required this.votingEligibilityErrorMessage,
+    required this.onVotingEligibilityRetry,
     required this.proposals,
     required this.draft,
     required this.onChoice,
@@ -314,6 +358,7 @@ class _ActivePollContent extends StatefulWidget {
   final bool votingEligibilityConfirmed;
   final String? votingEligibilityMessage;
   final String? votingEligibilityErrorMessage;
+  final VoidCallback onVotingEligibilityRetry;
   final List<VotingProposalView> proposals;
   final VotingDraftState draft;
   final void Function(int proposalId, int? choice) onChoice;
@@ -335,6 +380,10 @@ class _ActivePollContentState extends State<_ActivePollContent> {
   }
 
   Future<void> _handleBottomActionPressed() async {
+    if (_canRetryVotingEligibility) {
+      widget.onVotingEligibilityRetry();
+      return;
+    }
     if (!widget.votingEligibilityConfirmed) {
       await _showIneligibleDialog();
       return;
@@ -356,6 +405,13 @@ class _ActivePollContentState extends State<_ActivePollContent> {
     if (mounted) {
       context.push(votingReviewRoute(widget.roundId));
     }
+  }
+
+  bool get _canRetryVotingEligibility {
+    return !widget.votingEligibilityConfirmed &&
+        !widget.votingPowerPreparing &&
+        widget.votingEligibilityMessage != null &&
+        widget.votingEligibilityErrorMessage == null;
   }
 
   @override
@@ -419,15 +475,21 @@ class _ActivePollContentState extends State<_ActivePollContent> {
                       );
                     }
                     if (index == widget.proposals.length + 1) {
+                      final canRetryEligibility = _canRetryVotingEligibility;
                       final isIneligible =
                           !widget.votingEligibilityConfirmed &&
                           widget.votingEligibilityErrorMessage != null;
                       return _ReviewAnswersButton(
                         enabled:
+                            canRetryEligibility ||
                             isIneligible ||
                             widget.votingEligibilityConfirmed &&
                                 !widget.draft.isEmpty,
-                        label: isIneligible ? 'Not eligible' : 'Review answers',
+                        label: canRetryEligibility
+                            ? 'Retry eligibility'
+                            : isIneligible
+                            ? 'Not eligible'
+                            : 'Review answers',
                         onPressed: _handleBottomActionPressed,
                       );
                     }

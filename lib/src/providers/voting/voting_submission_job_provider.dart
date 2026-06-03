@@ -472,7 +472,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
         activeSession,
       );
       if ((draftVotes.isNotEmpty ||
-              _hasRemainingVoteOrShareWork(activeSession)) &&
+              _hasRemainingVoteOrShareWork(activeSession) ||
+              canPollDelegationWithoutDraft) &&
           !activeSession.hasConfirmedVotingEligibility) {
         await sessionNotifier.ensureVotingEligibility();
         if (!_isCurrentJob(key: key, generation: generation)) return;
@@ -744,9 +745,13 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }) async {
     if (!_isCurrentJob(key: key, generation: generation)) return;
     var votePollingSession = _sessionForJob(key) ?? initialSession;
+    final canContinueWithoutDraft =
+        votePollingSession != null &&
+        (_canRecoverWithoutDraft(votePollingSession) ||
+            _canPollDelegationWithoutDraft(votePollingSession) ||
+            _hasCompletedSubmissionArtifacts(votePollingSession));
     if (draftVotes.isEmpty &&
-        (votePollingSession == null ||
-            !_canRecoverWithoutDraft(votePollingSession))) {
+        (votePollingSession == null || !canContinueWithoutDraft)) {
       _failJob(
         key: key,
         generation: generation,
@@ -788,10 +793,21 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
     }
     await sessionNotifier.submitPendingShares();
     if (!_isCurrentJob(key: key, generation: generation)) return;
-    final done = _sessionForJob(key);
+    var done = _sessionForJob(key);
     if (done?.phase == VotingSessionPhase.error) {
       _failFromSession(key: key, generation: generation, session: done!);
       return;
+    }
+    if (done != null) {
+      final completedEligibilitySession =
+          await _ensureEligibilityForCompletedSession(
+            key: key,
+            generation: generation,
+            sessionNotifier: sessionNotifier,
+            session: done,
+          );
+      if (completedEligibilitySession == null) return;
+      done = completedEligibilitySession;
     }
     if (!_canCompleteSubmission(done)) {
       _scheduleCompletionPoll(key: key, generation: generation);
@@ -1119,7 +1135,8 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   }
 
   bool _stepCanRecoverWithoutDraft(rust_wire.NextStepView step) {
-    return step.kind == 'submit_vote' ||
+    return step.kind == 'cast_vote' ||
+        step.kind == 'submit_vote' ||
         step.kind == 'submit_shares' ||
         step.kind == 'poll_vote' ||
         step.kind == 'confirm_share';
@@ -1173,6 +1190,7 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
   bool _planNeedsVotePolling(rust_wire.RoundPlanView? roundPlan) {
     return roundPlan?.nextSteps.any(
           (step) =>
+              step.kind == 'cast_vote' ||
               step.kind == 'submit_vote' ||
               step.kind == 'submit_shares' ||
               step.kind == 'poll_vote',

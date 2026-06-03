@@ -427,7 +427,79 @@ void main() {
     expect(roundsCallsAfter, greaterThan(roundsCallsBefore));
   });
 
-  test('config switch preserves sessions during active submission', () async {
+  test(
+    'config source change invalidates rounds provider on initial load',
+    () async {
+      const firstSource = 'https://voting-a.example/static-voting-config.json';
+      const secondSource = 'https://voting-b.example/static-voting-config.json';
+      final http = FakeVotingHttpClient(
+        responses: {
+          firstSource: staticConfigJson(),
+          secondSource: staticConfigJson(),
+          'https://voting.example/dynamic-voting-config.json':
+              dynamicConfigJson(),
+          '/shielded-vote/v1/rounds': {
+            'rounds': [
+              {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+            ],
+          },
+        },
+      );
+      final container = ProviderContainer(
+        overrides: [
+          votingConfigSourceStoreProvider.overrideWithValue(
+            FakeVotingConfigSourceStore(sourceUrl: firstSource),
+          ),
+          votingHttpClientProvider.overrideWithValue(http),
+          votingConfigLoaderProvider.overrideWith((ref) {
+            final source =
+                ref.watch(votingConfigSourceProvider).value?.sourceUrl ??
+                kDefaultStaticVotingConfigSource;
+            return VotingConfigLoader(
+              httpClient: http,
+              sourceUrl: source,
+              resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
+              resolveVotingConfig:
+                  ({
+                    required source,
+                    required staticBytes,
+                    required dynamicBytes,
+                    previous,
+                  }) => fakeResolveVotingConfig(
+                    dynamicBytes: dynamicBytes,
+                    previous: previous,
+                    authenticatedRoundIds: const [kRoundId],
+                  ),
+            );
+          }),
+          votingActiveAccountUuidProvider.overrideWithValue(() async => null),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingRoundsProvider.future);
+      final roundsCallsBefore = http.requests
+          .where(
+            (request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'),
+          )
+          .length;
+
+      await container
+          .read(votingConfigSourceProvider.notifier)
+          .setCustom(secondSource);
+      await container.read(votingConfigProvider.notifier).refresh();
+      await container.read(votingRoundsProvider.future);
+      final roundsCallsAfter = http.requests
+          .where(
+            (request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'),
+          )
+          .length;
+
+      expect(roundsCallsAfter, greaterThan(roundsCallsBefore));
+    },
+  );
+
+  test('config switch defers session invalidation during submission', () async {
     var refreshCount = 0;
     final roundProvider = votingSessionProvider(kRoundId);
     const submissionKey = VotingSessionKey(
@@ -472,6 +544,12 @@ void main() {
 
     expect(roundObserver.disposed, isFalse);
     expect(submissionObserver.disposed, isFalse);
+
+    container.read(votingSubmissionGuardProvider.notifier).release(guard);
+    await container.pump();
+
+    expect(roundObserver.disposed, isTrue);
+    expect(submissionObserver.disposed, isTrue);
   });
 
   test('config switch unchanged keeps rounds provider cache', () async {
@@ -1352,7 +1430,7 @@ void main() {
     final state = container.read(votingSessionProvider(kRoundId)).value!;
 
     expect(state.phase, VotingSessionPhase.delegated);
-    expect(rust.setupCalls, 1);
+    expect(rust.setupCalls, 0);
     expect(rust.delegationBundleCalls, isEmpty);
   });
 
@@ -2389,6 +2467,9 @@ void main() {
           delegatePlan,
           votePlan,
           votePlan,
+          votePlan,
+          votePlan,
+          votePlan,
           completedPlan,
           completedPlan,
           completedPlan,
@@ -2440,6 +2521,8 @@ void main() {
         rust: rust,
         recoveryApi: _submittedDelegationOnlyRecoveryApi(),
         accountMnemonic: null,
+        hotkeyStore: const FailingVotingHotkeyStore(),
+        pirResolver: FakePirResolver(error: StateError('unexpected PIR')),
         txConfirmationPolling: _fastTxConfirmationPolling,
       );
       addTearDown(container.dispose);
@@ -2459,6 +2542,7 @@ void main() {
       );
 
       expect(completed.errorMessage, isNull);
+      expect(rust.setupCalls, 0);
       expect(rust.delegationBundleCalls, isEmpty);
       expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
       expect(_postRequestCount(http, '/shielded-vote/v1/cast-vote'), 0);
@@ -2480,6 +2564,8 @@ void main() {
         rust: rust,
         recoveryApi: _submittedDelegationOnlyRecoveryApi(),
         accountIsHardware: true,
+        hotkeyStore: const FailingVotingHotkeyStore(),
+        pirResolver: FakePirResolver(error: StateError('unexpected PIR')),
         txConfirmationPolling: _fastTxConfirmationPolling,
       );
       addTearDown(container.dispose);
@@ -2499,6 +2585,7 @@ void main() {
       );
 
       expect(completed.errorMessage, isNull);
+      expect(rust.setupCalls, 0);
       expect(rust.keystoneDelegationRequestCalls, isEmpty);
       expect(rust.keystoneProofBundleCalls, isEmpty);
       expect(_postRequestCount(http, '/shielded-vote/v1/delegate-vote'), 0);
@@ -3691,6 +3778,7 @@ void main() {
       http: FakeVotingHttpClient(responses: httpResponses),
       rust: rust,
       recoveryApi: recoveryApi,
+      hotkeyStore: const FailingVotingHotkeyStore(),
       txConfirmationPolling: _fastTxConfirmationPolling,
     );
     addTearDown(container.dispose);
@@ -3821,6 +3909,8 @@ void main() {
       'https://voting.example',
       'https://voting-failover.example',
     ]);
+    expect(rust.resetVoteTreeCalls, ['account-1:$kRoundId']);
+    expect(rust.resetVotingSessionStateCalls, isEmpty);
   });
 
   test('vote tree sync runs before each proposal', () async {
@@ -3890,7 +3980,7 @@ void main() {
       'https://voting.example',
       'https://voting-failover.example',
     ]);
-    expect(rust.resetVotingSessionStateCalls, ['account-1:*']);
+    expect(rust.resetVotingSessionStateCalls, ['account-1:$kRoundId']);
   });
 
   test('vote commitments submit shares and record recovery rows', () async {
@@ -4654,23 +4744,24 @@ void main() {
 
   test('hotkey failure moves session into error phase', () async {
     final rust = FakeVotingRustApi();
+    final recoveryApi = FakeVotingRecoveryApi(
+      state: recoveryState(
+        bundleCount: 1,
+        delegationTxHashes: [
+          rust_frb_types.DelegationRecoveryView(
+            bundleIndex: 0,
+            phase: VotingWorkflowPhase.submittedDelegation,
+            txHash: 'delegation-0',
+            vanLeafPosition: null,
+          ),
+        ],
+        votes: [vote(bundleIndex: 0, proposalId: 7)],
+      ),
+    );
     final container = _sessionContainer(
       rust: rust,
       hotkeyStore: const FailingVotingHotkeyStore(),
-      recoveryApi: FakeVotingRecoveryApi(
-        state: recoveryState(
-          bundleCount: 1,
-          delegationTxHashes: [
-            rust_frb_types.DelegationRecoveryView(
-              bundleIndex: 0,
-              phase: VotingWorkflowPhase.submittedDelegation,
-              txHash: 'delegation-0',
-              vanLeafPosition: null,
-            ),
-          ],
-          votes: [vote(bundleIndex: 0, proposalId: 7)],
-        ),
-      ),
+      recoveryApi: recoveryApi,
     );
     addTearDown(container.dispose);
 
@@ -4692,6 +4783,7 @@ void main() {
 
     expect(state.phase, VotingSessionPhase.error);
     expect(state.error?.cause, isA<VotingHotkeyUnavailable>());
+    expect(recoveryApi.ballotIntents, isEmpty);
     expect(rust.resetVotingSessionStateCalls, contains('account-1:$kRoundId'));
   });
 }
@@ -6008,6 +6100,7 @@ class FakeVotingRustApi implements VotingRustApi {
   final hotkeyGenerationStarted = Completer<void>();
   final precomputeStarted = Completer<void>();
   final precomputeFinished = Completer<void>();
+  final resetVoteTreeCalls = <String>[];
   final resetVotingSessionStateCalls = <String>[];
   final draftSingleShareValues = <bool>[];
   final planLastMomentBufferSeconds = <BigInt?>[];
@@ -6418,6 +6511,15 @@ class FakeVotingRustApi implements VotingRustApi {
     String? roundId,
   }) async {
     resetVotingSessionStateCalls.add('$accountUuid:${roundId ?? '*'}');
+  }
+
+  @override
+  Future<void> resetVoteTree({
+    required String dbPath,
+    required String accountUuid,
+    String? roundId,
+  }) async {
+    resetVoteTreeCalls.add('$accountUuid:${roundId ?? '*'}');
   }
 
   @override

@@ -67,6 +67,14 @@ class _VotingReviewScreenState extends ConsumerState<VotingReviewScreen> {
         ref
             .read(votingSessionProvider(widget.roundId).notifier)
             .refreshEligibleWeight()
+            .catchError((Object error, StackTrace stackTrace) {
+              debugPrint(
+                '[zcash] Voting: review voting eligibility refresh failed '
+                'round=${widget.roundId} account=${state.accountUuid} '
+                'error=$error',
+              );
+              return null;
+            })
             .whenComplete(() {
               if (!mounted) return;
               setState(() {

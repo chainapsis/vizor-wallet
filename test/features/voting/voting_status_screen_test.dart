@@ -1489,6 +1489,80 @@ void main() {
     expect(find.text('Review answers'), findsNothing);
   });
 
+  testWidgets('proposal detail routes non-active rounds to results', (
+    tester,
+  ) async {
+    final round = _roundStatusJson()..['status'] = 'pending';
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: _MutableVotingRecoveryApi(),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('results route'), findsOneWidget);
+    expect(find.text('Review answers'), findsNothing);
+  });
+
+  testWidgets('proposal detail shows recovery before non-active redirect', (
+    tester,
+  ) async {
+    final round = _roundStatusJson()..['status'] = 'pending';
+    final http = FakeVotingHttpClient(
+      responses: _votingHttpResponses()
+        ..['/shielded-vote/v1/round/$_roundId'] = {'round': round},
+    );
+    final recoveryApi = _MutableVotingRecoveryApi()
+      ..roundPlan = apiRoundPlan(
+        roundId: _roundId,
+        pendingRecovery: true,
+        nextSteps: const [
+          rust_wire.NextStepView(
+            kind: 'cast_vote',
+            bundleIndex: 0,
+            proposalId: 1,
+            choice: 0,
+            shareIndex: 0,
+          ),
+        ],
+        openProposals: Uint32List(0),
+        allDecided: false,
+      );
+    final container = _statusContainer(
+      http: http,
+      accountOverride: _MnemonicAccountNotifier.new,
+      recoveryApi: recoveryApi,
+      rust: _VotingStatusRustApi(recoveryApi),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: _proposalHarness(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final sessionState = container.read(votingSessionProvider(_roundId)).value!;
+    expect(sessionState.roundPlan?.blockingRecovery, isTrue);
+    expect(find.text('Vote in progress'), findsOneWidget);
+    expect(find.text('Continue voting'), findsOneWidget);
+    expect(find.text('results route'), findsNothing);
+  });
+
   testWidgets('poll stops preparing voting power when setup fails', (
     tester,
   ) async {
@@ -1514,6 +1588,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Voting power unavailable'), findsOneWidget);
+    expect(find.text('Retry eligibility'), findsOneWidget);
     expect(find.text('Preparing voting power'), findsNothing);
   });
 
@@ -3047,6 +3122,10 @@ Widget _proposalHarness({String? initialLocation}) {
           'status account: ${state.uri.queryParameters['account'] ?? ''}',
         ),
       ),
+      GoRoute(
+        path: '/voting/poll/:roundId/results',
+        builder: (_, _) => const Text('results route'),
+      ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
@@ -3599,7 +3678,9 @@ class _RetryableEligibilityVotingSessionNotifier
     if (refreshCalls == 1) {
       throw StateError('temporary setup unavailable');
     }
-    return BigInt.from(100);
+    final refreshed = _state.copyWith(eligibleWeightZatoshi: BigInt.from(100));
+    state = AsyncData(refreshed);
+    return refreshed.eligibleWeightZatoshi;
   }
 }
 
@@ -3683,6 +3764,13 @@ class _NoopVotingRustApi implements VotingRustApi {
 
   @override
   Future<void> resetVotingSessionState({
+    required String dbPath,
+    required String accountUuid,
+    String? roundId,
+  }) async {}
+
+  @override
+  Future<void> resetVoteTree({
     required String dbPath,
     required String accountUuid,
     String? roundId,

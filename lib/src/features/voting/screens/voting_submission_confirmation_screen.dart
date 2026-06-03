@@ -44,6 +44,7 @@ class _VotingSubmissionConfirmationScreenState
   bool _votingPowerRefreshAttempted = false;
   String? _votingPowerRefreshKey;
   BigInt? _refreshedVotingPowerZatoshi;
+  bool _refreshedVotingEligibilityConfirmed = false;
   String? _votingPowerRefreshErrorMessage;
   VotingSessionState? _lastSubmissionState;
   String? _pollRefreshKey;
@@ -61,6 +62,7 @@ class _VotingSubmissionConfirmationScreenState
     _votingPowerRefreshAttempted = false;
     _votingPowerRefreshKey = null;
     _refreshedVotingPowerZatoshi = null;
+    _refreshedVotingEligibilityConfirmed = false;
     _votingPowerRefreshErrorMessage = null;
     _lastSubmissionState = null;
     _pollRefreshKey = null;
@@ -131,7 +133,7 @@ class _VotingSubmissionConfirmationScreenState
     }
     final hasConfirmedVotingEligibility =
         state.hasConfirmedVotingEligibility ||
-        _refreshedVotingPowerZatoshi != null;
+        _refreshedVotingEligibilityConfirmed;
     final confirmed = hasCompletedSubmission && hasConfirmedVotingEligibility;
     _maybeRefreshVotingPower(
       confirmed: hasCompletedSubmission,
@@ -268,6 +270,7 @@ class _VotingSubmissionConfirmationScreenState
       _refreshingVotingPower = false;
       _votingPowerRefreshAttempted = false;
       _refreshedVotingPowerZatoshi = null;
+      _refreshedVotingEligibilityConfirmed = false;
       _votingPowerRefreshErrorMessage = null;
     }
     if (!confirmed || _refreshingVotingPower || _votingPowerRefreshAttempted) {
@@ -338,9 +341,21 @@ class _VotingSubmissionConfirmationScreenState
           : ref.read(votingSubmissionSessionProvider(jobKey).notifier);
       final refreshed = await notifier.refreshEligibleWeight();
       if (!mounted || _votingPowerRefreshKey != key) return;
+      final refreshedState = jobKey == null
+          ? ref.read(votingSessionProvider(widget.roundId)).value
+          : ref.read(votingSubmissionSessionProvider(jobKey)).value;
+      final refreshedEligibilityConfirmed =
+          refreshedState?.hasConfirmedVotingEligibility ?? false;
+      final refreshedError = refreshedState?.error;
       setState(() {
-        _refreshedVotingPowerZatoshi = refreshed;
-        _votingPowerRefreshErrorMessage = null;
+        _refreshedVotingEligibilityConfirmed = refreshedEligibilityConfirmed;
+        _refreshedVotingPowerZatoshi = refreshedEligibilityConfirmed
+            ? refreshed
+            : null;
+        _votingPowerRefreshErrorMessage =
+            refreshedEligibilityConfirmed || refreshedError == null
+            ? null
+            : friendlyVotingErrorText(refreshedError.message);
       });
     } catch (error) {
       debugPrint(
@@ -349,6 +364,8 @@ class _VotingSubmissionConfirmationScreenState
       );
       if (mounted && _votingPowerRefreshKey == key) {
         setState(() {
+          _refreshedVotingEligibilityConfirmed = false;
+          _refreshedVotingPowerZatoshi = null;
           _votingPowerRefreshErrorMessage = friendlyVotingErrorText('$error');
         });
       }

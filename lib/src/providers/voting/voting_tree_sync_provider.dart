@@ -104,6 +104,13 @@ class VotingTreePreSyncService {
         } catch (e) {
           lastError = e;
           if (attempt < nodeUrls.length - 1) {
+            await _ref
+                .read(votingRustApiProvider)
+                .resetVoteTree(
+                  dbPath: dbPath,
+                  accountUuid: accountUuid,
+                  roundId: roundId,
+                );
             debugPrint(
               '[zcash] Voting: vote tree pre-sync retrying failover '
               'round=$roundId from=$nodeUrl error=$e',

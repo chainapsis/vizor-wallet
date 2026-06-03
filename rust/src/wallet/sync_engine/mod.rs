@@ -1,12 +1,15 @@
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
+use nonempty::NonEmpty;
+use shardtree::error::{InsertionError, ShardTreeError};
 use tonic::transport::Channel;
 use zcash_client_backend::{
     data_api::{
         chain::{self, error::Error as ChainError, scan_cached_blocks},
-        scanning::ScanPriority,
-        WalletRead, WalletWrite,
+        scanning::{ScanPriority, ScanRange},
+        wallet::ConfirmationsPolicy,
+        WalletCommitmentTrees, WalletRead, WalletWrite,
     },
     proto::service,
 };
@@ -90,6 +93,11 @@ const SANDBLASTING_END: u32 = 2_050_000;
 const BATCH_SIZE_SANDBLASTING: u32 = 100;
 
 const SAPLING_ACTIVATION_HEIGHT: u32 = 419200;
+const MAX_WITNESS_REPAIR_PASSES_PER_RUN: u32 = 3;
+// `truncate_to_chain_state` only injects a canonical frontier when the requested
+// height is below the retained checkpoint window. Start at the pruning depth
+// and escalate so corrupted anchor checkpoints do not survive the repair.
+const ANCHOR_ROOT_REPAIR_REWIND_DISTANCES: [u32; 3] = [100, 1000, 10_000];
 
 /// Sync-scoped elapsed time reference. Set at sync start.
 static SYNC_START: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
@@ -150,6 +158,311 @@ fn target_percentage_after_blocks(initial_total: u64, remaining: u64, blocks: u6
         let target_remaining = remaining.saturating_sub(blocks);
         (1.0 - (target_remaining as f64 / initial_total as f64)).clamp(0.0, 1.0)
     }
+}
+
+fn is_pending_scan_range(range: &ScanRange) -> bool {
+    range.priority() != ScanPriority::Ignored && range.priority() != ScanPriority::Scanned
+}
+
+fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
+    ranges
+        .iter()
+        .filter(|r| is_pending_scan_range(r))
+        .map(|r| {
+            u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start)) as u64
+        })
+        .sum()
+}
+
+fn first_pending_scan_range(ranges: &[ScanRange]) -> Option<String> {
+    ranges
+        .iter()
+        .find(|r| is_pending_scan_range(r))
+        .map(|r| r.to_string())
+}
+
+fn wallet_summary_heights(db: &WalletDatabase) -> Result<Option<(u64, u64)>, SyncError> {
+    db.get_wallet_summary(ConfirmationsPolicy::default())
+        .map_err(|e| SyncError::db(format!("get_wallet_summary: {e}")))
+        .map(|summary| {
+            summary.map(|s| {
+                (
+                    u32::from(s.fully_scanned_height()) as u64,
+                    u32::from(s.chain_tip_height()) as u64,
+                )
+            })
+        })
+}
+
+fn block_range_len(range: &std::ops::Range<BlockHeight>) -> u64 {
+    u32::from(range.end).saturating_sub(u32::from(range.start)) as u64
+}
+
+fn describe_block_range(range: &std::ops::Range<BlockHeight>) -> String {
+    format!("{}..{}", u32::from(range.start), u32::from(range.end))
+}
+
+fn ensure_complete_scan_state(
+    db: &WalletDatabase,
+    current_tip_height: u64,
+) -> Result<(u64, u64), SyncError> {
+    let ranges = db
+        .suggest_scan_ranges()
+        .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+    let pending_blocks = pending_scan_blocks(&ranges);
+    if pending_blocks > 0 {
+        let first = first_pending_scan_range(&ranges).unwrap_or_else(|| "unknown".into());
+        return Err(SyncError::continuity(
+            current_tip_height,
+            format!(
+                "sync completion blocked: {pending_blocks} pending scan blocks remain \
+                 (first pending range: {first})"
+            ),
+        ));
+    }
+
+    let Some((fully_scanned_height, db_tip_height)) = wallet_summary_heights(db)? else {
+        if current_tip_height == 0 {
+            return Ok((0, 0));
+        }
+        return Err(SyncError::db(format!(
+            "sync completion blocked: wallet summary unavailable at tip {current_tip_height}"
+        )));
+    };
+
+    if db_tip_height < current_tip_height {
+        return Err(SyncError::continuity(
+            current_tip_height,
+            format!(
+                "sync completion blocked: wallet DB chain tip {db_tip_height} \
+                 lags lightwalletd tip {current_tip_height}"
+            ),
+        ));
+    }
+
+    if fully_scanned_height < db_tip_height {
+        return Err(SyncError::continuity(
+            db_tip_height,
+            format!(
+                "sync completion blocked: fully scanned height {fully_scanned_height} \
+                 below wallet DB chain tip {db_tip_height}"
+            ),
+        ));
+    }
+
+    Ok((fully_scanned_height, db_tip_height))
+}
+
+fn queue_witness_repairs_if_needed(
+    db: &mut WalletDatabase,
+    current_tip_height: u64,
+    repair_passes_this_run: &mut u32,
+) -> Result<Option<u64>, SyncError> {
+    let rescan_ranges = with_wallet_db_write_lock("sync_engine.check_witnesses", || {
+        db.check_witnesses()
+            .map_err(|e| SyncError::db(format!("check_witnesses: {e}")))
+    })?;
+
+    let Some(nonempty_ranges) = NonEmpty::from_vec(rescan_ranges) else {
+        return Ok(None);
+    };
+
+    if *repair_passes_this_run >= MAX_WITNESS_REPAIR_PASSES_PER_RUN {
+        let first = describe_block_range(&nonempty_ranges.head);
+        return Err(SyncError::db(format!(
+            "sync completion blocked: witness repair budget exhausted \
+             after {} pass(es); first remaining repair range: {first}",
+            MAX_WITNESS_REPAIR_PASSES_PER_RUN,
+        )));
+    }
+
+    *repair_passes_this_run += 1;
+    let pass = *repair_passes_this_run;
+    let range_count = 1 + nonempty_ranges.tail.len();
+    let repair_blocks = nonempty_ranges.iter().map(block_range_len).sum::<u64>();
+    let first = describe_block_range(&nonempty_ranges.head);
+
+    log::warn!(
+        "[{}] sync: witness repair pass {}/{} queued {} range(s), {} block(s) \
+         (first={first})",
+        elapsed(),
+        pass,
+        MAX_WITNESS_REPAIR_PASSES_PER_RUN,
+        range_count,
+        repair_blocks,
+    );
+
+    with_wallet_db_write_lock("sync_engine.queue_witness_repairs", || {
+        db.queue_rescans(nonempty_ranges, ScanPriority::Verify)
+            .map_err(|e| SyncError::db(format!("queue witness rescans: {e}")))
+    })?;
+
+    let post_ranges = db
+        .suggest_scan_ranges()
+        .map_err(|e| SyncError::db(format!("suggest_scan_ranges after witness repair: {e}")))?;
+    let pending_blocks = pending_scan_blocks(&post_ranges);
+    if pending_blocks == 0 && current_tip_height > 0 {
+        return Err(SyncError::db(format!(
+            "sync completion blocked: witness repair queued ranges but no pending scan \
+             ranges were produced at tip {current_tip_height}"
+        )));
+    }
+
+    Ok(Some(pending_blocks))
+}
+
+async fn repair_anchor_root_mismatch_if_needed(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &mut WalletDatabase,
+    current_tip_height: u64,
+    repair_passes_this_run: &mut u32,
+) -> Result<Option<u64>, SyncError> {
+    let Some((target_height, anchor_height)) = db
+        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .map_err(|e| SyncError::db(format!("get_target_and_anchor_heights: {e}")))?
+    else {
+        return Ok(None);
+    };
+
+    let local_sapling = db
+        .with_sapling_tree_mut(|tree| tree.root_at_checkpoint_id(&anchor_height))
+        .map_err(|e| SyncError::db(format!("sapling root at {anchor_height}: {e}")))?;
+    let local_orchard = db
+        .with_orchard_tree_mut(|tree| tree.root_at_checkpoint_id(&anchor_height))
+        .map_err(|e| SyncError::db(format!("orchard root at {anchor_height}: {e}")))?;
+
+    let anchor_chain_state = get_tree_state(client, u32::from(anchor_height) as u64)
+        .await?
+        .to_chain_state()
+        .map_err(|e| SyncError::parse(format!("parse anchor tree state: {e}")))?;
+    if anchor_chain_state.block_height() != anchor_height {
+        return Err(SyncError::parse(format!(
+            "lightwalletd returned tree state for height {}, requested {anchor_height}",
+            anchor_chain_state.block_height(),
+        )));
+    }
+
+    let canonical_sapling = anchor_chain_state.final_sapling_tree().root();
+    let canonical_orchard = anchor_chain_state.final_orchard_tree().root();
+    if local_sapling.as_ref() == Some(&canonical_sapling)
+        && local_orchard.as_ref() == Some(&canonical_orchard)
+    {
+        return Ok(None);
+    }
+
+    let start_idx = usize::try_from(*repair_passes_this_run).unwrap_or(usize::MAX);
+    let mut last_root_conflict = None;
+    for rewind_distance in ANCHOR_ROOT_REPAIR_REWIND_DISTANCES
+        .iter()
+        .copied()
+        .skip(start_idx)
+    {
+        *repair_passes_this_run += 1;
+        let repair_height = anchor_height.saturating_sub(rewind_distance);
+        let repair_chain_state = get_tree_state(client, u32::from(repair_height) as u64)
+            .await?
+            .to_chain_state()
+            .map_err(|e| SyncError::parse(format!("parse repair tree state: {e}")))?;
+        if repair_chain_state.block_height() != repair_height {
+            return Err(SyncError::parse(format!(
+                "lightwalletd returned tree state for height {}, requested {repair_height}",
+                repair_chain_state.block_height(),
+            )));
+        }
+
+        log::warn!(
+            "[{}] sync: anchor root mismatch at {anchor_height} \
+             (target={}, repair_height={repair_height}, pass {}/{}); \
+             local_sapling={:?}, canonical_sapling={:?}, local_orchard={:?}, \
+             canonical_orchard={:?}; rewinding to canonical chain state",
+            elapsed(),
+            u32::from(target_height),
+            *repair_passes_this_run,
+            ANCHOR_ROOT_REPAIR_REWIND_DISTANCES.len(),
+            local_sapling,
+            canonical_sapling,
+            local_orchard,
+            canonical_orchard,
+        );
+
+        let current_tip = BlockHeight::from_u32(current_tip_height as u32);
+        let attempt_result = with_wallet_db_write_lock(
+            "sync_engine.truncate_to_chain_state.anchor_root_mismatch",
+            || -> Result<Result<Vec<ScanRange>, String>, SyncError> {
+                match db.truncate_to_chain_state(repair_chain_state.clone()) {
+                    Ok(()) => {}
+                    Err(e) if is_commitment_tree_root_conflict(&e) => {
+                        return Ok(Err(format!("{e}")));
+                    }
+                    Err(e) if is_sqlite_lock_contention(&e) => {
+                        return Err(SyncError::other(format!(
+                            "truncate_to_chain_state({repair_height}): SQLite lock contention: {e}"
+                        )));
+                    }
+                    Err(e) => {
+                        return Err(SyncError::db(format!(
+                            "truncate_to_chain_state({repair_height}): {e}"
+                        )));
+                    }
+                }
+                db.update_chain_tip(current_tip).map_err(|e| {
+                    SyncError::db(format!(
+                        "update_chain_tip({current_tip_height}) after anchor root repair: {e}"
+                    ))
+                })?;
+                db.suggest_scan_ranges()
+                    .map_err(|e| {
+                        SyncError::db(format!("suggest_scan_ranges after anchor root repair: {e}"))
+                    })
+                    .map(Ok)
+            },
+        )?;
+
+        let post_rewind_ranges = match attempt_result {
+            Ok(ranges) => ranges,
+            Err(conflict) => {
+                log::warn!(
+                    "[{}] sync: anchor root repair at {repair_height} conflicted \
+                     with an existing tree root; trying a deeper repair if available ({conflict})",
+                    elapsed(),
+                );
+                last_root_conflict = Some(conflict);
+                continue;
+            }
+        };
+
+        let pending_blocks = pending_scan_blocks(&post_rewind_ranges);
+        let first_pending =
+            first_pending_scan_range(&post_rewind_ranges).unwrap_or_else(|| "none".into());
+        log::info!(
+            "[{}] sync: anchor root repair queued {pending_blocks} block(s) \
+             (first_pending={first_pending})",
+            elapsed(),
+        );
+
+        let anchor_height_u64 = u32::from(anchor_height) as u64;
+        if pending_blocks == 0 && anchor_height_u64 < current_tip_height {
+            return Err(SyncError::continuity(
+                current_tip_height,
+                format!(
+                    "anchor root repair at {anchor_height} produced no pending scan \
+                     ranges, but lightwalletd tip is {current_tip_height}"
+                ),
+            ));
+        }
+
+        return Ok(Some(pending_blocks));
+    }
+
+    Err(SyncError::db(format!(
+        "sync completion blocked: anchor root repair budget exhausted \
+         after {} pass(es) at anchor {anchor_height}{}",
+        ANCHOR_ROOT_REPAIR_REWIND_DISTANCES.len(),
+        last_root_conflict
+            .as_deref()
+            .map(|e| format!("; last root conflict: {e}"))
+            .unwrap_or_default(),
+    )))
 }
 
 async fn refresh_utxos(
@@ -457,9 +770,7 @@ async fn run_sync_impl(
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         ranges
             .iter()
-            .filter(|r| {
-                r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned
-            })
+            .filter(|r| is_pending_scan_range(r))
             .map(|r| {
                 u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start))
                     as u64
@@ -476,6 +787,8 @@ async fn run_sync_impl(
     // verify range can't eat the main scan's rewind budget.
     let mut verify_rewinds_this_run: u32 = 0;
     let mut main_rewinds_this_run: u32 = 0;
+    let mut witness_repair_passes_this_run: u32 = 0;
+    let mut anchor_root_repair_passes_this_run: u32 = 0;
 
     // Phase-transition markers used only for logging. Progress through the
     // scan queue is implicitly ordered by `ScanPriority::Verify` >
@@ -588,11 +901,35 @@ async fn run_sync_impl(
             .suggest_scan_ranges()
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
 
-        let range = match ranges.iter().find(|r| {
-            r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned
-        }) {
+        let range = match ranges.iter().find(|r| is_pending_scan_range(r)) {
             Some(r) => r.clone(),
-            None => break, // Fully synced
+            None => {
+                if let Some(repair_pending_blocks) = queue_witness_repairs_if_needed(
+                    &mut db,
+                    current_tip_height,
+                    &mut witness_repair_passes_this_run,
+                )? {
+                    initial_total = repair_pending_blocks;
+                    prev_remaining = repair_pending_blocks;
+                    prefetch = None;
+                    continue;
+                } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
+                    &mut client,
+                    &mut db,
+                    current_tip_height,
+                    &mut anchor_root_repair_passes_this_run,
+                )
+                .await?
+                {
+                    initial_total = repair_pending_blocks;
+                    prev_remaining = repair_pending_blocks;
+                    prefetch = None;
+                    continue;
+                } else {
+                    ensure_complete_scan_state(&db, current_tip_height)?;
+                    break;
+                }
+            }
         };
 
         // Phase bookkeeping. `ScanPriority::Verify` ranges are
@@ -754,6 +1091,15 @@ async fn run_sync_impl(
                         format!("BlockConflict at {at_height}: wallet rewind required"),
                     )
                 }
+                ChainError::Wallet(wallet_err) if is_commitment_tree_root_conflict(&wallet_err) => {
+                    let at_height = u32::from(start) as u64;
+                    SyncError::continuity(
+                        at_height,
+                        format!(
+                            "commitment tree root conflict while scanning from {at_height}: {wallet_err}"
+                        ),
+                    )
+                }
                 ChainError::Wallet(wallet_err) => {
                     // Transient SQLite lock contention (e.g. another wallet
                     // connection holds a write lock) must retry, not bail out.
@@ -799,6 +1145,12 @@ async fn run_sync_impl(
                         );
                         return Err(sync_err);
                     }
+                    let rewind_attempt_index = *current_rewinds;
+                    let rewind_distance =
+                        sync_err.rewind_distance_for_attempt(rewind_attempt_index);
+                    let requested_rewind_height = sync_err
+                        .rewind_target_for_attempt(rewind_attempt_index)
+                        .unwrap_or(to_height);
                     *current_rewinds += 1;
                     // `truncate_to_height` does NOT silently clamp to the
                     // nearest checkpoint. If the requested height is below
@@ -812,7 +1164,7 @@ async fn run_sync_impl(
                     // recovers. When it's `None` there is genuinely
                     // nowhere safe to rewind to, and we surface the
                     // failure as fatal.
-                    let target = BlockHeight::from_u32(to_height as u32);
+                    let target = BlockHeight::from_u32(requested_rewind_height as u32);
                     let actual_rewind_height = with_wallet_db_write_lock(
                         "sync_engine.truncate_to_height",
                         || -> Result<BlockHeight, SyncError> {
@@ -860,22 +1212,59 @@ async fn run_sync_impl(
                                     // error and triggers the rewind again. If the
                                     // lock has cleared by then, the retry succeeds.
                                     Err(SyncError::other(format!(
-                                        "truncate_to_height({to_height}): SQLite lock contention: {e}"
+                                        "truncate_to_height({requested_rewind_height}): SQLite lock contention: {e}"
                                     )))
                                 }
                                 Err(e) => Err(SyncError::db(format!(
-                                    "truncate_to_height({to_height}): {e}"
+                                    "truncate_to_height({requested_rewind_height}): {e}"
                                 ))),
                             }
                         },
                     )?;
+                    let current_tip = BlockHeight::from_u32(current_tip_height as u32);
+                    let post_rewind_ranges = with_wallet_db_write_lock(
+                        "sync_engine.update_chain_tip.after_rewind",
+                        || -> Result<Vec<ScanRange>, SyncError> {
+                            db.update_chain_tip(current_tip).map_err(|e| {
+                                SyncError::db(format!(
+                                    "update_chain_tip({current_tip_height}) after rewind: {e}"
+                                ))
+                            })?;
+                            db.suggest_scan_ranges().map_err(|e| {
+                                SyncError::db(format!("suggest_scan_ranges after rewind: {e}"))
+                            })
+                        },
+                    )?;
+                    let post_rewind_pending = pending_scan_blocks(&post_rewind_ranges);
+                    let first_pending = first_pending_scan_range(&post_rewind_ranges)
+                        .unwrap_or_else(|| "none".into());
+                    let summary = wallet_summary_heights(&db)?;
+                    let actual_rewind_height_u64 = u32::from(actual_rewind_height) as u64;
                     log::info!(
-                        "[{}] sync: {phase_name} rewound to {actual_rewind_height} after reorg \
-                         (attempt {}/{}); restarting scan loop",
+                        "[{}] sync: {phase_name} rewound to {actual_rewind_height} \
+                         after reorg (requested={requested_rewind_height}, \
+                         distance={rewind_distance}, attempt {}/{}); \
+                         post_rewind_pending={post_rewind_pending}, first_pending={first_pending}, \
+                         summary={summary:?}; restarting scan loop",
                         elapsed(),
                         *current_rewinds,
                         MAX_REWINDS_PER_RUN,
                     );
+                    if actual_rewind_height_u64 < current_tip_height && post_rewind_pending == 0 {
+                        return Err(SyncError::continuity(
+                            current_tip_height,
+                            format!(
+                                "post-rewind scan queue empty after rewinding to \
+                                 {actual_rewind_height_u64}, but lightwalletd tip is \
+                                 {current_tip_height}"
+                            ),
+                        ));
+                    }
+                    if post_rewind_pending > 0 {
+                        initial_total = post_rewind_pending;
+                        prev_remaining = post_rewind_pending;
+                    }
+                    prefetch = None;
                     continue;
                 }
                 RecoveryStrategy::RetryWithBackoff | RecoveryStrategy::Fatal => {
@@ -1001,9 +1390,7 @@ async fn run_sync_impl(
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
         let remaining: u64 = post_ranges
             .iter()
-            .filter(|r| {
-                r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned
-            })
+            .filter(|r| is_pending_scan_range(r))
             .map(|r| {
                 u32::from(r.block_range().end).saturating_sub(u32::from(r.block_range().start))
                     as u64
@@ -1030,9 +1417,7 @@ async fn run_sync_impl(
         };
         let next_display_target_blocks = post_ranges
             .iter()
-            .find(|r| {
-                r.priority() != ScanPriority::Ignored && r.priority() != ScanPriority::Scanned
-            })
+            .find(|r| is_pending_scan_range(r))
             .map(|r| {
                 let next_start = r.block_range().start;
                 let next_batch_size =
@@ -1097,11 +1482,18 @@ async fn run_sync_impl(
         }
     }
 
-    log::info!("[{}] sync: completed", elapsed());
+    let (final_scanned_height, final_tip_height) =
+        ensure_complete_scan_state(&db, current_tip_height)?;
+    log::info!(
+        "[{}] sync: completed (fully_scanned={}, chain_tip={})",
+        elapsed(),
+        final_scanned_height,
+        final_tip_height,
+    );
     // Final progress
     let final_progress = SyncProgressEvent {
-        scanned_height: current_tip_height,
-        chain_tip_height: current_tip_height,
+        scanned_height: final_scanned_height,
+        chain_tip_height: final_tip_height,
         percentage: 1.0,
         display_target_percentage: 1.0,
         display_target_blocks: 0,
@@ -1144,6 +1536,13 @@ fn is_sqlite_lock_contention(err: &SqliteClientError) -> bool {
     } else {
         false
     }
+}
+
+fn is_commitment_tree_root_conflict(err: &SqliteClientError) -> bool {
+    matches!(
+        err,
+        SqliteClientError::CommitmentTree(ShardTreeError::Insert(InsertionError::Conflict(_)))
+    )
 }
 
 // ==================== Tests ====================
@@ -1198,5 +1597,27 @@ mod tests {
             zcash_protocol::consensus::BlockHeight::from_u32(2_500_000),
         );
         assert!(!is_sqlite_lock_contention(&block_conflict));
+    }
+
+    #[test]
+    fn commitment_tree_root_conflict_is_recognised() {
+        use incrementalmerkletree::{Address, Level};
+
+        let conflict = SqliteClientError::CommitmentTree(ShardTreeError::Insert(
+            InsertionError::Conflict(Address::from_parts(Level::new(7), 391_096)),
+        ));
+        assert!(is_commitment_tree_root_conflict(&conflict));
+
+        let out_of_range =
+            SqliteClientError::CommitmentTree(ShardTreeError::Insert(InsertionError::OutOfRange(
+                incrementalmerkletree::Position::from(0),
+                incrementalmerkletree::Position::from(1)..incrementalmerkletree::Position::from(2),
+            )));
+        assert!(!is_commitment_tree_root_conflict(&out_of_range));
+
+        let block_conflict = SqliteClientError::BlockConflict(
+            zcash_protocol::consensus::BlockHeight::from_u32(2_500_000),
+        );
+        assert!(!is_commitment_tree_root_conflict(&block_conflict));
     }
 }

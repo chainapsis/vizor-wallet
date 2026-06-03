@@ -1,3 +1,5 @@
+import '../../address_book/models/address_book_contact.dart';
+
 enum SwapStatusBadgeKind { liveQuote, completed, warning, failed }
 
 enum SwapStatusTab { progress, details }
@@ -53,6 +55,8 @@ class SwapStatusDetailRowData {
     this.help = false,
     this.helpTooltip,
     this.accountProfilePictureId,
+    this.addressBookLabel,
+    this.addressNetwork,
   });
 
   final String label;
@@ -62,4 +66,13 @@ class SwapStatusDetailRowData {
   final bool help;
   final String? helpTooltip;
   final String? accountProfilePictureId;
+
+  /// When this row is an address that matches a saved address-book contact,
+  /// the contact's nickname. Renders as a matched-contact identity cell
+  /// (nickname + saved mark above the network + address).
+  final String? addressBookLabel;
+
+  /// The contact's network, used to draw the chain chip on the address line.
+  /// Only set when [addressBookLabel] is non-null.
+  final AddressBookNetwork? addressNetwork;
 }

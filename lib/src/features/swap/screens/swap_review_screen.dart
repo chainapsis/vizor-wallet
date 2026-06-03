@@ -13,6 +13,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
+import '../../address_book/providers/address_book_provider.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_fiat_value_formatting.dart';
@@ -110,6 +111,8 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     final swapState = ref.watch(swapStateProvider);
     final quote = swapState.reviewQuote;
     final addressPlan = swapState.reviewAddressPlan;
+    final addressBookContacts =
+        ref.watch(addressBookProvider).value?.contacts ?? const [];
     if (!swapState.reviewVisible || quote == null || addressPlan == null) {
       if (!_hadReviewState || !_startingIntent) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -180,6 +183,7 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
                                   SwapReviewPageContent(
                                     quote: quote,
                                     addressPlan: addressPlan,
+                                    addressBookContacts: addressBookContacts,
                                     accountLabel: accountLabel,
                                     accountProfilePictureId:
                                         accountProfilePictureId,

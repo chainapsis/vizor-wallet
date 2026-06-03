@@ -10,13 +10,13 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 flutter_rust_bridge = "=2.11.1"
 
 # Zcash core
-zcash_primitives = "0.27"
-zcash_address = "0.11"
-zcash_keys = { version = "0.13", features = ["orchard"] }
-zcash_protocol = "0.8"
-transparent = { package = "zcash_transparent", version = "0.7" }
+zcash_primitives = "0.28"
+zcash_address = "0.12"
+zcash_keys = { version = "0.14", features = ["orchard"] }
+zcash_protocol = "0.9"
+transparent = { package = "zcash_transparent", version = "0.8" }
 zcash_script = "0.4.3"
-zcash_client_backend = { version = "0.22", features = [
+zcash_client_backend = { version = "0.23", features = [
     "orchard",
     "transparent-inputs",
     "lightwalletd-tonic",
@@ -24,11 +24,11 @@ zcash_client_backend = { version = "0.22", features = [
     "sync",
     "pczt",
 ] }
-zcash_client_sqlite = { version = "0.20", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
+zcash_client_sqlite = { version = "0.21", features = ["orchard", "transparent-inputs", "unstable", "serde"] }
 # Voting clients need PIR lookup support and vote-commitment-tree sync.
-zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "16ab4e5bbd8154bbdbb1f242eed1ebcf2f1bfb0c", package = "zcash_voting" }
+zcash_voting = { git = "https://github.com/valargroup/zcash_voting", rev = "517126bb31a70181209b931905871a58f29601e0", package = "zcash_voting" }
 # Must match versions used by zcash_client_sqlite to avoid type conflicts
-orchard = { version = "=0.13.1", features = ["unstable-voting-circuits"] }
+orchard = "0.14"
 sapling-crypto = { version = "0.7", default-features = false, features = ["circuit"] }
 uuid = "1.1"
 zip32 = "0.2"
@@ -40,7 +40,7 @@ bls12_381 = "0.8"
 rand_core = "0.6"
 
 # Proofs
-zcash_proofs = "0.27"
+zcash_proofs = "0.28"
 
 # Key generation
 bip0039 = "0.12"
@@ -49,6 +49,7 @@ bip0039 = "0.12"
 nonempty = "0.11"
 prost = "0.14"
 incrementalmerkletree = "0.8"
+shardtree = "0.6"
 
 # Security
 secrecy = "0.8"
@@ -84,7 +85,7 @@ hex = "0.4"
 
 # Keystone hardware wallet
 ur = { git = "https://github.com/KeystoneHQ/ur-rs", tag = "0.3.3" }
-pczt = { version = "0.6", features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
+pczt = { version = "0.7", features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
 ur-registry = { git = "https://github.com/KeystoneHQ/keystone-sdk-rust", package = "ur-registry", default-features = false, features = ["std"] }
 serde_json = "1"
 url = "2.5.8"
@@ -95,7 +96,7 @@ security-framework = { version = "3.7", features = ["OSX_10_15"] }
 [dev-dependencies]
 tempfile = "3"
 hex = "0.4"
-vote-commitment-tree = "0.3"
+vote-commitment-tree = { git = "https://github.com/valargroup/zcash_voting", rev = "517126bb31a70181209b931905871a58f29601e0", package = "vote-commitment-tree" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

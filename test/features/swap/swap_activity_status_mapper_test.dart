@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_activity_status_mapper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_detail_tooltips.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -66,6 +67,88 @@ void main() {
     expect(
       _detailRow(presentation.details, 'ZEC refund address').copyText,
       'u1refund-address',
+    );
+  });
+
+  test('adds address book labels to matching address detail rows', () {
+    const recipientAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.processing,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: 't1deposit-address',
+        oneClickRecipient: recipientAddress,
+        oneClickRefundTo: 'u1refund-address',
+      ),
+      addressBookContacts: [
+        _contact(
+          label: 'Treasury',
+          network: AddressBookNetwork.ethereum,
+          address: recipientAddress.toLowerCase(),
+        ),
+        _contact(
+          label: 'Refund safe',
+          network: AddressBookNetwork.zcash,
+          address: 'u1refund-address',
+        ),
+      ],
+    );
+
+    final recipient = _detailRow(presentation.details, 'USDC recipient');
+    expect(recipient.value, contains('0x'));
+    expect(recipient.copyText, recipientAddress);
+    expect(recipient.addressBookLabel, 'Treasury');
+    expect(recipient.addressNetwork, AddressBookNetwork.ethereum);
+
+    final refund = _detailRow(presentation.details, 'ZEC refund address');
+    expect(refund.value, contains('u1'));
+    expect(refund.copyText, 'u1refund-address');
+    expect(refund.addressBookLabel, 'Refund safe');
+    expect(refund.addressNetwork, AddressBookNetwork.zcash);
+
+    final deposit = _detailRow(presentation.details, 'Deposit ZEC to');
+    expect(deposit.value, contains('t1'));
+    expect(deposit.copyText, 't1deposit-address');
+    expect(deposit.addressBookLabel, isNull);
+
+    // The nickname is folded into the address row, not emitted as a separate
+    // empty-label row.
+    expect(
+      presentation.details.where((row) => row.label.isEmpty),
+      isEmpty,
+    );
+  });
+
+  test('adds a labeled recipient row to terminal swap details', () {
+    const recipientAddress = '0x52908400098527886e0f7030069857d2e4169ee7';
+    final presentation = swapActivityStatusPresentationForIntent(
+      _state(),
+      _intent(
+        status: SwapIntentStatus.complete,
+        direction: SwapDirection.zecToExternal,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: 't1deposit-address',
+        oneClickRecipient: recipientAddress,
+      ),
+      addressBookContacts: [
+        _contact(
+          label: 'Treasury',
+          network: AddressBookNetwork.ethereum,
+          address: recipientAddress,
+        ),
+      ],
+    );
+
+    final recipient = _detailRow(presentation.details, 'USDC recipient');
+    expect(recipient.value, contains('0x'));
+    expect(recipient.copyText, recipientAddress);
+    expect(recipient.addressBookLabel, 'Treasury');
+    expect(recipient.addressNetwork, AddressBookNetwork.ethereum);
+    expect(
+      _detailValue(presentation.details, 'ZEC deposit to'),
+      contains('t1'),
     );
   });
 
@@ -332,41 +415,53 @@ void main() {
     expect(canRefreshSwapIntentStatus(SwapIntentStatus.failed), true);
   });
 
-  test('swapActivityShowsExternalDepositPage returns false once depositClaimedAt is set', () {
-    final base = _intent(
-      status: SwapIntentStatus.awaitingExternalDeposit,
-      direction: SwapDirection.externalToZec,
-      externalAsset: SwapAsset.usdc,
-      depositAddress: '0xdeposit-address',
-    );
-    expect(swapActivityShowsExternalDepositPage(base), isTrue);
+  test(
+    'swapActivityShowsExternalDepositPage returns false once depositClaimedAt is set',
+    () {
+      final base = _intent(
+        status: SwapIntentStatus.awaitingExternalDeposit,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: '0xdeposit-address',
+      );
+      expect(swapActivityShowsExternalDepositPage(base), isTrue);
 
-    final claimed = base.copyWith(
-      depositClaimedAt: DateTime.utc(2026, 5, 29, 12),
-    );
-    expect(swapActivityShowsExternalDepositPage(claimed), isFalse);
-  });
+      final claimed = base.copyWith(
+        depositClaimedAt: DateTime.utc(2026, 5, 29, 12),
+      );
+      expect(swapActivityShowsExternalDepositPage(claimed), isFalse);
+    },
+  );
 
-  test('claimed external deposit advances progress to the confirmation step', () {
-    final awaiting = _intent(
-      status: SwapIntentStatus.awaitingExternalDeposit,
-      direction: SwapDirection.externalToZec,
-      externalAsset: SwapAsset.usdc,
-      depositAddress: '0xdeposit-address',
-    );
-    expect(
-      swapActivityStatusPresentationForIntent(_state(), awaiting).progressIndex,
-      0,
-    );
+  test(
+    'claimed external deposit advances progress to the confirmation step',
+    () {
+      final awaiting = _intent(
+        status: SwapIntentStatus.awaitingExternalDeposit,
+        direction: SwapDirection.externalToZec,
+        externalAsset: SwapAsset.usdc,
+        depositAddress: '0xdeposit-address',
+      );
+      expect(
+        swapActivityStatusPresentationForIntent(
+          _state(),
+          awaiting,
+        ).progressIndex,
+        0,
+      );
 
-    final claimed = awaiting.copyWith(
-      depositClaimedAt: DateTime.utc(2026, 5, 29, 12),
-    );
-    expect(
-      swapActivityStatusPresentationForIntent(_state(), claimed).progressIndex,
-      1,
-    );
-  });
+      final claimed = awaiting.copyWith(
+        depositClaimedAt: DateTime.utc(2026, 5, 29, 12),
+      );
+      expect(
+        swapActivityStatusPresentationForIntent(
+          _state(),
+          claimed,
+        ).progressIndex,
+        1,
+      );
+    },
+  );
 
   test('status details keep the deposit memo reachable after a claim', () {
     final claimed = _intent(
@@ -456,4 +551,20 @@ SwapStatusDetailRowData _detailRow(
   String label,
 ) {
   return rows.singleWhere((row) => row.label == label);
+}
+
+AddressBookContact _contact({
+  required String label,
+  required AddressBookNetwork network,
+  required String address,
+}) {
+  return AddressBookContact(
+    id: 'contact_$label',
+    label: label,
+    network: network,
+    address: address,
+    profilePictureId: 'knight',
+    createdAtMs: 0,
+    updatedAtMs: 0,
+  );
 }
