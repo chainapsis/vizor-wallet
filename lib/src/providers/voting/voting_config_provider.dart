@@ -138,7 +138,10 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
     VotingConfigResolution resolution, {
     required String sourceUrl,
   }) {
-    _applySwitch(resolution.switchKind);
+    final sourceChanged =
+        _previousResolvedSourceUrl != null &&
+        _previousResolvedSourceUrl != sourceUrl;
+    _applySwitch(resolution.switchKind, sourceChanged: sourceChanged);
     _previousResolvedConfig = resolution.config;
     _previousResolvedSourceUrl = sourceUrl;
     _clearRefreshFailure();
@@ -160,10 +163,11 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
 
   /// Applies the Rust-computed switch plan to dependent voting state.
   ///
-  /// `unchanged`/`initialLoad` keep all caches. The remaining kinds all imply
-  /// the vote/PIR endpoints, signing keys, rounds, or protocol moved, so
-  /// endpoint-dependent caches are rebuilt to force re-resolution against the new
-  /// config:
+  /// `unchanged`/`initialLoad` keep all caches unless the configured source URL
+  /// changed. A source change or any of the remaining kinds imply the vote/PIR
+  /// endpoints, signing keys, rounds, or protocol may have moved, so
+  /// endpoint-dependent caches are rebuilt to force re-resolution against the
+  /// new config:
   ///
   /// - shared transport/client + PIR resolver caches via [_invalidateEndpointState];
   /// - the poll list ([votingRoundsProvider]) and the interactive session
@@ -171,7 +175,11 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
   /// - the submission-session family ([votingSubmissionSessionProvider]) so a
   ///   subsequent submission re-resolves its endpoints. Active submission guards
   ///   keep existing sessions alive until their jobs release process-local state.
-  void _applySwitch(ConfigSwitchKind kind) {
+  void _applySwitch(ConfigSwitchKind kind, {required bool sourceChanged}) {
+    if (sourceChanged) {
+      _invalidateConfigDependentState();
+      return;
+    }
     switch (kind) {
       case ConfigSwitchKind.unchanged:
       case ConfigSwitchKind.initialLoad:
@@ -179,13 +187,17 @@ class VotingConfigNotifier extends AsyncNotifier<ResolvedVotingConfig> {
       case ConfigSwitchKind.sameChainServiceUpdate:
       case ConfigSwitchKind.newChainOrRound:
       case ConfigSwitchKind.protocolChanged:
-        _invalidateEndpointState();
-        ref.invalidate(votingRoundsProvider);
-        if (ref.read(votingSubmissionGuardProvider).isEmpty) {
-          ref.invalidate(votingSessionProvider);
-          ref.invalidate(votingSubmissionSessionProvider);
-        }
+        _invalidateConfigDependentState();
         return;
+    }
+  }
+
+  void _invalidateConfigDependentState() {
+    _invalidateEndpointState();
+    ref.invalidate(votingRoundsProvider);
+    if (ref.read(votingSubmissionGuardProvider).isEmpty) {
+      ref.invalidate(votingSessionProvider);
+      ref.invalidate(votingSubmissionSessionProvider);
     }
   }
 

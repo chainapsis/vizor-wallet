@@ -427,6 +427,78 @@ void main() {
     expect(roundsCallsAfter, greaterThan(roundsCallsBefore));
   });
 
+  test(
+    'config source change invalidates rounds provider on initial load',
+    () async {
+      const firstSource = 'https://voting-a.example/static-voting-config.json';
+      const secondSource = 'https://voting-b.example/static-voting-config.json';
+      final http = FakeVotingHttpClient(
+        responses: {
+          firstSource: staticConfigJson(),
+          secondSource: staticConfigJson(),
+          'https://voting.example/dynamic-voting-config.json':
+              dynamicConfigJson(),
+          '/shielded-vote/v1/rounds': {
+            'rounds': [
+              {'vote_round_id': kRoundId, 'title': 'Poll', 'status': 'active'},
+            ],
+          },
+        },
+      );
+      final container = ProviderContainer(
+        overrides: [
+          votingConfigSourceStoreProvider.overrideWithValue(
+            FakeVotingConfigSourceStore(sourceUrl: firstSource),
+          ),
+          votingHttpClientProvider.overrideWithValue(http),
+          votingConfigLoaderProvider.overrideWith((ref) {
+            final source =
+                ref.watch(votingConfigSourceProvider).value?.sourceUrl ??
+                kDefaultStaticVotingConfigSource;
+            return VotingConfigLoader(
+              httpClient: http,
+              sourceUrl: source,
+              resolveStaticVotingConfig: fakeResolveStaticVotingConfig,
+              resolveVotingConfig:
+                  ({
+                    required source,
+                    required staticBytes,
+                    required dynamicBytes,
+                    previous,
+                  }) => fakeResolveVotingConfig(
+                    dynamicBytes: dynamicBytes,
+                    previous: previous,
+                    authenticatedRoundIds: const [kRoundId],
+                  ),
+            );
+          }),
+          votingActiveAccountUuidProvider.overrideWithValue(() async => null),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(votingRoundsProvider.future);
+      final roundsCallsBefore = http.requests
+          .where(
+            (request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'),
+          )
+          .length;
+
+      await container
+          .read(votingConfigSourceProvider.notifier)
+          .setCustom(secondSource);
+      await container.read(votingConfigProvider.notifier).refresh();
+      await container.read(votingRoundsProvider.future);
+      final roundsCallsAfter = http.requests
+          .where(
+            (request) => request.uri.path.endsWith('/shielded-vote/v1/rounds'),
+          )
+          .length;
+
+      expect(roundsCallsAfter, greaterThan(roundsCallsBefore));
+    },
+  );
+
   test('config switch preserves sessions during active submission', () async {
     var refreshCount = 0;
     final roundProvider = votingSessionProvider(kRoundId);
